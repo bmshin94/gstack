@@ -109,8 +109,10 @@ describe('selectTests', () => {
     expect(result.selected).toContain('plan-ceo-split-overflow');
     // v2 plan Phase B carve: the section-loading E2E depends on plan-ceo-review/**.
     expect(result.selected).toContain('plan-ceo-section-loading');
-    expect(result.selected.length).toBe(21);
-    expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 21);
+    expect(result.selected).toContain('codex-plan-ceo-format-mode');
+    expect(result.selected).toContain('codex-plan-ceo-format-approach');
+    expect(result.selected.length).toBe(23);
+    expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 23);
   });
 
   test('global touchfile triggers ALL tests', () => {

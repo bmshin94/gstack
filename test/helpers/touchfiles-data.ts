@@ -266,11 +266,17 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'codex-review': ['codex/**', 'test/skill-e2e-workflow.test.ts'],
 
   // Codex E2E (tests skills via Codex CLI + worktree)
-  'codex-discover-skill':  ['codex/**', 'scripts/gen-skill-docs.ts', 'test/helpers/codex-session-runner.ts', 'lib/worktree.ts', 'test/codex-e2e.test.ts'],
-  'codex-review-findings': ['review/**', 'scripts/gen-skill-docs.ts', 'codex/**', 'test/helpers/codex-session-runner.ts', 'lib/worktree.ts', 'test/codex-e2e.test.ts'],
+  'codex-discover-skill':  ['codex/**', 'scripts/gen-skill-docs.ts', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'lib/worktree.ts', 'test/codex-e2e.test.ts'],
+  'codex-review-findings': ['review/**', 'scripts/gen-skill-docs.ts', 'codex/**', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'lib/worktree.ts', 'test/codex-e2e.test.ts'],
+
+  // Plan-format checks depend on source templates, not optional installed caches.
+  'codex-plan-ceo-format-mode': ['plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts'],
+  'codex-plan-ceo-format-approach': ['plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts'],
+  'codex-plan-eng-format-coverage': ['plan-eng-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts'],
+  'codex-plan-eng-format-kind': ['plan-eng-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts'],
 
   // GPT-5.6 Sol scope-termination E2E (Codex CLI, full generated investigate skill)
-  'codex-sol-scope-termination': ['model-overlays/gpt-5.6-sol.md', 'scripts/models.ts', 'scripts/resolvers/model-overlay.ts', 'scripts/resolvers/preamble/**', 'investigate/**', 'test/helpers/codex-session-runner.ts', 'test/codex-e2e-sol-scope.test.ts'],
+  'codex-sol-scope-termination': ['model-overlays/gpt-5.6-sol.md', 'scripts/models.ts', 'scripts/resolvers/model-overlay.ts', 'scripts/resolvers/preamble/**', 'investigate/**', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-sol-scope.test.ts'],
 
   // Gemini E2E — smoke test only (Gemini gets lost in worktrees on complex tasks)
   'gemini-smoke':  ['scripts/gen-skill-docs.ts', 'test/helpers/gemini-session-runner.ts', 'lib/worktree.ts', 'test/gemini-e2e.test.ts'],
@@ -712,6 +718,10 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   'codex-discover-skill': 'periodic',
   'codex-review-findings': 'periodic',
   'codex-sol-scope-termination': 'periodic',
+  'codex-plan-ceo-format-mode': 'periodic',
+  'codex-plan-ceo-format-approach': 'periodic',
+  'codex-plan-eng-format-coverage': 'periodic',
+  'codex-plan-eng-format-kind': 'periodic',
   'gemini-smoke': 'periodic',
 
   // Design — gate for cheap functional, periodic for Opus/quality
