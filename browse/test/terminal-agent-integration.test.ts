@@ -10,8 +10,8 @@
  *   5. resize control message — terminal accepts and stays alive.
  *   6. close behavior — sending close terminates the PTY child.
  *
- * Uses /bin/bash via BROWSE_TERMINAL_BINARY override so CI doesn't need
- * the `claude` binary installed.
+ * Uses a CLI-compatible wrapper around /bin/bash via BROWSE_TERMINAL_BINARY
+ * so CI doesn't need the `claude` binary installed.
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
@@ -54,12 +54,25 @@ beforeAll(() => {
   const stateFile = path.join(stateDir, 'browse.json');
   // browse.json must exist so the agent's readBrowseToken doesn't throw.
   fs.writeFileSync(stateFile, JSON.stringify({ token: 'test-browse-token' }));
+  const terminalCli = path.join(stateDir, 'terminal-cli');
+  // Production supplies Claude's CLI arguments. Validate that contract before
+  // handing the real PTY to Bash; bare Bash rejects --append-system-prompt.
+  fs.writeFileSync(terminalCli, [
+    `#!${BASH}`,
+    'if [ "$#" -ne 2 ] || [ "$1" != "--append-system-prompt" ] || [ -z "$2" ]; then',
+    '  echo "unexpected terminal CLI arguments" >&2; exit 64',
+    'fi',
+    'shift 2',
+    `exec ${BASH} --noprofile --norc "$@"`,
+    '',
+  ].join('\n'));
+  fs.chmodSync(terminalCli, 0o755);
   agentProc = Bun.spawn(['bun', 'run', AGENT_SCRIPT], {
     env: {
       ...process.env,
       BROWSE_STATE_FILE: stateFile,
       BROWSE_SERVER_PORT: '0', // not used in this test
-      BROWSE_TERMINAL_BINARY: BASH,
+      BROWSE_TERMINAL_BINARY: terminalCli,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -158,8 +171,10 @@ describe('terminal-agent: PTY round-trip via real WebSocket (Cookie auth)', () =
 
     ws.addEventListener('close', () => { closed = true; });
 
-    // Lazy-spawn trigger: any binary frame causes the agent to spawn /bin/bash.
-    ws.send(new TextEncoder().encode('echo hello-pty-world\nexit\n'));
+    // Lazy-spawn trigger: any binary frame causes the agent to spawn the fixture CLI.
+    // The expected token must not occur in the input: PTY echo alone is not
+    // proof that the child accepted its arguments and executed the command.
+    ws.send(new TextEncoder().encode("printf 'hello-%s-world\\n' pty\nexit\n"));
 
     // Wait up to 5s for output and shutdown.
     await new Promise<void>((resolve) => {
