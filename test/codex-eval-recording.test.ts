@@ -15,7 +15,7 @@ import {
   type CodexEvalOptions,
 } from './helpers/codex-eval';
 import { CODEX_DRAIN_GRACE_MS, CodexHarnessError, type CodexResult } from './helpers/codex-session-runner';
-import { EvalCollector, listEvalJsonFiles, isFinalizedEvalResultFile, type EvalTestEntry } from './helpers/eval-store';
+import { EvalCollector, findPreviousRun, listEvalJsonFiles, isFinalizedEvalResultFile, type EvalTestEntry } from './helpers/eval-store';
 import { isPaidTestFile } from './helpers/paid-test-set';
 
 const result = (overrides: Partial<CodexResult> = {}): CodexResult => ({
@@ -269,6 +269,49 @@ describe('Codex suite collector isolation', () => {
       if (previousEvalDir === undefined) delete process.env.GSTACK_EVAL_DIR;
       else process.env.GSTACK_EVAL_DIR = previousEvalDir;
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('multiple suites sharing a paid shard preserve every record and compare only their own history', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-shared-shard-'));
+    const shard = path.join(dir, 'shards', 'multi-file-shard');
+    const suites = ['codex-e2e', 'codex-e2e-plan-format', 'codex-e2e-sol-scope'];
+    try {
+      const collectors = suites.map(suite => createCodexEvalCollector(suite, shard));
+      for (let i = 0; i < suites.length; i++) {
+        await runFixture({ name: `${suites[i]}-case`, suite: suites[i], record: entry => collectors[i].addTest(entry) });
+      }
+      // Partial collisions are deterministic, even if finalization crosses a minute.
+      const partials = listEvalJsonFiles(dir).filter(file => path.basename(file).startsWith('_partial'));
+      expect(partials).toHaveLength(3);
+      expect(partials.map(file => JSON.parse(fs.readFileSync(file, 'utf8')).tests[0].suite).sort()).toEqual([...suites].sort());
+      const finals = await Promise.all(collectors.map(collector => collector.finalize()));
+      expect(new Set(finals).size).toBe(3);
+      expect(listEvalJsonFiles(dir).filter(isFinalizedEvalResultFile).sort()).toEqual([...finals].sort());
+      expect(fs.existsSync(path.join(shard, 'shards'))).toBe(false);
+      for (let i = 0; i < suites.length; i++) {
+        const saved = JSON.parse(fs.readFileSync(finals[i], 'utf8'));
+        expect(saved).toMatchObject({ tier: 'e2e', shard: 'multi-file-shard', total_tests: 1 });
+        expect(saved.tests[0].suite).toBe(suites[i]);
+        expect(findPreviousRun(dir, 'e2e', saved.branch, finals[i])).toBeNull();
+      }
+
+      const current = JSON.parse(fs.readFileSync(finals[0], 'utf8'));
+      const previous = path.join(shard, `previous--suite-${suites[0]}.json`);
+      fs.writeFileSync(previous, JSON.stringify({ ...current, timestamp: '2020-01-01T00:00:00.000Z' }));
+      const legacy = path.join(shard, 'legacy.json');
+      fs.writeFileSync(legacy, JSON.stringify({ ...current, timestamp: '2099-01-01T00:00:00.000Z' }));
+      // A newer unrelated suite or legacy aggregate must never replace this baseline.
+      expect(findPreviousRun(dir, 'e2e', current.branch, finals[0])).toBe(previous);
+      expect(findPreviousRun(shard, 'e2e', current.branch, finals[0])).toBe(previous);
+      expect(findPreviousRun(dir, 'e2e', current.branch, finals[1])).toBeNull();
+      expect(findPreviousRun(dir, 'e2e', current.branch, path.join(shard, 'current.json'))).toBe(legacy);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('collector namespaces reject ambiguous filename delimiters before writing', () => {
+    for (const namespace of ['', 'two--parts', 'not a slug']) {
+      expect(() => new EvalCollector('e2e', os.tmpdir(), namespace)).toThrow('namespace');
     }
   });
 });

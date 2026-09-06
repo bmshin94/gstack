@@ -9,11 +9,12 @@ export const CODEX_EVAL_FINALIZE_MS = 2 * CODEX_DRAIN_GRACE_MS;
 
 let defaultEvalDir: string | undefined;
 
-/** Separate suites in flat/legacy runs; the paid shard runner already isolates them. */
+/** Flat runs get suite directories; multi-file paid shards need filenames too. */
 export function createCodexEvalCollector(suite: string, evalDir?: string): EvalCollector {
   const root = evalDir || process.env.GSTACK_EVAL_DIR || (defaultEvalDir ??= getProjectEvalDir());
-  const dir = shardSlugOfEvalDir(root) ? root : path.join(root, 'shards', suite);
-  return new EvalCollector('e2e', dir);
+  const inShard = shardSlugOfEvalDir(root) !== null;
+  const dir = inShard ? root : path.join(root, 'shards', suite);
+  return new EvalCollector('e2e', dir, inShard ? suite : undefined);
 }
 
 class CodexEvalTimeout extends Error {}
