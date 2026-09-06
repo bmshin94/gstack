@@ -1,5 +1,7 @@
 import { describe, test, expect, afterAll } from 'bun:test';
 import { assertSinglePreamble } from '../scripts/gen-skill-docs';
+import { validateSkillFrontmatter } from '../scripts/skill-check';
+import { externalHostPathLeaks } from './helpers/skill-parser';
 import { COMMAND_DESCRIPTIONS } from '../browse/src/commands';
 import { SNAPSHOT_FLAGS } from '../browse/src/snapshot';
 import * as fs from 'fs';
@@ -225,22 +227,11 @@ describe('gen-skill-docs', () => {
   // whose plain `description:` scalar contains an interior ": " (read as a nested
   // mapping). Parse EVERY generated frontmatter block with a strict YAML parser,
   // not just string-check that name:/description: exist.
-  function frontmatterBlock(content: string): string {
-    expect(content.startsWith('---\n')).toBe(true);
-    const end = content.indexOf('\n---', 4);
-    expect(end).toBeGreaterThan(0);
-    return content.slice(4, end);
-  }
-
   test('every generated SKILL.md frontmatter parses as strict YAML', () => {
     for (const skill of CLAUDE_GENERATED_SKILLS) {
       const content = fs.readFileSync(path.join(ROOT, skill.dir, 'SKILL.md'), 'utf-8');
-      const fm = frontmatterBlock(content);
-      let parsed: any;
-      expect(() => { parsed = Bun.YAML.parse(fm); },
-        `frontmatter for ${skill.dir} must be valid YAML`).not.toThrow();
-      expect(typeof parsed?.name).toBe('string');
-      expect(typeof parsed?.description).toBe('string');
+      expect(validateSkillFrontmatter(content),
+        `frontmatter for ${skill.dir} must be valid YAML with string name/description`).toEqual([]);
     }
   });
 
@@ -252,9 +243,8 @@ describe('gen-skill-docs', () => {
       if (!entry.isDirectory()) continue;
       const mdPath = path.join(agentsDir, entry.name, 'SKILL.md');
       if (!fs.existsSync(mdPath)) continue;
-      const fm = frontmatterBlock(fs.readFileSync(mdPath, 'utf-8'));
-      expect(() => Bun.YAML.parse(fm),
-        `Codex frontmatter for ${entry.name} must be valid YAML`).not.toThrow();
+      expect(validateSkillFrontmatter(fs.readFileSync(mdPath, 'utf-8')),
+        `Codex frontmatter for ${entry.name} must be valid YAML with string name/description`).toEqual([]);
     }
   });
 
@@ -2422,9 +2412,7 @@ describe('Parameterized host smoke tests', () => {
           const skillMd = path.join(hostDir, skill, 'SKILL.md');
           if (!fs.existsSync(skillMd)) continue;
           const content = fs.readFileSync(skillMd, 'utf-8');
-          // Strip bash blocks (which have legitimate fallback paths)
-          const noBash = content.replace(/```bash\n[\s\S]*?```/g, '');
-          const leaks = noBash.split('\n').filter(l => l.includes('.claude/skills'));
+          const leaks = externalHostPathLeaks(content);
           if (leaks.length > 0) {
             throw new Error(`${skill}: .claude/skills leakage:\n${leaks.slice(0, 3).join('\n')}`);
           }

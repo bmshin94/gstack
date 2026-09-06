@@ -7,12 +7,11 @@
  * `gbrain put office-hours/<slug>` with valid frontmatter.
  *
  * Approach:
- *   1. Regenerate office-hours/SKILL.md with --respect-detection against
- *      a temp GSTACK_HOME that has detected:true. Snapshot the rendered
- *      content (which now contains the compressed SAVE_RESULTS block),
- *      then restore the canonical no-gbrain version so the working tree
- *      stays clean.
- *   2. Write the snapshot into a temp workdir's office-hours/SKILL.md.
+ *   1. Render with --respect-detection into a temporary --out-dir against
+ *      a temp GSTACK_HOME that has detected:true. Point section links at
+ *      the final fixture workdir with --link-root; never rewrite the repo.
+ *   2. Copy the rendered office-hours skill and all its carved sections
+ *      into the temp workdir.
  *      Also write docs/gbrain-write-surfaces.md so the agent can read the
  *      template on demand (the compact block points to it).
  *   3. Write a fake `gbrain` shell script into workdir/bin/ with robust
@@ -41,6 +40,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -91,10 +91,11 @@ describeIfSelected(
       );
       copyFileSync(briefSrc, join(workDir, 'pitch.md'));
 
-      // Generate a brain-aware office-hours/SKILL.md (with --respect-detection
-      // against a temp GSTACK_HOME). Snapshot the content, restore the
-      // canonical version, write the snapshot into the workdir.
+      // Generate the brain-aware variant outside the repository. The renderer
+      // writes every Claude skill, so snapshotting just office-hours cannot
+      // protect the rest of the source tree from a detection-enabled render.
       const tmpHome = mkdtempSync(join(tmpdir(), 'gbrain-detect-home-'));
+      const renderDir = join(tmpHome, 'render');
       writeFileSync(
         join(tmpHome, 'gbrain-detection.json'),
         JSON.stringify({
@@ -103,15 +104,11 @@ describeIfSelected(
           gbrain_version: 'test-0.41.0',
         }),
       );
-      const skillPath = join(ROOT, 'office-hours', 'SKILL.md');
-      const originalSkill = readFileSync(skillPath, 'utf-8');
       // office-hours is carved (v2 plan T9): GBRAIN_SAVE_RESULTS moved into
-      // sections/design-and-handoff.md. Regen rewrites BOTH the skeleton and the
-      // section, so we snapshot + restore + ship both, and check the UNION for
-      // the gbrain put block.
-      const sectionPath = join(ROOT, 'office-hours', 'sections', 'design-and-handoff.md');
-      const hasSection = existsSync(sectionPath);
-      const originalSection = hasSection ? readFileSync(sectionPath, 'utf-8') : null;
+      // sections/design-and-handoff.md. Check the UNION for the gbrain put
+      // block, then copy all sections so every rendered section link resolves.
+      const skillPath = join(renderDir, 'office-hours', 'SKILL.md');
+      const sectionPath = join(renderDir, 'office-hours', 'sections', 'design-and-handoff.md');
       try {
         execFileSync(
           'bun',
@@ -121,10 +118,13 @@ describeIfSelected(
             '--host',
             'claude',
             '--respect-detection',
+            '--out-dir',
+            renderDir,
+            '--link-root',
+            workDir,
           ],
           {
-            // LIVE-REPO CWD: gen-skill-docs regenerates the in-repo
-            // office-hours SKILL.md + section (snapshotted/restored in finally).
+            // Read repository templates; all generated output lands in renderDir.
             cwd: ROOT,
             env: { ...process.env, GSTACK_HOME: tmpHome },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -132,6 +132,7 @@ describeIfSelected(
           },
         );
         const brainAwareSkill = readFileSync(skillPath, 'utf-8');
+        const hasSection = existsSync(sectionPath);
         const brainAwareSection = hasSection ? readFileSync(sectionPath, 'utf-8') : '';
         if (!(brainAwareSkill + brainAwareSection).includes('gbrain put "office-hours/')) {
           throw new Error(
@@ -139,16 +140,8 @@ describeIfSelected(
               'Detection override may be broken — see test/gbrain-detection-override.test.ts.',
           );
         }
-        mkdirSync(join(workDir, 'office-hours'), { recursive: true });
-        writeFileSync(join(workDir, 'office-hours', 'SKILL.md'), brainAwareSkill);
-        if (hasSection) {
-          mkdirSync(join(workDir, 'office-hours', 'sections'), { recursive: true });
-          writeFileSync(join(workDir, 'office-hours', 'sections', 'design-and-handoff.md'), brainAwareSection);
-        }
+        cpSync(join(renderDir, 'office-hours'), join(workDir, 'office-hours'), { recursive: true });
       } finally {
-        // Always restore the canonical skeleton + section so the working tree stays clean.
-        writeFileSync(skillPath, originalSkill);
-        if (hasSection && originalSection !== null) writeFileSync(sectionPath, originalSection);
         rmSync(tmpHome, { recursive: true, force: true });
       }
 
