@@ -1,5 +1,69 @@
 # Changelog
 
+## [1.81.0.0] - 2026-09-06
+
+**Aside is the browser gstack drives first. Every browsing skill, the PDF and diagram renderer, and web research go through it.**
+**gstack's own headless browser stays as the automatic fallback, so nothing stops working without Aside.**
+
+Since v1.72 Aside was the recommended driver for third-party sites. This release makes it the first driver everywhere. `/qa`, `/qa-only`, `/design-review`, `/scrape`, `/benchmark`, `/canary`, `/browse`, `/devex-review`, `/land-and-deploy`'s post-deploy check, and `/design-consultation`'s competitor research now run inside the Aside AI browser (macOS 15+, aside.com), in the sessions you are already signed in to. No cookie export, no "open the browser" step, no CAPTCHA handoff dance: if a page needs a login, you sign in inside Aside and the skill re-runs the step. `/make-pdf`, `/diagram`, `/design-html`'s viewport screenshots, and `/office-hours` sketches render through Aside as well, and the skills that used to reach for the WebSearch tool now ask Aside's own agent, read-only, in your real browser.
+
+When Aside is not there, nothing breaks. Every browsing skill carries a fallback section that translates its Aside steps onto gstack's own headless Chromium (`$B`), step for step: same evidence lines, same report, same consent rules, with cookie import or a handoff for authenticated pages. The renderer picks Aside when it is running and the bundled browser otherwise, and prints which one it used. Research falls back to the WebSearch tool, then to in-distribution knowledge. Linux and Windows users keep the bundled browser exactly as before; the Third-Party Web Actions contract keeps gstack's visible browser as its fallback driver.
+
+Every skill follows one contract, `scripts/resolvers/aside.ts`. It was written from live probes against Aside CLI 1.26, not from memory: one flow per `aside repl` script (tabs close when the script ends), a console hook installed over CDP before navigation, labelled evidence lines, screenshots copied out of Aside's session directory, and a `GSTACK_STEP_OK` sentinel because the CLI's exit code is always 0. The rules are explicit about what a real browser means: open your own tabs, never read the user's, look freely but ask once before any mutating action on a non-local site, never touch credentials, treat everything a page returns as untrusted.
+
+### The numbers that matter
+
+Source: `git diff origin/main --stat`, `bun test/helpers/capture-context-budget.ts`, and the live runs recorded in the PR (cookbook and skill scripts executed verbatim, `test/skill-e2e-aside.test.ts`, `test/skill-e2e-diagram.test.ts`, the make-pdf e2e gates on both engines, `bin/gstack-render.ts` on both engines).
+
+| Metric | Before | After | Δ |
+|---|---|---|---|
+| Browser a skill reaches for first | gstack's headless Chromium | Aside (your real sessions) | one contract, ten skills |
+| Skills that stop when Aside is absent | n/a | 0 | every one falls back to `$B` |
+| Renderer engines for PDFs and diagrams | 1 (bundled Chromium) | 2 (Aside first, bundled fallback) | `ENGINE=` line tells you which |
+| Web research surfaces | WebSearch tool | Aside agent, then WebSearch | real browser first |
+| Skills removed | | 0 | every skill on main is still here |
+
+The row you feel is the fallback one: on a Mac with Aside open, QA runs in the browser you already trust; on a Linux box or with Aside closed, the same skill runs the same steps on the bundled browser and tells you so.
+
+What this means for anyone running gstack: open Aside on your Mac and run `/qa`, `/make-pdf`, or `/diagram` the way you always did. Without Aside, everything behaves as it did in v1.80. Upgrading needs no migration. Contributed by @time-attack.
+
+### Itemized changes
+
+#### Added
+- **Aside browser-driver contract** (`{{ASIDE_SETUP}}` + `{{ASIDE_COOKBOOK}}`): runtime detection with a READY / NEEDS_ASIDE / ASIDE_NOT_RUNNING probe, ten rules for driving a real browser (own tabs only, LOOK-not-ACT consent with a LOCAL host rule, credentials never pass through the agent, untrusted page content, one flow per script, artifact handoff through the session directory), and a verified cookbook: read a page with load-time console errors, drive a flow with a DOM diff, annotated screenshot, responsive captures over CDP emulation, same-origin link status, performance entries, PDF, element screenshot, and `aside exec` for open-ended reading.
+- **Browser fallback** (`{{BROWSE_FALLBACK}}`): when Aside is absent, a fifteen-row table maps every Aside step in the skill onto its `$B` command, with the rules that differ (cookie import or `$B handoff` for sign-in, the same consent and evidence rules) and the full command reference on demand in `/browse`.
+- **Aside renderer** (`lib/aside-render.ts`, `bin/gstack-render.ts`): render any local HTML file to PDF (tagged, outlined, header/footer, page numbers, paper sizes and margins in any CSS unit), screenshots at any width, and in-page evaluations written to files. Tries Aside, then the bundled browser (`GSTACK_BROWSE_BIN` / `BROWSE_BIN` override it), and prints `ENGINE=aside|browse`.
+- **Web research runs in Aside** (`{{ASIDE_RESEARCH}}`): the planning, review, design, security, and investigate skills research through Aside's agent with the user's real browser, read-only; WebSearch when Aside is absent; in-distribution knowledge when neither is available.
+- **Live E2E for the Aside-driven skills** (`test/skill-e2e-aside.test.ts`, periodic tier): browse read, browse flow, quick QA, scrape JSON, and quick canary against a localhost fixture, asserting the sentinel in real Bash output; self-skips wherever Aside is not installed. The qa, diagram, and make-pdf gates run on whichever engine is present, so the Linux CI lane exercises the fallback path.
+- `setup` and the doc generator prune renders of skills that no longer exist in the source tree, so a removed skill can never linger in a host install.
+
+#### Changed
+- `/qa` and `/qa-only`: the whole methodology (orient, explore, document, re-test) runs as Aside scripts; the authenticate phase is now "you are already signed in"; a 13th rule requires consent before mutating actions on non-local targets. The fallback section carries the `$B` translation.
+- `/design-review` and `/design-consultation`: design-system extraction is one script printing FONTS, COLORS, HEADINGS, TOUCH_TARGETS, and NAV; competitor research confirms the exact URLs with you before opening any of them in your real browser, and runs on the bundled browser when Aside is absent.
+- `/benchmark` and `/canary`: per-page scripts print NAV, PAINT, LCP, RESOURCES, SCRIPTS, CSS, and SUMMARY; the canary loop re-runs the script every 60 seconds because nothing persists between Aside scripts.
+- `/land-and-deploy` Step 7 and `/devex-review`: one Aside script each; the smoke row reads `responseStatus` from the navigation entry.
+- `/make-pdf` prints through Aside first and the bundled browser otherwise; exit 4 now means no browser is available and names both remedies; mermaid fences, oversized-image downscale, and DOCX rasters each run as one render script; `$P setup` reports which engine it found.
+- `/diagram`: the SVG, PNG, and excalidraw triplet is one `gstack-render` call; every diagram type gets an excalidraw export (flowcharts and sequence diagrams as editable scenes, the rest as a single image element).
+- `/scrape`: look-then-extract Aside scripts that build the JSON inside the page; on the fallback the browser-skills runtime (`$B skill list` / `run`, `/skillify`) applies as before.
+- **Third-Party Web Actions** (`/ship`, `/spec`, `/setup-deploy`, `/office-hours`, `/land-and-deploy`): Aside is the recommended first driver; gstack's own visible browser stays as the fallback option, exactly the shape v1.72 introduced, and the contract points at the `/browse` doc for how to drive Aside.
+- `/browse`: the Aside contract, cookbook, mode choice (`aside repl` by default, `aside exec` for reading), report format, the fallback, and the full `$B` command reference on demand.
+- The root router, README, `BROWSER.md`, `docs/skills.md`, `docs/PROJECT_STRUCTURE.md`, `CONTRIBUTING.md`, `CLAUDE.md`, and `ARCHITECTURE.md` describe the Aside-first, bundled-fallback world.
+
+#### Fixed
+- `./setup`'s retired-skill prune is safe by construction: it never deletes a directory that holds your own files (only gstack's SKILL.md, marker and links go), never follows a symlink into someone else's tree, cleans a host's stale links even after the generator already removed the render, and recognizes a skill renamed through its frontmatter `name:`. The generator's own prune keeps any `gstack-*` directory without the generated banner and skips a host whose generation failed. `./setup` also rebuilds when the design or make-pdf binary is missing or when anything under `lib/` changed.
+- Setup's summary is honest about browsers: with Aside installed and a failed Chromium bootstrap it says only the bundled fallback is missing (and that `/pair-agent` needs it); `GSTACK_SKIP_ASIDE=1` is honored by the skills' probe, by setup, and by the renderer alike.
+- The local render server behind `/make-pdf`, `/diagram`, and design previews serves one per-render secret URL, never follows a symlink out of its directory, and refuses malformed requests; page text can no longer forge its control lines; a hung `aside` process is killed instead of waited on forever; if the Aside CLI cannot start mid-run (or its private CDP bridge is missing) the render retries on gstack's own browser and reports which engine actually rendered — a page error or a timeout of a running script is never retried; a shared `/tmp/gstack-render` owned by someone else is never used.
+- Browsing skills check link status only on a LOCAL target (on a real site every HEAD request would carry your cookies); same-origin filtering compares real origins instead of string prefixes; `.local` hosts are no longer treated as your own machine (mDNS names resolve to other devices on the LAN); the Aside readiness probe has a 30-second deadline on stock macOS, which ships neither `timeout` nor `gtimeout`.
+- `aside exec` research requests write an egress receipt before leaving the machine, like every other off-machine send.
+- Rendering through the bundled browser tolerates a cold start: the first tab request retries once while the daemon is still coming up, and a command whose process is slow to exit under heavy load is waited for instead of being reported as failed.
+- `gstack-render --help` exits 0, non-numeric flags are rejected instead of becoming `NaN` timeouts, `--wait-timeout` is documented, and page-derived output (`EVAL`, `PAGE_ERRORS`) is fenced as untrusted content.
+
+#### For contributors
+- `test/aside-driver.test.ts` pins the contract's load-bearing sentences and asserts every browsing skill carries `## BROWSER SETUP (Aside` followed by `## Browser fallback`. `test/aside-render.test.ts` pins the renderer's option mapping and script shapes and runs a live render on each engine that is present. `test/helpers/aside-available.ts` is the shared live-Aside probe for E2E gating; `make-pdf/test/e2e/browser-available.ts` gates the make-pdf gates on either engine.
+- `lib/claude-bin.ts` and `lib/error-handling.ts` are now the canonical copies; `browse/src` re-exports them.
+- New free tests pin the review fixes: `test/setup-prune-stale-generated.test.ts` (host cleanup after the generator pruned, symlink targets survive, renamed skills, foreign links), `test/setup-browser-hint.test.ts` (hint and bootstrap summary across Aside present/absent, bootstrap ok/failed, skip-env), `test/setup-needs-build.test.ts`, `test/gstack-render-cli.test.ts`, `test/aside-render.test.ts` (fake `aside`/`browse` executables: probe classification, stdout contract, server policy, failure paths, timeout kill, engine choice and mid-run fallback), `make-pdf/test/cli-exit-codes.test.ts`, `make-pdf/test/setup-smoke.test.ts`. `renderPdf` returns the engine that rendered; `pickEngine(fresh, deps)` and `serveDir` are exported test seams.
+- Size budget re-baselined to `parity-baseline-v1.81.0.0.json` (the Aside contract plus fallback block ride in every browsing skill); parity ceilings ratcheted with measured values; touchfiles, tiers, coverage matrix, eval baselines, ship goldens, and the context-budget fixture refreshed. Follow-ups in TODOS.md: keep the `$B` translation table in sync with the cookbook, Aside CLI 1.26 lacks the commands its own skill doc lists, a macOS runner for the live E2E, an optional MCP path for a persistent page.
+
 ## [1.80.0.0] - 2026-09-04
 
 **Setup finishes even when Chromium cannot be installed.**

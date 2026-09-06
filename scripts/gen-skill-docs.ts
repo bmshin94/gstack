@@ -919,14 +919,16 @@ function processSectionTemplate(
 
 // ─── Main ───────────────────────────────────────────────────
 
-/** Render each artifact once. The only filesystem writes are in emit(), and
- * dry runs use the same inventory as normal generation, including metadata and
+/** Render each artifact once. Artifact writes go through emit(); stale external
+ * caches are pruned only after a successful host render. Dry runs use the same
+ * inventory as normal generation, including metadata and
  * shared outputs. Options are per invocation so imports/concurrent runs cannot
  * inherit another caller's model, detection, or output paths.
  *
  * templates + host settings -> render -> emit -> dry-run: compare only
  *                                   |       -> normal: mkdir + write
  * shared index/digest ---------------+       -> artifact inventory + diagnostics
+ * successful external host -----------------> normal only: prune retired caches
  */
 export async function runGeneration(settings: GenerationOptions = {}): Promise<GenerationResult> {
   const options: RenderOptions = {
@@ -981,11 +983,13 @@ export async function runGeneration(settings: GenerationOptions = {}): Promise<G
     try {
       const hostConfig = getHostConfig(host);
       const tokenBudget: Array<{ skill: string; lines: number; tokens: number }> = [];
+      const renderedNames = new Set<string>();
       for (const template of templates) {
         const skillDir = path.dirname(template.tmpl);
         if (!includesSkill(hostConfig, skillDir)) continue;
         const result = processTemplate(path.join(ROOT, template.tmpl), host, options);
         const relativePath = rel(result.outputPath);
+        if (host !== 'claude') renderedNames.add(path.basename(path.dirname(result.outputPath)));
         if (result.symlinkLoop) {
           diagnostics.push({ kind: 'skipped', relativePath, host, message: `SKIPPED (symlink loop): ${relativePath}` });
           log(`SKIPPED (symlink loop): ${relativePath}`);
@@ -1014,6 +1018,34 @@ export async function runGeneration(settings: GenerationOptions = {}): Promise<G
           const fileName = `gstack-${variant}-CLAUDE.md`;
           emit(path.join(options.outputRoot, 'openclaw', fileName),
             fs.readFileSync(path.join(ROOT, 'openclaw', 'templates', fileName), 'utf-8'), 'openclaw', host);
+        }
+      }
+
+      // A failed render exits this try before pruning: its inventory is partial.
+      // Only remove generated directories owned by this host; sidecars and user
+      // skills survive. Dry runs never create, rewrite, or remove any directory.
+      if (!settings.dryRun && host !== 'claude') {
+        const skillsRoot = path.join(options.outputRoot, hostConfig.hostSubdir, 'skills');
+        let entries: fs.Dirent[] = [];
+        try {
+          entries = fs.readdirSync(skillsRoot, { withFileTypes: true });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        for (const entry of entries) {
+          if (entry.isSymbolicLink() || !entry.isDirectory() || !entry.name.startsWith('gstack-') || renderedNames.has(entry.name)) continue;
+          let generated = false;
+          try {
+            generated = fs.readFileSync(path.join(skillsRoot, entry.name, 'SKILL.md'), 'utf-8').includes('<!-- AUTO-GENERATED from');
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+          if (!generated) {
+            log(`  kept ${host} skills/${entry.name}: not a gstack render (no generated banner)`);
+            continue;
+          }
+          fs.rmSync(path.join(skillsRoot, entry.name), { recursive: true, force: true });
+          log(`  pruned stale ${host} render: ${entry.name}`);
         }
       }
 

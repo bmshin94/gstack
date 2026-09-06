@@ -10,15 +10,39 @@ Waves B–E2 of that plan are scheduled work, not TODOs; these are the items the
 reviews deliberately deferred, each with rationale:
 
 - **Shared `_gstack_owned_link` helper** — the ownership gate now exists in
-  six places (setup's `_claude_entry_is_ours` / `_claude_entry_owned_strongly`
+  seven places (setup's `_claude_entry_is_ours` / `_claude_entry_owned_strongly`
   used by link_claude_skill_dirs and _install_alias_skill_md, while
   cleanup_old_claude_symlinks and cleanup_prefixed_claude_symlinks inline their
   own marker/cmp/banner chain and readlink `case`; bin/gstack-relink
-  `_entry_is_ours`; bin/gstack-uninstall's per-entry loop). Extract one sourced
+  `_entry_is_ours`; bin/gstack-uninstall's per-entry loop; and, since the
+  Aside-first wave, setup's `_prune_stale_generated`, which removes a retired
+  host entry behind the banner-only `_owned_for_windows_refresh` check —
+  symlinks outright, real dirs through `_cleanup_weak_dir` — and must route
+  through the same helper). Extract one sourced
   helper so the destructive-path guard cannot drift, and while there: make the
   `.gstack-owned` marker's recorded install path load-bearing (today any marker
   counts, so a Windows fork copy carrying gstack's generated header is still
   treated as ours on a mode flip). Effort S. Priority P2. Depends on: none.
+- **Non-Claude host loops + stale-render prune under the marker rule** — the
+  Codex, Factory, OpenCode, Cursor and Kiro link loops (setup's
+  `link_*_skill_dirs`, the `_owned_for_windows_refresh` gate at each) still
+  `rm -rf` + re-copy a REAL host directory on banner-only proof, and
+  `_prune_stale_generated` routes a bannered real dir through
+  `_cleanup_weak_dir` only because those hosts never receive a `.gstack-owned`
+  marker. Write the marker for every host's copy install, then switch all five
+  loops and the prune to the strong/weak split the Claude host and
+  `gstack-relink` already use (#2119). Effort M (human ~2 days / CC ~1h).
+  Priority P2. Depends on: the shared `_gstack_owned_link` helper above (same
+  code motion; do them together).
+- **Free test: CHANGELOG top heading equals VERSION** — a fork PR that claimed
+  a version main had since shipped auto-merged VERSION, package.json and the
+  digest header with no git conflict (both sides identical); only
+  `bin/gstack-next-version` and the PR-time queue check saw it. A tiny free
+  test asserting the first `## [X]` in CHANGELOG.md equals VERSION would make
+  the collision a red test on any branch. Decide first whether mid-branch
+  VERSION bumps without a CHANGELOG entry are a workflow the suite must
+  tolerate (`/ship` writes both in one step, so probably not). Effort S
+  (human ~2h / CC ~10min). Priority P3. Depends on: none.
 - **Config-key reader tripwire** — `transcript_ingest_mode=off` sat unread for
   months while setup-gbrain advertised it. A free test that asserts every key
   in bin/gstack-config's default table is read by at least one binary (or is
@@ -511,8 +535,13 @@ references — include it in this fix's coverage list.
 
 ### QA logged-in-evidence path via Aside (Phase 2)
 
-**What:** Consent-gated `aside repl` as an alternative evidence source in /qa,
-/qa-only, and /browse when cookie-import can't reach a session (SSO,
+**Landed (Aside-first):** `aside repl` is now the PRIMARY evidence source for
+/qa, /qa-only, and /browse whenever Aside is installed and running; gstack's own
+browser (with cookie import) is the automatic fallback when it is not. Kept for
+the rationale; the remaining loose ends are under "Aside-first follow-ups".
+
+**What:** Consent-gated `aside repl` as the evidence source in /qa, /qa-only,
+and /browse for sessions a headless browser could never reach (SSO,
 device-bound auth, Safari-side logins Chromium export can't see).
 
 **Why:** Fills the exact gap `docs/designs/CHROME_VS_CHROMIUM_EXPLORATION.md`
@@ -3824,7 +3853,7 @@ path to the fixture during the run.
 
 **What:** Cache rendered diagram SVG/PNG in `~/.gstack/cache/diagram-render/`,
 keyed on `sha256(fence source + bundle version + render options)`, so repeat
-`make-pdf` runs skip the browse render tab for unchanged diagrams.
+`make-pdf` runs skip the render (Aside or the fallback browse tab) for unchanged diagrams.
 
 **Why:** Every run currently re-renders every fence (~150-300ms each). Docs with
 10+ diagrams pay seconds per iteration during write-preview loops. Codex
@@ -4006,3 +4035,189 @@ globs (D). What remains, re-filed individually:
   bounded (GSTACK_PLAYWRIGHT_INSTALL_TIMEOUT, default 600s), lock contention
   is a reason code, skills always register. Close #2233, #1900, #1901, #1902,
   #913 with the receipt (test/setup-playwright-best-effort.test.ts).
+
+## Aside-first follow-ups (filed when Aside became the primary browser)
+
+Every gstack skill that touches a web page drives the Aside AI browser first
+(`scripts/resolvers/aside.ts` is the contract; `lib/aside-render.ts` /
+`bin/gstack-render.ts` render local HTML through it; `{{ASIDE_RESEARCH}}` runs
+web research through it). gstack's own browser engine — the `browse` daemon,
+GStack Browser headed mode, cookie import, `/pair-agent`, browser-skills /
+`/skillify` — is kept as the automatic fallback whenever Aside is not installed
+or not running (Linux, Windows, a closed Aside app), and web research falls
+back to the WebSearch tool when the host provides one. Nothing was removed.
+Loose ends:
+
+### P1: Aside-first fallback parity — keep the `$B` equivalence table in sync with the cookbook
+
+**What:** The fallback block (`BROWSE_FALLBACK` in the browser resolvers) maps
+each verified `aside repl` cookbook shape (read a page, drive a flow, annotated
+screenshot, responsive captures, links + status, performance, PDF, element
+screenshot, `aside exec` research) to its `$B` equivalent so a skill produces
+the same evidence lines on either path. Every time a cookbook shape is added,
+renamed, or changes its output labels (`CONSOLE_ERRORS=`, `DIFF_START`,
+`ASIDE_DIR=`, `GSTACK_STEP_OK`), update the table in the same commit and add a
+pin in `test/aside-driver.test.ts` that the two lists name the same shapes.
+
+**Why:** A skill that reads `DIFF_START` on the Aside path and gets nothing on
+the fallback path "fixes" the missing output blindly. Parity is the whole point
+of keeping the engine; a silent gap is worse than no fallback.
+
+**Effort:** S per change (human ~half day, CC ~15min). **Priority:** P1. **Depends on:** nothing.
+
+### P2: Aside CLI 1.26 lacks subcommands Aside's own skill doc lists
+
+**What:** Aside's skill doc lists `session`, `memory`, `skills`, `host`, and
+`--permission`; Aside CLI 1.26 has none of them (`aside --help`). Skills must
+not depend on them until the CLI ships them. Re-probe on each Aside release;
+when they land, evaluate `session` for multi-script flows and `--permission`
+for the mutating-action consent gate.
+
+**Why:** A skill written against the doc instead of the binary dies at runtime
+on an unknown-command error the agent will then try to "fix" blindly.
+
+**Effort:** S (human ~half day, CC ~20min per re-probe). **Priority:** P2. **Depends on:** Aside releases.
+
+### P2: Aside E2E tests run only where Aside is installed
+
+**What:** The Aside-only E2E lane — `test/skill-e2e-aside.test.ts`, the Aside
+qa/design cases, the live render in `test/aside-render.test.ts` — self-skips
+when `aside` is absent (`asideAvailable()` in `test/helpers/aside-available.ts`),
+so CI's Linux runners never drive Aside; the make-pdf and /diagram render gates
+already run there on the browse binary. The Aside path runs only on macOS dev
+machines.
+Evaluate a self-hosted macOS runner (or a scheduled job on a Mac mini) that
+runs the Aside lane weekly under the same hermetic env as the other E2E lanes.
+
+**Why:** A browser contract nobody runs in CI drifts silently — exactly the
+class `test/aside-driver.test.ts` pins statically but cannot prove live.
+
+**Effort:** M (human ~2 days, CC ~1h plus the machine). **Priority:** P2. **Depends on:** a macOS host with Aside signed in.
+
+### P3: Evaluate `aside mcp` for multi-step flows
+
+**What:** `aside repl` is one flow per script — a fresh session per call, tabs
+closed when it ends. `aside mcp` keeps a persistent REPL page across calls.
+Once the CLI stabilizes, measure whether an MCP path makes long QA audits
+cheaper (no re-navigation per script) without losing the "leave the browser as
+you found it" guarantee.
+
+**Why:** Re-navigating from the URL per script is the honest tax of the current
+model; a persistent page could cut it but adds a session that must be cleaned up.
+
+**Effort:** M (human ~2 days, CC ~1h). **Priority:** P3. **Depends on:** Aside CLI stability.
+
+### P3: Eval that skills treat `aside exec` output as untrusted
+
+**What:** `aside exec "<task>"` returns another agent's answer. Add an LLM-judge
+or E2E eval that plants an instruction inside an `aside exec` result and checks
+the skill takes syntax from it, never scope, permissions, or consent.
+
+**Why:** The rule is pinned as prose; nothing yet proves a skill obeys it when
+the injected text arrives through the one channel that reads like a colleague.
+
+**Effort:** S (human ~1 day, CC ~30min). **Priority:** P3. **Depends on:** the Aside E2E lane above.
+
+### P1: make-pdf renders user documents inside the real browser profile — add a CSP
+
+**What:** `/make-pdf` prints markdown-derived HTML through Aside (the user's
+signed-in browser) on a `127.0.0.1` origin. The only barrier between a hostile
+document (a README from a cloned repo) and script execution in that profile is
+the regex sanitizer in `make-pdf/src/render.ts`, whose header assumes marked
+output is never malformed — raw-HTML passthrough breaks that assumption. Inject
+gstack's own CSP `<meta>` into the print template (`default-src 'none';
+img-src data: 'self'; style-src 'unsafe-inline' 'self'; font-src data: 'self';
+script-src 'nonce-<per-render>'` for Paged.js), since user `<meta>` is stripped
+and gstack's is not; alternatively keep make-pdf on the bundled engine by
+default.
+
+**Why:** Under the old cookieless headless engine a sanitizer bypass was
+near-harmless; in the real profile it is a CSRF-class primitive. Cross-model
+finding (Claude adversarial + Codex).
+
+**Effort:** M (human ~2 days, CC ~1h). **Priority:** P1. **Depends on:** none.
+
+### P1: diagram pre-pass buffers every oversized image before downscaling
+
+**What:** `make-pdf/src/diagram-prepass.ts` caps each image at 64 MB but keeps
+every pending buffer in `downscales` and duplicates it as base64 before the
+batch runs; a document referencing a few dozen large images can take gigabytes.
+Cap total pending bytes (e.g. 256 MB) and process in bounded batches, or
+downscale sequentially.
+
+**Why:** A hostile or merely image-heavy document crashes the tool instead of
+degrading.
+
+**Effort:** S (human ~1 day, CC ~30min). **Priority:** P1. **Depends on:** none.
+
+### P2: fallback renders die after any cookie import in the daemon's lifetime
+
+**What:** `renderWithBrowse` drives readiness and evals through `$B js`, and the
+daemon's cookie-import JS lock (`browse/src/read-commands.ts`) refuses `js` on
+every origin outside the imported set — `127.0.0.1` included, forever (the set
+is add-only). The renderer now names the remedy (`$B stop`), but the real fix is
+a fresh incognito context for local-HTML renders, or a loopback exemption once
+its threat model is written down.
+
+**Why:** On Linux/Windows (no Aside) one `/setup-browser-cookies` run makes
+every later `/diagram` and `/make-pdf` render fail.
+
+**Effort:** M (human ~2 days, CC ~1h). **Priority:** P2. **Depends on:** none.
+
+### P2: carve the Aside contract + fallback block into one shared section
+
+**What:** `{{ASIDE_SETUP}}` (~5.6 KB) plus `{{BROWSE_FALLBACK}}` (~4.1 KB) are
+rendered verbatim into ten browsing skills (~97 KB of identical prose loaded on
+every invocation). Keep the probe and the three decision steps inline; move
+"Rules for driving a real browser" and the Aside-to-`$B` translation table into
+one carved reference (the `browse/sections/command-list.md` pattern), then
+re-run `capture-context-budget.ts` so the ceilings ratchet back down.
+
+**Why:** Every skill invocation pays for prose that is skill-invariant.
+
+**Effort:** M (human ~2 days, CC ~1h). **Priority:** P2. **Depends on:** none.
+
+### P2: `$B js` / `$B eval` output is not wrapped in the untrusted envelope
+
+**What:** `js` and `eval` are not in `PAGE_CONTENT_COMMANDS`
+(`browse/src/commands.ts`), so page-controlled return values reach the agent
+unfenced while the fallback table routes exactly the page-controlled reads
+through them. `gstack-render` now fences its own `EVAL`/`PAGE_ERRORS` lines and
+the fallback prose says `$B js` is unwrapped; the durable fix is to add both
+commands to the envelope set.
+
+**Why:** A hostile page can deliver injection text through the one channel the
+skills were told is fenced.
+
+**Effort:** S (human ~half day, CC ~15min). **Priority:** P2. **Depends on:** none.
+
+### P3: Aside-first renderer follow-ups (perf and DRY)
+
+- **Readiness polling** spawns a `browse js` process every 150 ms; the daemon's
+  `wait <sel>` command blocks server-side in one spawn — use it for
+  `waitFor.selector`. Effort S.
+- **Bundle re-staging:** every `runScript()` batch copies the ~9 MB diagram
+  bundle into a fresh mkdtemp and starts a new loopback server; stage once per
+  run (content-addressed) and, on the browse engine, keep one tab across the
+  fence/downscale/DOCX batches. Effort M.
+- **Probe cost:** `probeAside()` runs two blocking spawns per process and the
+  engine cache is per-process; persist the outcome with a short TTL under
+  `GSTACK_HOME` and lower the repl probe timeout on the code path. Effort S.
+- **DRY:** the console-error `HOOK` IIFE exists in seven copies across
+  `scripts/resolvers/*.ts` and `lib/aside-render.ts` (two divergent variants);
+  cookbook recipes (responsive loop, links, read-a-page) are duplicated across
+  `aside.ts`, `design.ts`, `utility.ts`; the readiness probe is recovered from
+  rendered markdown by regex in two places instead of a shared constant. Export
+  one source for each. Effort S each.
+- **Egress scanner:** `test/egress-receipt-wiring.test.ts` scans `curl`, `git
+  push`, and `fetch`; add `aside exec` as a sink class so a bare call fails CI
+  the way the others do. Effort S.
+- `_browser_hint` treats any `aside` on PATH as the Aside browser (no version
+  check). Effort S.
+- **`gen-skill-docs --dry-run` is not write-free for external hosts:**
+  `processExternalHost` runs `mkdirSync(outputDir)` and writes
+  `agents/openai.yaml` with no `DRY_RUN` guard (only SKILL.md is skipped), so a
+  dry run against an empty `--out-dir` leaves 54 `openai.yaml` files behind.
+  Guard both writes. Effort S.
+
+**Priority:** P3. **Depends on:** none.
