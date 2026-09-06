@@ -81,6 +81,13 @@ export interface ParsedNDJSON {
   toolCalls: Array<{ tool: string; input: any; output: string }>;
 }
 
+function toolResultText(content: unknown): string | null {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return null;
+  return content.flatMap(block => block?.type === 'text' && typeof block.text === 'string'
+    ? [block.text] : []).join('\n');
+}
+
 /**
  * Parse an array of NDJSON lines into structured transcript data.
  * Pure function — no I/O, no side effects. Used by both the streaming
@@ -92,6 +99,7 @@ export function parseNDJSON(lines: string[]): ParsedNDJSON {
   let turnCount = 0;
   let toolCallCount = 0;
   const toolCalls: ParsedNDJSON['toolCalls'] = [];
+  const callsByParent = new Map<string | null, Map<string, ParsedNDJSON['toolCalls'][number]>>();
 
   for (const line of lines) {
     if (!line.trim()) continue;
@@ -106,12 +114,34 @@ export function parseNDJSON(lines: string[]): ParsedNDJSON {
         for (const item of content) {
           if (item.type === 'tool_use') {
             toolCallCount++;
-            toolCalls.push({
+            const call = {
               tool: item.name || 'unknown',
               input: item.input || {},
               output: '',
-            });
+            };
+            toolCalls.push(call);
+            if (typeof item.id === 'string') {
+              // Forwarded subagent events may reuse a parent's tool-use ID.
+              const parent = event.parent_tool_use_id ?? null;
+              let calls = callsByParent.get(parent);
+              if (!calls) callsByParent.set(parent, calls = new Map());
+              calls.set(item.id, call);
+            }
           }
+        }
+      }
+
+      if (event.type === 'user' && Array.isArray(event.message?.content)) {
+        const results = event.message.content.filter((item: any) => item?.type === 'tool_result');
+        const calls = callsByParent.get(event.parent_tool_use_id ?? null);
+        for (const result of results) {
+          const call = calls?.get(result.tool_use_id);
+          if (!call) continue;
+          // A sole Agent/Task result also carries the clean verdict separately
+          // from the message's agentId/usage wrapper. Keep only public text.
+          const verdict = results.length === 1 && ['Agent', 'Task'].includes(call.tool)
+            ? toolResultText(event.tool_use_result?.content) : null;
+          call.output = verdict ?? toolResultText(result.content) ?? '';
         }
       }
 
