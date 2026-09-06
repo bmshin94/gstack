@@ -22,7 +22,7 @@
  */
 
 import { test } from 'bun:test';
-import { validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
+import { observedAutoplanPhases, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
 import { PTY_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
@@ -85,7 +85,6 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
           // (autoplan/sections/{ceo,design,eng,dx}-phase.md — the skeleton
           // STOP-Reads each one at its phase boundary):
           //   "**Phase 1 complete." / "**Phase 2 complete." / "**Phase 2.5 complete." / "**Phase 3 complete."
-          const phasePattern = /\*\*Phase\s+(\d+(?:\.\d+)?)\s+complete\.?\*\*/g;
 
           let lastPermSig = '';
           while (Date.now() - start < budgetMs) {
@@ -114,11 +113,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
             }
 
             // Re-scan for any phase markers we haven't yet recorded.
-            phasePattern.lastIndex = 0;
-            let m: RegExpExecArray | null;
-            while ((m = phasePattern.exec(visible)) !== null) {
-              const phaseNum = parseFloat(m[1] ?? '0');
-              if (Number.isNaN(phaseNum)) continue;
+            for (const phaseNum of observedAutoplanPhases(visible)) {
               if (hits.some(h => h.phase === phaseNum)) continue;
               hits.push({ phase: phaseNum, ts: Date.now() });
             }

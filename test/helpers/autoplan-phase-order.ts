@@ -1,3 +1,11 @@
+/** The PTY renders Markdown without stars and may position spaces via ANSI.
+ * Keep complete-word bounds and stream order; callers dedupe first observations.
+ */
+export function observedAutoplanPhases(visible: string): number[] {
+  return [...visible.matchAll(/\bPhase\s*(\d+(?:\.\d+)?)\s*complete\b/g)]
+    .map(match => Number(match[1]));
+}
+
 /** Validate first-observed completion markers in stream order. Poll timestamps
  * cannot establish order: several phases may first appear in the same batch.
  */
