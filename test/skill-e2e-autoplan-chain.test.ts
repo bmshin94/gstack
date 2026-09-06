@@ -23,6 +23,7 @@
 
 import { test } from 'bun:test';
 import { validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
+import { seedAutoplanProject } from './helpers/autoplan-fixture';
 import { PTY_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { spawnSync } from 'child_process';
@@ -37,9 +38,6 @@ import {
 } from './helpers/claude-pty-runner';
 
 const describeE2E = describeE2ETier('periodic');
-
-const ROOT = path.resolve(import.meta.dir, '..');
-const UI_FIXTURE = path.join(ROOT, 'test', 'fixtures', 'plans', 'ui-heavy-feature.md');
 
 interface PhaseHit {
   phase: number;
@@ -59,10 +57,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         gitRun(['config', 'user.email', 'test@test.com']);
         gitRun(['config', 'user.name', 'Test']);
 
-        const plansDir = path.join(tempDir, '.claude', 'plans');
-        fs.mkdirSync(plansDir, { recursive: true });
-        fs.copyFileSync(UI_FIXTURE, path.join(plansDir, 'ui-heavy-feature.md'));
-        fs.writeFileSync(path.join(tempDir, 'README.md'), '# Autoplan chain fixture\n');
+        seedAutoplanProject(tempDir);
         gitRun(['add', '.']);
         gitRun(['commit', '-m', 'init UI-heavy fixture']);
 
@@ -143,6 +138,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
               break;
             }
           }
+          if (outcome === 'timeout') evidence = session.visibleSince(since).slice(-3000);
         } finally {
           await session.close();
         }
