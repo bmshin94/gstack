@@ -8,15 +8,15 @@
  * structural — a carve can't be registered yet behaviorally unguarded.
  *
  * Per codex refined-plan pass:
- *   #2 — ONE test() per skill, each with its own timeout + named failure output;
- *        a hung claude -p fails only its skill, not the whole file.
+ *   #2 — ONE test() per skill, each with its own timeout + named failure output.
+ *        The enclosing paid shard still has a separate whole-file deadline.
  *   #3 / D-CODEX(A) — GSTACK_CARVE_SKILL=<name> runs only that skill's case, so
- *        the touchfile selector can scope cost to the changed skill; unset runs all.
+ *        an explicit targeted run can scope cost; unset runs all.
  *   #7 — each case drives the run with the registry's `scenario` (built to force
  *        the STOP-Read path) and asserts the required sections were Read.
  *
- * 'external' skills (ship, plan-ceo-review) have bespoke fixtures (git state,
- * Step-0 mode loop) and keep their dedicated tests; E1 asserts those exist.
+ * 'external' skills (ship, plan-ceo-review, office-hours) have bespoke fixtures
+ * or full-workflow completion guards and keep dedicated tests; E1 asserts those exist.
  */
 
 import { test, expect } from 'bun:test';
@@ -74,7 +74,7 @@ describeE2E('carve behavioral section-loading (periodic, SDK capture)', () => {
           testName: `${guard.skill} section-loading`,
           runId,
           // 480s, not the helper's 300s default: the heavy full-workflow
-          // scenarios (plan-eng-review, office-hours, design-html) satisfy
+          // scenarios (plan-eng-review, design-html) satisfy
           // their required section reads inside 60s but need 300-450s of
           // wall clock to finish the report on slower sandboxes — a timeout
           // there reads as a loading failure when the carve invariant held.

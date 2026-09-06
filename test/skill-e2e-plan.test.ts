@@ -8,6 +8,8 @@ import {
   createEvalCollector, finalizeEvalCollector,
 } from './helpers/e2e-helpers';
 import { judgePosture } from './helpers/llm-judge';
+import { extractSkillSections } from './helpers/skill-fixture';
+import { validateOfficeHoursSpecSummary } from './helpers/office-hours-completion';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -528,13 +530,18 @@ describeIfSelected('Office Hours Spec Review E2E', ['office-hours-spec-review'],
     run('git', ['add', '.']);
     run('git', ['commit', '-m', 'init']);
 
-    // Copy office-hours skill
+    // This case explains the review procedure. Extract its actual section;
+    // the dedicated full-workflow case exercises skeleton/section discovery.
     fs.mkdirSync(path.join(ohDir, 'office-hours'), { recursive: true });
-    fs.copyFileSync(
-      path.join(ROOT, 'office-hours', 'SKILL.md'),
-      path.join(ohDir, 'office-hours', 'SKILL.md'),
+    const fixturePath = path.join(ohDir, 'office-hours', 'spec-review.md');
+    // The extractor requires the entry's real frontmatter. Recombine the entry
+    // and carved body locally, then keep only the review section for the model.
+    fs.writeFileSync(
+      fixturePath,
+      fs.readFileSync(path.join(ROOT, 'office-hours/SKILL.md'), 'utf-8') + '\n'
+        + fs.readFileSync(path.join(ROOT, 'office-hours/sections/design-and-handoff.md'), 'utf-8'),
     );
-    { const _sec = path.join(ROOT, 'office-hours', 'sections'); if (fs.existsSync(_sec)) fs.cpSync(_sec, path.join(ohDir, 'office-hours', 'sections'), { recursive: true }); }
+    fs.writeFileSync(fixturePath, extractSkillSections(fixturePath, ['Spec Review Loop']));
   });
 
   afterAll(() => {
@@ -543,7 +550,7 @@ describeIfSelected('Office Hours Spec Review E2E', ['office-hours-spec-review'],
 
   testConcurrentIfSelected('office-hours-spec-review', async () => {
     const result = await runSkillTest({
-      prompt: `Read office-hours/SKILL.md. I want to understand the spec review loop.
+      prompt: `Read office-hours/spec-review.md. This is a documentation question: explain the procedure without executing office hours.
 
 Summarize what the "Spec Review Loop" section does — specifically:
 1. How many dimensions does the reviewer check?
@@ -553,12 +560,8 @@ Summarize what the "Spec Review Loop" section does — specifically:
 
 Write your summary to ${ohDir}/spec-review-summary.md`,
       workingDirectory: ohDir,
-      // 12, not 8 (#2473): the Spec Review Loop content is CARVED out of
-      // SKILL.md into office-hours/sections/, so the agent legitimately needs
-      // discovery hops (grep SKILL.md -> ls sections/ -> read the section)
-      // before it can write. The 8-turn budget predates the carve — observed
-      // failures wrote a correct summary on tool-turn 8 and hit the cap on
-      // the closing text turn (error_max_turns at 9 turns, deterministic).
+      // Preserve this case's existing turn/time allowances. The fixture now
+      // supplies the section it asks about instead of a carved skeleton.
       maxTurns: 12,
       timeout: JUDGE_MS,
       testName: 'office-hours-spec-review',
@@ -566,15 +569,21 @@ Write your summary to ${ohDir}/spec-review-summary.md`,
     });
 
     logCost('/office-hours spec review', result);
-    recordE2E(evalCollector, '/office-hours-spec-review', 'Office Hours Spec Review E2E', result);
-    expect(result.exitReason).toBe('success');
-
-    const summaryPath = path.join(ohDir, 'spec-review-summary.md');
-    if (fs.existsSync(summaryPath)) {
-      const summary = fs.readFileSync(summaryPath, 'utf-8').toLowerCase();
-      expect(summary).toMatch(/5.*dimension|dimension.*5|completeness|consistency|clarity|scope|feasibility/);
-      expect(summary).toMatch(/agent|subagent/);
-      expect(summary).toMatch(/3.*iteration|iteration.*3|maximum.*3/);
+    let validationError: unknown;
+    try {
+      const summaryPath = path.join(ohDir, 'spec-review-summary.md');
+      validateOfficeHoursSpecSummary(result.exitReason,
+        fs.existsSync(summaryPath) ? fs.readFileSync(summaryPath, 'utf-8') : null);
+    } catch (error) {
+      validationError = error;
+      throw error;
+    } finally {
+      recordE2E(evalCollector, '/office-hours-spec-review', 'Office Hours Spec Review E2E', result,
+        validationError ? {
+          passed: false,
+          exit_reason: result.exitReason === 'success' ? 'validation_failed' : result.exitReason,
+          output: String(validationError).slice(0, 2000),
+        } : undefined);
     }
   }, CAPTURE_MS);
 });

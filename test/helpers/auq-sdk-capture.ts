@@ -222,6 +222,8 @@ This is a capture test, not an interactive session. Skip any system-audit / envi
 export async function captureSectionReads(opts: {
   planDir: string;
   skillName: string;
+  /** Explicit local artifact commands authorized by a particular fixture. */
+  artifactCommands?: string;
   scenario: string;
   /** Relative filename the agent writes its final output to (terminal signal). */
   reportFile?: string;
@@ -238,6 +240,7 @@ export async function captureSectionReads(opts: {
   reportWritten: boolean;
   exitReason: SkillTestResult['exitReason'];
   toolCalls: SkillTestResult['toolCalls'];
+  transcript: SkillTestResult['transcript'];
   output: string;
 }> {
   const outFile = path.join(opts.planDir, opts.reportFile ?? 'REPORT.md');
@@ -252,14 +255,14 @@ Rules for this run:
 - Skip system-audit, environment-setup, telemetry, and codebase-exploration steps.
 - At any decision point that would call AskUserQuestion, silently pick the skill's recommended option and continue. Do NOT stop to ask.
 - This skill's body has been carved into on-demand sections/. When the skill gives a STOP-Read directive (for example "Read \`.../sections/<file>\` and execute it in full"), you MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers. Do not work from memory.
-- Do NOT run git, gh, commit, push, or any mutating command.
+- Do NOT run git, gh, commit, push, or any other mutating command${opts.artifactCommands ? ' except the local artifact commands explicitly authorized below' : ''}.${opts.artifactCommands ? `\n- ${opts.artifactCommands}` : ''}
 - When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.`;
 
   const { runSkillTest } = await import('./session-runner');
   const result = await runSkillTest({
     prompt,
     workingDirectory: opts.planDir,
-    allowedTools: ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent'],
+    allowedTools: ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent', ...(opts.artifactCommands ? ['Bash'] : [])],
     maxTurns: opts.maxTurns ?? 25,
     timeout: opts.timeout ?? 300_000,
     testName: opts.testName,
@@ -286,7 +289,7 @@ Rules for this run:
 
   // Keep successful terminal-output captures, but a draft left by a failed run
   // must never satisfy callers that use reportProduced as their completion gate.
-  return { readSections, reportProduced, reportWritten, exitReason: result.exitReason, toolCalls: result.toolCalls, output };
+  return { readSections, reportProduced, reportWritten, exitReason: result.exitReason, toolCalls: result.toolCalls, transcript: result.transcript, output };
 }
 
 /** A completed CEO review needs its artifact and every summary outcome. */

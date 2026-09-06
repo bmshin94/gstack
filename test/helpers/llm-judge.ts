@@ -10,6 +10,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { resolveEvalModel } from '../../lib/eval-model';
 
@@ -72,14 +73,16 @@ export interface RecommendationScore {
 export async function callJudge<T>(
   prompt: string,
   model?: string,
-  opts?: { temperature?: number; max_tokens?: number },
+  opts?: { temperature?: number; max_tokens?: number; signal?: AbortSignal },
 ): Promise<T> {
+  const signal = opts?.signal;
+  signal?.throwIfAborted();
   // Routed through the documented single resolution point: explicit arg >
   // GSTACK_EVAL_MODEL_JUDGE > GSTACK_EVAL_MODEL > sonnet default. The old
   // inline `GSTACK_EVAL_MODEL_JUDGE || sonnet` silently ignored the global
   // GSTACK_EVAL_MODEL override that every other eval call site honors.
-  // opts (temperature/max_tokens) exist for bounded judgments like armJudge;
-  // defaults preserve prior behavior.
+  // opts support bounded judgments; cancellation covers both requests and
+  // retry delays. Defaults preserve prior behavior.
   const resolvedModel = resolveEvalModel('judge', model);
   const client = new Anthropic();
 
@@ -88,7 +91,7 @@ export async function callJudge<T>(
     max_tokens: opts?.max_tokens ?? 1024,
     ...(opts?.temperature !== undefined ? { temperature: opts.temperature } : {}),
     messages: [{ role: 'user', content: prompt }],
-  });
+  }, signal ? { signal } : undefined);
 
   // 429s under CI concurrency: jittered exponential backoff over 3 retries
   // (~1s/4s/16s + jitter), honoring the server's retry-after when present.
@@ -97,15 +100,21 @@ export async function callJudge<T>(
   let attempt = 0;
   for (;;) {
     try {
+      signal?.throwIfAborted();
       response = await makeRequest();
+      signal?.throwIfAborted();
       break;
     } catch (err: any) {
+      signal?.throwIfAborted();
       if (err?.status !== 429 || attempt >= 3) throw err;
       const retryAfterSecs = Number(err?.headers?.['retry-after']);
       const baseMs = Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
         ? retryAfterSecs * 1000
         : 1000 * 4 ** attempt;
-      await new Promise((r) => setTimeout(r, baseMs + Math.random() * 500));
+      await delay(baseMs + Math.random() * 500, undefined, { signal }).catch(error => {
+        signal?.throwIfAborted();
+        throw error;
+      });
       attempt += 1;
     }
   }

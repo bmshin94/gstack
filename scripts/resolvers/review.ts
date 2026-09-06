@@ -208,7 +208,106 @@ export function generateAntiShortcutClause(_ctx: TemplateContext): string {
   return `**Anti-shortcut clause:** The plan file is the OUTPUT of the interactive review, not a substitute for it. Writing every finding into one plan write and calling ExitPlanMode without firing AskUserQuestion is the precise failure mode of the May 2026 transcript bug — the model explored, found issues, and dumped them into a deliverable rather than walking the user through them. If you have ANY non-trivial finding in any review section, the path from finding to ExitPlanMode goes THROUGH AskUserQuestion. Zero findings in every section is the only path to ExitPlanMode that bypasses AskUserQuestion. If you find yourself wanting to write a plan with findings before asking, stop and call AskUserQuestion now — that's the bug, recognize it.`;
 }
 
+function generateOfficeHoursSpecReviewLoop(): string {
+  return `## Spec Review Loop
+
+Before presenting the document to the user for approval, run an adversarial review.
+The reviewer's saved JSON is the complete verdict. A prose summary is not a second
+finding inventory: the report helper preserves every problem/remedy and counts the
+records mechanically. Do not rewrite, condense, deduplicate, or recount its blocks.
+
+**Step 1: Prepare and dispatch the reviewer**
+
+Create a fresh review directory next to the design:
+
+\`\`\`bash
+mktemp -d "<design-path>.review.XXXXXX"
+\`\`\`
+Remember its actual path for this invocation. Keep these evidence files with the design.
+Maximum 3 iterations total. Before EACH dispatch, generate the complete prompt using
+all preceding valid round files in order (omit them for round 1):
+
+\`\`\`bash
+~/.claude/skills/gstack/bin/gstack-office-hours-review prepare --design "<design-path>" --out-dir "<review-directory>" "<round-1.json if present>" "<round-2.json if present>"
+\`\`\`
+
+Omit absent arguments rather than passing placeholders. The helper chooses the next
+round and writes \`round-N.prompt.md\`. It includes the full finding schema, all five
+review dimensions (Completeness, Consistency, Clarity, Scope, Feasibility), the
+office-hours coaching contract, and the COMPLETE preceding JSON verdict.
+
+Use the Agent tool with \`run_in_background: false\` and its returned \`dispatch\`
+string unchanged as the prompt. The reviewer must Read the entire prepared prompt
+file before reviewing the design. Do not recreate the prompt, copy selected fields,
+or summarize prior findings. A parent Read does not deliver the file to the reviewer.
+The reviewer has fresh context and cannot see the brainstorming conversation.
+Its prepared contract requires a complete JSON Write and an identical JSON response.
+It protects the required coaching and Assignment sections, distinguishes unknown
+customer facts from committed behavior, and requires evidence for every prior status.
+
+**Step 2: Check stop conditions, then fix and re-dispatch**
+
+After each verdict, BEFORE fixing any findings or dispatching again, validate the
+saved files with the helper (list every completed round in order):
+
+\`\`\`bash
+~/.claude/skills/gstack/bin/gstack-office-hours-review check "<round-1.json>" "<round-2.json if present>"
+\`\`\`
+
+Omit absent arguments rather than passing placeholders.
+**Convergence guard and stopping rules:** Read its stop reason:
+- PASS: no unresolved findings; proceed to Step 3.
+- CONVERGENCE: the reviewer explicitly marked a prior obligation persisting with
+  a concrete prior/current finding pair and document evidence. Stop even if new
+  findings appear. Shared topic labels or new refinements alone are insufficient.
+- MAX_ITERATIONS: round 3 completed; stop.
+- CONTINUE: fix the listed findings in the design, then return to Step 1 to prepare and dispatch the next review.
+
+On a stop, do not fix again or re-dispatch. Run the finalizer before approval:
+
+\`\`\`bash
+~/.claude/skills/gstack/bin/gstack-office-hours-review finalize --design "<design-path>" "<round-1.json>" "<round-2.json if present>"
+\`\`\`
+
+It installs the complete \`## Reviewer Concerns\` section directly from the JSON.
+Recording concerns does not mark them fixed. Do not edit that generated section.
+Then proceed to Step 3 and the existing user approval.
+
+If the subagent fails, times out, or is unavailable — stop the loop and present the
+document unreviewed. Tell the user: "Spec review unavailable — presenting unreviewed doc."
+A missing or invalid verdict is an explicit review failure, never PASS. Preserve the
+failed output and its error. Finalize with \`--unreviewed "<actual failure cause>"\`
+and only the preceding valid round files (none if round 1 failed); their known
+concerns remain visible. Do not fabricate JSON or hide a completed verdict behind
+UNREVIEWED. The independent review remains a quality bonus, not an approval gate.
+
+**Step 3: Report and persist metrics**
+
+The finalizer prints the exact Spec Review block, quality score, and metrics. Tell the user the
+result using that block; link the design and saved verdicts for details. Report
+finding observations across rounds separately from unresolved final findings.
+Confirmed resolutions require explicit later reviewer evidence; attempted fix
+rounds are counted separately and never described as successful fixes.
+
+When writing a completion report, write its other sections normally, then run the
+same finalizer with \`--report "<report-path>"\` after the report exists. This installs
+its authoritative \`## Spec Review\` section and Disposition mechanically. Do not
+summarize or replace that section afterward; refer to it elsewhere instead of
+inventing duplicate counts. Preserve the Assignment, coaching, approval, and Handoff.
+
+Append the helper's actual metrics to the existing analytics log (telemetry is
+best-effort and must not block approval):
+\`\`\`bash
+mkdir -p ~/.gstack/analytics
+echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.gstack/analytics/spec-review.jsonl 2>/dev/null || true
+\`\`\`
+Use iterations, issues_found, issues_fixed, remaining, and quality_score from the
+helper. FOUND counts finding observations across rounds; FIXED counts only
+reviewer-confirmed resolutions. An unavailable score is null, never invented.`;
+}
+
 export function generateSpecReviewLoop(_ctx: TemplateContext): string {
+  if (_ctx.skillName === 'office-hours') return generateOfficeHoursSpecReviewLoop();
   return `## Spec Review Loop
 
 Before presenting the document to the user for approval, run an adversarial review.

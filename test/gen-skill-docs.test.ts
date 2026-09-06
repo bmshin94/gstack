@@ -1326,6 +1326,114 @@ describe('Skill invocation during plan mode in preamble', () => {
 
 describe('SPEC_REVIEW_LOOP resolver', () => {
   const content = readSkillUnion('office-hours'); // carved: Phase 5/6 prose moved to section
+  const { generateSpecReviewLoop } = require('../scripts/resolvers/review');
+  const { HOST_PATHS } = require('../scripts/resolvers/types');
+  const render = (skillName: string, host = 'claude') => generateSpecReviewLoop({
+    skillName,
+    tmplPath: `${skillName}/SKILL.md.tmpl`,
+    host,
+    paths: HOST_PATHS[host],
+  });
+
+  test('office-hours prepares a complete reviewer prompt on every host', () => {
+    const { renderOfficeHoursReviewerPrompt } = require('../lib/office-hours-review');
+    for (const host of Object.keys(HOST_PATHS)) {
+      const output = render('office-hours', host);
+      expect(output).toContain('gstack-office-hours-review prepare --design');
+      expect(output).toContain('Before EACH dispatch');
+      expect(output).toContain('all preceding valid round files in order');
+      expect(output).toContain('string unchanged as the prompt');
+      expect(output).toContain('Read the entire prepared prompt');
+      expect(output).toContain('A parent Read does not deliver the file to the reviewer');
+      const prompt = renderOfficeHoursReviewerPrompt({ document: '/tmp/design.md', verdictPath: '/tmp/round-1.json' });
+      expect(prompt).toContain('design and coaching document, produced before engineering');
+      expect(prompt).toContain("startup-mode 'The Assignment'");
+      expect(prompt).toContain("both modes' 'What I noticed about how you think'");
+      expect(prompt).toContain('evaluate their evidence and usefulness');
+      expect(prompt).toContain('do not remove them merely because they are coaching content');
+      expect(prompt).toContain('Unknown customer facts may remain explicit Open Questions or assignments; do not invent answers');
+      expect(prompt).toContain('unsupported claims, contradictions, safety/correctness risks');
+      expect(prompt).toContain('missing behavior needed by the approach the document actually commits to');
+      expect(prompt).toContain('a contradiction or a required behavior an open question does not resolve it');
+      expect(prompt).toContain('clear enough for user approval and the next engineering review');
+      expect(prompt).toContain('Are open discovery questions distinguished from committed behavior?');
+      expect(prompt).toContain('Flag ambiguous or missing behavior in the chosen approach');
+      expect(prompt).not.toContain('Could an engineer implement this without asking questions?');
+      expect(prompt).toContain('return that identical JSON as your entire response');
+      expect(prompt).toContain('include every unresolved problem and necessary remedy, including minor findings');
+      expect(prompt).toContain('classify EVERY preceding finding as resolved, persisting, or unverified');
+      expect(prompt).toContain('Absence from the new findings list is not confirmation');
+      expect(prompt).toContain('specific document decision/behavior proving the status');
+      expect(prompt).toContain('Never invent customer answers');
+      expect(prompt).toContain('"version": 1');
+      expect(prompt).toContain('"prior": []');
+    }
+  });
+
+  test('office-hours checks stop conditions before edits and preserves concerns mechanically', () => {
+    const output = render('office-hours');
+    const step2 = output.slice(output.indexOf('**Step 2:'), output.indexOf('**Step 3:'));
+    expect(step2).toContain('BEFORE fixing any findings or dispatching again');
+    expect(step2).toContain('gstack-office-hours-review check');
+    expect(step2).toContain('PASS: no unresolved findings');
+    expect(step2).toContain('CONVERGENCE: the reviewer explicitly marked a prior obligation persisting');
+    expect(step2).toContain('concrete prior/current finding pair and document evidence');
+    expect(step2).toContain('Shared topic labels or new refinements alone are insufficient');
+    expect(step2).toContain('MAX_ITERATIONS: round 3 completed; stop');
+    expect(step2).toContain('CONTINUE: fix the listed findings');
+    expect(step2).toContain('On a stop, do not fix again or re-dispatch');
+    expect(step2).toContain('finalizer before approval');
+    expect(step2).toContain('gstack-office-hours-review finalize --design');
+    expect(step2).toContain('Recording concerns does not mark them fixed');
+    expect(step2).toContain('Do not edit that generated section');
+    expect(step2).toContain('Then proceed to Step 3 and the existing user approval');
+    expect(step2.indexOf('gstack-office-hours-review check')).toBeLessThan(step2.indexOf('CONTINUE: fix'));
+  });
+
+  test('office-hours finalizes the report after writing it and labels derivable metrics', () => {
+    const output = render('office-hours');
+    expect(output).toContain('with `--report "<report-path>"` after the report exists');
+    expect(output).toContain('Disposition mechanically');
+    expect(output).toContain('Do not\nsummarize or replace that section afterward');
+    expect(output).toContain('Preserve the Assignment, coaching, approval, and Handoff');
+    expect(output).toContain('Confirmed resolutions require explicit later reviewer evidence');
+    expect(output).toContain('finding observations across rounds');
+    expect(output).toContain('attempted fix\nrounds are counted separately');
+    expect(output).toContain('An unavailable score is null, never invented');
+    expect(output).not.toContain('M issues caught and fixed');
+  });
+
+  test('office-hours errors stay explicit and preserve preceding valid evidence', () => {
+    const output = render('office-hours');
+    expect(output).toContain('A missing or invalid verdict is an explicit review failure, never PASS');
+    expect(output).toContain('Preserve the\nfailed output and its error');
+    expect(output).toContain('--unreviewed');
+    expect(output).toContain('preceding valid round files');
+    expect(output).toContain('Do not fabricate JSON or hide a completed verdict');
+    expect(output).toContain('quality bonus, not an approval gate');
+  });
+
+  test('CEO keeps its existing loop, scoring, failure handling, and reporting', () => {
+    const ceo = render('plan-ceo-review');
+    expect(ceo).toContain('Could an engineer implement this without asking questions? Ambiguous language?');
+    expect(ceo).not.toContain('design and coaching document');
+    expect(ceo).not.toContain('gstack-office-hours-review');
+    expect(ceo.slice(ceo.indexOf('**Step 2:'), ceo.indexOf('If the subagent fails,')).trim()).toBe(`**Step 2: Fix and re-dispatch**
+
+If the reviewer returns issues:
+1. Fix each issue in the document on disk (use Edit tool)
+2. Re-dispatch the reviewer subagent with the updated document
+3. Maximum 3 iterations total
+
+**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
+(the fix didn't resolve them or the reviewer disagrees with the fix), stop the loop
+and persist those issues as "Reviewer Concerns" in the document rather than looping
+further.`);
+    expect(ceo).toContain('Spec review unavailable — presenting unreviewed doc.');
+    expect(ceo).toContain('M issues caught and fixed');
+    expect(ceo).toContain('Quality score: X/10');
+    expect(ceo).toContain('spec-review.jsonl');
+  });
 
   test('contains all 5 review dimensions', () => {
     for (const dim of ['Completeness', 'Consistency', 'Clarity', 'Scope', 'Feasibility']) {
