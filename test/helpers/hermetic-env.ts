@@ -231,7 +231,11 @@ export function getHermeticDirs(): HermeticDirs {
     // The privacy stop-gate is config-keyed, not marker-keyed: on machines
     // with gbrain installed it fires whenever artifacts_sync_mode is off and
     // the consent prompt is unrecorded — same PTY-stall class as the markers.
-    fs.writeFileSync(path.join(gstackHome, 'config.yaml'), 'artifacts_sync_mode_prompted: true\n');
+    // HOME still exposes the operator's installed runtime to literal skill
+    // preambles. Its older VERSION or update cache must not turn a scope-gate
+    // eval into an upgrade prompt. Update-flow tests opt in with their own
+    // GSTACK_HOME config through the existing per-test override.
+    fs.writeFileSync(path.join(gstackHome, 'config.yaml'), 'artifacts_sync_mode_prompted: true\nupdate_check: false\n');
   } catch (err) {
     try { fs.rmSync(runRoot, { recursive: true, force: true }); } catch { /* best-effort */ }
     throw err;
