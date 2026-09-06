@@ -25,7 +25,7 @@ import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { hermeticChildEnv, hermeticSkillsConfigDir, isHermeticEnabled } from './hermetic-env';
+import { buildSeedConfig, getHermeticDirs, hermeticChildEnv, hermeticSkillsConfigDir, isHermeticEnabled } from './hermetic-env';
 
 /** Strip ANSI escapes for pattern-matching against visible text. */
 export function stripAnsi(s: string): string {
@@ -1328,6 +1328,29 @@ export async function launchClaudePty(
   const childEnv = hermeticChildEnv(opts.env);
   if (opts.seedSkills && hermetic && !opts.env?.CLAUDE_CONFIG_DIR) {
     childEnv.CLAUDE_CONFIG_DIR = hermeticSkillsConfigDir();
+  }
+  if (hermetic && !opts.env?.CLAUDE_CONFIG_DIR && path.resolve(cwd) !== path.resolve(__dirname, '..', '..')) {
+    // Temporary fixtures are not in the shared repo-only trust seed. Give
+    // each launch its own config: concurrent CLI sessions rewrite theirs,
+    // and the startup trust menu no longer has a stable numeric shortcut.
+    const sessionRoot = fs.mkdtempSync(path.join(getHermeticDirs().runRoot, 'pty-'));
+    const configDir = path.join(sessionRoot, '.claude');
+    try {
+      fs.mkdirSync(configDir);
+      fs.writeFileSync(path.join(configDir, '.claude.json'), JSON.stringify(buildSeedConfig({
+        apiKey: childEnv.ANTHROPIC_API_KEY,
+        trustedDirs: [...new Set([path.resolve(cwd), fs.realpathSync(cwd)])],
+      }), null, 2));
+      if (opts.seedSkills) {
+        fs.symlinkSync(path.join(childEnv.CLAUDE_CONFIG_DIR!, 'skills'), path.join(configDir, 'skills'), 'dir');
+      }
+      childEnv.CLAUDE_CONFIG_DIR = configDir;
+    } catch (error) {
+      fs.rmSync(sessionRoot, { recursive: true, force: true });
+      throw error;
+    }
+    // Keep plan artifacts after close(); the runRoot exit handler/GC owns
+    // cleanup because callers inspect returned plan paths after closing.
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,0 +1,132 @@
+/** Free coverage of the config actually handed to temp-workspace PTY children. */
+import { describe, expect, spyOn, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { launchClaudePty, type ClaudePtyOptions } from './helpers/claude-pty-runner';
+import { getHermeticDirs, hermeticSkillsConfigDir } from './helpers/hermetic-env';
+
+const ROOT = path.resolve(import.meta.dir, '..');
+
+async function withFixture(check: (fixture: {
+  cwd: string;
+  launch: (opts?: ClaudePtyOptions) => Promise<{
+    session: Awaited<ReturnType<typeof launchClaudePty>>;
+    env: Record<string, string>;
+  }>;
+}) => Promise<void>): Promise<void> {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'pty-workspace-trust-'));
+  const previous = {
+    binary: process.env.BROWSE_TERMINAL_BINARY,
+    hermetic: process.env.EVALS_HERMETIC,
+  };
+  process.env.BROWSE_TERMINAL_BINARY = process.execPath;
+  process.env.EVALS_HERMETIC = '1';
+  let childEnv: Record<string, string> = {};
+  const spawn = spyOn(Bun, 'spawn').mockImplementation((_command: any, options: any) => {
+    childEnv = options.env;
+    // Report the same acceptance condition the real CLI checks, before a
+    // workflow/model turn. This exercises the actual launch environment.
+    const configPath = path.join(childEnv.CLAUDE_CONFIG_DIR, '.claude.json');
+    const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
+    const trusted = config.projects?.[fs.realpathSync(options.cwd)]?.hasTrustDialogAccepted === true;
+    options.terminal.data(null, Buffer.from(trusted ? 'FIXTURE_READY' : 'FIXTURE_UNTRUSTED'));
+    return { exited: Promise.resolve(trusted ? 0 : 1), terminal: { write() {} }, kill() {} } as any;
+  });
+  const sessions: Array<Awaited<ReturnType<typeof launchClaudePty>>> = [];
+  try {
+    await check({
+      cwd,
+      launch: async (opts = {}) => {
+        const session = await launchClaudePty({ cwd, seedSkills: true, ...opts });
+        sessions.push(session);
+        return { session, env: { ...childEnv } };
+      },
+    });
+  } finally {
+    for (const session of sessions) await session.close();
+    spawn.mockRestore();
+    for (const [key, value] of Object.entries({ BROWSE_TERMINAL_BINARY: previous.binary, EVALS_HERMETIC: previous.hermetic })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+describe('PTY temporary workspace trust', () => {
+  test('each launch trusts its canonical cwd without changing shared config or losing plan artifacts', async () => {
+    await withFixture(async ({ cwd, launch }) => {
+      const shared = hermeticSkillsConfigDir();
+      const before = fs.readFileSync(path.join(shared, '.claude.json'), 'utf8');
+      const alias = path.join(cwd, 'alias');
+      const workspace = path.join(cwd, 'workspace');
+      fs.mkdirSync(workspace);
+      fs.symlinkSync(workspace, alias, 'dir');
+      const first = await launch({ cwd: alias, env: { ANTHROPIC_API_KEY: 'test-effective-key-12345678901234567890', GSTACK_HOME: path.join(cwd, 'state') } });
+      const second = await launch();
+      const sameWorkspace = await launch({ cwd: alias });
+      expect(first.session.visibleText()).toBe('FIXTURE_READY');
+      expect(second.session.visibleText()).toBe('FIXTURE_READY');
+      expect(first.env.CLAUDE_CONFIG_DIR).not.toBe(second.env.CLAUDE_CONFIG_DIR);
+      expect(first.env.CLAUDE_CONFIG_DIR).not.toBe(sameWorkspace.env.CLAUDE_CONFIG_DIR);
+      expect(first.env.CLAUDE_CONFIG_DIR).not.toBe(shared);
+      expect(first.env.CLAUDE_CONFIG_DIR.endsWith(`${path.sep}.claude`)).toBe(true);
+      expect(first.session.hermeticConfigDir).toBe(first.env.CLAUDE_CONFIG_DIR);
+      expect(first.env.GSTACK_HOME).toBe(path.join(cwd, 'state'));
+      const config = JSON.parse(fs.readFileSync(path.join(first.env.CLAUDE_CONFIG_DIR, '.claude.json'), 'utf8'));
+      expect(config.customApiKeyResponses.approved).toEqual(['12345678901234567890']);
+      expect(config.projects[fs.realpathSync(cwd)]).toBeUndefined();
+      expect(fs.readFileSync(path.join(shared, '.claude.json'), 'utf8')).toBe(before);
+      expect(fs.realpathSync(path.join(first.env.CLAUDE_CONFIG_DIR, 'skills', 'autoplan', 'SKILL.md')))
+        .toBe(fs.realpathSync(path.join(ROOT, 'autoplan', 'SKILL.md')));
+      const plan = path.join(first.env.CLAUDE_CONFIG_DIR, 'plans', 'fixture.md');
+      fs.mkdirSync(path.dirname(plan));
+      fs.writeFileSync(plan, 'plan evidence');
+      await first.session.close();
+      expect(fs.readFileSync(plan, 'utf8')).toBe('plan evidence');
+    });
+  });
+
+  test('does not seed skills when the caller did not request them', async () => {
+    await withFixture(async ({ launch }) => {
+      const { session, env } = await launch({ seedSkills: false });
+      expect(session.visibleText()).toBe('FIXTURE_READY');
+      expect(fs.existsSync(path.join(env.CLAUDE_CONFIG_DIR, 'skills'))).toBe(false);
+    });
+  });
+
+  test('preserves explicit config overrides and the hermetic opt-out', async () => {
+    await withFixture(async ({ cwd, launch }) => {
+      const explicit = path.join(cwd, 'explicit');
+      fs.mkdirSync(explicit);
+      fs.writeFileSync(path.join(explicit, '.claude.json'), '{}');
+      const override = await launch({ env: { CLAUDE_CONFIG_DIR: explicit } });
+      expect(override.env.CLAUDE_CONFIG_DIR).toBe(explicit);
+      expect(override.session.visibleText()).toBe('FIXTURE_UNTRUSTED');
+      expect(fs.readFileSync(path.join(explicit, '.claude.json'), 'utf8')).toBe('{}');
+      process.env.EVALS_HERMETIC = '0';
+      const legacy = await launch({ env: { CLAUDE_CONFIG_DIR: explicit } });
+      expect(legacy.env.CLAUDE_CONFIG_DIR).toBe(explicit);
+      expect(legacy.session.hermeticConfigDir).toBeNull();
+      expect(legacy.session.visibleText()).toBe('FIXTURE_UNTRUSTED');
+    });
+  });
+
+  test('keeps the existing repo-cwd config selection', async () => {
+    await withFixture(async ({ launch }) => {
+      expect((await launch({ cwd: ROOT })).env.CLAUDE_CONFIG_DIR).toBe(hermeticSkillsConfigDir());
+      expect((await launch({ cwd: ROOT, seedSkills: false })).env.CLAUDE_CONFIG_DIR).toBe(getHermeticDirs().configDir);
+    });
+  });
+
+  test('fails loudly and removes a partial private config when seeding fails', async () => {
+    await withFixture(async ({ cwd, launch }) => {
+      hermeticSkillsConfigDir();
+      const runRoot = getHermeticDirs().runRoot;
+      const before = fs.readdirSync(runRoot).sort();
+      await expect(launch({ cwd: path.join(cwd, 'does-not-exist') })).rejects.toThrow('ENOENT');
+      expect(fs.readdirSync(runRoot).sort()).toEqual(before);
+    });
+  });
+});

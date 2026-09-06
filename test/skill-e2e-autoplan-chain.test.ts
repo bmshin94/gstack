@@ -79,9 +79,11 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         const hits: PhaseHit[] = [];
         let outcome: 'chain_complete' | 'plan_ready' | 'timeout' | 'exited' = 'timeout';
         let evidence = '';
+        let exitCode: number | null = null;
 
         try {
           await Bun.sleep(8000);
+          const startupEvidence = session.visibleText();
           const since = session.mark();
           session.send('/autoplan\r');
 
@@ -98,7 +100,8 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
             await Bun.sleep(5000);
             if (session.exited()) {
               outcome = 'exited';
-              evidence = session.visibleSince(since).slice(-3000);
+              exitCode = session.exitCode();
+              evidence = `--- startup ---\n${startupEvidence}\n--- after command ---\n${session.visibleSince(since).slice(-3000)}`;
               break;
             }
             const visible = session.visibleSince(since);
@@ -149,8 +152,8 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
 
         if (outcome === 'exited' || outcome === 'timeout') {
           throw new Error(
-            `autoplan chain test FAILED: outcome=${outcome}, hits=${JSON.stringify(hits)}\n` +
-              `--- evidence (last 3KB) ---\n${evidence}`,
+            `autoplan chain test FAILED: outcome=${outcome}, exitCode=${exitCode}, hits=${JSON.stringify(hits)}\n` +
+              `--- evidence ---\n${evidence}`,
           );
         }
 
