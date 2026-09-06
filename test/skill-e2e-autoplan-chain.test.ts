@@ -10,22 +10,19 @@
  *   "**Phase 3 complete." (Eng — always runs, always LAST: the required
  *     gate reviews the final amended plan)
  *
- * Why this exists: each individual phase has its own plan-mode smoke
- * test. Nothing verifies the SEQUENCING — that phases don't run in
- * parallel, that Phase 3 doesn't start before Phase 1 ends, that
- * conditional phases (Design, DX) are skipped when their scope is absent.
- * A regression where the autoplan template wires phases concurrently
- * would not be caught by per-phase tests.
+ * Why this exists: per-phase smoke tests do not check the chain's
+ * completion-marker order. This observes that order through Eng completion;
+ * it does not establish whether any reviewer executions overlapped.
  *
- * Approach: tee timestamps as each "**Phase N complete." marker first
- * appears in the visible buffer. Assert observed ordering. Phase 2 is
- * optional — UI-heavy fixture should make it run; backend-only fixtures
- * should make it skip.
+ * Approach: preserve the order in which completion markers first appear in
+ * the visible stream. Several markers may arrive in one poll, so timestamps
+ * are diagnostic only. Design and DX are optional; Eng must complete last.
  *
  * Cost: ~$5-8/run, 10-15 min wall clock. Periodic — runs weekly.
  */
 
-import { test, expect } from 'bun:test';
+import { test } from 'bun:test';
+import { validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
 import { PTY_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { spawnSync } from 'child_process';
@@ -51,7 +48,7 @@ interface PhaseHit {
 
 describeE2E('/autoplan chain ordering (periodic)', () => {
   test(
-    'phases run sequentially: Phase 1 (CEO) before Phase 3 (Eng), Phase 2 (Design) between when present',
+    'completion markers follow CEO, optional Design, optional DX, then Eng',
     async () => {
       // UI-heavy fixture so Phase 2 runs.
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-autoplan-chain-'));
@@ -157,33 +154,17 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
           );
         }
 
-        // Phase 3 (Eng) MUST have been seen.
-        const ceo = hits.find(h => h.phase === 1);
-        const design = hits.find(h => h.phase === 2);
-        const eng = hits.find(h => h.phase === 3);
-        if (!ceo || !eng) {
+        try {
+          validateAutoplanPhaseOrder(hits.map(hit => hit.phase));
+        } catch (error) {
           throw new Error(
-            `Required phase markers missing. Saw: ${JSON.stringify(hits)}\n` +
+            `${error instanceof Error ? error.message : String(error)}\n` +
+              `--- observed markers ---\n${JSON.stringify(hits)}\n` +
               `--- evidence ---\n${evidence}`,
+            { cause: error },
           );
         }
 
-        // Sequencing: CEO must end before Eng ends — and Eng is the terminal
-        // phase (the required gate reviews the final amended plan). Design and
-        // DX (if observed) must end after CEO and before Eng.
-        expect(ceo.ts).toBeLessThan(eng.ts);
-        if (design) {
-          expect(design.ts).toBeGreaterThan(ceo.ts);
-          expect(design.ts).toBeLessThan(eng.ts);
-        }
-        const dx = hits.find(h => h.phase === 2.5);
-        if (dx) {
-          expect(dx.ts).toBeGreaterThan(ceo.ts);
-          expect(dx.ts).toBeLessThan(eng.ts);
-        }
-        // No phase marker may appear after Eng's (Eng-last invariant).
-        const maxTs = Math.max(...hits.map(h => h.ts));
-        expect(eng.ts).toBe(maxTs);
       } finally {
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
       }
