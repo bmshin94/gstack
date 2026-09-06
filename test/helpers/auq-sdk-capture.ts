@@ -16,7 +16,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { runSkillTest, type SkillTestResult } from './session-runner';
+import type { SkillTestResult } from './session-runner';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
@@ -184,6 +184,7 @@ ${opts.scenario}
 
 This is a capture test, not an interactive session. Skip any system-audit / environment-setup / codebase-exploration steps. When you reach the FIRST point where the skill would call AskUserQuestion, write the verbatim full decision-brief text of that question (title, ELI10, stakes, recommendation, every option with its ✅/❌ pros/cons bullets, and the Net line) to ${outFile}. Do NOT call any tool to ask the user. Do NOT paraphrase. After writing the file, STOP.`;
 
+  const { runSkillTest } = await import('./session-runner');
   await runSkillTest({
     prompt,
     workingDirectory: opts.planDir,
@@ -213,9 +214,10 @@ This is a capture test, not an interactive session. Skip any system-audit / envi
  * The skill under test is the planted copy in `planDir` (pin the absolute path so
  * the agent cannot wander to the global install). AskUserQuestion is declared
  * unavailable so the agent auto-picks the recommended option and proceeds far
- * enough to hit the post-Step-0 STOP-Read directives; Read is the tool a STOP-Read
- * resolves to, so Read/Grep/Glob/Write is all the agent needs (no Bash → it cannot
- * `find /` its way out, nor run git/gh mutations).
+ * enough to hit the post-Step-0 STOP-Read directives. Read/Grep/Glob load the
+ * sections, Write/Edit save review artifacts, and Agent provides an independent
+ * review when required. These tools are pre-approved; the prompt separately
+ * prohibits command mutations and wandering to other skill installs.
  */
 export async function captureSectionReads(opts: {
   planDir: string;
@@ -230,7 +232,14 @@ export async function captureSectionReads(opts: {
   model?: string;
   maxTurns?: number;
   timeout?: number;
-}): Promise<{ readSections: Set<string>; reportProduced: boolean; toolCalls: SkillTestResult['toolCalls']; output: string }> {
+}): Promise<{
+  readSections: Set<string>;
+  reportProduced: boolean;
+  reportWritten: boolean;
+  exitReason: SkillTestResult['exitReason'];
+  toolCalls: SkillTestResult['toolCalls'];
+  output: string;
+}> {
   const outFile = path.join(opts.planDir, opts.reportFile ?? 'REPORT.md');
   const skillPath = path.join(opts.planDir, opts.skillName, 'SKILL.md');
   const prompt = `You are running an automated skill-execution test. No human is present, so AskUserQuestion is unavailable. The ONLY skill file you may read is this absolute path: ${skillPath}. Do NOT Glob/find/search for any other SKILL.md anywhere — especially nothing under ~/.claude or /Users.
@@ -246,10 +255,11 @@ Rules for this run:
 - Do NOT run git, gh, commit, push, or any mutating command.
 - When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.`;
 
+  const { runSkillTest } = await import('./session-runner');
   const result = await runSkillTest({
     prompt,
     workingDirectory: opts.planDir,
-    allowedTools: ['Read', 'Grep', 'Glob', 'Write'],
+    allowedTools: ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent'],
     maxTurns: opts.maxTurns ?? 25,
     timeout: opts.timeout ?? 300_000,
     testName: opts.testName,
@@ -266,10 +276,53 @@ Rules for this run:
   }
 
   let output = '';
-  try { output = fs.readFileSync(outFile, 'utf-8'); } catch { output = result.output ?? ''; }
-  const reportProduced = opts.reportMarker ? opts.reportMarker.test(output) : output.trim().length > 0;
+  let reportWritten = false;
+  try {
+    output = fs.readFileSync(outFile, 'utf-8');
+    reportWritten = true;
+  } catch { output = result.output ?? ''; }
+  const reportProduced = result.exitReason === 'success'
+    && (opts.reportMarker ? opts.reportMarker.test(output) : output.trim().length > 0);
 
-  return { readSections, reportProduced, toolCalls: result.toolCalls, output };
+  // Keep successful terminal-output captures, but a draft left by a failed run
+  // must never satisfy callers that use reportProduced as their completion gate.
+  return { readSections, reportProduced, reportWritten, exitReason: result.exitReason, toolCalls: result.toolCalls, output };
+}
+
+/** A completed CEO review needs its artifact and every summary outcome. */
+export function validateCeoReviewCompletion(capture: {
+  exitReason: string;
+  reportWritten: boolean;
+  output: string;
+}): void {
+  if (capture.exitReason !== 'success') {
+    throw new Error(`CEO review execution failed: ${capture.exitReason}`);
+  }
+  if (!capture.reportWritten) throw new Error('CEO review did not write REPORT.md');
+  const lines = capture.output.split(/\r?\n/);
+  const summaryStart = lines.findIndex(line =>
+    /^(?:#{1,6}\s+(?:\d+[.)]\s+)?)?(?:\|\s*)?(?:MEGA PLAN REVIEW\s*[—–-]\s*)?COMPLETION SUMMARY(?:\s*\|)?$/i
+      .test(line.trim().replace(/\*\*/g, '')),
+  );
+  if (summaryStart === -1) throw new Error('CEO report is missing its Completion Summary');
+  const summaryLines = lines.slice(summaryStart + 1);
+  const nextHeading = summaryLines.findIndex(line => /^#{1,6}\s+\S/.test(line));
+  const summary = nextHeading === -1 ? summaryLines : summaryLines.slice(0, nextHeading);
+  const outcomes = new Map<number, string>();
+  for (const line of summary) {
+    const row = line.replace(/\*\*/g, '').match(/^\s*\|\s*Section\s+(\d{1,2})\b[^|]*\|\s*(.*?)\s*\|\s*$/i);
+    if (row) outcomes.set(Number(row[1]), row[2].replace(/\*\*/g, '').trim());
+  }
+  for (let section = 1; section <= 11; section++) {
+    const outcome = outcomes.get(section) ?? '';
+    const placeholder = !outcome || /___/.test(outcome)
+      || /^(?:TBD|TODO|pending|not reviewed|done|complete(?:d)?|reviewed|[-—]+)[.!]?$/i.test(outcome);
+    const skipped = /^(?:skip(?:ped)?|N\/A|not applicable)\b/i.test(outcome);
+    const noUi = section === 11 && /\bno UI\b/i.test(outcome);
+    if (placeholder || (skipped && !noUi)) {
+      throw new Error(`CEO Completion Summary is missing a completed Section ${section} outcome`);
+    }
+  }
 }
 
 /** Read the carved (current worktree) plan-ceo SKILL.md + its sections dir. */
@@ -332,6 +385,7 @@ Proceed to Step 0F (Mode Selection), where the skill presents the 4 review-mode 
 
 Write the verbatim text of that AskUserQuestion (the full decision brief: title, ELI10, stakes, recommendation, every option with its pros/cons bullets, and the Net line) to ${outFile}. Do NOT call any tool to ask the user. Do NOT paraphrase. After writing the file, stop.`;
 
+  const { runSkillTest } = await import('./session-runner');
   await runSkillTest({
     prompt,
     workingDirectory: opts.planDir,

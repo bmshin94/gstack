@@ -31,6 +31,7 @@ import {
   setupSkillDir,
   skillFromWorktree,
   captureSectionReads,
+  validateCeoReviewCompletion,
 } from './helpers/auq-sdk-capture';
 
 const describeE2E = describeE2ETier('periodic');
@@ -68,17 +69,29 @@ describeE2E('/plan-ceo-review section-loading E2E (periodic, SDK capture)', () =
         tmpPrefix: 'gstack-ceo-secload-',
       });
 
-      const { readSections, reportProduced, output } = await captureSectionReads({
+      const capture = await captureSectionReads({
         planDir,
         skillName: 'plan-ceo-review',
         scenario:
-          'Review the plan in PLAN.md. Hold the current scope (HOLD SCOPE mode) — do not challenge or expand scope. Run the full CEO review and produce the review report.',
-        requiredSections: REQUIRED_SECTIONS,
+          'Review the plan in PLAN.md. Hold the current scope (HOLD SCOPE mode) — do not challenge or expand scope. Run the full CEO review and produce the review report. For the independent outside-voice plan review, use the available Agent tool. Read-only delegation is permitted and is part of this review, not environment setup.',
         reportMarker: /GSTACK REVIEW REPORT|COMPLETION SUMMARY|review/i,
         testName: 'plan-ceo-section-loading',
         runId,
+        // Eleven sections plus outside voice are a long workflow. Use its
+        // selected tier, leaving the historical 60s margin for setup/cleanup.
+        timeout: CAPTURE_LONG_MS - 60_000,
       });
 
+      validateCeoReviewCompletion(capture);
+      // A report cannot replace the available independent review with a
+      // made-up "automated test rules" skip. Verify an invocation for this plan.
+      expect(capture.toolCalls.some(call => {
+        if (call.tool !== 'Agent') return false;
+        const request = JSON.stringify(call.input);
+        return /outside.?voice|independent|fresh.context|second opinion/i.test(request)
+          && /PLAN\.md|cache|LRU/i.test(request);
+      })).toBe(true);
+      const { readSections, reportProduced, output } = capture;
       const missing = REQUIRED_SECTIONS.filter(s => !readSections.has(s));
       expect({ reportProduced, read: [...readSections], missing }).toEqual({
         reportProduced: true,
