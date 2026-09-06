@@ -261,7 +261,10 @@ describe('setup: Chromium bootstrap block executes best-effort', () => {
     expect(fresh.stdout).toContain('REASON=chromium-install-locked\n');
   }, 15_000);
 
-  test('_kill_tree without pgrep on PATH still kills the grandchild (walks /proc)', () => {
+  test.each([
+    { name: '_kill_tree without pgrep on PATH still kills the grandchild (walks /proc)', vanishedStat: false },
+    { name: '_kill_tree skips a stat file that vanished after /proc enumeration', vanishedStat: true },
+  ])('$name', ({ vanishedStat }) => {
     if (!fs.existsSync('/proc')) return;
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-killtree-'));
     try {
@@ -276,17 +279,31 @@ describe('setup: Chromium bootstrap block executes best-effort', () => {
         'hash -r',
         'command -v pgrep >/dev/null 2>&1 && { echo "PGREP_PRESENT"; exit 0; }',
         extractFn('_kill_tree'),
-        // two commands so bash forks a real subshell instead of exec-ing sleep directly
-        '( sleep 30; true ) & pid=$!',
-        'sleep 0.3',
-        // find the sleep grandchild via /proc, the same way the fallback does
-        'child=$(awk -v p="$pid" \'{ s=$0; sub(/^[^)]*\\) /, "", s); split(s, f, " "); if (f[2]==p) { print $1; exit } }\' /proc/[0-9]*/stat 2>/dev/null)',
-        '[ -n "$child" ] || { echo "NO_CHILD"; exit 0; }',
+        // A reaped process models a stat path disappearing after the shell glob
+        // was expanded. Inject it before the live entries, without a timing race.
+        ...(vanishedStat ? [
+          'sleep 30 & gone=$!',
+          'kill -9 "$gone"; wait "$gone" 2>/dev/null || true',
+          'vanished_stat="/proc/$gone/stat"',
+          '[ ! -e "$vanished_stat" ] || exit 1',
+          'awk() { command awk "$1" "$2" "$3" "$vanished_stat" "${@:4}"; }',
+        ] : []),
+        'pid= child=',
+        'trap \'kill -9 "$pid" "$child" 2>/dev/null || true; wait "$pid" 2>/dev/null || true\' EXIT',
+        `CHILD_PID_FILE="${path.join(tmp, 'child.pid')}"`,
+        // The subshell publishes its child's PID. Readiness must not depend on
+        // a fixed sleep or repeat the /proc scan being tested.
+        '( sleep 30 & echo $! > "$CHILD_PID_FILE"; wait ) & pid=$!',
+        'for ((i=0; i<100; i++)); do [ -s "$CHILD_PID_FILE" ] && break; sleep 0.01; done',
+        'read -r child < "$CHILD_PID_FILE" || exit 1',
+        'kill -0 "$pid" "$child" 2>/dev/null || exit 1',
         '_kill_tree "$pid"',
+        'wait "$pid" 2>/dev/null || true',
         'sleep 0.3',
         'if kill -0 "$child" 2>/dev/null; then echo "CHILD_ALIVE"; else echo "CHILD_DEAD"; fi',
       ].join('\n');
       const r = spawnSync('/bin/bash', ['-c', script], { encoding: 'utf-8', timeout: 20_000 });
+      expect(r.status).toBe(0);
       expect(r.stdout).toContain('CHILD_DEAD');
       expect(r.stdout).not.toContain('PGREP_PRESENT');
     } finally {
