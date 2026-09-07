@@ -158,6 +158,10 @@ const WINDOWS_FRAGILE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 // the failure mode is structural rather than detectable via source-file scan.
 export const KNOWN_WINDOWS_INCOMPATIBLE: Array<{ file: string; reason: string }> = [
   {
+    file: 'test/setup-gbrain-fixture.test.ts',
+    reason: 'the fixture invokes real POSIX detector/verifier helpers through executable shebang wrappers',
+  },
+  {
     file: 'test/hermetic-skills-seeding.test.ts',
     reason: 'seeds the POSIX PTY skill runtime, whose embedded shell paths require a POSIX temporary root',
   },

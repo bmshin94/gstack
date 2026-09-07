@@ -49,7 +49,10 @@ export const SECTION_ANCHORS: Record<string, string> = {
  * `neededSections` inlined at their STOP pointers and every other pointer
  * replaced by an explicit not-needed stub. Throws on any missing anchor.
  */
-export function buildSetupGbrainFixture(neededSections: string[]): string {
+export function buildSetupGbrainFixture(
+  neededSections: string[],
+  options: { helperBinDir?: string } = {},
+): string {
   for (const file of neededSections) {
     if (!(file in SECTION_ANCHORS)) {
       throw new Error(
@@ -103,5 +106,11 @@ export function buildSetupGbrainFixture(neededSections: string[]): string {
     }
   }
 
+  // Preserve the extracted instructions; only rebind their install location.
+  // PATH alone cannot redirect the literal ~/.../bin commands in the skill.
+  if (options.helperBinDir) {
+    const quotedBin = `'${options.helperBinDir.replaceAll("'", "'\\''")}'`;
+    full = full.replaceAll('~/.claude/skills/gstack/bin', quotedBin);
+  }
   return full;
 }
