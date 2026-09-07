@@ -181,6 +181,44 @@ function repoRoot(): string {
   return path.resolve(__dirname, '..', '..');
 }
 
+/** Seed a private, existing empty directory owned by the calling test.
+ * Never apply this automatically to a caller-supplied GSTACK_HOME: tests for
+ * onboarding and upgrades intentionally supply their own state. The caller
+ * owns cleanup if a write fails. Refuse existing state or a symlink root so
+ * this helper cannot silently reset operator configuration.
+ */
+export function seedHermeticGstackHome(gstackHome: string): void {
+  const existing = fs.lstatSync(gstackHome, { throwIfNoEntry: false });
+  if (!existing?.isDirectory() || fs.readdirSync(gstackHome).length !== 0) {
+    throw new Error('Hermetic GStack seed requires a private, existing empty directory');
+  }
+  // Seed one-time onboarding markers into the CHILD's GSTACK_HOME.
+  // bin/gstack-skill-start reads ${GSTACK_HOME:-$HOME/.gstack} (EOV7), so
+  // the operator-HOME seeding in e2e-helpers.ts no longer reaches hermetic
+  // children — without these, the emission layer fires lake-intro/telemetry
+  // prompts that burn turns and can stall PTY tests waiting on an answer.
+  // Tests that exercise onboarding itself override GSTACK_HOME per-test.
+  for (const f of [
+    '.activated',
+    '.completeness-intro-seen',
+    '.telemetry-prompted',
+    '.proactive-prompted',
+    '.first-loop-tip-shown',
+    '.feature-prompted-continuous-checkpoint',
+    '.feature-prompted-model-overlay',
+  ]) {
+    fs.writeFileSync(path.join(gstackHome, f), '');
+  }
+  // The privacy stop-gate is config-keyed, not marker-keyed: on machines
+  // with gbrain installed it fires whenever artifacts_sync_mode is off and
+  // the consent prompt is unrecorded — same PTY-stall class as the markers.
+  // HOME still exposes the operator's installed runtime to literal skill
+  // preambles. Its older VERSION or update cache must not turn a scope-gate
+  // eval into an upgrade prompt. Update-flow tests opt in with their own
+  // GSTACK_HOME config through the existing per-test override.
+  fs.writeFileSync(path.join(gstackHome, 'config.yaml'), 'artifacts_sync_mode_prompted: true\nupdate_check: false\n');
+}
+
 /**
  * Sync memoized per-process singleton — intentionally NO async gap between
  * the cache check and create+seed, so concurrent first calls under
@@ -211,31 +249,7 @@ export function getHermeticDirs(): HermeticDirs {
       trustedDirs: [repoRoot()],
     });
     fs.writeFileSync(path.join(configDir, '.claude.json'), JSON.stringify(seed, null, 2));
-    // Seed one-time onboarding markers into the CHILD's GSTACK_HOME.
-    // bin/gstack-skill-start reads ${GSTACK_HOME:-$HOME/.gstack} (EOV7), so
-    // the operator-HOME seeding in e2e-helpers.ts no longer reaches hermetic
-    // children — without these, the emission layer fires lake-intro/telemetry
-    // prompts that burn turns and can stall PTY tests waiting on an answer.
-    // Tests that exercise onboarding itself override GSTACK_HOME per-test.
-    for (const f of [
-      '.activated',
-      '.completeness-intro-seen',
-      '.telemetry-prompted',
-      '.proactive-prompted',
-      '.first-loop-tip-shown',
-      '.feature-prompted-continuous-checkpoint',
-      '.feature-prompted-model-overlay',
-    ]) {
-      fs.writeFileSync(path.join(gstackHome, f), '');
-    }
-    // The privacy stop-gate is config-keyed, not marker-keyed: on machines
-    // with gbrain installed it fires whenever artifacts_sync_mode is off and
-    // the consent prompt is unrecorded — same PTY-stall class as the markers.
-    // HOME still exposes the operator's installed runtime to literal skill
-    // preambles. Its older VERSION or update cache must not turn a scope-gate
-    // eval into an upgrade prompt. Update-flow tests opt in with their own
-    // GSTACK_HOME config through the existing per-test override.
-    fs.writeFileSync(path.join(gstackHome, 'config.yaml'), 'artifacts_sync_mode_prompted: true\nupdate_check: false\n');
+    seedHermeticGstackHome(gstackHome);
   } catch (err) {
     try { fs.rmSync(runRoot, { recursive: true, force: true }); } catch { /* best-effort */ }
     throw err;

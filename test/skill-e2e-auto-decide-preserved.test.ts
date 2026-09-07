@@ -41,6 +41,7 @@ import { test, expect } from 'bun:test';
 import { CAPTURE_LONG_MS, PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { runPlanSkillObservation } from './helpers/claude-pty-runner';
+import { seedHermeticGstackHome } from './helpers/hermetic-env';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -54,6 +55,11 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
   test('user-opted-in question still auto-decides when AskUserQuestion is --disallowedTools', async () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-auto-decide-'));
     try {
+      // This explicit override replaces the default hermetic state. Keep its
+      // normal onboarding/update baseline so unrelated setup prompts cannot
+      // intercept the one question whose never-ask behavior this case checks.
+      seedHermeticGstackHome(tmpHome);
+
       // 1. Bootstrap the tmp GSTACK_HOME with question_tuning=true.
       const configBin = path.join(ROOT, 'bin', 'gstack-config');
       const setRes = spawnSync(configBin, ['set', 'question_tuning', 'true'], {
