@@ -6,6 +6,7 @@ import * as path from 'path';
 import { buildHermeticEnv } from './helpers/hermetic-env';
 import type { QueryProvider } from './helpers/agent-sdk-runner';
 import { createSetupGbrainSandbox, runSetupGbrainAttempt } from './helpers/setup-gbrain-sandbox';
+import { chooseLocalPgliteFixtureAnswer } from './helpers/setup-gbrain-fixture';
 
 const originalClaudeMd = '# Fixture project\nKeep this content.\n';
 async function command(bin: string, args: string[], env: Record<string, string>) {
@@ -156,4 +157,116 @@ describe('setup-gbrain owned Path 4 fixture', () => {
       expect(paths.every((file) => fs.existsSync(file))).toBe(true);
     } finally { fs.rmSync(evidenceRoot, { recursive: true, force: true }); }
   }, 30_000);
+});
+
+describe('setup-gbrain local-PGLite fixture answers', () => {
+  // Captured failing Step 4d offer: its explanation mentions artifacts, while
+  // the actual offered decision is whether to install local code search.
+  const localQuestion = {
+  "question": "Want symbol-aware code search on this machine?\n\nThe remote brain at http://127.0.0.1:39563/mcp is great for cross-machine knowledge, but symbol queries like `gbrain code-def` / `code-refs` / `code-callers` need a local index of THIS machine's code. We can spin up a tiny isolated PGLite database (~30 seconds, no accounts, ~120 MB disk) just for code, separate from your remote brain. Transcripts and artifacts continue routing through the artifacts repo to the remote brain — local PGLite stays code-only.\n\nStakes: without it, semantic code search in this repo's worktrees falls back to Grep.\nRecommendation: A — 30 seconds, no ongoing cost, unlocks the symbol tools.\nCompleteness: A=10/10 (full split-engine), B=7/10 (remote-only).",
+  "header": "Code search",
+  "options": [
+    {
+      "label": "Yes, set up local PGLite for code",
+      "description": "Unlocks `gbrain code-def`, `code-refs`, `code-callers` per worktree. Independent engine — won't disturb remote brain or share transcripts. (Recommended)"
+    },
+    {
+      "label": "No, remote MCP only",
+      "description": "Zero local state — only ~/.claude.json MCP registration. Symbol code queries fall back to Grep in this repo's worktrees."
+    }
+  ],
+  "multiSelect": false
+};
+  const artifactsQuestion = {
+  "question": "Also sync your gstack artifacts (CEO plans, designs, reports, retros) to a private git repo that gbrain can index across machines?",
+  "header": "Artifacts sync",
+  "options": [
+    {
+      "label": "Yes, full sync",
+      "description": "Sync everything allowlisted (plans, designs, retros, behavioral data) to a private git repo."
+    },
+    {
+      "label": "Yes, artifacts-only",
+      "description": "Sync plans, designs, retros — skip behavioral data."
+    },
+    {
+      "label": "No thanks",
+      "description": "Skip artifacts sync for now. You can set this up later."
+    }
+  ],
+  "multiSelect": false
+};
+
+  test('opts into the captured local-PGLite offer despite artifacts context', () => {
+    expect(chooseLocalPgliteFixtureAnswer(localQuestion)).toBe('Yes, set up local PGLite for code');
+    expect(chooseLocalPgliteFixtureAnswer({ ...localQuestion, options: [...localQuestion.options].reverse() }))
+      .toBe('Yes, set up local PGLite for code');
+  });
+
+  test('declines the actual captured artifacts-sync offer', () => {
+    expect(chooseLocalPgliteFixtureAnswer(artifactsQuestion)).toBe('No thanks');
+    expect(chooseLocalPgliteFixtureAnswer({
+      ...artifactsQuestion, question: artifactsQuestion.question + ' Local PGLite remains code-only.',
+    })).toBe('No thanks');
+  });
+
+  test('preserves explicit Path 4 selection', () => {
+    expect(chooseLocalPgliteFixtureAnswer({
+      question: 'Where should your brain live?',
+      options: [{ label: 'Local PGLite' }, { label: 'Remote gbrain MCP (Path 4)' }],
+    })).toBe('Remote gbrain MCP (Path 4)');
+  });
+
+  test('does not accept an unrelated yes or recommended choice', () => {
+    expect(() => chooseLocalPgliteFixtureAnswer({
+      question: 'Upload diagnostics?',
+      options: [{ label: 'Yes (Recommended)' }, { label: 'No thanks' }],
+    })).toThrow('Unrecognized or ambiguous');
+  });
+
+  test('rejects mixed action menus rather than silently choosing one', () => {
+    expect(() => chooseLocalPgliteFixtureAnswer({
+      question: 'Select a setup action', options: [...localQuestion.options, ...artifactsQuestion.options],
+    })).toThrow('Unrecognized or ambiguous');
+  });
+  test('rejects explicit remote choices mixed with local opt-in or sync actions', () => {
+    for (const options of [
+      [{ label: 'Remote MCP (Path4)' }, { label: 'Yes, artifacts-only' }, { label: 'No thanks' }],
+      [...localQuestion.options, { label: 'Remote MCP (Path4)' }],
+    ]) {
+      expect(() => chooseLocalPgliteFixtureAnswer({ question: 'Choose a setup action', options }))
+        .toThrow('Unrecognized or ambiguous');
+    }
+  });
+
+  test('rejects unknown affirmative actions alongside a recognized decision', () => {
+    for (const options of [
+      [...localQuestion.options, { label: 'Yes, upload diagnostics' }],
+      [...artifactsQuestion.options, { label: 'Yes, delete the remote database' }],
+    ]) {
+      expect(() => chooseLocalPgliteFixtureAnswer({ question: 'Choose a setup action', options }))
+        .toThrow('Unrecognized or ambiguous');
+    }
+  });
+
+  test('rejects destructive labels and Path40 substring collisions', () => {
+    for (const options of [
+      [{ label: 'Yes, remove local PGLite' }, { label: 'No, remote MCP only' }],
+      [{ label: 'Local PGLite' }, { label: 'Remove remote MCP' }],
+      [{ label: 'Local PGLite' }, { label: 'Path40' }],
+    ]) {
+      expect(() => chooseLocalPgliteFixtureAnswer({ question: 'Choose a setup action', options }))
+        .toThrow('Unrecognized or ambiguous');
+    }
+  });
+
+  test('preserves the canonical numbered Step 2 backend menu from the source', () => {
+    const source = fs.readFileSync(path.join(import.meta.dir, '..', 'setup-gbrain', 'SKILL.md.tmpl'), 'utf8');
+    const labels = [...source.matchAll(/^- \*\*((?:1|2a|2b|3|4) — [^\n]*?)\*\*/gm)].map(match => match[1]!);
+    expect(labels).toHaveLength(5);
+    expect(chooseLocalPgliteFixtureAnswer({
+      question: 'Where should your brain live?', options: labels.map(label => ({ label })),
+    })).toBe('4 — Remote gbrain MCP.');
+  });
+
 });

@@ -114,3 +114,38 @@ export function buildSetupGbrainFixture(
   }
   return full;
 }
+
+/** This opt-in fixture answers recognized decisions from their offered choices.
+ * Explanatory text can mention artifacts inside the local-code offer. Reject
+ * unknown or mixed actions instead of silently consenting to another action.
+ */
+export function chooseLocalPgliteFixtureAnswer(question: {
+  question: string;
+  options: Array<{ label: string }>;
+}): string {
+  const options = question.options.map(option => ({
+    option, label: option.label.replace(/\s*\(recommended\)\s*$/i, '').trim().replace(/\s+/g, ' '),
+  }));
+  const declines = options.filter(o => /^(?:no(?:,? (?:thanks|remote mcp only))?|skip(?: artifacts sync)?|decline(?: artifacts sync)?)$/i.test(o.label));
+  const local = options.filter(o => /^yes,? (?:(?:set up|install|enable|use) )?local pglite(?: for (?:code|code search))?$/i.test(o.label));
+  const sync = options.filter(o => /^(?:yes,? )?(?:full sync|artifacts[- ]only(?: sync)?|sync (?:all|artifacts)(?: only)?)$/i.test(o.label));
+  const remote = options.filter(o => /^(?:(?:use|connect to|select) )?remote (?:gbrain )?mcp(?: \(path ?4\))?$/i.test(o.label)
+    || /^path ?4(?:\s*[-—–:]\s*remote (?:gbrain )?mcp)?$/i.test(o.label)
+    || /^4 — remote gbrain mcp\.?$/i.test(o.label));
+  // Step 2's existing backend alternatives are not affirmative setup actions.
+  const backendLabels = new Set([
+    'local pglite', '1 — supabase, i already have a connection string',
+    '2a — supabase, auto-provision a new project', '2b — supabase, create manually',
+    '3 — pglite local',
+  ]);
+  const otherBackends = options.filter(o => backendLabels.has(o.label.replace(/\.$/, '').toLowerCase()));
+  const known = new Set([...declines, ...local, ...sync, ...remote, ...otherBackends]);
+  const families = [local.length, sync.length, remote.length + otherBackends.length].filter(Boolean);
+  if (known.size !== options.length || families.length !== 1) {
+    throw new Error(`Unrecognized or ambiguous local-PGLite fixture question: ${question.question.split('\n')[0]}`);
+  }
+  if (local.length === 1 && declines.length === 1 && /^no,? remote mcp only$/i.test(declines[0]!.label)) return local[0]!.option.label;
+  if (sync.length > 0 && declines.length === 1) return declines[0]!.option.label;
+  if (remote.length === 1) return remote[0]!.option.label;
+  throw new Error(`Unrecognized or ambiguous local-PGLite fixture question: ${question.question.split('\n')[0]}`);
+}

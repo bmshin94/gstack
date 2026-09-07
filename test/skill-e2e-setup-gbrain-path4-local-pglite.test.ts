@@ -26,6 +26,7 @@ import {
   resolveClaudeBinary,
 } from './helpers/agent-sdk-runner';
 import { createSetupGbrainSandbox, runSetupGbrainAttempt } from './helpers/setup-gbrain-sandbox';
+import { chooseLocalPgliteFixtureAnswer } from './helpers/setup-gbrain-fixture';
 
 const describeE2E = describeE2ETier('periodic');
 
@@ -56,12 +57,7 @@ describeE2E('/setup-gbrain Path 4 + Step 4d Yes → local PGLite for code', () =
         }>;
         const answers: Record<string, string> = {};
         for (const q of questions) {
-          const chosen = /artifacts|sync.*private.*repo/i.test(q.question)
-            ? q.options.find((o) => /no|skip|decline/i.test(o.label))
-            : q.options.find((o) => /yes.*local|local.*pglite|code search|opt in/i.test(o.label)) ??
-              q.options.find((o) => /remote.*mcp|path 4/i.test(o.label)) ??
-              q.options.find((o) => /yes|recommended/i.test(o.label));
-          const choice = (chosen ?? q.options[0]!).label;
+          const choice = chooseLocalPgliteFixtureAnswer(q);
           answers[q.question] = choice;
           askLog.push({ question: q.question, choice });
         }
