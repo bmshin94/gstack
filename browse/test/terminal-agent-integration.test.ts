@@ -325,3 +325,125 @@ describe('terminal-agent: PTY round-trip via real WebSocket (Cookie auth)', () =
     try { ws.close(); } catch {}
   });
 });
+
+// Route-level lifecycle regressions use the same owned Bash CLI fixture and
+// real PTY/WS transport above. Every expected result is absent from typed input.
+describe('terminal-agent: owned PTY completion and restart', () => {
+  async function internal(route: string, body: unknown) {
+    return fetch(`http://127.0.0.1:${agentPort}/internal/${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${internalToken}` },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function until(check: () => boolean | Promise<boolean>, label: string) {
+    const deadline = Date.now() + 5000;
+    while (!(await check())) {
+      if (Date.now() >= deadline) throw new Error(`timed out waiting for ${label}`);
+      await Bun.sleep(10);
+    }
+  }
+
+  async function attach(sessionId: string, token: string) {
+    const granted = await internal('grant', { token, sessionId });
+    expect(granted.status).toBe(200);
+    const ws = new WebSocket(`ws://127.0.0.1:${agentPort}/ws`, {
+      headers: { Origin: 'chrome-extension://test-extension-id', Cookie: `gstack_pty=${token}` },
+    } as any);
+    const events: Array<{ type: string; [key: string]: any }> = [];
+    let output = '';
+    let closed: number | null = null;
+    ws.addEventListener('message', (event: any) => {
+      if (typeof event.data === 'string') events.push(JSON.parse(event.data));
+      else {
+        const chunk = new TextDecoder().decode(event.data);
+        output += chunk;
+        events.push({ type: 'output', text: chunk });
+      }
+    });
+    ws.addEventListener('close', event => { closed = event.code; events.push({ type: 'closed', code: event.code }); });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('ws never opened')), 5000);
+      ws.addEventListener('open', () => { clearTimeout(timer); resolve(); });
+      ws.addEventListener('error', () => { clearTimeout(timer); reject(new Error('ws error')); });
+    });
+    return { ws, events, output: () => output, closed: () => closed };
+  }
+
+  test('restart closes the old socket and grants a fresh child only to its replacement', async () => {
+    const sessionId = 'owned-restart-session';
+    const old = await attach(sessionId, 'owned-restart-old-token-long-enough');
+    let replacement: Awaited<ReturnType<typeof attach>> | undefined;
+    try {
+      old.ws.send(new TextEncoder().encode("printf 'restart-%s:%s\\n' old $$\n"));
+      await until(() => /restart-old:\d+\r?\n/.test(old.output()), 'old child output');
+      const oldPid = /restart-old:(\d+)\r?\n/.exec(old.output())![1];
+      const response = await internal('restart', { sessionId });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ killed: 1 });
+      // A message can already be queued while the close handshake completes.
+      try { old.ws.send(new TextEncoder().encode("printf 'restart-%s\\n' forbidden\n")); } catch {}
+      await until(() => old.closed() !== null, 'old socket close');
+      expect(old.closed()).toBe(4001);
+      expect(old.output()).not.toContain('restart-forbidden');
+
+      replacement = await attach(sessionId, 'owned-restart-new-token-long-enough');
+      replacement.ws.send(new TextEncoder().encode("printf 'restart-%s:%s\\n' new $$\nexit\n"));
+      await until(() => replacement!.closed() !== null, 'replacement completion');
+      expect(replacement.output()).toContain('restart-new:');
+      const newPid = /restart-new:(\d+)/.exec(replacement.output())?.[1];
+      expect(newPid).toBeDefined();
+      expect(newPid).not.toBe(oldPid);
+      expect(replacement.events.find(event => event.type === 'pty-exit')?.process.exitCode).toBe(0);
+      expect(old.output()).not.toContain('restart-new:');
+    } finally {
+      try { old.ws.close(1000); } catch {}
+      try { replacement?.ws.close(1000); } catch {}
+      await internal('restart', { sessionId });
+    }
+  });
+
+  test('completion while detached replays final output before closing without a new child', async () => {
+    const sessionId = 'owned-detached-completion-session';
+    const release = path.join(stateDir, 'release-detached-child');
+    const quotedRelease = `'${release.replace(/'/g, "'\\''")}'`;
+    const old = await attach(sessionId, 'owned-detached-old-token-long-enough');
+    let replacement: Awaited<ReturnType<typeof attach>> | undefined;
+    try {
+      const command = `printf 'detached-%s:%s\\n' start $$; while [ ! -e ${quotedRelease} ]; do sleep 0.01; done; printf 'detached-%s:%s\\n' final $$; exit\n`;
+      old.ws.send(new TextEncoder().encode(command));
+      await until(() => /detached-start:\d+\r?\n/.test(old.output()), 'child waiting at release barrier');
+      const pid = /detached-start:(\d+)\r?\n/.exec(old.output())![1];
+      old.ws.close(1001);
+      await until(() => old.closed() !== null, 'detach handshake');
+      fs.writeFileSync(release, 'release\n');
+      // Authenticated completion state proves BOTH native callbacks happened
+      // while detached; no guessed post-exit sleep or early reattachment.
+      await until(async () => {
+        const health = await fetch(`http://127.0.0.1:${agentPort}/internal/healthz`, {
+          headers: { Authorization: `Bearer ${internalToken}` },
+        });
+        return (await health.json()).completedSessions === 1;
+      }, 'detached completion');
+
+      replacement = await attach(sessionId, 'owned-detached-new-token-long-enough');
+      await until(() => replacement!.closed() !== null, 'replayed completion close');
+      const kinds = replacement.events.map(event => event.type);
+      expect(kinds).toEqual(['reattach-begin', 'output', 'pty-exit', 'closed']);
+      expect(replacement.output()).toContain(`detached-start:${pid}`);
+      expect(replacement.output()).toContain(`detached-final:${pid}`);
+      const completion = replacement.events.find(event => event.type === 'pty-exit')!;
+      expect(completion.process.exitCode).toBe(0);
+      expect(completion.drainTimedOut).toBe(false);
+      expect(completion.exitTimedOut).toBe(false);
+      expect(completion.reader).not.toBeNull();
+      expect(replacement.closed()).toBe(1000);
+    } finally {
+      fs.writeFileSync(release, 'release\n');
+      try { old.ws.close(1000); } catch {}
+      try { replacement?.ws.close(1000); } catch {}
+      await internal('restart', { sessionId });
+    }
+  });
+});
