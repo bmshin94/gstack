@@ -111,9 +111,9 @@ jobs:
   eval-slices:
     runs-on: ubicloud-standard-8
     needs: [build-image, plan-slices]
-    # The free workflow policy checks the live manifest's largest slice:
-    # ceil(shards / EVALS_JOBS) x process wall, plus 20min for setup/teardown.
-    timeout-minutes: 300
+    # The free policy resolves each file wall and the serial overlay slice:
+    # max(slice allowances) plus 20min for setup/teardown.
+    timeout-minutes: 330
     permissions:
       contents: read
       packages: read

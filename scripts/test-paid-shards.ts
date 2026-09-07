@@ -66,6 +66,7 @@ import { PAID_TEST_GLOBS, isPaidTestFile } from '../test/helpers/paid-test-set';
 import { PERIODIC_CI_EXCLUDE } from '../test/helpers/periodic-exclude-data';
 import { getProjectEvalDir, getClaudeCliVersion, isFinalizedEvalResultFile } from '../test/helpers/eval-store';
 import { preflightAnthropicApi } from '../test/helpers/anthropic-preflight';
+import { OVERLAY_MIN_FILE_WALL_MS } from '../test/helpers/overlay-case-policy';
 import {
   detectBaseBranch,
   getChangedFiles,
@@ -95,6 +96,23 @@ export const DEFAULT_MAX_FILES_PER_SHARD = 1;
 // CHROMIUM_PROFILE isolation in runPaidShard.
 export const DEFAULT_JOBS = 8;
 export const DEFAULT_WITHIN_SHARD_CONCURRENCY = 2;
+
+/** One overlay process preserves the original process-wide SDK semaphore. */
+export const OVERLAY_MAX_ACTIVE_SHARDS = 1;
+
+export function isOverlayTestFile(file: string): boolean {
+  return /^skill-e2e-overlay-harness-.+\.test\.ts$/.test(path.basename(normalizeRelativePath(file)));
+}
+
+export function resolvePaidShardTimeoutMs(files: string[], explicitTimeoutMs?: number): number {
+  if (files.some(isOverlayTestFile)) {
+    if (explicitTimeoutMs !== undefined && explicitTimeoutMs < OVERLAY_MIN_FILE_WALL_MS) {
+      throw new Error(`Overlay shard requires at least ${OVERLAY_MIN_FILE_WALL_MS}ms; explicit wall ${explicitTimeoutMs}ms cannot preserve its work and finalization budget: ${files.join(' ')}`);
+    }
+    return explicitTimeoutMs ?? OVERLAY_MIN_FILE_WALL_MS;
+  }
+  return explicitTimeoutMs ?? DEFAULT_SHARD_TIMEOUT_MS;
+}
 
 export function collectPaidTestFiles(rootDir = ROOT): string[] {
   const testDir = path.join(rootDir, 'test');
@@ -489,7 +507,7 @@ export async function runPaidShard(
 ): Promise<ShardOutcome> {
   if (files.length === 0) throw new Error('Cannot run an empty paid-test shard.');
   const rootDir = options.rootDir ?? ROOT;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_SHARD_TIMEOUT_MS;
+  const timeoutMs = resolvePaidShardTimeoutMs(files, options.timeoutMs);
   const streamLive = (options.jobs ?? DEFAULT_JOBS) === 1;
   const log = options.log ?? ((line: string) => console.log(line));
   const label = `[test:paid] shard ${shardNumber}/${totalShards}`;
@@ -707,16 +725,31 @@ export async function runPaidShards(
     skippedTests: null,
   }));
 
-  let next = 0;
+  // Validate the whole batch before any child can spend or create artifacts.
+  for (const files of shards) resolvePaidShardTimeoutMs(files, options.timeoutMs);
+  const pending = shards.map((_, index) => index);
+  let activeOverlayShards = 0;
+  const waiters = new Set<() => void>();
+  const wakeWorkers = () => {
+    for (const resolve of waiters) resolve();
+    waiters.clear();
+  };
   const worker = async (): Promise<void> => {
     while (true) {
       // Cancellation (SIGINT/SIGTERM) must stop the RUN: the signal
       // forwarders kill in-flight children, and this guard stops the pool
       // from launching replacement shards that would keep burning API spend.
       if (isTerminationRequested()) return;
-      const index = next;
-      next += 1;
-      if (index >= shards.length) return;
+      if (pending.length === 0) return;
+      const position = pending.findIndex(index => !shards[index].some(isOverlayTestFile)
+        || activeOverlayShards < OVERLAY_MAX_ACTIVE_SHARDS);
+      if (position < 0) {
+        await new Promise<void>(resolve => waiters.add(resolve));
+        continue;
+      }
+      const [index] = pending.splice(position, 1);
+      const overlay = shards[index].some(isOverlayTestFile);
+      if (overlay) activeOverlayShards++;
       try {
         outcomes[index] = await runPaidShard(shards[index], index + 1, shards.length, { ...options, jobs });
       } catch (error) {
@@ -731,6 +764,9 @@ export async function runPaidShards(
           skippedTests: null,
         };
         console.error(`[test:paid] shard ${index + 1} could not run: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        if (overlay) activeOverlayShards--;
+        wakeWorkers();
       }
     }
   };
@@ -816,7 +852,7 @@ export const SINGLE_ATTEMPT_FILES = new Set([
 export function retriesForFiles(files: string[]): number {
   // A caller grouping files explicitly must also preserve a long case's one
   // attempt contract. Default grouping is one file per process.
-  if (files.some(file => SINGLE_ATTEMPT_FILES.has(normalizeRelativePath(file)))) return 0;
+  if (files.some(isOverlayTestFile) || files.some(file => SINGLE_ATTEMPT_FILES.has(normalizeRelativePath(file)))) return 0;
   return Math.max(1, ...files.map((f) => RETRY_OVERRIDES[normalizeRelativePath(f)] ?? 1));
 }
 
@@ -840,8 +876,12 @@ export function buildRunManifest(opts: {
   const { runnable, skipped } = partitionShardsByDiffSelection(shards, diffSelection.selectedNames);
 
   const entries: ManifestEntry[] = [];
-  runnable.forEach((files, index) => {
-    entries.push({ file: files[0], slice: (index % opts.sliceCount) + 1, status: 'planned' });
+  const reserveOverlaySlice = opts.sliceCount > 1 && runnable.some(files => files.some(isOverlayTestFile));
+  const normalSliceCount = opts.sliceCount - Number(reserveOverlaySlice);
+  let normalIndex = 0;
+  runnable.forEach(files => {
+    const slice = files.some(isOverlayTestFile) ? opts.sliceCount : (normalIndex++ % normalSliceCount) + 1;
+    entries.push({ file: files[0], slice, status: 'planned' });
   });
   for (const s of skipped) entries.push({ file: s.files[0], slice: 0, status: 'skipped-by-diff', reason: s.reason });
   for (const e of excluded) entries.push({ file: e.file, slice: 0, status: 'excluded', reason: e.reason });
@@ -869,6 +909,14 @@ export function parseRunManifest(raw: string): PaidRunManifest {
     if (entry.status === 'planned' && (entry.slice < 1 || entry.slice > parsed.sliceCount)) {
       throw new Error(`planned entry ${entry.file} has out-of-range slice ${entry.slice}`);
     }
+  }
+  const plannedOverlays = parsed.entries.filter(entry => entry.status === 'planned' && isOverlayTestFile(entry.file));
+  if (plannedOverlays.some(entry => entry.slice !== parsed.sliceCount)) {
+    throw new Error('Overlay manifest entries must share the final slice to preserve one-process API admission');
+  }
+  if (plannedOverlays.length > 0 && parsed.sliceCount > 1
+    && parsed.entries.some(entry => entry.status === 'planned' && !isOverlayTestFile(entry.file) && entry.slice === parsed.sliceCount)) {
+    throw new Error('The final manifest slice is reserved for overlay files');
   }
   return parsed;
 }
@@ -929,6 +977,8 @@ type CliOptions = {
   tier: PaidTier;
   listOnly: boolean;
   timeoutMs: number;
+  /** Distinguish a user override from the ordinary per-file default. */
+  timeoutExplicit: boolean;
   jobs: number;
   withinShardConcurrency: number;
   maxFilesPerShard: number;
@@ -966,6 +1016,7 @@ export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv = process
   const options: CliOptions = {
     tier: validatedTier(env.EVALS_TIER, 'EVALS_TIER'),
     listOnly: false,
+    timeoutExplicit: !!env.EVALS_SHARD_TIMEOUT_MS,
     timeoutMs: env.EVALS_SHARD_TIMEOUT_MS
       ? parsePositiveInt(env.EVALS_SHARD_TIMEOUT_MS, 'EVALS_SHARD_TIMEOUT_MS')
       : DEFAULT_SHARD_TIMEOUT_MS,
@@ -994,7 +1045,7 @@ export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv = process
       options.tier = value;
       continue;
     }
-    if (arg === '--timeout') { options.timeoutMs = parsePositiveInt(argv[index += 1], '--timeout') * 1000; continue; }
+    if (arg === '--timeout') { options.timeoutMs = parsePositiveInt(argv[index += 1], '--timeout') * 1000; options.timeoutExplicit = true; continue; }
     if (arg === '--jobs') { options.jobs = parsePositiveInt(argv[index += 1], '--jobs'); continue; }
     if (arg === '--files-per-shard') { options.maxFilesPerShard = parsePositiveInt(argv[index += 1], '--files-per-shard'); continue; }
     if (arg === '--emit-plan') {
@@ -1021,6 +1072,7 @@ export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv = process
 
 async function main(): Promise<number> {
   const options = parseCliOptions(process.argv.slice(2));
+  const timeoutOverride = options.timeoutExplicit ? options.timeoutMs : undefined;
 
   // ── Planner mode: compute selection + the slice plan ONCE, write it, exit.
   if (options.emitPlanPath) {
@@ -1112,6 +1164,7 @@ async function main(): Promise<number> {
     }
     const mine = manifest.entries.filter((e) => e.status === 'planned' && e.slice === options.sliceIndex);
     const shards = mine.map((e) => [e.file]);
+    for (const files of shards) resolvePaidShardTimeoutMs(files, timeoutOverride);
     console.log(`[test:paid] slice ${options.sliceIndex}/${manifest.sliceCount}: ${shards.length} shard(s), tier=${manifest.tier}, evalsAll=${manifest.evalsAll}`);
 
     const evalDirBase = process.env.GSTACK_EVAL_DIR || getProjectEvalDir();
@@ -1121,7 +1174,7 @@ async function main(): Promise<number> {
     } else {
       preflightAnthropicApi(process.env);
       summary = await runPaidShards(shards, {
-        timeoutMs: options.timeoutMs,
+        timeoutMs: timeoutOverride,
         jobs: options.jobs,
         withinShardConcurrency: options.withinShardConcurrency,
         env: {
@@ -1197,12 +1250,13 @@ async function main(): Promise<number> {
   // ~30 paid claude -p calls (30s timeout each) per full run for one bit of
   // information. A dead API now fails here, before any shard spawns.
   // Nothing runnable → nothing to ping.
+  for (const files of runnable) resolvePaidShardTimeoutMs(files, timeoutOverride);
   if (runnable.length > 0) preflightAnthropicApi(process.env);
 
   const runSummary = await runPaidShards(runnable, {
     // Tier reaches the children only via EVALS_TIER below; the runtime
     // E2E_TIERS filter inside each child is the real selection mechanism.
-    timeoutMs: options.timeoutMs,
+    timeoutMs: timeoutOverride,
     jobs: options.jobs,
     withinShardConcurrency: options.withinShardConcurrency,
     env: {

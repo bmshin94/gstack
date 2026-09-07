@@ -13,10 +13,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-  firstTurnParallelism,
-  type AgentSdkResult,
-} from '../helpers/agent-sdk-runner';
+import type { AgentSdkResult } from '../helpers/agent-sdk-runner';
+import { firstAssistantMessageToolCount, reportedThinkingTokens, type ComparisonSpec } from '../helpers/overlay-measurement';
+import { setupLiteralWorkspace, correctLiteralTargets, assertOutputIncludes } from '../helpers/overlay-workspace';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -45,13 +44,21 @@ export interface OverlayFixture {
   maxTurns?: number;
   /**
    * Direction of the expected effect. `higher_is_better` = overlay should
-   * increase the metric (e.g. fanout, files touched for literal scope).
-   * `lower_is_better` = overlay should decrease it (e.g. Bash count, turn count).
+   * increase the metric (e.g. batched calls, correct target behaviors).
+   * `lower_is_better` = overlay should decrease it (e.g. Bash count, reported reasoning tokens).
    * Used only for cosmetic logging in the test output; `pass` is the actual gate.
    */
   direction?: 'higher_is_better' | 'lower_is_better';
   /** Compute the per-trial metric from the typed SDK result. */
-  metric: (r: AgentSdkResult) => number;
+  metric: (r: AgentSdkResult, workspace?: string, deadlineAt?: number) => number;
+  /** Exact task correctness, separate from comparative efficacy. */
+  verify?: (r: AgentSdkResult, workspace: string, metric: number) => void;
+  /** The OFF control may be incomplete when completion itself is the metric. */
+  taskCorrect?: (metric: number) => boolean;
+  /** Exact permitted paths; read-only by default. */
+  allowedChanges?: string[];
+  metricName?: string;
+  comparison?: ComparisonSpec;
   /** Acceptance predicate across all arms' per-trial metrics. */
   pass: (arms: { overlay: number[]; off: number[] }) => boolean;
 }
@@ -117,11 +124,11 @@ function mean(xs: number[]): number {
 
 /**
  * Standard fanout predicate: overlay mean beats off mean by at least 0.5
- * parallel tool_use blocks in first turn, AND at least 3 of the overlay
- * trials emit >= 2 parallel tool_use blocks.
+ * tool_use blocks in the first complete assistant message, AND at least 3 of the overlay
+ * trials emit >= 2 tool_use blocks in the same message.
  *
  * The combined rule catches both "overlay nudges every trial slightly"
- * (mean) and "overlay sometimes triggers real fanout" (floor). A single
+ * (mean) and "overlay sometimes triggers batching" (floor). A single
  * 0.5 lift with every trial still emitting 1 call would be suspicious;
  * this predicate rejects it.
  */
@@ -134,18 +141,18 @@ export function fanoutPass(arms: { overlay: number[]; off: number[] }): boolean 
 /**
  * Generic "lower is better" pass predicate: overlay mean should drop the
  * metric by at least 20% vs baseline. Used for nudges like "effort-match"
- * (fewer turns) and "dedicated tools vs Bash" (fewer Bash calls).
+ * (reported reasoning tokens) and "dedicated tools vs Bash" (fewer Bash calls).
  */
 export function lowerIsBetter20Pct(arms: { overlay: number[]; off: number[] }): boolean {
   const meanOff = mean(arms.off);
-  if (meanOff === 0) return mean(arms.overlay) <= meanOff;
+  if (meanOff === 0) return false; // Equality at the optimum is not efficacy lift.
   return mean(arms.overlay) <= meanOff * 0.8;
 }
 
 /**
  * Generic "higher is better" pass predicate: overlay mean should lift the
  * metric by at least 20% vs baseline. Used for nudges like "literal
- * interpretation" (more files touched when scope is ambiguous).
+ * interpretation" (more target behaviors completed).
  */
 export function higherIsBetter20Pct(arms: { overlay: number[]; off: number[] }): boolean {
   const meanOff = mean(arms.off);
@@ -166,30 +173,6 @@ export function bashToolCallCount(r: AgentSdkResult): number {
   return r.toolCalls.filter((c) => c.tool === 'Bash').length;
 }
 
-/**
- * Total turns the session used to complete. Signal for "effort-match the
- * step" nudge in opus-4-7.md — trivial prompts should complete quickly.
- */
-export function turnsToCompletion(r: AgentSdkResult): number {
-  return r.turnsUsed;
-}
-
-/**
- * Count of unique files the model edited or wrote. Signal for "literal
- * interpretation" nudge in opus-4-7.md — "fix the tests" with multiple
- * failures should touch all of them.
- */
-export function uniqueFilesEdited(r: AgentSdkResult): number {
-  const touched = new Set<string>();
-  for (const call of r.toolCalls) {
-    if (call.tool === 'Edit' || call.tool === 'Write' || call.tool === 'MultiEdit') {
-      const input = call.input as { file_path?: string } | null;
-      if (input?.file_path) touched.add(input.file_path);
-    }
-  }
-  return touched.size;
-}
-
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -208,7 +191,10 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     },
     userPrompt:
       'Read alpha.txt, beta.txt, and gamma.txt and summarize each in one line.',
-    metric: (r) => firstTurnParallelism(r.assistantTurns[0]),
+    metric: firstAssistantMessageToolCount,
+    metricName: 'first_assistant_message_tool_calls',
+    verify: (r) => assertOutputIncludes(r, [/alpha/i, /beta/i, /gamma/i]),
+    comparison: { direction: 'higher_is_better', minimum: 0, unsupportedHypothesis: 'The current resolved overlay contains no fanout instruction; batching alone cannot establish overlay efficacy.' },
     pass: fanoutPass,
   },
   {
@@ -239,7 +225,10 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     userPrompt:
       'Audit this project: read app.ts, config.ts, and README.md, and glob for ' +
       'every .ts file under src/. Summarize what you find in 3 bullet points.',
-    metric: (r) => firstTurnParallelism(r.assistantTurns[0]),
+    metric: firstAssistantMessageToolCount,
+    metricName: 'first_assistant_message_tool_calls',
+    verify: (r) => assertOutputIncludes(r, [/app\.ts/i, /config\.ts/i, /README/i, /util/i]),
+    comparison: { direction: 'higher_is_better', minimum: 0, unsupportedHypothesis: 'The current resolved overlay contains no fanout instruction; batching alone cannot establish overlay efficacy.' },
     pass: fanoutPass,
   },
 
@@ -271,6 +260,9 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     // The overlay says "prefer Read/Glob/Grep over cat/find/grep shell."
     // A model following that should emit Glob + Read, not Bash ls/find/cat.
     metric: bashToolCallCount,
+    metricName: 'bash_tool_calls',
+    verify: (r) => assertOutputIncludes(r, [/index\.ts/i, /util\.ts/i, /types\.ts/i, /config\.ts/i, /api\.ts/i, /fetchFoo/, /Foo/]),
+    comparison: { direction: 'lower_is_better', minimum: 0 },
     pass: lowerIsBetter20Pct,
   },
 
@@ -292,11 +284,12 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
       );
     },
     userPrompt: "What's the version in config.json?",
-    // Metric: turns used to reach a result.
-    // The overlay says "simple lookups don't need deep reasoning."
-    // A trivial prompt like this should complete in 2 turns
-    // (Read, respond). Extended deliberation bumps this up.
-    metric: turnsToCompletion,
+    // Use the SDK's reported reasoning tokens. Lookup/tool counts do not
+    // measure extended thinking; absent usage metadata is an error.
+    metric: reportedThinkingTokens,
+    metricName: 'reported_thinking_tokens',
+    verify: (r) => assertOutputIncludes(r, [/\b1\.0\.0\b/]),
+    comparison: { direction: 'lower_is_better', minimum: 0 },
     pass: lowerIsBetter20Pct,
   },
 
@@ -310,49 +303,27 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     trials: 10,
     concurrency: 3,
     direction: 'higher_is_better',
-    // Allow Edit and Write so the model can fix the tests.
+    // Allow repairs to real implementations; the public tests stay frozen.
     allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'],
     maxTurns: 15,
-    setupWorkspace: (dir) => {
-      // Three failing test files. The "obvious" one is named first; the
-      // other two require the model to enumerate to notice them.
-      fs.writeFileSync(
-        path.join(dir, 'auth.test.ts'),
-        "import { test, expect } from 'bun:test';\n" +
-          "test('auth returns true', () => { expect(1).toBe(2); });\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'billing.test.ts'),
-        "import { test, expect } from 'bun:test';\n" +
-          "test('billing computes total', () => { expect('ten').toBe('10'); });\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'notifications.test.ts'),
-        "import { test, expect } from 'bun:test';\n" +
-          "test('notifications fire on save', () => { expect([1,2]).toEqual([1,2,3]); });\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'README.md'),
-        "# demo\n\nSmall project with three failing test files.\n",
-      );
+    setupWorkspace: setupLiteralWorkspace,
+    userPrompt: 'Fix the failing tests. Preserve the specified behavior and repair the implementation.',
+    metric: (_r, dir, deadlineAt) => {
+      if (!dir) throw new Error('literal fixture metric needs its workspace');
+      return correctLiteralTargets(dir, deadlineAt);
     },
-    userPrompt: "Fix the failing tests.",
-    // Metric: number of unique test files the model edited/wrote.
-    // The overlay says "fix ALL failing tests, not just the obvious one."
-    // Overlay-ON should touch all 3 test files. Overlay-OFF might stop
-    // at the first one after making it pass.
-    metric: uniqueFilesEdited,
+    metricName: 'correct_target_behaviors',
+    taskCorrect: (metric) => metric === 3,
+    allowedChanges: ['src/auth.ts', 'src/billing.ts', 'src/notifications.ts'],
+    comparison: { direction: 'higher_is_better', minimum: 0, maximum: 3 },
     pass: higherIsBetter20Pct,
   },
 
   // =========================================================================
   // Sonnet 4.6 variants of the Opus-4.7 fixtures.
   //
-  // Rationale: /claude.md + /opus-4-7.md overlays measured as no-op or
-  // counterproductive on Opus 4.7. Before deleting the whole overlay stack,
-  // check whether weaker Claude models (Sonnet, Haiku) benefit from the same
-  // nudges. Same overlays, same prompts, same metrics, different model ID.
-  // Sonnet is ~4x cheaper than Opus so these 5 add ~$3 to a run.
+  // Same overlays, prompts, metrics and trial counts; different pinned model.
+  // Model effects remain separate instead of pooling their observations.
   // =========================================================================
 
   {
@@ -368,7 +339,10 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     },
     userPrompt:
       'Read alpha.txt, beta.txt, and gamma.txt and summarize each in one line.',
-    metric: (r) => firstTurnParallelism(r.assistantTurns[0]),
+    metric: firstAssistantMessageToolCount,
+    metricName: 'first_assistant_message_tool_calls',
+    verify: (r) => assertOutputIncludes(r, [/alpha/i, /beta/i, /gamma/i]),
+    comparison: { direction: 'higher_is_better', minimum: 0, unsupportedHypothesis: 'The current resolved overlay contains no fanout instruction; batching alone cannot establish overlay efficacy.' },
     pass: fanoutPass,
   },
 
@@ -400,7 +374,10 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     userPrompt:
       'Audit this project: read app.ts, config.ts, and README.md, and glob for ' +
       'every .ts file under src/. Summarize what you find in 3 bullet points.',
-    metric: (r) => firstTurnParallelism(r.assistantTurns[0]),
+    metric: firstAssistantMessageToolCount,
+    metricName: 'first_assistant_message_tool_calls',
+    verify: (r) => assertOutputIncludes(r, [/app\.ts/i, /config\.ts/i, /README/i, /util/i]),
+    comparison: { direction: 'higher_is_better', minimum: 0, unsupportedHypothesis: 'The current resolved overlay contains no fanout instruction; batching alone cannot establish overlay efficacy.' },
     pass: fanoutPass,
   },
 
@@ -424,6 +401,9 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
       "List every TypeScript file under src/ and tell me what each exports. " +
       "You may use any tools available.",
     metric: bashToolCallCount,
+    metricName: 'bash_tool_calls',
+    verify: (r) => assertOutputIncludes(r, [/index\.ts/i, /util\.ts/i, /types\.ts/i, /config\.ts/i, /api\.ts/i, /fetchFoo/, /Foo/]),
+    comparison: { direction: 'lower_is_better', minimum: 0 },
     pass: lowerIsBetter20Pct,
   },
 
@@ -442,7 +422,10 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
       );
     },
     userPrompt: "What's the version in config.json?",
-    metric: turnsToCompletion,
+    metric: reportedThinkingTokens,
+    metricName: 'reported_thinking_tokens',
+    verify: (r) => assertOutputIncludes(r, [/\b1\.0\.0\b/]),
+    comparison: { direction: 'lower_is_better', minimum: 0 },
     pass: lowerIsBetter20Pct,
   },
 
@@ -455,29 +438,16 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     direction: 'higher_is_better',
     allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'],
     maxTurns: 15,
-    setupWorkspace: (dir) => {
-      fs.writeFileSync(
-        path.join(dir, 'auth.test.ts'),
-        "import { test, expect } from 'bun:test';\n" +
-          "test('auth returns true', () => { expect(1).toBe(2); });\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'billing.test.ts'),
-        "import { test, expect } from 'bun:test';\n" +
-          "test('billing computes total', () => { expect('ten').toBe('10'); });\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'notifications.test.ts'),
-        "import { test, expect } from 'bun:test';\n" +
-          "test('notifications fire on save', () => { expect([1,2]).toEqual([1,2,3]); });\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'README.md'),
-        "# demo\n\nSmall project with three failing test files.\n",
-      );
+    setupWorkspace: setupLiteralWorkspace,
+    userPrompt: 'Fix the failing tests. Preserve the specified behavior and repair the implementation.',
+    metric: (_r, dir, deadlineAt) => {
+      if (!dir) throw new Error('literal fixture metric needs its workspace');
+      return correctLiteralTargets(dir, deadlineAt);
     },
-    userPrompt: "Fix the failing tests.",
-    metric: uniqueFilesEdited,
+    metricName: 'correct_target_behaviors',
+    taskCorrect: (metric) => metric === 3,
+    allowedChanges: ['src/auth.ts', 'src/billing.ts', 'src/notifications.ts'],
+    comparison: { direction: 'higher_is_better', minimum: 0, maximum: 3 },
     pass: higherIsBetter20Pct,
   },
 ];

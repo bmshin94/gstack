@@ -105,6 +105,8 @@ export interface RunAgentSdkOptions {
   runId?: string;
   fixtureId?: string;
   queryProvider?: QueryProvider;
+  /** Cancel queueing, SDK work and retries under the caller's case deadline. */
+  signal?: AbortSignal;
   /** Max 429 retries per call. Default 3. */
   maxRetries?: number;
   /**
@@ -179,12 +181,22 @@ class Semaphore {
   constructor(capacity: number) {
     this.available = capacity;
   }
-  async acquire(): Promise<void> {
+  async acquire(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     if (this.available > 0) {
       this.available--;
       return;
     }
-    await new Promise<void>((resolve) => this.queue.push(resolve));
+    await new Promise<void>((resolve, reject) => {
+      const grant = () => { signal?.removeEventListener('abort', abort); resolve(); };
+      const abort = () => {
+        const index = this.queue.indexOf(grant);
+        if (index >= 0) this.queue.splice(index, 1);
+        reject(signal?.reason ?? new Error('SDK query aborted while queued'));
+      };
+      this.queue.push(grant);
+      signal?.addEventListener('abort', abort, { once: true });
+    });
   }
   release(): void {
     const next = this.queue.shift();
@@ -320,8 +332,15 @@ export async function runAgentSdkTest(
   let lastErr: unknown = null;
 
   while (attempt <= maxRetries) {
-    await sem.acquire();
+    await sem.acquire(opts.signal);
     const startMs = Date.now();
+    const controller = new AbortController();
+    let activeQuery: ReturnType<QueryProvider> | undefined;
+    const abort = () => {
+      controller.abort(opts.signal?.reason);
+      try { activeQuery?.close(); } catch { /* cancellation remains authoritative */ }
+    };
+    opts.signal?.addEventListener('abort', abort, { once: true });
 
     // Hoisted so the max-turns catch branch can synthesize a result from
     // whatever we captured before the SDK threw.
@@ -337,6 +356,7 @@ export async function runAgentSdkTest(
     let terminalResult: SDKResultMessage | null = null;
 
     try {
+      opts.signal?.throwIfAborted();
       // When canUseTool is supplied, the SDK must route tool-use approval
       // decisions through the callback. bypassPermissions short-circuits
       // that. Flip to 'default' mode so canUseTool actually fires. Tests
@@ -356,6 +376,7 @@ export async function runAgentSdkTest(
           : baseTools;
 
       const sdkOpts: Options = {
+        abortController: controller,
         model,
         cwd: opts.workingDirectory,
         maxTurns: opts.maxTurns ?? 5,
@@ -379,8 +400,12 @@ export async function runAgentSdkTest(
         prompt: opts.userPrompt,
         options: sdkOpts,
       });
+      activeQuery = q;
+      if (opts.signal?.aborted) abort();
+      opts.signal?.throwIfAborted();
 
       for await (const ev of q) {
+        opts.signal?.throwIfAborted();
         const now = Date.now();
         if (firstResponseMs === 0) firstResponseMs = now - startMs;
         const interTurn = now - lastEventMs;
@@ -431,6 +456,8 @@ export async function runAgentSdkTest(
         }
       }
 
+      opts.signal?.throwIfAborted();
+
       if (rateLimited) {
         throw rateLimited;
       }
@@ -466,6 +493,7 @@ export async function runAgentSdkTest(
       };
     } catch (err) {
       lastErr = err;
+      opts.signal?.throwIfAborted();
 
       // "Max turns reached" is the SDK's way of saying "this session ran
       // out of turns." It's thrown from the generator instead of emitted
@@ -503,13 +531,20 @@ export async function runAgentSdkTest(
       }
       attempt++;
       // backoff: 1s, 2s, 4s
-      await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+      await new Promise<void>((resolve, reject) => {
+        const aborted = () => { clearTimeout(timer); reject(opts.signal?.reason ?? new Error('SDK retry aborted')); };
+        const timer = setTimeout(() => { opts.signal?.removeEventListener('abort', aborted); resolve(); }, 1000 * Math.pow(2, attempt - 1));
+        opts.signal?.addEventListener('abort', aborted, { once: true });
+        if (opts.signal?.aborted) aborted();
+      });
+      opts.signal?.throwIfAborted();
       // Let caller reset workspace since prior attempt may have partially
       // mutated files via Bash.
       if (opts.onRetry) {
         opts.onRetry(opts.workingDirectory);
       }
     } finally {
+      opts.signal?.removeEventListener('abort', abort);
       sem.release();
     }
   }

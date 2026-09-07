@@ -22,7 +22,7 @@
 import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildRunManifest, parseCliOptions } from '../scripts/test-paid-shards';
+import { buildRunManifest, parseCliOptions, isOverlayTestFile, OVERLAY_MAX_ACTIVE_SHARDS, resolvePaidShardTimeoutMs } from '../scripts/test-paid-shards';
 
 const ROOT = path.join(import.meta.dir, '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -161,16 +161,21 @@ describe('evals-periodic.yml sliced-lane wiring', () => {
       tier: plannerOptions.tier, sliceCount: plannerOptions.slices,
       evalsAll: true, env: plannerEnv, rootDir: ROOT,
     });
-    const counts = slices.map(slice => manifest.entries.filter(entry => entry.status === 'planned' && entry.slice === slice).length);
-    const maxShards = Math.max(...counts);
-    expect(maxShards).toBeGreaterThan(0);
-    // The job cap includes checkout/build/config/artifacts around the executor.
+    // Resolve the same per-file walls and overlay admission limit as execution.
+    const explicitWall = executorOptions.timeoutExplicit ? executorOptions.timeoutMs : undefined;
     const setupAllowanceMinutes = 20;
-    const processMinutes = executorOptions.timeoutMs / 60_000;
-    const requiredMinutes = Math.ceil(maxShards / executorOptions.jobs) * processMinutes + setupAllowanceMinutes;
+    const allowances = slices.map(slice => {
+      const files = manifest.entries.filter(entry => entry.status === 'planned' && entry.slice === slice).map(entry => entry.file);
+      const normal = files.filter(file => !isOverlayTestFile(file));
+      const overlay = files.filter(isOverlayTestFile);
+      const bound = (group: string[], jobs: number) => Math.ceil(group.length / jobs)
+        * Math.max(0, ...group.map(file => resolvePaidShardTimeoutMs([file], explicitWall)));
+      return (bound(normal, executorOptions.jobs) + bound(overlay, Math.min(executorOptions.jobs, OVERLAY_MAX_ACTIVE_SHARDS))) / 60_000;
+    });
+    expect(Math.max(...allowances)).toBeGreaterThan(0);
+    const requiredMinutes = Math.max(...allowances) + setupAllowanceMinutes;
     expect(executor['timeout-minutes'],
-      `periodic slice cap must cover ${maxShards} shards / ${executorOptions.jobs} jobs ` +
-      `at ${processMinutes} minutes each + ${setupAllowanceMinutes} minutes setup = ${requiredMinutes} minutes`,
+      `periodic slice allowances ${allowances.join(', ')} minutes + ${setupAllowanceMinutes} minutes setup require ${requiredMinutes} CI minutes`,
     ).toBeGreaterThanOrEqual(requiredMinutes);
   });
 

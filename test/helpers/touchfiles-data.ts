@@ -151,7 +151,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'plan-ceo-section-loading':    ['plan-ceo-review/**', 'scripts/resolvers/sections.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/auq-sdk-capture.ts', 'test/helpers/session-runner.ts', 'test/skill-e2e-plan-ceo-review-section-loading.test.ts'],
   'office-hours-section-loading': ['office-hours/**', 'bin/gstack-office-hours-review', 'lib/office-hours-review.ts', 'lib/fs-atomic.ts', 'scripts/resolvers/review.ts', 'scripts/resolvers/sections.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/carve-guards.ts', 'test/helpers/auq-sdk-capture.ts', 'test/helpers/office-hours-completion.ts', 'test/helpers/llm-judge.ts', 'test/helpers/session-runner.ts', 'test/skill-e2e-office-hours-section-loading.test.ts'],
   // Data-driven behavioral guard for the 'plan'/'prompt' carves (eng, design,
-  // devex + future PR2 carves). One file iterating CARVE_GUARDS;
+  // devex + future PR2 carves). One process per CARVE_GUARDS entry;
   // GSTACK_CARVE_SKILL=<name> can scope an explicit targeted run. Automatic
   // diff selection currently selects this file as a whole.
   'carve-section-loading':       ['design-html/**', 'design-shotgun/**', 'qa/**', 'browse/**', 'retro/**', 'autoplan/**', 'spec/**', 'setup-gbrain/**', 'review/**', 'codex/**', 'land-and-deploy/**', 'plan-eng-review/**', 'plan-design-review/**', 'plan-devex-review/**', 'document-release/**', 'design-consultation/**', 'cso/**', 'test/helpers/carve-guards.ts', 'scripts/resolvers/sections.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/auq-sdk-capture.ts', 'test/helpers/session-runner.ts', 'test/carve-section-loading*.test.ts', 'test/helpers/carve-section-case.ts', 'test/carve-section-sharding.test.ts', 'test/carve-section-loading-browse.test.ts', 'test/carve-section-loading-codex.test.ts', 'test/carve-section-loading-cso.test.ts', 'test/carve-section-loading-design-consultation.test.ts', 'test/carve-section-loading-design-html.test.ts', 'test/carve-section-loading-design-shotgun.test.ts', 'test/carve-section-loading-document-release.test.ts', 'test/carve-section-loading-land-and-deploy.test.ts', 'test/carve-section-loading-plan-design-review.test.ts', 'test/carve-section-loading-plan-devex-review.test.ts', 'test/carve-section-loading-plan-eng-review.test.ts', 'test/carve-section-loading-qa.test.ts', 'test/carve-section-loading-retro.test.ts', 'test/carve-section-loading-review.test.ts', 'test/carve-section-loading-setup-gbrain.test.ts', 'test/carve-section-loading-spec.test.ts'],
@@ -408,15 +408,29 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/overlay-nudges.ts',
     'test/helpers/agent-sdk-runner.ts',
     'scripts/resolvers/model-overlay.ts',
-    'test/skill-e2e-overlay-harness.test.ts',
-  ],
+    'test/skill-e2e-overlay-harness-opus-4-7-fanout-toy.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
   'overlay-harness-opus-4-7-fanout-realistic': [
     'model-overlays/**',
     'test/fixtures/overlay-nudges.ts',
     'test/helpers/agent-sdk-runner.ts',
     'scripts/resolvers/model-overlay.ts',
-    'test/skill-e2e-overlay-harness.test.ts',
-  ],
+    'test/skill-e2e-overlay-harness-opus-4-7-fanout-realistic.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+
+  'overlay-harness-claude-dedicated-tools-vs-bash': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-claude-dedicated-tools-vs-bash.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+
+  'overlay-harness-opus-4-7-effort-match-trivial': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-effort-match-trivial.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+
+  'overlay-harness-opus-4-7-literal-interpretation': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-literal-interpretation.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+
+  'overlay-harness-opus-4-7-fanout-toy-sonnet': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-fanout-toy-sonnet.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+
+  'overlay-harness-opus-4-7-fanout-realistic-sonnet': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-fanout-realistic-sonnet.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+
+  'overlay-harness-claude-dedicated-tools-vs-bash-sonnet': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-claude-dedicated-tools-vs-bash-sonnet.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+
+  'overlay-harness-opus-4-7-effort-match-trivial-sonnet': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-effort-match-trivial-sonnet.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+
+  'overlay-harness-opus-4-7-literal-interpretation-sonnet': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-literal-interpretation-sonnet.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
 
   // /ios-qa — agent flow E2E. Daemon + stub StateServer + codegen
   // exercised end-to-end. The no-device path is gate-tier; the with-device
@@ -809,6 +823,14 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   'overlay-harness-opus-4-7-fanout-toy': 'periodic',
   'overlay-harness-opus-4-7-fanout-realistic': 'periodic',
 
+  'overlay-harness-claude-dedicated-tools-vs-bash': 'periodic',
+  'overlay-harness-opus-4-7-effort-match-trivial': 'periodic',
+  'overlay-harness-opus-4-7-literal-interpretation': 'periodic',
+  'overlay-harness-opus-4-7-fanout-toy-sonnet': 'periodic',
+  'overlay-harness-opus-4-7-fanout-realistic-sonnet': 'periodic',
+  'overlay-harness-claude-dedicated-tools-vs-bash-sonnet': 'periodic',
+  'overlay-harness-opus-4-7-effort-match-trivial-sonnet': 'periodic',
+  'overlay-harness-opus-4-7-literal-interpretation-sonnet': 'periodic',
   // /ios-qa daemon + codegen. Demoted gate -> periodic (2026-08 audit): the
   // gate declaration was never executable in CI — the file sits in
   // PERIODIC_CI_EXCLUDE ("not a CI runner capability"), but that exclusion
