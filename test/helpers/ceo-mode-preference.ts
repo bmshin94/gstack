@@ -35,6 +35,25 @@ function automaticModeEvidence(text: string): string | undefined {
     .map(sentence => sentence.trim()).find(sentence => isAutoDecidedVisible(sentence) && (standard.test(sentence) || observed.test(sentence)));
 }
 
+
+/** Corroborate a completed two-choice prose brief through its exact final reply
+ * instruction. TUI redraws need not retain the entire paragraph contiguously.
+ * The owned heading, question ID and both offered selectors remain required;
+ * this never accepts a bare ID, fuzzy option match or an illustrated preview.
+ */
+function isTwoChoiceReplyVisible(text: string, visible: string, questionId: string, selectors: string[]): boolean {
+  if (selectors.length !== 2 || new Set(selectors).size !== 2) return false;
+  const lines = text.replace(/\*\*/g, '').split('\n').map(line => line.trim());
+  const heading = lines.find(line => line && !/^[-*_]{3,}$/.test(line));
+  if (!heading || !/^D[1-9]\d*\s+[—–-]\s+.+\?$/.test(heading)) return false;
+  const reply = lines.filter(Boolean).at(-1)!;
+  const match = reply.match(/^Reply ([A-D]|[1-4]) to (.+), or ([A-D]|[1-4]) to (.+)\s+`?<gstack-qid:([a-z0-9-]+)>`?$/);
+  if (!match || match[5] !== questionId || match[1] === match[3]
+    || !selectors.includes(match[1]) || !selectors.includes(match[3])) return false;
+  // Inline-code ticks are decoration, and do not survive the terminal renderer.
+  return compact(visible).includes(compact(reply.replace(/`/g, '')));
+}
+
 export type ModePreferenceSignal =
   | { kind: 'asked'; evidence: string }
   | { kind: 'auto_decided'; evidence: string }
@@ -101,7 +120,11 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
     if (!entry.complete) continue; // Never type an answer while the model uses tools.
     const questionIds = [...text.matchAll(/<gstack-qid:([a-z0-9-]+)>/g)].map(match => match[1]);
     const options = [...text.replace(/\*\*/g, '').matchAll(/^\s*(?:[-+]\s+)?([A-D]|[1-4])[).]\s+([^\n]+)/gm)];
-    if (options.length < 2 || !compact(visible).includes(compact(text))) continue;
+    const fullyRendered = compact(visible).includes(compact(text));
+    const replyRendered = questionIds.length === 1 && questionIds[0] !== CEO_MODE_QUESTION_ID
+      && modeLabels(options.map(option => option[2]).join('\n')) < 2
+      && isTwoChoiceReplyVisible(text, visible, questionIds[0], options.map(option => option[1]));
+    if (options.length < 2 || (!fullyRendered && !replyRendered)) continue;
     if (questionIds.includes(CEO_MODE_QUESTION_ID) || modeLabels(options.map(option => option[2]).join('\n')) >= 2) {
       return { kind: 'asked', evidence: text };
     }

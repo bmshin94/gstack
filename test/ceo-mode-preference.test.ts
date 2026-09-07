@@ -110,3 +110,32 @@ test.each(['automatic', 'target', 'timeout', 'expired-boot', 'exited'] as const)
     expect(observation.outcome).toBe(scenario === 'automatic' ? 'auto_decided' : scenario === 'target' ? 'asked' : scenario === 'exited' ? 'exited' : 'timeout');
   } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });
+
+const capturedOfficeHours = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/ceo-mode-preference-office-hours-render.json'), 'utf8'));
+test('owned office-hours reply survives captured terminal redraw without accepting a mode decision', () => {
+  const { assistantText, visible } = capturedOfficeHours;
+  expect(inspectCeoModePreference(transcript(assistant(assistantText)), visible)).toMatchObject({
+    kind: 'unrelated', questionId: 'plan-ceo-review-office-hours-offer', answer: 'B',
+  });
+});
+
+test('captured prose reply still requires current complete ownership and both explicit selectors', () => {
+  const { assistantText, visible } = capturedOfficeHours;
+  const owned = assistant(assistantText);
+  for (const input of [
+    transcript(assistant(assistantText, 'tool_use')),
+    { ...transcript(owned), pendingBytes: 3 },
+    transcript(owned, { type: 'user', message: { role: 'user', content: 'Choose B' } }),
+    transcript(owned, assistant('Working...', 'tool_use', 'newer')),
+    transcript({ type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'end_turn', content: [
+      { type: 'tool_use', name: 'Write', input: { content: assistantText } },
+    ] } }),
+    transcript(assistant('Example only, not an actual question:\n' + assistantText)),
+    transcript(assistant('I will present this later:\n' + assistantText)),
+    transcript(assistant(assistantText.split('\n').map((line: string) => '> ' + line).join('\n'))),
+  ]) expect(inspectCeoModePreference(input, visible).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(owned), '<gstack-qid:plan-ceo-review-office-hours-offer>').kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(owned), visible.replaceAll('plan-ceo-review-office-hours-offer', 'foreign-question')).kind).toBe('working');
+  const mismatched = assistantText.replace('or A to run', 'or C to run');
+  expect(inspectCeoModePreference(transcript(assistant(mismatched)), visible.replaceAll('orAtorun', 'orCtorun')).kind).toBe('working');
+});
