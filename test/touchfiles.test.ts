@@ -128,10 +128,12 @@ describe('selectTests', () => {
   });
 
   test('global touchfile triggers ALL tests', () => {
-    const result = selectTests(['test/helpers/session-runner.ts'], E2E_TOUCHFILES);
-    expect(result.selected.length).toBe(Object.keys(E2E_TOUCHFILES).length);
-    expect(result.skipped.length).toBe(0);
-    expect(result.reason).toContain('global');
+    for (const file of ['test/helpers/session-runner.ts', 'scripts/test-strict-output.ts']) {
+      const result = selectTests([file], E2E_TOUCHFILES);
+      expect(result.selected.length).toBe(Object.keys(E2E_TOUCHFILES).length);
+      expect(result.skipped.length).toBe(0);
+      expect(result.reason).toContain('global');
+    }
   });
 
   test.each([

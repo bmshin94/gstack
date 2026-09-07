@@ -906,6 +906,7 @@ export const LLM_JUDGE_TOUCHFILES: Record<string, string[]> = {
  * codex/gemini session runners) belong in individual test entries instead.
  */
 export const GLOBAL_TOUCHFILES = [
+  'scripts/test-strict-output.ts',  // Capture/exit handling determines every paid test's verdict
   'test/helpers/session-runner.ts',  // All E2E tests use this runner
   'test/helpers/hermetic-env.ts',    // Changes every E2E child's environment
   'test/helpers/eval-store.ts',      // All E2E tests store results here
