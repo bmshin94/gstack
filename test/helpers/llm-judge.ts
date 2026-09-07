@@ -208,7 +208,7 @@ Rules:
  * The generator model is whatever the skill runs with (often Opus for
  * plan-ceo-review). The judge is always Sonnet via callJudge() for cost.
  */
-export async function judgePosture(mode: PostureMode, text: string): Promise<PostureScore> {
+export async function judgePosture(mode: PostureMode, text: string, signal?: AbortSignal): Promise<PostureScore> {
   const rubrics: Record<PostureMode, { axis_a: string; axis_b: string; context: string }> = {
     expansion: {
       context: 'This text is expansion proposals emitted by /plan-ceo-review in SCOPE EXPANSION or SELECTIVE EXPANSION mode. The skill is supposed to lead with felt-experience vision, then close with concrete effort and impact.',
@@ -249,7 +249,7 @@ Respond with ONLY valid JSON in this exact format:
 
 Here is the output to evaluate:
 
-${text}`);
+${text}`, undefined, { signal });
 }
 
 /**

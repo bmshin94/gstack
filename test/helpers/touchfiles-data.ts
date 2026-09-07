@@ -81,8 +81,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
 
   // Office Hours
   'office-hours-spec-review':     ['office-hours/**', 'bin/gstack-office-hours-review', 'lib/office-hours-review.ts', 'lib/fs-atomic.ts', 'scripts/resolvers/review.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/skill-fixture.ts', 'test/helpers/office-hours-completion.ts', 'test/skill-e2e-plan.test.ts'],
-  'office-hours-forcing-energy':  ['office-hours/**', 'scripts/resolvers/preamble.ts', 'test/fixtures/mode-posture/**', 'test/helpers/llm-judge.ts', 'test/skill-e2e-office-hours.test.ts'],
-  'office-hours-builder-wildness': ['office-hours/**', 'scripts/resolvers/preamble.ts', 'test/fixtures/mode-posture/**', 'test/helpers/llm-judge.ts', 'test/skill-e2e-office-hours.test.ts'],
+  'office-hours-forcing-energy':  ['office-hours/**', 'scripts/resolvers/preamble.ts', 'test/fixtures/mode-posture/**', 'test/helpers/llm-judge.ts', 'test/skill-e2e-office-hours.test.ts', 'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts'],
+  'office-hours-builder-wildness': ['office-hours/**', 'scripts/resolvers/preamble.ts', 'test/fixtures/mode-posture/**', 'test/helpers/llm-judge.ts', 'test/skill-e2e-office-hours.test.ts', 'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts'],
 
   // Plan reviews
   'plan-ceo-review':                  ['plan-ceo-review/**', 'test/skill-e2e-plan.test.ts'],
@@ -450,8 +450,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'office-hours/SKILL.md.tmpl',
     'docs/gbrain-write-surfaces.md',
     'test/fixtures/office-hours-brain-writeback/**',
-    'test/skill-e2e-office-hours-brain-writeback.test.ts',
-  ],
+    'test/skill-e2e-office-hours-brain-writeback.test.ts', 'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'test/office-hours-writeback-env.test.ts'],
 
   // gbrain CLI real round-trip against a local PGLite store (v1.50.0.0
   // T11). Proves the gbrain CLI persistence contract gstack relies on —
