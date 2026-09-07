@@ -21,6 +21,78 @@ async function runFakeCounting(completion: string, scenario: string) {
 }
 
 describe('real plan counting loop with an isolated fake PTY', () => {
+  test('a stale grant cannot become permission for a new sole pending owner', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-owner-change');
+    expect(result.error).toContain('cannot be bound');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('a new tool ID with identical question text cannot inherit the old rendering', async () => {
+    const result = await runFakeCounting('**DONE**', 'repeated-native');
+    expect(result.error).toContain('Indistinguishable repeated native question');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1\r']);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('one permission dialog cannot grant two ambiguous pending tools', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-ambiguous');
+    expect(result.error).toContain('Ambiguous native permission owner');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('unsupported checkbox navigation fails before sending an answer', async () => {
+    const result = await runFakeCounting('**DONE**', 'multi-select');
+    expect(result.error).toContain('multiSelect');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('permission acknowledgement consumes its owned tool despite later repaint', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-redraw');
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1\r', '1\r', '1\r']);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+  }, 15_000);
+  test('a preview without an owned question never receives an answer', async () => {
+    const result = await runFakeCounting('**DONE**', 'preview-only');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.observation.step0Count).toBe(0);
+  }, 15_000);
+  test('a submitted question does not count until its matching acknowledgement', async () => {
+    const result = await runFakeCounting('**DONE**', 'no-ack');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1\r']);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(0);
+    expect(result.observation.outcome).toBe('timeout');
+  }, 15_000);
+  test('two question tabs and final submit produce one acknowledged invocation', async () => {
+    const result = await runFakeCounting('**DONE**', 'multi-question');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1\r', '1\r', '\r']);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(1);
+    expect(result.observation.fingerprints[1].questions).toHaveLength(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+  }, 15_000);
+  test('first-question routing survives native identity and acknowledgement', async () => {
+    const result = await runFakeCounting('**DONE**', 'first-route');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '2\r', '1\r', '1\r']);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+  }, 15_000);
+  test('identical options on a different native question wait for that question render', async () => {
+    const result = await runFakeCounting('**DONE**', 'wrong-question');
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1\r', '1\r']);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+  }, 15_000);
+  test('an answered menu with changed repaint text cannot send or count another answer', async () => {
+    const result = await runFakeCounting('**DONE**', 'stale-redraw');
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1\r', '1\r']);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+  }, 15_000);
   test.each([['**DONE**', 'normal'], ['## Completion Summary', 'normal'], ['**DONE**', 'reused-options'], ['**DONE**', 'redraw']])('fixture precedes slash, preview does not stop, and %s completes (%s)', async (completion, scenario) => {
     const result = await runFakeCounting(completion, scenario);
     expect(result.seededBeforeSlash).toBe(true);

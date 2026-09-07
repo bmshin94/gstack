@@ -8,10 +8,10 @@ import { ceoStep0Boundary, runPlanSkillCounting } from '../helpers/claude-pty-ru
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
-  const timing = ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question'].includes(scenario);
+  const timing = ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack'].includes(scenario);
   const caseBudgetMs = scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
-  const reusedOptions = scenario === 'reused-options' || scenario === 'redraw';
+  const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-'));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
   const sends: string[] = [];
@@ -24,8 +24,11 @@ async function main() {
   let clock = 0;
   let pendingRedrawSleeps = 0;
   let lateCompletionSent = false;
+  const unsolicitedWrites: string[] = [];
+  const prematureAnswers: string[] = [];
   let showSecondFinding = () => {};
   let finishLate = () => {};
+  let delayedRender = () => {};
   const originalSpawn = Bun.spawn;
   const originalSleep = Bun.sleep;
   const originalNow = Date.now;
@@ -45,17 +48,30 @@ async function main() {
       const append = (row: Record<string, unknown>) => fs.appendFileSync(file, JSON.stringify({ sessionId, ...row }) + '\n');
       const emit = (value: string) => options.terminal.data(null, Buffer.from(value));
       const finding = (number: number) => `\nFinding ${number} — ${number === 1 ? 'Success' : 'Failure'} test\n\n❯ 1. ${reusedOptions ? 'Add test' : number === 1 ? 'Add receipt assertion' : 'Add retry assertion'}\n  2. ${reusedOptions ? 'Skip test' : number === 1 ? 'Skip receipt test' : 'Skip retry test'}\n`;
-      const tool = (name: string, content: unknown) => append({
-        type: 'assistant', message: { id: `tool-${sends.length}`, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', name, input: content }] },
-      });
+      let sequence = 0;
+      let pendingId: string | null = null;
+      let permissionId: string | null = null;
+      const tool = (name: string, input: unknown) => {
+        const id = `tool-${++sequence}`;
+        append({ type: 'assistant', message: { id, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input }] } });
+        return id;
+      };
+      const ask = (question: string, labels: string[]) => {
+        pendingId = tool('AskUserQuestion', { questions: [{ question, header: question, multiSelect: scenario === 'multi-select', options: labels.map(label => ({ label, description: `Choose ${label}` })) }] });
+      };
+      const acknowledge = () => {
+        append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: pendingId, content: 'Answer accepted' }] } });
+        pendingId = null;
+      };
       const finish = () => {
         append({ type: 'assistant', message: { id: 'final', role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: completion }] } });
         emit('\n' + completion.replace(/\*|#| /g, '') + '\n');
       };
       finishLate = () => { lateCompletionSent = true; finish(); };
-      showSecondFinding = () => { tool('AskUserQuestion', { question: 'Failure test' }); emit(finding(2)); };
+      showSecondFinding = () => { ask('Finding 2 — Failure test', [reusedOptions ? 'Add test' : 'Add retry assertion', reusedOptions ? 'Skip test' : 'Skip retry test']); emit(finding(2)); };
       let end: (code: number) => void = () => {};
       let answer = 0;
+      let batchQuestion = 0;
       return {
         exited: new Promise<number>(resolve => { end = resolve; }),
         terminal: { write(data: string) {
@@ -67,23 +83,63 @@ async function main() {
               emit('WORK_IN_PROGRESS\n');
               return;
             }
+            if (['permission-redraw', 'permission-ambiguous', 'permission-owner-change'].includes(scenario)) {
+              permissionId = tool('Bash', { command: 'true' });
+              if (scenario === 'permission-ambiguous') tool('Read', { file_path: '/fixture' });
+              emit('Bash command true requires permission\n❯1.Yes\n2.No\n');
+              return;
+            }
             tool('Read', { content: '## GSTACK REVIEW REPORT\nVERDICT: APPROVED' });
+            if (scenario !== 'preview-only') ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
             // Actual failure: a preview in PTY while the assistant still uses tools.
             emit('Read: GSTACK REVIEW REPORT\nVERDICT: APPROVED\n\nD1 — Pick a mode\n\n❯ 1. HOLD SCOPE\n  2. SCOPE EXPANSION\n');
-          } else if (data === '1\r') {
+          } else if (data === '\r' && scenario === 'multi-question' && batchQuestion === 2) {
+            acknowledge();
+            finish();
+          } else if (/^[12]\r$/.test(data)) {
+            if (permissionId) {
+              append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Complete' }] } });
+              permissionId = null;
+              if (scenario === 'permission-owner-change') tool('Read', { file_path: '/new-owner-only' });
+              emit('Bash command true requires permission\n❯1.Yes\n2.No Redraw\n');
+              delayedRender = () => { ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']); emit('\nD1 — Pick a mode\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\n'); };
+              pendingRedrawSleeps = 3;
+              return;
+            }
+            if (scenario === 'wrong-question' && pendingRedrawSleeps > 0) prematureAnswers.push(data);
+            if (!pendingId) { unsolicitedWrites.push(data); return; }
             answer++;
-            append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'Answer accepted' }] } });
+            if (scenario === 'multi-question' && answer > 1) {
+              batchQuestion++;
+              emit(batchQuestion === 1 ? finding(2) : '\nReview your answers\nReady to submit your answers?\nSubmit answers\n');
+              return;
+            }
+            if (scenario === 'no-ack' && answer === 2) { emit('\nWORK_IN_PROGRESS\n'); return; }
+            acknowledge();
             if (answer === 1) {
-              tool('AskUserQuestion', { question: 'Success test' });
+              if (scenario === 'multi-question') {
+                pendingId = tool('AskUserQuestion', { questions: ['Finding 1 — Success test', 'Finding 2 — Failure test'].map(question => ({
+                  question, header: question, multiSelect: false, options: ['Add test', 'Skip test'].map(label => ({ label, description: label })),
+                })) });
+              } else ask('Finding 1 — Success test', [reusedOptions ? 'Add test' : 'Add receipt assertion', reusedOptions ? 'Skip test' : 'Skip receipt test']);
               emit(finding(1));
             } else if (answer === 2) {
               if (scenario === 'timeout-after-question') emit('\nWORK_IN_PROGRESS\n');
-              else if (scenario === 'redraw') {
-                redraws++;
+              else if (scenario === 'repeated-native') {
+                ask('Finding 1 — Success test', ['Add receipt assertion', 'Skip receipt test']);
                 emit(finding(1));
+              } else if (scenario === 'wrong-question') {
+                ask('Finding 2 — Failure test', ['Add test', 'Skip test']);
+                emit(finding(1));
+                delayedRender = () => emit(finding(2));
+                pendingRedrawSleeps = 3;
+              } else if (scenario === 'redraw' || scenario === 'stale-redraw') {
+                redraws++;
+                emit(scenario === 'stale-redraw' ? finding(1).trimEnd() + ' Working frame 2\n' : finding(1));
                 // One post-answer pause, then a poll sees the same question;
                 // only the next poll receives a genuinely different prompt.
                 pendingRedrawSleeps = 3;
+                delayedRender = showSecondFinding;
               } else showSecondFinding();
             } else finish();
           }
@@ -95,7 +151,7 @@ async function main() {
       if (!closed && ++sleeps > 50) throw new Error('Fake counting session did not converge');
       if (timing) clock += ms;
       if (scenario === 'late-completion' && clock >= caseBudgetMs && !lateCompletionSent) finishLate();
-      if (pendingRedrawSleeps > 0 && --pendingRedrawSleeps === 0) showSecondFinding();
+      if (pendingRedrawSleeps > 0 && --pendingRedrawSleeps === 0) delayedRender();
     }) as typeof Bun.sleep;
     const helperTimeoutMs = scenario === 'invalid-nan' ? Number.NaN : scenario === 'invalid-infinity' ? Number.POSITIVE_INFINITY
       : caseBudgetMs - (Date.now() - caseStartedAt);
@@ -104,11 +160,12 @@ async function main() {
     try { observation = await runPlanSkillCounting({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
       cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling: 4, timeoutMs: helperTimeoutMs,
+      firstAUQPick: scenario === 'first-route' ? () => 2 : undefined,
     }); } catch (cause) {
-      if (!scenario.startsWith('invalid-')) throw cause;
+      if (!scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'repeated-native'].includes(scenario)) throw cause;
       error = String(cause);
     }
-    console.log(JSON.stringify({ observation, error, sends, sendTimes, seededBeforeSlash, closed, launches, redraws,
+    console.log(JSON.stringify({ observation, error, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers,
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {
     Bun.spawn = originalSpawn;

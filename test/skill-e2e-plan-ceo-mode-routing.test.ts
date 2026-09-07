@@ -31,19 +31,14 @@
  */
 
 import { test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
+import { navigateToModeAskUserQuestion, readNativeModePosture } from './helpers/plan-skill-mode-navigation';
 import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import {
   launchClaudePty,
   isNumberedOptionListVisible,
-  isPermissionDialogVisible,
-  parseNumberedOptions,
   isPlanReadyVisible,
-  MODE_RE,
-  findModeOption,
-  optionsSignature,
-  TAIL_SCAN_BYTES,
-  type ClaudePtySession,
 } from './helpers/claude-pty-runner';
 
 const describeE2E = describeE2ETier('periodic');
@@ -59,100 +54,15 @@ const CASES: ModeCase[] = [
   { mode: 'SCOPE EXPANSION', postureRe: /\b(expansion|10x|delight|dream|cathedral|opt[\s-]?in)\b/i },
 ];
 
-/**
- * Navigate prior AskUserQuestions by picking option 1 until we hit an AskUserQuestion whose
- * options match one of the 4 mode names. Returns the option index
- * matching `targetMode`, with the buffer marker pointing AT that AskUserQuestion.
- *
- * Throws if we don't reach the mode AskUserQuestion within `maxNav` prior AskUserQuestions or
- * the overall budget.
- */
-async function navigateToModeAskUserQuestion(
-  session: ClaudePtySession,
-  since: number,
-  targetMode: ModeCase['mode'],
-  opts: { maxNav?: number; budgetMs?: number } = {},
-): Promise<{ modeIndex: number; visibleAtMode: string }> {
-  // /plan-ceo-review's mode AskUserQuestion (Step 0F) sits behind several preamble
-  // and Step 0A-0C-bis gates: telemetry, proactive, routing, vendoring,
-  // brain privacy, office-hours offer, premise challenge (3 questions),
-  // approach selection. 12 hops is the conservative ceiling.
-  const maxNav = opts.maxNav ?? 12;
-  const budgetMs = opts.budgetMs ?? 420_000;
-  const start = Date.now();
-  let priorAnswered = 0;
-  let lastSeenList: Array<{ index: number; label: string }> = [];
-
-  while (Date.now() - start < budgetMs) {
-    if (session.exited()) {
-      throw new Error(
-        `claude exited (code=${session.exitCode()}) during nav.\n` +
-        `Last visible:\n${session.visibleSince(since).slice(-2000)}`,
-      );
-    }
-    await Bun.sleep(2000);
-    const visible = session.visibleSince(since);
-    if (!isNumberedOptionListVisible(visible)) continue;
-    const opts = parseNumberedOptions(visible);
-    if (opts.length < 2) continue;
-
-    // Has the rendered list changed since last poll? If not, we're seeing
-    // the same prompt and shouldn't double-press.
-    const sig = optionsSignature(opts);
-    const lastSig = optionsSignature(lastSeenList);
-    if (sig === lastSig) continue;
-    lastSeenList = opts;
-
-    // Is THIS the mode AskUserQuestion?
-    if (opts.some(o => MODE_RE.test(o.label))) {
-      const target = findModeOption(opts, targetMode);
-      if (!target) {
-        throw new Error(
-          `Mode AskUserQuestion rendered but target "${targetMode}" not in option labels:\n` +
-          opts.map(o => `  ${o.index}. ${o.label}`).join('\n'),
-        );
-      }
-      return { modeIndex: target.index, visibleAtMode: visible };
-    }
-
-    // Permission dialog? Grant with "1" but don't count it against nav budget.
-    // Classify on the recent tail only — old permission text persists in
-    // visibleSince and would re-trigger forever.
-    //
-    // Note: runPlanSkillObservation has its own permission-dialog filter that
-    // simply skips classification (since it observes, doesn't drive). This nav
-    // loop drives the PTY directly via launchClaudePty and so owns its own
-    // dialog handling — granting with "1" so the workflow advances. Both
-    // paths share TAIL_SCAN_BYTES as the recent-tail window so tuning stays
-    // in sync.
-    if (isPermissionDialogVisible(visible.slice(-TAIL_SCAN_BYTES))) {
-      session.send('1\r');
-      await Bun.sleep(1500);
-      continue;
-    }
-
-    // Not the mode AskUserQuestion — answer with option 1 (recommended) and continue.
-    if (priorAnswered >= maxNav) {
-      throw new Error(
-        `Navigated ${maxNav} prior AskUserQuestions without reaching the mode AskUserQuestion. ` +
-        `Last list:\n${opts.map(o => `  ${o.index}. ${o.label}`).join('\n')}`,
-      );
-    }
-    priorAnswered++;
-    session.send('1\r');
-    // Give the agent a beat to advance before re-polling.
-    await Bun.sleep(2000);
-  }
-  throw new Error(`Mode AskUserQuestion not reached within ${budgetMs}ms`);
-}
-
 describeE2E('/plan-ceo-review mode routing (gate)', () => {
   for (const c of CASES) {
     test(
       `mode "${c.mode}" routes to its distinctive posture`,
       async () => {
+        const sessionId = randomUUID();
         const session = await launchClaudePty({
           permissionMode: 'plan',
+          extraArgs: ['--session-id', sessionId],
           timeoutMs: CAPTURE_LONG_MS,
           seedSkills: true,
         });
@@ -161,11 +71,7 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
           const since = session.mark();
           session.send('/plan-ceo-review\r');
 
-          const { modeIndex } = await navigateToModeAskUserQuestion(session, since, c.mode);
-
-          // Snapshot the visible buffer at mode-pick time, then send the index.
-          const sincePick = session.rawOutput().length;
-          session.send(`${modeIndex}\r`);
+          const { sincePick, toolUseId } = await navigateToModeAskUserQuestion(session, since, c.mode, { sessionId });
 
           // Wait for downstream evidence: either next AskUserQuestion or plan_ready or
           // a posture-distinctive substring shows up.
@@ -174,7 +80,8 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
           let postureMatched = false;
           let downstreamSnapshot = '';
           while (Date.now() - start < budgetMs) {
-            await Bun.sleep(2500);
+            await Bun.sleep(Math.min(2500, budgetMs - (Date.now() - start)));
+            if (Date.now() - start >= budgetMs) break;
             if (session.exited()) {
               throw new Error(
                 `claude exited (code=${session.exitCode()}) after mode pick.\n` +
@@ -182,7 +89,9 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
               );
             }
             downstreamSnapshot = session.visibleSince(sincePick);
-            if (c.postureRe.test(downstreamSnapshot)) {
+            const ownedPosture = readNativeModePosture(session.hermeticConfigDir, sessionId, toolUseId, downstreamSnapshot, c.postureRe);
+            if (Date.now() - start >= budgetMs) break;
+            if (ownedPosture) {
               postureMatched = true;
               break;
             }

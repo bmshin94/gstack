@@ -23,6 +23,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { readPlanSkillCompletion } from './plan-skill-completion';
+import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey, type NativeQuestion } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -1017,17 +1018,19 @@ export function classifyVisible(
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * Captured identity of an AskUserQuestion — the rendered question text plus
- * its numbered options. Used by `runPlanSkillCounting` to dedupe redrawn
- * prompts and to feed `Step0BoundaryPredicate` callers.
+ * Captured identity of an AskUserQuestion. Pure parsing callers use rendered
+ * text; native counting uses the acknowledged tool ID and its owned input.
  *
- * `signature` is the stable hash. Two AUQs with identical prompt + options
+ * Parser `signature` is the stable hash. Two AUQs with identical prompt + options
  * produce the same signature; differences in either field produce different
  * signatures. Critically: two AUQs with shared option labels (e.g. the
  * generic "A) Add to plan / B) Defer / C) Build now" menu) but different
  * question text get DIFFERENT signatures because the prompt is in the hash.
  */
 export interface AskUserQuestionFingerprint {
+  /** Present on native counting observations: full invocation input, including tabs. */
+  toolUseId?: string;
+  questions?: NativeQuestion[];
   /** Stable hash combining normalized prompt text + options signature. */
   signature: string;
   /** First 240 chars of the rendered question prompt (post-normalization). */
@@ -1968,7 +1971,7 @@ export interface PlanSkillCountObservation {
 }
 
 /**
- * Drive a plan-* skill in plan mode and count distinct review-phase
+ * Drive a plan-* skill in plan mode and count acknowledged native review-phase
  * AskUserQuestions until a terminal signal fires. Completion requires the
  * owned hermetic session transcript; EVALS_HERMETIC=0 is unsupported here.
  * Missing ownership and malformed transcripts fail instead of using PTY previews.
@@ -1982,34 +1985,31 @@ export interface PlanSkillCountObservation {
  *      follow-up message (the proven pattern at
  *      skill-e2e-plan-design-with-ui.test.ts:57-71).
  *   4. Poll loop:
- *      - Skip permission dialogs (auto-grant with `defaultPick`).
- *      - On a new numbered-option list, parse prompt + options, build
- *        fingerprint via `auqFingerprint`. Empty-prompt parses are skipped
- *        and re-polled (avoids the empty-prompt collision documented in
- *        the auqFingerprint contract).
- *      - First time we see a fingerprint: push it, classify as Step 0 or
- *        review-phase based on `boundaryFired`, press `defaultPick` to
- *        advance.
- *      - After pressing, evaluate `isLastStep0AUQ(fingerprint)`. If true,
- *        all subsequent AUQs are review-phase.
+ *      - Bind permission grants to an identifiable owned pending tool.
+ *      - Read complete native AUQ tool-use IDs and corroborate their current
+ *        question headings/choices in fresh PTY output. Reserve each question
+ *        once; multiple single-select tabs finish through explicit submit.
+ *      - After the matching successful tool result, count ONE invocation,
+ *        then evaluate `isLastStep0AUQ` against its owned questions.
+ *      - Unsupported checkbox navigation or indistinguishable repeated
+ *        prompts fail before input; stale redraws cannot increment counts.
  *      - Hard ceiling: if `reviewCount >= reviewCountCeiling`, return
  *        `ceiling_reached`. This bounds runaway counts; tests should set
  *        the ceiling above their assertion CEILING.
  *      - Soft terminals: completed owned assistant summary, corroborated in
  *        rendered output → `completion_summary`;
- *        plan-ready confirmation → `plan_ready`; silent write outside
+ *        owned ExitPlanMode plus rendered confirmation → `plan_ready`; silent write outside
  *        sanctioned dirs → `silent_write`; process exited → `exited`;
  *        wall clock exceeded → `timeout`.
  *
- * Boundary detection (D14): event-based, fired against the answered AUQ's
- * fingerprint, not against later rendered content. This avoids the race
+ * Boundary detection (D14): event-based, fired after the native answer result,
+ * not against later rendered content. This avoids the race
  * where Step-0-final and Section-1-first AUQs straddle a section header
  * regex match.
  *
- * Fingerprint composition (D9): `auqFingerprint(prompt, options)` mixes
- * normalized prompt text with the options signature so distinct findings
- * with shared menu structure (the generic A/B/C TODO menu) get distinct
- * fingerprints.
+ * Native fingerprints retain the tool ID and full invocation input; shared
+ * option labels and terminal repaint context do not change their identity.
+ * Lifecycle: owned call → rendered match → one input per tab → result → count.
  */
 export async function runPlanSkillCounting(opts: {
   /** Skill name, e.g. 'plan-ceo-review'. Used for diagnostic strings only. */
@@ -2055,7 +2055,9 @@ export async function runPlanSkillCounting(opts: {
   const deadlineAt = startedAt + timeoutMs;
 
   const fingerprints: AskUserQuestionFingerprint[] = [];
-  const seen = new Set<string>();
+  const submitted = new Map<string, { answeredQuestions: number; submitted: boolean; counted: boolean; fp: AskUserQuestionFingerprint }>();
+  const grantedTools = new Set<string>();
+  const grantedRequests = new Set<string>();
   let boundaryFired = false;
   let step0Count = 0;
   let reviewCount = 0;
@@ -2104,12 +2106,14 @@ export async function runPlanSkillCounting(opts: {
     seedSkills: true,
   });
   let since = session.mark();
+  let questionSince = since;
   // Case setup → remaining entry deadline → boot/polls → bounded close.
   // Bun's separate finalization allowance never extends model work.
   try {
     await pause(8000); // boot grace + auto-trust handler window
     if (expired()) return snapshot('timeout', timeoutSummary(), session.visibleSince(since));
     since = session.mark();
+    questionSince = since;
     session.send(`${opts.slashCommand}\r`);
     await pause(3000);
     if (expired()) return snapshot('timeout', timeoutSummary(), session.visibleSince(since));
@@ -2119,6 +2123,7 @@ export async function runPlanSkillCounting(opts: {
       await pause(2000);
       if (expired()) break;
       const visible = session.visibleSince(since);
+      const questionVisible = session.visibleSince(questionSince);
 
       // Process exited?
       if (session.exited()) {
@@ -2154,16 +2159,37 @@ export async function runPlanSkillCounting(opts: {
         }
       }
 
+      const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId);
+      if (native.pendingBytes) continue;
+      // An input write is not an answer. Count each native invocation only
+      // after its matching successful result, including every tab in the call.
+      for (const call of native.calls) {
+        const state = submitted.get(call.id);
+        if (!state || state.counted || call.result === 'pending') continue;
+        if (call.result === 'error') throw new Error(`Native AskUserQuestion ${call.id} returned an error`);
+        if (state.answeredQuestions !== call.questions.length) throw new Error(`Native AskUserQuestion ${call.id} completed before all questions were answered`);
+        state.counted = true;
+        state.fp.preReview = !boundaryFired;
+        fingerprints.push(state.fp);
+        if (boundaryFired) reviewCount += 1;
+        else step0Count += 1;
+        if (!boundaryFired && call.questions.some(q => opts.isLastStep0AUQ({ ...state.fp, promptSnippet: q.question.slice(0, 240), options: q.options.map((o, i) => ({ index: i + 1, label: o.label })) }))) boundaryFired = true;
+      }
+      if (reviewCount >= opts.reviewCountCeiling) {
+        return snapshot('ceiling_reached', `review-phase AUQ count reached ceiling (${opts.reviewCountCeiling})`, visible);
+      }
+
       // Soft terminal signals — check before AUQ processing so a final
       // completion-summary doesn't get misclassified as a bonus AUQ.
-      if (readPlanSkillCompletion(session.hermeticConfigDir, sessionId, visible)) {
+      const hasPendingQuestion = native.calls.some(call => call.result === 'pending');
+      if (!hasPendingQuestion && readPlanSkillCompletion(session.hermeticConfigDir, sessionId, visible)) {
         return snapshot(
           'completion_summary',
           `owned assistant completed its turn with a rendered completion summary / verdict / status line (step0=${step0Count}, review=${reviewCount})`,
           visible,
         );
       }
-      if (isPlanReadyVisible(visible)) {
+      if (!hasPendingQuestion && native.ready && isPlanReadyVisible(questionVisible)) {
         return snapshot(
           'plan_ready',
           `skill emitted plan-mode "Ready to execute" confirmation (step0=${step0Count}, review=${reviewCount})`,
@@ -2171,65 +2197,66 @@ export async function runPlanSkillCounting(opts: {
         );
       }
 
-      // Numbered option list?
-      if (!isNumberedOptionListVisible(visible)) continue;
-
-      // Permission dialog? Auto-grant with defaultPick. Only act on the
-      // recent tail to avoid re-triggering on stale dialogs in scrollback.
-      if (isPermissionDialogVisible(visible.slice(-TAIL_SCAN_BYTES))) {
+      const pending = native.calls.filter(call => call.result === 'pending');
+      if (pending.length > 1) throw new Error('Concurrent native AskUserQuestion calls are unsupported by the counting driver');
+      const call = pending[0];
+      // Native permissions are separate from AUQs. Consume the rendered
+      // window before writing, so old permission text cannot send again.
+      if (!call && native.permissionTools.length && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES))) {
+        if (native.permissionTools.length > 1) throw new Error('Ambiguous native permission owner: multiple tools are pending');
+        const owner = native.permissionTools[0]!;
+        if (grantedTools.has(owner.id)) continue;
+        const request = nativePermissionKey(owner, questionVisible.slice(-TAIL_SCAN_BYTES));
+        if (grantedRequests.has(request)) throw new Error('Repeated native permission request cannot be distinguished from stale rendering');
         if (expired()) break;
+        grantedTools.add(owner.id);
+        grantedRequests.add(request);
+        questionSince = session.mark();
         session.send(`${defaultPick}\r`);
         await pause(1500);
         continue;
       }
 
-      // Parse the full AUQ before deduping: different findings often offer
-      // identical choices. The prompt-aware fingerprint also rejects redraws.
-      const options = parseNumberedOptions(visible);
-      if (options.length < 2) continue;
-      const promptSnippet = parseQuestionPrompt(visible);
-      if (promptSnippet === '') continue; // not yet rendered, poll again
-
-      const fingerprintHash = auqFingerprint(promptSnippet, options);
-      if (seen.has(fingerprintHash)) {
-        // Same content, already counted (TTY redrew with whitespace diff).
+      if (!call) continue;
+      let state = submitted.get(call.id);
+      if (state?.answeredQuestions === call.questions.length) {
+        // Multi-question and multi-select calls have an explicit final review
+        // screen. Single-select one-question calls submit automatically.
+        if (!state.submitted && isNativeQuestionSubmitVisible(questionVisible)) {
+          if (expired()) break;
+          state.submitted = true;
+          questionSince = session.mark();
+          session.sendKey('Enter');
+        }
         continue;
       }
-      if (expired()) break;
-      seen.add(fingerprintHash);
-
+      const question = call.questions[state?.answeredQuestions ?? 0]!;
+      // Native checkbox questions require a distinct focus/Next protocol.
+      // Digit+Enter toggles twice on the standard CLI; never pretend it answered.
+      if (question.multiSelect) throw new Error('Native multiSelect AskUserQuestion requires checkbox navigation unsupported by the counting driver');
+      if (!isNumberedOptionListVisible(questionVisible)) continue;
+      const renderedOptions = parseNumberedOptions(questionVisible);
+      if (!matchesNativeQuestion(question, questionVisible, renderedOptions, native.calls.flatMap(call => call.questions))) continue;
       const fp: AskUserQuestionFingerprint = {
-        signature: fingerprintHash,
-        promptSnippet,
-        options,
-        observedAtMs: Date.now() - startedAt,
-        preReview: !boundaryFired,
+        signature: call.id, toolUseId: call.id, questions: call.questions,
+        promptSnippet: question.question.slice(0, 240),
+        options: question.options.map((o, i) => ({ index: i + 1, label: o.label })),
+        observedAtMs: Date.now() - startedAt, preReview: !boundaryFired,
       };
-      fingerprints.push(fp);
-      if (boundaryFired) reviewCount += 1;
-      else step0Count += 1;
-
-      // Press to advance — first AUQ may use the override pick.
+      // Reserve before writing; a repaint or delayed result cannot re-answer
+      // this question. First-question routing applies once per launch.
       const pickIdx =
         isFirstAUQ && opts.firstAUQPick ? opts.firstAUQPick(fp) : defaultPick;
-      isFirstAUQ = false;
+      if (!Number.isInteger(pickIdx) || pickIdx < 1 || pickIdx > question.options.length) throw new Error('Native AskUserQuestion selection is outside its owned options');
+      if (!state) {
+        state = { answeredQuestions: 0, submitted: false, counted: false, fp };
+        submitted.set(call.id, state);
+      }
       if (expired()) break;
+      state.answeredQuestions += 1;
+      isFirstAUQ = false;
+      questionSince = session.mark();
       session.send(`${pickIdx}\r`);
-
-      // Evaluate boundary AFTER pressing — if THIS AUQ was the last Step 0
-      // question, all subsequent AUQs go to reviewCount.
-      if (!boundaryFired && opts.isLastStep0AUQ(fp)) {
-        boundaryFired = true;
-      }
-
-      // Hard ceiling — runaway protection.
-      if (reviewCount >= opts.reviewCountCeiling) {
-        return snapshot(
-          'ceiling_reached',
-          `review-phase AUQ count reached ceiling (${opts.reviewCountCeiling})`,
-          session.visibleSince(since),
-        );
-      }
 
       // Give the agent a beat to advance to the next state.
       await pause(2000);
