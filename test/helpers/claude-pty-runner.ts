@@ -175,17 +175,18 @@ export function isPlanReadyVisible(visible: string): boolean {
  * Detect the AUTO_DECIDE preamble template firing. The model prints
  * "Auto-decided <summary> → <option> (your preference). Change with /plan-tune."
  * when it short-circuits an AskUserQuestion via the question-tuning resolver
- * (`scripts/resolvers/question-tuning.ts:26`). The "Auto-decided ..." stem +
- * "(your preference)" tail combination is the tightest signal. Whitespace-
- * collapsed forms covered for the same TTY-rendering reason as
- * isPlanReadyVisible.
+ * (`scripts/resolvers/question-tuning.ts:26`). A live CEO capture instead
+ * attributed its chosen mode with "(auto-decided from plan-tune preference)".
+ * Both annotations explicitly attribute the decision to a saved preference;
+ * bare AUTO_DECIDED or advice to configure plan-tune does not qualify.
+ * Collapse whitespace for the same TTY-rendering reason as isPlanReadyVisible.
  */
 export function isAutoDecidedVisible(visible: string): boolean {
   const stemMatch =
     /Auto-decided\b/i.test(visible) || /Auto-decided/i.test(visible.replace(/\s+/g, ''));
   if (!stemMatch) return false;
   if (/\(your preference\)/i.test(visible)) return true;
-  return /\(yourpreference\)/i.test(visible.replace(/\s+/g, ''));
+  return /\((?:yourpreference|auto-decidedfromplan-tunepreference)\)/i.test(visible.replace(/\s+/g, ''));
 }
 
 /**

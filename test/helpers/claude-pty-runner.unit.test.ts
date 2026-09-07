@@ -31,6 +31,7 @@ import {
   isScopeGateQuestionVisible,
   isScopeGateAutoSelectVisible,
   isPlanReadyVisible,
+  isAutoDecidedVisible,
   parseNumberedOptions,
   classifyVisible,
   TAIL_SCAN_BYTES,
@@ -48,6 +49,31 @@ import {
   type ClaudePtyOptions,
   type AskUserQuestionFingerprint,
 } from './claude-pty-runner';
+
+describe('saved preference annotation', () => {
+  test('recognizes the explicit preference attribution from the timed-out CEO capture', () => {
+    const visible = 'Now I have a clear picture of the branch. Let me proceed with the full review. ' +
+      'Mode is HOLD SCOPE (auto-decided from plan-tune preference).';
+    expect(isAutoDecidedVisible(visible)).toBe(true);
+    expect(classifyVisible(visible)?.outcome).toBe('auto_decided');
+    expect(classifyVisible(visible.replace(/\s+/g, ''))?.outcome).toBe('auto_decided');
+  });
+
+  test('retains the canonical annotation and its precedence over plan-ready', () => {
+    const visible = 'Auto-decided review mode → HOLD SCOPE (your preference). Change with /plan-tune.\nReady to execute?';
+    expect(classifyVisible(visible)?.outcome).toBe('auto_decided');
+  });
+
+  test('does not equate an unrequested choice or plan-tune advice with a saved preference', () => {
+    for (const visible of [
+      'Mode is HOLD SCOPE (AUTO_DECIDED).',
+      'I auto-decided HOLD SCOPE because this is a refactor.',
+      'I auto-decided HOLD SCOPE. You can set a plan-tune preference later.',
+      'Mode is HOLD SCOPE (not auto-decided from plan-tune preference).',
+      'Mode is HOLD SCOPE (will be auto-decided from plan-tune preference).',
+    ]) expect(isAutoDecidedVisible(visible)).toBe(false);
+  });
+});
 
 describe('mode option rendering', () => {
   test('selects the actual collapsed-space mode from the failed periodic menu', () => {
