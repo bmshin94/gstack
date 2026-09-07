@@ -36,8 +36,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { promotedEnv } from '../../lib/conductor-env-shim';
-import { isProcessAlive, safeUnlink } from '../../lib/error-handling';
-import { skillCensus, frontmatterName } from './skill-census';
+import { isProcessAlive } from '../../lib/error-handling';
+import { refreshHermeticSkillRuntime } from './hermetic-skill-runtime';
 
 /** Exact env names a hermetic child keeps. Everything not listed (or matched
  * by a prefix rule below) is dropped. */
@@ -257,7 +257,7 @@ let cachedSkillsConfigDir: string | null = null;
  * A hermetic CLAUDE_CONFIG_DIR with the repo's shipped skills REGISTERED in
  * user scope, mirroring ./setup's registration exactly: each discovered skill
  * gets a REAL directory `<configDir>/skills/<registryName>/` containing a
- * SYMLINK to that skill's SKILL.md (absolute path), plus a `sections/`
+ * SYMLINK to that skill's bound SKILL.md (absolute path), plus a `sections/`
  * symlink when the skill has one. registryName is the frontmatter `name:`
  * (dir-name fallback), NO gstack- prefix; the root SKILL.md router registers
  * as `_gstack-command`. skillCensus().registryEntries is the authoritative
@@ -272,50 +272,36 @@ let cachedSkillsConfigDir: string | null = null;
  * cover it. Ends in `/.claude` for the same plan-path anchoring reason as
  * HermeticDirs.configDir.
  *
- * Two intentional non-hermetic edges:
- * - Seeding reads the LIVE repo tree BY DESIGN — the skills ARE the subject
- *   under test; a snapshot would measure stale copies.
- * - HOME is not hermeticized, so the ~64 absolute
- *   `~/.claude/skills/gstack/...` preamble references inside each SKILL.md
- *   still resolve to the operator install (same limitation as CI).
+ * Every call refreshes instructions from the LIVE repo tree — no per-process
+ * document snapshot. Global install references bind to a private runtime tree
+ * whose bins/assets link to this checkout, so nested reads cannot drift into
+ * an older operator install. HOME stays real for auth and browser caches.
  */
 export function hermeticSkillsConfigDir(): string {
-  if (cachedSkillsConfigDir) return cachedSkillsConfigDir;
   const { runRoot } = getHermeticDirs();
-  const configDir = path.join(runRoot, 'with-skills', '.claude');
-  const skillsDir = path.join(configDir, 'skills');
-  fs.mkdirSync(skillsDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(configDir, '.claude.json'),
-    JSON.stringify(buildSeedConfig({
-      apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
-      trustedDirs: [repoRoot()],
-    }), null, 2),
-  );
-  const root = repoRoot();
-  for (const rel of skillCensus(root).physicalSkillFiles) {
-    const skillMd = path.join(root, rel);
-    const skillDir = path.dirname(rel);
-    const registryName = rel === 'SKILL.md'
-      ? '_gstack-command'
-      : frontmatterName(skillMd) || skillDir;
-    const target = path.join(skillsDir, registryName);
-    // Idempotent overwrite mirrors setup's re-link: connect-chrome (a dir
-    // symlink to open-gstack-browser) shares its target's frontmatter name,
-    // so the two walk entries collapse to one registry dir.
-    fs.mkdirSync(target, { recursive: true });
-    safeUnlink(path.join(target, 'SKILL.md'));
-    fs.symlinkSync(skillMd, path.join(target, 'SKILL.md'));
-    if (rel !== 'SKILL.md') {
-      const sections = path.join(root, skillDir, 'sections');
-      if (fs.existsSync(sections)) {
-        safeUnlink(path.join(target, 'sections'));
-        fs.symlinkSync(sections, path.join(target, 'sections'));
-      }
+  const privateDir = path.join(runRoot, 'with-skills');
+  try {
+    const configDir = refreshHermeticSkillRuntime(repoRoot(), privateDir);
+    const seedFile = path.join(configDir, '.claude.json');
+    const seedStat = fs.lstatSync(seedFile, { throwIfNoEntry: false });
+    if (!cachedSkillsConfigDir || !seedStat?.isFile()) {
+      if (seedStat && !seedStat.isFile()) fs.rmSync(seedFile, { recursive: true, force: true });
+      fs.writeFileSync(
+        seedFile,
+        JSON.stringify(buildSeedConfig({
+          apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
+          trustedDirs: [repoRoot()],
+        }), null, 2),
+      );
     }
+    cachedSkillsConfigDir = configDir;
+    return configDir;
+  } catch (error) {
+    if (!cachedSkillsConfigDir) {
+      try { fs.rmSync(privateDir, { recursive: true, force: true }); } catch { /* retain original error */ }
+    }
+    throw error;
   }
-  cachedSkillsConfigDir = configDir;
-  return configDir;
 }
 
 /** A dir younger than this is never GC'd even if its pid looks dead — guards

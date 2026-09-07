@@ -158,6 +158,18 @@ const WINDOWS_FRAGILE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 // the failure mode is structural rather than detectable via source-file scan.
 export const KNOWN_WINDOWS_INCOMPATIBLE: Array<{ file: string; reason: string }> = [
   {
+    file: 'test/hermetic-skills-seeding.test.ts',
+    reason: 'seeds the POSIX PTY skill runtime, whose embedded shell paths require a POSIX temporary root',
+  },
+  {
+    file: 'test/hermetic-wiring.test.ts',
+    reason: 'its runtime contract check seeds the POSIX PTY skill runtime; the curated Windows lane does not run that harness',
+  },
+  {
+    file: 'test/pty-workspace-trust.test.ts',
+    reason: 'launches the POSIX PTY harness with a fake executable and bound skill runtime',
+  },
+  {
     file: 'test/host-config.test.ts',
     reason: 'asserts "claude" binary on PATH (only true when running inside Claude Code, not on bare CI runner)',
   },

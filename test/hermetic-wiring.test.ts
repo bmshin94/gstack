@@ -146,28 +146,19 @@ describe('hermetic wiring tripwire', () => {
     // the LIVE repo tree's skills (the skills are the subject under test).
     // What it must never do is hand children the operator's ~/.claude — the
     // seeded CLAUDE_CONFIG_DIR lives under the hermetic runRoot, and every
-    // registered symlink resolves into the repo checkout.
+    // registered document lives in the private runtime refreshed from source.
     const configDir = hermeticSkillsConfigDir();
     const { runRoot } = getHermeticDirs();
     const operatorClaude = path.join(os.homedir(), '.claude') + path.sep;
     expect(configDir.startsWith(runRoot + path.sep)).toBe(true);
     expect(configDir.startsWith(operatorClaude)).toBe(false);
     const skillsDir = path.join(configDir, 'skills');
-    const repoRootReal = fs.realpathSync(ROOT) + path.sep;
+    const runtimeRootReal = fs.realpathSync(path.join(path.dirname(configDir), 'runtime')) + path.sep;
     for (const entry of fs.readdirSync(skillsDir)) {
       const target = fs.readlinkSync(path.join(skillsDir, entry, 'SKILL.md'));
       const resolved = fs.realpathSync(target);
-      // Targets inside the live repo checkout are the blessed edge — exempt
-      // them BEFORE the operator-~/.claude ban. On the default global-git
-      // install the repo itself lives at ~/.claude/skills/gstack, so every
-      // CORRECT symlink carries the operatorClaude prefix and an unexempted
-      // ban can never pass (regression 2026-08-15: pristine v1.64.1.0 fails
-      // this test in any worktree under ~/.claude/skills/ and passes
-      // elsewhere — realpath both sides so a symlinked HOME can't dodge it).
-      if (!resolved.startsWith(repoRootReal)) {
-        expect(resolved.startsWith(operatorClaude), `${entry}: symlink escapes to ${target}`).toBe(false);
-      }
-      expect(resolved.startsWith(repoRootReal), `${entry}: symlink outside repo: ${target}`).toBe(true);
+      expect(resolved.startsWith(operatorClaude), `${entry}: symlink escapes to ${target}`).toBe(false);
+      expect(resolved.startsWith(runtimeRootReal), `${entry}: symlink outside private runtime: ${target}`).toBe(true);
     }
   });
 });

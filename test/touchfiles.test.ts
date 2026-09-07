@@ -134,6 +134,19 @@ describe('selectTests', () => {
     expect(result.reason).toContain('global');
   });
 
+  test.each([
+    'test/helpers/hermetic-skill-runtime.ts',
+    'test/hermetic-skill-runtime.test.ts',
+    'lib/fs-atomic.ts',
+  ])('live runtime dependency selects PTY consumers: %s', (file) => {
+    const result = selectTests([file], E2E_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    expect(result.selected).toContain('autoplan-chain-pty');
+    expect(result.selected).toContain('plan-ceo-mode-routing');
+    expect(result.selected).not.toContain('codex-plan-ceo-format-mode');
+    expect(result.selected).not.toContain('retro');
+  });
+
   test('gen-skill-docs.ts is a scoped touchfile, not global', () => {
     const result = selectTests(['scripts/gen-skill-docs.ts'], E2E_TOUCHFILES);
     // Should select tests that list gen-skill-docs.ts in their touchfiles, not ALL tests

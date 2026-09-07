@@ -12,7 +12,7 @@
  *    resolving to a real file (plus sections/ when the skill has one).
  * 3. connect-chrome (dir symlink) collapses into open-gstack-browser — no
  *    duplicate, no connect-chrome entry.
- * 4. Per-process idempotence: the second call returns the cached dir.
+ * 4. Stable registration: later calls refresh documents at the same path.
  */
 
 import { describe, test, expect } from 'bun:test';
@@ -66,7 +66,8 @@ describe('hermeticSkillsConfigDir', () => {
 
   test('root router registered as _gstack-command pointing at the root SKILL.md', () => {
     const link = path.join(skillsDir, '_gstack-command', 'SKILL.md');
-    expect(fs.realpathSync(link)).toBe(fs.realpathSync(path.join(ROOT, 'SKILL.md')));
+    const runtimeRoot = path.join(path.dirname(configDir), 'runtime');
+    expect(fs.realpathSync(link)).toBe(fs.realpathSync(path.join(runtimeRoot, 'SKILL.md')));
   });
 
   test('second call returns the cached dir', () => {

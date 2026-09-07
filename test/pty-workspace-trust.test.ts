@@ -79,7 +79,7 @@ describe('PTY temporary workspace trust', () => {
       expect(config.projects[fs.realpathSync(cwd)]).toBeUndefined();
       expect(fs.readFileSync(path.join(shared, '.claude.json'), 'utf8')).toBe(before);
       expect(fs.realpathSync(path.join(first.env.CLAUDE_CONFIG_DIR, 'skills', 'autoplan', 'SKILL.md')))
-        .toBe(fs.realpathSync(path.join(ROOT, 'autoplan', 'SKILL.md')));
+        .toBe(fs.realpathSync(path.join(path.dirname(shared), 'runtime', 'autoplan', 'SKILL.md')));
       const plan = path.join(first.env.CLAUDE_CONFIG_DIR, 'plans', 'fixture.md');
       fs.mkdirSync(path.dirname(plan));
       fs.writeFileSync(plan, 'plan evidence');
