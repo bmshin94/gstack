@@ -18,6 +18,12 @@ import * as path from 'path';
 
 const ROOT = path.join(import.meta.dir, '..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf-8');
+const phases = [
+  { child: 'ceo', id: '1', next: ['2'] },
+  { child: 'design', id: '2', next: ['2.5', '3'] },
+  { child: 'dx', id: '2.5', next: ['3'] },
+  { child: 'eng', id: '3', next: ['4'] },
+];
 
 describe('autoplan phase order (Eng always last)', () => {
   const tmpl = read('autoplan/SKILL.md.tmpl');
@@ -47,13 +53,25 @@ describe('autoplan phase order (Eng always last)', () => {
     expect(tmpl).not.toContain('Phase 3.5');
   });
 
-  test('phase sections hand off in the new order', () => {
-    expect(read('autoplan/sections/dx-phase.md.tmpl')).toContain(
-      'Passing to Phase 3 (Eng Review',
-    );
-    expect(read('autoplan/sections/eng-phase.md.tmpl')).toContain(
-      'Passing to Phase 4 (Final Gate)',
-    );
+  test.each(phases)('carved child completion and handoff IDs match the pipeline: %j', ({ child, id, next }) => {
+    const section = read(`autoplan/sections/${child}-phase.md.tmpl`);
+    const declared = [...section.matchAll(/\*\*PHASE (\d+(?:\.\d+)?) COMPLETE\.\*\*/g)].map(m => m[1]);
+    const announced = [...section.matchAll(/^> \*\*Phase (\d+(?:\.\d+)?) complete\.\*\*/gm)].map(m => m[1]);
+    const handoff = section.match(/^> Passing to .+$/m)?.[0] ?? '';
+    expect(declared).toEqual([id]);
+    expect(announced).toEqual([id]);
+    expect([...handoff.matchAll(/Phase (\d+(?:\.\d+)?)/g)].map(m => m[1])).toEqual(next);
+    // Catch obsolete Phase 3.5 references anywhere in any carved child,
+    // including prose or prompts that could contradict otherwise-correct headings.
+    const known = new Set(['0', '0.5', '1', '2', '2.5', '3', '4']);
+    const mentioned = [...section.matchAll(/\bPhase (\d+(?:\.\d+)?)\b/gi)].map(m => m[1]);
+    expect(mentioned.filter(id => !known.has(id))).toEqual([]);
+  });
+
+  test('each later Codex voice receives only already-completed phase context', () => {
+    const dx = read('autoplan/sections/dx-phase.md.tmpl');
+    const priorContext = [...dx.matchAll(/^\s*(CEO|Design|Eng|DX): <insert /gm)].map(m => m[1]);
+    expect(priorContext).toEqual(['CEO', 'Design']);
     // Eng's Codex voice sees every prior phase's consensus, DX included.
     expect(read('autoplan/sections/eng-phase.md.tmpl')).toContain(
       'DX: <insert DX consensus table summary',

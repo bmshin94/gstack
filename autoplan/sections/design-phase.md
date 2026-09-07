@@ -66,9 +66,13 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 3. Passes 1-7: Run each from loaded skill. Rate 0-10. Auto-decide each issue.
    DISAGREE items from scorecard → raised in the relevant pass with both perspectives.
 
-**PHASE 2 COMPLETE.** Emit phase-transition summary:
+**PHASE 2 COMPLETE.** Emit this phase-transition summary in an assistant response
+before any next-phase analysis, tool call, or subagent dispatch. Writing it only
+inside the plan file does not satisfy this announcement:
 > **Phase 2 complete.** Codex: [N concerns]. Claude subagent: [N issues].
 > Consensus: [X/Y confirmed, Z disagreements → surfaced at gate].
-> Passing to Phase 3.
+> Passing to Phase 2.5 (DX Review, if developer-facing scope), then Phase 3 (Eng Review).
 
-Do NOT begin Phase 3 until all Phase 2 outputs (if run) are written to the plan file.
+Do NOT begin Phase 2.5 or Phase 3 until all Phase 2 outputs are written to the plan
+file and the transition summary is emitted. If DX scope is absent, skip Phase 2.5
+and continue to Phase 3 after verifying its pre-phase checklist.

@@ -629,8 +629,11 @@ shipping gate, so it must review the FINAL amended plan — every other phase's
 amendments land before it. Each phase MUST complete fully before the next
 begins. NEVER run phases in parallel — each builds on the previous.
 
-Between each phase, emit a phase-transition summary and verify that all required
-outputs from the prior phase are written before starting the next.
+Between each phase, verify that all required outputs are written, then emit the
+phase-transition summary in an assistant response before any next-phase analysis,
+tool call, or subagent dispatch. A summary written only inside the plan file does
+not satisfy this announcement. Use the exact `Phase N complete.` text from the
+phase section so the user can follow the handoff.
 
 ---
 

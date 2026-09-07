@@ -101,7 +101,9 @@ Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = fl
 - Completion Summary (the full summary from the Eng skill)
 - TODOS.md updates (collected from all phases)
 
-**PHASE 3 COMPLETE.** Emit phase-transition summary:
+**PHASE 3 COMPLETE.** Emit this phase-transition summary in an assistant response
+before any next-phase analysis, tool call, or subagent dispatch. Writing it only
+inside the plan file does not satisfy this announcement:
 > **Phase 3 complete.** Codex: [N concerns]. Claude subagent: [N issues].
 > Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].
 > Passing to Phase 4 (Final Gate).

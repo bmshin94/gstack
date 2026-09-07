@@ -23,7 +23,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 
   Also consider these findings from prior review phases:
   CEO: <insert CEO consensus summary>
-  Eng: <insert Eng consensus summary>
+  Design: <insert Design consensus summary, or 'skipped, no UI scope'>
 
   You are a developer who has never seen this product. Evaluate:
   1. Time to hello world: how many steps from zero to working? Target is under 5 minutes.
@@ -53,6 +53,8 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   NO prior-phase context — subagent must be truly independent.
 
   Error handling: same as Phase 1 (both foreground/blocking, degradation matrix applies).
+  Earlier-phase findings do not count as a DX voice. Use the same degradation
+  matrix for unavailable or failed DX voices; missing-voice cells are N/A.
 
 - DX choices: if codex disagrees with a DX decision with valid developer empathy reasoning
   → TASTE DECISION. Scope changes both models agree on → USER CHALLENGE.
@@ -94,7 +96,9 @@ Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = fl
 - DX Implementation Checklist
 - TTHW assessment with target
 
-**PHASE 2.5 COMPLETE.** Emit phase-transition summary:
+**PHASE 2.5 COMPLETE.** Emit this phase-transition summary in an assistant response
+before any next-phase analysis, tool call, or subagent dispatch. Writing it only
+inside the plan file does not satisfy this announcement:
 > **Phase 2.5 complete.** DX overall: [N]/10. TTHW: [N] min → [target] min.
 > Codex: [N concerns]. Claude subagent: [N issues].
 > Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].

@@ -109,7 +109,9 @@ Sections 1-10 — for EACH section, run the evaluation criteria from the loaded 
 - Dream state delta (where this plan leaves us vs 12-month ideal)
 - Completion Summary (the full summary table from the CEO skill)
 
-**PHASE 1 COMPLETE.** Emit phase-transition summary:
+**PHASE 1 COMPLETE.** Emit this phase-transition summary in an assistant response
+before any next-phase analysis, tool call, or subagent dispatch. Writing it only
+inside the plan file does not satisfy this announcement:
 > **Phase 1 complete.** Codex: [N concerns]. Claude subagent: [N issues].
 > Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].
 > Passing to Phase 2.
