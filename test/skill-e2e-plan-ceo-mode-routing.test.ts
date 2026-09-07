@@ -40,6 +40,7 @@ import {
   parseNumberedOptions,
   isPlanReadyVisible,
   MODE_RE,
+  findModeOption,
   optionsSignature,
   TAIL_SCAN_BYTES,
   type ClaudePtySession,
@@ -104,7 +105,7 @@ async function navigateToModeAskUserQuestion(
 
     // Is THIS the mode AskUserQuestion?
     if (opts.some(o => MODE_RE.test(o.label))) {
-      const target = opts.find(o => o.label.toUpperCase().includes(targetMode));
+      const target = findModeOption(opts, targetMode);
       if (!target) {
         throw new Error(
           `Mode AskUserQuestion rendered but target "${targetMode}" not in option labels:\n` +

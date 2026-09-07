@@ -824,7 +824,21 @@ export function parseNumberedOptions(
  * source of truth — when /plan-ceo-review adds a fifth mode, one regex updates
  * everywhere instead of drifting per-test.
  */
-export const MODE_RE = /HOLD SCOPE|SCOPE EXPANSION|SELECTIVE EXPANSION|SCOPE REDUCTION/i;
+// Terminal repainting can remove spaces inside a label. Match the mode at
+// the label's start so appended descriptions or old screen text cannot supply
+// a mode that the current option does not offer.
+export const MODE_RE = /^\s*(?:\*\*)?(HOLD\s*SCOPE|SCOPE\s*EXPANSION|SELECTIVE\s*EXPANSION|SCOPE\s*REDUCTION)\b/i;
+
+/** Select the requested mode using the same rendering rules as detection. */
+export function findModeOption(
+  options: Array<{ index: number; label: string }>,
+  targetMode: string,
+): { index: number; label: string } | undefined {
+  const target = targetMode.replace(/\s+/g, '').toUpperCase();
+  return options.find(option =>
+    MODE_RE.exec(option.label)?.[1]?.replace(/\s+/g, '').toUpperCase() === target,
+  );
+}
 
 /**
  * Stable signature for a parsed numbered-option list — used by tests to detect

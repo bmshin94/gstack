@@ -38,6 +38,8 @@ import {
   parseQuestionPrompt,
   auqFingerprint,
   COMPLETION_SUMMARY_RE,
+  MODE_RE,
+  findModeOption,
   assertReviewReportAtBottom,
   ceoStep0Boundary,
   engStep0Boundary,
@@ -46,6 +48,40 @@ import {
   type ClaudePtyOptions,
   type AskUserQuestionFingerprint,
 } from './claude-pty-runner';
+
+describe('mode option rendering', () => {
+  test('selects the actual collapsed-space mode from the failed periodic menu', () => {
+    const options = [
+      { index: 1, label: 'HOLDSCOPE(recommended)\rMake the reliability wave bulletproof.' },
+      { index: 2, label: 'SELECTIVEEXPANSION\rKeep the current scope as the baseline.' },
+      { index: 3, label: 'SCOPEREDUCTION\rFind the minimum subset.' },
+      { index: 4, label: 'SCOPEEXPANSION\rDream up adjacent reliability improvements.' },
+      { index: 5, label: 'Type something.' },
+      { index: 6, label: 'Chat about this\rUser answered → HOLD SCOPE (recommended)' },
+    ];
+    expect(options.slice(0, 4).every(option => MODE_RE.test(option.label))).toBe(true);
+    expect(findModeOption(options, 'SCOPE EXPANSION')?.index).toBe(4);
+    expect(findModeOption(options, 'HOLD SCOPE')?.index).toBe(1);
+  });
+
+  test('retains ordinary, wrapped, and emphasized mode labels', () => {
+    for (const label of ['SCOPE EXPANSION (Recommended)', 'scope\t expansion', 'SCOPE\r\nEXPANSION', '**SCOPE EXPANSION**']) {
+      expect(findModeOption([{ index: 2, label }], 'SCOPE EXPANSION')?.index).toBe(2);
+    }
+  });
+
+  test('an omitted target remains missing, including when another mode mentions it', () => {
+    const options = [
+      { index: 1, label: 'HOLD SCOPE\rPrefer this over SCOPE EXPANSION.' },
+      { index: 2, label: 'SELECTIVE EXPANSION' },
+      { index: 3, label: 'SCOPE REDUCTION' },
+      { index: 4, label: 'Chat about this\rSCOPEEXPANSION (old screen)' },
+    ];
+    expect(findModeOption(options, 'SCOPE EXPANSION')).toBeUndefined();
+    expect(MODE_RE.test(options[3]!.label)).toBe(false);
+    expect(MODE_RE.test('Scope expansionist')).toBe(false);
+  });
+});
 
 describe('isPermissionDialogVisible', () => {
   test('matches "Bash command requires permission" prompts', () => {
