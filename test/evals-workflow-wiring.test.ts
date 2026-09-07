@@ -22,6 +22,7 @@
 import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { buildRunManifest, parseCliOptions } from '../scripts/test-paid-shards';
 
 const ROOT = path.join(import.meta.dir, '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -123,6 +124,56 @@ describe('evals.yml sliced-lane wiring (post-matrix)', () => {
 });
 
 describe('evals-periodic.yml sliced-lane wiring', () => {
+  test('the CI job cap covers the live periodic slice census plus setup', () => {
+    type Env = Record<string, string>;
+    const workflow = Bun.YAML.parse(periodicYml) as {
+      env?: Env;
+      jobs: Record<string, {
+        env?: Env;
+        'timeout-minutes': number;
+        strategy?: { matrix: { slice: number[] } };
+        steps: Array<{ run?: string; env?: Env }>;
+      }>;
+    };
+    const planner = workflow.jobs['plan-slices'];
+    const executor = workflow.jobs['eval-slices'];
+    const plannerSteps = planner.steps.filter(step => step.run?.includes('--emit-plan '));
+    const executorSteps = executor.steps.filter(step => step.run?.includes('--plan '));
+    expect(plannerSteps).toHaveLength(1);
+    expect(executorSteps).toHaveLength(1);
+    const cliArgs = (run: string) => {
+      const command = 'bun run scripts/test-paid-shards.ts ';
+      expect(run).toContain(command);
+      return run.slice(run.indexOf(command) + command.length)
+        .replace(/\$\{\{\s*matrix\.slice\s*\}\}/g, '1').trim().split(/\s+/);
+    };
+    const plannerEnv = { ...workflow.env, ...planner.env, ...plannerSteps[0].env };
+    const plannerOptions = parseCliOptions(cliArgs(plannerSteps[0].run!), plannerEnv);
+    const executorOptions = parseCliOptions(cliArgs(executorSteps[0].run!), {
+      ...workflow.env, ...executor.env, ...executorSteps[0].env,
+    });
+    expect(plannerEnv.EVALS_ALL).toBe('1');
+    expect(plannerOptions.tier).toBe('periodic');
+    expect(executorOptions.tier).toBe('periodic');
+    const slices = executor.strategy!.matrix.slice;
+    expect(slices).toEqual(Array.from({ length: plannerOptions.slices }, (_, i) => i + 1));
+    const manifest = buildRunManifest({
+      tier: plannerOptions.tier, sliceCount: plannerOptions.slices,
+      evalsAll: true, env: plannerEnv, rootDir: ROOT,
+    });
+    const counts = slices.map(slice => manifest.entries.filter(entry => entry.status === 'planned' && entry.slice === slice).length);
+    const maxShards = Math.max(...counts);
+    expect(maxShards).toBeGreaterThan(0);
+    // The job cap includes checkout/build/config/artifacts around the executor.
+    const setupAllowanceMinutes = 20;
+    const processMinutes = executorOptions.timeoutMs / 60_000;
+    const requiredMinutes = Math.ceil(maxShards / executorOptions.jobs) * processMinutes + setupAllowanceMinutes;
+    expect(executor['timeout-minutes'],
+      `periodic slice cap must cover ${maxShards} shards / ${executorOptions.jobs} jobs ` +
+      `at ${processMinutes} minutes each + ${setupAllowanceMinutes} minutes setup = ${requiredMinutes} minutes`,
+    ).toBeGreaterThanOrEqual(requiredMinutes);
+  });
+
   test('planner/executor/report tier=periodic and slice counts agree', () => {
     expect(periodicYml).toMatch(/EVALS_TIER=periodic bun run scripts\/test-paid-shards\.ts --tier periodic --emit-plan/);
     expect(periodicYml).toMatch(/EVALS_TIER=periodic bun run scripts\/test-paid-shards\.ts --tier periodic --plan .* --slice /);

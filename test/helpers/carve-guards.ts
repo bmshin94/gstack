@@ -11,7 +11,7 @@
  *
  * Consumers:
  *   - test/carve-section-ordering.test.ts   (E2, gate)  → staticInvariants
- *   - test/carve-section-loading.test.ts    (T2, periodic) → requiredReads + scenario
+ *   - test/carve-section-loading-*.test.ts    (T2, periodic) → requiredReads + scenario
  *   - test/carve-guard-completeness.test.ts (E1, gate)  → the set must equal the
  *                                                          filesystem carved set
  *   - test/carve-guards-negative.test.ts    (ET1, gate) → injects a broken fixture

@@ -6,18 +6,22 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 export function seedCeoFindingProject(projectDir: string, plan: string): void {
+  seedPlanReviewProject(projectDir, plan, 'plan-ceo-review');
+}
+
+export function seedPlanReviewProject(projectDir: string, plan: string, skill: 'plan-ceo-review' | 'plan-eng-review' | 'plan-design-review' | 'plan-devex-review'): void {
   if (!fs.lstatSync(projectDir).isDirectory() || fs.readdirSync(projectDir).length !== 0) {
-    throw new Error('CEO finding fixture requires a fresh private directory');
+    throw new Error('Plan review fixture requires a fresh private directory');
   }
   fs.writeFileSync(path.join(projectDir, 'review-input.md'), plan, { flag: 'wx' });
-  fs.writeFileSync(path.join(projectDir, 'README.md'), '# CEO plan review fixture\n', { flag: 'wx' });
+  fs.writeFileSync(path.join(projectDir, 'README.md'), `# ${skill} fixture\n`, { flag: 'wx' });
   fs.writeFileSync(path.join(projectDir, 'CLAUDE.md'), [
-    '# CEO plan review', '',
+    `# ${skill}`, '',
     'The requested review target is the plan in `review-input.md`. Read it before',
     'choosing review scope. Follow its instruction for the output plan path.',
     'This repository contains the review input; its branch diff is not the plan.', '',
     '## Skill routing', '',
-    '- Review the supplied plan with /plan-ceo-review.', '',
+    `- Review the supplied plan with /${skill}.`, '',
   ].join('\n'), { flag: 'wx' });
   const git = (args: string[]) => execFileSync('git', args, { cwd: projectDir, stdio: 'pipe', timeout: 10_000 });
   git(['init', '-b', 'main']);

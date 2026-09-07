@@ -4,12 +4,14 @@
  * The behavioral proof that a REAL agent actually Reads each carved skill's
  * required sections at runtime — not just that the skeleton structure looks right
  * (that's E2, free, per-PR). One file iterating the canonical CARVE_GUARDS
- * registry (EQ2): registry membership IS the test, so "registered ⇒ asserted" is
+ * registry (EQ2): the free wrapper census enforces "registered ⇒ asserted", so coverage is
  * structural — a carve can't be registered yet behaviorally unguarded.
+ * Each paid wrapper registers exactly one case: its 600s outer budget and
+ * configured retry both fit the unchanged 1800s process wall, even serially.
  *
  * Per codex refined-plan pass:
  *   #2 — ONE test() per skill, each with its own timeout + named failure output.
- *        The enclosing paid shard still has a separate whole-file deadline.
+ *        Each case has its own paid shard and separate process deadline.
  *   #3 / D-CODEX(A) — GSTACK_CARVE_SKILL=<name> runs only that skill's case, so
  *        an explicit targeted run can scope cost; unset runs all.
  *   #7 — each case drives the run with the registry's `scenario` (built to force
@@ -20,12 +22,10 @@
  */
 
 import { test, expect } from 'bun:test';
-import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
-import { describeE2ETier } from './helpers/e2e-gate';
-import { setupSkillDir, skillFromWorktree, captureSectionReads } from './helpers/auq-sdk-capture';
-import { CARVE_GUARDS } from './helpers/carve-guards';
+import { CAPTURE_LONG_MS } from './eval-budgets';
+import { setupSkillDir, skillFromWorktree, captureSectionReads } from './auq-sdk-capture';
+import { CARVE_GUARDS } from './carve-guards';
 
-const describeE2E = describeE2ETier('periodic');
 const runId = `carve-section-loading-${process.env.EVALS_RUN_ID ?? 'local'}`;
 const only = process.env.GSTACK_CARVE_SKILL?.trim();
 
@@ -46,12 +46,11 @@ const PLAN_MD = [
   '',
 ].join('\n');
 
-describeE2E('carve behavioral section-loading (periodic, SDK capture)', () => {
-  for (const guard of Object.values(CARVE_GUARDS)) {
-    // 'external' carves keep their dedicated bespoke tests (E1 verifies those exist).
-    if (guard.behavioral === 'external') continue;
-    // Cost-scoped selection: when GSTACK_CARVE_SKILL is set, run only that skill.
-    if (only && only !== guard.skill) continue;
+export function registerCarveSectionCase(skill: string): void {
+    const guard = CARVE_GUARDS[skill];
+    if (!guard || guard.behavioral === 'external') throw new Error(`No generic carved-skill case for ${skill}`);
+    // Keep explicit cost-scoped selection; the free census pins every wrapper.
+    if (only && only !== guard.skill) return;
 
     test(
       `${guard.skill}: a real run Reads ${guard.requiredReads.join(', ')}`,
@@ -100,5 +99,4 @@ describeE2E('carve behavioral section-loading (periodic, SDK capture)', () => {
       },
       CAPTURE_LONG_MS,
     );
-  }
-});
+}

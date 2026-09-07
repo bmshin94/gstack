@@ -42,7 +42,7 @@ describe('eval budget tiers', () => {
   });
 
   test('counting cases retain 25-minute work budgets including setup, plus cleanup only', () => {
-    const files = ['test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/skill-e2e-plan-ceo-split-overflow.test.ts', 'test/skill-e2e-plan-eng-finding-count.test.ts', 'test/skill-e2e-plan-design-finding-count.test.ts', 'test/skill-e2e-plan-devex-finding-count.test.ts', 'test/skill-e2e-plan-eng-multi-finding-batching.test.ts'];
+    const files = ['test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/skill-e2e-plan-ceo-paired-control.test.ts', 'test/skill-e2e-plan-ceo-split-overflow.test.ts', 'test/skill-e2e-plan-eng-finding-count.test.ts', 'test/skill-e2e-plan-design-finding-count.test.ts', 'test/skill-e2e-plan-devex-finding-count.test.ts', 'test/skill-e2e-plan-eng-multi-finding-batching.test.ts'];
     expect(PLAN_SKILL_COUNT_FINALIZE_MS).toBe(10_000);
     expect(1_500_000).toBeLessThanOrEqual(PTY_LONG_MS * 1.25);
     expect(1_500_000 + PLAN_SKILL_COUNT_FINALIZE_MS + WALL_OVERHEAD_MS).toBeLessThanOrEqual(DEFAULT_SHARD_TIMEOUT_MS);
@@ -50,6 +50,7 @@ describe('eval budget tiers', () => {
     for (const file of files) {
       const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
       const bodies = source.split('    async () => {').slice(1);
+      expect(bodies.length, `${file} must own one process budget`).toBe(1);
       const outerBudgets = source.match(/1_500_000 \+ PLAN_SKILL_COUNT_FINALIZE_MS/g) ?? [];
       expect(outerBudgets.length, file).toBe(bodies.length);
       for (const body of bodies) {

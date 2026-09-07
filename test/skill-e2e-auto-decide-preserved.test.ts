@@ -31,16 +31,14 @@
  *     "Auto-decided ... (your preference)" text rendered)
  *
  * If outcome is 'asked', the model ignored the user's `/plan-tune`
- * preference — that's a regression against the opt-in feature. If outcome
- * is 'plan_ready' with no AUTO_DECIDE text, the model auto-decided BUT
- * skipped the annotation (acceptable; AUTO_DECIDE annotation is good
- * practice but not the load-bearing behavior).
+ * preference — that's a regression against the opt-in feature. A bare 'plan_ready' without mode-specific evidence is inconclusive, not a pass.
  */
 
 import { test, expect } from 'bun:test';
 import { CAPTURE_LONG_MS, PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
-import { runPlanSkillObservation } from './helpers/claude-pty-runner';
+import { runCeoModePreferenceObservation } from './helpers/ceo-mode-preference';
+import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
 import { seedHermeticGstackHome } from './helpers/hermetic-env';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -53,8 +51,13 @@ const ROOT = path.resolve(import.meta.dir, '..');
 
 describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () => {
   test('user-opted-in question still auto-decides when AskUserQuestion is --disallowedTools', async () => {
-    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-auto-decide-'));
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-auto-decide-'));
+    const tmpHome = path.join(fixture, 'state');
+    const project = path.join(fixture, 'project');
+    fs.mkdirSync(tmpHome);
+    fs.mkdirSync(project);
     try {
+      seedCeoFindingProject(project, '# Export saved settings\n\nAdd a CSV export button to the settings page. Reuse the existing settings API;\nvalidate escaping for commas, quotes, and newlines. The change touches the settings\npage, a CSV formatter, and formatter tests. Review this plan before implementation.\n');
       // This explicit override replaces the default hermetic state. Keep its
       // normal onboarding/update baseline so unrelated setup prompts cannot
       // intercept the one question whose never-ask behavior this case checks.
@@ -63,6 +66,7 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
       // 1. Bootstrap the tmp GSTACK_HOME with question_tuning=true.
       const configBin = path.join(ROOT, 'bin', 'gstack-config');
       const setRes = spawnSync(configBin, ['set', 'question_tuning', 'true'], {
+        cwd: project,
         env: { ...process.env, GSTACK_HOME: tmpHome },
         encoding: 'utf-8',
         timeout: 30_000,
@@ -75,9 +79,8 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
       //    claude would resolve). The preference file path keys on this slug.
       const slugBin = path.join(ROOT, 'bin', 'gstack-slug');
       const slugRes = spawnSync(slugBin, [], {
-        // LIVE-REPO CWD: gstack-slug resolves the slug from this repo's git
-        // remote — must match what the spawned claude (repo cwd) resolves.
-        cwd: ROOT,
+        // The slug probe and model must resolve the same isolated project.
+        cwd: project,
         env: { ...process.env, GSTACK_HOME: tmpHome },
         encoding: 'utf-8',
         timeout: 30_000,
@@ -96,6 +99,7 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
           source: 'plan-tune',
         })],
         {
+          cwd: project,
           env: { ...process.env, GSTACK_HOME: tmpHome },
           encoding: 'utf-8',
           timeout: 30_000,
@@ -111,7 +115,7 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
         throw new Error(`expected preference file at ${prefFile}; not found. slug=${slug}`);
       }
 
-      // 4. Run /plan-ceo-review with the Conductor flag set + isolated state.
+      // 4. Run the real skill with Conductor flags in the seeded project.
       //    GSTACK_HOME=tmpHome is REQUIRED: the preference + question_tuning were
       //    seeded there. Without it the spawned claude reads the real ~/.gstack,
       //    never sees the never-ask preference, and the test silently exercises
@@ -119,33 +123,24 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
       //    CONDUCTOR_WORKSPACE_PATH additionally proves auto-decide still WINS
       //    over the Conductor prose redirect (precedence: settled preference
       //    beats transport-avoidance).
-      const obs = await runPlanSkillObservation({
-        skillName: 'plan-ceo-review',
-        inPlanMode: true,
-        extraArgs: ['--disallowedTools', 'AskUserQuestion'],
+      const obs = await runCeoModePreferenceObservation({
+        cwd: project,
         timeoutMs: CAPTURE_LONG_MS,
-        env: { GSTACK_HOME: tmpHome, CONDUCTOR_WORKSPACE_PATH: tmpHome },
+        env: { GSTACK_HOME: tmpHome, CONDUCTOR_WORKSPACE_PATH: project },
       });
 
-      // 5. Pass: 'auto_decided' (the strongest signal) or 'plan_ready' with
-      //    no question rendered. Fail: 'asked' (model ignored the opt-in).
-      if (obs.outcome === 'asked') {
+      // A never-ask preference applies only to the mode question. The helper
+      // answers owned, unrelated questions once and ignores tool previews.
+      console.log('Mode preference observation:', JSON.stringify(obs));
+      if (obs.outcome !== 'auto_decided') {
         throw new Error(
-          `AUTO_DECIDE regression: the model surfaced an AskUserQuestion despite the user's never-ask preference.\n` +
-            `summary: ${obs.summary}\n` +
-            `--- evidence (last 2KB visible) ---\n${obs.evidence}`,
+          `AUTO_DECIDE mode preference ${obs.outcome === 'asked' ? 'regression' : 'unverified'}: outcome=${obs.outcome}\n` +
+          `--- owned evidence ---\n${obs.evidence}`,
         );
       }
-      if (obs.outcome === 'silent_write' || obs.outcome === 'exited' || obs.outcome === 'timeout') {
-        throw new Error(
-          `AUTO_DECIDE preserve test inconclusive: outcome=${obs.outcome}\n` +
-            `summary: ${obs.summary}\n` +
-            `--- evidence (last 2KB visible) ---\n${obs.evidence}`,
-        );
-      }
-      expect(['auto_decided', 'plan_ready']).toContain(obs.outcome);
+      expect(obs.outcome).toBe('auto_decided');
     } finally {
-      try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* best-effort */ }
+      try { fs.rmSync(fixture, { recursive: true, force: true }); } catch { /* best-effort */ }
     }
   }, PTY_MS);
 });

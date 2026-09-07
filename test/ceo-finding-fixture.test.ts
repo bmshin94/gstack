@@ -3,12 +3,24 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
+import { seedCeoFindingProject, seedPlanReviewProject } from './helpers/ceo-finding-fixture';
 import { FORCING_SPLIT_OVERFLOW_CEO } from './fixtures/forcing-finding-seeds';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
 describe('CEO finding fixture establishes scope before launch', () => {
+  test.each(['plan-eng-review', 'plan-design-review', 'plan-devex-review'] as const)('%s receives its own committed target and routing', skill => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'review-fixture-'));
+    try {
+      const plan = '# Review this specific plan\nKeep every finding.\n';
+      seedPlanReviewProject(root, plan, skill);
+      expect(fs.readFileSync(path.join(root, 'review-input.md'), 'utf8')).toBe(plan);
+      const guide = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
+      expect(guide).toContain(`/${skill}`);
+      expect(guide).not.toContain('/plan-ceo-review');
+      expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: root, encoding: 'utf8' })).toBe(plan);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
   test('input and project instructions are committed before the real preamble runs', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-finding-seed-'));
     try {

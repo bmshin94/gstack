@@ -146,15 +146,27 @@ export interface TierSelection {
   excluded: Array<{ file: string; reason: string }>;
 }
 
-export function selectPaidTestFiles(files: string[], tier: PaidTier, rootDir = ROOT): TierSelection {
+export function selectPaidTestFiles(files: string[], tier: PaidTier, rootDir = ROOT, env: NodeJS.ProcessEnv = process.env): TierSelection {
   const selected: string[] = [];
   const excluded: Array<{ file: string; reason: string }> = [];
+  const carveSkill = tier === 'periodic' ? env.GSTACK_CARVE_SKILL?.trim() : undefined;
+  const carveWrapper = (file: string) => /^test\/carve-section-loading-(.+)\.test\.ts$/.exec(normalizeRelativePath(file))?.[1];
+  if (carveSkill && files.some(file => carveWrapper(file)) && !files.some(file => carveWrapper(file) === carveSkill)) {
+    throw new Error(`GSTACK_CARVE_SKILL=${carveSkill} has no generic section-loading wrapper`);
+  }
   // Periodic-lane exclusions (documented-red / manual-hardware files): a
   // known-red weekly shard is triage waste locally AND in CI, so the list
   // applies to every periodic run, with the reason surfaced per file.
   const ciExcluded = (file: string): { reason: string; tracking: string } | undefined =>
     tier === 'periodic' ? PERIODIC_CI_EXCLUDE[normalizeRelativePath(file)] : undefined;
   for (const file of files) {
+    // One wrapper per process means a child-side return now creates an empty
+    // shard. Apply the existing explicit cost scope before planning processes.
+    const skill = carveWrapper(file);
+    if (carveSkill && skill && skill !== carveSkill) {
+      excluded.push({ file, reason: `GSTACK_CARVE_SKILL=${carveSkill} selects another section-loading case` });
+      continue;
+    }
     const exclusion = ciExcluded(file);
     if (exclusion) {
       excluded.push({ file, reason: `excluded: ${exclusion.reason} [${exclusion.tracking}]` });
@@ -787,7 +799,24 @@ export const RETRY_OVERRIDES: Record<string, number> = {
   'test/skill-e2e-plan-mode-no-op.test.ts': 2,
 };
 
+/** These complete 25-minute cases each own a 30-minute process. A Bun retry
+ * cannot retain its model budget inside that same wall. Run once and preserve
+ * the real failure; any investigated rerun gets a fresh process and receipt.
+ */
+export const SINGLE_ATTEMPT_FILES = new Set([
+  'test/skill-e2e-plan-ceo-finding-count.test.ts',
+  'test/skill-e2e-plan-ceo-paired-control.test.ts',
+  'test/skill-e2e-plan-ceo-split-overflow.test.ts',
+  'test/skill-e2e-plan-design-finding-count.test.ts',
+  'test/skill-e2e-plan-devex-finding-count.test.ts',
+  'test/skill-e2e-plan-eng-finding-count.test.ts',
+  'test/skill-e2e-plan-eng-multi-finding-batching.test.ts',
+]);
+
 export function retriesForFiles(files: string[]): number {
+  // A caller grouping files explicitly must also preserve a long case's one
+  // attempt contract. Default grouping is one file per process.
+  if (files.some(file => SINGLE_ATTEMPT_FILES.has(normalizeRelativePath(file)))) return 0;
   return Math.max(1, ...files.map((f) => RETRY_OVERRIDES[normalizeRelativePath(f)] ?? 1));
 }
 
@@ -805,7 +834,7 @@ export function buildRunManifest(opts: {
   }
   const rootDir = opts.rootDir ?? ROOT;
   const discovered = opts.discovered ?? collectPaidTestFiles(rootDir);
-  const { selected, excluded } = selectPaidTestFiles(discovered, opts.tier, rootDir);
+  const { selected, excluded } = selectPaidTestFiles(discovered, opts.tier, rootDir, opts.env ?? process.env);
   const shards = planPaidShards(selected, { maxFilesPerShard: 1 });
   const diffSelection = computePaidDiffSelection(opts.env ?? process.env);
   const { runnable, skipped } = partitionShardsByDiffSelection(shards, diffSelection.selectedNames);
@@ -1097,6 +1126,9 @@ async function main(): Promise<number> {
         withinShardConcurrency: options.withinShardConcurrency,
         env: {
           ...process.env,
+          // Manifest filenames already encode carve selection. Ambient scope
+          // must not suppress a planned wrapper when this slice executes.
+          GSTACK_CARVE_SKILL: '',
           EVALS: '1',
           EVALS_TIER: options.tier,
           ...(manifest.evalsAll ? { EVALS_ALL: '1' } : {}),

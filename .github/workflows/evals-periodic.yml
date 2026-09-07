@@ -111,9 +111,9 @@ jobs:
   eval-slices:
     runs-on: ubicloud-standard-8
     needs: [build-image, plan-slices]
-    # ~70 shards / 6 slices / EVALS_JOBS=2, 1800s shard wall — worst case is
-    # bounded by ceil(12/2) x 30min; typical is far under.
-    timeout-minutes: 200
+    # The free workflow policy checks the live manifest's largest slice:
+    # ceil(shards / EVALS_JOBS) x process wall, plus 20min for setup/teardown.
+    timeout-minutes: 300
     permissions:
       contents: read
       packages: read

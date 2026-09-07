@@ -33,7 +33,7 @@
 import { test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { navigateToModeAskUserQuestion, readNativeModePosture } from './helpers/plan-skill-mode-navigation';
-import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
+import { PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import {
   launchClaudePty,
@@ -63,7 +63,8 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
         const session = await launchClaudePty({
           permissionMode: 'plan',
           extraArgs: ['--session-id', sessionId],
-          timeoutMs: CAPTURE_LONG_MS,
+          // Navigation (420s) + posture (240s) must both fit; phase budgets stay fixed.
+          timeoutMs: PTY_MS,
           seedSkills: true,
         });
         try {
@@ -118,7 +119,7 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
           await session.close();
         }
       },
-      CAPTURE_LONG_MS,
+      PTY_MS,
     );
   }
 });

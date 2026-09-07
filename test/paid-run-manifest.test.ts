@@ -11,6 +11,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 
 import {
@@ -20,6 +22,7 @@ import {
   parseRunManifest,
   retriesForFiles,
   RETRY_OVERRIDES,
+  SINGLE_ATTEMPT_FILES,
   summarize,
   summaryExitCode,
   verifySliceResults,
@@ -83,6 +86,79 @@ describe('run manifest (planner)', () => {
     };
     expect(() => parseRunManifest(JSON.stringify(outOfRange))).toThrow(/out-of-range/);
   });
+});
+
+describe('manifest executor scope', () => {
+  test('a conflicting inherited carve scope cannot suppress a planned case; direct Bun stays scoped', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-manifest-scope-'));
+    const fixtureRoot = path.join(dir, 'fixture');
+    const receipt = path.join(dir, 'captures.jsonl');
+    fs.mkdirSync(path.join(fixtureRoot, 'test'), { recursive: true });
+    const discovered = ['review', 'browse'].map(skill => `test/carve-section-loading-${skill}.test.ts`);
+    try {
+      for (const skill of ['review', 'browse']) {
+        // Exercise the real registration filter and assertions, with only the
+        // model-capture boundary replaced in this isolated child process.
+        fs.writeFileSync(path.join(fixtureRoot, `test/carve-section-loading-${skill}.test.ts`), `
+          import { mock, expect } from 'bun:test';
+          import { appendFileSync } from 'node:fs';
+          import { CARVE_GUARDS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/carve-guards.ts'))};
+          mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/auq-sdk-capture.ts'))}, () => ({
+            skillFromWorktree: () => ({ skillMd: 'free fixture', sectionsFrom: '' }),
+            setupSkillDir: () => ${JSON.stringify(fixtureRoot)},
+            captureSectionReads: async ({ skillName }) => {
+              expect(skillName).toBe(${JSON.stringify(skill)});
+              appendFileSync(${JSON.stringify(receipt)}, JSON.stringify({ skill: skillName, scope: process.env.GSTACK_CARVE_SKILL }) + '\\n');
+              return { readSections: new Set(CARVE_GUARDS[skillName].requiredReads), reportProduced: true, output: 'Local fake review report. '.repeat(12) };
+            },
+          }));
+          const { registerCarveSectionCase } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/carve-section-case.ts'))});
+          registerCarveSectionCase(${JSON.stringify(skill)});
+        `);
+      }
+      const manifest = buildRunManifest({
+        tier: 'periodic', sliceCount: 1, evalsAll: true, discovered, rootDir: fixtureRoot,
+        env: { EVALS_ALL: '1', GSTACK_CARVE_SKILL: 'review' },
+      });
+      expect(manifest.entries.filter(e => e.status === 'planned').map(e => e.file)).toEqual([discovered[0]]);
+      expect(manifest.entries.filter(e => e.status === 'excluded').map(e => e.file)).toEqual([discovered[1]]);
+      // Absolute fixture selectors let the real executor use its ordinary root
+      // while every selected test and receipt remains owned by this test.
+      manifest.entries = manifest.entries.map(e => ({ ...e, file: path.join(fixtureRoot, e.file) }));
+      const manifestPath = path.join(dir, 'manifest.json');
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+      const env = {
+        PATH: path.dirname(process.execPath),
+        ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+        HOME: dir, TMPDIR: dir, TEMP: dir, TMP: dir,
+        EVALS_PREFLIGHT_OK: '1', GSTACK_CLAUDE_CLI_VERSION: 'free-fixture',
+        GSTACK_EVAL_DIR: path.join(dir, 'evals'), GSTACK_CARVE_SKILL: 'browse',
+      };
+      const run = (args: string[]) => {
+        const result = spawnSync(process.execPath, args, { cwd: ROOT, env, encoding: 'utf8', timeout: 20_000 });
+        expect(result.error).toBeUndefined();
+        expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      };
+      const captures = () => fs.readFileSync(receipt, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+
+      // No API credentials are inherited, preflight/version probes are skipped,
+      // and both files replace the model module before importing the real helper.
+      run(['test', ...discovered.map(file => path.join(fixtureRoot, file))]);
+      expect(captures()).toEqual([{ skill: 'browse', scope: 'browse' }]);
+      fs.writeFileSync(receipt, '');
+
+      run([path.join(ROOT, 'scripts/test-paid-shards.ts'), '--tier', 'periodic', '--plan', manifestPath, '--slice', '1', '--jobs', '1', '--timeout', '10']);
+      expect(captures()).toEqual([{ skill: 'review', scope: '' }]);
+      const slice = JSON.parse(fs.readFileSync(path.join(env.GSTACK_EVAL_DIR, 'slice-1.json'), 'utf8'));
+      expect(slice.outcomes).toHaveLength(1);
+      expect(slice.outcomes[0]).toMatchObject({
+        files: [path.join(fixtureRoot, discovered[0])], status: 'passed', exitCode: 0, executedTests: 1,
+      });
+      expect(env.GSTACK_CARVE_SKILL).toBe('browse');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 describe('slice-result reconciliation (report)', () => {
@@ -173,6 +249,15 @@ describe('hollow-shard guard', () => {
 });
 
 describe('retry parity', () => {
+  test('a long case gets one complete attempt instead of an inevitably truncated retry', () => {
+    expect(SINGLE_ATTEMPT_FILES.size).toBe(7);
+    for (const file of SINGLE_ATTEMPT_FILES) {
+      expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
+      expect(retriesForFiles([file])).toBe(0);
+      expect(retriesForFiles([file.replaceAll('/', '\\')])).toBe(0);
+      expect(buildPaidShardArgs([file], 1_800_000, 1, retriesForFiles([file])).join(' ')).toContain('--retry 0');
+    }
+  });
   test('overrides exist only for the files whose matrix rows earned them, and each names a real file', () => {
     expect(Object.keys(RETRY_OVERRIDES).sort()).toEqual([
       'test/skill-e2e-office-hours-auto-mode.test.ts',

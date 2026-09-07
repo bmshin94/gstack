@@ -9,6 +9,7 @@
  */
 
 import { test } from 'bun:test';
+import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -65,15 +66,15 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
       const planPath = path.join(tmpDir, 'gstack-test-plan-design.md');
 
       try {
+        seedPlanReviewProject(tmpDir, planDesign5Findings(planPath), 'plan-design-review');
         const obs = await runPlanSkillCounting({
           skillName: 'plan-design-review',
           slashCommand: '/plan-design-review',
-          followUpPrompt: planDesign5Findings(planPath),
+          followUpPrompt: '', // plan already committed before the first model turn
           isLastStep0AUQ: designStep0Boundary,
           reviewCountCeiling: CEILING + 1,
-          // LIVE-REPO CWD: PTY session needs the repo cwd — gstack skill
-          // registry + hermetic pre-trusted dir (hermetic-env trustedDirs).
-          cwd: process.cwd(),
+          // The review target is present before scope selection.
+          cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt),
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
