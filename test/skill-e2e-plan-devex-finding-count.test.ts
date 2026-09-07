@@ -15,6 +15,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   runPlanSkillCounting,
+  PLAN_SKILL_COUNT_FINALIZE_MS,
   devexStep0Boundary,
   assertReviewReportAtBottom,
 } from './helpers/claude-pty-runner';
@@ -56,6 +57,7 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
   test(
     `5-finding plan emits ${FLOOR}-${CEILING} review-phase AskUserQuestions`,
     async () => {
+      const caseStartedAt = Date.now();
       // Per-run artifact dir: a hardcoded shared /tmp path collides under
       // --retry, EVALS_JOBS>1, or concurrent worktrees (a sibling's finally-
       // rmSync deletes this run's artifact → spurious D19 failure).
@@ -72,7 +74,7 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
           // LIVE-REPO CWD: PTY session needs the repo cwd — gstack skill
           // registry + hermetic pre-trusted dir (hermetic-env trustedDirs).
           cwd: process.cwd(),
-          timeoutMs: 1_500_000,
+          timeoutMs: 1_500_000 - (Date.now() - caseStartedAt),
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
@@ -132,6 +134,6 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
         }
       }
     },
-    1_500_000 /* physical ceiling: the 25-min CI job + 1800s shard wall cap what can actually execute */,
+    1_500_000 + PLAN_SKILL_COUNT_FINALIZE_MS /* same work budget, plus bounded finalization */,
   );
 });

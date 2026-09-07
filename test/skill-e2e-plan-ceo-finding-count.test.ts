@@ -17,42 +17,16 @@
 
 import { test } from 'bun:test';
 import { describeE2ETier } from './helpers/e2e-gate';
+import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   runPlanSkillCounting,
+  PLAN_SKILL_COUNT_FINALIZE_MS,
   ceoStep0Boundary,
   assertReviewReportAtBottom,
-  type AskUserQuestionFingerprint,
 } from './helpers/claude-pty-runner';
-
-/**
- * /plan-ceo-review's first AUQ asks "what scope?" with options like
- *   1. Branch diff vs main
- *   2. A specific plan file or design doc
- *   3. An idea you'll describe inline
- *   ...
- *   7. Skip interview and plan immediately
- *
- * The default pick (1) routes to "branch diff vs main" — the wrong target
- * for our seeded fixture (the agent would review the gstack PR itself,
- * recursively). Picking "Skip interview and plan immediately" bypasses
- * Step 0 and routes the agent to review the chat context (where our
- * follow-up plan was pasted).
- */
-function pickSkipInterview(fp: AskUserQuestionFingerprint): number {
-  const skipOpt = fp.options.find((o) =>
-    /skip\s+interview|plan\s+immediately/i.test(o.label),
-  );
-  if (skipOpt) return skipOpt.index;
-  // Fallback: "describe inline" also routes to using our pasted plan.
-  const inlineOpt = fp.options.find((o) =>
-    /describe.*inline|inline.*idea/i.test(o.label),
-  );
-  if (inlineOpt) return inlineOpt.index;
-  return 1;
-}
 
 const describeE2E = describeE2ETier('periodic');
 
@@ -108,6 +82,7 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
   test(
     `5-finding plan emits ${FLOOR_DISTINCT}-${CEILING_DISTINCT} review-phase AskUserQuestions`,
     async () => {
+      const caseStartedAt = Date.now();
       // Per-run artifact dir: a hardcoded shared /tmp path collides under
       // --retry, EVALS_JOBS>1, or concurrent worktrees (a sibling's finally-
       // rmSync deletes this run's artifact → spurious D19 failure).
@@ -115,17 +90,15 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
       const planPath = path.join(tmpDir, 'gstack-test-plan-ceo.md');
 
       try {
+        seedCeoFindingProject(tmpDir, planCeo5Findings(planPath));
         const obs = await runPlanSkillCounting({
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
-          followUpPrompt: planCeo5Findings(planPath),
+          followUpPrompt: '', // review-input.md is available before the first scope question
           isLastStep0AUQ: ceoStep0Boundary,
           reviewCountCeiling: CEILING_DISTINCT + 1, // hard cap above assertion ceiling
-          firstAUQPick: pickSkipInterview, // bypass scope-selection, route to review
-          // LIVE-REPO CWD: PTY session needs the repo cwd — gstack skill
-          // registry + hermetic pre-trusted dir (hermetic-env trustedDirs).
-          cwd: process.cwd(),
-          timeoutMs: 1_500_000, // 25 min
+          cwd: tmpDir,
+          timeoutMs: 1_500_000 - (Date.now() - caseStartedAt), // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
@@ -147,7 +120,8 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
         if (obs.reviewCount < FLOOR_DISTINCT) {
           throw new Error(
             `BAND FAIL (below floor): reviewCount=${obs.reviewCount} < FLOOR=${FLOOR_DISTINCT}.\n` +
-              `Likely batching regression — agent collapsed multiple findings into fewer questions.\n` +
+              `Check scope, Step-0 boundary, and finding evidence before diagnosing batching.\n` +
+              `outcome=${obs.outcome} step0=${obs.step0Count} elapsed=${obs.elapsedMs}ms\n` +
               `Fingerprints (review-phase only):\n` +
               obs.fingerprints
                 .filter((f) => !f.preReview)
@@ -170,7 +144,7 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
         if (!fs.existsSync(planPath)) {
           throw new Error(
             `D19 FAIL: agent did not produce expected plan file at ${planPath}.\n` +
-              `Either the agent ignored the path instruction in the follow-up prompt, or\n` +
+              `Either the agent ignored the path instruction in review-input.md, or\n` +
               `the helper exited before the agent wrote the file. ` +
               `outcome=${obs.outcome} review=${obs.reviewCount}`,
           );
@@ -194,27 +168,27 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
         }
       }
     },
-    1_500_000 /* physical ceiling: the 25-min CI job + 1800s shard wall cap what can actually execute */,
+    1_500_000 + PLAN_SKILL_COUNT_FINALIZE_MS /* same work budget, plus bounded finalization */,
   );
 
   test(
     `paired-finding positive control: ${N_PAIRED} related findings produce ${FLOOR_PAIRED}-${CEILING_PAIRED} AskUserQuestions`,
     async () => {
+      const caseStartedAt = Date.now();
       // Per-run artifact dir — see the distinct-findings test above.
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-ceo-paired-'));
       const planPath = path.join(tmpDir, 'gstack-test-plan-ceo-paired.md');
 
       try {
+        seedCeoFindingProject(tmpDir, planCeo2PairedFindings(planPath));
         const obs = await runPlanSkillCounting({
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
-          followUpPrompt: planCeo2PairedFindings(planPath),
+          followUpPrompt: '', // same fixture-first scope contract as the distinct case
           isLastStep0AUQ: ceoStep0Boundary,
           reviewCountCeiling: CEILING_PAIRED + 1,
-          // LIVE-REPO CWD: PTY session needs the repo cwd — gstack skill
-          // registry + hermetic pre-trusted dir (hermetic-env trustedDirs).
-          cwd: process.cwd(),
-          timeoutMs: 1_500_000,
+          cwd: tmpDir,
+          timeoutMs: 1_500_000 - (Date.now() - caseStartedAt),
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
@@ -228,7 +202,8 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
         if (obs.reviewCount < FLOOR_PAIRED) {
           throw new Error(
             `PAIRED CONTROL FAIL: reviewCount=${obs.reviewCount} < FLOOR=${FLOOR_PAIRED}.\n` +
-              `Two deliberately related findings were batched into <2 questions — the rule failed under D12.\n` +
+              `Expected separate finding questions; check scope and Step-0 classification before diagnosing batching.\n` +
+              `outcome=${obs.outcome} step0=${obs.step0Count} elapsed=${obs.elapsedMs}ms\n` +
               `Review-phase fingerprints:\n` +
               obs.fingerprints
                 .filter((f) => !f.preReview)
@@ -249,6 +224,6 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
         }
       }
     },
-    1_500_000 /* physical ceiling: the 25-min CI job + 1800s shard wall cap what can actually execute */,
+    1_500_000 + PLAN_SKILL_COUNT_FINALIZE_MS /* same work budget, plus bounded finalization */,
   );
 });

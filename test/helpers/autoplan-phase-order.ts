@@ -1,5 +1,4 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 
 /** The PTY renders Markdown without stars and may position spaces via ANSI.
  * Keep complete-word bounds and stream order; callers dedupe first observations.
@@ -37,55 +36,10 @@ function announcedAutoplanPhases(text: string): number[] {
  * Tool payloads, user messages, and sidechain responses cannot announce phases.
  */
 export function readAutoplanTranscript(configDir: string | null, sessionId: string): AutoplanTranscriptObservation {
-  if (!configDir) throw new Error('Autoplan requires an owned hermetic transcript directory');
-  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(sessionId)) {
-    throw new Error('Autoplan transcript session ID must be a UUID');
-  }
-  const pending = { file: null, phases: [], completedLines: 0, pendingBytes: 0 };
-  const projects = path.join(configDir, 'projects');
-  let directories: fs.Dirent[];
-  try {
-    directories = fs.readdirSync(projects, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return pending;
-    throw error;
-  }
-  const files: string[] = [];
-  for (const directory of directories) {
-    if (!directory.isDirectory()) continue; // Never follow project symlinks.
-    const file = path.join(projects, directory.name, `${sessionId}.jsonl`);
-    try {
-      if (!fs.lstatSync(file).isFile()) throw new Error(`Autoplan transcript is not a regular file: ${file}`);
-      files.push(file);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-  }
-  if (files.length === 0) return pending;
-  if (files.length !== 1) throw new Error(`Ambiguous autoplan transcript for session ${sessionId}`);
-  const file = files[0];
-  let source: string;
-  try {
-    source = fs.readFileSync(file, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return pending;
-    throw error;
-  }
-  const boundary = source.lastIndexOf('\n') + 1;
-  const lines = source.slice(0, boundary).split('\n').slice(0, -1);
+  const { file, rows, completedLines, pendingBytes } = readOwnedClaudeTranscript(configDir, sessionId);
   const phases: number[] = [];
-  for (const [index, line] of lines.entries()) {
-    if (!line.trim()) continue;
-    let row: any;
-    try {
-      row = JSON.parse(line);
-      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Expected a JSON object');
-    } catch {
-      // Do not include the raw record: it may contain tool output or secrets.
-      throw new Error(`Malformed autoplan transcript JSON at ${file}:${index + 1}`);
-    }
-    if (row.type !== 'assistant' || row.message?.role !== 'assistant'
-      || row.sessionId !== sessionId || row.isSidechain === true || row.parent_tool_use_id != null) continue;
+  for (const row of rows) {
+    if (row.type !== 'assistant' || row.message?.role !== 'assistant') continue;
     if (!Array.isArray(row.message.content)) continue;
     for (const block of row.message.content) {
       if (block?.type !== 'text' || typeof block.text !== 'string') continue;
@@ -94,7 +48,7 @@ export function readAutoplanTranscript(configDir: string | null, sessionId: stri
       }
     }
   }
-  return { file, phases, completedLines: lines.length, pendingBytes: Buffer.byteLength(source.slice(boundary)) };
+  return { file, phases, completedLines, pendingBytes };
 }
 
 /** Assistant order is authoritative; rendered previews cannot establish order.

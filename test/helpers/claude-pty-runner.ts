@@ -21,6 +21,8 @@
  * tests don't need it).
  */
 
+import { randomUUID } from 'node:crypto';
+import { readPlanSkillCompletion } from './plan-skill-completion';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -1940,6 +1942,9 @@ export async function runPlanSkillObservation(opts: {
  * (`step0Count`, `reviewCount`) and the full fingerprint list for diagnostic
  * dumps when an assertion fails.
  */
+/** Existing close waits at most 2s + 1s; reserve time for cleanup/assertions. */
+export const PLAN_SKILL_COUNT_FINALIZE_MS = 10_000;
+
 export interface PlanSkillCountObservation {
   outcome:
     | 'plan_ready'
@@ -1963,12 +1968,14 @@ export interface PlanSkillCountObservation {
 
 /**
  * Drive a plan-* skill in plan mode and count distinct review-phase
- * AskUserQuestions until a terminal signal fires.
+ * AskUserQuestions until a terminal signal fires. Completion requires the
+ * owned hermetic session transcript; EVALS_HERMETIC=0 is unsupported here.
+ * Missing ownership and malformed transcripts fail instead of using PTY previews.
  *
  * Flow:
  *   1. Boot PTY in plan mode (8s grace + auto-trust dialog).
  *   2. Send `slashCommand` alone. Sleep ~3s.
- *   3. Send `followUpPrompt` as a chat message — this is the plan content
+ *   3. If supplied, send `followUpPrompt` as a chat message — this is the plan content
  *      the skill reviews. Slash commands with trailing args are rejected by
  *      Claude Code unless the skill defines them, so the plan goes as a
  *      follow-up message (the proven pattern at
@@ -1987,7 +1994,8 @@ export interface PlanSkillCountObservation {
  *      - Hard ceiling: if `reviewCount >= reviewCountCeiling`, return
  *        `ceiling_reached`. This bounds runaway counts; tests should set
  *        the ceiling above their assertion CEILING.
- *      - Soft terminals: `COMPLETION_SUMMARY_RE` match → `completion_summary`;
+ *      - Soft terminals: completed owned assistant summary, corroborated in
+ *        rendered output → `completion_summary`;
  *        plan-ready confirmation → `plan_ready`; silent write outside
  *        sanctioned dirs → `silent_write`; process exited → `exited`;
  *        wall clock exceeded → `timeout`.
@@ -2007,7 +2015,7 @@ export async function runPlanSkillCounting(opts: {
   skillName: string;
   /** Slash command to send alone, e.g. '/plan-ceo-review'. No trailing args. */
   slashCommand: string;
-  /** Plan content sent as a follow-up message ~3s after the slash command. */
+  /** Optional follow-up content. Empty when the input is already seeded in cwd. */
   followUpPrompt: string;
   /** Per-skill predicate: which answered AUQ is the last Step-0 question. */
   isLastStep0AUQ: Step0BoundaryPredicate;
@@ -2031,7 +2039,7 @@ export async function runPlanSkillCounting(opts: {
   firstAUQPick?: (fp: AskUserQuestionFingerprint) => number;
   /** Working directory. Default process.cwd() (repo cwd holds skill registry). */
   cwd?: string;
-  /** Total budget for skill to reach a terminal outcome. Default 1_500_000 (25 min). */
+  /** Remaining case work budget, measured from helper entry including boot. Default 25 min. */
   timeoutMs?: number;
   /** Extra env merged into the spawned `claude` process. */
   env?: Record<string, string>;
@@ -2040,16 +2048,10 @@ export async function runPlanSkillCounting(opts: {
 }): Promise<PlanSkillCountObservation> {
   const startedAt = Date.now();
   const defaultPick = opts.defaultPick ?? 1;
-  const timeoutMs = opts.timeoutMs ?? 1_500_000;
-
-  const session = await launchClaudePty({
-    permissionMode: 'plan',
-    cwd: opts.cwd,
-    timeoutMs: timeoutMs + 60_000,
-    env: opts.env,
-    model: opts.model,
-    seedSkills: true,
-  });
+  const requestedTimeoutMs = opts.timeoutMs ?? 1_500_000;
+  if (!Number.isFinite(requestedTimeoutMs)) throw new Error('Plan counting timeoutMs must be finite');
+  const timeoutMs = Math.max(0, requestedTimeoutMs);
+  const deadlineAt = startedAt + timeoutMs;
 
   const fingerprints: AskUserQuestionFingerprint[] = [];
   const seen = new Set<string>();
@@ -2057,34 +2059,64 @@ export async function runPlanSkillCounting(opts: {
   let step0Count = 0;
   let reviewCount = 0;
   let isFirstAUQ = true;
-  let lastSig = '';
+
+  const timeoutSummary = () => `no terminal outcome within ${timeoutMs}ms (step0=${step0Count}, review=${reviewCount})`;
+  const expired = () => Date.now() >= deadlineAt;
+  const pause = async (ms: number) => {
+    const remaining = deadlineAt - Date.now();
+    if (remaining > 0) await Bun.sleep(Math.min(ms, remaining));
+  };
 
   function snapshot(
     outcome: PlanSkillCountObservation['outcome'],
     summary: string,
     visible: string,
   ): PlanSkillCountObservation {
+    const capturedAt = Date.now();
+    if (outcome !== 'timeout' && capturedAt >= deadlineAt) {
+      outcome = 'timeout';
+      summary = timeoutSummary();
+    }
     return {
       outcome,
       summary,
       evidence: visible.slice(-3000),
-      elapsedMs: Date.now() - startedAt,
+      elapsedMs: capturedAt - startedAt,
       fingerprints,
       step0Count,
       reviewCount,
     };
   }
 
-  try {
-    await Bun.sleep(8000); // boot grace + auto-trust handler window
-    const since = session.mark();
-    session.send(`${opts.slashCommand}\r`);
-    await Bun.sleep(3000);
-    session.send(`${opts.followUpPrompt}\r`);
+  if (timeoutMs === 0) {
+    return snapshot('timeout', 'case budget exhausted before PTY launch (step0=0, review=0)', '');
+  }
 
-    const budgetStart = Date.now();
-    while (Date.now() - budgetStart < timeoutMs) {
-      await Bun.sleep(2000);
+  const sessionId = randomUUID();
+  const session = await launchClaudePty({
+    permissionMode: 'plan',
+    extraArgs: ['--session-id', sessionId],
+    cwd: opts.cwd,
+    timeoutMs: Math.max(1, deadlineAt - Date.now()),
+    env: opts.env,
+    model: opts.model,
+    seedSkills: true,
+  });
+  let since = session.mark();
+  // Case setup → remaining entry deadline → boot/polls → bounded close.
+  // Bun's separate finalization allowance never extends model work.
+  try {
+    await pause(8000); // boot grace + auto-trust handler window
+    if (expired()) return snapshot('timeout', timeoutSummary(), session.visibleSince(since));
+    since = session.mark();
+    session.send(`${opts.slashCommand}\r`);
+    await pause(3000);
+    if (expired()) return snapshot('timeout', timeoutSummary(), session.visibleSince(since));
+    if (opts.followUpPrompt) session.send(`${opts.followUpPrompt}\r`);
+
+    while (!expired()) {
+      await pause(2000);
+      if (expired()) break;
       const visible = session.visibleSince(since);
 
       // Process exited?
@@ -2123,10 +2155,10 @@ export async function runPlanSkillCounting(opts: {
 
       // Soft terminal signals — check before AUQ processing so a final
       // completion-summary doesn't get misclassified as a bonus AUQ.
-      if (COMPLETION_SUMMARY_RE.test(visible)) {
+      if (readPlanSkillCompletion(session.hermeticConfigDir, sessionId, visible)) {
         return snapshot(
           'completion_summary',
-          `skill emitted completion summary / verdict / status line (step0=${step0Count}, review=${reviewCount})`,
+          `owned assistant completed its turn with a rendered completion summary / verdict / status line (step0=${step0Count}, review=${reviewCount})`,
           visible,
         );
       }
@@ -2144,25 +2176,25 @@ export async function runPlanSkillCounting(opts: {
       // Permission dialog? Auto-grant with defaultPick. Only act on the
       // recent tail to avoid re-triggering on stale dialogs in scrollback.
       if (isPermissionDialogVisible(visible.slice(-TAIL_SCAN_BYTES))) {
+        if (expired()) break;
         session.send(`${defaultPick}\r`);
-        await Bun.sleep(1500);
+        await pause(1500);
         continue;
       }
 
-      // Parse the active AUQ. Skip same-redraw and empty-prompt cases.
+      // Parse the full AUQ before deduping: different findings often offer
+      // identical choices. The prompt-aware fingerprint also rejects redraws.
       const options = parseNumberedOptions(visible);
       if (options.length < 2) continue;
-      const sig = optionsSignature(options);
-      if (sig === lastSig) continue;
       const promptSnippet = parseQuestionPrompt(visible);
       if (promptSnippet === '') continue; // not yet rendered, poll again
-      lastSig = sig;
 
       const fingerprintHash = auqFingerprint(promptSnippet, options);
       if (seen.has(fingerprintHash)) {
         // Same content, already counted (TTY redrew with whitespace diff).
         continue;
       }
+      if (expired()) break;
       seen.add(fingerprintHash);
 
       const fp: AskUserQuestionFingerprint = {
@@ -2180,6 +2212,7 @@ export async function runPlanSkillCounting(opts: {
       const pickIdx =
         isFirstAUQ && opts.firstAUQPick ? opts.firstAUQPick(fp) : defaultPick;
       isFirstAUQ = false;
+      if (expired()) break;
       session.send(`${pickIdx}\r`);
 
       // Evaluate boundary AFTER pressing — if THIS AUQ was the last Step 0
@@ -2198,12 +2231,12 @@ export async function runPlanSkillCounting(opts: {
       }
 
       // Give the agent a beat to advance to the next state.
-      await Bun.sleep(2000);
+      await pause(2000);
     }
 
     return snapshot(
       'timeout',
-      `no terminal outcome within ${timeoutMs}ms (step0=${step0Count}, review=${reviewCount})`,
+      timeoutSummary(),
       session.visibleSince(since),
     );
   } finally {

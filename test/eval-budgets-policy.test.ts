@@ -18,6 +18,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { ALL_TIERS, PTY_LONG_MS } from './helpers/eval-budgets';
+import { PLAN_SKILL_COUNT_FINALIZE_MS } from './helpers/claude-pty-runner';
 import { isPaidTestFile } from './helpers/paid-test-set';
 import { DEFAULT_SHARD_TIMEOUT_MS } from '../scripts/test-paid-shards';
 
@@ -38,6 +39,28 @@ describe('eval budget tiers', () => {
     const values = Object.values(ALL_TIERS);
     expect([...values].sort((a, b) => a - b)).toEqual(values);
     expect(Math.max(...values)).toBe(PTY_LONG_MS);
+  });
+
+  test('counting cases retain 25-minute work budgets including setup, plus cleanup only', () => {
+    const files = ['test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/skill-e2e-plan-ceo-split-overflow.test.ts', 'test/skill-e2e-plan-eng-finding-count.test.ts', 'test/skill-e2e-plan-design-finding-count.test.ts', 'test/skill-e2e-plan-devex-finding-count.test.ts', 'test/skill-e2e-plan-eng-multi-finding-batching.test.ts'];
+    expect(PLAN_SKILL_COUNT_FINALIZE_MS).toBe(10_000);
+    expect(1_500_000).toBeLessThanOrEqual(PTY_LONG_MS * 1.25);
+    expect(1_500_000 + PLAN_SKILL_COUNT_FINALIZE_MS + WALL_OVERHEAD_MS).toBeLessThanOrEqual(DEFAULT_SHARD_TIMEOUT_MS);
+    let cases = 0;
+    for (const file of files) {
+      const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
+      const bodies = source.split('    async () => {').slice(1);
+      const outerBudgets = source.match(/1_500_000 \+ PLAN_SKILL_COUNT_FINALIZE_MS/g) ?? [];
+      expect(outerBudgets.length, file).toBe(bodies.length);
+      for (const body of bodies) {
+        cases++;
+        const start = body.indexOf('const caseStartedAt = Date.now();');
+        expect(start, file).toBeGreaterThanOrEqual(0);
+        expect(start, file).toBeLessThan(body.indexOf('fs.mkdtempSync('));
+        expect(body, file).toContain('timeoutMs: 1_500_000 - (Date.now() - caseStartedAt)');
+      }
+    }
+    expect(cases).toBe(7);
   });
 
   test('no paid-test timeout literal exceeds the ceiling tier', () => {

@@ -31,6 +31,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   runPlanSkillCounting,
+  PLAN_SKILL_COUNT_FINALIZE_MS,
   engStep0Boundary,
 } from './helpers/claude-pty-runner';
 import { FORCING_BATCHING_ENG } from './fixtures/forcing-finding-seeds';
@@ -49,6 +50,7 @@ describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () 
   test(
     `4-finding plan emits >= ${FLOOR} review-phase AskUserQuestions (no batching)`,
     async () => {
+      const caseStartedAt = Date.now();
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-eng-batching-'));
       const planPath = path.join(tmpDir, 'gstack-test-plan-eng-batching.md');
       const followUpPrompt = FORCING_BATCHING_ENG.replaceAll(FIXTURE_PLAN_PATH, planPath);
@@ -68,7 +70,7 @@ describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () 
           // LIVE-REPO CWD: PTY session needs the repo cwd — gstack skill
           // registry + hermetic pre-trusted dir (hermetic-env trustedDirs).
           cwd: process.cwd(),
-          timeoutMs: 1_500_000, // 25 min
+          timeoutMs: 1_500_000 - (Date.now() - caseStartedAt), // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
@@ -101,6 +103,6 @@ describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () 
         }
       }
     },
-    1_500_000 /* physical ceiling: the 25-min CI job + 1800s shard wall cap what can actually execute */,
+    1_500_000 + PLAN_SKILL_COUNT_FINALIZE_MS /* same work budget, plus bounded finalization */,
   );
 });
