@@ -14,15 +14,17 @@
  * completion-marker order. This observes that order through Eng completion;
  * it does not establish whether any reviewer executions overlapped.
  *
- * Approach: preserve the order in which completion markers first appear in
- * the visible stream. Several markers may arrive in one poll, so timestamps
- * are diagnostic only. Design and DX are optional; Eng must complete last.
+ * Approach: the owned main transcript establishes assistant announcement order;
+ * the rendered stream must corroborate that order. Tool previews cannot announce
+ * completion. Design and DX are optional; Eng must complete last.
+ * This oracle requires owned hermetic transcripts; EVALS_HERMETIC=0 is unsupported
+ * for this case. The shared runner's opt-out behavior is unchanged.
  *
  * Cost: ~$5-8/run, 10-15 min wall clock. Periodic — runs weekly.
  */
 
 import { test } from 'bun:test';
-import { observedAutoplanPhases, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
+import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
 import { PTY_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
@@ -30,6 +32,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { randomUUID } from 'node:crypto';
 import {
   launchClaudePty,
   isPlanReadyVisible,
@@ -38,11 +41,6 @@ import {
 } from './helpers/claude-pty-runner';
 
 const describeE2E = describeE2ETier('periodic');
-
-interface PhaseHit {
-  phase: number;
-  ts: number;
-}
 
 describeE2E('/autoplan chain ordering (periodic)', () => {
   test(
@@ -61,17 +59,22 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         gitRun(['add', '.']);
         gitRun(['commit', '-m', 'init UI-heavy fixture']);
 
+        const sessionId = randomUUID();
         const session = await launchClaudePty({
           permissionMode: 'plan',
           cwd: tempDir,
           timeoutMs: 1_080_000, // 18 min, slightly above test budget
           seedSkills: true,
+          extraArgs: ['--session-id', sessionId],
         });
 
-        const hits: PhaseHit[] = [];
+        let transcript: AutoplanTranscriptObservation = { file: null, phases: [], completedLines: 0, pendingBytes: 0 };
+        let renderedPhases: number[] = [];
+        let corroboratedPhases: number[] = [];
         let outcome: 'chain_complete' | 'plan_ready' | 'timeout' | 'exited' = 'timeout';
         let evidence = '';
         let exitCode: number | null = null;
+        const observations = () => JSON.stringify({ sessionId, transcript, renderedPhases, corroboratedPhases });
 
         try {
           await Bun.sleep(8000);
@@ -96,6 +99,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
               break;
             }
             const visible = session.visibleSince(since);
+            evidence = visible.slice(-3000);
 
             // Auto-grant any permission dialog so autoplan can keep moving
             // through its phases. The autoplan template auto-decides AskUserQuestions
@@ -112,45 +116,55 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
               }
             }
 
-            // Re-scan for any phase markers we haven't yet recorded.
-            for (const phaseNum of observedAutoplanPhases(visible)) {
-              if (hits.some(h => h.phase === phaseNum)) continue;
-              hits.push({ phase: phaseNum, ts: Date.now() });
-            }
+            transcript = readAutoplanTranscript(session.hermeticConfigDir, sessionId);
+            renderedPhases = [...new Set(observedAutoplanPhases(visible))];
+            corroboratedPhases = corroboratedAutoplanPhases(transcript.phases, visible);
+            // Reject a wrong authoritative order even if a tool preview looks
+            // correct or some assistant announcements have not rendered yet.
+            if (transcript.phases.includes(3)) validateAutoplanPhaseOrder(transcript.phases);
 
-            // Terminal: Phase 3 (Eng) seen — chain reached the required end.
-            if (hits.some(h => h.phase === 3)) {
+            // Terminal: all assistant announcements through Eng also rendered.
+            if (corroboratedPhases.includes(3) && corroboratedPhases.length === transcript.phases.length) {
               outcome = 'chain_complete';
-              evidence = visible.slice(-3000);
               break;
             }
 
             // Plan-ready as a fallback terminal — autoplan finished without
             // surfacing a Phase 3 marker. This is a regression surface.
-            if (isPlanReadyVisible(visible)) {
+            if (isPlanReadyVisible(visible) && transcript.file && transcript.pendingBytes === 0) {
               outcome = 'plan_ready';
-              evidence = visible.slice(-3000);
               break;
             }
           }
           if (outcome === 'timeout') evidence = session.visibleSince(since).slice(-3000);
+        } catch (error) {
+          throw new Error(
+            `${error instanceof Error ? error.message : String(error)}\n` +
+              `--- observed announcements ---\n${observations()}\n--- evidence ---\n${evidence}`,
+            { cause: error },
+          );
         } finally {
           await session.close();
         }
 
         if (outcome === 'exited' || outcome === 'timeout') {
           throw new Error(
-            `autoplan chain test FAILED: outcome=${outcome}, exitCode=${exitCode}, hits=${JSON.stringify(hits)}\n` +
+            `autoplan chain test FAILED: outcome=${outcome}, exitCode=${exitCode}\n` +
+              `--- observed announcements ---\n${observations()}\n` +
               `--- evidence ---\n${evidence}`,
           );
         }
 
         try {
-          validateAutoplanPhaseOrder(hits.map(hit => hit.phase));
+          validateAutoplanPhaseOrder(transcript.phases);
+          validateAutoplanPhaseOrder(corroboratedPhases);
+          if (corroboratedPhases.length !== transcript.phases.length) {
+            throw new Error('Not all assistant phase announcements appeared in the rendered stream');
+          }
         } catch (error) {
           throw new Error(
             `${error instanceof Error ? error.message : String(error)}\n` +
-              `--- observed markers ---\n${JSON.stringify(hits)}\n` +
+              `--- observed announcements ---\n${observations()}\n` +
               `--- evidence ---\n${evidence}`,
             { cause: error },
           );

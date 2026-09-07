@@ -1,7 +1,156 @@
 /** Free ordering regressions for the paid autoplan chain's observed markers. */
-import { describe, expect, test } from 'bun:test';
-import { observedAutoplanPhases, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
 import { stripAnsi } from './helpers/claude-pty-runner';
+
+describe('autoplan announcements from the owned main transcript', () => {
+  const sessionId = 'b4a90d12-0134-4ecf-9931-a2d453cc874a';
+  const otherSession = '00000000-0000-4000-8000-000000000000';
+  let configDir: string;
+  const row = (content: unknown, extra: Record<string, unknown> = {}) => JSON.stringify({
+    type: 'assistant', isSidechain: false, sessionId,
+    message: { role: 'assistant', content }, ...extra,
+  }) + '\n';
+  const text = (value: string) => [{ type: 'text', text: value }];
+  const write = (source: string, project = 'fixture', id = sessionId) => {
+    const file = path.join(configDir, 'projects', project, `${id}.jsonl`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, source);
+    return file;
+  };
+  beforeEach(() => { configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-transcript-')); });
+  afterEach(() => { fs.rmSync(configDir, { recursive: true, force: true }); });
+
+  test('missing transcript stays pending, and an owned config and UUID are required', () => {
+    expect(readAutoplanTranscript(configDir, sessionId)).toEqual({ file: null, phases: [], completedLines: 0, pendingBytes: 0 });
+    expect(() => readAutoplanTranscript(null, sessionId)).toThrow('owned hermetic');
+    expect(() => readAutoplanTranscript(configDir, '../other')).toThrow('UUID');
+  });
+
+  test('reads the captured assistant schema and canonical Markdown announcements', () => {
+    // Same role/content shape and four lines as ship-phase-render-probe-attempt2.json.
+    const file = write(row(text('**Phase 1 complete.**\n**Phase 2 complete.**\n> **Phase 2.5 complete.**\nPhase 3 complete.')));
+    const observation = readAutoplanTranscript(configDir, sessionId);
+    expect(observation).toEqual({ file, phases: [1, 2, 2.5, 3], completedLines: 1, pendingBytes: 0 });
+    const visible = stripAnsi('\x1b[2CPhase\x1b[9G1\x1b[11Gcomplete.\nPhase2complete.\nPhase2.5complete.\nPhase3complete.');
+    expect(corroboratedAutoplanPhases(observation.phases, visible)).toEqual([1, 2, 2.5, 3]);
+  });
+
+  test('tool inputs/results, thinking, user text, other sessions, and sidechains cannot announce phases', () => {
+    const marker = '**Phase 3 complete.**';
+    write([
+      row([{ type: 'tool_use', input: { content: marker } }, { type: 'thinking', thinking: marker }]),
+      row([{ type: 'tool_result', content: marker }]),
+      row(text(marker), { type: 'user', message: { role: 'user', content: text(marker) } }),
+      row(text(marker), { isSidechain: true }),
+      row(text(marker), { parent_tool_use_id: 'child-call' }),
+      row(text(marker), { sessionId: otherSession }),
+      row(text(marker), { message: { role: 'user', content: text(marker) } }),
+      row(text('**Phase 1 complete.**')),
+    ].join(''));
+    expect(readAutoplanTranscript(configDir, sessionId).phases).toEqual([1]);
+  });
+
+  test('quoted future markers and fenced or indented code are not announcements', () => {
+    write(row(text([
+      'I will print **Phase 3 complete.** later.',
+      '"Phase 3 complete."',
+      '```markdown', '**Phase 3 complete.**', '```',
+      '~~~', 'Phase 4 complete.', '~~~',
+      '    Phase 3 complete.',
+      '**Phase 1 complete.** Codex: 2 concerns.',
+    ].join('\n'))));
+    expect(readAutoplanTranscript(configDir, sessionId).phases).toEqual([1]);
+  });
+
+  test('reads only the exact UUID in direct project directories, never subagents or other sessions', () => {
+    write(row(text('Phase 3 complete.')), 'fixture', otherSession);
+    write(row(text('Phase 3 complete.')), `fixture/${sessionId}/subagents`);
+    expect(readAutoplanTranscript(configDir, sessionId).file).toBeNull();
+    write(row(text('Phase 1 complete.')));
+    expect(readAutoplanTranscript(configDir, sessionId).phases).toEqual([1]);
+  });
+
+  test('ambiguous exact-session files fail instead of selecting an arbitrary project', () => {
+    write(row(text('Phase 1 complete.')), 'one');
+    write(row(text('Phase 3 complete.')), 'two');
+    expect(() => readAutoplanTranscript(configDir, sessionId)).toThrow('Ambiguous');
+  });
+
+  test.skipIf(process.platform === 'win32')('does not follow project or transcript symlinks', () => {
+    const external = path.join(configDir, 'outside-projects');
+    fs.mkdirSync(external);
+    fs.writeFileSync(path.join(external, `${sessionId}.jsonl`), row(text('Phase 3 complete.')));
+    const projects = path.join(configDir, 'projects');
+    fs.mkdirSync(projects);
+    fs.symlinkSync(external, path.join(projects, 'linked-project'), 'dir');
+    expect(readAutoplanTranscript(configDir, sessionId).file).toBeNull();
+    fs.mkdirSync(path.join(projects, 'fixture'));
+    fs.symlinkSync(path.join(external, `${sessionId}.jsonl`), path.join(projects, 'fixture', `${sessionId}.jsonl`));
+    expect(() => readAutoplanTranscript(configDir, sessionId)).toThrow('not a regular file');
+  });
+
+  test('partial final JSONL remains pending until its newline is written', () => {
+    const final = row(text('Phase 3 complete.'));
+    const split = Math.floor(final.length / 2);
+    const file = write(row(text('Phase 1 complete.')) + final.slice(0, split));
+    expect(readAutoplanTranscript(configDir, sessionId).phases).toEqual([1]);
+    expect(readAutoplanTranscript(configDir, sessionId).pendingBytes).toBeGreaterThan(0);
+    fs.appendFileSync(file, final.slice(split, -1));
+    expect(readAutoplanTranscript(configDir, sessionId).phases).toEqual([1]);
+    fs.appendFileSync(file, '\n');
+    expect(readAutoplanTranscript(configDir, sessionId).phases).toEqual([1, 3]);
+  });
+
+  test('malformed completed JSONL fails with file/line diagnostics without exposing contents', () => {
+    const file = write(row(text('Phase 1 complete.')) + '{"sensitive-fixture-data":broken}\n');
+    expect(() => readAutoplanTranscript(configDir, sessionId)).toThrow(`${file}:2`);
+    try { readAutoplanTranscript(configDir, sessionId); } catch (error) {
+      expect(String(error)).not.toContain('sensitive-fixture-data');
+    }
+  });
+
+  test('first assistant observation order and unknown phase errors are preserved', () => {
+    write(row(text('Phase 1 complete.\nPhase 2.5 complete.\nPhase 2 complete.\nPhase 1 complete.\nPhase 3 complete.')));
+    const phases = readAutoplanTranscript(configDir, sessionId).phases;
+    expect(phases).toEqual([1, 2.5, 2, 3]);
+    expect(() => validateAutoplanPhaseOrder(phases)).toThrow('optional Design (2), optional DX (2.5)');
+    write(row(text('Phase 1 complete.\nPhase 4 complete.\nPhase 3 complete.')));
+    expect(() => validateAutoplanPhaseOrder(readAutoplanTranscript(configDir, sessionId).phases)).toThrow();
+  });
+});
+
+describe('rendered corroboration of authoritative assistant announcements', () => {
+  test('tool-only markers cannot complete the chain', () => {
+    const visible = 'Bash(printf "Phase 1 complete. Phase 3 complete.")';
+    expect(observedAutoplanPhases(visible)).toEqual([1, 3]);
+    expect(corroboratedAutoplanPhases([], visible)).toEqual([]);
+  });
+
+  test('early Eng previews do not establish order or satisfy Eng visibility after CEO', () => {
+    const preview = 'Read: Phase3complete.\n';
+    expect(corroboratedAutoplanPhases([], preview)).toEqual([]);
+    expect(corroboratedAutoplanPhases([1], preview + 'Phase1complete.')).toEqual([1]);
+    expect(corroboratedAutoplanPhases([1, 3], preview + 'Phase1complete.')).toEqual([1]);
+    expect(corroboratedAutoplanPhases([1, 3], preview + 'Phase1complete.\nPhase3complete.')).toEqual([1, 3]);
+  });
+
+  test('every announced optional phase must render, and a visible-only optional phase cannot alter order', () => {
+    expect(corroboratedAutoplanPhases([1, 2, 2.5, 3], 'Phase1complete. Phase3complete.')).toEqual([1]);
+    expect(corroboratedAutoplanPhases([1, 3], 'Phase2.5complete. Phase1complete. Phase3complete.')).toEqual([1, 3]);
+  });
+
+  test('valid-looking tool previews cannot launder a wrong assistant announcement order', () => {
+    const assistant = [1, 2.5, 2, 3];
+    const visible = 'Phase1complete. Phase2complete. Phase2.5complete. Phase3complete.\n'
+      + 'Phase1complete. Phase2.5complete. Phase2complete. Phase3complete.';
+    expect(corroboratedAutoplanPhases(assistant, visible)).toEqual(assistant);
+    expect(() => validateAutoplanPhaseOrder(assistant)).toThrow();
+  });
+});
 
 describe('autoplan completion markers from rendered output', () => {
   test('reads actual Claude 2.1.257 cursor-positioned output after ANSI stripping', () => {
