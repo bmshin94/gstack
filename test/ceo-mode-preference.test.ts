@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { inspectCeoModePreference, runCeoModePreferenceObservation } from './helpers/ceo-mode-preference';
 import type { OwnedClaudeTranscript } from './helpers/owned-claude-transcript';
-import type { ClaudePtySession } from './helpers/claude-pty-runner';
+import { stripAnsi, type ClaudePtySession } from './helpers/claude-pty-runner';
 
 const automatic = 'Mode is HOLD SCOPE (auto-decided from plan-tune preference).';
 const approach = 'D1 — Which implementation approach? <gstack-qid:plan-ceo-review-approach-select>\nA) Reuse the formatter (recommended)\nB) Add a dependency';
@@ -138,4 +138,146 @@ test('captured prose reply still requires current complete ownership and both ex
   expect(inspectCeoModePreference(transcript(owned), visible.replaceAll('plan-ceo-review-office-hours-offer', 'foreign-question')).kind).toBe('working');
   const mismatched = assistantText.replace('or A to run', 'or C to run');
   expect(inspectCeoModePreference(transcript(assistant(mismatched)), visible.replaceAll('orAtorun', 'orCtorun')).kind).toBe('working');
+});
+
+const capturedImplementation = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/ceo-mode-preference-implementation-render.json'), 'utf8'));
+test('captured three-choice reply uses the rendered marker without relying on damaged redraw prose', () => {
+  const { assistantText, rawTerminal, visible } = capturedImplementation;
+  expect(stripAnsi(rawTerminal)).toBe(visible);
+  expect(rawTerminal).not.toContain('<gstack-qid:'); // CLI markdown already removed the brackets.
+  expect(visible.replace(/\s/g, '')).toContain('ReplywithA,B,orC.gstack-qid:plan-ceo-review-implementation-approach');
+  expect(inspectCeoModePreference(transcript(assistant(assistantText)), visible)).toMatchObject({
+    kind: 'unrelated', questionId: 'plan-ceo-review-implementation-approach', answer: 'B',
+  });
+});
+
+test.each([
+  { selectors: ['A', 'B'], reply: 'Reply B to keep this scope, or A to add caching.', position: 'last' },
+  { selectors: ['A', 'B', 'C'], reply: 'Reply with A, B, or C.', position: 'first' },
+  { selectors: ['1', '2', '3', '4'], reply: 'Reply with 1, 2, 3, or 4.', position: 'first' },
+])('reply corroboration follows the unique selector inventory: $reply', ({ selectors, reply, position }) => {
+  const directive = `${reply} <gstack-qid:plan-ceo-review-cache-policy>`;
+  const options = selectors.map((selector, index) => `${selector}) Cache policy ${index}${index === 1 ? ' (recommended)' : ''}`).join('\n');
+  const text = `## D3 — Cache policy\n${position === 'first' ? directive + '\n' : ''}The choice determines expiration behavior.\n${options}${position === 'last' ? '\n' + directive : ''}`;
+  const visible = directive.replace(/[<>]/g, '').replace(/ /g, '');
+  expect(inspectCeoModePreference(transcript(assistant(text)), visible)).toMatchObject({ kind: 'unrelated', answer: selectors[1] });
+});
+
+test('captured reply cannot authorize incomplete, ambiguous, stale, quoted or mode questions', () => {
+  const { assistantText, visible } = capturedImplementation;
+  const owned = assistant(assistantText);
+  for (const input of [
+    transcript(assistant(assistantText, 'tool_use')),
+    { ...transcript(owned), pendingBytes: 1 },
+    transcript(owned, { type: 'user', message: { role: 'user', content: 'Choose B' } }),
+    transcript(owned, assistant('Working...', 'tool_use', 'newer')),
+    transcript(assistant(assistantText, 'end_turn', 'old'), assistant(assistantText, 'end_turn', 'new')),
+    transcript(assistant('Example only, not an actual question:\n' + assistantText)),
+    transcript(assistant('I will present this later:\n' + assistantText)),
+    transcript(assistant('```text\n' + assistantText + '\n```')),
+    transcript(assistant(assistantText.split('\n').map((line: string) => '> ' + line).join('\n'))),
+    transcript({ type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'end_turn', content: [
+      { type: 'tool_use', name: 'Write', input: { content: assistantText } },
+    ] } }),
+    transcript(assistant(assistantText.replace('**C)', '**B)'))),
+    transcript(assistant(assistantText.replace('**A)', '**A) (recommended)'))),
+    transcript(assistant(assistantText + '\n<gstack-qid:plan-ceo-review-other>')),
+  ]) expect(inspectCeoModePreference(input, visible).kind).toBe('working');
+  for (const render of [
+    'gstack-qid:plan-ceo-review-implementation-approach',
+    visible.replaceAll('plan-ceo-review-implementation-approach', 'foreign-question'),
+    visible.replaceAll('plan-ceo-review-implementation-approach', 'plan-ceo-review-implementation-approach-stale'),
+    visible.replaceAll('gstack-qid:plan-ceo-review-implementation-approach', '<gstack-qid:plan-ceo-review-implementation-approach-stale>'),
+    visible.replaceAll('orC.', 'orD.'),
+    visible.replaceAll('A,B,orC.', 'A,orC.'),
+    visible.replaceAll('Reply', 'Repl'),
+  ]) expect(inspectCeoModePreference(transcript(owned), render).kind).toBe('working');
+  const modeText = assistantText.replaceAll('plan-ceo-review-implementation-approach', 'plan-ceo-review-mode');
+  expect(inspectCeoModePreference(transcript(assistant(modeText)), visible.replaceAll('plan-ceo-review-implementation-approach', 'plan-ceo-review-mode')).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(modeText)), modeText).kind).toBe('asked');
+  for (const text of [
+    assistantText + '\nD) Add another format\nE) Add a fifth format',
+    assistantText.replace('**C)', '**Z)'),
+  ]) expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+});
+
+test('qid token boundaries survive normalization even before later reply text', () => {
+  const text = 'D1 — Cache policy\nReply with A<gstack-qid:plan-ceo-review-cache>, or B.\nA) Reuse (recommended)\nB) Replace';
+  const visible = 'Reply with A gstack-qid:plan-ceo-review-cache, or B.';
+  expect(inspectCeoModePreference(transcript(assistant(text)), visible).kind).toBe('unrelated');
+  expect(inspectCeoModePreference(transcript(assistant(text)), visible.replace('cache,', 'cache-stale,')).kind).toBe('working');
+});
+
+test('same-input exact tool directives are ambiguous while ordinary qid references are not', () => {
+  const { assistantText, visible } = capturedImplementation;
+  const preview = (text: string) => ({ type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'tool_use', content: [
+    { type: 'tool_use', name: 'Write', input: { content: text } },
+  ] } });
+  const result = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: assistantText }] } };
+  const current = assistant(assistantText, 'end_turn', 'current');
+  expect(inspectCeoModePreference(transcript(preview(assistantText), current), visible).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(result, current), visible).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(preview(assistantText), current), assistantText).kind).toBe('working');
+  const qidReference = '<gstack-qid:plan-ceo-review-implementation-approach>';
+  expect(inspectCeoModePreference(transcript(preview(qidReference), current), visible).kind).toBe('unrelated');
+  const nextInput = { type: 'user', message: { role: 'user', content: 'Continue this review' } };
+  expect(inspectCeoModePreference(transcript(preview(assistantText), nextInput, current), visible).kind).toBe('unrelated');
+});
+
+test('input-window scoping keeps earlier contrary mode and affirmative mode evidence', () => {
+  const { assistantText, visible } = capturedImplementation;
+  const current = assistant(assistantText, 'end_turn', 'current');
+  expect(inspectCeoModePreference(transcript(current), visible, '').kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(mode), current), mode + visible, '').kind).toBe('asked');
+  expect(inspectCeoModePreference(transcript(assistant(automatic), current), automatic + visible, '').kind).toBe('auto_decided');
+});
+
+test.each([false, true])('a previous input-window preview cannot answer a new owned question; fresh render=%s', async showCurrent => {
+  const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-preference-input-window-'));
+  const second = capturedImplementation.assistantText;
+  const sends: string[] = [];
+  let time = 0; let visible = ''; let file = ''; let sessionId = ''; let polls = 0; let closed = false;
+  const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ ...row, sessionId }) + '\n');
+  const session = {
+    hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
+    exited: () => false, close: async () => { closed = true; },
+    send(data: string) {
+      sends.push(data);
+      if (data.startsWith('/')) {
+        append({ type: 'assistant', message: { id: 'preview', role: 'assistant', stop_reason: 'tool_use', content: [
+          { type: 'tool_use', name: 'Write', input: { content: second } },
+        ] } });
+        append(assistant(approach));
+        visible += second + '\n' + approach;
+      } else if (data.startsWith('For ')) {
+        append({ type: 'user', message: { role: 'user', content: data } });
+        if (data.startsWith('For plan-ceo-review-implementation-approach,')) {
+          append(assistant(automatic, 'end_turn', 'done'));
+          visible += '\n' + automatic;
+        }
+      } else throw new Error('Unsolicited input: ' + data);
+    },
+  } as unknown as ClaudePtySession;
+  try {
+    const observation = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
+      now: () => time,
+      launch: async opts => {
+        sessionId = opts.extraArgs![1];
+        file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        return session;
+      },
+      pause: async ms => {
+        time += ms;
+        if (++polls === 3) append(assistant(second, 'end_turn', 'new-question'));
+        if (polls === 4 && showCurrent) visible += '\n' + capturedImplementation.visible;
+      },
+    });
+    expect(closed).toBe(true);
+    expect(sends.filter(text => text.startsWith('For '))).toEqual([
+      'For plan-ceo-review-approach-select, I choose option A. Continue the review.\r',
+      ...(showCurrent ? ['For plan-ceo-review-implementation-approach, I choose option B. Continue the review.\r'] : []),
+    ]);
+    expect(observation.outcome).toBe(showCurrent ? 'auto_decided' : 'timeout');
+  } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });

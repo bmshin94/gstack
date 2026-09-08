@@ -37,23 +37,35 @@ function automaticModeEvidence(text: string): string | undefined {
 }
 
 
-/** Corroborate a completed two-choice prose brief through its exact final reply
- * instruction. TUI redraws need not retain the entire paragraph contiguously.
- * The owned heading, question ID and both offered selectors remain required;
- * this never accepts a bare ID, fuzzy option match or an illustrated preview.
+/** Bind a completed prose brief to its exact rendered reply instruction. The
+ * native transcript owns the heading, ID and complete 2–4-choice inventory;
+ * the current input window must corroborate the directive and every selector.
+ * Markdown may hide qid angle brackets, but letters and wording must survive.
  */
-function isTwoChoiceReplyVisible(text: string, visible: string, questionId: string, selectors: string[]): boolean {
-  if (selectors.length !== 2 || new Set(selectors).size !== 2) return false;
+function proseReply(text: string, questionId: string, selectors: string[]): string | undefined {
+  if (selectors.length < 2 || selectors.length > 4 || new Set(selectors).size !== selectors.length) return undefined;
   const lines = text.replace(/\*\*/g, '').split('\n').map(line => line.trim());
-  const heading = lines.find(line => line && !/^[-*_]{3,}$/.test(line));
-  if (!heading || !/^D[1-9]\d*\s+[—–-]\s+.+\?$/.test(heading)) return false;
-  const reply = lines.filter(Boolean).at(-1)!;
-  const match = reply.match(/^Reply ([A-D]|[1-4]) to (.+), or ([A-D]|[1-4]) to (.+)\s+`?<gstack-qid:([a-z0-9-]+)>`?$/);
-  if (!match || match[5] !== questionId || match[1] === match[3]
-    || !selectors.includes(match[1]) || !selectors.includes(match[3])) return false;
-  // Inline-code ticks are decoration, and do not survive the terminal renderer.
-  return compact(visible).includes(compact(reply.replace(/`/g, '')));
+  const headings = lines.filter(line => /^(?:#{1,6}\s+)?D[1-9]\d*\s+[—–-]\s+\S/.test(line));
+  const first = lines.find(line => line && !/^[-*_]{3,}$/.test(line));
+  if (headings.length !== 1 || first !== headings[0]) return undefined;
+  const replies = lines.filter(line => /^Reply\b/.test(line));
+  if (replies.length !== 1 || !replies[0].includes(`<gstack-qid:${questionId}>`)) return undefined;
+  const reply = replies[0];
+  const instruction = reply.replace(/`?<gstack-qid:[a-z0-9-]+>`?/, '').trim();
+  // Parse a selector list, optionally with "to ..." descriptions. This is a
+  // structural choice grammar; no question-specific phrasing or fuzzy matching.
+  const clause = '[A-D1-4](?:\\s+to\\s+.+?)?';
+  if (!new RegExp('^Reply(?:\\s+with)?\\s+' + clause + '(?:(?:,\\s*|,?\\s+or\\s+)' + clause + '){1,3}[.!]?$').test(instruction)) return undefined;
+  const offered = [...instruction.matchAll(/\b([A-D]|[1-4])\b/g)].map(match => match[1]);
+  if (offered.length !== selectors.length || new Set(offered).size !== offered.length
+    || offered.some(selector => !selectors.includes(selector))) return undefined;
+  return reply;
 }
+
+// Tokenize before dropping whitespace: a bare qid ends at CR/space, while a
+// suffix such as "-stale" remains part of that distinct identifier.
+const renderedProse = (value: string) => compact(value.replace(/`/g, '')
+  .replace(/<?(gstack-qid:[a-z0-9-]+)>?/g, '<$1>'));
 
 export type ModePreferenceSignal =
   | { kind: 'asked'; evidence: string }
@@ -64,15 +76,26 @@ export type ModePreferenceSignal =
 /** Inspect main-assistant text, never Write previews or preference-tool output.
  * A preference for the mode question says nothing about an approach question.
  */
-export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visible: string): ModePreferenceSignal {
+export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visible: string, questionVisible = visible): ModePreferenceSignal {
   if (transcript.pendingBytes) return { kind: 'working' };
   const messages = new Map<string, { text: string[]; complete: boolean }>();
   let latestAssistantId: string | null = null;
   let userReplied = false;
+  let toolText: string[] = [];
+  const collectToolText = (value: unknown): void => {
+    if (typeof value === 'string') toolText.push(value);
+    else if (Array.isArray(value)) value.forEach(collectToolText);
+    else if (value && typeof value === 'object') Object.values(value).forEach(collectToolText);
+  };
   for (const row of transcript.rows) {
     const message = row.message;
     if (row.type === 'user' && message?.role === 'user' && (typeof message.content === 'string'
-      || Array.isArray(message.content) && message.content.some((block: any) => block?.type === 'text'))) userReplied = true;
+      || Array.isArray(message.content) && message.content.some((block: any) => block?.type === 'text'))) {
+      userReplied = true; toolText = [];
+    }
+    if (row.type === 'user' && message?.role === 'user' && Array.isArray(message.content)) {
+      for (const block of message.content) if (block?.type === 'tool_result') collectToolText(block.content);
+    }
     if (row.type !== 'assistant' || message?.role !== 'assistant' || !Array.isArray(message.content)) continue;
     latestAssistantId = typeof message.id === 'string' ? message.id : null;
     userReplied = false;
@@ -82,6 +105,7 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       messages.set(latestAssistantId, entry);
     }
     for (const block of message.content) {
+      if (block?.type === 'tool_use') collectToolText(block.input);
       if (block?.type === 'tool_use' && /(?:^|__)AskUserQuestion$/.test(block.name ?? '')) {
         for (const question of block.input?.questions ?? []) {
           if (question.question?.includes(`<gstack-qid:${CEO_MODE_QUESTION_ID}>`)
@@ -120,18 +144,31 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
     }
     if (!entry.complete) continue; // Never type an answer while the model uses tools.
     const questionIds = [...text.matchAll(/<gstack-qid:([a-z0-9-]+)>/g)].map(match => match[1]);
-    const options = [...text.replace(/\*\*/g, '').matchAll(/^\s*(?:[-+]\s+)?([A-D]|[1-4])[).]\s+([^\n]+)/gm)];
-    const fullyRendered = compact(visible).includes(compact(text));
-    const replyRendered = questionIds.length === 1 && questionIds[0] !== CEO_MODE_QUESTION_ID
-      && modeLabels(options.map(option => option[2]).join('\n')) < 2
-      && isTwoChoiceReplyVisible(text, visible, questionIds[0], options.map(option => option[1]));
-    if (options.length < 2 || (!fullyRendered && !replyRendered)) continue;
-    if (questionIds.includes(CEO_MODE_QUESTION_ID) || modeLabels(options.map(option => option[2]).join('\n')) >= 2) {
+    const options = [...text.replace(/\*\*/g, '').matchAll(/^\s*(?:[-+]\s+)?([A-Z]|\d+)[).]\s+([^\n]+)/gm)];
+    const isModeQuestion = questionIds.includes(CEO_MODE_QUESTION_ID) || modeLabels(options.map(option => option[2]).join('\n')) >= 2;
+    // Contrary mode evidence keeps the whole-review observation window.
+    if (options.length >= 2 && isModeQuestion && compact(visible).includes(compact(text))) {
       return { kind: 'asked', evidence: text };
     }
-    if (questionIds.length === 1 && id === latestAssistantId && !userReplied) {
-      const recommended = options.find(option => /recommended/i.test(option[2])) ?? options[0];
-      unrelated = { kind: 'unrelated', id, questionId: questionIds[0], answer: recommended[1], evidence: text };
+    if (questionIds.length === 1 && !isModeQuestion && id === latestAssistantId && !userReplied) {
+      const selectors = options.map(option => option[1]);
+      if (selectors.length < 2 || selectors.length > 4 || new Set(selectors).size !== selectors.length
+        || selectors.some(selector => !/^[A-D1-4]$/.test(selector))) continue;
+      // Reused IDs across native messages cannot identify which prompt an old
+      // rendering belongs to. Fail closed, even if the selectors are identical.
+      if ([...messages].some(([otherId, other]) => otherId !== id
+        && other.text.join('\n').includes(`<gstack-qid:${questionIds[0]}>`))) continue;
+      const reply = proseReply(text, questionIds[0], selectors);
+      const signature = renderedProse(reply ?? text);
+      // A same-input tool preview/result can display the identical directive.
+      // Its rendering cannot establish that this later native question is on
+      // screen. Exact repeats are ambiguous; mere qid/plan references are not.
+      if (toolText.some(value => renderedProse(value).includes(signature))) continue;
+      if (!compact(questionVisible).includes(compact(text))
+        && (!reply || !renderedProse(questionVisible).includes(signature))) continue;
+      const recommended = options.filter(option => /recommended/i.test(option[2]));
+      if (recommended.length > 1) continue;
+      unrelated = { kind: 'unrelated', id, questionId: questionIds[0], answer: (recommended[0] ?? options[0])[1], evidence: text };
     }
   }
   return automatic ?? unrelated ?? { kind: 'working' };
@@ -183,7 +220,7 @@ export async function runCeoModePreferenceObservation(opts: {
       const visible = session.visibleSince(since);
       if (session.exited()) return result('exited', visible);
       const transcript = readOwnedClaudeTranscript(session.hermeticConfigDir, sessionId);
-      const signal = inspectCeoModePreference(transcript, visible);
+      const signal = inspectCeoModePreference(transcript, visible, session.visibleSince(inputSince));
       lastSignal = signal;
       if (now() >= deadline) break;
       if (signal.kind === 'asked' || signal.kind === 'auto_decided') return result(signal.kind, signal.evidence);

@@ -218,6 +218,13 @@ describe('generateAskUserFormat — runtime-failure prose fallback', () => {
     expect(out).toMatch(/STOP and wait/i);
   });
 
+  test('prose questions carry their checked identity on the reply line only when tuning is enabled', () => {
+    const layout = out.slice(out.indexOf('Layout:'), out.indexOf('**Continuation'));
+    expect(layout).toContain('listing the offered selectors');
+    expect(layout).toContain('With `QUESTION_TUNING: true`');
+    expect(layout).toContain('append the checked `<gstack-qid:{question_id}>` to the explicit reply line');
+  });
+
   // OV2: the former "tool_use, not prose" assertions must carry the qualifier so the
   // fallback is not self-contradicting. Guards against the instruction collision
   // silently returning on a future edit.
