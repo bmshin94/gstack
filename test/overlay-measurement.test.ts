@@ -156,6 +156,23 @@ describe('exact read-only task answers', () => {
       expect(() => f.verify!(finalResult(JSON.stringify({ ...expected, unrelated: true })), '', 0)).toThrow('does not match');
       expect(() => f.verify!(finalResult('{}'), '', 0)).toThrow('does not match');
     });
+    test(`${f.id} keeps strict JSON framing`, () => {
+      const expected = f.metricName === 'bash_tool_calls' ? exports : { version: '1.0.0' };
+      const json = JSON.stringify(expected, null, 2);
+      // The dedicated-tools native failures returned this correct payload in
+      // one json fence. Preserve their rejection; only the prompt is clarified.
+      for (const answer of [`\`\`\`json\n${json}\n\`\`\``, `Here is the result:\n${json}`, `${json}\nDone.`, `${json}\n${json}`]) {
+        expect(() => f.verify!(finalResult(answer), '', 0)).toThrow('requested JSON');
+      }
+      expect(() => f.verify!(finalResult(`\n${json}\n`), '', 0)).not.toThrow();
+    });
+  }
+  for (const f of OVERLAY_FIXTURES.filter(f => f.verify)) {
+    test(`${f.id} explicitly describes the final-message JSON transport`, () => {
+      expect(f.userPrompt).toContain('The final message is consumed directly by JSON.parse');
+      expect(f.userPrompt).toContain('no Markdown fences and no other prose');
+      if (f.metricName === 'bash_tool_calls') expect(f.userPrompt).toContain('You may use any tools available.');
+    });
   }
   test('dedicated-tool answers must associate every file with its actual exports', () => {
     const f = OVERLAY_FIXTURES.find(f => f.metricName === 'bash_tool_calls')!;

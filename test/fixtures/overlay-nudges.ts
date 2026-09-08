@@ -202,6 +202,7 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     userPrompt:
       "List every TypeScript file under src/ and tell me what each exports. " +
       "Return only a JSON object mapping each src/ path to an array of its exported symbol names. " +
+      "The final message is consumed directly by JSON.parse: return the exact JSON object, with no Markdown fences and no other prose. " +
       "You may use any tools available.",
     // Metric: total Bash tool_use count across the whole session.
     // The overlay says "prefer Read/Glob/Grep over cat/find/grep shell."
@@ -231,7 +232,8 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
         '{"name": "demo", "version": "1.0.0"}\n',
       );
     },
-    userPrompt: "What's the version in config.json? Return only a JSON object with the version key and its exact string value.",
+    userPrompt: "What's the version in config.json? Return only a JSON object with the version key and its exact string value. " +
+      "The final message is consumed directly by JSON.parse: return the exact JSON object, with no Markdown fences and no other prose.",
     // Use the SDK's reported reasoning tokens. Lookup/tool counts do not
     // measure extended thinking; absent usage metadata is an error.
     metric: reportedThinkingTokens,
@@ -293,6 +295,7 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     userPrompt:
       "List every TypeScript file under src/ and tell me what each exports. " +
       "Return only a JSON object mapping each src/ path to an array of its exported symbol names. " +
+      "The final message is consumed directly by JSON.parse: return the exact JSON object, with no Markdown fences and no other prose. " +
       "You may use any tools available.",
     metric: bashToolCallCount,
     metricName: 'bash_tool_calls',
@@ -316,7 +319,8 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
         '{"name": "demo", "version": "1.0.0"}\n',
       );
     },
-    userPrompt: "What's the version in config.json? Return only a JSON object with the version key and its exact string value.",
+    userPrompt: "What's the version in config.json? Return only a JSON object with the version key and its exact string value. " +
+      "The final message is consumed directly by JSON.parse: return the exact JSON object, with no Markdown fences and no other prose.",
     metric: reportedThinkingTokens,
     metricName: 'reported_thinking_tokens',
     verify: (r) => assertFinalJson(r, { version: '1.0.0' }),
