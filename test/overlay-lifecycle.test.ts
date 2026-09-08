@@ -6,7 +6,7 @@ import { runOverlayCaseLifecycle } from './helpers/overlay-lifecycle';
 import { runOverlayTrial, captureOverlayQueryAttempts, type OverlayTrialOutcome } from './helpers/overlay-attempt';
 import { runAgentSdkTest, __resetSemaphoreForTests, type QueryProvider, type AgentSdkResult } from './helpers/agent-sdk-runner';
 import { OVERLAY_FIXTURES, higherIsBetter20Pct, type OverlayFixture } from './fixtures/overlay-nudges';
-import { OVERLAY_CASE_FILES, OVERLAY_CASE_WORK_MS, OVERLAY_RECORD_GRACE_MS, OVERLAY_CASE_OUTER_MS, OVERLAY_MIN_FILE_WALL_MS } from './helpers/overlay-case-policy';
+import { OVERLAY_CONTRACT, OVERLAY_CASE_FILES, OVERLAY_CASE_WORK_MS, OVERLAY_RECORD_GRACE_MS, OVERLAY_CASE_OUTER_MS, OVERLAY_MIN_FILE_WALL_MS } from './helpers/overlay-case-policy';
 import { isPaidTestFile } from './helpers/paid-test-set';
 import { selectPaidTestFiles } from '../scripts/test-paid-shards';
 
@@ -27,8 +27,8 @@ test('every fixture owns one paid wrapper; public models/trials/concurrency/turn
   }
   expect(isPaidTestFile('test/overlay-lifecycle.test.ts')).toBe(false);
   expect(OVERLAY_FIXTURES.every(f => f.trials === 10 && f.concurrency === 3)).toBe(true);
-  expect(OVERLAY_FIXTURES.map(f => f.maxTurns ?? 5)).toEqual([5,5,15,8,15,5,5,15,8,15]);
-  expect(OVERLAY_FIXTURES.map(f => f.model)).toEqual([...Array(5).fill('claude-opus-4-7'), ...Array(5).fill('claude-sonnet-4-6')]);
+  expect(OVERLAY_FIXTURES.map(f => f.maxTurns ?? 5)).toEqual([15,8,15,15,8,15]);
+  expect(OVERLAY_FIXTURES.map(f => f.model)).toEqual([...Array(3).fill('claude-opus-4-7'), ...Array(3).fill('claude-sonnet-4-6')]);
   expect([OVERLAY_CASE_WORK_MS, OVERLAY_RECORD_GRACE_MS, OVERLAY_CASE_OUTER_MS, OVERLAY_MIN_FILE_WALL_MS]).toEqual([1_800_000, 5_000, 1_810_000, 1_830_000]);
 });
 
@@ -53,6 +53,7 @@ test('normal attempts record all measurements then one aggregate after cleanup',
     cleanup: async () => { cleaned = true; },
   });
   expect(result.startedTrials).toBe(6);
+  expect(result.contract).toEqual(OVERLAY_CONTRACT);
   expect(new Set(records).size).toBe(7);
 });
 

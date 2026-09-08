@@ -42,6 +42,11 @@ fallback `~/.gstack-dev/evals/`) with auto-comparison
 against the previous finalized run (in-flight `_partial` files are never used as
 a baseline, so a run can't compare against itself).
 
+The periodic overlay fixtures use a versioned behavior gate with efficacy
+reported separately. See [Overlay benchmark contract v2](OVERLAY_BENCHMARK_CONTRACT.md)
+for exact correctness requirements, retired fanout cases, immutable evidence,
+and the limits of a passing result.
+
 ## Runners: how the suites execute (2026-08 overhaul)
 
 **Aside-only E2E tests self-skip without a live Aside; browser-driving tests

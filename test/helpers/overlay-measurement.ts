@@ -83,7 +83,8 @@ export function assessComparison(
 export function assertSuccessfulExecution(result: AgentSdkResult): void {
   if (result.exitReason !== 'success') throw new Error(`SDK execution failed: ${result.exitReason}`);
   const terminals = result.events.filter((event) => event.type === 'result');
-  if (terminals.length !== 1 || (terminals[0] as { subtype?: string }).subtype !== 'success') {
+  if (terminals.length !== 1 || (terminals[0] as { subtype?: string }).subtype !== 'success' ||
+    (terminals[0] as { is_error?: boolean }).is_error === true) {
     throw new Error('expected exactly one successful SDK terminal result');
   }
   if (!result.output.trim()) throw new Error('SDK execution returned no assistant answer');

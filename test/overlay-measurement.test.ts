@@ -10,7 +10,7 @@ import { fanoutPass, higherIsBetter20Pct, lowerIsBetter20Pct, OVERLAY_FIXTURES, 
 
 function result(overrides: Partial<AgentSdkResult> = {}): AgentSdkResult {
   return {
-    events: [{ type: 'result', subtype: 'success', usage: { output_tokens_details: { thinking_tokens: 31 } } }] as AgentSdkResult['events'],
+    events: [{ type: 'result', subtype: 'success', result: '{"version":"1.0.0"}', usage: { output_tokens_details: { thinking_tokens: 31 } } }] as AgentSdkResult['events'],
     assistantTurns: [], toolCalls: [], output: 'Version 1.0.0', exitReason: 'success',
     turnsUsed: 3, durationMs: 100, firstResponseMs: 10, maxInterTurnMs: 20,
     costUsd: 0.03, model: 'claude-opus-4-7', sdkVersion: 'test', sdkClaudeCodeVersion: 'test', resolvedBinaryPath: 'test', browseErrors: [], ...overrides,
@@ -21,7 +21,7 @@ function assistant(id: string | undefined, content: unknown[]): AgentSdkResult['
 }
 function tool(id: string) { return { type: 'tool_use', id, name: 'Read', input: { file_path: `${id}.txt` } }; }
 function fixture(overrides: Partial<OverlayFixture> = {}): OverlayFixture {
-  return { id: 'unit-overlay', overlayPath: 'model-overlays/opus-4-7.md', model: 'claude-opus-4-7', trials: 3, setupWorkspace: (dir) => fs.writeFileSync(path.join(dir, 'config.json'), '{"version":"1.0.0"}'), userPrompt: 'Read version', metric: () => 31, pass: lowerIsBetter20Pct, ...overrides };
+  return { id: 'unit-overlay', overlayPath: 'model-overlays/opus-4-7.md', model: 'claude-opus-4-7', trials: 3, setupWorkspace: (dir) => fs.writeFileSync(path.join(dir, 'config.json'), '{"version":"1.0.0"}'), userPrompt: 'Read version', metric: () => 31, pass: lowerIsBetter20Pct, comparison: { direction: 'lower_is_better', minimum: 0 }, ...overrides };
 }
 function temp<T>(fn: (dir: string) => T): T {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'overlay-unit-'));
@@ -52,16 +52,40 @@ describe('SDK overlay measurements', () => {
     expect(reportedThinkingTokens(result({ turnsUsed: 400 }))).toBe(31);
   });
   test.each([undefined, -1, NaN, Infinity, '31'])('missing/invalid thinking metadata fails: %s', (count) => {
-    const r = result({ events: [{ type: 'result', subtype: 'success', usage: { output_tokens_details: { thinking_tokens: count } } }] as AgentSdkResult['events'] });
+    const r = result({ events: [{ type: 'result', subtype: 'success', result: '{"version":"1.0.0"}', usage: { output_tokens_details: { thinking_tokens: count } } }] as AgentSdkResult['events'] });
     expect(() => reportedThinkingTokens(r)).toThrow('thinking_tokens');
   });
   test('explicit zero thinking tokens is valid', () => {
-    const r = result({ events: [{ type: 'result', subtype: 'success', usage: { output_tokens_details: { thinking_tokens: 0 } } }] as AgentSdkResult['events'] });
+    const r = result({ events: [{ type: 'result', subtype: 'success', result: '{"version":"1.0.0"}', usage: { output_tokens_details: { thinking_tokens: 0 } } }] as AgentSdkResult['events'] });
     expect(reportedThinkingTokens(r)).toBe(0);
   });
 });
 
 describe('correctness versus efficacy', () => {
+  test.each(['claude-opus-4-7', 'claude-sonnet-4-6'])('dedicated-tool behavior gates zero ON Bash calls for %s', (model) => {
+    const f = { ...OVERLAY_FIXTURES.find(f => f.metricName === 'bash_tool_calls' && f.model === model)!, trials: 3 };
+    const samples = (metric: number) => Array.from({ length: 3 }, (): OverlayTrialOutcome =>
+      ({ passed: true, taskCorrect: f.taskCorrect!(metric), metric, exitReason: 'success' }));
+    expect(assessOverlayArms(f, samples(0), samples(0))).toMatchObject({
+      passed: true, comparison: { status: 'baseline_saturated', criterionMet: false },
+    });
+    // Even a >20% improvement cannot excuse breaking the exact ON contract.
+    expect(assessOverlayArms(f, samples(1), samples(5))).toMatchObject({
+      passed: false, correctnessPassed: false, comparison: { status: 'improved', criterionMet: true },
+    });
+  });
+  test.each([
+    [30, 30, 'no_measured_improvement'],
+    [40, 30, 'regressed'],
+    [0, 0, 'baseline_saturated'],
+  ] as const)('effort comparison %s/%s remains research-only (%s)', (on, off, status) => {
+    const f = { ...OVERLAY_FIXTURES.find(f => f.metricName === 'reported_thinking_tokens')!, trials: 3 };
+    const samples = (metric: number) => Array.from({ length: 3 }, (): OverlayTrialOutcome =>
+      ({ passed: true, taskCorrect: true, metric, exitReason: 'success' }));
+    expect(assessOverlayArms(f, samples(on), samples(off))).toMatchObject({
+      measurementsValid: true, correctnessPassed: true, passed: true, comparison: { status, criterionMet: false },
+    });
+  });
   test('saturated full coverage does not pass the unchanged 20% criterion', () => {
     const arms = { overlay: [3, 3, 3], off: [3, 3, 3] };
     expect(higherIsBetter20Pct(arms)).toBe(false);
@@ -96,7 +120,7 @@ describe('correctness versus efficacy', () => {
     const sample = (metric: number): OverlayTrialOutcome => ({ passed: true, taskCorrect: metric === 3, metric, exitReason: 'success' });
     expect(assessOverlayArms(f, [sample(3), sample(3), sample(3)], [sample(2), sample(2), sample(2)])).toMatchObject({ measurementsValid: true, correctnessPassed: true, passed: true });
     expect(assessOverlayArms(f, [sample(3), sample(3), sample(2)], [sample(0), sample(0), sample(0)])).toMatchObject({ measurementsValid: true, correctnessPassed: false, passed: false });
-    expect(assessOverlayArms(f, [sample(3), sample(3), sample(3)], [sample(3), sample(3), sample(3)])).toMatchObject({ correctnessPassed: true, passed: false, comparison: { status: 'baseline_saturated' } });
+    expect(assessOverlayArms(f, [sample(3), sample(3), sample(3)], [sample(3), sample(3), sample(3)])).toMatchObject({ correctnessPassed: true, passed: true, comparison: { status: 'baseline_saturated', criterionMet: false } });
   });
   test('an incomplete measurement arm never passes using its remaining samples', () => {
     const f = fixture({ comparison: { direction: 'higher_is_better', minimum: 0, maximum: 3 }, pass: higherIsBetter20Pct });
@@ -104,9 +128,46 @@ describe('correctness versus efficacy', () => {
     const bad: OverlayTrialOutcome = { passed: false, taskCorrect: false, exitReason: 'harness_error' };
     expect(assessOverlayArms(f, [good, good, good], [bad, bad, bad])).toMatchObject({ measurementsValid: false, passed: false });
   });
+  test.each([undefined, -1, 4, NaN, Infinity])('invalid recorded metrics cannot bypass the behavior gate: %s', (metric) => {
+    const f = fixture({ comparison: { direction: 'higher_is_better', minimum: 0, maximum: 3 }, pass: higherIsBetter20Pct });
+    const good: OverlayTrialOutcome = { passed: true, taskCorrect: true, metric: 3, exitReason: 'success' };
+    const invalid = { ...good, metric };
+    expect(assessOverlayArms(f, [good, good, good], [good, invalid, good])).toMatchObject({
+      measurementsValid: false, passed: false, comparison: { status: 'incomplete', criterionMet: false },
+    });
+  });
   test('artifact names retain each Bun retry with the same trial identity', () => {
     expect(trialArtifactStem('fixture', 1, 'overlay-on', 0)).not.toBe(trialArtifactStem('fixture', 2, 'overlay-on', 0));
     expect(() => trialArtifactStem('../fixture', 1, 'overlay-on', 0)).toThrow();
+  });
+});
+
+describe('exact read-only task answers', () => {
+  const exports = { 'src/index.ts': ['x'], 'src/util.ts': ['util'], 'src/types.ts': ['Foo'], 'src/config.ts': ['c'], 'src/api.ts': ['fetchFoo'] };
+  const finalResult = (answer: string) => result({
+    // Earlier words must not rescue an incorrect final answer.
+    output: `Version 1.0.0\n${JSON.stringify(exports)}\n${answer}`,
+    events: [{ type: 'result', subtype: 'success', result: answer }] as AgentSdkResult['events'],
+  });
+  for (const f of OVERLAY_FIXTURES.filter(f => f.verify)) {
+    test(`${f.id} validates exact final-answer values`, () => {
+      const expected = f.metricName === 'bash_tool_calls' ? exports : { version: '1.0.0' };
+      expect(() => f.verify!(finalResult(JSON.stringify(expected)), '', 0)).not.toThrow();
+      expect(() => f.verify!(finalResult(JSON.stringify({ ...expected, unrelated: true })), '', 0)).toThrow('does not match');
+      expect(() => f.verify!(finalResult('{}'), '', 0)).toThrow('does not match');
+    });
+  }
+  test('dedicated-tool answers must associate every file with its actual exports', () => {
+    const f = OVERLAY_FIXTURES.find(f => f.metricName === 'bash_tool_calls')!;
+    const swapped = { ...exports, 'src/index.ts': ['c'], 'src/config.ts': ['x'] };
+    expect(() => f.verify!(finalResult(JSON.stringify(swapped)), '', 0)).toThrow('does not match');
+    expect(() => f.verify!(finalResult('index.ts util.ts types.ts config.ts api.ts fetchFoo Foo'), '', 0)).toThrow('requested JSON');
+  });
+  test('effort correctness cannot be rescued by the correct version in earlier prose', () => {
+    const f = OVERLAY_FIXTURES.find(f => f.metricName === 'reported_thinking_tokens')!;
+    expect(() => f.verify!(finalResult('{"version":"2.0.0"}'), '', 0)).toThrow('does not match');
+    expect(() => f.verify!(result(), '', 0)).not.toThrow();
+    expect(() => f.verify!(result({ events: [] }), '', 0)).toThrow('missing native final answer');
   });
 });
 
@@ -127,6 +188,13 @@ describe('literal fixture task correctness', () => {
     fs.writeFileSync(path.join(dir, 'src/notifications.ts'), 'export const recipients = ids => [...new Set(ids)];');
     expect(correctLiteralTargets(dir)).toBe(3);
   }));
+  test('an implementation exiting zero during import cannot bypass the behavior assertions', () => temp((dir) => {
+    setupLiteralWorkspace(dir);
+    for (const file of ['auth', 'billing', 'notifications']) {
+      fs.writeFileSync(path.join(dir, 'src', `${file}.ts`), 'process.exit(0);\n');
+    }
+    expect(correctLiteralTargets(dir)).toBe(0);
+  }));
   test('weakening or removing public tests fails instead of buying a green suite', () => temp((dir) => {
     setupLiteralWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'auth.test.ts'), '');
@@ -138,22 +206,25 @@ describe('literal fixture task correctness', () => {
     fs.writeFileSync(path.join(dir, 'b'), 'extra');
     expect(() => assertReadOnlyWorkspace(before, snapshotWorkspace(dir))).toThrow('b');
   }));
-  test('registry preserves all ten case ids and original model/trial budgets', () => {
-    expect(OVERLAY_FIXTURES).toHaveLength(10);
+  test('registry retires absent-nudge fanout cases and preserves remaining model/trial budgets', () => {
+    expect(OVERLAY_FIXTURES).toHaveLength(6);
+    expect(OVERLAY_FIXTURES.some((f) => f.id.includes('fanout') || f.comparison?.unsupportedHypothesis)).toBe(false);
     expect(OVERLAY_FIXTURES.every((f) => f.trials === 10 && f.comparison)).toBe(true);
-    expect(OVERLAY_FIXTURES.filter((f) => f.model === 'claude-opus-4-7')).toHaveLength(5);
-    expect(OVERLAY_FIXTURES.filter((f) => f.model === 'claude-sonnet-4-6')).toHaveLength(5);
+    expect(OVERLAY_FIXTURES.filter((f) => f.model === 'claude-opus-4-7')).toHaveLength(3);
+    expect(OVERLAY_FIXTURES.filter((f) => f.model === 'claude-sonnet-4-6')).toHaveLength(3);
   });
 });
 
 describe('complete trial lifecycle', () => {
-  test.each(['success', 'runner_error', 'setup_error', 'max_turns', 'bad_terminal', 'empty_output', 'bad_metric', 'assertion', 'workspace_mutation'])('%s records once after validation', async (scenario) => {
+  test.each(['success', 'runner_error', 'setup_error', 'max_turns', 'bad_terminal', 'terminal_error', 'empty_output', 'bad_metric', 'negative_metric', 'assertion', 'workspace_mutation', 'oracle_mutation'])('%s records once after validation', async (scenario) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'overlay-attempt-unit-'));
     const records: OverlayTrialOutcome[] = [];
     try {
       const f = fixture({
         ...(scenario === 'setup_error' ? { setupWorkspace: () => { throw new Error('setup broke'); } } : {}),
         ...(scenario === 'bad_metric' ? { metric: () => NaN } : {}),
+        ...(scenario === 'negative_metric' ? { metric: () => -1 } : {}),
+        ...(scenario === 'oracle_mutation' ? { metric: () => { fs.writeFileSync(path.join(dir, 'unexpected.txt'), 'oracle side effect'); return 31; } } : {}),
         ...(scenario === 'assertion' ? { verify: () => { throw new Error('required output absent'); } } : {}),
       });
       const outcome = await runOverlayTrial({ fixture: f, directory: dir, invoke: async () => {
@@ -162,6 +233,7 @@ describe('complete trial lifecycle', () => {
         return result({
           ...(scenario === 'max_turns' ? { exitReason: 'error_max_turns' } : {}),
           ...(scenario === 'bad_terminal' ? { events: [] } : {}),
+          ...(scenario === 'terminal_error' ? { events: [{ type: 'result', subtype: 'success', is_error: true }] as AgentSdkResult['events'] } : {}),
           ...(scenario === 'empty_output' ? { output: '' } : {}),
         });
       }, record: (entry) => records.push(entry) });

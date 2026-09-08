@@ -1,6 +1,6 @@
 import type { OverlayFixture } from '../fixtures/overlay-nudges';
 import { assessOverlayArms, type OverlayTrialOutcome } from './overlay-attempt';
-import { OVERLAY_CASE_WORK_MS, OVERLAY_RECORD_GRACE_MS } from './overlay-case-policy';
+import { OVERLAY_CONTRACT, OVERLAY_CASE_WORK_MS, OVERLAY_RECORD_GRACE_MS } from './overlay-case-policy';
 
 export type OverlayArm = 'overlay-on' | 'overlay-off';
 export class OverlayDeadlineError extends Error {
@@ -8,6 +8,7 @@ export class OverlayDeadlineError extends Error {
 }
 interface StartedTrial { arm: OverlayArm; index: number; outcome?: OverlayTrialOutcome }
 export interface OverlayCaseSummary {
+  contract: typeof OVERLAY_CONTRACT;
   passed: boolean;
   timedOut: boolean;
   cleanupIncomplete: boolean;
@@ -98,6 +99,7 @@ export async function runOverlayCaseLifecycle(options: {
     const outcomes = (arm: OverlayArm) => started.filter(trial => trial.arm === arm).sort((a, b) => a.index - b.index).map(trial => trial.outcome!);
     const assessment = assessOverlayArms(options.fixture, outcomes('overlay-on'), outcomes('overlay-off'));
     const summary: OverlayCaseSummary = {
+      contract: OVERLAY_CONTRACT,
       passed: !timedOut && drained && errors.length === 0 && assessment.passed,
       timedOut, cleanupIncomplete: !drained || !!cleanupError,
       plannedTrials: 2 * options.fixture.trials, startedTrials: started.length, errors, assessment,

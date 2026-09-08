@@ -1,11 +1,11 @@
 /**
- * Paid overlay experiment. Both arms use the real Claude Code preset; ON appends
- * the resolved overlay. Trials prove execution/task correctness, while a distinct
- * aggregate record reports the unchanged comparative criterion. Saturated or
- * unsupported comparisons remain failures, never evidence of positive efficacy.
+ * Paid overlay behavior contract v2. Both arms use the real Claude Code preset;
+ * ON appends the resolved overlay. Complete execution, scope and ON correctness
+ * gate the case; unchanged efficacy comparisons remain separate research results.
+ * A behavior pass establishes neither marginal benefit nor resource non-regression.
  *
- * Ten fixtures × two arms × ten trials, plus configured Bun retries. Historical
- * recorded usage was about $26 for 360 trials; this is not a fixed cost budget.
+ * Six fixtures × two arms × ten trials. The paid runner disables Bun retries;
+ * native rate-limit retries retain separate evidence. No fixed cost guarantee.
  */
 import { test, expect, afterAll } from 'bun:test';
 import { e2eTierEnabled } from './e2e-gate';
@@ -40,7 +40,7 @@ function saveTrial(fixture: OverlayFixture, attempt: number, arm: Arm, n: number
   fs.writeFileSync(path.join(TRANSCRIPTS_DIR, `${stem}.jsonl`),
     (outcome.result?.events ?? []).map((event) => JSON.stringify(event)).join('\n') + '\n', { flag: 'wx' });
   fs.writeFileSync(path.join(TRANSCRIPTS_DIR, `${stem}.json`), JSON.stringify({
-    fixture: fixture.id, attempt, arm, trial: n, metricName: fixture.metricName,
+    contract: OVERLAY_CONTRACT, fixture: fixture.id, attempt, arm, trial: n, metricName: fixture.metricName,
     rateLimitRetries: retries,
     // Per-query SDK files preserve prior retry events and thrown-error streams;
     // this JSONL remains the final SDK result used for the trial measurement.
@@ -53,7 +53,7 @@ function saveTrial(fixture: OverlayFixture, attempt: number, arm: Arm, n: number
 
 import { runOverlayCaseLifecycle } from './overlay-lifecycle';
 import { snapshotWorkspace } from './overlay-workspace';
-import { OVERLAY_CASE_OUTER_MS, OVERLAY_CASE_WORK_MS } from './overlay-case-policy';
+import { OVERLAY_CONTRACT, OVERLAY_CASE_OUTER_MS, OVERLAY_CASE_WORK_MS } from './overlay-case-policy';
 
 export function registerOverlayCase(fixtureId: string): void {
   const fixture = OVERLAY_FIXTURES.find(candidate => candidate.id === fixtureId);
@@ -76,11 +76,11 @@ export function registerOverlayCase(fixtureId: string): void {
     const recordAggregate = (value: Record<string, unknown>) => {
       if (aggregateRecorded) return;
       aggregateRecorded = true;
-      summary = { fixture: fixture.id, attempt, metricName: fixture.metricName, wallClockMs: Date.now() - started, ...value };
+      summary = { fixture: fixture.id, attempt, metricName: fixture.metricName, wallClockMs: Date.now() - started, ...value, contract: OVERLAY_CONTRACT };
       fs.mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
       fs.writeFileSync(path.join(TRANSCRIPTS_DIR, `${fixture.id}-attempt-${attempt}-aggregate.json`), JSON.stringify(summary, null, 2) + '\n', { flag: 'wx' });
       evalCollector?.addTest({
-        name: `${fixture.id}-aggregate`, suite: 'overlay-harness-aggregate', tier: 'e2e',
+        name: `${fixture.id}-contract-v${OVERLAY_CONTRACT.version}-aggregate`, suite: 'overlay-harness-aggregate', tier: 'e2e',
         passed: value.passed === true, duration_ms: 0, cost_usd: 0, model: fixture.model,
         exit_reason: value.passed ? 'success' : value.timedOut ? 'timeout' : 'validation_failed',
         error: value.passed ? undefined : JSON.stringify(value.errors ?? value.comparison ?? value.assessment),
@@ -140,10 +140,10 @@ export function registerOverlayCase(fixtureId: string): void {
             saveTrial(fixture, attempt, arm, index, retries.get(key) ?? 0, retained);
             const sdk = outcome.result;
             evalCollector?.addTest({
-              name: `${fixture.id}-${key}`, suite: 'overlay-harness-measurement', tier: 'e2e',
+              name: `${fixture.id}-contract-v${OVERLAY_CONTRACT.version}-${key}`, suite: 'overlay-harness-measurement', tier: 'e2e',
               passed: outcome.passed, duration_ms: sdk?.durationMs ?? 0, cost_usd: sdk?.costUsd ?? 0,
               transcript: sdk?.events, prompt: fixture.userPrompt,
-              output: JSON.stringify({ measurementPassed: outcome.passed, taskCorrect: outcome.taskCorrect, metric: outcome.metric, assistantOutput: sdk?.output }),
+              output: JSON.stringify({ contract: OVERLAY_CONTRACT, measurementPassed: outcome.passed, taskCorrect: outcome.taskCorrect, metric: outcome.metric, assistantOutput: sdk?.output }),
               turns_used: sdk?.turnsUsed, browse_errors: sdk?.browseErrors,
               exit_reason: outcome.exitReason, error: outcome.error,
               model: sdk?.model ?? fixture.model, first_response_ms: sdk?.firstResponseMs, max_inter_turn_ms: sdk?.maxInterTurnMs,

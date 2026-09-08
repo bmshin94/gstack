@@ -398,23 +398,9 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'fanout-arm-overlay-off':
     ['model-overlays/claude.md', 'model-overlays/opus-4-7.md', 'scripts/models.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-opus-47.test.ts'],
 
-  // Overlay efficacy harness (SDK) — measures whether overlay nudges change
-  // behavior under @anthropic-ai/claude-agent-sdk (closer to real Claude Code
-  // than `claude -p`). testNames in the file are template literals so the
-  // completeness scanner doesn't require them; these entries exist for
-  // diff-based selection accuracy.
-  'overlay-harness-opus-4-7-fanout-toy': [
-    'model-overlays/**',
-    'test/fixtures/overlay-nudges.ts',
-    'test/helpers/agent-sdk-runner.ts',
-    'scripts/resolvers/model-overlay.ts',
-    'test/skill-e2e-overlay-harness-opus-4-7-fanout-toy.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
-  'overlay-harness-opus-4-7-fanout-realistic': [
-    'model-overlays/**',
-    'test/fixtures/overlay-nudges.ts',
-    'test/helpers/agent-sdk-runner.ts',
-    'scripts/resolvers/model-overlay.ts',
-    'test/skill-e2e-overlay-harness-opus-4-7-fanout-realistic.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
+  // Overlay behavior contract v2 (SDK): task correctness gates releases;
+  // measured comparative efficacy is reported separately. Unsupported fanout
+  // hypotheses are retired. Wrapper dependencies keep case selection exact.
 
   'overlay-harness-claude-dedicated-tools-vs-bash': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-claude-dedicated-tools-vs-bash.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
 
@@ -422,9 +408,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
 
   'overlay-harness-opus-4-7-literal-interpretation': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-literal-interpretation.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
 
-  'overlay-harness-opus-4-7-fanout-toy-sonnet': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-fanout-toy-sonnet.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
 
-  'overlay-harness-opus-4-7-fanout-realistic-sonnet': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-fanout-realistic-sonnet.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
 
   'overlay-harness-claude-dedicated-tools-vs-bash-sonnet': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-claude-dedicated-tools-vs-bash-sonnet.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
 
@@ -819,15 +803,11 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   'fanout-arm-overlay-on': 'periodic',
   'fanout-arm-overlay-off': 'periodic',
 
-  // Overlay efficacy harness (SDK, paid) — periodic only
-  'overlay-harness-opus-4-7-fanout-toy': 'periodic',
-  'overlay-harness-opus-4-7-fanout-realistic': 'periodic',
+  // Overlay behavior contract v2 (SDK, paid) — periodic only
 
   'overlay-harness-claude-dedicated-tools-vs-bash': 'periodic',
   'overlay-harness-opus-4-7-effort-match-trivial': 'periodic',
   'overlay-harness-opus-4-7-literal-interpretation': 'periodic',
-  'overlay-harness-opus-4-7-fanout-toy-sonnet': 'periodic',
-  'overlay-harness-opus-4-7-fanout-realistic-sonnet': 'periodic',
   'overlay-harness-claude-dedicated-tools-vs-bash-sonnet': 'periodic',
   'overlay-harness-opus-4-7-effort-match-trivial-sonnet': 'periodic',
   'overlay-harness-opus-4-7-literal-interpretation-sonnet': 'periodic',

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { runOverlayCaseLifecycle } from './helpers/overlay-lifecycle';
+import { OVERLAY_CONTRACT } from './helpers/overlay-case-policy';
 
 // Execute the private paid-case recording callbacks with free dependencies.
 // This exercises their real source without opening the paid registration gate.
@@ -27,13 +28,13 @@ test('overlay recording failure retains partial evidence but counts only complet
     fs: { ...fs, writeFileSync: (file: fs.PathOrFileDescriptor, ...args: any[]) => {
       if (file === failedMetadata) { failedWriteAttempts++; throw firstCause; }
       return (fs.writeFileSync as any)(file, ...args);
-    } }, path, TRANSCRIPTS_DIR: directory, trialArtifactStem: stem,
+    } }, path, OVERLAY_CONTRACT, TRANSCRIPTS_DIR: directory, trialArtifactStem: stem,
     snapshotWorkspace: () => ({}), workspaces: new Map(), before: new Map(), trials, fixture, attempt: 1, retries: new Map(),
     evalCollector: { addTest: (entry: unknown) => measurements.push(entry) },
     recordAggregate: (value: unknown) => { summary = value; },
   };
   const code = new Bun.Transpiler({ loader: 'ts' }).transformSync(`
-    const { fs, path, TRANSCRIPTS_DIR, trialArtifactStem, snapshotWorkspace, workspaces, before, trials, fixture, attempt, retries, evalCollector, recordAggregate } = deps;
+    const { fs, path, OVERLAY_CONTRACT, TRANSCRIPTS_DIR, trialArtifactStem, snapshotWorkspace, workspaces, before, trials, fixture, attempt, retries, evalCollector, recordAggregate } = deps;
     ${source.slice(saveStart, saveEnd)}
     return { recordTrial: ${trial}, recordAggregate: ${aggregate} };
   `);
@@ -54,5 +55,45 @@ test('overlay recording failure retains partial evidence but counts only complet
     expect(summary.recordedTrials).toBe(1);
     expect(summary.recordedCostUsd).toBe(.25);
     expect(summary.partialEvidence).toBe(true);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('versioned aggregate keeps false efficacy and cannot overwrite earlier attempt evidence', () => {
+  const source = fs.readFileSync(path.join(import.meta.dir, 'helpers/overlay-case.ts'), 'utf8');
+  const start = source.indexOf('const recordAggregate = (value:');
+  const end = source.indexOf('\n    try {', start);
+  if (start < 0 || end < 0) throw new Error('aggregate callback boundary changed');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'overlay-aggregate-contract-'));
+  const entries: any[] = [];
+  const fixture = { id: 'owned-contract', metricName: 'bash_tool_calls', model: 'free' };
+  const deps = {
+    fs, path, OVERLAY_CONTRACT, TRANSCRIPTS_DIR: directory, fixture, started: Date.now(),
+    evalCollector: { addTest: (entry: unknown) => entries.push(entry) }, console: { log: () => {} },
+  };
+  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync(`
+    const { fs, path, OVERLAY_CONTRACT, TRANSCRIPTS_DIR, fixture, started, evalCollector, console } = deps;
+    let summary; let aggregateRecorded = false;
+    ${source.slice(start, end)}
+    return recordAggregate;
+  `);
+  const recorder = new Function('deps', 'attempt', code);
+  const verdict = { passed: true, assessment: { comparison: { status: 'baseline_saturated', criterionMet: false } } };
+  try {
+    const first = recorder(deps, 1);
+    first(verdict);
+    first({ passed: false }); // the same callback records only once
+    const file = path.join(directory, 'owned-contract-attempt-1-aggregate.json');
+    const original = fs.readFileSync(file, 'utf8');
+    expect(JSON.parse(original)).toMatchObject({ ...verdict, contract: OVERLAY_CONTRACT });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ name: 'owned-contract-contract-v2-aggregate', passed: true, cost_usd: 0, duration_ms: 0 });
+    expect(() => recorder(deps, 1)({ passed: false })).toThrow('EEXIST');
+    expect(fs.readFileSync(file, 'utf8')).toBe(original);
+    recorder(deps, 2)({ passed: false, errors: ['task incomplete'] });
+    expect(JSON.parse(fs.readFileSync(path.join(directory, 'owned-contract-attempt-2-aggregate.json'), 'utf8'))).toMatchObject({
+      contract: OVERLAY_CONTRACT, passed: false, errors: ['task incomplete'],
+    });
+    expect(fs.readFileSync(file, 'utf8')).toBe(original);
+    expect(entries).toHaveLength(2);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

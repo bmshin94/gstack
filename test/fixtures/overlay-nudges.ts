@@ -1,21 +1,21 @@
 /**
- * Overlay-efficacy fixture registry.
+ * Overlay behavior regression fixtures with comparative research measurements.
  *
- * Each fixture defines a reproducible A/B test for one behavioral nudge
- * embedded in a model-overlays/*.md file. The harness at
- * test/skill-e2e-overlay-harness.test.ts iterates this registry and runs
- * `fixture.trials` A/B trials per fixture, asserting `fixture.pass(arms)`.
+ * Each paid wrapper runs both arms against the real Claude Code preset.
+ * Complete, valid measurements and exact ON behavior are blocking; the original
+ * `fixture.pass(arms)` efficacy comparator is retained as research evidence.
+ * New records use the versioned contract in helpers/overlay-case-policy.ts.
  *
- * Adding a new overlay eval = one entry in this list. The harness handles
- * arm wiring, concurrency, artifact storage, rate-limit retries, and the
- * cross-harness diagnostic.
+ * A new eval needs a fixture, paid wrapper/census, and selection dependencies.
+ * The harness handles
+ * arm wiring, concurrency, artifact storage, rate-limit retries, and records.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import type { AgentSdkResult } from '../helpers/agent-sdk-runner';
-import { firstAssistantMessageToolCount, reportedThinkingTokens, type ComparisonSpec } from '../helpers/overlay-measurement';
-import { setupLiteralWorkspace, correctLiteralTargets, assertOutputIncludes } from '../helpers/overlay-workspace';
+import { reportedThinkingTokens, type ComparisonSpec } from '../helpers/overlay-measurement';
+import { setupLiteralWorkspace, correctLiteralTargets, assertFinalJson } from '../helpers/overlay-workspace';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -46,20 +46,20 @@ export interface OverlayFixture {
    * Direction of the expected effect. `higher_is_better` = overlay should
    * increase the metric (e.g. batched calls, correct target behaviors).
    * `lower_is_better` = overlay should decrease it (e.g. Bash count, reported reasoning tokens).
-   * Used only for cosmetic logging in the test output; `pass` is the actual gate.
+   * Used for logging; the numeric `pass` comparator is research evidence only.
    */
   direction?: 'higher_is_better' | 'lower_is_better';
   /** Compute the per-trial metric from the typed SDK result. */
   metric: (r: AgentSdkResult, workspace?: string, deadlineAt?: number) => number;
   /** Exact task correctness, separate from comparative efficacy. */
   verify?: (r: AgentSdkResult, workspace: string, metric: number) => void;
-  /** The OFF control may be incomplete when completion itself is the metric. */
+  /** Exact ON behavior requirement; OFF can validly miss this control variable. */
   taskCorrect?: (metric: number) => boolean;
   /** Exact permitted paths; read-only by default. */
   allowedChanges?: string[];
   metricName?: string;
   comparison?: ComparisonSpec;
-  /** Acceptance predicate across all arms' per-trial metrics. */
+  /** Original comparative efficacy predicate; never the behavior release gate. */
   pass: (arms: { overlay: number[]; off: number[] }) => boolean;
 }
 
@@ -123,9 +123,9 @@ function mean(xs: number[]): number {
 }
 
 /**
- * Standard fanout predicate: overlay mean beats off mean by at least 0.5
- * tool_use blocks in the first complete assistant message, AND at least 3 of the overlay
- * trials emit >= 2 tool_use blocks in the same message.
+ * Retired paid fanout predicate, retained for free regressions: overlay mean
+ * beats OFF by at least 0.5 tool_use blocks in the first complete assistant
+ * message, AND at least 3 ON trials emit >= 2 blocks in the same message.
  *
  * The combined rule catches both "overlay nudges every trial slightly"
  * (mean) and "overlay sometimes triggers batching" (floor). A single
@@ -139,7 +139,7 @@ export function fanoutPass(arms: { overlay: number[]; off: number[] }): boolean 
 }
 
 /**
- * Generic "lower is better" pass predicate: overlay mean should drop the
+ * Original "lower is better" research comparator: overlay mean should drop the
  * metric by at least 20% vs baseline. Used for nudges like "effort-match"
  * (reported reasoning tokens) and "dedicated tools vs Bash" (fewer Bash calls).
  */
@@ -150,7 +150,7 @@ export function lowerIsBetter20Pct(arms: { overlay: number[]; off: number[] }): 
 }
 
 /**
- * Generic "higher is better" pass predicate: overlay mean should lift the
+ * Original "higher is better" research comparator: overlay mean should lift the
  * metric by at least 20% vs baseline. Used for nudges like "literal
  * interpretation" (more target behaviors completed).
  */
@@ -178,60 +178,6 @@ export function bashToolCallCount(r: AgentSdkResult): number {
 // ---------------------------------------------------------------------------
 
 export const OVERLAY_FIXTURES: OverlayFixture[] = [
-  {
-    id: 'opus-4-7-fanout-toy',
-    overlayPath: 'model-overlays/opus-4-7.md',
-    model: 'claude-opus-4-7',
-    trials: 10,
-    concurrency: 3,
-    setupWorkspace: (dir) => {
-      fs.writeFileSync(path.join(dir, 'alpha.txt'), 'Alpha file: used in module A.\n');
-      fs.writeFileSync(path.join(dir, 'beta.txt'), 'Beta file: used in module B.\n');
-      fs.writeFileSync(path.join(dir, 'gamma.txt'), 'Gamma file: used in module C.\n');
-    },
-    userPrompt:
-      'Read alpha.txt, beta.txt, and gamma.txt and summarize each in one line.',
-    metric: firstAssistantMessageToolCount,
-    metricName: 'first_assistant_message_tool_calls',
-    verify: (r) => assertOutputIncludes(r, [/alpha/i, /beta/i, /gamma/i]),
-    comparison: { direction: 'higher_is_better', minimum: 0, unsupportedHypothesis: 'The current resolved overlay contains no fanout instruction; batching alone cannot establish overlay efficacy.' },
-    pass: fanoutPass,
-  },
-  {
-    id: 'opus-4-7-fanout-realistic',
-    overlayPath: 'model-overlays/opus-4-7.md',
-    model: 'claude-opus-4-7',
-    trials: 10,
-    concurrency: 3,
-    setupWorkspace: (dir) => {
-      fs.writeFileSync(
-        path.join(dir, 'app.ts'),
-        "import { config } from './config';\nimport { util } from './src/util';\n\nexport function main() { return config.name + ':' + util(); }\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'config.ts'),
-        "export const config = { name: 'demo', version: 1 };\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'README.md'),
-        '# demo project\n\nA small demo. Entry: `app.ts`. Config: `config.ts`.\n',
-      );
-      fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
-      fs.writeFileSync(
-        path.join(dir, 'src', 'util.ts'),
-        "export function util() { return 'util-result'; }\n",
-      );
-    },
-    userPrompt:
-      'Audit this project: read app.ts, config.ts, and README.md, and glob for ' +
-      'every .ts file under src/. Summarize what you find in 3 bullet points.',
-    metric: firstAssistantMessageToolCount,
-    metricName: 'first_assistant_message_tool_calls',
-    verify: (r) => assertOutputIncludes(r, [/app\.ts/i, /config\.ts/i, /README/i, /util/i]),
-    comparison: { direction: 'higher_is_better', minimum: 0, unsupportedHypothesis: 'The current resolved overlay contains no fanout instruction; batching alone cannot establish overlay efficacy.' },
-    pass: fanoutPass,
-  },
-
   // -------------------------------------------------------------------------
   // claude.md / "Dedicated tools over Bash"
   // -------------------------------------------------------------------------
@@ -255,13 +201,15 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     },
     userPrompt:
       "List every TypeScript file under src/ and tell me what each exports. " +
+      "Return only a JSON object mapping each src/ path to an array of its exported symbol names. " +
       "You may use any tools available.",
     // Metric: total Bash tool_use count across the whole session.
     // The overlay says "prefer Read/Glob/Grep over cat/find/grep shell."
     // A model following that should emit Glob + Read, not Bash ls/find/cat.
     metric: bashToolCallCount,
     metricName: 'bash_tool_calls',
-    verify: (r) => assertOutputIncludes(r, [/index\.ts/i, /util\.ts/i, /types\.ts/i, /config\.ts/i, /api\.ts/i, /fetchFoo/, /Foo/]),
+    verify: (r) => assertFinalJson(r, { 'src/index.ts': ['x'], 'src/util.ts': ['util'], 'src/types.ts': ['Foo'], 'src/config.ts': ['c'], 'src/api.ts': ['fetchFoo'] }),
+    taskCorrect: (metric) => metric === 0,
     comparison: { direction: 'lower_is_better', minimum: 0 },
     pass: lowerIsBetter20Pct,
   },
@@ -283,12 +231,12 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
         '{"name": "demo", "version": "1.0.0"}\n',
       );
     },
-    userPrompt: "What's the version in config.json?",
+    userPrompt: "What's the version in config.json? Return only a JSON object with the version key and its exact string value.",
     // Use the SDK's reported reasoning tokens. Lookup/tool counts do not
     // measure extended thinking; absent usage metadata is an error.
     metric: reportedThinkingTokens,
     metricName: 'reported_thinking_tokens',
-    verify: (r) => assertOutputIncludes(r, [/\b1\.0\.0\b/]),
+    verify: (r) => assertFinalJson(r, { version: '1.0.0' }),
     comparison: { direction: 'lower_is_better', minimum: 0 },
     pass: lowerIsBetter20Pct,
   },
@@ -327,61 +275,6 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
   // =========================================================================
 
   {
-    id: 'opus-4-7-fanout-toy-sonnet',
-    overlayPath: 'model-overlays/opus-4-7.md',
-    model: 'claude-sonnet-4-6',
-    trials: 10,
-    concurrency: 3,
-    setupWorkspace: (dir) => {
-      fs.writeFileSync(path.join(dir, 'alpha.txt'), 'Alpha file: used in module A.\n');
-      fs.writeFileSync(path.join(dir, 'beta.txt'), 'Beta file: used in module B.\n');
-      fs.writeFileSync(path.join(dir, 'gamma.txt'), 'Gamma file: used in module C.\n');
-    },
-    userPrompt:
-      'Read alpha.txt, beta.txt, and gamma.txt and summarize each in one line.',
-    metric: firstAssistantMessageToolCount,
-    metricName: 'first_assistant_message_tool_calls',
-    verify: (r) => assertOutputIncludes(r, [/alpha/i, /beta/i, /gamma/i]),
-    comparison: { direction: 'higher_is_better', minimum: 0, unsupportedHypothesis: 'The current resolved overlay contains no fanout instruction; batching alone cannot establish overlay efficacy.' },
-    pass: fanoutPass,
-  },
-
-  {
-    id: 'opus-4-7-fanout-realistic-sonnet',
-    overlayPath: 'model-overlays/opus-4-7.md',
-    model: 'claude-sonnet-4-6',
-    trials: 10,
-    concurrency: 3,
-    setupWorkspace: (dir) => {
-      fs.writeFileSync(
-        path.join(dir, 'app.ts'),
-        "import { config } from './config';\nimport { util } from './src/util';\n\nexport function main() { return config.name + ':' + util(); }\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'config.ts'),
-        "export const config = { name: 'demo', version: 1 };\n",
-      );
-      fs.writeFileSync(
-        path.join(dir, 'README.md'),
-        '# demo project\n\nA small demo. Entry: `app.ts`. Config: `config.ts`.\n',
-      );
-      fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
-      fs.writeFileSync(
-        path.join(dir, 'src', 'util.ts'),
-        "export function util() { return 'util-result'; }\n",
-      );
-    },
-    userPrompt:
-      'Audit this project: read app.ts, config.ts, and README.md, and glob for ' +
-      'every .ts file under src/. Summarize what you find in 3 bullet points.',
-    metric: firstAssistantMessageToolCount,
-    metricName: 'first_assistant_message_tool_calls',
-    verify: (r) => assertOutputIncludes(r, [/app\.ts/i, /config\.ts/i, /README/i, /util/i]),
-    comparison: { direction: 'higher_is_better', minimum: 0, unsupportedHypothesis: 'The current resolved overlay contains no fanout instruction; batching alone cannot establish overlay efficacy.' },
-    pass: fanoutPass,
-  },
-
-  {
     id: 'claude-dedicated-tools-vs-bash-sonnet',
     overlayPath: 'model-overlays/claude.md',
     model: 'claude-sonnet-4-6',
@@ -399,10 +292,12 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
     },
     userPrompt:
       "List every TypeScript file under src/ and tell me what each exports. " +
+      "Return only a JSON object mapping each src/ path to an array of its exported symbol names. " +
       "You may use any tools available.",
     metric: bashToolCallCount,
     metricName: 'bash_tool_calls',
-    verify: (r) => assertOutputIncludes(r, [/index\.ts/i, /util\.ts/i, /types\.ts/i, /config\.ts/i, /api\.ts/i, /fetchFoo/, /Foo/]),
+    verify: (r) => assertFinalJson(r, { 'src/index.ts': ['x'], 'src/util.ts': ['util'], 'src/types.ts': ['Foo'], 'src/config.ts': ['c'], 'src/api.ts': ['fetchFoo'] }),
+    taskCorrect: (metric) => metric === 0,
     comparison: { direction: 'lower_is_better', minimum: 0 },
     pass: lowerIsBetter20Pct,
   },
@@ -421,10 +316,10 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
         '{"name": "demo", "version": "1.0.0"}\n',
       );
     },
-    userPrompt: "What's the version in config.json?",
+    userPrompt: "What's the version in config.json? Return only a JSON object with the version key and its exact string value.",
     metric: reportedThinkingTokens,
     metricName: 'reported_thinking_tokens',
-    verify: (r) => assertOutputIncludes(r, [/\b1\.0\.0\b/]),
+    verify: (r) => assertFinalJson(r, { version: '1.0.0' }),
     comparison: { direction: 'lower_is_better', minimum: 0 },
     pass: lowerIsBetter20Pct,
   },

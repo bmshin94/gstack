@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawnSync } from 'child_process';
+import { deepStrictEqual } from 'node:assert';
+import { randomUUID } from 'node:crypto';
 import type { AgentSdkResult } from './agent-sdk-runner';
 
 const IMPLEMENTATIONS: Record<string, string> = {
@@ -55,10 +57,15 @@ export function assertWorkspaceChanges(before: Record<string, string>, after: Re
   }
 }
 
-export function assertOutputIncludes(result: AgentSdkResult, patterns: RegExp[]): void {
-  for (const pattern of patterns) {
-    if (!pattern.test(result.output)) throw new Error(`answer is missing expected content: ${pattern}`);
-  }
+/** Validate the native final answer, never a matching word in earlier prose. */
+export function assertFinalJson(result: AgentSdkResult, expected: unknown): void {
+  const terminal = result.events.findLast((event) => event.type === 'result');
+  const answer = (terminal as { result?: unknown } | undefined)?.result;
+  if (typeof answer !== 'string' || !answer.trim()) throw new Error('missing native final answer');
+  let actual: unknown;
+  try { actual = JSON.parse(answer); }
+  catch { throw new Error('final answer must be the requested JSON object'); }
+  deepStrictEqual(actual, expected, 'final answer does not match the fixture task');
 }
 
 /**
@@ -87,11 +94,14 @@ export function correctLiteralTargets(dir: string, deadlineAt?: number): number 
       const source = path.join(dir, check.file);
       if (!fs.existsSync(source) || fs.lstatSync(source).isSymbolicLink()) throw new Error(`missing regular implementation: ${check.file}`);
       const oracle = path.join(oracleDir, `check-${index}.ts`);
-      fs.writeFileSync(oracle, `import assert from 'node:assert/strict';\nconst mod = await import(${JSON.stringify(source)});\n${check.code}\n`);
+      const completed = `overlay-oracle-completed-${randomUUID()}`;
+      fs.writeFileSync(oracle, `import assert from 'node:assert/strict';\nconst mod = await import(${JSON.stringify(source)});\n${check.code}\nprocess.stdout.write(${JSON.stringify(completed + '\n')});\n`);
       const execution = spawnSync(process.execPath, [oracle], { cwd: dir, encoding: 'utf8', timeout: remaining, maxBuffer: 64_000 });
       if (execution.error) throw new Error(`behavior oracle failed for ${check.file}: ${execution.error.message}`);
       if (execution.signal) throw new Error(`behavior oracle killed for ${check.file}: ${execution.signal}`);
-      if (execution.status === 0) passed++;
+      // An imported module can exit(0) before any assertion runs. Success needs
+      // affirmative completion of this oracle, not merely a zero process exit.
+      if (execution.status === 0 && execution.stdout.split(/\r?\n/).includes(completed)) passed++;
     }
     return passed;
   } finally {
