@@ -71,6 +71,7 @@ test('quoted templates and previously acknowledged or superseded questions canno
 test.each(['automatic', 'target', 'timeout', 'expired-boot', 'exited'] as const)('driver handles %s without replaying the unrelated answer or accepting a preview', async scenario => {
   const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-preference-free-'));
   const sends: string[] = [];
+  let typed = '';
   let time = 0; let closed = false; let visible = ''; let file = ''; let sessionId = ''; let polls = 0;
   const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ ...row, sessionId }) + '\n');
   const session = {
@@ -82,9 +83,15 @@ test.each(['automatic', 'target', 'timeout', 'expired-boot', 'exited'] as const)
         append({ type: 'assistant', message: { id: 'preview', role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', name: 'Write', id: 'w1', input: { content: mode } }] } });
         visible += mode;
       } else if (data.startsWith('For plan-ceo-review-approach-select,')) {
-        // Repaint the exact previous question for several polls; no extra input.
-        visible += '\n' + approach;
+        typed = data;
       } else throw new Error('Unsolicited input: ' + data);
+    },
+    sendKey(key: string) {
+      expect(key).toBe('Enter');
+      expect(typed).not.toEndWith('\r');
+      append({ type: 'user', message: { role: 'user', content: typed } });
+      // Repaint the exact previous question for several polls; no extra input.
+      visible += '\n' + approach;
     },
   } as unknown as ClaudePtySession;
   try {
@@ -108,6 +115,122 @@ test.each(['automatic', 'target', 'timeout', 'expired-boot', 'exited'] as const)
     expect(closed).toBe(true);
     expect(sends.filter(text => text.startsWith('For ')).length).toBe(['expired-boot', 'exited'].includes(scenario) ? 0 : 1);
     expect(observation.outcome).toBe(scenario === 'automatic' ? 'auto_decided' : scenario === 'target' ? 'asked' : scenario === 'exited' ? 'exited' : 'timeout');
+  } finally { fs.rmSync(config, { recursive: true, force: true }); }
+});
+
+test.each([
+  'string ack', 'block ack', 'delayed ack', 'partial ack',
+  'dropped text', 'dropped Enter', 'wrong user then exact ack', 'nontext user then exact ack', 'assistant then exact ack',
+  'old ack', 'foreign ack', 'sidechain ack', 'parent-tool ack', 'tool-result echo', 'reset prefix',
+  'same-owner duplicate', 'same-owner thinking',
+  'changed same-owner before Enter', 'same-owner tool before Enter', 'incomplete same-owner before Enter',
+  'ack before Enter', 'new owner before Enter', 'nontext user before Enter', 'automatic before Enter', 'mode question before Enter',
+  'exit before Enter', 'deadline before Enter', 'partial native row before Enter', 'throw on type',
+])('prose submission requires a separate Enter and exact owned acknowledgement: %s', async scenario => {
+  const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-submit-free-'));
+  const evidenceRoot = path.join(config, 'evidence');
+  const payload = 'For plan-ceo-review-approach-select, I choose option A. Continue the review.';
+  const writes: Array<{ text: string; poll: number }> = [];
+  let time = 0; let polls = 0; let visible = ''; let file = ''; let sessionId = '';
+  let typed = ''; let entered = 0; let enterPoll = -1; let typePoll = -1;
+  let closed = false; let exited = false; let progressed = false;
+  const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ sessionId, ...row }) + '\n');
+  const user = (content: any = payload) => ({ type: 'user', message: { role: 'user', content } });
+  const finish = () => { append(assistant(automatic, 'end_turn', 'done')); visible += '\n' + automatic; progressed = true; };
+  const acknowledge = () => {
+    append(user(scenario === 'block ack' ? [{ type: 'text', text: payload }] : payload));
+    finish();
+  };
+  const session = {
+    hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
+    rawOutput: () => visible, visibleText: () => visible, pid: () => 1, exitCode: () => exited ? 0 : null,
+    exited: () => exited, close: async () => { closed = true; },
+    send(data: string) {
+      writes.push({ text: data, poll: polls });
+      if (data.startsWith('/')) {
+        if (scenario === 'old ack') append(user());
+        append(assistant(approach)); visible += approach;
+        return;
+      }
+      typePoll = polls;
+      if (scenario === 'throw on type') throw new Error('Synthetic text transport failure');
+      if (scenario === 'dropped text') return;
+      // Model the observed CLI: text plus CR in one write can leave editable
+      // text without a native user turn. Only a later Enter submits it.
+      typed = data.replace(/\r$/, ''); visible += '\n❯ ' + typed;
+    },
+    sendKey(key: string) {
+      expect(key).toBe('Enter'); entered++; enterPoll = polls;
+      if (!typed || scenario === 'dropped Enter') return;
+      if (scenario === 'delayed ack' || scenario === 'partial ack') {
+        if (scenario === 'partial ack') fs.appendFileSync(file, JSON.stringify({ sessionId, ...user() }));
+        return;
+      }
+      if (scenario === 'wrong user then exact ack') { append(user('For another-question, I choose option A.')); acknowledge(); }
+      else if (scenario === 'nontext user then exact ack') { append(user([{ type: 'image', source: {} }])); acknowledge(); }
+      else if (scenario === 'assistant then exact ack') { append(assistant('Another owner', 'tool_use', 'intervening')); acknowledge(); }
+      else if (scenario === 'old ack') finish();
+      else if (scenario === 'foreign ack') { append({ ...user(), sessionId: '00000000-0000-4000-8000-000000000001' }); finish(); }
+      else if (scenario === 'sidechain ack') { append({ ...user(), isSidechain: true }); finish(); }
+      else if (scenario === 'parent-tool ack') { append({ ...user(), parent_tool_use_id: 'child' }); finish(); }
+      else if (scenario === 'tool-result echo') { append(user([{ type: 'tool_result', tool_use_id: 'preview', content: payload }])); finish(); }
+      else if (scenario === 'reset prefix') { fs.writeFileSync(file, ''); acknowledge(); }
+      else acknowledge();
+    },
+  } as unknown as ClaudePtySession;
+  try {
+    const promise = runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000, evidenceRoot }, {
+      now: () => time,
+      launch: async opts => {
+        sessionId = opts.extraArgs![1]; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+        fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
+      },
+      pause: async ms => {
+        time += ms; polls++;
+        if (typePoll >= 0 && !progressed && (scenario.endsWith('before Enter')
+          || scenario === 'same-owner duplicate' || scenario === 'same-owner thinking')) {
+          progressed = true;
+          if (scenario === 'ack before Enter') acknowledge();
+          else if (scenario === 'exit before Enter') exited = true;
+          else if (scenario === 'deadline before Enter') time = 30_000;
+          else if (scenario === 'partial native row before Enter') fs.appendFileSync(file, '{"type":');
+          else if (scenario === 'nontext user before Enter') append(user([{ type: 'image', source: {} }]));
+          else if (scenario === 'same-owner duplicate') append(assistant(approach));
+          else if (scenario === 'changed same-owner before Enter') append(assistant('The request has changed.'));
+          else if (scenario === 'incomplete same-owner before Enter') append(assistant(approach, 'tool_use'));
+          else if (scenario === 'same-owner thinking' || scenario === 'same-owner tool before Enter') {
+            append({ type: 'assistant', message: { id: 'message-1', role: 'assistant', stop_reason: 'end_turn', content:
+              scenario === 'same-owner thinking' ? [{ type: 'thinking', thinking: 'Nonvisible metadata.' }]
+                : [{ type: 'tool_use', name: 'Read', id: 'new-tool', input: {} }] } });
+          }
+          else {
+            const value = scenario === 'automatic before Enter' ? automatic
+              : scenario === 'mode question before Enter' ? mode : 'A new unrelated owner';
+            append(assistant(value, 'end_turn', 'new-owner')); visible += '\n' + value;
+          }
+        }
+        if (!progressed && enterPoll >= 0 && polls >= enterPoll + 2) {
+          if (scenario === 'delayed ack') acknowledge();
+          if (scenario === 'partial ack') { fs.appendFileSync(file, '\n'); finish(); }
+        }
+      },
+    });
+    const accepted = ['string ack', 'block ack', 'delayed ack', 'partial ack', 'ack before Enter',
+      'same-owner duplicate', 'same-owner thinking'].includes(scenario);
+    if (scenario === 'throw on type') await expect(promise).rejects.toThrow('Synthetic text transport failure');
+    else {
+      const result = await promise;
+      expect(result.outcome).toBe(accepted ? 'auto_decided' : scenario === 'mode question before Enter' ? 'asked' : scenario === 'exit before Enter' ? 'exited' : 'timeout');
+      expect(result.answered).toEqual(accepted ? ['message-1'] : []);
+    }
+    expect(closed).toBe(true);
+    expect(writes.filter(write => write.text.startsWith('For ')).map(write => write.text)).toEqual([payload]);
+    expect(entered).toBe(scenario.endsWith('before Enter') || scenario === 'throw on type' ? 0 : 1);
+    if (entered) expect(enterPoll).toBeGreaterThan(typePoll);
+    const saved = JSON.parse(fs.readFileSync(path.join(evidenceRoot, sessionId, 'observation.json'), 'utf8')).evidence;
+    expect(saved.answered).toEqual(accepted ? ['message-1'] : []);
+    if (accepted) expect(saved.pendingReply).toBeNull();
+    else expect(saved.pendingReply).toMatchObject({ id: 'message-1', questionId: 'plan-ceo-review-approach-select', text: payload, textWriteAttempted: true, enterWriteAttempted: entered === 1 });
   } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });
 
@@ -460,6 +583,7 @@ test.each([false, true])('a previous input-window preview cannot answer a new ow
   const second = capturedImplementation.assistantText;
   const sends: string[] = [];
   let time = 0; let visible = ''; let file = ''; let sessionId = ''; let polls = 0; let closed = false;
+  let typed = ''; let firstAcknowledged = false; let secondRendered = false;
   const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ ...row, sessionId }) + '\n');
   const session = {
     hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
@@ -473,12 +597,18 @@ test.each([false, true])('a previous input-window preview cannot answer a new ow
         append(assistant(approach));
         visible += second + '\n' + approach;
       } else if (data.startsWith('For ')) {
-        append({ type: 'user', message: { role: 'user', content: data } });
-        if (data.startsWith('For plan-ceo-review-implementation-approach,')) {
-          append(assistant(automatic, 'end_turn', 'done'));
-          visible += '\n' + automatic;
-        }
+        typed = data;
       } else throw new Error('Unsolicited input: ' + data);
+    },
+    sendKey(key: string) {
+      expect(key).toBe('Enter');
+      append({ type: 'user', message: { role: 'user', content: typed } });
+      if (typed.startsWith('For plan-ceo-review-implementation-approach,')) {
+        append(assistant(automatic, 'end_turn', 'done')); visible += '\n' + automatic;
+      } else {
+        firstAcknowledged = true;
+        append(assistant(second, 'end_turn', 'new-question'));
+      }
     },
   } as unknown as ClaudePtySession;
   try {
@@ -492,14 +622,16 @@ test.each([false, true])('a previous input-window preview cannot answer a new ow
       },
       pause: async ms => {
         time += ms;
-        if (++polls === 3) append(assistant(second, 'end_turn', 'new-question'));
-        if (polls === 4 && showCurrent) visible += '\n' + capturedImplementation.visible;
+        polls++;
+        if (firstAcknowledged && !secondRendered && showCurrent) {
+          secondRendered = true; visible += '\n' + capturedImplementation.visible;
+        }
       },
     });
     expect(closed).toBe(true);
     expect(sends.filter(text => text.startsWith('For '))).toEqual([
-      'For plan-ceo-review-approach-select, I choose option A. Continue the review.\r',
-      ...(showCurrent ? ['For plan-ceo-review-implementation-approach, I choose option B. Continue the review.\r'] : []),
+      'For plan-ceo-review-approach-select, I choose option A. Continue the review.',
+      ...(showCurrent ? ['For plan-ceo-review-implementation-approach, I choose option B. Continue the review.'] : []),
     ]);
     expect(observation.outcome).toBe(showCurrent ? 'auto_decided' : 'timeout');
   } finally { fs.rmSync(config, { recursive: true, force: true }); }

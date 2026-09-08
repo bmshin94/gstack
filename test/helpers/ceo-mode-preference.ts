@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   isAutoDecidedVisible, isNumberedOptionListVisible, isPlanReadyVisible,
   launchClaudePty, MODE_RE, parseNumberedOptions, type ClaudePtySession,
@@ -265,6 +265,12 @@ export async function runCeoModePreferenceObservation(opts: {
   const deadline = startedAt + opts.timeoutMs;
   const sessionId = randomUUID();
   const answered = new Set<string>();
+  let pendingReply: {
+    id: string; questionId: string; answer: string; text: string;
+    nativeRowCount: number; nativePrefixSha256: string; nextInputSince: number;
+    textWriteAttempted: boolean; enterWriteAttempted: boolean; invalidated: string | null;
+  } | null = null;
+  const nativePrefixHash = (rows: unknown[]) => createHash('sha256').update(JSON.stringify(rows)).digest('hex');
   let session: ClaudePtySession | undefined;
   let failure: unknown;
   let observation: { outcome: string; evidence: string; answered: string[] } | undefined;
@@ -295,14 +301,81 @@ export async function runCeoModePreferenceObservation(opts: {
       const visible = session.visibleSince(since);
       if (session.exited()) return result('exited', visible);
       const transcript = readOwnedClaudeTranscript(session.hermeticConfigDir, sessionId);
+      if (now() >= deadline) break;
+      if (pendingReply && !pendingReply.invalidated && !transcript.pendingBytes) {
+        // A write is only an attempt. Bind the acknowledgement to this exact
+        // owned prefix; reset/truncation or an intervening owner cannot ack it.
+        if (transcript.rows.length < pendingReply.nativeRowCount
+          || nativePrefixHash(transcript.rows.slice(0, pendingReply.nativeRowCount)) !== pendingReply.nativePrefixSha256) {
+          pendingReply.invalidated = 'Owned transcript prefix changed before reply acknowledgement';
+        } else {
+          for (const row of transcript.rows.slice(pendingReply.nativeRowCount)) {
+            const message = row.message;
+            if (row.type === 'assistant' && message?.role === 'assistant') {
+              const originalText = new Set(transcript.rows.slice(0, pendingReply.nativeRowCount)
+                .filter(original => original.type === 'assistant' && original.message?.role === 'assistant'
+                  && original.message.id === pendingReply!.id)
+                .flatMap(original => original.message.content ?? [])
+                .filter((block: any) => block?.type === 'text' && typeof block.text === 'string')
+                .map((block: any) => block.text));
+              // Native rows can supplement the same completed message. Exact
+              // repeats and nonvisible thinking do not introduce another turn.
+              if (message.id === pendingReply.id && message.stop_reason === 'end_turn'
+                && Array.isArray(message.content) && message.content.every((block: any) =>
+                  block?.type === 'thinking' || block?.type === 'redacted_thinking'
+                  || block?.type === 'text' && originalText.has(block.text))) continue;
+              pendingReply.invalidated = 'Owned assistant advanced before reply acknowledgement';
+              break;
+            }
+            if (row.type !== 'user' || message?.role !== 'user') continue;
+            const content = message.content;
+            if (Array.isArray(content) && content.length > 0
+              && content.every((block: any) => block?.type === 'tool_result')) continue;
+            // Tool results are not submitted input. Every other owned user
+            // message must match exactly, including nontext or mixed content.
+            const text = typeof content === 'string' ? content
+              : Array.isArray(content) && content.length > 0
+                && content.every((block: any) => block?.type === 'text' && typeof block.text === 'string')
+                ? content.map((block: any) => block.text).join('\n') : undefined;
+            if (text !== pendingReply.text) {
+              pendingReply.invalidated = 'Different owned user input preceded reply acknowledgement';
+              break;
+            }
+            answered.add(pendingReply.id);
+            // Preserve a next question that rendered before this ack poll.
+            inputSince = pendingReply.nextInputSince;
+            pendingReply = null;
+            break;
+          }
+        }
+      }
       const signal = inspectCeoModePreference(transcript, visible, session.visibleSince(inputSince));
       lastSignal = signal;
       if (now() >= deadline) break;
-      if (signal.kind === 'asked' || signal.kind === 'auto_decided') return result(signal.kind, signal.evidence);
+      if (signal.kind === 'asked' || signal.kind === 'auto_decided' && !pendingReply) return result(signal.kind, signal.evidence);
+      if (pendingReply) {
+        // The next existing poll separates typing from Enter. Never submit to
+        // another owner, replay the text, or count a missing ack as a success.
+        if (!pendingReply.invalidated && !transcript.pendingBytes && pendingReply.textWriteAttempted
+          && !pendingReply.enterWriteAttempted && signal.kind === 'unrelated'
+          && signal.id === pendingReply.id && signal.questionId === pendingReply.questionId
+          && signal.answer === pendingReply.answer) {
+          if (now() >= deadline) break;
+          pendingReply.enterWriteAttempted = true;
+          session.sendKey('Enter');
+        }
+        continue;
+      }
       if (signal.kind === 'unrelated' && !answered.has(signal.id)) {
-        answered.add(signal.id); inputSince = session.mark();
+        pendingReply = {
+          id: signal.id, questionId: signal.questionId, answer: signal.answer,
+          text: `For ${signal.questionId}, I choose option ${signal.answer}. Continue the review.`,
+          nativeRowCount: transcript.rows.length, nativePrefixSha256: nativePrefixHash(transcript.rows),
+          nextInputSince: session.mark(), textWriteAttempted: false, enterWriteAttempted: false, invalidated: null,
+        };
         if (now() >= deadline) break;
-        session.send(`For ${signal.questionId}, I choose option ${signal.answer}. Continue the review.\r`);
+        pendingReply.textWriteAttempted = true;
+        session.send(pendingReply.text);
         continue;
       }
       const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId);
@@ -354,7 +427,7 @@ export async function runCeoModePreferenceObservation(opts: {
           startedAt, finishedAt: now(), timeoutMs: opts.timeoutMs,
           outcome: failure || errors.length ? 'harness_error' : observation?.outcome,
           failure: failure ? describe(failure) : null, finalizationErrors: errors.map(describe),
-          observation, lastSignal, answered: [...answered], snapshot,
+          observation, lastSignal, answered: [...answered], pendingReply, snapshot,
         }, { ...process.env, ...opts.env });
         console.log(`CEO mode evidence: ${file}`);
       } catch (error) { errors.push(error); }
