@@ -72,26 +72,51 @@ function proseReply(text: string, questionId: string, selectors: string[]): stri
   return signature;
 }
 
+/** Veto statements that make this request noncurrent, wherever they occur in
+ * the owned turn. Ordinary option actions and inline examples are not such
+ * statements. This applies only to unrelated input, never to the mode oracle.
+ */
+function noncurrentBriefContext(text: string): boolean {
+  // Keep option contents: a request-level contradiction can follow its label.
+  // Normalize emphasis/punctuation only for this veto, never for ownership.
+  const context = text.replace(/[*_`]/g, '').replace(/[‘’]/g, "'")
+    .replace(/^\s*(?:[-+]\s+)?(?:[A-Z]|\d+)[).]\s+/gm, '');
+  // Labels and line wrapping do not hide a statement; incidental words inside
+  // an explanation are not statements about whether to answer this request.
+  const statement = (pattern: string) => new RegExp('(?:(?:^|[.!?;:\\n])\\s*(?:(?:[-+]|>+|#{1,6})\\s+)?|,\\s*(?:but\\s+)?)' + pattern, 'i').test(context);
+  const noun = '(?:question|decision|brief|request)';
+  const current = '(?:(?:this|the|that)\\s+' + noun + '|this|that|it)\\b';
+  const presentation = '(?:present|render|ask)\\s+(?:(?:(?:this|the|that|an?)\\s+)?' + noun + '|this|that|it)\\b';
+  const planned = "(?:I|we)(?:'ll|\\s+will)\\s+";
+  return statement("(?:please\\s+)?(?:do\\s+not|don't|must\\s+not|should\\s+not)\\s+(?:answer|reply|respond|choose|select)(?:\\s+(?:(?:to\\s+)?" + current + '|yet\\b|now\\b|until\\b|before\\b)|(?=\\s*(?:[.!?;:\\n]|$)))')
+    || statement('no\\s+(?:participation|input|answer|response|reply)\\s+(?:is\\s+)?(?:expected|requested|required|needed)\\b')
+    || statement(current + '\\s+(?:is|remains|has been|will be)\\s+(?:deferred|postponed|hypothetical|(?:(?:only|just)\\s+)?(?:an?\\s+)?(?:example|template|rehearsal))\\b')
+    || statement("(?:I|we)\\s+(?:will\\s+not|won't|cannot|can't)\\s+" + presentation)
+    || statement(planned + presentation + '[^.!?;\\n]*\\b(?:later|tomorrow|next time)\\b')
+    || statement('(?:if|unless)\\b[^.!?;]*\\b' + planned + presentation)
+    || statement(planned + '(?:present|render|ask)\\s+(?:(?:this|the|that|an?)\\s+)?(?:example|template)\\s+' + noun + '\\b')
+    || statement("(?:here is|here's|this is|the following is)\\s+an?\\s+(?:example|template)\\b")
+    || statement('(?:if|when|unless)\\s+(?:this|that|it)\\s+(?:becomes?|is|were|was)\\s+(?:relevant|necessary|needed)\\b')
+    || statement('(?:(?:only|just)\\s+(?:an?\\s+)?(?:example|template|rehearsal)|(?:ready\\s+)?rehearsal (?:material|report))\\s*[:—-]?(?=[.!?;\\n]|$)');
+}
+
 function liveBriefIntroduction(text: string): string | undefined {
+  if (noncurrentBriefContext(text)) return undefined;
   const nativeLines = text.split('\n');
   const lines = nativeLines.map(line => line.replace(/\*\*/g, ''));
   const headings = lines.flatMap((line, index) => /^ {0,3}(?:#{1,6}\s+)?D[1-9]\d*\s+[—–-]\s+\S/.test(line) ? [index] : []);
   if (headings.length !== 1) return undefined;
   const before = nativeLines.slice(0, headings[0]);
   if (before.every(line => !line.trim() || /^[-*_]{3,}$/.test(line.trim()))) return '';
-  // Only an explicit immediate presentation may introduce a live brief. The
-  // optional status inventory has a closed, neutral resource vocabulary: open
-  // prose could wrap an example, rehearsal or deferred request. This is not a
-  // general prose classifier; unfamiliar introductions require manual input.
-  const lead = before.join('\n').trim().match(/^([^\n]+)\n\s*\n[-*_]{3,}$/)?.[1];
-  if (!lead || /^(?: {4}|\t)/.test(before.find(line => line.trim()) ?? '')) return undefined;
-  const state = '(?:no|missing|empty|available|loaded|ready|cold|warm)';
-  const modifier = '(?:local|remote|current|prior|saved|cached|project|repository|design|review|build|test|brain|shared)';
-  const resource = '(?:docs?|documents?|plans?|specs?|notes|learnings|config|context|cache|history|memory|branch|repository|worktree|tests|checks|results)';
-  const status = state + ' (?:' + modifier + ' ){0,2}' + resource;
-  const inventory = '(?:' + status + '(?:, ' + status + '){0,3}\\. )?';
-  const announcement = "I(?: will|'ll) (?:present|render|ask) (?:the|this) (?:(?:current|prerequisite) )?(?:question|decision brief|brief) (?:now|here|below|before continuing|before proceeding)\\.";
-  if (!new RegExp('^' + inventory + announcement + '$', 'i').test(lead)) return undefined;
+  // A lead is provenance to corroborate, not an authorization vocabulary.
+  // Keep its physical quotation/code context instead of manufacturing a live
+  // introduction by filtering those lines. Bold and multiple plain paragraphs
+  // are harmless; the explicit owned Reply below establishes the request.
+  if (before.some(line => {
+    if (/^(?: {4}|\t)|^\s*(?:>|`{3,}|~{3,})/.test(line)) return true;
+    const code = line.trim().replace(/[*_]/g, '').match(/^(`+)(.*)\1$/);
+    return code !== null && !code[2].includes(code[1]);
+  })) return undefined;
   return nativeLines.slice(0, headings[0] + 1).join('\n');
 }
 
@@ -188,7 +213,7 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       // The envelope applies to full-text corroboration too: a fully rendered
       // deferred/example brief is still not a request for current input.
       const introduction = liveBriefIntroduction(nativeText);
-      if (introduction === undefined || introduction && !compact(questionVisible).includes(compact(introduction))) continue;
+      if (introduction === undefined || introduction && !renderedProse(questionVisible).includes(renderedProse(introduction))) continue;
       if ([...nativeText.matchAll(/<gstack-qid:([a-z0-9-]+)>/g)].length !== 1) continue;
       const selectors = options.map(option => option[1]);
       if (selectors.length < 2 || selectors.length > 4 || new Set(selectors).size !== selectors.length
@@ -198,6 +223,7 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       if ([...messages].some(([otherId, other]) => otherId !== id
         && other.text.join('\n').includes(`<gstack-qid:${questionIds[0]}>`))) continue;
       const reply = proseReply(nativeText, questionIds[0], selectors);
+      if (introduction && !reply) continue;
       const signature = renderedProse(reply ?? text);
       const previewText = [...toolText, toolText.join('\n')].map(renderedProse);
       // A same-input tool preview/result can display the identical directive.

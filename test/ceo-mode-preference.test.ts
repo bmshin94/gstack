@@ -309,14 +309,33 @@ test('captured immediately introduced brief binds its intact adjacent reply with
   expect(inspectCeoModePreference(transcript(assistant(ambiguous)), visible).kind).toBe('working');
 });
 
+const capturedContext = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/ceo-mode-preference-context-render.json'), 'utf8'));
+test('the captured completed question survives a neutral status introduction without changing its recommendation or mode oracle', () => {
+  const { assistantText, visible } = capturedContext;
+  expect(inspectCeoModePreference(transcript(assistant(assistantText)), visible)).toMatchObject({
+    kind: 'unrelated', questionId: 'plan-ceo-review-office-hours-offer', answer: 'B',
+  });
+  const ambiguous = assistantText.replace('A) Run /office-hours first', 'A) Run /office-hours first (recommended)');
+  expect(ambiguous).not.toBe(assistantText);
+  expect(inspectCeoModePreference(transcript(assistant(ambiguous)), visible).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(assistantText)), visible, '').kind).toBe('working');
+  const modeText = assistantText.replaceAll('plan-ceo-review-office-hours-offer', 'plan-ceo-review-mode');
+  expect(inspectCeoModePreference(transcript(assistant(modeText)), modeText).kind).toBe('asked');
+});
+
 test.each([
   "I'll present the question now.",
   'I will ask this current question before proceeding.',
   'Loaded project config. I will render this brief below.',
   'Missing saved plans, available local tests. I will present the decision brief here.',
-])('a narrowly introduced current decision requires its introduction to render: %s', lead => {
+  'The repository scan finished. The remaining decision follows.',
+  'A brief update: the workspace scan is complete.\n\nOne decision remains.',
+  "No design doc.\n\nI'll present the question now.",
+  "**I'll present the question now.**",
+  '`review-input.md` is loaded. Now presenting the current decision.',
+])('a structurally introduced current decision requires its introduction to render: %s', lead => {
   const text = lead + '\n\n---\n\n' + adjacentBrief;
-  const visible = lead + '\n---\nD1 — Cache policy\n' + adjacentVisible;
+  const visible = lead.replace(/`/g, '') + '\n---\nD1 — Cache policy\n' + adjacentVisible;
   expect(inspectCeoModePreference(transcript(assistant(text)), visible).kind).toBe('unrelated');
   expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('unrelated');
   expect(inspectCeoModePreference(transcript(assistant(text)), adjacentVisible).kind).toBe('working');
@@ -333,16 +352,84 @@ test.each([
   "Ready rehearsal material. I'll present the question now.",
   "Ready rehearsal report. I'll present the question now.",
   "This is only a rehearsal. I'll present the question now.",
-  "No design doc.\n\nI'll present the question now.",
   "> I'll present the question now.",
   "    I'll present the question now.",
   "`I'll present the question now.`",
-  "**I'll present the question now.**",
+  '**`Neutral status.`**',
+  '_`Neutral status.`_',
   "```text\nI'll present the question now.\n```",
-])('a noncurrent or unknown introduction cannot receive input even when fully rendered: %s', lead => {
+])('a noncurrent or quoted introduction cannot receive input even when fully rendered: %s', lead => {
   const text = lead + '\n\n---\n\n' + adjacentBrief;
   expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
   expect(inspectCeoModePreference(transcript(assistant(text)), lead + '\n---\nD1 — Cache policy\n' + adjacentVisible).kind).toBe('working');
+});
+
+test.each([
+  'Do not answer this decision yet.',
+  'Do not _answer_ this decision yet.',
+  'Do *not* answer this decision yet.',
+  'Do not `answer` this decision yet.',
+  'Don’t answer this decision yet.',
+  'Note: Do not answer this decision yet.',
+  'Do not\nanswer this decision yet.',
+  '- Do not answer this decision yet.',
+  '### Do not answer this decision yet.',
+  'Please do not reply to this question.',
+  'No participation expected.',
+  'Important: No participation expected.',
+  '- No participation expected.',
+  '* No participation expected.',
+  'This question is deferred until later.',
+  'This question is hypothetical.',
+  'This is only a rehearsal.',
+  "Here's an example:",
+  'Here’s an example:',
+  "If necessary, I'll present the question now.",
+])('noncurrent statements veto the entire unrelated brief without erasing mode evidence: %s', statement => {
+  for (const question of [adjacentBrief, "I'll present the question now.\n\n---\n\n" + adjacentBrief]) {
+    for (const text of [
+      statement + '\n\n' + question,
+      question.replace('A) Reuse', statement + '\n\nA) Reuse'),
+      question.replace('B) Replace', 'B) Replace. ' + statement),
+      question + '\n\n' + statement,
+    ]) {
+      expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+      expect(inspectCeoModePreference(transcript(assistant(text)), question).kind).toBe('working');
+      const modeText = text.replaceAll('plan-ceo-review-cache-policy', 'plan-ceo-review-mode');
+      expect(inspectCeoModePreference(transcript(assistant(modeText)), modeText).kind).toBe('asked');
+    }
+  }
+});
+
+test('ordinary inline examples and deferred actions do not make the current question hypothetical', () => {
+  const text = ('The workspace scan is complete.\n\n' + adjacentBrief)
+    .replace('A) Reuse (recommended)', 'For example, compare the cached value with `a,b` and `a"b`. These inline examples describe the formatter.\n\nA) Reuse the example cache (recommended)')
+    .replace('B) Replace', 'B) Defer the cache migration until later');
+  expect(inspectCeoModePreference(transcript(assistant(text)), text)).toMatchObject({ kind: 'unrelated', answer: 'A' });
+});
+
+test.each([
+  'For example, the parser can preserve an example question in history.',
+  'The configuration snippet is only a template for the new formatter.',
+  'If we choose A, ask QA to verify the CSV example later.',
+])('explanations about examples and subsequent work do not defer the current question: %s', explanation => {
+  const text = adjacentBrief.replace('A) Reuse', explanation + '\n\nA) Reuse');
+  expect(inspectCeoModePreference(transcript(assistant(text)), text)).toMatchObject({ kind: 'unrelated', answer: 'A' });
+  expect(inspectCeoModePreference(transcript(assistant(text)), adjacentVisible)).toMatchObject({ kind: 'unrelated', answer: 'A' });
+});
+
+test.each([
+  'Do not answer cached queries until refreshed',
+  'Do not answer iterative queries until refreshed',
+  'Render the template question later',
+])('an option action does not prohibit input to the current question: %s', option => {
+  const text = adjacentBrief.replace('B) Replace', 'B) ' + option);
+  expect(inspectCeoModePreference(transcript(assistant(text)), text)).toMatchObject({ kind: 'unrelated', answer: 'A' });
+});
+
+test('a prefaced current question requires an explicit corroborated Reply even when its entire text renders', () => {
+  const text = 'The workspace scan is complete.\n\n' + approach;
+  expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
 });
 
 test('the current introduction must precede its reply and cannot come from a tool preview', () => {
