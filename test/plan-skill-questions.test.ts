@@ -20,7 +20,7 @@ function earlyQuestions() {
   const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
   const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PreToolUse[0].hooks[0].command;
   return { source, emit(id: string, input: unknown = { questions: [question] }) {
-    const result = Bun.spawnSync(['bash', '-c', command], { stdin: Buffer.from(JSON.stringify({
+    const result = Bun.spawnSync(['bash', '-c', command], { timeout: 5000, stdin: Buffer.from(JSON.stringify({
       hook_event_name: 'PreToolUse', session_id: sessionId, transcript_path: file, cwd: config,
       tool_name: 'AskUserQuestion', tool_use_id: id, tool_input: input,
     })), stdout: 'pipe', stderr: 'pipe' });

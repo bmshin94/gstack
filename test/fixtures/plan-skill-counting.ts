@@ -59,6 +59,7 @@ async function main() {
           // Exercise the real launch-installed recorder; only results go to JSONL.
           const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
           const recorded = Bun.spawnSync(['bash', '-c', settings.hooks.PreToolUse[0].hooks[0].command], {
+            timeout: 5000,
             stdin: Buffer.from(JSON.stringify({ hook_event_name: 'PreToolUse', session_id: sessionId,
               transcript_path: file, cwd: options.cwd, tool_name: name, tool_use_id: id, tool_input: input })),
             stdout: 'pipe', stderr: 'pipe',
