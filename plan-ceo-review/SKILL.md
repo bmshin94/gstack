@@ -1096,7 +1096,9 @@ Surface these as questions for the user NOW, not as "figure it out later."
 ### 0F. Mode Selection
 In every mode, you are 100% in control. No scope is added without your explicit approval.
 
-Present four options:
+Use registered ID `plan-ceo-review-mode` and the preamble's session-kind precedence. If an interactive user has not chosen a mode and `QUESTION_TUNING: true`, run the documented `gstack-question-preference --check` for this ID before choosing or presenting modes. Follow `AUTO_DECIDE` or `ASK_NORMALLY`, including the standard preference annotation. `CONDUCTOR_SESSION: true` selects prose transport, not mode.
+
+Available modes:
 1. **SCOPE EXPANSION:** The plan is good but could be great. Dream big — propose the ambitious version. Every expansion is presented individually for your approval. You opt in to each one.
 2. **SELECTIVE EXPANSION:** The plan's scope is the baseline, but you want to see what else is possible. Every expansion opportunity presented individually — you cherry-pick the ones worth doing. Neutral recommendations.
 3. **HOLD SCOPE:** The plan's scope is right. Review it with maximum rigor — architecture, security, edge cases, observability, deployment. Make it bulletproof. No expansions surfaced.
@@ -1115,9 +1117,9 @@ After mode is selected, confirm which implementation approach (from 0C-bis) appl
 
 Once selected, commit fully. Do not silently drift.
 
-Present these mode options via AskUserQuestion using the preamble's AskUserQuestion Format section: include RECOMMENDATION. These options differ in kind (review posture), not coverage — do NOT emit `Completeness: N/10` per option. Include the one-line note from step 4 of the preamble format rule instead: `Note: options differ in kind, not coverage — no completeness score.`
+If mode selection needs an answer, use the preamble's question format and transport: include RECOMMENDATION. Modes differ in kind (review posture), not coverage — do NOT emit `Completeness: N/10` per option. Include: `Note: options differ in kind, not coverage — no completeness score.`
 
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+For unresolved decisions, use the preamble's transport, ask once per issue, do NOT batch, and **STOP until the user responds**. Recommend + WHY; even an "obvious fix" needs a decision before changing the plan. If none remain, state "No issues, moving on" and proceed. Settled preferences and spawned sessions follow the preamble's precedence.
 **Reminder: Do NOT make any code changes. Review only.**
 
 > **STOP.** Before running the 11-section deep review, required outputs, and review report (only after Step 0 scope and mode are agreed), Read `~/.claude/skills/gstack/plan-ceo-review/sections/review-sections.md` and execute it
