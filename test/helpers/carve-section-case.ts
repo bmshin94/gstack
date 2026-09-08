@@ -65,11 +65,15 @@ export function registerCarveSectionCase(skill: string): void {
           tmpPrefix: `gstack-${guard.skill}-secload-`,
         });
 
-        const { readSections, reportProduced, output } = await captureSectionReads({
+        const { readSections, reportProduced: completionMarked, reportWritten, output } = await captureSectionReads({
           planDir,
           skillName: guard.skill,
           scenario: guard.scenario,
-          reportMarker: /report|review|summary|design doc|handoff/i,
+          // This scenario produces an HTML implementation, whose complete
+          // document need not contain any of the prose report keywords.
+          reportMarker: guard.skill === 'design-html'
+            ? /<!doctype\s+html\s*>\s*<html\b[^>]*>[\s\S]*?<head\b[^>]*>[\s\S]*?<\/head\s*>[\s\S]*?<body\b[^>]*>[\s\S]*?<\/body\s*>\s*<\/html\s*>/i
+            : /report|review|summary|design doc|handoff/i,
           testName: `${guard.skill} section-loading`,
           runId,
           // 480s, not the helper's 300s default: the heavy full-workflow
@@ -79,6 +83,9 @@ export function registerCarveSectionCase(skill: string): void {
           // there reads as a loading failure when the carve invariant held.
           timeout: 480_000,
         });
+        // Require the HTML artifact itself; a terminal-only claim is insufficient.
+        // captureSectionReads already requires a successful native completion.
+        const reportProduced = completionMarked && (guard.skill !== 'design-html' || reportWritten);
 
         const missing = guard.requiredReads.filter((s) => !readSections.has(s));
         // Named failure output (codex #2): skill + expected + observed.
