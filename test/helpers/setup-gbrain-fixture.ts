@@ -141,7 +141,10 @@ export function chooseLocalPgliteFixtureAnswer(question: {
   // An em dash after the initial Yes/No is the observed comma separator.
   // Keep all action text and trailing qualifiers for the anchored classifiers.
   options = options.map(o => ({ ...o, label: o.label.replace(/^(yes|no) — /i, '$1, ') }));
-  const declines = options.filter(o => /^(?:no(?:,? (?:thanks|remote mcp only))?|skip(?: artifacts sync)?|decline(?: artifacts sync)?)$/i.test(o.label));
+  // The optional transport name does not change the remote-only decline.
+  const remoteOnlyDecline = /^no,? remote(?: mcp)? only$/i;
+  const declines = options.filter(o => /^(?:no(?:,? thanks)?|skip(?: artifacts sync)?|decline(?: artifacts sync)?)$/i.test(o.label)
+    || remoteOnlyDecline.test(o.label));
   const local = options.filter(o => /^yes,? (?:(?:set up|install|enable|use) )?local pglite(?: for (?:code|code search))?$/i.test(o.label));
   const sync = options.filter(o => /^(?:yes,? )?(?:full sync(?: \(everything allowlisted\))?|artifacts[- ]only(?: sync)?|sync (?:all|artifacts)(?: only)?)$/i.test(o.label));
   const remote = options.filter(o => /^(?:(?:use|connect to|select) )?remote (?:gbrain )?mcp(?: \(path ?4\))?$/i.test(o.label)
@@ -159,7 +162,7 @@ export function chooseLocalPgliteFixtureAnswer(question: {
   if (known.size !== options.length || families.length !== 1) {
     throw new Error(`Unrecognized or ambiguous local-PGLite fixture question: ${question.question.split('\n')[0]}`);
   }
-  if (local.length === 1 && declines.length === 1 && /^no,? remote mcp only$/i.test(declines[0]!.label)) return local[0]!.option.label;
+  if (local.length === 1 && declines.length === 1 && remoteOnlyDecline.test(declines[0]!.label)) return local[0]!.option.label;
   if (sync.length > 0 && declines.length === 1) return declines[0]!.option.label;
   if (remote.length === 1) return remote[0]!.option.label;
   throw new Error(`Unrecognized or ambiguous local-PGLite fixture question: ${question.question.split('\n')[0]}`);

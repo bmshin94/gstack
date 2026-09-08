@@ -17,6 +17,46 @@ async function command(bin: string, args: string[], env: Record<string, string>)
   return { stdout, stderr, exitCode };
 }
 
+describe('setup-gbrain documented lock acquisition', () => {
+  test.each(['fresh-home', 'existing-lock', 'parent-file', 'lock-file'])('%s retains the actual acquisition outcome', async scenario => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gbrain-lock-'));
+    const parent = path.join(home, '.gstack');
+    const lock = path.join(parent, '.setup-gbrain.lock.d');
+    try {
+      if (scenario === 'parent-file') fs.writeFileSync(parent, 'preserve parent file');
+      if (scenario === 'existing-lock') {
+        fs.mkdirSync(lock, { recursive: true });
+        fs.writeFileSync(path.join(lock, 'owner'), 'preserve owner');
+      }
+      if (scenario === 'lock-file') {
+        fs.mkdirSync(parent);
+        fs.writeFileSync(lock, 'preserve lock file');
+      }
+      const source = fs.readFileSync(path.join(import.meta.dir, '..', 'setup-gbrain', 'SKILL.md.tmpl'), 'utf8');
+      const script = source.match(/\*\*Concurrent-run lock\.\*\*[\s\S]*?```bash\n([\s\S]*?)\n  ```/)?.[1];
+      expect(script).toBeDefined();
+      const result = await command('bash', ['-c', script!], { ...process.env, HOME: home } as Record<string, string>);
+      expect(result.exitCode).toBe(scenario === 'fresh-home' ? 0 : 1);
+      if (scenario === 'fresh-home') {
+        expect(fs.statSync(lock).isDirectory()).toBe(true);
+        expect(result.stderr).toBe('');
+      } else {
+        expect(result.stderr).toContain('mkdir:');
+        expect(result.stderr.includes('Another /setup-gbrain instance')).toBe(scenario === 'existing-lock');
+        if (scenario === 'existing-lock') expect(fs.readFileSync(path.join(lock, 'owner'), 'utf8')).toBe('preserve owner');
+        if (scenario === 'parent-file') {
+          expect(result.stderr).toContain('Cannot create setup-gbrain lock parent');
+          expect(fs.readFileSync(parent, 'utf8')).toBe('preserve parent file');
+        }
+        if (scenario === 'lock-file') {
+          expect(result.stderr).toContain('Cannot acquire setup-gbrain lock');
+          expect(fs.readFileSync(lock, 'utf8')).toBe('preserve lock file');
+        }
+      }
+    } finally { fs.rmSync(home, { recursive: true, force: true }); }
+  });
+});
+
 describe('setup-gbrain owned Path 4 fixture', () => {
   for (const status of [401, 200] as const) {
     test(`real verifier/detector exercise ${status} with a fresh MCP state and explicit child token`, async () => {
@@ -201,6 +241,37 @@ describe('setup-gbrain local-PGLite fixture answers', () => {
     expect(chooseLocalPgliteFixtureAnswer(localQuestion)).toBe('Yes, set up local PGLite for code');
     expect(chooseLocalPgliteFixtureAnswer({ ...localQuestion, options: [...localQuestion.options].reverse() }))
       .toBe('Yes, set up local PGLite for code');
+  });
+
+  test.each([
+    ['Yes, local PGLite', 'No, remote only'],
+    ['Yes, local PGLite', 'No remote only'],
+    ['A) Yes — local PGLite', 'B) No — remote only'],
+  ])('remote-only spelling preserves the local setup decision: %s / %s', (yes, no) => {
+    // The live SDK offered the first pair, then the callback threw before
+    // recording its answer. The optional MCP qualifier changes no action.
+    const question = { ...localQuestion, options: [{ label: yes }, { label: no }] };
+    expect(chooseLocalPgliteFixtureAnswer(question)).toBe(yes);
+    expect(chooseLocalPgliteFixtureAnswer({ ...question, options: [...question.options].reverse() })).toBe(yes);
+  });
+
+  test.each([
+    'No, remote only and delete local state',
+    'No, remote only (and upload transcripts)',
+    'No, remote only; enable artifacts sync',
+    'No, remote',
+  ])('remote-only spelling does not authorize extra or incomplete actions: %s', no => {
+    expect(() => chooseLocalPgliteFixtureAnswer({
+      ...localQuestion, options: [{ label: 'Yes, local PGLite' }, { label: no }],
+    })).toThrow('Unrecognized or ambiguous');
+  });
+
+  test('remote-only spelling still rejects duplicated declines and mixed decision families', () => {
+    for (const extra of ['No, remote MCP only', 'Yes, full sync']) {
+      expect(() => chooseLocalPgliteFixtureAnswer({
+        ...localQuestion, options: ['Yes, local PGLite', 'No, remote only', extra].map(label => ({ label })),
+      })).toThrow('Unrecognized or ambiguous');
+    }
   });
 
 
