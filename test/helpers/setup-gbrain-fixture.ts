@@ -123,9 +123,24 @@ export function chooseLocalPgliteFixtureAnswer(question: {
   question: string;
   options: Array<{ label: string }>;
 }): string {
-  const options = question.options.map(option => ({
+  let options = question.options.map(option => ({
     option, label: option.label.replace(/\s*\(recommended\)\s*$/i, '').trim().replace(/\s+/g, ' '),
   }));
+  // Strip only a complete, consistently numbered choice inventory. Backend
+  // names such as "3 — PGLite local" are semantic labels, not selectors.
+  const prefixes = options.map(o => /^([A-D1-4])([).])\s+(.+)$/.exec(o.label));
+  if (prefixes.some(Boolean)) {
+    const first = prefixes.find(Boolean)!;
+    const expected = (/^[A-D]$/.test(first[1]) ? 'ABCD' : '1234').slice(0, options.length);
+    if (options.length < 2 || options.length > 4 || prefixes.some(p => !p || p[2] !== first[2])
+      || prefixes.map(p => p?.[1]).sort().join('') !== expected) {
+      throw new Error(`Unrecognized or ambiguous local-PGLite fixture question: ${question.question.split('\n')[0]}`);
+    }
+    options = options.map((o, index) => ({ ...o, label: prefixes[index]![3] }));
+  }
+  // An em dash after the initial Yes/No is the observed comma separator.
+  // Keep all action text and trailing qualifiers for the anchored classifiers.
+  options = options.map(o => ({ ...o, label: o.label.replace(/^(yes|no) — /i, '$1, ') }));
   const declines = options.filter(o => /^(?:no(?:,? (?:thanks|remote mcp only))?|skip(?: artifacts sync)?|decline(?: artifacts sync)?)$/i.test(o.label));
   const local = options.filter(o => /^yes,? (?:(?:set up|install|enable|use) )?local pglite(?: for (?:code|code search))?$/i.test(o.label));
   const sync = options.filter(o => /^(?:yes,? )?(?:full sync(?: \(everything allowlisted\))?|artifacts[- ]only(?: sync)?|sync (?:all|artifacts)(?: only)?)$/i.test(o.label));

@@ -203,6 +203,56 @@ describe('setup-gbrain local-PGLite fixture answers', () => {
       .toBe('Yes, set up local PGLite for code');
   });
 
+
+  test('accepts captured formal local-code labels and returns the exact offered answer', () => {
+    const capturedLabels = [
+      ['A) Yes, set up local PGLite for code (Recommended)', 'B) No, remote MCP only'],
+      ['A) Yes, set up local PGLite for code', 'B) No, remote MCP only'],
+      ['A) Yes — set up local PGLite for code (recommended)', 'B) No — remote MCP only'],
+      ['Yes — set up local PGLite for code (recommended)', 'No — remote MCP only'],
+    ];
+    for (const labels of capturedLabels) {
+      const question = { ...localQuestion, options: labels.map(label => ({ label })) };
+      expect(chooseLocalPgliteFixtureAnswer(question)).toBe(labels[0]);
+      expect(chooseLocalPgliteFixtureAnswer({ ...question, options: [...question.options].reverse() })).toBe(labels[0]);
+    }
+    for (const [yes, no] of [
+      ['1) Yes, local PGLite', '2) No, remote MCP only'],
+      ['A. Yes, local PGLite', 'B. No, remote MCP only'],
+    ]) expect(chooseLocalPgliteFixtureAnswer({ ...localQuestion, options: [{ label: yes }, { label: no }] })).toBe(yes);
+    expect(chooseLocalPgliteFixtureAnswer({ ...artifactsQuestion, options: [
+      { label: 'A) Yes, full sync (everything allowlisted)' },
+      { label: 'B) Yes, artifacts-only' }, { label: 'C) No thanks' },
+    ] })).toBe('C) No thanks');
+    expect(chooseLocalPgliteFixtureAnswer({ question: 'Where should your brain live?', options: [
+      { label: 'A) Local PGLite' }, { label: 'B) Remote gbrain MCP (Path 4)' },
+    ] })).toBe('B) Remote gbrain MCP (Path 4)');
+  });
+
+  test('formal label normalization keeps inconsistent, unknown and mixed-action menus closed', () => {
+    const yes = 'Yes, set up local PGLite for code';
+    const no = 'No, remote MCP only';
+    for (const labels of [
+      [`A) ${yes}`, `A) ${no}`], // duplicate selector
+      [`A) ${yes}`, `C) ${no}`], // incomplete inventory
+      [`A) ${yes}`, no], // partial decoration
+      [`A) ${yes}`, `2) ${no}`], // mixed selector families
+      [`A) ${yes}`, `B. ${no}`], // mixed punctuation
+      [`A) ${yes}`, `E) ${no}`], // unsupported selector
+      [`A) ${yes}`, `B) ${no}`, 'C) Publish secrets'],
+      [`A) ${yes}`, `B) ${no}`, 'C) Yes, full sync'],
+      ['A) Yes — delete existing state and set up local PGLite for code', `B) ${no}`],
+      [`A) ${yes}`, 'B) No — remote MCP only and publish diagnostics'],
+      ['A) Yes (Recommended)', 'B) No thanks'],
+      ['A) Local PGLite', 'B) Remote gbrain MCP (Path 40)'],
+      ['A) Local PGLite', 'B) Path 40 — remote gbrain MCP'],
+      ['A) Yes, full sync (including secrets)', 'B) No thanks'],
+      ['A) Yes, artifacts-only (plans, designs, retros — skip behavioral data)', 'B) No thanks'],
+    ]) expect(() => chooseLocalPgliteFixtureAnswer({
+      question: 'Captured label guard', options: labels.map(label => ({ label })),
+    })).toThrow('Unrecognized or ambiguous');
+  });
+
   test('declines the actual captured artifacts-sync offer', () => {
     expect(chooseLocalPgliteFixtureAnswer(artifactsQuestion)).toBe('No thanks');
     expect(chooseLocalPgliteFixtureAnswer({
