@@ -5,6 +5,7 @@ import {
 } from './claude-pty-runner';
 import { readOwnedClaudeTranscript, type OwnedClaudeTranscript } from './owned-claude-transcript';
 import { matchesNativeQuestion, readPlanSkillQuestions } from './plan-skill-questions';
+import { retainCeoModeEvidence } from './ceo-mode-evidence';
 
 export const CEO_MODE_QUESTION_ID = 'plan-ceo-review-mode';
 const compact = (text: string) => text.replace(/[\s*#]/g, '').toLowerCase();
@@ -137,31 +138,41 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
 }
 
 /** Launch → owned question/annotation → scoped answer → observe target only.
+ * Before cleanup: snapshot owned evidence → close → retain the final outcome.
  * One entry deadline covers boot and polling; previews cannot produce input.
  */
 export async function runCeoModePreferenceObservation(opts: {
-  cwd: string; env: Record<string, string>; timeoutMs: number;
+  cwd: string; env: Record<string, string>; timeoutMs: number; evidenceRoot?: string;
 }, deps: { launch?: typeof launchClaudePty; pause?: (ms: number) => Promise<unknown>; now?: () => number } = {}): Promise<{
   outcome: 'auto_decided' | 'asked' | 'timeout' | 'exited' | 'plan_ready'; evidence: string; answered: string[];
 }> {
   const now = deps.now ?? Date.now;
   const pause = deps.pause ?? Bun.sleep;
   if (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs < 0) throw new Error('Mode preference timeout must be finite and nonnegative');
-  const deadline = now() + opts.timeoutMs;
+  const startedAt = now();
+  const deadline = startedAt + opts.timeoutMs;
   const sessionId = randomUUID();
   const answered = new Set<string>();
-  if (now() >= deadline) return { outcome: 'timeout', evidence: '', answered: [] };
-  const session: ClaudePtySession = await (deps.launch ?? launchClaudePty)({
-    permissionMode: 'plan', seedSkills: true, cwd: opts.cwd, env: opts.env,
-    extraArgs: ['--session-id', sessionId, '--disallowedTools', 'AskUserQuestion'], timeoutMs: opts.timeoutMs,
-  });
+  let session: ClaudePtySession | undefined;
+  let failure: unknown;
+  let observation: { outcome: string; evidence: string; answered: string[] } | undefined;
+  let lastSignal: ModePreferenceSignal = { kind: 'working' };
   const sleep = async (ms: number) => { if (now() < deadline) await pause(Math.min(ms, deadline - now())); };
-  let since = session.mark();
-  let inputSince = since;
-  const result = (outcome: 'auto_decided' | 'asked' | 'timeout' | 'exited' | 'plan_ready', evidence: string) => ({
-    outcome: now() >= deadline ? 'timeout' as const : outcome, evidence: evidence.slice(-3000), answered: [...answered],
-  });
+  let since = 0;
+  let inputSince = 0;
+  const result = (outcome: 'auto_decided' | 'asked' | 'timeout' | 'exited' | 'plan_ready', evidence: string) => {
+    const value = { outcome: now() >= deadline ? 'timeout' as const : outcome,
+      evidence: evidence.slice(-3000), answered: [...answered] };
+    observation = value;
+    return value;
+  };
   try {
+    if (now() >= deadline) return result('timeout', 'Budget expired before launch');
+    session = await (deps.launch ?? launchClaudePty)({
+      permissionMode: 'plan', seedSkills: true, cwd: opts.cwd, env: opts.env,
+      extraArgs: ['--session-id', sessionId, '--disallowedTools', 'AskUserQuestion'], timeoutMs: opts.timeoutMs,
+    });
+    since = session.mark(); inputSince = since;
     await sleep(8000);
     if (now() >= deadline) return result('timeout', 'Budget expired during boot');
     since = session.mark(); inputSince = since;
@@ -173,6 +184,7 @@ export async function runCeoModePreferenceObservation(opts: {
       if (session.exited()) return result('exited', visible);
       const transcript = readOwnedClaudeTranscript(session.hermeticConfigDir, sessionId);
       const signal = inspectCeoModePreference(transcript, visible);
+      lastSignal = signal;
       if (now() >= deadline) break;
       if (signal.kind === 'asked' || signal.kind === 'auto_decided') return result(signal.kind, signal.evidence);
       if (signal.kind === 'unrelated' && !answered.has(signal.id)) {
@@ -200,5 +212,42 @@ export async function runCeoModePreferenceObservation(opts: {
       if (native.ready && isPlanReadyVisible(questionVisible)) return result('plan_ready', visible);
     }
     return result('timeout', session.visibleSince(since));
-  } finally { await session.close(); }
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    const errors: unknown[] = [];
+    const snapshot: Record<string, unknown> = {};
+    if (opts.evidenceRoot && session) {
+      // One broken source must not erase the other evidence before close().
+      const capture = (field: string, read: () => unknown) => {
+        try { snapshot[field] = read(); }
+        catch (error) {
+          errors.push(new Error(`CEO evidence capture failed: ${field}`, { cause: error }));
+          snapshot[field] = { captureError: error instanceof Error ? error.message : String(error) };
+        }
+      };
+      capture('rawTerminal', () => session!.rawOutput());
+      capture('visibleTerminal', () => session!.visibleText());
+      capture('observationVisible', () => session!.visibleSince(since));
+      capture('inputVisible', () => session!.visibleSince(inputSince));
+      capture('transcript', () => readOwnedClaudeTranscript(session!.hermeticConfigDir, sessionId));
+      capture('process', () => ({ pid: session!.pid(), exited: session!.exited(), exitCode: session!.exitCode() }));
+    }
+    try { await session?.close(); } catch (error) { errors.push(error); }
+    if (opts.evidenceRoot) {
+      try {
+        const describe = (error: unknown) => error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        const file = retainCeoModeEvidence(opts.evidenceRoot, sessionId, {
+          startedAt, finishedAt: now(), timeoutMs: opts.timeoutMs,
+          outcome: failure || errors.length ? 'harness_error' : observation?.outcome,
+          failure: failure ? describe(failure) : null, finalizationErrors: errors.map(describe),
+          observation, lastSignal, answered: [...answered], snapshot,
+        }, { ...process.env, ...opts.env });
+        console.log(`CEO mode evidence: ${file}`);
+      } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors,
+      'CEO observation evidence/cleanup failed');
+  }
 }

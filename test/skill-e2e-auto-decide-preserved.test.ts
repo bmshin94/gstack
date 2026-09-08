@@ -126,6 +126,7 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
       const obs = await runCeoModePreferenceObservation({
         cwd: project,
         timeoutMs: CAPTURE_LONG_MS,
+        evidenceRoot: path.join(process.env.GSTACK_EVAL_DIR ?? path.join(ROOT, '.context', 'ceo-mode-evidence'), 'auto-decide'),
         env: { GSTACK_HOME: tmpHome, CONDUCTOR_WORKSPACE_PATH: project },
       });
 

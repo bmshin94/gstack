@@ -9,6 +9,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/helpers/setup-gbrain-sandbox.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['test/helpers/setup-gbrain-fixture-command.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['test/helpers/ceo-mode-preference.ts', ['auto-decide-preserved']],
+    ['test/helpers/ceo-mode-evidence.ts', ['auto-decide-preserved']],
+    ['test/ceo-mode-evidence.test.ts', ['auto-decide-preserved']],
     ['test/fixtures/ceo-mode-preference-office-hours-render.json', ['auto-decide-preserved']],
     ['test/helpers/carve-section-case.ts', ['carve-section-loading']],
     ['test/skill-e2e-plan-ceo-paired-control.test.ts', ['plan-ceo-finding-count']],
