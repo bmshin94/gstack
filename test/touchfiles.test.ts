@@ -164,6 +164,12 @@ describe('selectTests', () => {
     expect(result.selected).not.toContain('cso-full-audit');
   });
 
+  test.each(['test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/ceo-mode-routing-fixture.test.ts'])('mode input dependency selects its periodic eval: %s', file => {
+    const result = selectTests([file], E2E_TOUCHFILES);
+    expect(result.selected).toContain('plan-ceo-mode-routing');
+    expect(result.reason).toBe('diff');
+  });
+
   test('unrelated file selects nothing', () => {
     const result = selectTests(['README.md'], E2E_TOUCHFILES);
     expect(result.selected).toEqual([]);

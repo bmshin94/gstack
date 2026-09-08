@@ -32,6 +32,10 @@
 
 import { test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
 import { navigateToModeAskUserQuestion, readNativeModePosture } from './helpers/plan-skill-mode-navigation';
 import { PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
@@ -39,6 +43,7 @@ import {
   launchClaudePty,
   isNumberedOptionListVisible,
   isPlanReadyVisible,
+  type ClaudePtySession,
 } from './helpers/claude-pty-runner';
 
 const describeE2E = describeE2ETier('periodic');
@@ -59,16 +64,30 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
     test(
       `mode "${c.mode}" routes to its distinctive posture`,
       async () => {
-        const sessionId = randomUUID();
-        const session = await launchClaudePty({
-          permissionMode: 'plan',
-          captureQuestionsForSession: sessionId,
-          // Navigation (420s) + posture (240s) must both fit; phase budgets stay fixed.
-          timeoutMs: PTY_MS,
-          seedSkills: true,
-          captureScreen: true,
-        });
+        const project = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-mode-routing-'));
+        let session: ClaudePtySession | undefined;
         try {
+          // Both choices start from the same user request. An ambient branch can
+          // otherwise look like a bug fix and legitimately bypass the mode menu.
+          seedCeoFindingProject(project, `# Export saved settings
+
+Add a CSV export button to the settings page. Reuse the existing settings API;
+validate escaping for commas, quotes, and newlines. The change touches the settings
+page, a CSV formatter, and formatter tests. Review this plan before implementation.
+
+Please present the full review-mode choice and wait for my selection before
+selecting a mode. I have not chosen a review mode for this plan.
+`);
+          const sessionId = randomUUID();
+          session = await launchClaudePty({
+            cwd: project,
+            permissionMode: 'plan',
+            captureQuestionsForSession: sessionId,
+            // Navigation (420s) + posture (240s) must both fit; phase budgets stay fixed.
+            timeoutMs: PTY_MS,
+            seedSkills: true,
+            captureScreen: true,
+          });
           await Bun.sleep(8000);
           const since = session.mark();
           session.send('/plan-ceo-review\r');
@@ -117,7 +136,8 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
             );
           }
         } finally {
-          await session.close();
+          try { await session?.close(); }
+          finally { fs.rmSync(project, { recursive: true, force: true }); }
         }
       },
       PTY_MS,
