@@ -93,12 +93,90 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
 // Terminal markdown/positioning can remove whitespace and decoration; semantic
 // question text and option labels must still match the owned tool input.
 const compact = (value: string) => value.replace(/<gstack-qid:[^>]+>/g, '').replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+
+/** Read only a physical side-preview frame. Other layouts retain the existing
+ * parser; preview text never supplies label characters. */
+function previewQuestionOptions(question: NativeQuestion, menu: string): Array<{ index: number; label: string }> | null {
+  let lines = menu.split(/\r?\n/);
+  // A glyph in an offered label is not a preview. Require a separated border
+  // band corroborated by an aligned right-column body or bottom row.
+  const apparentPreview = lines.slice(1).some(line => {
+    const body = / {2,}(│.*│|└─+┘)[ \t]*$/.exec(line);
+    if (!body) return false;
+    const column = body.index + body[0].indexOf(body[1]!);
+    const band = lines[0]!.slice(column);
+    return column >= 6 && / {2}$/.test(lines[0]!.slice(0, column))
+      && /^[┌┐─ \t]+$/.test(band) && /[┌┐─]/.test(band);
+  });
+  if (!apparentPreview) return null;
+  const top = /┌─+┐[ \t]*$/.exec(lines[0]!);
+  if (!top) return [];
+  const column = top.index;
+  const edge = column + top[0].trimEnd().length - 1;
+  if (column < 6 || !/ {2}$/.test(lines[0]!.slice(0, column))) return [];
+  let bottom = -1;
+  for (let i = 1; i < lines.length; i++) {
+    const row = lines[i]!;
+    if (row[column] === '└') {
+      if (row[edge] !== '┘' || !/^─+$/.test(row.slice(column + 1, edge)) || row.slice(edge + 1).trim()) return [];
+      bottom = i;
+      break;
+    }
+    if (row[column] !== '│' || row[edge] !== '│' || row.slice(edge + 1).trim()) return [];
+  }
+  if (bottom < 0) return [];
+  // Only cursor tokens inside a verified preview are decorative. A later
+  // menu after this frame restores the existing latest-menu selection.
+  for (const match of menu.matchAll(/❯\s*1\./g)) {
+    if (match.index === lines[0]!.indexOf('❯')) continue;
+    const before = menu.slice(0, match.index);
+    const row = before.split('\n').length - 1;
+    const cursorColumn = match.index - (before.lastIndexOf('\n') + 1);
+    if (row > bottom) return null;
+    if (row < 1 || row >= bottom || cursorColumn <= column
+      || cursorColumn + match[0].length > edge || /[\r\n]/.test(match[0])) return [];
+  }
+  lines = lines.slice(0, bottom + 1).map(line => line.slice(0, column).trimEnd());
+  const found: Array<{ index: number; label: string }> = [];
+  for (let row = 0; row < lines.length; row++) {
+    const line = lines[row]!;
+    const numbered = /^[ \t]*(?:❯[ \t]*)?([1-9])\.[ \t]*(\S.*)$/.exec(line);
+    if (numbered) {
+      const index = Number(numbered[1]);
+      if (index > question.options.length) break; // Native Other/Chat controls.
+      if (index !== found.length + 1) return [];
+      const previous = found.at(-1);
+      if (previous && !compact(previous.label).startsWith(compact(question.options[previous.index - 1]!.label))) return [];
+      found.push({ index, label: numbered[2]! });
+    } else {
+      const previous = found.at(-1);
+      if (!previous) return [];
+      const complete = compact(previous.label).startsWith(compact(question.options[previous.index - 1]!.label));
+      if (!/^ {4,}\S/.test(line)) {
+        if (!complete && lines.slice(row).some(tail => tail.trim())) return [];
+        break;
+      }
+      if (complete) continue; // A description is not another offered label.
+      previous.label += ' ' + line.trim();
+    }
+    const current = found.at(-1)!;
+    const offered = compact(question.options[current.index - 1]!.label);
+    const rendered = compact(current.label);
+    if (!rendered || (!offered.startsWith(rendered) && !rendered.startsWith(offered))) return [];
+  }
+  // The final choice may extend below the viewport. Its prefix is validated
+  // above; the caller still requires two other complete offered labels.
+  return found;
+}
+
 export function matchesNativeQuestion(question: NativeQuestion, visible: string, options: Array<{ index: number; label: string }>, others: NativeQuestion[] = []): boolean {
   if (others.some(other => other !== question && compact(other.question) === compact(question.question)
     && compact(other.header) === compact(question.header) && JSON.stringify(other.options.map(o => o.label)) === JSON.stringify(question.options.map(o => o.label)))) {
     throw new Error('Indistinguishable repeated native question: current rendering cannot identify a new invocation');
   }
-  const cursor = [...visible.matchAll(/❯\s*1\./g)].at(-1);
+  const physicalCursor = [...visible.matchAll(/^[ \t]*❯[ \t]*1\./gm)].at(-1);
+  const physicalOptions = physicalCursor ? previewQuestionOptions(question, visible.slice(physicalCursor.index)) : null;
+  const cursor = physicalOptions === null ? [...visible.matchAll(/❯\s*1\./g)].at(-1) : physicalCursor;
   if (!cursor) return false;
   const prefix = visible.slice(0, cursor.index);
   const box = Math.max(prefix.lastIndexOf('☐'), prefix.lastIndexOf('☑'), prefix.lastIndexOf('✔'));
@@ -116,7 +194,8 @@ export function matchesNativeQuestion(question: NativeQuestion, visible: string,
   if (!promptMatches) return false;
   // Rendered choices corroborate the prompt; the complete offered inventory
   // and numeric selection come from native input, even below the viewport.
-  return options.filter(rendered => {
+  const renderedOptions = physicalOptions ?? options;
+  return renderedOptions.filter(rendered => {
     const offered = question.options[rendered.index - 1];
     return offered && compact(rendered.label).startsWith(compact(offered.label));
   }).length >= 2;
