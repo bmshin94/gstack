@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey, type NativeQuestion } from './helpers/plan-skill-questions';
 import { isPermissionDialogVisible, parseNumberedOptions, stripAnsi } from './helpers/claude-pty-runner';
+import { setupQuestionEventSource } from './helpers/plan-skill-question-events';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
 const question: NativeQuestion = { question: 'D1 — Which approach?\nMake it reliable. Enforce the delivery policy.', header: 'Approach', multiSelect: false,
@@ -14,6 +15,59 @@ const call = (id: string, questions = [question]) => ({ type: 'assistant', sessi
 const write = (...rows: unknown[]) => fs.writeFileSync(file, rows.map(row => JSON.stringify(row) + '\n').join(''));
 beforeEach(() => { config = fs.mkdtempSync(path.join(os.tmpdir(), 'native-question-')); file = path.join(config, 'projects', 'fixture', `${sessionId}.jsonl`); fs.mkdirSync(path.dirname(file), { recursive: true }); });
 afterEach(() => fs.rmSync(config, { recursive: true, force: true }));
+
+function earlyQuestions() {
+  const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
+  const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PreToolUse[0].hooks[0].command;
+  return { source, emit(id: string, input: unknown = { questions: [question] }) {
+    const result = Bun.spawnSync(['bash', '-c', command], { stdin: Buffer.from(JSON.stringify({
+      hook_event_name: 'PreToolUse', session_id: sessionId, transcript_path: file, cwd: config,
+      tool_name: 'AskUserQuestion', tool_use_id: id, tool_input: input,
+    })), stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode, result.stderr.toString()).toBe(0);
+    expect(result.stdout.length).toBe(0);
+  } };
+}
+
+test('a pre-transcript native question is pending until its exact owned result arrives', () => {
+  write({ type: 'user', sessionId, message: { role: 'user', content: 'Begin the review' } });
+  const early = earlyQuestions();
+  early.emit('early');
+  expect(readPlanSkillQuestions(config, sessionId).calls).toEqual([]);
+  expect(readPlanSkillQuestions(config, sessionId, early.source).calls.map(c => [c.id, c.result])).toEqual([['early', 'pending']]);
+  fs.appendFileSync(file, JSON.stringify({ type: 'user', sessionId: '00000000-0000-4000-8000-000000000002',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'early' }] } }) + '\n');
+  expect(readPlanSkillQuestions(config, sessionId, early.source).calls[0].result).toBe('pending');
+  fs.appendFileSync(file, JSON.stringify({ type: 'user', sessionId, message: { role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: 'early', content: 'Answer accepted' }] } }) + '\n');
+  expect(readPlanSkillQuestions(config, sessionId, early.source).calls[0].result).toBe('answered');
+});
+
+test('early and persisted invocations coalesce, and any changed input fails', () => {
+  write(call('same'));
+  const early = earlyQuestions();
+  early.emit('same');
+  expect(readPlanSkillQuestions(config, sessionId, early.source).calls).toHaveLength(1);
+  write(call('same', [{ ...question, question: 'A different question?' }]));
+  expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('changed input');
+});
+
+test('early native input uses the existing validator and never supplies a successful result', () => {
+  write(call('valid'));
+  const early = earlyQuestions();
+  early.emit('invalid', { questions: [] });
+  expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('Unsupported native');
+});
+
+test('an error result for an early question stays failed and partial transcript records stay visible', () => {
+  write({ type: 'user', sessionId, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'early', is_error: true }] } });
+  const early = earlyQuestions();
+  early.emit('early');
+  fs.appendFileSync(file, '{"type":"user"');
+  const state = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(state.calls[0].result).toBe('error');
+  expect(state.pendingBytes).toBeGreaterThan(0);
+});
 
 test('owned calls retain distinct IDs, all question tabs, and exact matching results', () => {
   write(call('first', [question, { ...question, question: 'D2 — Which next step?' }]), call('second'),
@@ -53,6 +107,7 @@ test('a stale menu with identical options cannot match a new question or nearby 
 test('a final submit needs the native confirmation text, not an ordinary option or report', () => {
   expect(isNativeQuestionSubmitVisible('Review your answers\nReady to submit your answers?\nSubmit answers')).toBe(true);
   expect(isNativeQuestionSubmitVisible('Submit answers in the report')).toBe(false);
+  expect(isNativeQuestionSubmitVisible('Ready to submit your answers?\nYou have not answered all questions\nSubmit answers')).toBe(false);
 });
 test('permission binding rejects command prefixes and matching paths in another tool kind', () => {
   const bash = { id: 'new', name: 'Bash', input: { command: 'git status' } };

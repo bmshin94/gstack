@@ -8,11 +8,11 @@ import { ceoStep0Boundary, runPlanSkillCounting } from '../helpers/claude-pty-ru
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
-  const timing = ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const timing = ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-'));
+  const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
   const sends: string[] = [];
   const sendTimes: number[] = [];
@@ -54,7 +54,17 @@ async function main() {
       let permissionId: string | null = null;
       const tool = (name: string, input: unknown) => {
         const id = `tool-${++sequence}`;
-        append({ type: 'assistant', cwd: options.cwd, message: { id, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input }] } });
+        if (name === 'AskUserQuestion' && scenario.startsWith('hook-')) {
+          // Native CLI can show this modal before persisting its tool_use.
+          // Exercise the real launch-installed recorder; only results go to JSONL.
+          const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
+          const recorded = Bun.spawnSync(['bash', '-c', settings.hooks.PreToolUse[0].hooks[0].command], {
+            stdin: Buffer.from(JSON.stringify({ hook_event_name: 'PreToolUse', session_id: sessionId,
+              transcript_path: file, cwd: options.cwd, tool_name: name, tool_use_id: id, tool_input: input })),
+            stdout: 'pipe', stderr: 'pipe',
+          });
+          if (recorded.exitCode !== 0 || recorded.stdout.length) throw new Error(`Question recorder failed: ${recorded.stderr}`);
+        } else append({ type: 'assistant', cwd: options.cwd, message: { id, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input }] } });
         return id;
       };
       const ask = (question: string, labels: string[]) => {
@@ -112,8 +122,9 @@ async function main() {
           } else if (data === '\r' && scenario === 'multi-question' && batchQuestion === 2) {
             acknowledge();
             finish();
-          } else if (/^[12]\r$/.test(data)) {
+          } else if (/^[12]\r?$/.test(data)) {
             if (permissionId) {
+              if (data !== '1\r') throw new Error('Permission must select only the current request');
               append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Complete' }] } });
               permissionId = null;
               if (scenario === 'permission-owner-change') tool('Read', { file_path: '/new-owner-only' });
@@ -122,6 +133,7 @@ async function main() {
               pendingRedrawSleeps = 3;
               return;
             }
+            if (data.endsWith('\r')) throw new Error('Native question digit already advances; Enter would act on the next tab');
             if (scenario === 'wrong-question' && pendingRedrawSleeps > 0) prematureAnswers.push(data);
             if (!pendingId) { unsolicitedWrites.push(data); return; }
             answer++;
@@ -130,7 +142,7 @@ async function main() {
               emit(batchQuestion === 1 ? finding(2) : '\nReview your answers\nReady to submit your answers?\nSubmit answers\n');
               return;
             }
-            if (scenario === 'no-ack' && answer === 2) { emit('\nWORK_IN_PROGRESS\n'); return; }
+            if (['no-ack', 'hook-no-ack'].includes(scenario) && answer === 2) { emit('\nWORK_IN_PROGRESS\n'); return; }
             acknowledge();
             if (answer === 1) {
               if (scenario === 'multi-question') {

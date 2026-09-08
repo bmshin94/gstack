@@ -30,6 +30,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { buildSeedConfig, getHermeticDirs, hermeticChildEnv, hermeticSkillsConfigDir, isHermeticEnabled } from './hermetic-env';
 import { PtyCurrentScreen } from './pty-current-screen';
+import { setupQuestionEventSource, type QuestionEventSource } from './plan-skill-question-events';
 
 /** Strip ANSI escapes for pattern-matching against visible text. */
 export function stripAnsi(s: string): string {
@@ -102,6 +103,9 @@ export interface ClaudePtyOptions {
   timeoutMs?: number;
   /** Reconstruct the active screen for native interactive question drivers. */
   captureScreen?: boolean;
+  /** Retain native question invocations before the CLI persists its transcript.
+   * Owns --session-id and a private record-only hook; hermetic launches only. */
+  captureQuestionsForSession?: string;
 }
 
 export interface ClaudePtySession {
@@ -152,6 +156,7 @@ export interface ClaudePtySession {
    * the dir name ends in `/.claude` by contract).
    */
   hermeticConfigDir: string | null;
+  nativeQuestionEvents?: QuestionEventSource;
   /**
    * Send SIGINT, then SIGKILL after 1s. Always safe to call multiple times.
    * Awaits process exit before resolving.
@@ -1322,11 +1327,11 @@ export async function launchClaudePty(
     );
   }
 
-  const cwd = opts.cwd ?? process.cwd();
+  let cwd = opts.cwd ?? process.cwd();
   const cols = opts.cols ?? 120;
   const rows = opts.rows ?? 40;
   const timeoutMs = opts.timeoutMs ?? 240_000;
-  const screen = opts.captureScreen ? new PtyCurrentScreen({ cols, rows }) : null;
+  let screen: PtyCurrentScreen | null = null;
   let screenError: unknown = null;
 
   let buffer = '';
@@ -1382,21 +1387,47 @@ export async function launchClaudePty(
     // cleanup because callers inspect returned plan paths after closing.
   }
 
+  // Launch-bound native invocation → current screen match → input → owned
+  // transcript tool_result. Capturing a hook event never supplies an answer.
+  let nativeQuestionEvents: QuestionEventSource | undefined;
+  if (opts.captureQuestionsForSession !== undefined) {
+    if (!hermetic || !childEnv.CLAUDE_CONFIG_DIR) throw new Error('Native question capture requires a hermetic Claude config');
+    if (args.some(arg => /^--(?:session-id|settings|setting-sources|managed-settings|plugin-dir|add-dir|resume|continue|fork-session|from-pr|resume-session-at)(?:=|$)/.test(arg)
+      || arg === '-r' || arg === '-c')) {
+      throw new Error('Native question capture owns session and hook settings arguments');
+    }
+    const capture = setupQuestionEventSource({ configDir: childEnv.CLAUDE_CONFIG_DIR, cwd,
+      sessionId: opts.captureQuestionsForSession, rootDir: getHermeticDirs().runRoot });
+    nativeQuestionEvents = capture.source;
+    // Give the CLI the same canonical paths its event binding owns, including
+    // platforms whose normal temporary paths use parent-directory aliases.
+    childEnv.CLAUDE_CONFIG_DIR = capture.source.configDir;
+    cwd = capture.source.cwd;
+    args.push('--session-id', opts.captureQuestionsForSession, '--settings', capture.settingsPath);
+  }
+  screen = opts.captureScreen ? new PtyCurrentScreen({ cols, rows }) : null;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const proc = (Bun as any).spawn([claudePath, ...args], {
-    terminal: {
-      cols,
-      rows,
-      data(_t: unknown, chunk: Buffer) {
-        buffer += chunk.toString('utf-8');
-        if (screen && !screenError) {
-          try { screen.feed(chunk); } catch (error) { screenError = error; }
-        }
+  let proc: any;
+  try {
+    proc = (Bun as any).spawn([claudePath, ...args], {
+      terminal: {
+        cols,
+        rows,
+        data(_t: unknown, chunk: Buffer) {
+          buffer += chunk.toString('utf-8');
+          if (screen && !screenError) {
+            try { screen.feed(chunk); } catch (error) { screenError = error; }
+          }
+        },
       },
-    },
-    cwd,
-    env: childEnv,
-  });
+      cwd,
+      env: childEnv,
+    });
+  } catch (error) {
+    screen?.dispose();
+    throw error;
+  }
 
   // Track exit so waitForAny can fail fast if claude crashes.
   let exitedPromise: Promise<void> = Promise.resolve();
@@ -1555,6 +1586,7 @@ export async function launchClaudePty(
     exited: () => exited,
     exitCode: () => exitCodeCaptured,
     hermeticConfigDir: hermetic ? childEnv.CLAUDE_CONFIG_DIR ?? null : null,
+    ...(nativeQuestionEvents ? { nativeQuestionEvents } : {}),
     close,
   };
 }
@@ -2117,7 +2149,7 @@ export async function runPlanSkillCounting(opts: {
   const sessionId = randomUUID();
   const session = await launchClaudePty({
     permissionMode: 'plan',
-    extraArgs: ['--session-id', sessionId],
+    captureQuestionsForSession: sessionId,
     cwd: opts.cwd,
     timeoutMs: Math.max(1, deadlineAt - Date.now()),
     env: opts.env,
@@ -2184,7 +2216,7 @@ export async function runPlanSkillCounting(opts: {
         }
       }
 
-      const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId);
+      const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
       if (native.pendingBytes) continue;
       // An input write is not an answer. Count each native invocation only
       // after its matching successful result, including every tab in the call.
@@ -2281,7 +2313,9 @@ export async function runPlanSkillCounting(opts: {
       state.answeredQuestions += 1;
       isFirstAUQ = false;
       questionSince = session.mark();
-      session.send(`${pickIdx}\r`);
+      // Native single-select digits select and advance immediately. Enter
+      // would act on the next tab; submit only after every tab is answered.
+      session.send(String(pickIdx));
 
       // Give the agent a beat to advance to the next state.
       await pause(2000);

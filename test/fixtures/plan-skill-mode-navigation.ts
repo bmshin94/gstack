@@ -23,7 +23,20 @@ const append = (row: unknown) => fs.appendFileSync(file, JSON.stringify({ sessio
 const tool = (id: string, question: string, labels: string[]) => append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions: [{ question, header: question, multiSelect: false, options: labels.map(label => ({ label, description: label })) }] } }] } });
 const result = (id: string) => append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'Answer accepted' }] } });
 let buffer = '\nExample modes in a report preview\n❯1.HOLD SCOPE\n2.SELECTIVE EXPANSION\n3.SCOPE REDUCTION\n';
+let activeScreen = buffer;
+const paint = (text: string) => { activeScreen = text; buffer += text; };
 tool('approach', 'Choose architecture', ['Extend dispatcher', 'Queue fanout']);
+if (scenario === 'multi-tab') {
+  fs.writeFileSync(file, '');
+  append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{
+    type: 'tool_use', id: 'approach', name: 'AskUserQuestion', input: { questions: [
+      { question: 'Choose architecture', header: 'Architecture', multiSelect: false,
+        options: ['Extend dispatcher', 'Queue fanout'].map(label => ({ label, description: label })) },
+      { question: 'Choose review mode', header: 'Review mode', multiSelect: false,
+        options: ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION', 'SCOPE EXPANSION'].map(label => ({ label, description: label })) },
+    ] },
+  }] } });
+}
 if (scenario === 'diagnostic-write') {
   fs.writeFileSync(file, '');
   append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'write-plan', name: 'Write', input: { file_path: '/fixture/plan.md', content: 'Plan content' } }] } });
@@ -46,10 +59,31 @@ const session = {
     return config;
   },
   visibleSince: (mark = 0) => buffer.slice(mark), rawOutput: () => buffer,
+  ...(scenario === 'multi-tab' ? { currentScreen: async () => ({ text: activeScreen, rawEnd: buffer.length }) } : {}),
   mark: () => { if (scenario === 'write-budget' && stage === 'mode') clock = 30_000; return buffer.length; },
   send(data: string) {
     sends.push(data);
-    if (stage === 'approach' && data === '1\r') {
+    if (scenario === 'multi-tab') {
+      // Installed CLI single-select handles each digit immediately; the next
+      // Enter acts on the next tab. Model the actual failed two-tab sequence.
+      for (const key of data) {
+        if (stage === 'approach' && key === '1') {
+          stage = 'mode';
+          paint('\nChoose review mode\n❯1.HOLD SCOPE\n2.SELECTIVE EXPANSION\n');
+        } else if (stage === 'mode' && key === '\r') {
+          stage = 'incomplete-submit';
+          paint('\nReview your answers\nYou have not answered all questions\nSubmit answers\n');
+        } else if (stage === 'mode' && key === '4') {
+          stage = 'submit';
+          paint('\nReview your answers\nReady to submit your answers?\nSubmit answers\n');
+        } else if (stage === 'submit' && key === '\r') {
+          result('approach'); acknowledged = true; stage = 'done';
+          paint('\nSCOPE EXPANSION posture\n');
+        } else premature.push(key);
+      }
+      return;
+    }
+    if (stage === 'approach' && data === '1') {
       if (scenario === 'diagnostic-send-failure') throw sendFailure;
       if (diagnostics) {
         stage = 'unacknowledged-approach';
@@ -62,7 +96,7 @@ const session = {
       // Native input is authoritative even when the current viewport only
       // renders two choices. The target remains native option four.
       buffer += '\nChoose review mode\n❯1.HOLD SCOPE\n2.SELECTIVE EXPANSION\n';
-    } else if (stage === 'mode' && data === '4\r') {
+    } else if (stage === 'mode' && data === '4') {
       if (scenario !== 'unacknowledged') { result('mode'); acknowledged = true; }
       stage = 'done';
       buffer += '\nSCOPE EXPANSION posture\n';
@@ -74,7 +108,7 @@ const oldSleep = Bun.sleep;
 const oldNow = Date.now;
 Bun.sleep = (async (ms: number) => {
   clock += ms;
-  if (++sleeps === 2 && !['diagnostic-unmatched', 'diagnostic-write', 'diagnostic-truncation', 'diagnostic-write-failure'].includes(scenario)) { stage = 'approach'; buffer += '\nChoose architecture\n❯1.Extend dispatcher\n2.Queue fanout\n'; }
+  if (++sleeps === 2 && !['diagnostic-unmatched', 'diagnostic-write', 'diagnostic-truncation', 'diagnostic-write-failure'].includes(scenario)) { stage = 'approach'; paint('\nChoose architecture\n❯1.Extend dispatcher\n2.Queue fanout\n'); }
   if (scenario === 'diagnostic-truncation') buffer += '界'.repeat(70_000);
 }) as typeof Bun.sleep;
 Date.now = () => clock;

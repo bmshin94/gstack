@@ -20,27 +20,35 @@ test('mode navigation ignores a mode-looking preview, selects native option four
   const result = await run('native');
   expect(result.error).toBeUndefined();
   expect(result.premature).toEqual([]);
-  expect(result.sends).toEqual(['1\r', '4\r']);
+  expect(result.sends).toEqual(['1', '4']);
   expect(result.navigation.modeIndex).toBe(4);
+  expect(result.acknowledged).toBe(true);
+}, 15_000);
+test('two native tabs select with digits and submit once after both answers', async () => {
+  const result = await run('multi-tab');
+  expect(result.error).toBeUndefined();
+  expect(result.premature).toEqual([]);
+  expect(result.sends).toEqual(['1', '4', '\r']);
+  expect(result.navigation).toMatchObject({ modeIndex: 4, toolUseId: 'approach' });
   expect(result.acknowledged).toBe(true);
 }, 15_000);
 test('a real native mode question missing the requested mode fails explicitly', async () => {
   const result = await run('missing');
   expect(result.error).toContain('Native mode AskUserQuestion');
   expect(result.error).toContain('SCOPE EXPANSION');
-  expect(result.sends).toEqual(['1\r']);
+  expect(result.sends).toEqual(['1']);
 }, 15_000);
 test('mode selection without acknowledgement cannot start the posture assertion', async () => {
   const result = await run('unacknowledged');
   expect(result.error).toContain('not acknowledged');
-  expect(result.sends).toEqual(['1\r', '4\r']);
+  expect(result.sends).toEqual(['1', '4']);
   expect(result.acknowledged).toBe(false);
 }, 15_000);
 test.each(['read-budget', 'write-budget', 'ack-budget'])('mode navigation respects its deadline after %s work', async scenario => {
   const result = await run(scenario);
   expect(result.navigation).toBeUndefined();
   expect(result.error).toContain('30000ms');
-  expect(result.sends).toEqual(scenario === 'ack-budget' ? ['1\r', '4\r'] : ['1\r']);
+  expect(result.sends).toEqual(scenario === 'ack-budget' ? ['1', '4'] : ['1']);
 }, 15_000);
 test('nonfinite mode navigation budgets fail before input', async () => {
   const result = await run('invalid-budget');
@@ -70,10 +78,10 @@ test.each(['diagnostic-unmatched', 'diagnostic-unacknowledged', 'diagnostic-writ
     expect(native.calls[0].result).toBe('pending');
     expect(diagnostic.answered).toEqual(scenario === 'diagnostic-unacknowledged'
       ? [{ id: { text: 'approach', codeUnits: 8, truncated: false }, questions: 1, submitted: false, counted: false }] : []);
-    expect(result.sends).toEqual(scenario === 'diagnostic-unacknowledged' ? ['1\r'] : []);
+    expect(result.sends).toEqual(scenario === 'diagnostic-unacknowledged' ? ['1'] : []);
   }
   if (scenario === 'diagnostic-unacknowledged') {
-    expect(diagnostic.lastSend.data).toBe('1\r');
+    expect(diagnostic.lastSend.data).toBe('1');
     expect(diagnostic.lastSend.status).toBe('returned');
     expect(diagnostic.lastSend.visibleBefore.text).toContain('Choose architecture');
     expect(diagnostic.inputRaw.text).toBe('\n❯ 1\n');
@@ -103,7 +111,7 @@ test('mode failure diagnostics bound rendered/native payloads without changing t
 test('failed sends are recorded as attempts and preserve the exact thrown error', async () => {
   const result = await run('diagnostic-send-failure');
   expect(result.originalSendErrorPreserved).toBe(true);
-  expect(result.sends).toEqual(['1\r']);
+  expect(result.sends).toEqual(['1']);
   expect(result.diagnostic.lastSend.status).toBe('threw');
   expect(result.diagnostic.lastSend.failureTruncated).toBe(true);
   expect(result.diagnostic.lastSend.rawCodeUnitsBefore).toBe(result.diagnostic.lastSend.rawCodeUnitsAfter);

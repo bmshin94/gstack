@@ -43,7 +43,7 @@ export async function navigateToModeAskUserQuestion(
       const visible = observe('current input window', () => session.visibleSince(questionSince), '');
       let nativeFresh = false;
       const native = observe('owned native questions', () => {
-        const value = readPlanSkillQuestions(configDir, opts.sessionId);
+        const value = readPlanSkillQuestions(configDir, opts.sessionId, session.nativeQuestionEvents);
         nativeFresh = true;
         return value;
       }, lastNative);
@@ -123,7 +123,7 @@ export async function navigateToModeAskUserQuestion(
     const visible = frame
       ? frame.rawEnd > questionSince ? frame.text : ''
       : session.visibleSince(questionSince);
-    const native = readPlanSkillQuestions(session.hermeticConfigDir, opts.sessionId);
+    const native = readPlanSkillQuestions(session.hermeticConfigDir, opts.sessionId, session.nativeQuestionEvents);
     lastVisible = visible;
     lastNative = native;
     if (Date.now() >= deadline) break;
@@ -179,7 +179,9 @@ export async function navigateToModeAskUserQuestion(
     state.questions++;
     questionSince = session.mark();
     if (target) selected = { id: call.id, modeIndex: target.index, sincePick: questionSince };
-    if (!send(`${target?.index ?? 1}\r`)) break;
+    // A digit already selects and advances the native single-select menu.
+    // Final submit is a separate action after all owned tabs are answered.
+    if (!send(String(target?.index ?? 1))) break;
     await pause(2000);
   }
   if (selected) throw new Error(`Selected native mode was not acknowledged within ${budgetMs}ms`);

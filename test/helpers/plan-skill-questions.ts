@@ -1,5 +1,7 @@
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { readQuestionEvents, type QuestionEventSource } from './plan-skill-question-events';
 
 export interface NativeQuestion {
   question: string;
@@ -14,10 +16,11 @@ export interface NativeQuestionCall {
 }
 export interface NativePermissionTool { id: string; name: string; input: Record<string, unknown>; cwd?: string }
 
-/** Tool identity comes from complete records in this launch's own transcript.
- * PTY scrollback and tool previews cannot create an invocation or acknowledge it.
+/** The launch's native PreToolUse event can precede transcript persistence.
+ * Both sources must agree; only an owned transcript result acknowledges input.
+ * PTY scrollback and tool previews supply neither invocation nor acknowledgement.
  */
-export function readPlanSkillQuestions(configDir: string | null, sessionId: string): {
+export function readPlanSkillQuestions(configDir: string | null, sessionId: string, events?: QuestionEventSource): {
   calls: NativeQuestionCall[];
   ready: boolean;
   permissionTools: NativePermissionTool[];
@@ -28,12 +31,38 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const results = new Map<string, boolean>();
   const ready = new Set<string>();
   const permissionTools = new Map<string, NativePermissionTool>();
+  const inputs = new Map<string, unknown>();
+  const addQuestion = (id: unknown, input: any) => {
+    if (typeof id !== 'string' || !id) throw new Error('Native AskUserQuestion is missing its tool ID');
+    const questions = input?.questions;
+    if (!Array.isArray(questions) || questions.length < 1 || questions.length > 4 || questions.some(q =>
+      typeof q?.question !== 'string' || !q.question.trim() || typeof q.header !== 'string' || !q.header.trim()
+      || typeof q.multiSelect !== 'boolean' || !Array.isArray(q.options) || q.options.length < 2 || q.options.length > 4
+      || q.options.some((o: any) => typeof o?.label !== 'string' || !o.label.trim() || typeof o.description !== 'string')
+    )) throw new Error('Unsupported native AskUserQuestion input shape');
+    if (inputs.has(id) && !isDeepStrictEqual(inputs.get(id), input)) {
+      throw new Error('Native AskUserQuestion changed input for an existing tool ID');
+    }
+    inputs.set(id, input);
+    calls.set(id, { id, questions, result: 'pending' });
+  };
+  if (events) {
+    for (const event of readQuestionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+      addQuestion(event.id, event.input);
+    }
+  }
   for (const row of transcript.rows) {
     const message = row.message;
     if (!Array.isArray(message?.content)) continue;
     for (const block of message.content) {
       if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         results.set(block.tool_use_id, block.is_error === true);
+      }
+      // An unfinished assistant record cannot introduce a call, but it can
+      // invalidate conflicting early evidence before any input is sent.
+      if (row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use' && inputs.has(block.id)
+        && (block.name !== 'AskUserQuestion' || !isDeepStrictEqual(inputs.get(block.id), block.input))) {
+        throw new Error('Native AskUserQuestion changed input for an existing tool ID');
       }
       if (row.type !== 'assistant' || message.role !== 'assistant' || message.stop_reason !== 'tool_use' || block?.type !== 'tool_use') continue;
       if (block.name === 'ExitPlanMode' && typeof block.id === 'string') ready.add(block.id);
@@ -42,16 +71,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
         ...(typeof row.cwd === 'string' ? { cwd: row.cwd } : {}),
       });
       if (block.name !== 'AskUserQuestion') continue;
-      if (typeof block.id !== 'string' || !block.id) throw new Error('Native AskUserQuestion is missing its tool ID');
-      const questions = block.input?.questions;
-      if (!Array.isArray(questions) || questions.length < 1 || questions.length > 4 || questions.some(q =>
-        typeof q?.question !== 'string' || !q.question.trim() || typeof q.header !== 'string' || !q.header.trim()
-        || typeof q.multiSelect !== 'boolean' || !Array.isArray(q.options) || q.options.length < 2 || q.options.length > 4
-        || q.options.some((o: any) => typeof o?.label !== 'string' || !o.label.trim() || typeof o.description !== 'string')
-      )) throw new Error('Unsupported native AskUserQuestion input shape');
-      const prior = calls.get(block.id);
-      if (prior && JSON.stringify(prior.questions) !== JSON.stringify(questions)) throw new Error('Native AskUserQuestion changed input for an existing tool ID');
-      calls.set(block.id, { id: block.id, questions, result: 'pending' });
+      addQuestion(block.id, block.input);
     }
   }
   for (const call of calls.values()) {
@@ -138,5 +158,6 @@ export function nativePermissionKey(tool: NativePermissionTool, visible: string)
 
 export function isNativeQuestionSubmitVisible(visible: string): boolean {
   const text = compact(visible);
-  return text.includes('readytosubmityouranswers') && text.includes('submitanswers');
+  return text.includes('readytosubmityouranswers') && text.includes('submitanswers')
+    && !text.includes('youhavenotansweredallquestions');
 }

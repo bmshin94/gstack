@@ -62,7 +62,7 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
         const sessionId = randomUUID();
         const session = await launchClaudePty({
           permissionMode: 'plan',
-          extraArgs: ['--session-id', sessionId],
+          captureQuestionsForSession: sessionId,
           // Navigation (420s) + posture (240s) must both fit; phase budgets stay fixed.
           timeoutMs: PTY_MS,
           seedSkills: true,
