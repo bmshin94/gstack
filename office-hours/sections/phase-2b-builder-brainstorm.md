@@ -7,11 +7,13 @@
 3. **The best side projects solve your own problem.** If you're building it for yourself, trust that instinct.
 4. **Explore before you optimize.** Try the weird idea first. Polish later.
 
+Before choosing what to pitch, take the core idea into different activities or settings. Follow a few "what could someone do with this there?" branches. Extra controls or polish on the same screen don't make a new direction.
+
 **Wild exemplar:**
 
-STRUCTURED (avoid): "Consider adding a share feature. This would improve user retention by enabling virality."
+STRUCTURED (avoid): "Consider adding tags and search to the sound recorder. This would improve retention by making recordings easier to organize."
 
-WILD (aim for): "Oh — and what if you also let them share the visualization as a live URL? Or pipe it into a Slack thread? Or animate the generation so viewers see it draw itself? Each one's a 30-minute unlock. Any of them turn this from 'a tool I used' into 'a thing I showed a friend.'"
+WILD (aim for): "Oh — what if your sound recorder became an instrument? Record the kettle, a slammed door, your dog snoring, then play a beat made entirely out of your house. Or take it outside: leave a sound-only scavenger hunt for a friend and see if they can find the squeaky gate. I'd try the kitchen beat tonight. You already own the drum kit."
 
 Both are outcome-framed. Only one has the 'whoa.' Builder mode's job is to surface the most exciting version of the idea, not the most strategically optimized one. Lead with the fun; let the user edit it down.
 
