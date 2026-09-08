@@ -3,10 +3,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { inspectCeoModePreference, runCeoModePreferenceObservation } from './helpers/ceo-mode-preference';
-import type { OwnedClaudeTranscript } from './helpers/owned-claude-transcript';
+import { readOwnedClaudeTranscript, type OwnedClaudeTranscript } from './helpers/owned-claude-transcript';
 import { stripAnsi, type ClaudePtySession } from './helpers/claude-pty-runner';
 
 const automatic = 'Mode is HOLD SCOPE (auto-decided from plan-tune preference).';
+const scopedAutomatic = '**Auto-decided:** Review mode → **SELECTIVE EXPANSION** (your preference for this question).';
 const approach = 'D1 — Which implementation approach? <gstack-qid:plan-ceo-review-approach-select>\nA) Reuse the formatter (recommended)\nB) Add a dependency';
 const mode = 'D2 — Which review mode? <gstack-qid:plan-ceo-review-mode>\nA) HOLD SCOPE\nB) SCOPE EXPANSION';
 const assistant = (text: string, stop_reason = 'end_turn', id = 'message-1') => ({ type: 'assistant', message: { role: 'assistant', id, stop_reason, content: [{ type: 'text', text }] } });
@@ -57,6 +58,149 @@ test.each([
 test('a real standard annotation is accepted at sentence level', () => {
   const text = 'Auto-decided review mode → HOLD SCOPE (your preference). Change with /plan-tune.';
   expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('auto_decided');
+});
+test('mode annotation punctuation and explicit question attribution preserve the decision meaning', () => {
+  expect(inspectCeoModePreference(transcript(assistant(scopedAutomatic, 'tool_use')), scopedAutomatic).kind).toBe('auto_decided');
+});
+test.each([automatic, 'Auto-decided review mode → HOLD SCOPE (your preference).', scopedAutomatic])('future or quote-wrapped mode annotations are not decisions: %s', annotation => {
+  for (const text of [
+    'I will print this later:\n' + annotation,
+    'I will print this later:\n\n' + annotation,
+    'If approved, I will print:\n\n' + annotation,
+    'If approved:\n' + annotation,
+    'When the user confirms:\n\n' + annotation,
+    'Expected annotation:\n\n' + annotation,
+    'Example only, not an actual decision:\n\n' + annotation,
+    '### Example annotation:\n\n' + annotation,
+    'Here’s an example:\n\n' + annotation,
+    'I will print `this` later:\n\n' + annotation,
+    'Expected output:\nSome explanatory prose.\n\n' + annotation,
+    'Expected output:\nSome `code` in the explanation.\n\n' + annotation,
+    '"\n' + annotation + '\n"',
+    '"\n\n' + annotation + '\n\n"',
+    '"\n\n' + annotation,
+    '“\n' + annotation + '\n”',
+    "'\nThe owners' example.\n\n" + annotation + "\n'",
+    '‘\nThe owners’ example.\n\n' + annotation + '\n’',
+    '"An example. ' + annotation + '"',
+    '“An example. ' + annotation + '”',
+    "'An example. " + annotation + "'",
+    '‘An example. ' + annotation + '’',
+    '`' + annotation + '`',
+    '**`' + annotation + '`**',
+    '```text\n\n' + annotation + '\n\n```',
+    '````text\n```\n\n' + annotation + '\n````',
+    '> ' + annotation,
+    '> quoted example\n' + annotation,
+    '    ' + annotation,
+    '\t' + annotation,
+  ]) expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+});
+test.each([
+  'Auto-decided: mode → HOLD SCOPE (your preference).',
+  'Auto-decided CEO review mode selection: SCOPE REDUCTION (your preference for this question).',
+  'Auto-decided: review mode — SCOPE EXPANSION (your preference)!',
+  'Review Mode is SELECTIVE EXPANSION (auto-decided from plan-tune preference).',
+])('a bounded mode subject and saved preference establish the decision: %s', annotation => {
+  expect(inspectCeoModePreference(transcript(assistant(annotation)), annotation).kind).toBe('auto_decided');
+});
+test.each([automatic, scopedAutomatic].flatMap(annotation => [
+    "'The owners' example.\n" + annotation + "\n'",
+    "'The owners' example.\n\n" + annotation + "\n'",
+    "'The owners'\nexample.\n\n" + annotation + "\n'",
+    "'The owners'\nquoted context.\n\n" + annotation + "\n'",
+    "'The owners' context.\n\n" + annotation + "\n' (illustration)",
+    '‘The owners’ example.\n' + annotation + '\n’',
+    '‘The owners’ example.\n\n' + annotation + '\n’',
+    '‘The owners’\nexample.\n\n' + annotation + '\n’',
+    '‘The owners’\nquoted context.\n\n' + annotation + '\n’',
+    '‘The owners’ context.\n\n' + annotation + '\n’ (illustration)',
+    '"An escaped quote \\".\n' + annotation + '\n"',
+    '"An escaped quote \\".\n\n' + annotation + '\n"',
+    '### Example\n\n' + annotation,
+    'Example only\n' + annotation,
+]))('ambiguous native quote spans and example headings cannot expose decisions: %s', text => {
+  expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+});
+test.each([
+  'Auto-decided: implementation approach → HOLD SCOPE (your preference for this question).',
+  'Auto-decided: review mode → HOLD SCOPE (your preference for another question).',
+  'Auto-decided: review mode → HOLD SCOPE (your preference for this question, probably).',
+  'Auto-decided: review mode → HOLD SCOPE (not your preference).',
+  'Auto-decided: review mode → HOLD SCOPE (your default).',
+  'Auto-decided: review mode → HOLD SCOPE (your preference) if approved.',
+  'Auto-decided: review mode → HOLD SCOPE (your preference for this question) if approved.',
+  'Auto-decided: review mode → HOLD SCOPE (your preference)?',
+  'Auto-decided: review mode → HOLD SCOPE (your preference for this question)?',
+  'Auto-decided: review mode → HOLD SCOPE or SELECTIVE EXPANSION (your preference).',
+  'Auto-decided: review mode → HOLD SCOPE / SELECTIVE EXPANSION (your preference for this question).',
+  'Auto-decided: review mode → UNKNOWN MODE (your preference for this question).',
+  'Not auto-decided: review mode → HOLD SCOPE (your preference for this question).',
+  'If approved, Auto-decided: review mode → HOLD SCOPE (your preference for this question).',
+  'Mode is HOLD SCOPE or SELECTIVE EXPANSION (auto-decided from plan-tune preference).',
+  'Mode is HOLD SCOPE (auto-decided from plan-tune preference) if approved.',
+  'Mode is HOLD SCOPE (auto-decided from plan-tune preference)?',
+  'Mode is not HOLD SCOPE (auto-decided from plan-tune preference).',
+])('an incomplete or qualified mode claim is not a decision: %s', annotation => {
+  expect(inspectCeoModePreference(transcript(assistant(annotation)), annotation).kind).toBe('working');
+});
+test.each([automatic, scopedAutomatic])('unrelated context cannot erase an affirmative mode decision: %s', annotation => {
+  for (const prefix of [
+    'I will test the formatter later.',
+    'Do not answer the implementation question yet.',
+    'The CSV example includes commas and quoted cells.',
+    'Here is an example:\n```text\nplaceholder\n```',
+    'Here is an example:\n\n```text\nplaceholder\n```',
+    'Expected annotation:\n\n"\nplaceholder\n"',
+    'Expected annotation:\n\n“\nplaceholder\n”',
+    'Expected annotation:\n\n“\nplaceholder\n” (illustration)',
+    'Example:\n\n> placeholder',
+    'Example:\n\n    placeholder',
+    'A quoted "placeholder" is ordinary context.',
+    "A quoted 'placeholder' is ordinary context.",
+    "Example:\n\n'placeholder'",
+    'Example:\n\n‘placeholder’',
+    "The owners' implementation needs a formatter.",
+    'The owners’ implementation needs a formatter.',
+  ]) {
+    const text = prefix + '\n\n' + annotation;
+    expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('auto_decided');
+  }
+});
+test('distinct affirmative sentences retain their independent evidence', () => {
+  const text = automatic + ' ' + scopedAutomatic;
+  expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('auto_decided');
+  expect(inspectCeoModePreference(transcript(assistant(automatic), assistant(scopedAutomatic, 'end_turn', 'later')), text).kind).toBe('auto_decided');
+});
+test.each([automatic, scopedAutomatic])('contrary questions and native provenance still control mode evidence: %s', annotation => {
+  for (const rows of [
+    [assistant(mode), assistant(annotation, 'end_turn', 'later')],
+    [assistant(annotation), assistant(mode, 'end_turn', 'later')],
+    [assistant(annotation + '\n' + mode)],
+    [assistant(mode + '\n' + annotation)],
+  ]) expect(inspectCeoModePreference(transcript(...rows), annotation + '\n' + mode).kind).toBe('asked');
+  expect(inspectCeoModePreference(transcript(assistant(annotation)), 'Working...').kind).toBe('working');
+  expect(inspectCeoModePreference({ ...transcript(assistant(annotation)), pendingBytes: 1 }, annotation).kind).toBe('working');
+  for (const block of [
+    { type: 'tool_use', name: 'Write', input: { content: annotation } },
+    { type: 'thinking', thinking: annotation },
+  ]) {
+    const row = assistant(''); row.message.content = [block as any];
+    expect(inspectCeoModePreference(transcript(row), annotation).kind).toBe('working');
+  }
+  const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-mode-owner-free-'));
+  const sessionId = '00000000-0000-4000-8000-000000000001';
+  const file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const rows = [
+      { ...assistant(annotation), sessionId: '00000000-0000-4000-8000-000000000002' },
+      { ...assistant(annotation), sessionId, isSidechain: true },
+      { ...assistant(annotation), sessionId, parent_tool_use_id: 'tool' },
+    ];
+    fs.writeFileSync(file, rows.map(row => JSON.stringify(row) + '\n').join(''));
+    expect(inspectCeoModePreference(readOwnedClaudeTranscript(config, sessionId), annotation).kind).toBe('working');
+  } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });
 test('quoted templates and previously acknowledged or superseded questions cannot receive an answer', () => {
   const unfenced = 'Example only; do not answer this template yet:\n' + approach;
@@ -124,7 +268,7 @@ test.each([
   'old ack', 'foreign ack', 'sidechain ack', 'parent-tool ack', 'tool-result echo', 'reset prefix',
   'same-owner duplicate', 'same-owner thinking',
   'changed same-owner before Enter', 'same-owner tool before Enter', 'incomplete same-owner before Enter',
-  'ack before Enter', 'new owner before Enter', 'nontext user before Enter', 'automatic before Enter', 'mode question before Enter',
+  'ack before Enter', 'new owner before Enter', 'nontext user before Enter', 'automatic before Enter', 'scoped automatic before Enter', 'mode question before Enter',
   'exit before Enter', 'deadline before Enter', 'partial native row before Enter', 'throw on type',
 ])('prose submission requires a separate Enter and exact owned acknowledgement: %s', async scenario => {
   const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-submit-free-'));
@@ -205,6 +349,7 @@ test.each([
           }
           else {
             const value = scenario === 'automatic before Enter' ? automatic
+              : scenario === 'scoped automatic before Enter' ? scopedAutomatic
               : scenario === 'mode question before Enter' ? mode : 'A new unrelated owner';
             append(assistant(value, 'end_turn', 'new-owner')); visible += '\n' + value;
           }
@@ -359,6 +504,75 @@ const adjacentMarker = '<gstack-qid:plan-ceo-review-cache-policy>';
 const adjacentReply = 'Reply with **A** or **B**.';
 const adjacentBrief = `D1 — Cache policy\nA) Reuse (recommended)\nB) Replace\n\n\`${adjacentMarker}\`\n\n${adjacentReply}`;
 const adjacentVisible = adjacentMarker + '\nReply with A or B.';
+
+test.each([false, true])('an explicit negative recommendation does not compete with the positive choice (structural render: %s)', structural => {
+  const text = adjacentBrief.replace('A) Reuse (recommended)', 'A) Reuse (recommended: no)')
+    .replace('B) Replace', 'B) Replace (recommended)');
+  expect(inspectCeoModePreference(transcript(assistant(text)), structural ? adjacentVisible : text))
+    .toMatchObject({ kind: 'unrelated', questionId: 'plan-ceo-review-cache-policy', answer: 'B' });
+});
+
+test.each([
+  { a: '', b: '', answer: 'A' },
+  { a: '(not recommended)', b: '(recommended)', answer: 'B' },
+  { a: '( recommended : NO )', b: '( RECOMMENDED : yes )', answer: 'B' },
+  { a: '(recommended: yes)', b: '(recommended: no)', answer: 'A' },
+  { a: '', b: '(recommended)', answer: 'B' },
+  { a: '(recommended: no)', b: '"CSV" (recommended)', answer: 'B' },
+  { a: '(recommended: no)', b: "'CSV' (recommended)", answer: 'B' },
+  { a: '(recommended: no)', b: '`csv.ts` (recommended)', answer: 'B' },
+  { a: '(recommended: no)', b: "don't rename owners' files (recommended)", answer: 'B' },
+  { a: '(recommended)', b: '(recommended)' },
+  { a: '(recommended: yes)', b: '(recommended: yes)' },
+  { a: '(recommended: no)', b: '' },
+  { a: '', b: '(not recommended)' },
+  { a: '(not recommended)', b: '(recommended: no)' },
+  { a: '(recommended: maybe)', b: '(recommended)' },
+  { a: '(not recommended unless necessary)', b: '(recommended)' },
+  { a: '(not not recommended)', b: '(recommended)' },
+  { a: '(recommended for this situation)', b: '(recommended)' },
+  { a: '(recommended by the default rule, not by context)', b: '(recommended)' },
+  { a: '(recommended) (not recommended)', b: '' },
+  { a: '(recommended) (recommended)', b: '' },
+  { a: '(recommended) "(recommended)"', b: '' },
+  { a: '(recommended: no)', b: 'recommended' },
+  { a: '(recommended: no)', b: '(recommended' },
+  { a: '(recommended: no)', b: '((recommended))' },
+  { a: '(recommended: no)', b: '(not (recommended))' },
+  { a: '(recommended: no)', b: '(formerly (recommended))' },
+  { a: '(recommended: no)', b: '(recommended))' },
+  { a: '(recommended: no)', b: '(unrecommended)' },
+  { a: '(recommended: no)', b: '"(recommended)"' },
+  { a: '(recommended: no)', b: '"the (recommended) cache"' },
+  { a: '(recommended: no)', b: "Quote 'don't use the (recommended) path'" },
+  { a: '(recommended: no)', b: 'Quote ‘don’t use the (recommended) path’' },
+  { a: '(recommended: no)', b: "Quote 'owners' (recommended) path'" },
+  { a: '(recommended: no)', b: '\\"(recommended)\\"' },
+  { a: '(recommended: no)', b: "'(recommended)'" },
+  { a: '(recommended: no)', b: '“the (recommended) path”' },
+  { a: '(recommended: no)', b: '‘the (recommended) path’' },
+  { a: '(recommended: no)', b: '`(recommended)`' },
+  { a: '(recommended: no)', b: '``the (recommended) path``' },
+  { a: '(recommended: no)', b: '`prefix \\`` (recommended) suffix \\`` end`' },
+  { a: '(recommended: no)', b: '"unfinished (recommended)' },
+  { a: '(recommended: no)', b: '`unfinished (recommended)' },
+  { a: '"(not recommended)"', b: '(recommended)' },
+])('option recommendation polarity is explicit and unambiguous: $a / $b', ({ a, b, answer }) => {
+  const text = adjacentBrief.replace('A) Reuse (recommended)', `A) Reuse ${a}`)
+    .replace('B) Replace', `B) Replace ${b}`);
+  for (const visible of [text, adjacentVisible]) {
+    const signal = inspectCeoModePreference(transcript(assistant(text)), visible);
+    if (answer) expect(signal).toMatchObject({ kind: 'unrelated', answer });
+    else expect(signal.kind).toBe('working');
+  }
+});
+
+test('a Recommendation paragraph is not a new source for choosing an option', () => {
+  const text = adjacentBrief.replace('A) Reuse (recommended)', 'Recommendation: B because it is faster.\n\nA) Reuse');
+  for (const visible of [text, adjacentVisible]) {
+    expect(inspectCeoModePreference(transcript(assistant(text)), visible)).toMatchObject({ kind: 'unrelated', answer: 'A' });
+  }
+});
 
 test('an adjacent standalone identity and reply are corroborated in native order', () => {
   for (const text of [adjacentBrief, adjacentBrief.replaceAll('`', ''), adjacentBrief.replace('\n\nReply', '\nReply')]) {

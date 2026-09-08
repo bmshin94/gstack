@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  isAutoDecidedVisible, isNumberedOptionListVisible, isPlanReadyVisible,
+  isNumberedOptionListVisible, isPlanReadyVisible,
   launchClaudePty, MODE_RE, parseNumberedOptions, type ClaudePtySession,
 } from './claude-pty-runner';
 import { readOwnedClaudeTranscript, type OwnedClaudeTranscript } from './owned-claude-transcript';
@@ -28,12 +28,110 @@ function dialogue(text: string, includeIllustrations = false): string {
 
 function automaticModeEvidence(text: string): string | undefined {
   const label = '(?:HOLD\\s+SCOPE|SELECTIVE\\s+EXPANSION|SCOPE\\s+REDUCTION|SCOPE\\s+EXPANSION)';
-  const standard = new RegExp('^Auto-decided (?:CEO )?(?:review )?mode(?: selection)?\\s*(?:→|:|—)\\s*' + label + '\\s*\\(your preference\\)[.!]?$', 'i');
+  const standard = new RegExp('^Auto-decided(?:\\s*:\\s*|\\s+)(?:CEO )?(?:review )?mode(?: selection)?\\s*(?:→|:|—)\\s*' + label + '\\s*\\(your preference(?: for this question)?\\)[.!]?$', 'i');
   const observed = new RegExp('^(?:Review )?Mode is ' + label + '\\s*\\(auto-decided from plan-tune preference\\)[.!]?$', 'i');
-  // Bind the attribution and chosen mode in one affirmative decision sentence.
-  // Loose same-paragraph co-occurrence admits negation, examples and future plans.
-  return dialogue(text).replace(/\*\*/g, '').split(/\n|(?<=[.!?])\s+/)
-    .map(sentence => sentence.trim()).find(sentence => isAutoDecidedVisible(sentence) && (standard.test(sentence) || observed.test(sentence)));
+  // Presentation wrappers own their following prose even across blank lines.
+  // A wrapper introducing a closed code/quotation block owns that block only.
+  // Ordinary future work or an unrelated no-input request is not a wrapper.
+  const wrapper = /^(?:#{1,6}\s+)?(?:example\b|(?:template|expected (?:output|annotation)|quoted (?:text|annotation)|quotation)\s*:|(?:here is|here['’]s|this is|the following is) an? (?:example|template)\b|(?:if|when|unless)\b[^:\n]*:\s*$|(?:(?:if|when|unless)\b[^\n]*?[,;]\s*)?(?:I|we)(?:\s+will|['’]ll)\s+(?:print|show|display|render|emit|present|write)\b[^\n]*:)/i;
+  const closesQuote = (line: string, quote: string) => line.trimStart().startsWith(quote)
+    && /^(?:$|\s|[).,;:!?])/.test(line.trimStart().slice(quote.length));
+  let fence: { marker: string; length: number } | null = null;
+  let quote = ''; let standaloneQuote = ''; let ticks = 0;
+  let pendingWrapper = false; let wrappedProse = false;
+  const paragraphs = text.split(/\n[ \t]*\n/);
+  for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
+    const lines = paragraph.split('\n');
+    const visible: string[] = [];
+    const protectedLines: boolean[] = [];
+    let quotedParagraph = false;
+    for (const [lineIndex, line] of lines.entries()) {
+      const marker = !quote && !standaloneQuote && !ticks ? line.trim().match(/^(`{3,}|~{3,})/)?.[1] : undefined;
+      if (marker) {
+        if (!fence) fence = { marker: marker[0], length: marker.length };
+        else if (marker[0] === fence.marker && marker.length >= fence.length && line.trim().slice(marker.length).trim() === '') fence = null;
+        visible.push(''); protectedLines.push(true); continue;
+      }
+      if (fence || quotedParagraph || /^(?: {4}|\t)|^\s*>/.test(line)) {
+        quotedParagraph ||= /^\s*>/.test(line);
+        visible.push(''); protectedLines.push(!!line.trim()); continue;
+      }
+      // An explicit quote on its own line encloses complete physical blocks;
+      // apostrophes in quoted prose cannot close that delimiter early.
+      if (standaloneQuote || !quote && !ticks && /^["'“‘]$/.test(line.trim())) {
+        if (standaloneQuote && closesQuote(line, standaloneQuote)) standaloneQuote = '';
+        else if (!standaloneQuote) standaloneQuote = line.trim() === '“' ? '”' : line.trim() === '‘' ? '’' : line.trim();
+        visible.push(''); protectedLines.push(!!line.trim()); continue;
+      }
+      let prose = '';
+      let protectedContent = false;
+      for (let index = 0; index < line.length; index++) {
+        const char = line[index];
+        if (ticks) {
+          if (char === '`') {
+            const width = line.slice(index).match(/^`+/)![0].length;
+            if (width === ticks) ticks = 0;
+            prose += ' '.repeat(width); index += width - 1;
+          } else prose += ' ';
+          protectedContent = true; continue;
+        }
+        if (quote) {
+          if (char === '\\' && line[index + 1] === quote) {
+            prose += '  '; index++; protectedContent = true; continue;
+          }
+          const apostrophe = (char === "'" || char === '’') && /\w/.test(line[index - 1] ?? '') && /\w/.test(line[index + 1] ?? '');
+          // An apparent apostrophe close cannot end a plausible multiline
+          // quotation ahead of its later standalone closing delimiter.
+          const outerClose = (char === "'" || char === '’') && /\w/.test(line[index - 1] ?? '')
+            && [...lines.slice(lineIndex + 1), ...paragraphs.slice(paragraphIndex + 1).flatMap(value => value.split('\n'))]
+              .some(value => closesQuote(value, quote));
+          if (char === quote && !apostrophe && !outerClose) quote = '';
+          prose += ' '; protectedContent = true; continue;
+        }
+        if (char === '`') {
+          ticks = line.slice(index).match(/^`+/)![0].length;
+          prose += ' '.repeat(ticks); index += ticks - 1; protectedContent = true; continue;
+        }
+        if (char === '"' || char === '“' || char === '‘' || char === "'" && !/\w/.test(line[index - 1] ?? '')) {
+          quote = char === '“' ? '”' : char === '‘' ? '’' : char;
+          prose += ' '; protectedContent = true; continue;
+        }
+        prose += char;
+      }
+      visible.push(prose);
+      protectedLines.push(protectedContent);
+    }
+    if (!visible.some(line => line.trim())) {
+      if (protectedLines.some(Boolean) && !quote && !standaloneQuote && !ticks && !fence) pendingWrapper = false;
+      continue;
+    }
+    let protectedAfterWrapper = false;
+    for (const [index, line] of visible.entries()) {
+      const normalized = line.replace(/\*\*/g, '').trim();
+      if (!normalized) { if (pendingWrapper) protectedAfterWrapper ||= protectedLines[index]; continue; }
+      if (wrapper.test(normalized)) { pendingWrapper = true; protectedAfterWrapper = false; continue; }
+      if (pendingWrapper) { wrappedProse = true; pendingWrapper = false; }
+      if (wrappedProse) continue;
+      // Masking quotes must not manufacture a standalone affirmative sentence.
+      // Match original physical sentences, then require every character to
+      // survive the quotation/code mask at the same position.
+      let cursor = 0;
+      for (const sentence of lines[index].split(/(?<=[.!?])\s+/)) {
+        const start = lines[index].indexOf(sentence, cursor); cursor = start + sentence.length;
+        if (line.slice(start, cursor) !== sentence) continue;
+        // Single quotes can also contain possessive apostrophes. A plausible
+        // outer span in this paragraph remains quoted under either reading.
+        const offset = lines.slice(0, index).reduce((sum, value) => sum + value.length + 1, 0) + start;
+        const before = paragraph.slice(0, offset); const after = paragraph.slice(offset + sentence.length);
+        if (/(?:^|[^\p{L}\p{N}_])'/u.test(before) && /'(?=$|[^\p{L}\p{N}_])/u.test(after)
+          || before.includes('‘') && after.includes('’')) continue;
+        const value = sentence.replace(/\*\*/g, '').trim();
+        if (standard.test(value) || observed.test(value)) return value;
+      }
+    }
+    if (pendingWrapper && protectedAfterWrapper && !quote && !standaloneQuote && !ticks && !fence) pendingWrapper = false;
+  }
+  return undefined;
 }
 
 
@@ -70,6 +168,63 @@ function proseReply(text: string, questionId: string, selectors: string[]): stri
   if (offered.length !== selectors.length || new Set(offered).size !== offered.length
     || offered.some(selector => !selectors.includes(selector))) return undefined;
   return signature;
+}
+
+/** Only explicit, unquoted option annotations establish recommendation
+ * polarity. Unknown or conflicting markers never fall back to a choice.
+ */
+function recommendationPolarity(label: string): 'absent' | 'positive' | 'negative' | 'ambiguous' {
+  const markers = [...label.matchAll(/recommended/gi)];
+  if (!markers.length) return 'absent';
+  const annotations = [...label.matchAll(/\(([^()]*)\)/g)].filter(match => /recommended/i.test(match[1]));
+  if (markers.length !== 1 || annotations.length !== 1) return 'ambiguous';
+  const annotation = annotations[0];
+  const before = label.slice(0, annotation.index);
+  const after = label.slice(annotation.index! + annotation[0].length);
+  // An internal apostrophe can resemble a closing quote. A plausible outer
+  // span around the annotation stays ambiguous regardless of that reading.
+  if (/(?:^|[^\p{L}\p{N}_])'/u.test(before) && /'(?=$|[^\p{L}\p{N}_])/u.test(after)
+    || before.includes('‘') && after.includes('’')) return 'ambiguous';
+  let quote = ''; let ticks = 0; let depth = 0;
+  for (let index = 0; index < label.length; index++) {
+    const char = label[index];
+    if (index === annotation.index && (quote || ticks || depth)) return 'ambiguous';
+    if (ticks) {
+      // Backslashes are literal inside Markdown code spans; consume whole
+      // backtick runs before interpreting escapes outside them.
+      if (char === '`') {
+        const width = label.slice(index).match(/^`+/)![0].length;
+        if (ticks === width) ticks = 0;
+        index += width - 1;
+      }
+      continue;
+    }
+    if (char === '\\') {
+      if (index + 1 === annotation.index || /["'“”‘’`]/.test(label[index + 1] ?? '')) return 'ambiguous';
+      index++; continue;
+    }
+    if (quote) {
+      const apostrophe = (char === "'" || char === '’')
+        && /[\p{L}\p{N}_]/u.test(label[index - 1] ?? '') && /[\p{L}\p{N}_]/u.test(label[index + 1] ?? '');
+      if (char === quote && !apostrophe) quote = '';
+      continue;
+    }
+    if (char === '`') {
+      ticks = label.slice(index).match(/^`+/)![0].length;
+      index += ticks - 1; continue;
+    }
+    if (char === '"' || char === '“' || char === '‘'
+      || char === "'" && !/[\p{L}\p{N}_]/u.test(label[index - 1] ?? '')) {
+      quote = char === '“' ? '”' : char === '‘' ? '’' : char; continue;
+    }
+    if (char === '(') depth++;
+    if (char === ')' && --depth < 0) return 'ambiguous';
+  }
+  if (quote || ticks || depth) return 'ambiguous';
+  const value = annotation[1].trim();
+  if (/^recommended(?:\s*:\s*yes)?$/i.test(value)) return 'positive';
+  if (/^(?:not\s+recommended|recommended\s*:\s*no)$/i.test(value)) return 'negative';
+  return 'ambiguous';
 }
 
 /** Veto statements that make this request noncurrent, wherever they occur in
@@ -197,7 +352,7 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
     }
     const nativeText = entry.text.join('\n');
     const text = dialogue(nativeText);
-    const annotation = automaticModeEvidence(text);
+    const annotation = automaticModeEvidence(nativeText);
     if (annotation && compact(visible).includes(compact(annotation))) {
       automatic = { kind: 'auto_decided', evidence: annotation };
     }
@@ -241,8 +396,10 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       }
       if (!compact(questionVisible).includes(compact(text))
         && (!reply || !renderedProse(questionVisible).includes(signature))) continue;
-      const recommended = options.filter(option => /recommended/i.test(option[2]));
-      if (recommended.length > 1) continue;
+      const polarities = options.map(option => recommendationPolarity(option[2]));
+      if (polarities.includes('ambiguous')) continue;
+      const recommended = options.filter((_, index) => polarities[index] === 'positive');
+      if (recommended.length > 1 || !recommended.length && polarities.some(value => value !== 'absent')) continue;
       unrelated = { kind: 'unrelated', id, questionId: questionIds[0], answer: (recommended[0] ?? options[0])[1], evidence: text };
     }
   }
