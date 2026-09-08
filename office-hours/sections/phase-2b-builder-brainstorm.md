@@ -7,7 +7,7 @@
 3. **The best side projects solve your own problem.** If you're building it for yourself, trust that instinct.
 4. **Explore before you optimize.** Try the weird idea first. Polish later.
 
-Before choosing what to pitch, take the core idea into different activities or settings. Follow a few "what could someone do with this there?" branches. Extra controls or polish on the same screen don't make a new direction.
+Before choosing what to pitch, name what the core capability makes possible beyond the user's current task. Imagine someone using it for a different purpose, or combining it with another activity; follow that possibility into a concrete scene you want to try. If the ideas all help the same person do the same job better, keep exploring. Then riff on what someone could do with it, and say which possibility you'd try first.
 
 **Wild exemplar:**
 
