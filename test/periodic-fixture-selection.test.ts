@@ -17,6 +17,9 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/ceo-mode-preference-adjacent-render.json', ['auto-decide-preserved']],
     ['test/fixtures/ceo-mode-preference-context-render.json', ['auto-decide-preserved']],
     ['test/helpers/carve-section-case.ts', ['carve-section-loading']],
+    ['test/design-html-section-completion.test.ts', ['carve-section-loading']],
+    ['test/fixtures/design-html-section-complete.md', ['carve-section-loading']],
+    ['test/plan-design-floor-fixture.test.ts', ['plan-design-finding-floor']],
     ['test/skill-e2e-plan-ceo-paired-control.test.ts', ['plan-ceo-finding-count']],
     ...['overlay-measurement', 'overlay-workspace', 'overlay-attempt', 'overlay-case', 'overlay-case-policy', 'overlay-lifecycle'].map((helper): [string, string[]] => [
       `test/helpers/${helper}.ts`, OVERLAY_FIXTURES.map(fixture => `overlay-harness-${fixture.id}`),
@@ -38,5 +41,18 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
       expect(result.selected.sort()).toEqual([...expected].sort());
       for (const id of expected) expect(E2E_TIERS[id]).toBe('periodic');
     });
+  }
+});
+
+test('shared native input dependencies select every PTY consumer without changing tiers', () => {
+  const expected = selectTests(['test/helpers/claude-pty-runner.ts'], E2E_TOUCHFILES).selected.sort();
+  expect(expected).toHaveLength(22);
+  expect(expected.filter(id => E2E_TIERS[id] === 'gate')).toHaveLength(7);
+  expect(expected.filter(id => E2E_TIERS[id] === 'periodic')).toHaveLength(15);
+  for (const file of ['test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts',
+    'test/helpers/plan-skill-questions.ts', 'test/plan-skill-questions.test.ts']) {
+    const result = selectTests([file], E2E_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    expect(result.selected.sort()).toEqual(expected);
   }
 });
