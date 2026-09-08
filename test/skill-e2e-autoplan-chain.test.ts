@@ -24,7 +24,7 @@
  */
 
 import { test } from 'bun:test';
-import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
+import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, retainAutoplanFailure, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
 import { PTY_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
@@ -144,6 +144,11 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
             { cause: error },
           );
         } finally {
+          if (outcome !== 'chain_complete') retainAutoplanFailure({
+            configDir: session.hermeticConfigDir, sessionId,
+            observation: { outcome, exitCode, transcript, renderedPhases, corroboratedPhases },
+            raw: () => session.rawOutput(), visible: () => session.visibleText(),
+          });
           await session.close();
         }
 

@@ -835,11 +835,13 @@ export const RETRY_OVERRIDES: Record<string, number> = {
   'test/skill-e2e-plan-mode-no-op.test.ts': 2,
 };
 
-/** These complete 25-minute cases each own a 30-minute process. A Bun retry
- * cannot retain its model budget inside that same wall. Run once and preserve
- * the real failure; any investigated rerun gets a fresh process and receipt.
+/** These complete workflows each own a 30-minute process. A Bun retry cannot
+ * retain two 25-minute cases, or two 15-minute autoplan work windows plus setup
+ * and cleanup, inside that same wall. Run once and preserve the real failure;
+ * any investigated rerun gets a fresh process and receipt.
  */
 export const SINGLE_ATTEMPT_FILES = new Set([
+  'test/skill-e2e-autoplan-chain.test.ts',
   'test/skill-e2e-plan-ceo-finding-count.test.ts',
   'test/skill-e2e-plan-ceo-paired-control.test.ts',
   'test/skill-e2e-plan-ceo-split-overflow.test.ts',

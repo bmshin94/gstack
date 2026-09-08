@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
+import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, retainAutoplanFailure, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
 import { stripAnsi } from './helpers/claude-pty-runner';
 
 describe('autoplan announcements from the owned main transcript', () => {
@@ -120,6 +120,66 @@ describe('autoplan announcements from the owned main transcript', () => {
     expect(() => validateAutoplanPhaseOrder(phases)).toThrow('optional Design (2), optional DX (2.5)');
     write(row(text('Phase 1 complete.\nPhase 4 complete.\nPhase 3 complete.')));
     expect(() => validateAutoplanPhaseOrder(readAutoplanTranscript(configDir, sessionId).phases)).toThrow();
+  });
+
+  test('failed chain retains exact owned commands and pending status after native cleanup', () => {
+    const command = 'printf "Phase 3 complete."; codex exec "Review the design — café"';
+    write(row([
+      { type: 'thinking', thinking: 'private-reasoning', signature: 'private-signature' },
+      { type: 'tool_use', id: 'design-command', name: 'Bash', input: { command, timeout: 600_000 } },
+    ]));
+    write(row([{ type: 'tool_use', id: 'foreign', name: 'Bash', input: { command: 'foreign-command' } }]), 'foreign', otherSession);
+    const destination = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-retained-'));
+    try {
+      const saved = retainAutoplanFailure({ configDir, sessionId, evalDir: destination,
+        observation: { outcome: 'timeout', phases: [1] }, raw: () => '\x1b[2JRunning design command', visible: () => 'Running design command' });
+      expect(saved).not.toBeNull();
+      fs.rmSync(configDir, { recursive: true, force: true });
+      const contents = fs.readFileSync(saved!, 'utf8');
+      const record = JSON.parse(contents);
+      expect(JSON.parse(record.calls[0].inputJson.text)).toEqual({ command, timeout: 600_000 });
+      expect(record.calls[0].result).toBe('pending');
+      expect(record.pendingIds[0].text).toBe('design-command');
+      expect(JSON.parse(record.observation.text)).toEqual({ outcome: 'timeout', phases: [1] });
+      expect(contents).not.toContain('private-reasoning');
+      expect(contents).not.toContain('private-signature');
+      expect(contents).not.toContain('foreign-command');
+      expect(fs.statSync(saved!).mode & 0o777).toBe(0o600);
+    } finally { fs.rmSync(destination, { recursive: true, force: true }); }
+  });
+
+  test('diagnostics preserve completed/error tools and mark partial input and native tails explicitly', () => {
+    const command = 'x'.repeat(40_000);
+    const calls = Array.from({ length: 20 }, (_, index) => ({ type: 'tool_use', id: `call-${index}`, name: 'Bash', input: { command } }));
+    write(row(calls) + row([], { type: 'user', message: { role: 'user', content: [
+      { type: 'tool_result', tool_use_id: 'call-18', is_error: false },
+      { type: 'tool_result', tool_use_id: 'call-19', is_error: true },
+    ] } }) + '{"partial":');
+    const destination = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-retained-'));
+    try {
+      const saved = retainAutoplanFailure({ configDir, sessionId, evalDir: destination,
+        observation: { outcome: 'timeout' }, raw: () => '界'.repeat(70_000), visible: () => 'partial input' });
+      const record = JSON.parse(fs.readFileSync(saved!, 'utf8'));
+      expect(record.pendingBytes).toBeGreaterThan(0);
+      expect(record.calls).toHaveLength(16);
+      expect(record.callsOmitted).toBe(4);
+      expect(record.calls[0].inputJson.truncated).toBe(true);
+      expect(record.calls.at(-1).result).toBe('error');
+      expect(record.calls.at(-2).result).toBe('completed');
+      expect(record.pendingCount).toBe(18);
+      expect(record.rawCodeUnits).toBe(70_000);
+      expect(record.rawTail.text.length).toBe(65_536);
+      expect(record.rawTail.omittedPrefixCodeUnits).toBe(4_464);
+      const before = fs.readFileSync(saved!, 'utf8');
+      expect(retainAutoplanFailure({ configDir, sessionId, evalDir: destination,
+        observation: null, raw: () => '', visible: () => '' })).toBeNull();
+      expect(fs.readFileSync(saved!, 'utf8')).toBe(before);
+    } finally { fs.rmSync(destination, { recursive: true, force: true }); }
+  });
+
+  test('diagnostic observation failure cannot replace the test outcome', () => {
+    expect(retainAutoplanFailure({ configDir, sessionId, observation: { outcome: 'timeout' },
+      raw: () => { throw new Error('terminal capture failed'); }, visible: () => '' })).toBeNull();
   });
 });
 
