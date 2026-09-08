@@ -354,6 +354,25 @@ export async function runAgentSdkTest(
     let systemInitVersion = 'unknown';
     let rateLimited: unknown = null;
     let terminalResult: SDKResultMessage | null = null;
+    // A generator can emit its terminal result and then throw. Keep its
+    // authoritative usage in both paths, while preserving the caller's outcome.
+    const finishResult = (exitReason: string): AgentSdkResult => ({
+      events,
+      assistantTurns,
+      toolCalls,
+      output: assistantTextParts.join('\n'),
+      exitReason,
+      turnsUsed: terminalResult?.num_turns ?? assistantTurns.length,
+      durationMs: Date.now() - startMs,
+      firstResponseMs,
+      maxInterTurnMs,
+      costUsd: terminalResult?.total_cost_usd ?? 0, // Unknown only when no usage was returned.
+      model,
+      sdkVersion: resolveSdkVersion(),
+      sdkClaudeCodeVersion: systemInitVersion,
+      resolvedBinaryPath: opts.pathToClaudeCodeExecutable ?? 'sdk-default',
+      browseErrors: [],
+    });
 
     try {
       opts.signal?.throwIfAborted();
@@ -465,61 +484,16 @@ export async function runAgentSdkTest(
         throw new Error('query stream ended without a result event');
       }
 
-      const durationMs = Date.now() - startMs;
-      const costUsd =
-        (terminalResult as { total_cost_usd?: number }).total_cost_usd ?? 0;
-      const turnsUsed =
-        (terminalResult as { num_turns?: number }).num_turns ??
-        assistantTurns.length;
-      const exitReason =
-        (terminalResult as { subtype?: string }).subtype ?? 'unknown';
-
-      return {
-        events,
-        assistantTurns,
-        toolCalls,
-        output: assistantTextParts.join('\n'),
-        exitReason,
-        turnsUsed,
-        durationMs,
-        firstResponseMs,
-        maxInterTurnMs,
-        costUsd,
-        model,
-        sdkVersion: resolveSdkVersion(),
-        sdkClaudeCodeVersion: systemInitVersion,
-        resolvedBinaryPath: opts.pathToClaudeCodeExecutable ?? 'sdk-default',
-        browseErrors: [],
-      };
+      return finishResult(terminalResult.subtype ?? 'unknown');
     } catch (err) {
       lastErr = err;
       opts.signal?.throwIfAborted();
 
-      // "Max turns reached" is the SDK's way of saying "this session ran
-      // out of turns." It's thrown from the generator instead of emitted
-      // as a result message. Treat as a successful-but-capped trial: the
-      // assistant turns we collected are real and carry a metric. Record
-      // them with exitReason='error_max_turns' rather than failing the
-      // whole run.
+      // Some SDK versions throw max-turns after emitting a terminal result;
+      // others throw without one. Preserve captured usage when present and
+      // keep error_max_turns even if an earlier terminal claimed success.
       if (isMaxTurnsError(err)) {
-        const durationMs = Date.now() - startMs;
-        return {
-          events,
-          assistantTurns,
-          toolCalls,
-          output: assistantTextParts.join('\n'),
-          exitReason: 'error_max_turns',
-          turnsUsed: assistantTurns.length,
-          durationMs,
-          firstResponseMs,
-          maxInterTurnMs,
-          costUsd: 0, // unknown from thrown-error path
-          model,
-          sdkVersion: resolveSdkVersion(),
-          sdkClaudeCodeVersion: systemInitVersion,
-          resolvedBinaryPath: opts.pathToClaudeCodeExecutable ?? 'sdk-default',
-          browseErrors: [],
-        };
+        return finishResult('error_max_turns');
       }
 
       const isRetryable = isRateLimitThrown(err);

@@ -311,6 +311,98 @@ describe('runAgentSdkTest — happy path', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Terminal usage, including SDK errors thrown after a terminal event
+// ---------------------------------------------------------------------------
+
+describe('runAgentSdkTest — terminal usage', () => {
+  for (const throwsAfterTerminal of [false, true]) {
+    test(`preserves max-turns terminal usage through serialization (${throwsAfterTerminal ? 'then throws' : 'EOF'})`, async () => {
+      freshSem();
+      const terminal = {
+        ...resultRateLimit(), subtype: 'error_max_turns', num_turns: 26,
+        total_cost_usd: 0.5610850000000001,
+        errors: ['Reached maximum number of turns (25)'],
+      } as SDKMessage;
+      // Assistant event chunks are not the SDK's authoritative turn count.
+      const stream = [systemInit(), assistantTurn([{ type: 'text', text: 'working' }]),
+        assistantTurn([{ type: 'text', text: 'still working' }]), terminal];
+      let calls = 0;
+      const queryProvider: QueryProvider = () => {
+        calls++;
+        return (async function* () {
+          yield* stream;
+          if (throwsAfterTerminal) throw new Error('Reached maximum number of turns (25)');
+        })() as unknown as Query;
+      };
+      const result = await runAgentSdkTest({ ...BASE_OPTS, queryProvider });
+      expect(calls).toBe(1);
+      expect(result.exitReason).toBe('error_max_turns');
+      expect(result.assistantTurns).toHaveLength(2);
+      expect({ turnsUsed: result.turnsUsed, costUsd: result.costUsd })
+        .toEqual({ turnsUsed: 26, costUsd: 0.5610850000000001 });
+      expect(result.events).toEqual(stream);
+      const stored = JSON.parse(JSON.stringify(toSkillTestResult(result)));
+      expect(stored.exitReason).toBe('error_max_turns');
+      expect(stored.costEstimate.turnsUsed).toBe(26);
+      expect(stored.costEstimate.estimatedCost).toBe(0.5610850000000001);
+      expect(stored.transcript.at(-1)).toEqual(terminal);
+    });
+  }
+
+  for (const subtype of ['error_during_execution', 'error_max_budget_usd']) {
+    test(`preserves non-rate-limit ${subtype} terminal fields`, async () => {
+      freshSem();
+      const terminal = { ...resultRateLimit(), subtype, num_turns: 3,
+        total_cost_usd: 0.25, errors: ['model execution stopped'] } as SDKMessage;
+      const stub: StubConfig = { streams: [[systemInit(), terminal]], calls: [] };
+      const result = await runAgentSdkTest({ ...BASE_OPTS, queryProvider: makeStubProvider(stub) });
+      expect(stub.calls).toHaveLength(1);
+      expect(result.exitReason).toBe(subtype);
+      expect(result.turnsUsed).toBe(3);
+      expect(result.costUsd).toBe(0.25);
+      expect(result.events.at(-1)).toEqual(terminal);
+    });
+  }
+
+  test('keeps the existing unknown-usage fallback when max turns throws without a terminal', async () => {
+    freshSem();
+    const queryProvider: QueryProvider = () => (async function* () {
+      yield systemInit();
+      yield assistantTurn([{ type: 'text', text: 'partial output' }]);
+      throw new Error('Reached maximum number of turns (25)');
+    })() as unknown as Query;
+    const result = await runAgentSdkTest({ ...BASE_OPTS, queryProvider });
+    expect(result.exitReason).toBe('error_max_turns');
+    expect(result.turnsUsed).toBe(1);
+    expect(result.costUsd).toBe(0); // Still unknown, not a zero-cost billing claim.
+    expect(result.output).toBe('partial output');
+    expect(result.events.some(event => event.type === 'result')).toBe(false);
+  });
+
+  test('does not swallow a generic error after a terminal event', async () => {
+    freshSem();
+    const failure = new Error('stream transport failed after terminal');
+    const queryProvider: QueryProvider = () => (async function* () {
+      yield resultSuccess(0.1, 2);
+      throw failure;
+    })() as unknown as Query;
+    await expect(runAgentSdkTest({ ...BASE_OPTS, queryProvider })).rejects.toBe(failure);
+  });
+
+  test('a max-turns throw remains an error even after a prior success terminal', async () => {
+    freshSem();
+    const queryProvider: QueryProvider = () => (async function* () {
+      yield resultSuccess(0.1, 2);
+      throw new Error('Reached maximum number of turns (2)');
+    })() as unknown as Query;
+    const result = await runAgentSdkTest({ ...BASE_OPTS, queryProvider });
+    expect(result.exitReason).toBe('error_max_turns');
+    expect(result.turnsUsed).toBe(2);
+    expect(result.costUsd).toBe(0.1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Options propagation
 // ---------------------------------------------------------------------------
 
