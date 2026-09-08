@@ -44,13 +44,23 @@ function automaticModeEvidence(text: string): string | undefined {
  */
 function proseReply(text: string, questionId: string, selectors: string[]): string | undefined {
   if (selectors.length < 2 || selectors.length > 4 || new Set(selectors).size !== selectors.length) return undefined;
-  const lines = text.replace(/\*\*/g, '').split('\n').map(line => line.trim());
-  const headings = lines.filter(line => /^(?:#{1,6}\s+)?D[1-9]\d*\s+[—–-]\s+\S/.test(line));
-  const first = lines.find(line => line && !/^[-*_]{3,}$/.test(line));
-  if (headings.length !== 1 || first !== headings[0]) return undefined;
-  const replies = lines.filter(line => /^Reply\b/.test(line));
-  if (replies.length !== 1 || !replies[0].includes(`<gstack-qid:${questionId}>`)) return undefined;
-  const reply = replies[0];
+  const physical = text.replace(/\*\*/g, '').split('\n');
+  const lines = physical.map(line => line.trim());
+  const replies = physical.flatMap((line, index) => /^ {0,3}Reply\b/.test(line) ? [index] : []);
+  if (replies.length !== 1) return undefined;
+  const index = replies[0];
+  const reply = lines[index];
+  let signature = reply;
+  if (!reply.includes(`<gstack-qid:${questionId}>`)) {
+    let previous = index - 1;
+    while (previous >= 0 && !lines[previous]) previous--;
+    const marker = `<gstack-qid:${questionId}>`;
+    if (previous < 0 || /^(?: {4}|\t)/.test(physical[previous])) return undefined;
+    if (lines[previous] !== marker && lines[previous] !== '`' + marker + '`') return undefined;
+    // Inspect physical native lines: filtering a quote/fence/prose interruption
+    // must never manufacture adjacency between the identity and directive.
+    signature = lines.slice(previous, index + 1).join('\n');
+  }
   const instruction = reply.replace(/`?<gstack-qid:[a-z0-9-]+>`?/, '').trim();
   // Parse a selector list, optionally with "to ..." descriptions. This is a
   // structural choice grammar; no question-specific phrasing or fuzzy matching.
@@ -59,7 +69,30 @@ function proseReply(text: string, questionId: string, selectors: string[]): stri
   const offered = [...instruction.matchAll(/\b([A-D]|[1-4])\b/g)].map(match => match[1]);
   if (offered.length !== selectors.length || new Set(offered).size !== offered.length
     || offered.some(selector => !selectors.includes(selector))) return undefined;
-  return reply;
+  return signature;
+}
+
+function liveBriefIntroduction(text: string): string | undefined {
+  const nativeLines = text.split('\n');
+  const lines = nativeLines.map(line => line.replace(/\*\*/g, ''));
+  const headings = lines.flatMap((line, index) => /^ {0,3}(?:#{1,6}\s+)?D[1-9]\d*\s+[—–-]\s+\S/.test(line) ? [index] : []);
+  if (headings.length !== 1) return undefined;
+  const before = nativeLines.slice(0, headings[0]);
+  if (before.every(line => !line.trim() || /^[-*_]{3,}$/.test(line.trim()))) return '';
+  // Only an explicit immediate presentation may introduce a live brief. The
+  // optional status inventory has a closed, neutral resource vocabulary: open
+  // prose could wrap an example, rehearsal or deferred request. This is not a
+  // general prose classifier; unfamiliar introductions require manual input.
+  const lead = before.join('\n').trim().match(/^([^\n]+)\n\s*\n[-*_]{3,}$/)?.[1];
+  if (!lead || /^(?: {4}|\t)/.test(before.find(line => line.trim()) ?? '')) return undefined;
+  const state = '(?:no|missing|empty|available|loaded|ready|cold|warm)';
+  const modifier = '(?:local|remote|current|prior|saved|cached|project|repository|design|review|build|test|brain|shared)';
+  const resource = '(?:docs?|documents?|plans?|specs?|notes|learnings|config|context|cache|history|memory|branch|repository|worktree|tests|checks|results)';
+  const status = state + ' (?:' + modifier + ' ){0,2}' + resource;
+  const inventory = '(?:' + status + '(?:, ' + status + '){0,3}\\. )?';
+  const announcement = "I(?: will|'ll) (?:present|render|ask) (?:the|this) (?:(?:current|prerequisite) )?(?:question|decision brief|brief) (?:now|here|below|before continuing|before proceeding)\\.";
+  if (!new RegExp('^' + inventory + announcement + '$', 'i').test(lead)) return undefined;
+  return nativeLines.slice(0, headings[0] + 1).join('\n');
 }
 
 // Tokenize before dropping whitespace: a bare qid ends at CR/space, while a
@@ -137,7 +170,8 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       (questionText.includes(`<gstack-qid:${CEO_MODE_QUESTION_ID}>`) || modeLabels(modeOptions.map(option => option[2]).join('\n')) >= 2)) {
       return { kind: 'asked', evidence: questionText };
     }
-    const text = dialogue(entry.text.join('\n'));
+    const nativeText = entry.text.join('\n');
+    const text = dialogue(nativeText);
     const annotation = automaticModeEvidence(text);
     if (annotation && compact(visible).includes(compact(annotation))) {
       automatic = { kind: 'auto_decided', evidence: annotation };
@@ -151,6 +185,11 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       return { kind: 'asked', evidence: text };
     }
     if (questionIds.length === 1 && !isModeQuestion && id === latestAssistantId && !userReplied) {
+      // The envelope applies to full-text corroboration too: a fully rendered
+      // deferred/example brief is still not a request for current input.
+      const introduction = liveBriefIntroduction(nativeText);
+      if (introduction === undefined || introduction && !compact(questionVisible).includes(compact(introduction))) continue;
+      if ([...nativeText.matchAll(/<gstack-qid:([a-z0-9-]+)>/g)].length !== 1) continue;
       const selectors = options.map(option => option[1]);
       if (selectors.length < 2 || selectors.length > 4 || new Set(selectors).size !== selectors.length
         || selectors.some(selector => !/^[A-D1-4]$/.test(selector))) continue;
@@ -158,12 +197,22 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       // rendering belongs to. Fail closed, even if the selectors are identical.
       if ([...messages].some(([otherId, other]) => otherId !== id
         && other.text.join('\n').includes(`<gstack-qid:${questionIds[0]}>`))) continue;
-      const reply = proseReply(text, questionIds[0], selectors);
+      const reply = proseReply(nativeText, questionIds[0], selectors);
       const signature = renderedProse(reply ?? text);
+      const previewText = [...toolText, toolText.join('\n')].map(renderedProse);
       // A same-input tool preview/result can display the identical directive.
       // Its rendering cannot establish that this later native question is on
       // screen. Exact repeats are ambiguous; mere qid/plan references are not.
-      if (toolText.some(value => renderedProse(value).includes(signature))) continue;
+      if (previewText.some(value => value.includes(signature))) continue;
+      if (introduction) {
+        const prefix = renderedProse(introduction);
+        if (previewText.some(value => value.includes(prefix))) continue;
+        // A redraw can repeat either fragment. At least one complete prefix
+        // must precede the exact reply within this same input window.
+        const current = renderedProse(questionVisible);
+        const start = current.indexOf(prefix);
+        if (start < 0 || reply && current.indexOf(signature, start + prefix.length) < 0) continue;
+      }
       if (!compact(questionVisible).includes(compact(text))
         && (!reply || !renderedProse(questionVisible).includes(signature))) continue;
       const recommended = options.filter(option => /recommended/i.test(option[2]));

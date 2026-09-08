@@ -232,6 +232,142 @@ test('input-window scoping keeps earlier contrary mode and affirmative mode evid
   expect(inspectCeoModePreference(transcript(assistant(automatic), current), automatic + visible, '').kind).toBe('auto_decided');
 });
 
+const adjacentMarker = '<gstack-qid:plan-ceo-review-cache-policy>';
+const adjacentReply = 'Reply with **A** or **B**.';
+const adjacentBrief = `D1 — Cache policy\nA) Reuse (recommended)\nB) Replace\n\n\`${adjacentMarker}\`\n\n${adjacentReply}`;
+const adjacentVisible = adjacentMarker + '\nReply with A or B.';
+
+test('an adjacent standalone identity and reply are corroborated in native order', () => {
+  for (const text of [adjacentBrief, adjacentBrief.replaceAll('`', ''), adjacentBrief.replace('\n\nReply', '\nReply')]) {
+    expect(inspectCeoModePreference(transcript(assistant(text)), adjacentVisible)).toMatchObject({
+      kind: 'unrelated', questionId: 'plan-ceo-review-cache-policy', answer: 'A',
+    });
+  }
+  for (const visible of [
+    adjacentVisible.split('\n').reverse().join('\n'),
+    adjacentVisible.replace('cache-policy', 'cache-policy-stale'),
+    adjacentVisible.replace(' or B', ''),
+    adjacentVisible.replace('or B', 'or C'),
+    adjacentMarker,
+  ]) expect(inspectCeoModePreference(transcript(assistant(adjacentBrief)), visible).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(adjacentBrief)), adjacentVisible, '').kind).toBe('working');
+});
+
+test.each(['> quoted interruption', '```text\nexample\n```', '    indented interruption', 'Intervening prose.'])('adjacent identity cannot be manufactured across %s', interruption => {
+  const text = adjacentBrief.replace('\n\nReply', '\n' + interruption + '\nReply');
+  expect(inspectCeoModePreference(transcript(assistant(text)), adjacentVisible).kind).toBe('working');
+});
+
+test('adjacent directives retain completion, ownership and recommendation ambiguity guards', () => {
+  for (const input of [
+    transcript(assistant(adjacentBrief, 'tool_use')),
+    { ...transcript(assistant(adjacentBrief)), pendingBytes: 1 },
+    transcript(assistant(adjacentBrief), assistant('Still working', 'tool_use', 'newer')),
+    transcript(assistant(adjacentBrief), { type: 'user', message: { role: 'user', content: 'Continue' } }),
+    transcript(assistant(adjacentBrief, 'end_turn', 'old'), assistant(adjacentBrief, 'end_turn', 'new')),
+    transcript(assistant(adjacentBrief.replace('B) Replace', 'B) Replace (recommended for this situation)'))),
+    transcript(assistant(adjacentBrief.replace('(recommended)', '(recommended by the default rule, not by context)').replace('B) Replace', 'B) Replace (recommended for this situation)'))),
+    transcript(assistant(adjacentBrief.replace('B) Replace', 'A) Replace'))),
+    transcript(assistant(adjacentBrief + '\n<gstack-qid:plan-ceo-review-other>')),
+    transcript(assistant(adjacentBrief.replace('`' + adjacentMarker + '`', '    ' + adjacentMarker))),
+    transcript(assistant(adjacentBrief.replace('Reply with', '    Reply with'))),
+    transcript(assistant(adjacentBrief.replace('`' + adjacentMarker + '`', '`' + adjacentMarker))),
+  ]) expect(inspectCeoModePreference(input, adjacentVisible).kind).toBe('working');
+});
+
+test('split tool previews cannot establish an adjacent rendered question', () => {
+  const current = assistant(adjacentBrief, 'end_turn', 'current');
+  const preview = { type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'tool_use', content: [
+    { type: 'tool_use', name: 'Write', input: { identity: adjacentMarker, directive: adjacentReply } },
+  ] } };
+  const result = { type: 'user', message: { role: 'user', content: [
+    { type: 'tool_result', content: adjacentMarker }, { type: 'tool_result', content: adjacentReply },
+  ] } };
+  expect(inspectCeoModePreference(transcript(preview, current), adjacentVisible).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(result, current), adjacentVisible).kind).toBe('working');
+  const reference = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: adjacentMarker }] } };
+  expect(inspectCeoModePreference(transcript(reference, current), adjacentVisible).kind).toBe('unrelated');
+});
+
+test.each(['I will present this later:', 'Example only; do not answer:', 'If this becomes relevant:', '> Deferred until later'])('full rendering does not authorize a wrapped question: %s', lead => {
+  const text = lead + '\n\n' + adjacentBrief;
+  expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(text)), adjacentVisible).kind).toBe('working');
+});
+
+const capturedAdjacent = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/ceo-mode-preference-adjacent-render.json'), 'utf8'));
+test('captured immediately introduced brief binds its intact adjacent reply without changing the mode oracle', () => {
+  const { assistantText, visible } = capturedAdjacent;
+  expect(inspectCeoModePreference(transcript(assistant(assistantText)), visible)).toMatchObject({
+    kind: 'unrelated', questionId: 'plan-ceo-review-office-hours-offer', answer: 'B',
+  });
+  expect(inspectCeoModePreference(transcript(assistant(assistantText)), visible, '').kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(assistantText)), visible, '<gstack-qid:plan-ceo-review-office-hours-offer>Reply with A or B.').kind).toBe('working');
+  const modeText = assistantText.replaceAll('plan-ceo-review-office-hours-offer', 'plan-ceo-review-mode');
+  expect(inspectCeoModePreference(transcript(assistant(modeText)), modeText).kind).toBe('asked');
+  const ambiguous = assistantText.replace('A) Run /office-hours now', 'A) Run /office-hours now (recommended by the default rule, not by context)');
+  expect(inspectCeoModePreference(transcript(assistant(ambiguous)), visible).kind).toBe('working');
+});
+
+test.each([
+  "I'll present the question now.",
+  'I will ask this current question before proceeding.',
+  'Loaded project config. I will render this brief below.',
+  'Missing saved plans, available local tests. I will present the decision brief here.',
+])('a narrowly introduced current decision requires its introduction to render: %s', lead => {
+  const text = lead + '\n\n---\n\n' + adjacentBrief;
+  const visible = lead + '\n---\nD1 — Cache policy\n' + adjacentVisible;
+  expect(inspectCeoModePreference(transcript(assistant(text)), visible).kind).toBe('unrelated');
+  expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('unrelated');
+  expect(inspectCeoModePreference(transcript(assistant(text)), adjacentVisible).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(text)), visible.replace('---', 'interruption')).kind).toBe('working');
+});
+
+test.each([
+  "I'll present the question later.",
+  "If necessary, I'll present the question now.",
+  "I won't present the question now.",
+  "I'll present the example question now.",
+  "I'll present the question now, but do not answer.",
+  "No participation expected. I'll present the question now.",
+  "Ready rehearsal material. I'll present the question now.",
+  "Ready rehearsal report. I'll present the question now.",
+  "This is only a rehearsal. I'll present the question now.",
+  "No design doc.\n\nI'll present the question now.",
+  "> I'll present the question now.",
+  "    I'll present the question now.",
+  "`I'll present the question now.`",
+  "**I'll present the question now.**",
+  "```text\nI'll present the question now.\n```",
+])('a noncurrent or unknown introduction cannot receive input even when fully rendered: %s', lead => {
+  const text = lead + '\n\n---\n\n' + adjacentBrief;
+  expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(text)), lead + '\n---\nD1 — Cache policy\n' + adjacentVisible).kind).toBe('working');
+});
+
+test('the current introduction must precede its reply and cannot come from a tool preview', () => {
+  const lead = "I'll present the question now.";
+  const introduction = lead + '\n\n---\n\nD1 — Cache policy';
+  const text = lead + '\n\n---\n\n' + adjacentBrief;
+  const current = assistant(text, 'end_turn', 'current');
+  const visible = introduction + '\n' + adjacentVisible;
+  expect(inspectCeoModePreference(transcript(current), adjacentVisible + '\n' + introduction).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(current), visible).kind).toBe('unrelated');
+  expect(inspectCeoModePreference(transcript(current), adjacentVisible + '\n' + visible).kind).toBe('unrelated');
+  const preview = { type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'tool_use', content: [
+    { type: 'tool_use', name: 'Write', input: { content: introduction } },
+  ] } };
+  const splitPreview = { type: 'user', message: { role: 'user', content: [
+    { type: 'tool_result', content: lead }, { type: 'tool_result', content: '---\nD1 — Cache policy' },
+  ] } };
+  for (const input of [transcript(preview, current), transcript(splitPreview, current)]) {
+    expect(inspectCeoModePreference(input, visible).kind).toBe('working');
+    expect(inspectCeoModePreference(input, text).kind).toBe('working');
+  }
+  const nextInput = { type: 'user', message: { role: 'user', content: 'Continue the review' } };
+  expect(inspectCeoModePreference(transcript(preview, nextInput, current), visible).kind).toBe('unrelated');
+});
+
 test.each([false, true])('a previous input-window preview cannot answer a new owned question; fresh render=%s', async showCurrent => {
   const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-preference-input-window-'));
   const second = capturedImplementation.assistantText;

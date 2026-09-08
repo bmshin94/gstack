@@ -14,6 +14,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/ceo-mode-evidence.test.ts', ['auto-decide-preserved']],
     ['test/fixtures/ceo-mode-preference-office-hours-render.json', ['auto-decide-preserved']],
     ['test/fixtures/ceo-mode-preference-implementation-render.json', ['auto-decide-preserved']],
+    ['test/fixtures/ceo-mode-preference-adjacent-render.json', ['auto-decide-preserved']],
     ['test/helpers/carve-section-case.ts', ['carve-section-loading']],
     ['test/skill-e2e-plan-ceo-paired-control.test.ts', ['plan-ceo-finding-count']],
     ...['overlay-measurement', 'overlay-workspace', 'overlay-attempt', 'overlay-case', 'overlay-case-policy', 'overlay-lifecycle'].map((helper): [string, string[]] => [
