@@ -56,7 +56,7 @@ async function main() {
         const id = `tool-${++sequence}`;
         if (name === 'AskUserQuestion' && scenario.startsWith('hook-')) {
           // Native CLI can show this modal before persisting its tool_use.
-          // Exercise the real launch-installed recorder; only results go to JSONL.
+          // Exercise the recorder installed by the real launcher.
           const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
           const recorded = Bun.spawnSync(['bash', '-c', settings.hooks.PreToolUse[0].hooks[0].command], {
             timeout: 5000,
@@ -65,6 +65,10 @@ async function main() {
             stdout: 'pipe', stderr: 'pipe',
           });
           if (recorded.exitCode !== 0 || recorded.stdout.length) throw new Error(`Question recorder failed: ${recorded.stderr}`);
+          if (scenario === 'hook-omitted-default') {
+            const wireInput = { ...(input as any), questions: (input as any).questions.map(({ multiSelect, ...question }: any) => question) };
+            append({ type: 'assistant', cwd: options.cwd, message: { id, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input: wireInput }] } });
+          }
         } else append({ type: 'assistant', cwd: options.cwd, message: { id, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input }] } });
         return id;
       };

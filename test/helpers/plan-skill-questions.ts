@@ -16,6 +16,15 @@ export interface NativeQuestionCall {
 }
 export interface NativePermissionTool { id: string; name: string; input: Record<string, unknown>; cwd?: string }
 
+function questionInputWithDefaults(input: any): any {
+  if (!input || typeof input !== 'object' || !Array.isArray(input.questions)) return input;
+  // The CLI hook supplies this default while its transcript can omit it.
+  // Preserve every other field so actual input changes still fail comparison.
+  return { ...input, questions: input.questions.map((question: any) =>
+    question && typeof question === 'object' && !Array.isArray(question) && !Object.hasOwn(question, 'multiSelect')
+      ? { ...question, multiSelect: false } : question) };
+}
+
 /** The launch's native PreToolUse event can precede transcript persistence.
  * Both sources must agree; only an owned transcript result acknowledges input.
  * PTY scrollback and tool previews supply neither invocation nor acknowledgement.
@@ -34,6 +43,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const inputs = new Map<string, unknown>();
   const addQuestion = (id: unknown, input: any) => {
     if (typeof id !== 'string' || !id) throw new Error('Native AskUserQuestion is missing its tool ID');
+    input = questionInputWithDefaults(input);
     const questions = input?.questions;
     if (!Array.isArray(questions) || questions.length < 1 || questions.length > 4 || questions.some(q =>
       typeof q?.question !== 'string' || !q.question.trim() || typeof q.header !== 'string' || !q.header.trim()
@@ -61,7 +71,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       // An unfinished assistant record cannot introduce a call, but it can
       // invalidate conflicting early evidence before any input is sent.
       if (row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use' && inputs.has(block.id)
-        && (block.name !== 'AskUserQuestion' || !isDeepStrictEqual(inputs.get(block.id), block.input))) {
+        && (block.name !== 'AskUserQuestion' || !isDeepStrictEqual(inputs.get(block.id), questionInputWithDefaults(block.input)))) {
         throw new Error('Native AskUserQuestion changed input for an existing tool ID');
       }
       if (row.type !== 'assistant' || message.role !== 'assistant' || message.stop_reason !== 'tool_use' || block?.type !== 'tool_use') continue;

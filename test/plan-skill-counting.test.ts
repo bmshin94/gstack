@@ -29,6 +29,16 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.outcome).toBe('completion_summary');
     expect(result.closed).toBe(true);
   }, 15_000);
+  test('omitted multiSelect defaults preserve acknowledged counting and completion', async () => {
+    const result = await runFakeCounting('**DONE**', 'hook-omitted-default');
+    expect(result.error).toBeUndefined();
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+    expect(result.closed).toBe(true);
+  }, 15_000);
   test('an early hook invocation without a native acknowledgement cannot count', async () => {
     const result = await runFakeCounting('**DONE**', 'hook-no-ack');
     expect(result.observation.step0Count).toBe(1);

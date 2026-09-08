@@ -52,6 +52,50 @@ test('early and persisted invocations coalesce, and any changed input fails', ()
   expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('changed input');
 });
 
+for (const stopReason of [null, 'tool_use']) {
+  test(`the hook's false multiSelect default matches an omitted transcript field (${stopReason})`, () => {
+    const { multiSelect, ...omittedDefault } = question;
+    const native = call('defaulted');
+    native.message.stop_reason = stopReason as any;
+    native.message.content[0].input.questions = [omittedDefault as NativeQuestion];
+    write(native);
+    const early = earlyQuestions();
+    early.emit('defaulted');
+    const pending = readPlanSkillQuestions(config, sessionId, early.source);
+    expect(pending.calls).toEqual([{ id: 'defaulted', questions: [question], result: 'pending' }]);
+    fs.appendFileSync(file, JSON.stringify({ type: 'user', sessionId, message: { role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'defaulted', content: 'Answer accepted' }] } }) + '\n');
+    expect(readPlanSkillQuestions(config, sessionId, early.source).calls[0].result).toBe('answered');
+  });
+}
+
+test('a completed native invocation without an event uses the same false default', () => {
+  const { multiSelect, ...omittedDefault } = question;
+  write(call('native-default', [omittedDefault as NativeQuestion]));
+  expect(readPlanSkillQuestions(config, sessionId).calls).toEqual([
+    { id: 'native-default', questions: [question], result: 'pending' },
+  ]);
+});
+
+for (const multiSelect of [true, null, 'false']) {
+  test(`default equivalence still rejects changed multiSelect ${JSON.stringify(multiSelect)}`, () => {
+    write(call('changed-default', [{ ...question, multiSelect } as NativeQuestion]));
+    const early = earlyQuestions();
+    early.emit('changed-default');
+    expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('changed input');
+  });
+}
+
+test('default equivalence preserves comparison of other input fields', () => {
+  const { multiSelect, ...omittedDefault } = question;
+  const native = call('other-input', [omittedDefault as NativeQuestion]);
+  (native.message.content[0].input as any).metadata = { changed: true };
+  write(native);
+  const early = earlyQuestions();
+  early.emit('other-input');
+  expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('changed input');
+});
+
 test('early native input uses the existing validator and never supplies a successful result', () => {
   write(call('valid'));
   const early = earlyQuestions();
