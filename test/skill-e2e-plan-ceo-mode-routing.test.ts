@@ -66,6 +66,7 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
           // Navigation (420s) + posture (240s) must both fit; phase budgets stay fixed.
           timeoutMs: PTY_MS,
           seedSkills: true,
+          captureScreen: true,
         });
         try {
           await Bun.sleep(8000);

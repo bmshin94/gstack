@@ -1,4 +1,5 @@
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
+import * as path from 'node:path';
 
 export interface NativeQuestion {
   question: string;
@@ -11,7 +12,7 @@ export interface NativeQuestionCall {
   questions: NativeQuestion[];
   result: 'pending' | 'answered' | 'error';
 }
-export interface NativePermissionTool { id: string; name: string; input: Record<string, unknown> }
+export interface NativePermissionTool { id: string; name: string; input: Record<string, unknown>; cwd?: string }
 
 /** Tool identity comes from complete records in this launch's own transcript.
  * PTY scrollback and tool previews cannot create an invocation or acknowledge it.
@@ -36,7 +37,10 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       }
       if (row.type !== 'assistant' || message.role !== 'assistant' || message.stop_reason !== 'tool_use' || block?.type !== 'tool_use') continue;
       if (block.name === 'ExitPlanMode' && typeof block.id === 'string') ready.add(block.id);
-      else if (block.name !== 'AskUserQuestion' && typeof block.id === 'string') permissionTools.set(block.id, { id: block.id, name: block.name, input: block.input ?? {} });
+      else if (block.name !== 'AskUserQuestion' && typeof block.id === 'string') permissionTools.set(block.id, {
+        id: block.id, name: block.name, input: block.input ?? {},
+        ...(typeof row.cwd === 'string' ? { cwd: row.cwd } : {}),
+      });
       if (block.name !== 'AskUserQuestion') continue;
       if (typeof block.id !== 'string' || !block.id) throw new Error('Native AskUserQuestion is missing its tool ID');
       const questions = block.input?.questions;
@@ -91,10 +95,34 @@ export function matchesNativeQuestion(question: NativeQuestion, visible: string,
 /** A lone pending tool is insufficient: its command/path must also identify
  * the displayed permission. Unsupported or repeated ambiguous grants fail.
  */
+export function currentFilePermissionTarget(visible: string): { operation: 'create' | 'edit'; filePath: string } | null {
+  const cursor = [...visible.matchAll(/❯\s*1\./g)].at(-1);
+  if (!cursor) return null;
+  // Bind the current menu's distinctive CLI controls, not a prose question
+  // containing "create" or a stale permission earlier in scrollback.
+  const controls = visible.slice(cursor.index).replace(/\s+/g, '');
+  if (!/^❯1\.Yes2\.Yes,andswitchtoacceptedits\(auto-approvefileeditsandcommonfilecommands\)forthissession(?:\(shift\+tab\))?3\.No(?:\b|Esc)/.test(controls)) return null;
+  const prompt = /Do\s*you\s*want\s*to\s*(create|edit)\s+([^\r\n?]+)\?\s*$/.exec(visible.slice(0, cursor.index));
+  return prompt ? { operation: prompt[1] as 'create' | 'edit', filePath: prompt[2]!.trim() } : null;
+}
+
 export function nativePermissionKey(tool: NativePermissionTool, visible: string): string {
   const value = tool.name === 'Bash' ? tool.input.command
     : ['Read', 'Write', 'Edit'].includes(tool.name) ? tool.input.file_path : null;
   if (typeof value !== 'string' || !value.trim()) throw new Error('Unsupported native permission command or file path');
+  const current = currentFilePermissionTarget(visible);
+  if (current) {
+    const expectedTool = current.operation === 'create' ? 'Write' : 'Edit';
+    const displayed = current.filePath;
+    const resolved = path.isAbsolute(displayed) ? path.normalize(displayed)
+      : tool.cwd && path.isAbsolute(tool.cwd) ? path.resolve(tool.cwd, displayed) : null;
+    // A basename alone has no authority. Its exact path must resolve through
+    // the cwd on this owned tool record; missing/corrupted names stay errors.
+    if (tool.name !== expectedTool || !path.isAbsolute(value) || resolved !== path.normalize(value)) {
+      throw new Error('Visible permission cannot be bound to its pending native command or file path');
+    }
+    return tool.name + ':' + path.normalize(value);
+  }
   // Match the request's own labelled field, not a command/path substring
   // elsewhere in a previous dialog (or another tool's command).
   const displayed = tool.name === 'Bash'

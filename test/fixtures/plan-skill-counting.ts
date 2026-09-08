@@ -8,7 +8,7 @@ import { ceoStep0Boundary, runPlanSkillCounting } from '../helpers/claude-pty-ru
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
-  const timing = ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack'].includes(scenario);
+  const timing = ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
@@ -46,14 +46,15 @@ async function main() {
       const file = path.join(options.env.CLAUDE_CONFIG_DIR, 'projects', 'fixture', `${sessionId}.jsonl`);
       fs.mkdirSync(path.dirname(file), { recursive: true });
       const append = (row: Record<string, unknown>) => fs.appendFileSync(file, JSON.stringify({ sessionId, ...row }) + '\n');
-      const emit = (value: string) => options.terminal.data(null, Buffer.from(value));
+      // A real PTY's ONLCR output converts these fixture newlines to CRLF.
+      const emit = (value: string) => options.terminal.data(null, Buffer.from(value.replace(/(?<!\r)\n/g, '\r\n')));
       const finding = (number: number) => `\nFinding ${number} — ${number === 1 ? 'Success' : 'Failure'} test\n\n❯ 1. ${reusedOptions ? 'Add test' : number === 1 ? 'Add receipt assertion' : 'Add retry assertion'}\n  2. ${reusedOptions ? 'Skip test' : number === 1 ? 'Skip receipt test' : 'Skip retry test'}\n`;
       let sequence = 0;
       let pendingId: string | null = null;
       let permissionId: string | null = null;
       const tool = (name: string, input: unknown) => {
         const id = `tool-${++sequence}`;
-        append({ type: 'assistant', message: { id, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input }] } });
+        append({ type: 'assistant', cwd: options.cwd, message: { id, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input }] } });
         return id;
       };
       const ask = (question: string, labels: string[]) => {
@@ -81,6 +82,21 @@ async function main() {
             seededBeforeSlash = fs.readFileSync(path.join(options.cwd, 'review-input.md'), 'utf8') === plan;
             if (scenario === 'setup-budget' || scenario === 'launch-budget' || scenario === 'setup-exhausted') {
               emit('WORK_IN_PROGRESS\n');
+              return;
+            }
+            if (scenario === 'screen-only-plan-ready') {
+              tool('ExitPlanMode', {});
+              emit('\x1b[2J\x1b[HReay to execute?\n');
+              emit('\x1b7\x1b[1;4H\x1b[@d\x1b8');
+              return;
+            }
+            if (scenario.startsWith('permission-current-create')) {
+              permissionId = tool('Write', { file_path: path.join(project, scenario.endsWith('mismatch') ? 'different.md' : 'plan.md'), content: plan });
+              const prompt = 'Do you want to create pln.md?';
+              emit('\x1b[2J\x1b[H' + prompt + '\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel');
+              // A cursor insertion restores the exact filename on screen. An
+              // append-and-strip view still contains the wrong name pln.md.
+              emit(`\x1b7\x1b[1;${prompt.indexOf('pln.md') + 3}H\x1b[@a\x1b8`);
               return;
             }
             if (['permission-redraw', 'permission-ambiguous', 'permission-owner-change'].includes(scenario)) {
@@ -122,7 +138,11 @@ async function main() {
                   question, header: question, multiSelect: false, options: ['Add test', 'Skip test'].map(label => ({ label, description: label })),
                 })) });
               } else ask('Finding 1 — Success test', [reusedOptions ? 'Add test' : 'Add receipt assertion', reusedOptions ? 'Skip test' : 'Skip receipt test']);
-              emit(finding(1));
+              if (scenario === 'screen-question-redraw') {
+                const rendered = finding(1).trimStart().replace('Success', 'Succss');
+                emit('\x1b[2J\x1b[H' + rendered);
+                emit(`\x1b7\x1b[1;${rendered.indexOf('Succss') + 5}H\x1b[@e\x1b8`);
+              } else emit(finding(1));
             } else if (answer === 2) {
               if (scenario === 'timeout-after-question') emit('\nWORK_IN_PROGRESS\n');
               else if (scenario === 'repeated-native') {
@@ -160,9 +180,10 @@ async function main() {
     try { observation = await runPlanSkillCounting({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
       cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling: 4, timeoutMs: helperTimeoutMs,
+      defaultPick: scenario === 'permission-current-create-pick-two' ? 2 : undefined,
       firstAUQPick: scenario === 'first-route' ? () => 2 : undefined,
     }); } catch (cause) {
-      if (!scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'repeated-native'].includes(scenario)) throw cause;
+      if (!scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
       error = String(cause);
     }
     console.log(JSON.stringify({ observation, error, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers,

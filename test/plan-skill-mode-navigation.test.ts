@@ -12,7 +12,7 @@ async function run(scenario: string) {
   try {
     const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     expect(exit, stderr).toBe(0);
-    return JSON.parse(stdout.trim());
+    return { ...JSON.parse(stdout.trim()), stderr };
   } finally { clearTimeout(watchdog); if (child.exitCode === null) { child.kill(); await child.exited; } }
 }
 
@@ -46,6 +46,79 @@ test('nonfinite mode navigation budgets fail before input', async () => {
   const result = await run('invalid-budget');
   expect(result.error).toContain('must be finite');
   expect(result.sends).toEqual([]);
+}, 15_000);
+
+test.each(['diagnostic-unmatched', 'diagnostic-unacknowledged', 'diagnostic-write'])('mode navigation retains its actual failure state before cleanup: %s', async scenario => {
+  const result = await run(scenario);
+  expect(result.error).toContain('Mode AskUserQuestion not reached within 30000ms');
+  expect(result.navigation).toBeUndefined();
+  expect(result.configRemovedBeforeArtifactRead).toBe(true);
+  if (process.platform !== 'win32') expect(result.diagnosticMode).toBe(0o600);
+  const diagnostic = result.diagnostic;
+  expect(diagnostic.sessionId).toBe('00000000-0000-4000-8000-000000000001');
+  expect(diagnostic.error).toBe(result.error);
+  expect(diagnostic.selected).toBeNull();
+  expect(diagnostic.priorAnswered).toBe(0);
+  const native = JSON.parse(diagnostic.native.text);
+  if (scenario === 'diagnostic-write') {
+    expect(native.calls).toEqual([]);
+    expect(native.permissionTools.map((tool: any) => tool.id)).toEqual(['write-plan']);
+    expect(diagnostic.granted).toEqual([]);
+    expect(result.sends).toEqual([]);
+  } else {
+    expect(native.calls[0].id).toBe('approach');
+    expect(native.calls[0].result).toBe('pending');
+    expect(diagnostic.answered).toEqual(scenario === 'diagnostic-unacknowledged'
+      ? [{ id: { text: 'approach', codeUnits: 8, truncated: false }, questions: 1, submitted: false, counted: false }] : []);
+    expect(result.sends).toEqual(scenario === 'diagnostic-unacknowledged' ? ['1\r'] : []);
+  }
+  if (scenario === 'diagnostic-unacknowledged') {
+    expect(diagnostic.lastSend.data).toBe('1\r');
+    expect(diagnostic.lastSend.status).toBe('returned');
+    expect(diagnostic.lastSend.visibleBefore.text).toContain('Choose architecture');
+    expect(diagnostic.inputRaw.text).toBe('\n❯ 1\n');
+    expect(diagnostic.questionSince).toBe(diagnostic.lastSend.inputMark);
+    expect(diagnostic.lastSend.rawCodeUnitsBefore).toBe(diagnostic.lastSend.inputMark);
+    expect(diagnostic.lastSend.rawCodeUnitsAfter).toBe(diagnostic.lastSend.rawCodeUnitsBefore + '\n❯ 1\n'.length);
+  } else expect(diagnostic.lastSend).toBeNull();
+}, 15_000);
+
+test('mode failure diagnostics bound rendered/native payloads without changing the timeout', async () => {
+  const result = await run('diagnostic-truncation');
+  expect(result.error).toContain('within 30000ms');
+  expect(result.sends).toEqual([]);
+  expect(result.diagnostic.raw.truncated).toBe(true);
+  expect(result.diagnostic.inputVisible.truncated).toBe(true);
+  expect(result.diagnostic.native.truncated).toBe(true);
+  expect(result.diagnostic.nativeSummary.pendingBytes).toBe(0);
+  expect(result.diagnostic.nativeSummary.calls[0].id.text).toBe('approach');
+  expect(result.diagnostic.nativeSummary.permissionCount).toBe(80);
+  expect(result.diagnostic.nativeSummary.permissionTools).toHaveLength(64);
+  expect(result.diagnostic.nativeSummary.permissionToolsOmitted).toBe(16);
+  expect(result.diagnostic.nativeSummary.permissionTools[0].id.truncated).toBe(true);
+  expect(result.diagnosticBytes).toBeLessThan(400_000);
+  expect(result.diagnostic.raw.text.length).toBeLessThanOrEqual(16_384);
+}, 15_000);
+
+test('failed sends are recorded as attempts and preserve the exact thrown error', async () => {
+  const result = await run('diagnostic-send-failure');
+  expect(result.originalSendErrorPreserved).toBe(true);
+  expect(result.sends).toEqual(['1\r']);
+  expect(result.diagnostic.lastSend.status).toBe('threw');
+  expect(result.diagnostic.lastSend.failureTruncated).toBe(true);
+  expect(result.diagnostic.lastSend.rawCodeUnitsBefore).toBe(result.diagnostic.lastSend.rawCodeUnitsAfter);
+  expect(result.diagnostic.errorTruncated).toBe(true);
+  expect(result.diagnostic.error.length).toBe(1024);
+  expect(result.diagnostic.errorCodeUnits).toBe(result.error.length);
+}, 15_000);
+
+test('diagnostic write failure preserves the original navigation error and reports the secondary failure', async () => {
+  const result = await run('diagnostic-write-failure');
+  expect(result.error).toBe('Error: Mode AskUserQuestion not reached within 30000ms');
+  expect(result.diagnostic).toBeNull();
+  expect(result.blockedOutputPreserved).toBe(true);
+  expect(result.sends).toEqual([]);
+  expect(result.stderr).toContain('Mode navigation diagnostic could not be retained');
 }, 15_000);
 
 test('posture requires rendered assistant text after the selected mode result', () => {

@@ -1,6 +1,8 @@
 import { isNumberedOptionListVisible, isPermissionDialogVisible, parseNumberedOptions, MODE_RE, findModeOption, TAIL_SCAN_BYTES, type ClaudePtySession } from './claude-pty-runner';
 import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey } from './plan-skill-questions';
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 /** Answer prior native invocations, then select and acknowledge the requested
  * mode. A rendered preview cannot supply either prompt identity or inventory.
@@ -21,21 +23,109 @@ export async function navigateToModeAskUserQuestion(
   const answered = new Map<string, { questions: number; submitted: boolean; counted: boolean }>();
   const granted = new Set<string>();
   const grantedRequests = new Set<string>();
+  let lastNative: ReturnType<typeof readPlanSkillQuestions> | null = null;
+  let lastVisible = '';
+  let lastSend: { data: string; inputMark: number; visibleBefore: string;
+    status: 'attempted' | 'returned' | 'threw'; failure?: string;
+    rawCodeUnitsBefore: number | null; rawCodeUnitsAfter: number | null } | null = null;
+  // Diagnostics observe the existing state; they never authorize input or
+  // change an outcome. Persist before the caller closes and deletes its CLI.
+  const retainFailure = (cause: unknown) => {
+    const tail = (value: string) => ({ text: value.slice(-16_384), codeUnits: value.length, truncated: value.length > 16_384 });
+    try {
+      const observationErrors: string[] = [];
+      const observe = <T>(label: string, read: () => T, fallback: T): T => {
+        try { return read(); }
+        catch (error) { observationErrors.push(`${label}: ${String(error)}`.slice(0, 1024)); return fallback; }
+      };
+      const configDir = observe('config directory', () => session.hermeticConfigDir, null);
+      const raw = observe('raw terminal', () => session.rawOutput(), '');
+      const visible = observe('current input window', () => session.visibleSince(questionSince), '');
+      let nativeFresh = false;
+      const native = observe('owned native questions', () => {
+        const value = readPlanSkillQuestions(configDir, opts.sessionId);
+        nativeFresh = true;
+        return value;
+      }, lastNative);
+      const identity = (value: string) => ({ text: value.slice(0, 256), codeUnits: value.length, truncated: value.length > 256 });
+      const error = String(cause);
+      const calls = native?.calls ?? [];
+      const permissions = native?.permissionTools ?? [];
+      const diagnostic = {
+        schemaVersion: 1, sessionId: opts.sessionId, configDir: configDir && tail(configDir), targetMode, budgetMs,
+        error: error.slice(0, 1024), errorCodeUnits: error.length, errorTruncated: error.length > 1024,
+        since, questionSince, capturedAt: new Date().toISOString(),
+        selected: selected && { ...selected, id: identity(selected.id) }, priorAnswered,
+        answered: [...answered].slice(-64).map(([id, state]) => ({ id: identity(id), ...state })),
+        answeredCount: answered.size, answeredOmitted: Math.max(0, answered.size - 64),
+        granted: [...granted].slice(-64).map(identity),
+        grantedCount: granted.size, grantedOmitted: Math.max(0, granted.size - 64),
+        grantedRequestCount: grantedRequests.size,
+        nativeSummary: {
+          available: native !== null, freshRead: nativeFresh, pendingBytes: native?.pendingBytes ?? null, ready: native?.ready ?? null,
+          calls: calls.slice(-64).map(call => ({ id: identity(call.id), result: call.result, questionCount: call.questions.length })),
+          callCount: calls.length, callsOmitted: Math.max(0, calls.length - 64),
+          permissionTools: permissions.slice(-64).map(tool => ({ id: identity(tool.id), name: identity(tool.name),
+            filePath: typeof tool.input.file_path === 'string' ? tail(tool.input.file_path) : null })),
+          permissionCount: permissions.length, permissionToolsOmitted: Math.max(0, permissions.length - 64),
+        },
+        native: tail(JSON.stringify(native)), raw: tail(raw), inputRaw: tail(raw.slice(questionSince)),
+        inputVisible: tail(visible), lastObservedVisible: tail(lastVisible),
+        lastSend: lastSend && { data: lastSend.data.slice(0, 32), inputMark: lastSend.inputMark, status: lastSend.status,
+          failure: lastSend.failure?.slice(0, 1024), failureTruncated: (lastSend.failure?.length ?? 0) > 1024,
+          rawCodeUnitsBefore: lastSend.rawCodeUnitsBefore, rawCodeUnitsAfter: lastSend.rawCodeUnitsAfter,
+          visibleBefore: tail(lastSend.visibleBefore), rawBefore: tail(raw.slice(0, lastSend.inputMark)) },
+        observationErrors,
+        limits: 'Diagnostic only. A normally returned send proves neither delivery nor acknowledgement. Text/IDs and arrays have explicit clipping metadata. Marks count raw UTF-16 code units. No thinking or native transcript rows are copied.',
+      };
+      const evalDir = process.env.GSTACK_EVAL_DIR;
+      if (!evalDir) throw new Error('GSTACK_EVAL_DIR is not configured');
+      if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(opts.sessionId)) throw new Error('Diagnostic session ID is not a UUID');
+      const directory = path.join(evalDir, 'mode-navigation');
+      fs.mkdirSync(directory, { recursive: true });
+      const file = path.join(directory, `${opts.sessionId}.json`);
+      const serialized = JSON.stringify(diagnostic, null, 2) + '\n';
+      if (Buffer.byteLength(serialized) > 1_048_576) throw new Error('Diagnostic exceeds the 1 MiB retention bound');
+      fs.writeFileSync(file, serialized, { flag: 'wx', mode: 0o600 });
+      console.error(`[mode-navigation] failure diagnostic: ${file}`);
+    } catch (error) {
+      // Secondary diagnostics must not replace the actual navigation failure.
+      try { console.error(`Mode navigation diagnostic could not be retained: ${String(error).slice(0, 1024)}`); } catch { /* preserve cause */ }
+    }
+  };
   const send = (data: string) => {
     if (Date.now() >= deadline) return false;
-    session.send(data);
+    lastSend = { data, inputMark: questionSince, visibleBefore: lastVisible, status: 'attempted',
+      rawCodeUnitsBefore: null, rawCodeUnitsAfter: null };
+    try { lastSend.rawCodeUnitsBefore = session.rawOutput().length; } catch { /* diagnostic only */ }
+    try {
+      session.send(data);
+      lastSend.status = 'returned';
+    } catch (cause) {
+      lastSend.status = 'threw';
+      try { lastSend.failure = String(cause); } catch { lastSend.failure = 'Unprintable thrown value'; }
+      throw cause;
+    } finally {
+      try { lastSend.rawCodeUnitsAfter = session.rawOutput().length; } catch { /* diagnostic only */ }
+    }
     return true;
   };
   const pause = async (ms: number) => {
     const remaining = deadline - Date.now();
     if (remaining > 0) await Bun.sleep(Math.min(ms, remaining));
   };
+  try {
   while (Date.now() < deadline) {
     if (session.exited()) throw new Error(`claude exited (code=${session.exitCode()}) during native mode navigation`);
     await pause(2000);
     if (Date.now() >= deadline) break;
-    const visible = session.visibleSince(questionSince);
+    const frame = await session.currentScreen?.();
+    const visible = frame
+      ? frame.rawEnd > questionSince ? frame.text : ''
+      : session.visibleSince(questionSince);
     const native = readPlanSkillQuestions(session.hermeticConfigDir, opts.sessionId);
+    lastVisible = visible;
+    lastNative = native;
     if (Date.now() >= deadline) break;
     if (native.pendingBytes) continue;
     for (const call of native.calls) {
@@ -94,6 +184,10 @@ export async function navigateToModeAskUserQuestion(
   }
   if (selected) throw new Error(`Selected native mode was not acknowledged within ${budgetMs}ms`);
   throw new Error(`Mode AskUserQuestion not reached within ${budgetMs}ms`);
+  } catch (cause) {
+    retainFailure(cause);
+    throw cause;
+  }
 }
 
 /** Mode acknowledgement and its echoed label are not downstream posture.

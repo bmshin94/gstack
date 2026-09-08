@@ -21,6 +21,39 @@ async function runFakeCounting(completion: string, scenario: string) {
 }
 
 describe('real plan counting loop with an isolated fake PTY', () => {
+  test('a current create dialog is decoded and granted only for its exact owned path', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-current-create');
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1\r', '1\r', '1\r']);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+  }, 15_000);
+  test('a decoded create dialog cannot grant a different pending path', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-current-create-mismatch');
+    expect(result.error).toContain('cannot be bound');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('a second-option question preference still grants only the current file request', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-current-create-pick-two');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '2\r', '2\r', '2\r']);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+  }, 15_000);
+  test('screen decoding cannot expand the existing plan-ready completion evidence', async () => {
+    const result = await runFakeCounting('**DONE**', 'screen-only-plan-ready');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.observation.evidence).toContain('Reay to execute?');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('cursor-corrected question text matches its native invocation and still requires acknowledgement', async () => {
+    const result = await runFakeCounting('**DONE**', 'screen-question-redraw');
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1\r', '1\r']);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+  }, 15_000);
   test('a stale grant cannot become permission for a new sole pending owner', async () => {
     const result = await runFakeCounting('**DONE**', 'permission-owner-change');
     expect(result.error).toContain('cannot be bound');

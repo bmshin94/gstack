@@ -23,12 +23,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { readPlanSkillCompletion } from './plan-skill-completion';
-import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey, type NativeQuestion } from './plan-skill-questions';
+import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey, currentFilePermissionTarget, type NativeQuestion } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { buildSeedConfig, getHermeticDirs, hermeticChildEnv, hermeticSkillsConfigDir, isHermeticEnabled } from './hermetic-env';
+import { PtyCurrentScreen } from './pty-current-screen';
 
 /** Strip ANSI escapes for pattern-matching against visible text. */
 export function stripAnsi(s: string): string {
@@ -99,6 +100,8 @@ export interface ClaudePtyOptions {
   env?: Record<string, string>;
   /** Total run timeout (ms). Default 240000 (4 min). */
   timeoutMs?: number;
+  /** Reconstruct the active screen for native interactive question drivers. */
+  captureScreen?: boolean;
 }
 
 export interface ClaudePtySession {
@@ -119,6 +122,9 @@ export interface ClaudePtySession {
   mark(): number;
   /** Visible text since the most recent (or specific) mark. */
   visibleSince(marker?: number): string;
+  /** Active screen at a completed decode barrier; rawEnd counts raw UTF-16
+   * code units and can be compared with mark(). Present only when requested. */
+  currentScreen?(): Promise<{ text: string; rawEnd: number }>;
   /**
    * Wait for any of the supplied patterns to appear in visibleText. Resolves
    * with the first match. Throws on timeout (with last 2KB of visible text).
@@ -290,6 +296,7 @@ export const TAIL_SCAN_BYTES = 1500;
  * remain unconditional.
  */
 export function isPermissionDialogVisible(visible: string): boolean {
+  if (currentFilePermissionTarget(visible)) return true;
   // Standalone signatures — high specificity, never appear in skill questions.
   if (/requested\s+permissions?\s+to/i.test(visible)) return true;
   // "Yes / Yes, allow all edits / No" shape — file-edit permission grants.
@@ -1319,6 +1326,8 @@ export async function launchClaudePty(
   const cols = opts.cols ?? 120;
   const rows = opts.rows ?? 40;
   const timeoutMs = opts.timeoutMs ?? 240_000;
+  const screen = opts.captureScreen ? new PtyCurrentScreen({ cols, rows }) : null;
+  let screenError: unknown = null;
 
   let buffer = '';
   let exited = false;
@@ -1380,6 +1389,9 @@ export async function launchClaudePty(
       rows,
       data(_t: unknown, chunk: Buffer) {
         buffer += chunk.toString('utf-8');
+        if (screen && !screenError) {
+          try { screen.feed(chunk); } catch (error) { screenError = error; }
+        }
       },
     },
     cwd,
@@ -1505,6 +1517,7 @@ export async function launchClaudePty(
     clearTimeout(wallTimer);
     clearTimeout(trustWatcherStop);
     clearInterval(trustWatcher);
+    screen?.dispose();
     if (exited) return;
     try {
       proc.kill?.('SIGINT');
@@ -1530,6 +1543,12 @@ export async function launchClaudePty(
     visibleText: () => stripAnsi(buffer),
     mark,
     visibleSince,
+    ...(screen ? { currentScreen: async () => {
+      if (screenError) throw screenError;
+      const rawEnd = buffer.length;
+      const frame = await screen.snapshot();
+      return { text: frame.text, rawEnd };
+    } } : {}),
     waitForAny,
     waitFor,
     pid: () => proc.pid as number | undefined,
@@ -2104,6 +2123,7 @@ export async function runPlanSkillCounting(opts: {
     env: opts.env,
     model: opts.model,
     seedSkills: true,
+    captureScreen: true,
   });
   let since = session.mark();
   let questionSince = since;
@@ -2123,7 +2143,12 @@ export async function runPlanSkillCounting(opts: {
       await pause(2000);
       if (expired()) break;
       const visible = session.visibleSince(since);
-      const questionVisible = session.visibleSince(questionSince);
+      const questionWindow = session.visibleSince(questionSince);
+      const frame = await session.currentScreen?.();
+      const questionVisible = frame
+        ? frame.rawEnd > questionSince ? frame.text : ''
+        : questionWindow;
+      if (expired()) break;
 
       // Process exited?
       if (session.exited()) {
@@ -2189,7 +2214,7 @@ export async function runPlanSkillCounting(opts: {
           visible,
         );
       }
-      if (!hasPendingQuestion && native.ready && isPlanReadyVisible(questionVisible)) {
+      if (!hasPendingQuestion && native.ready && isPlanReadyVisible(questionWindow)) {
         return snapshot(
           'plan_ready',
           `skill emitted plan-mode "Ready to execute" confirmation (step0=${step0Count}, review=${reviewCount})`,
@@ -2212,7 +2237,7 @@ export async function runPlanSkillCounting(opts: {
         grantedTools.add(owner.id);
         grantedRequests.add(request);
         questionSince = session.mark();
-        session.send(`${defaultPick}\r`);
+        session.send('1\r'); // Grant this request; AUQ preferences cannot enable session-wide access.
         await pause(1500);
         continue;
       }
