@@ -45,6 +45,12 @@ const child = String.raw`
     return file;
   };
   const skillFile = skill('review');
+  const projectSkill = (name = 'plan-ceo-review', target = path.join(project, name, 'SKILL.md'), content = fs.readFileSync(path.join(sourceRoot, 'plan-ceo-review/SKILL.md'), 'utf8')) => {
+    write(target, content);
+    const link = path.join(project, '.claude', 'skills', name, 'SKILL.md');
+    fs.mkdirSync(path.dirname(link), {recursive: true}); fs.symlinkSync(target, link);
+    return target;
+  };
   const settings = path.join(configDir, 'settings.json');
   const hooks = matcher => ({ hooks: { PreToolUse: [{ ...(matcher === undefined ? {} : { matcher }), hooks: [{ type: 'command', command: 'must-not-run' }] }] } });
   let checks = 0;
@@ -79,6 +85,21 @@ const child = String.raw`
       fs.symlinkSync(path.join(alias, 'with-skills', '.claude', 'skills'), path.join(configDir, 'skills'), 'dir');
       passes(); break;
     }
+    case 'project-same-name-skill': projectSkill(); passes(); break;
+    case 'project-cross-name-skill': projectSkill('plan-ceo-review', path.join(project, 'other-skill', 'SKILL.md')); refuses(() => setup({configDir,cwd})); break;
+    case 'project-external-skill': projectSkill('plan-ceo-review', path.join(root, 'external-skill', 'SKILL.md')); refuses(() => setup({configDir,cwd})); break;
+    case 'project-pretool-mutation':
+      projectSkill('plan-ceo-review', undefined, '---\nname: plan-ceo-review\nhooks:\n  PreToolUse:\n    - matcher: AskUserQuestion\n      hooks: []\n---\n');
+      refuses(() => setup({configDir,cwd})); break;
+    case 'project-permission-mutation':
+      projectSkill('plan-ceo-review', undefined, '---\nname: plan-ceo-review\nhooks:\n  PermissionRequest:\n    - matcher: AskUserQuestion\n      hooks: []\n---\n');
+      refuses(() => setup({configDir,cwd})); break;
+    case 'project-skill-drift': { const file = projectSkill(); const scope = passes(); fs.appendFileSync(file, '\nchanged'); refuses(() => check(scope)); break; }
+    case 'empty-plugins-container': { const scope = passes(); fs.mkdirSync(path.join(configDir, 'plugins')); check(scope); checks++; break; }
+    case 'new-plugin-registry': { const scope = passes(); json(path.join(configDir, 'plugins', 'installed_plugins.json'), {version: 2, plugins: {}}); refuses(() => check(scope)); break; }
+    case 'changed-plugin-registry': { const file = path.join(configDir, 'plugins', 'installed_plugins.json'); json(file, {version: 2, plugins: {}}); const scope = passes(); json(file, {version: 3, plugins: {}}); refuses(() => check(scope)); break; }
+    case 'plugin-container-symlink': { const scope = passes(); const outside = path.join(root, 'external-plugins'); fs.mkdirSync(outside); fs.symlinkSync(outside, path.join(configDir, 'plugins'), 'dir'); refuses(() => check(scope)); break; }
+    case 'plugin-container-nondirectory': { const scope = passes(); write(path.join(configDir, 'plugins'), ''); refuses(() => check(scope)); break; }
     case 'literal-non-auq':
       json(settings, hooks('Bash')); json(path.join(project, '.claude', 'settings.local.json'), hooks('Read'));
       write(skillFile, '---\nname: review\nhooks:\n  PreToolUse:\n    - matcher: Write\n      hooks: []\n---\n');
@@ -127,6 +148,9 @@ const child = String.raw`
 `;
 
 const scenarios = ['clean', 'all-generated-skills', 'actual-hermetic-registry', 'alias-registry',
+  'project-same-name-skill', 'project-cross-name-skill', 'project-external-skill',
+  'project-pretool-mutation', 'project-permission-mutation', 'project-skill-drift',
+  'empty-plugins-container', 'new-plugin-registry', 'changed-plugin-registry', 'plugin-container-symlink', 'plugin-container-nondirectory',
   'literal-non-auq', 'auq-settings', 'substring-settings', 'lowercase-auq',
   'permission-auq', 'permission-other-tool',
   'regex-settings', 'wildcard-settings', 'omitted-matcher', 'malformed-hooks', 'ancestor-settings',

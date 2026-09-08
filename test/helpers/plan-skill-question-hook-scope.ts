@@ -91,8 +91,12 @@ function inventory(opts: Options): string {
       let file = path.join(dir, name, 'SKILL.md');
       if (stat(file)?.isSymbolicLink()) {
         const target = fs.realpathSync(file);
-        const runtime = path.join(path.dirname(path.dirname(dir)), 'runtime');
-        if (!privateRegistry || !target.startsWith(runtime + path.sep)) fail('external skill document');
+        const owner = path.dirname(path.dirname(dir));
+        // The installed project registry links each name to its same-name
+        // checkout document. Keep the private derived-runtime rule separate.
+        const allowed = privateRegistry ? target.startsWith(path.join(owner, 'runtime') + path.sep)
+          : target === path.join(owner, name, 'SKILL.md');
+        if (!allowed) fail('external skill document');
         rows.push([file, `link:${fs.readlinkSync(file)}:${target}`]);
         file = target;
       }
@@ -108,7 +112,11 @@ function inventory(opts: Options): string {
     settings(path.join(dir, 'settings.json'));
     settings(path.join(dir, 'settings.local.json'));
     const plugins = path.join(dir, 'plugins');
-    if (directory(plugins) !== null) settings(path.join(plugins, 'installed_plugins.json'));
+    // CLI startup creates this empty container. Its existence is not policy;
+    // the registry's absence/bytes are always inventoried, even before mkdir.
+    const pluginDir = stat(plugins);
+    if (pluginDir && (!pluginDir.isDirectory() || fs.realpathSync(plugins) !== plugins)) fail('noncanonical plugin directory');
+    settings(path.join(plugins, 'installed_plugins.json'));
     skills(path.join(dir, 'skills'), privateRegistry);
   }
 
