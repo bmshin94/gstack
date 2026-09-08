@@ -128,7 +128,7 @@ export function chooseLocalPgliteFixtureAnswer(question: {
   }));
   const declines = options.filter(o => /^(?:no(?:,? (?:thanks|remote mcp only))?|skip(?: artifacts sync)?|decline(?: artifacts sync)?)$/i.test(o.label));
   const local = options.filter(o => /^yes,? (?:(?:set up|install|enable|use) )?local pglite(?: for (?:code|code search))?$/i.test(o.label));
-  const sync = options.filter(o => /^(?:yes,? )?(?:full sync|artifacts[- ]only(?: sync)?|sync (?:all|artifacts)(?: only)?)$/i.test(o.label));
+  const sync = options.filter(o => /^(?:yes,? )?(?:full sync(?: \(everything allowlisted\))?|artifacts[- ]only(?: sync)?|sync (?:all|artifacts)(?: only)?)$/i.test(o.label));
   const remote = options.filter(o => /^(?:(?:use|connect to|select) )?remote (?:gbrain )?mcp(?: \(path ?4\))?$/i.test(o.label)
     || /^path ?4(?:\s*[-—–:]\s*remote (?:gbrain )?mcp)?$/i.test(o.label)
     || /^4 — remote gbrain mcp\.?$/i.test(o.label));

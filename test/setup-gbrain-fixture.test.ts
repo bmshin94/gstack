@@ -210,6 +210,33 @@ describe('setup-gbrain local-PGLite fixture answers', () => {
     })).toBe('No thanks');
   });
 
+  test('declines the September 8 captured full-sync qualifier without accepting other qualifiers', () => {
+    // Captured native Step 7 menu: the qualifier describes the known full-sync action.
+    const captured = {
+      ...artifactsQuestion,
+      options: [
+        { label: 'Yes, full sync (everything allowlisted)' },
+        { label: 'Yes, artifacts-only' },
+        { label: 'No thanks' },
+      ],
+    };
+    expect(chooseLocalPgliteFixtureAnswer(captured)).toBe('No thanks');
+    expect(chooseLocalPgliteFixtureAnswer({ ...captured, options: [...captured.options].reverse() }))
+      .toBe('No thanks');
+    for (const label of [
+      'Yes, full sync (including secrets)',
+      'Yes, full sync (everything allowlisted; publish publicly)',
+      'Yes, artifacts-only (everything allowlisted)',
+    ]) {
+      expect(() => chooseLocalPgliteFixtureAnswer({
+        ...captured, options: [{ label }, ...captured.options.slice(1)],
+      })).toThrow('Unrecognized or ambiguous');
+    }
+    expect(() => chooseLocalPgliteFixtureAnswer({
+      ...captured, options: [...captured.options, localQuestion.options[0]],
+    })).toThrow('Unrecognized or ambiguous');
+  });
+
   test('preserves explicit Path 4 selection', () => {
     expect(chooseLocalPgliteFixtureAnswer({
       question: 'Where should your brain live?',
