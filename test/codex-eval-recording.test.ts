@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import {
   CODEX_EVAL_FINALIZE_MS,
   createCodexEvalCollector,
+  createCodexPlanFormatCapture,
   runRecordedCodexEval,
   validateCodexDiscovery,
   validateCodexReview,
@@ -69,6 +70,8 @@ describe('Codex assertion and record parity', () => {
   for (const [name, captured, kind, passed] of [
     ['kind succeeds', kindQuestion, 'kind', true],
     ['coverage succeeds', coverageQuestion, 'coverage', true],
+    ['coverage accepts canonical option scores', coverageQuestion.replace('Completeness: 10/10', 'Completeness: A=10/10, B=7/10, C=3/10'), 'coverage', true],
+    ['kind rejects canonical option scores', `${kindQuestion}\nCompleteness: A=10/10, B=7/10`, 'kind', false],
     ['missing recommendation', kindQuestion.replace('RECOMMENDATION:', 'Suggestion:'), 'kind', false],
     ['short capture', 'RECOMMENDATION: Choose A', 'coverage', false],
     ['missing completeness', coverageQuestion.replace('Completeness: 10/10', ''), 'coverage', false],
@@ -121,6 +124,73 @@ describe('Codex assertion and record parity', () => {
       expect(error).toBeDefined();
       expect(records[0].passed).toBe(false);
       expect(records[0].error).toContain('ENOENT');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('exact plan captures survive failed validation, fixture cleanup, and retry serialization', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-plan-evidence-'));
+    const file = path.join(dir, 'ask-capture.md');
+    const collector = new EvalCollector('e2e', path.join(dir, 'records'));
+    const texts = [
+      `${kindQuestion}\r\nCompleteness: A=10/10, B=7/10\r\nUnicode: naïve → choice`,
+      `${kindQuestion}\n${prose.repeat(5)}`,
+    ];
+    const records: EvalTestEntry[] = [];
+    try {
+      for (const [index, text] of texts.entries()) {
+        const capture = createCodexPlanFormatCapture(file, 'kind');
+        const { error } = await runFixture({
+          run: async () => {
+            capture.reset();
+            expect(fs.existsSync(file)).toBe(false);
+            fs.writeFileSync(file, text);
+            return result({ sessionId: `session-${index}`, output: 'x'.repeat(2_100) });
+          },
+          validate: capture.validate,
+          record: entry => {
+            // The exact input is retained before either success or failure,
+            // independently of the model's last message and fixture lifetime.
+            fs.rmSync(file);
+            const retained = capture.attach(entry);
+            records.push(retained);
+            collector.addTest(retained);
+          },
+        });
+        expect(error === undefined).toBe(index === 1);
+      }
+      const saved = JSON.parse(fs.readFileSync(await collector.finalize(), 'utf8'));
+      expect(saved.tests.map((entry: EvalTestEntry) => [entry.attempt, entry.passed])).toEqual([[1, false], [2, true]]);
+      expect(saved.tests[0].exit_reason).toBe('validation_failed');
+      expect(saved.tests[0].error).toContain('Kind question must not include a completeness score');
+      for (const [index, entry] of saved.tests.entries()) {
+        expect(entry.output).toHaveLength(2_000);
+        expect(entry.transcript).toEqual([{
+          type: 'gstack_plan_format_capture', file_path: file,
+          content: texts[index], session_id: `session-${index}`,
+        }]);
+      }
+      expect(records).toHaveLength(2);
+      expect(fs.existsSync(file)).toBe(false);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('a retry cannot borrow a stale plan capture when its runner writes nothing', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-plan-stale-'));
+    const file = path.join(dir, 'ask-capture.md');
+    const records: EvalTestEntry[] = [];
+    try {
+      fs.writeFileSync(file, coverageQuestion);
+      const capture = createCodexPlanFormatCapture(file, 'coverage');
+      const { error } = await runFixture({
+        run: async () => { capture.reset(); return result(); },
+        validate: capture.validate,
+        record: entry => records.push(capture.attach(entry)),
+      });
+      expect(error).toBeDefined();
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({ passed: false, exit_reason: 'validation_failed' });
+      expect(records[0].error).toContain('ENOENT');
+      expect(records[0].transcript).toBeUndefined();
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 

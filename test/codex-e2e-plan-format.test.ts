@@ -28,7 +28,7 @@
 import { describe, test, beforeAll, afterAll } from 'bun:test';
 import { CAPTURE_MS, CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { runCodexSkill } from './helpers/codex-session-runner';
-import { CODEX_EVAL_FINALIZE_MS, createCodexEvalCollector, runRecordedCodexEval, validateCodexPlanFormat } from './helpers/codex-eval';
+import { CODEX_EVAL_FINALIZE_MS, createCodexEvalCollector, runRecordedCodexEval, createCodexPlanFormatCapture } from './helpers/codex-eval';
 import { selectTests, detectBaseBranch, getChangedFiles, E2E_TOUCHFILES, GLOBAL_TOUCHFILES } from './helpers/touchfiles';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -156,24 +156,25 @@ describeCodex('Codex Plan Format — CEO Mode Selection', () => {
   });
 
   testIfSelected('codex-plan-ceo-format-mode', async () => {
+    const capture = createCodexPlanFormatCapture(outFile, 'kind');
     const result = await runRecordedCodexEval({
       name: 'codex-plan-ceo-format-mode',
       suite: 'codex-e2e-plan-format',
       budgetMs: CAPTURE_LONG_MS,
-      run: (signal) => runCodexSkill({
-        skillDir,
-        prompt: `Read the plan-ceo-review skill. Read plan.md (the plan to review). Proceed to Step 0F (Mode Selection) where the skill presents 4 mode options (SCOPE EXPANSION, SELECTIVE EXPANSION, HOLD SCOPE, SCOPE REDUCTION) via AskUserQuestion. These options differ in kind (review posture), not coverage. ${captureInstruction(outFile)}`,
-        timeoutMs: CAPTURE_MS,
-        cwd: planDir,
-        skillName: 'gstack-plan-ceo-review',
-        sandbox: 'workspace-write',
-        signal,
-      }),
-      validate: () => {
-        const captured = fs.readFileSync(outFile, 'utf-8');
-        validateCodexPlanFormat(captured, 'kind');
+      run: (signal) => {
+        capture.reset();
+        return runCodexSkill({
+          skillDir,
+          prompt: `Read the plan-ceo-review skill. Read plan.md (the plan to review). Proceed to Step 0F (Mode Selection) where the skill presents 4 mode options (SCOPE EXPANSION, SELECTIVE EXPANSION, HOLD SCOPE, SCOPE REDUCTION) via AskUserQuestion. These options differ in kind (review posture), not coverage. ${captureInstruction(outFile)}`,
+          timeoutMs: CAPTURE_MS,
+          cwd: planDir,
+          skillName: 'gstack-plan-ceo-review',
+          sandbox: 'workspace-write',
+          signal,
+        });
       },
-      record: (entry) => evalCollector?.addTest(entry),
+      validate: capture.validate,
+      record: (entry) => evalCollector?.addTest(capture.attach(entry)),
     });
     console.log(`codex-plan-ceo-format-mode: ${result.tokens}t, ${Math.round(result.durationMs/1000)}s, exit=${result.exitCode}`);
   }, CAPTURE_LONG_MS);
@@ -191,24 +192,25 @@ describeCodex('Codex Plan Format — CEO Approach Menu', () => {
   });
 
   testIfSelected('codex-plan-ceo-format-approach', async () => {
+    const capture = createCodexPlanFormatCapture(outFile, 'coverage');
     const result = await runRecordedCodexEval({
       name: 'codex-plan-ceo-format-approach',
       suite: 'codex-e2e-plan-format',
       budgetMs: CAPTURE_LONG_MS,
-      run: (signal) => runCodexSkill({
-        skillDir,
-        prompt: `Read the plan-ceo-review skill. Read plan.md. Proceed to Step 0C-bis (Implementation Alternatives / Approach Menu) where the skill generates 2-3 approaches (minimal viable vs ideal architecture) and presents them via AskUserQuestion. These options differ in coverage so Completeness: N/10 applies. ${captureInstruction(outFile)}`,
-        timeoutMs: CAPTURE_MS,
-        cwd: planDir,
-        skillName: 'gstack-plan-ceo-review',
-        sandbox: 'workspace-write',
-        signal,
-      }),
-      validate: () => {
-        const captured = fs.readFileSync(outFile, 'utf-8');
-        validateCodexPlanFormat(captured, 'coverage');
+      run: (signal) => {
+        capture.reset();
+        return runCodexSkill({
+          skillDir,
+          prompt: `Read the plan-ceo-review skill. Read plan.md. Proceed to Step 0C-bis (Implementation Alternatives / Approach Menu) where the skill generates 2-3 approaches (minimal viable vs ideal architecture) and presents them via AskUserQuestion. These options differ in coverage so Completeness: N/10 applies. ${captureInstruction(outFile)}`,
+          timeoutMs: CAPTURE_MS,
+          cwd: planDir,
+          skillName: 'gstack-plan-ceo-review',
+          sandbox: 'workspace-write',
+          signal,
+        });
       },
-      record: (entry) => evalCollector?.addTest(entry),
+      validate: capture.validate,
+      record: (entry) => evalCollector?.addTest(capture.attach(entry)),
     });
     console.log(`codex-plan-ceo-format-approach: ${result.tokens}t, ${Math.round(result.durationMs/1000)}s, exit=${result.exitCode}`);
   }, CAPTURE_LONG_MS);
@@ -226,24 +228,25 @@ describeCodex('Codex Plan Format — Eng Coverage Issue', () => {
   });
 
   testIfSelected('codex-plan-eng-format-coverage', async () => {
+    const capture = createCodexPlanFormatCapture(outFile, 'coverage');
     const result = await runRecordedCodexEval({
       name: 'codex-plan-eng-format-coverage',
       suite: 'codex-e2e-plan-format',
       budgetMs: CAPTURE_LONG_MS,
-      run: (signal) => runCodexSkill({
-        skillDir,
-        prompt: `Read the plan-eng-review skill. Read plan.md. In your Section 3 Test Review, generate ONE AskUserQuestion about test coverage depth where options are clearly coverage-differentiated: A) full coverage incl. edge + error paths (Completeness 10/10), B) happy path only (7/10), C) smoke test (3/10). ${captureInstruction(outFile)}`,
-        timeoutMs: CAPTURE_MS,
-        cwd: planDir,
-        skillName: 'gstack-plan-eng-review',
-        sandbox: 'workspace-write',
-        signal,
-      }),
-      validate: () => {
-        const captured = fs.readFileSync(outFile, 'utf-8');
-        validateCodexPlanFormat(captured, 'coverage');
+      run: (signal) => {
+        capture.reset();
+        return runCodexSkill({
+          skillDir,
+          prompt: `Read the plan-eng-review skill. Read plan.md. In your Section 3 Test Review, generate ONE AskUserQuestion about test coverage depth where options are clearly coverage-differentiated: A) full coverage incl. edge + error paths (Completeness 10/10), B) happy path only (7/10), C) smoke test (3/10). ${captureInstruction(outFile)}`,
+          timeoutMs: CAPTURE_MS,
+          cwd: planDir,
+          skillName: 'gstack-plan-eng-review',
+          sandbox: 'workspace-write',
+          signal,
+        });
       },
-      record: (entry) => evalCollector?.addTest(entry),
+      validate: capture.validate,
+      record: (entry) => evalCollector?.addTest(capture.attach(entry)),
     });
     console.log(`codex-plan-eng-format-coverage: ${result.tokens}t, ${Math.round(result.durationMs/1000)}s, exit=${result.exitCode}`);
   }, CAPTURE_LONG_MS);
@@ -261,24 +264,25 @@ describeCodex('Codex Plan Format — Eng Kind Issue', () => {
   });
 
   testIfSelected('codex-plan-eng-format-kind', async () => {
+    const capture = createCodexPlanFormatCapture(outFile, 'kind');
     const result = await runRecordedCodexEval({
       name: 'codex-plan-eng-format-kind',
       suite: 'codex-e2e-plan-format',
       budgetMs: CAPTURE_LONG_MS,
-      run: (signal) => runCodexSkill({
-        skillDir,
-        prompt: `Read the plan-eng-review skill. Read plan.md. In your Section 1 Architecture review, generate ONE AskUserQuestion about an architectural choice where the options differ in kind (e.g. Redis vs Postgres materialized view vs in-process cache — different kinds of systems with different tradeoffs, NOT more-or-less-complete versions of the same thing). ${captureInstruction(outFile)}`,
-        timeoutMs: CAPTURE_MS,
-        cwd: planDir,
-        skillName: 'gstack-plan-eng-review',
-        sandbox: 'workspace-write',
-        signal,
-      }),
-      validate: () => {
-        const captured = fs.readFileSync(outFile, 'utf-8');
-        validateCodexPlanFormat(captured, 'kind');
+      run: (signal) => {
+        capture.reset();
+        return runCodexSkill({
+          skillDir,
+          prompt: `Read the plan-eng-review skill. Read plan.md. In your Section 1 Architecture review, generate ONE AskUserQuestion about an architectural choice where the options differ in kind (e.g. Redis vs Postgres materialized view vs in-process cache — different kinds of systems with different tradeoffs, NOT more-or-less-complete versions of the same thing). ${captureInstruction(outFile)}`,
+          timeoutMs: CAPTURE_MS,
+          cwd: planDir,
+          skillName: 'gstack-plan-eng-review',
+          sandbox: 'workspace-write',
+          signal,
+        });
       },
-      record: (entry) => evalCollector?.addTest(entry),
+      validate: capture.validate,
+      record: (entry) => evalCollector?.addTest(capture.attach(entry)),
     });
     console.log(`codex-plan-eng-format-kind: ${result.tokens}t, ${Math.round(result.durationMs/1000)}s, exit=${result.exitCode}`);
   }, CAPTURE_LONG_MS);

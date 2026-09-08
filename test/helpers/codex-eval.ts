@@ -2,6 +2,7 @@
 import { CODEX_DRAIN_GRACE_MS, CodexHarnessError, type CodexResult } from './codex-session-runner';
 import { EvalCollector, getProjectEvalDir, shardSlugOfEvalDir, type EvalTestEntry } from './eval-store';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 // The process keeps its existing work budget. Its pipes may need the existing
 // five-second drain grace; Bun must then allow another five seconds to record.
@@ -41,10 +42,31 @@ export function validateCodexReview(result: CodexResult): void {
 export function validateCodexPlanFormat(captured: string, kind: 'kind' | 'coverage'): void {
   requireCondition(captured.length > 400, 'Captured question must contain more than 400 characters');
   requireCondition(/RECOMMENDATION:[*\s]*Choose/.test(captured), 'Captured question is missing RECOMMENDATION: Choose');
-  const hasCompleteness = /Completeness:\s*\d{1,2}\/10/.test(captured);
+  // Match the documented option-prefixed form and the Claude format oracle.
+  const hasCompleteness = /Completeness:\s*(?:[A-Z]=)?\d{1,2}\/10/.test(captured);
   requireCondition(kind === 'coverage' ? hasCompleteness : !hasCompleteness,
     kind === 'coverage' ? 'Coverage question is missing Completeness: N/10' : 'Kind question must not include a completeness score');
   if (kind === 'kind') requireCondition(/options differ in kind/i.test(captured), 'Kind question is missing the options differ in kind note');
+}
+
+/** Keep the exact validation input in the existing per-attempt transcript. */
+export function createCodexPlanFormatCapture(file: string, kind: 'kind' | 'coverage') {
+  let observation: { type: 'gstack_plan_format_capture'; file_path: string; content: string; session_id: string | null } | undefined;
+  return {
+    reset(): void {
+      observation = undefined;
+      // Bun retries reuse beforeAll fixtures. A new run must produce its own file.
+      fs.rmSync(file, { force: true });
+    },
+    validate(result: CodexResult): void {
+      const captured = fs.readFileSync(file, 'utf8');
+      observation = { type: 'gstack_plan_format_capture', file_path: file, content: captured, session_id: result.sessionId };
+      validateCodexPlanFormat(captured, kind);
+    },
+    attach(entry: EvalTestEntry): EvalTestEntry {
+      return observation ? { ...entry, transcript: [...(entry.transcript ?? []), observation] } : entry;
+    },
+  };
 }
 
 export interface CodexSolScopeEvidence {
