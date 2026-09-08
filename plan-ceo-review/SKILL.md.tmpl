@@ -392,7 +392,7 @@ Surface these as questions for the user NOW, not as "figure it out later."
 ### 0F. Mode Selection
 In every mode, you are 100% in control. No scope is added without your explicit approval.
 
-Use registered ID `plan-ceo-review-mode` and the preamble's session-kind precedence. If an interactive user has not chosen a mode and `QUESTION_TUNING: true`, run the documented `gstack-question-preference --check` for this ID before choosing or presenting modes. Follow `AUTO_DECIDE` or `ASK_NORMALLY`, including the standard preference annotation. `CONDUCTOR_SESSION: true` selects prose transport, not mode.
+Use registered ID `plan-ceo-review-mode` and the preamble's session-kind precedence. If an interactive user has not chosen a mode and `QUESTION_TUNING: true`, run the documented `gstack-question-preference --check` for this ID before choosing or presenting modes. On `AUTO_DECIDE`, say "Auto-decided review mode → <mode> (your preference). Change with /plan-tune." Otherwise follow `ASK_NORMALLY`. `CONDUCTOR_SESSION: true` selects prose transport, not mode.
 
 Available modes:
 1. **SCOPE EXPANSION:** The plan is good but could be great. Dream big — propose the ambitious version. Every expansion is presented individually for your approval. You opt in to each one.
