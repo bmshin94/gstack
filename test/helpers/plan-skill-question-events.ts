@@ -32,16 +32,24 @@ export type QuestionEventSource = Readonly<Binding & {
 }>;
 export interface QuestionEventCall {
   id: string;
+  toolName: 'AskUserQuestion';
   input: Record<string, unknown>;
   cwd: string;
 }
-interface EventRecord extends Binding {
-  hookEventName: 'PreToolUse';
-  toolName: 'AskUserQuestion';
-  transcriptFile: string;
-  id: string;
+export interface PermissionRequestEventCall {
+  /** Observer identity only: PermissionRequest supplies no native tool_use_id. */
+  requestId: string;
+  capturedAtMs: number;
+  toolName: 'Write' | 'Edit';
   input: Record<string, unknown>;
+  cwd: string;
 }
+type EventRecord = Binding & {
+  transcriptFile: string;
+  input: Record<string, unknown>;
+} & ({ hookEventName: 'PreToolUse'; toolName: 'AskUserQuestion'; id: string }
+  | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit'; requestId: string; capturedAtMs: number });
+const eventId = (event: EventRecord): string => event.hookEventName === 'PreToolUse' ? event.id : event.requestId;
 
 function canonicalDirectory(directory: string): string {
   if (!path.isAbsolute(directory) || path.normalize(directory) !== directory
@@ -126,8 +134,10 @@ export function setupQuestionEventSource(opts: {
     const bindingBytes = JSON.stringify(binding) + '\n';
     fs.writeFileSync(bindingPath, bindingBytes, { flag: 'wx', mode: 0o600 });
     const command = [process.execPath, import.meta.path, '--record-question-event', bindingPath, binding.nonce].map(quote).join(' ');
-    const settingsBytes = JSON.stringify({ hooks: { PreToolUse: [{ matcher: '^AskUserQuestion$',
-      hooks: [{ type: 'command', command, timeout: 5 }] }] } }) + '\n';
+    const settingsBytes = JSON.stringify({ hooks: {
+      PreToolUse: [{ matcher: '^AskUserQuestion$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PermissionRequest: [{ matcher: '^(Write|Edit)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+    } }) + '\n';
     fs.writeFileSync(settingsPath, settingsBytes, { flag: 'wx', mode: 0o600 });
     const source = Object.freeze({ ...binding, directory,
       bindingSha256: sha(bindingBytes), settingsSha256: sha(settingsBytes) }) as QuestionEventSource;
@@ -154,14 +164,22 @@ function eventFromInput(value: unknown, binding: Binding): EventRecord | null {
   if (!object(value)) throw new Error('Malformed native question hook input');
   // A subagent can inherit the hook setting. It must never become a main call.
   if (value.session_id !== binding.sessionId || Object.hasOwn(value, 'agent_id')) return null;
-  if (value.hook_event_name !== 'PreToolUse' || value.tool_name !== 'AskUserQuestion'
-    || value.cwd !== binding.cwd || !transcriptPathAllowed(value.transcript_path, binding)
-    || typeof value.tool_use_id !== 'string' || !value.tool_use_id.trim() || value.tool_use_id.length > 256
+  if (value.cwd !== binding.cwd || !transcriptPathAllowed(value.transcript_path, binding)
     || !object(value.tool_input)) throw new Error('Native question hook ownership or input mismatch');
-  // Full questions/options validation belongs to the shared native question
-  // reader, once for both transcript and event inputs. Nothing here is an ACK.
-  return { ...binding, hookEventName: 'PreToolUse', toolName: 'AskUserQuestion',
-    transcriptFile: value.transcript_path, id: value.tool_use_id, input: value.tool_input, cwd: binding.cwd };
+  // Full tool-input validation belongs to the shared native reader, once for
+  // both transcript and event inputs. Nothing here grants permission or ACKs.
+  if (value.hook_event_name === 'PreToolUse' && value.tool_name === 'AskUserQuestion'
+    && typeof value.tool_use_id === 'string' && value.tool_use_id.trim() && value.tool_use_id.length <= 256) {
+    return { ...binding, hookEventName: 'PreToolUse', toolName: 'AskUserQuestion',
+      transcriptFile: value.transcript_path, id: value.tool_use_id, input: value.tool_input };
+  }
+  if (value.hook_event_name === 'PermissionRequest' && (value.tool_name === 'Write' || value.tool_name === 'Edit')) {
+    // Each hook emission is a distinct request observation. The payload cannot
+    // provide this identity, and it must never masquerade as a native tool ID.
+    return { ...binding, hookEventName: 'PermissionRequest', toolName: value.tool_name,
+      transcriptFile: value.transcript_path, requestId: randomUUID(), capturedAtMs: Date.now(), input: value.tool_input };
+  }
+  throw new Error('Native question hook event or tool mismatch');
 }
 
 async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<void> {
@@ -189,7 +207,7 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
     if (!event) return;
     const body = canonical(event) + '\n';
     if (Buffer.byteLength(body) > MAX_EVENT_BYTES) throw new Error('Native question event exceeds the byte bound');
-    const name = sha(event.id) + '.json';
+    const name = sha(eventId(event)) + '.json';
     if (!atomicPublish(directory, name, body)) {
       const existing = parseJsonBytes(readRegular(path.join(directory, name), MAX_EVENT_BYTES));
       if (canonical(existing) !== canonical(event)) throw new Error('Conflicting native question event for an existing tool ID');
@@ -204,10 +222,9 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
   }
 }
 
-/** Pending invocation evidence only. Never reads or fabricates a result. */
-export function readQuestionEvents(source: QuestionEventSource, expected: {
+function readCapturedEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
-}): QuestionEventCall[] {
+}): (QuestionEventCall | PermissionRequestEventCall)[] {
   if (expected.configDir === null || canonicalDirectory(expected.configDir) !== source.configDir
     || expected.sessionId !== source.sessionId) throw new Error('Question event source belongs to another session');
   const scope = hookScopes.get(source);
@@ -232,7 +249,7 @@ export function readQuestionEvents(source: QuestionEventSource, expected: {
   if (expected.transcriptFile === null) return [];
   const transcriptFile = expectedTranscript(expected.transcriptFile, expected.configDir, binding);
   let total = 0;
-  const calls: QuestionEventCall[] = [];
+  const calls: (QuestionEventCall | PermissionRequestEventCall)[] = [];
   const observed = observedEvents.get(source);
   if (!observed) throw new Error('Question event source was not created by this launcher');
   if ([...observed.keys()].some(file => !files.includes(file))) throw new Error('Previously observed native question event disappeared');
@@ -244,16 +261,38 @@ export function readQuestionEvents(source: QuestionEventSource, expected: {
     const event = parseJsonBytes(bytes);
     if (!object(event) || event.schemaVersion !== 1 || event.nonce !== binding.nonce
       || event.sessionId !== binding.sessionId || event.configDir !== binding.configDir || event.cwd !== binding.cwd
-      || event.hookEventName !== 'PreToolUse' || event.toolName !== 'AskUserQuestion'
-      || event.transcriptFile !== transcriptFile || typeof event.id !== 'string'
-      || !event.id.trim() || event.id.length > 256 || file !== sha(event.id) + '.json' || !object(event.input)
-      || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', 'id', 'input'].includes(key))) throw new Error('Native question event identity or input changed');
+      || event.transcriptFile !== transcriptFile || !object(event.input)) throw new Error('Native question event identity or input changed');
+    const question = event.hookEventName === 'PreToolUse' && event.toolName === 'AskUserQuestion'
+      && typeof event.id === 'string' && !!event.id.trim() && event.id.length <= 256;
+    const permission = event.hookEventName === 'PermissionRequest' && (event.toolName === 'Write' || event.toolName === 'Edit')
+      && typeof event.requestId === 'string' && UUID.test(event.requestId)
+      && typeof event.capturedAtMs === 'number' && Number.isSafeInteger(event.capturedAtMs)
+      && event.capturedAtMs > 0 && event.capturedAtMs <= 8_640_000_000_000_000;
+    const identityKey = question ? 'id' : 'requestId';
+    if ((!question && !permission) || file !== sha(event[identityKey] as string) + '.json'
+      || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', identityKey, 'input', ...(permission ? ['capturedAtMs'] : [])].includes(key))) throw new Error('Native question event identity or input changed');
     const hash = sha(bytes);
     if (observed.has(file) && observed.get(file) !== hash) throw new Error('Previously observed native question event changed');
     observed.set(file, hash);
-    calls.push({ id: event.id, input: event.input, cwd: event.cwd });
+    if (question) calls.push({ id: event.id as string, toolName: 'AskUserQuestion', input: event.input, cwd: event.cwd });
+    else calls.push({ requestId: event.requestId as string, capturedAtMs: event.capturedAtMs as number,
+      toolName: event.toolName as 'Write' | 'Edit', input: event.input, cwd: event.cwd });
   }
   return calls;
+}
+
+/** Pending native AUQ invocation evidence only. Never reads or fabricates a result. */
+export function readQuestionEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): QuestionEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is QuestionEventCall => call.toolName === 'AskUserQuestion');
+}
+
+/** Post-PreToolUse permission requests. requestId is never a native ID or ACK. */
+export function readPermissionRequestEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): PermissionRequestEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => call.toolName !== 'AskUserQuestion');
 }
 
 if (import.meta.main && process.argv.length === 5 && process.argv[2] === '--record-question-event') {

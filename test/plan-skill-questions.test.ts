@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey, type NativeQuestion } from './helpers/plan-skill-questions';
 import { isPermissionDialogVisible, parseNumberedOptions, stripAnsi } from './helpers/claude-pty-runner';
-import { setupQuestionEventSource } from './helpers/plan-skill-question-events';
+import { setupQuestionEventSource, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
 const question: NativeQuestion = { question: 'D1 — Which approach?\nMake it reliable. Enforce the delivery policy.', header: 'Approach', multiSelect: false,
@@ -13,7 +13,7 @@ let config: string;
 let file: string;
 const call = (id: string, questions = [question]) => ({ type: 'assistant', sessionId, message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions } }] } });
 const write = (...rows: unknown[]) => fs.writeFileSync(file, rows.map(row => JSON.stringify(row) + '\n').join(''));
-beforeEach(() => { config = fs.mkdtempSync(path.join(os.tmpdir(), 'native-question-')); file = path.join(config, 'projects', 'fixture', `${sessionId}.jsonl`); fs.mkdirSync(path.dirname(file), { recursive: true }); });
+beforeEach(() => { config = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'native-question-'))); file = path.join(config, 'projects', 'fixture', `${sessionId}.jsonl`); fs.mkdirSync(path.dirname(file), { recursive: true }); });
 afterEach(() => fs.rmSync(config, { recursive: true, force: true }));
 
 function earlyQuestions() {
@@ -28,6 +28,76 @@ function earlyQuestions() {
     expect(result.stdout.length).toBe(0);
   } };
 }
+
+function filePermissionRequest(input = { file_path: path.join(config, 'plan.md'), content: 'Final report' }) {
+  const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
+  const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PermissionRequest[0].hooks[0].command;
+  const result = Bun.spawnSync(['bash', '-c', command], { timeout: 5000, stdin: Buffer.from(JSON.stringify({
+    hook_event_name: 'PermissionRequest', session_id: sessionId, transcript_path: file, cwd: config,
+    tool_name: 'Write', tool_input: input,
+  })), stdout: 'pipe', stderr: 'pipe' });
+  expect(result.exitCode, result.stderr.toString()).toBe(0);
+  expect(result.stdout.length).toBe(0);
+  const [event] = readPermissionRequestEvents(source, { configDir: config, sessionId, transcriptFile: file });
+  return { source, event: event!, input };
+}
+const nativeWrite = (id: string, input: unknown, cwd = config, name = 'Write', stop_reason: string | null = 'tool_use') => ({
+  type: 'assistant', sessionId, cwd, message: { role: 'assistant', stop_reason, content: [{ type: 'tool_use', id, name, input }] },
+});
+const nativeWriteResult = (id: string, timestamp?: string, is_error = false) => ({
+  type: 'user', sessionId, timestamp, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error, content: 'Done' }] },
+});
+
+test('permission request identity remains separate until an exact later native result completes it', () => {
+  write();
+  const { source, event, input } = filePermissionRequest();
+  const pending = readPlanSkillQuestions(config, sessionId, source);
+  expect(pending.permissionTools).toEqual([]);
+  expect(pending.permissionRequests).toEqual([{ requestId: event.requestId, capturedAtMs: event.capturedAtMs,
+    name: 'Write', cwd: config, input, result: 'pending' }]);
+  write(nativeWrite('real-write', input));
+  expect(readPlanSkillQuestions(config, sessionId, source).permissionRequests[0]).toMatchObject({ result: 'pending', nativeToolId: 'real-write' });
+  write(nativeWrite('real-write', input), nativeWriteResult('real-write', new Date(event.capturedAtMs + 1).toISOString()));
+  expect(readPlanSkillQuestions(config, sessionId, source).permissionRequests[0]).toMatchObject({ requestId: event.requestId, result: 'completed', nativeToolId: 'real-write' });
+});
+
+test.each(['old', 'equal', 'invalid', 'missing', 'foreign'])('a %s native result cannot acknowledge a newly captured file request', variant => {
+  write();
+  const { source, event, input } = filePermissionRequest();
+  const time = variant === 'missing' ? undefined : variant === 'invalid' ? 'not-a-date'
+    : new Date(event.capturedAtMs + (variant === 'old' ? -1 : variant === 'equal' ? 0 : 1)).toISOString();
+  const result = nativeWriteResult('old-write', time);
+  if (variant === 'foreign') result.sessionId = '00000000-0000-4000-8000-000000000002';
+  write(nativeWrite('old-write', input), result);
+  expect(readPlanSkillQuestions(config, sessionId, source).permissionRequests[0].result).toBe('pending');
+  if (variant !== 'foreign') expect(readPlanSkillQuestions(config, sessionId, source).permissionRequests[0].nativeToolId).toBeUndefined();
+});
+
+test('file request errors and ambiguous full-input matches never become successful completion', () => {
+  write();
+  const { source, event, input } = filePermissionRequest();
+  const timestamp = new Date(event.capturedAtMs + 1).toISOString();
+  write(nativeWrite('failed', input), nativeWriteResult('failed', timestamp, true));
+  expect(readPlanSkillQuestions(config, sessionId, source).permissionRequests[0]).toMatchObject({ result: 'error', nativeToolId: 'failed' });
+  write(nativeWrite('first', input), nativeWriteResult('first', timestamp), nativeWrite('second', input));
+  expect(() => readPlanSkillQuestions(config, sessionId, source)).toThrow('Indistinguishable');
+});
+
+test.each(['content', 'cwd', 'name', 'unfinished'])('late native file %s disagreement refuses the permission request', variant => {
+  write();
+  const { source, input } = filePermissionRequest();
+  write(nativeWrite('changed', variant === 'content' || variant === 'unfinished' ? { ...input, content: 'Changed after permission' } : input,
+    variant === 'cwd' ? path.dirname(config) : config, variant === 'name' ? 'Edit' : 'Write', variant === 'unfinished' ? null : 'tool_use'));
+  expect(() => readPlanSkillQuestions(config, sessionId, source)).toThrow('changed input');
+});
+
+test('a reused real native tool ID cannot change file input or become an AskUserQuestion', () => {
+  const input = { file_path: path.join(config, 'plan.md'), content: 'Initial' };
+  write(nativeWrite('same', input), nativeWrite('same', { ...input, content: 'Changed' }));
+  expect(() => readPlanSkillQuestions(config, sessionId)).toThrow('changed input');
+  write(nativeWrite('same', input), call('same'));
+  expect(() => readPlanSkillQuestions(config, sessionId)).toThrow('changed input');
+});
 
 test('a pre-transcript native question is pending until its exact owned result arrives', () => {
   write({ type: 'user', sessionId, message: { role: 'user', content: 'Begin the review' } });
@@ -163,6 +233,19 @@ test('permission binding rejects command prefixes and matching paths in another 
 });
 
 const createDialog = (target: string) => `Do you want to create ${target}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`;
+
+test('modern overwrite permission uses the exact current Write path and controls', () => {
+  const filePath = path.join(config, 'plan.md');
+  const dialog = createDialog('plan.md').replace('create', 'overwrite');
+  const owner = { id: 'overwrite', name: 'Write', cwd: config, input: { file_path: filePath, content: 'Final report' } };
+  expect(isPermissionDialogVisible(dialog)).toBe(true);
+  expect(nativePermissionKey(owner, dialog)).toBe(`Write:${filePath}`);
+  expect(() => nativePermissionKey({ ...owner, name: 'Edit' }, dialog)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...owner, cwd: path.dirname(config) }, dialog)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey(owner, dialog.replace('plan.md', 'other.md'))).toThrow('cannot be bound');
+  expect(isPermissionDialogVisible(dialog.replace('auto-approve file edits and common file commands', 'review this plan'))).toBe(false);
+  expect(isPermissionDialogVisible('Do you want to overwrite plan.md?\n❯1.Yes\n2.No')).toBe(false);
+});
 
 test('current create-file permission controls are recognized without treating an ordinary decision as permission', () => {
   // Exact controls retained from the CEO finding-count timeout. Its clipped

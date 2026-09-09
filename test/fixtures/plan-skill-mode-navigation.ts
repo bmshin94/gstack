@@ -142,6 +142,9 @@ try {
  * Native rows are the authority; the current frame only corroborates them.
  */
 async function postModeFixture(scenario: string) {
+  const fileRequestCase = scenario.startsWith('post-permission-request');
+  const navigation = scenario === 'post-permission-request-navigation';
+  const wallNow = Date.now;
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'post-mode-fixture-')));
   const config = path.join(root, '.claude');
   const cwd = path.join(root, 'project');
@@ -151,7 +154,7 @@ async function postModeFixture(scenario: string) {
   fs.mkdirSync(path.dirname(file), { recursive: true }); fs.mkdirSync(cwd);
   process.env.GSTACK_EVAL_DIR = evalDir;
   let clock = 0;
-  const append = (row: object) => fs.appendFileSync(file, JSON.stringify({ sessionId, timestamp: new Date(clock).toISOString(), ...row }) + '\n');
+  const append = (row: object) => fs.appendFileSync(file, JSON.stringify({ sessionId, timestamp: new Date(fileRequestCase ? wallNow() : clock).toISOString(), ...row }) + '\n');
   const tool = (id: string, input: object, extra = {}) => append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input }] }, ...extra });
   const ack = (id: string, is_error = false) => append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error, content: 'Answer accepted' }] } });
   const question = (header: string, text: string, labels: string[]) => ({ header, question: text, multiSelect: false,
@@ -164,11 +167,30 @@ async function postModeFixture(scenario: string) {
   if (scenario === 'post-multiselect') approach.multiSelect = true;
   const input = { questions: scenario === 'post-repeat-mode' ? [{ ...mode, header: 'Confirm Mode', question: 'D3 — Confirm the review mode for the chosen approach?' }] : scenario === 'post-identical-mode' ? [mode] : scenario === 'post-multi-tab'
     ? [approach, question('Filename', 'Choose CSV filename', ['settings.csv', 'export.csv'])] : [approach] };
-  tool('mode', { questions: [mode] });
-  if (scenario !== 'post-no-mode-ack') ack('mode');
+  if (fileRequestCase) append({ type: 'user', message: { role: 'user', content: 'Review the supplied plan.' } });
+  if (!navigation) {
+    tool('mode', { questions: [mode] });
+    if (scenario !== 'post-no-mode-ack') ack('mode');
+  }
   let events;
   let earlyWithoutNativeInvocation = false;
-  if (scenario === 'post-early-event') {
+  let publishDuringScreen: (() => void) | null = null;
+  let raceInjected = false;
+  if (fileRequestCase) {
+    const capture = setupQuestionEventSource({ configDir: config, cwd, sessionId, rootDir: root });
+    events = capture.source;
+    const command = JSON.parse(fs.readFileSync(capture.settingsPath, 'utf8')).hooks.PermissionRequest[0].hooks[0].command;
+    const publish = () => {
+      const child = spawnSync('/bin/sh', ['-c', command], { input: JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: sessionId,
+        transcript_path: file, cwd, tool_name: 'Write', tool_input: { file_path: path.join(cwd, 'plan.md'), content: 'Plan' } }), encoding: 'utf8', timeout: 5000 });
+      if (child.error || child.status || child.stdout || child.stderr) throw new Error('Silent local permission observer fixture failed');
+      earlyWithoutNativeInvocation = !fs.readFileSync(file, 'utf8').includes('"name":"Write"');
+    };
+    if (scenario === 'post-permission-request-arrival-race') {
+      append({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'I will make this plan bulletproof.' }] } });
+      publishDuringScreen = () => { publish(); raceInjected = true; };
+    } else publish();
+  } else if (scenario === 'post-early-event') {
     const capture = setupQuestionEventSource({ configDir: config, cwd, sessionId, rootDir: root });
     events = capture.source;
     const command = JSON.parse(fs.readFileSync(capture.settingsPath, 'utf8')).hooks.PreToolUse[0].hooks[0].command;
@@ -192,8 +214,9 @@ async function postModeFixture(scenario: string) {
     const q = input.questions[tab]!;
     paint(`\n☐ ${q.header}\n${q.question}\n` + q.options.map((o, i) => `${i === 0 ? '❯' : ' '}${i + 1}. ${o.label}`).join('\n') + '\n');
   };
-  if (stage === 'permission') paint(`Do you want to create ${scenario === 'post-permission-unowned' ? 'other.md' : 'plan.md'}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`);
+  if (stage === 'permission') paint(`Do you want to ${fileRequestCase ? 'overwrite' : 'create'} ${scenario.endsWith('unowned') ? 'other.md' : 'plan.md'}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`);
   else show();
+  if (scenario === 'post-permission-request-arrival-race') paint('\nI will make this plan bulletproof.\n');
   if (scenario === 'post-unmatched') paint('\nOther question\n❯1.Unrelated left option\n2.Unrelated right option\n');
   const sends: string[] = [];
   const premature: string[] = [];
@@ -209,22 +232,34 @@ async function postModeFixture(scenario: string) {
     nativeQuestionEvents: events,
     exited: () => scenario === 'post-exited' || (scenario === 'post-exit-during-pause' && clock > 0), exitCode: () => 9,
     visibleSince: (mark = 0) => buffer.slice(mark), rawOutput: () => buffer,
-    currentScreen: async () => ({ text: screen, rawEnd: scenario === 'post-stale' ? 0 : buffer.length }),
+    currentScreen: async () => {
+      const frame = { text: screen, rawEnd: scenario === 'post-stale' ? 0 : buffer.length };
+      const publish = publishDuringScreen; publishDuringScreen = null;
+      if (publish) { publish(); paint('Do you want to overwrite plan.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel'); }
+      return frame;
+    },
     mark: () => { if (scenario === 'post-mark-deadline') clock = 30_000; return buffer.length; },
     send(data: string) {
       sends.push(data);
       if (scenario === 'post-send-failure') throw sendFailure;
       if (stage === 'permission' && data === '1\r') {
-        ack('write'); tool('follow-up', input); stage = 'question'; show(); return;
+        if (fileRequestCase) append({ type: 'assistant', cwd, message: { role: 'assistant', stop_reason: 'tool_use',
+          content: [{ type: 'tool_use', id: 'write', name: 'Write', input: { file_path: path.join(cwd, 'plan.md'), content: 'Plan' } }] } });
+        if (scenario !== 'post-permission-request-no-ack') ack('write');
+        if (scenario === 'post-permission-request-arrival-race') {
+          acknowledged = true; stage = 'done'; paint('\nI will make this plan bulletproof.\n'); return;
+        }
+        if (navigation) { input.questions = [mode]; followId = 'mode'; }
+        tool(followId, input); stage = 'question'; show(); return;
       }
-      const expected = scenario === 'post-repeat-mode' ? '3' : tab > 0 || ['post-no-recommendation', 'post-ambiguous-recommendation'].includes(scenario) ? '1' : '2';
+      const expected = navigation || scenario === 'post-repeat-mode' ? '3' : tab > 0 || ['post-no-recommendation', 'post-ambiguous-recommendation'].includes(scenario) ? '1' : '2';
       if (stage === 'question' && data === expected) {
         tab++;
         if (scenario === 'post-stale-after-pick') return;
         if (tab < input.questions.length) show();
         else { stage = 'submit'; paint('\nReview your answers\nReady to submit your answers?\nSubmit answers\n'); }
       } else if (stage === 'submit' && data === '\r') {
-        if (events) tool('follow-up', input);
+        if (events && !fileRequestCase) tool('follow-up', input);
         if (scenario !== 'post-no-ack') { ack(followId, scenario === 'post-error-ack'); acknowledged = scenario !== 'post-error-ack'; }
         if (scenario === 'post-many-questions' && followNumber < 13) {
           followId = `follow-up-${++followNumber}`;
@@ -244,12 +279,15 @@ async function postModeFixture(scenario: string) {
   Date.now = () => clock;
   let error, originalSendErrorPreserved = false;
   try {
-    try { await waitForNativeModePosture(session, { modeIndex: 3, sincePick, toolUseId: 'mode' }, 'HOLD SCOPE',
-      { sessionId, postureRe: /\b(rigor|bulletproof|hold\s*scope|maximum\s+rigor)\b/i, budgetMs: scenario === 'post-many-questions' ? 240_000 : 30_000 }); }
+    try {
+      if (navigation) await navigateToModeAskUserQuestion(session, 0, 'HOLD SCOPE', { sessionId, budgetMs: 30_000 });
+      else await waitForNativeModePosture(session, { modeIndex: 3, sincePick, toolUseId: 'mode' }, 'HOLD SCOPE',
+        { sessionId, postureRe: /\b(rigor|bulletproof|hold\s*scope|maximum\s+rigor)\b/i, budgetMs: scenario === 'post-many-questions' ? 240_000 : 30_000 });
+    }
     catch (cause) { error = String(cause); originalSendErrorPreserved = cause === sendFailure; }
     finally { await session.close(); }
     const diagnostic = fs.existsSync(diagnosticPath) ? JSON.parse(fs.readFileSync(diagnosticPath, 'utf8')) : null;
-    console.log(JSON.stringify({ error, sends, premature, acknowledged, earlyWithoutNativeInvocation, originalSendErrorPreserved,
+    console.log(JSON.stringify({ error, sends, premature, acknowledged, earlyWithoutNativeInvocation, raceInjected, originalSendErrorPreserved,
       closed, diagnosticBeforeClose, configRemovedBeforeArtifactRead: !fs.existsSync(config), diagnostic,
       diagnosticMode: diagnostic && (fs.statSync(diagnosticPath).mode & 0o777), elapsed: clock }));
   } finally { Bun.sleep = oldSleep; Date.now = oldNow; fs.rmSync(root, { recursive: true, force: true }); }

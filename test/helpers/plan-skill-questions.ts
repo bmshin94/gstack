@@ -1,7 +1,7 @@
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { readQuestionEvents, type QuestionEventSource } from './plan-skill-question-events';
+import { readQuestionEvents, readPermissionRequestEvents, type QuestionEventSource } from './plan-skill-question-events';
 
 export interface NativeQuestion {
   question: string;
@@ -15,6 +15,16 @@ export interface NativeQuestionCall {
   result: 'pending' | 'answered' | 'error';
 }
 export interface NativePermissionTool { id: string; name: string; input: Record<string, unknown>; cwd?: string }
+export interface NativeFilePermissionRequest {
+  requestId: string;
+  capturedAtMs: number;
+  name: 'Write' | 'Edit';
+  input: Record<string, unknown>;
+  cwd: string;
+  result: 'pending' | 'completed' | 'error';
+  nativeToolId?: string;
+}
+export interface NativePermissionGrant { nativeId?: string; requestId?: string; operation?: 'create' | 'edit' | 'overwrite' }
 
 function questionInputWithDefaults(input: any): any {
   if (!input || typeof input !== 'object' || !Array.isArray(input.questions)) return input;
@@ -33,16 +43,23 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   calls: NativeQuestionCall[];
   ready: boolean;
   permissionTools: NativePermissionTool[];
+  permissionResults: Array<{ id: string; result: 'completed' | 'error' }>;
+  permissionRequests: NativeFilePermissionRequest[];
+  permissionRequestCapture: boolean;
   pendingBytes: number;
 } {
   const transcript = readOwnedClaudeTranscript(configDir, sessionId);
   const calls = new Map<string, NativeQuestionCall>();
   const results = new Map<string, boolean>();
+  const resultTimes = new Map<string, number>();
   const ready = new Set<string>();
   const permissionTools = new Map<string, NativePermissionTool>();
   const inputs = new Map<string, unknown>();
+  const permissionInputs = new Map<string, NativePermissionTool>();
+  const unfinishedFileInputs: NativePermissionTool[] = [];
   const addQuestion = (id: unknown, input: any) => {
     if (typeof id !== 'string' || !id) throw new Error('Native AskUserQuestion is missing its tool ID');
+    if (permissionInputs.has(id)) throw new Error('Native tool changed input or name for an existing tool ID');
     input = questionInputWithDefaults(input);
     const questions = input?.questions;
     if (!Array.isArray(questions) || questions.length < 1 || questions.length > 4 || questions.some(q =>
@@ -56,6 +73,16 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
     inputs.set(id, input);
     calls.set(id, { id, questions, result: 'pending' });
   };
+  const addPermission = (tool: NativePermissionTool) => {
+    const previous = permissionInputs.get(tool.id);
+    if (inputs.has(tool.id) || previous && (previous.name !== tool.name || !isDeepStrictEqual(previous.input, tool.input)
+      || previous.cwd !== undefined && tool.cwd !== undefined && previous.cwd !== tool.cwd)) {
+      throw new Error('Native tool changed input, name or cwd for an existing tool ID');
+    }
+    const bound = previous?.cwd !== undefined ? { ...tool, cwd: previous.cwd } : tool;
+    if (['Write', 'Edit'].includes(tool.name)) permissionInputs.set(tool.id, bound);
+    permissionTools.set(tool.id, bound);
+  };
   if (events) {
     for (const event of readQuestionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
       addQuestion(event.id, event.input);
@@ -67,6 +94,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
     for (const block of message.content) {
       if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         results.set(block.tool_use_id, block.is_error === true);
+        resultTimes.set(block.tool_use_id, typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : Number.NaN);
       }
       // An unfinished assistant record cannot introduce a call, but it can
       // invalidate conflicting early evidence before any input is sent.
@@ -74,9 +102,18 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
         && (block.name !== 'AskUserQuestion' || !isDeepStrictEqual(inputs.get(block.id), questionInputWithDefaults(block.input)))) {
         throw new Error('Native AskUserQuestion changed input for an existing tool ID');
       }
+      if (row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use' && permissionInputs.has(block.id)) {
+        addPermission({ id: block.id, name: block.name, input: block.input ?? {},
+          ...(typeof row.cwd === 'string' ? { cwd: row.cwd } : {}) });
+      }
+      if (row.type === 'assistant' && message.role === 'assistant' && message.stop_reason !== 'tool_use'
+        && block?.type === 'tool_use' && ['Write', 'Edit'].includes(block.name)) {
+        unfinishedFileInputs.push({ id: block.id, name: block.name, input: block.input ?? {},
+          ...(typeof row.cwd === 'string' ? { cwd: row.cwd } : {}) });
+      }
       if (row.type !== 'assistant' || message.role !== 'assistant' || message.stop_reason !== 'tool_use' || block?.type !== 'tool_use') continue;
       if (block.name === 'ExitPlanMode' && typeof block.id === 'string') ready.add(block.id);
-      else if (block.name !== 'AskUserQuestion' && typeof block.id === 'string') permissionTools.set(block.id, {
+      else if (block.name !== 'AskUserQuestion' && typeof block.id === 'string') addPermission({
         id: block.id, name: block.name, input: block.input ?? {},
         ...(typeof row.cwd === 'string' ? { cwd: row.cwd } : {}),
       });
@@ -87,7 +124,39 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   for (const call of calls.values()) {
     if (results.has(call.id)) call.result = results.get(call.id) ? 'error' : 'answered';
   }
-  return { calls: [...calls.values()], ready: [...ready].some(id => !results.has(id)), permissionTools: [...permissionTools.values()].filter(tool => !results.has(tool.id)), pendingBytes: transcript.pendingBytes };
+  const permissionRequests: NativeFilePermissionRequest[] = [];
+  if (events) {
+    for (const event of readPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+      // PermissionRequest has no native tool ID. Its observer requestId is
+      // separate; only a unique, exact native invocation/result can finish it.
+      const candidates = [...permissionInputs.values()].filter(tool => tool.name === event.toolName
+        && tool.cwd === event.cwd && isDeepStrictEqual(tool.input, event.input));
+      if (candidates.length > 1 || permissionRequests.some(request => request.name === event.toolName
+        && request.cwd === event.cwd && isDeepStrictEqual(request.input, event.input))) {
+        throw new Error('Indistinguishable repeated native file permission request');
+      }
+      const native = candidates[0];
+      const resultAfterRequest = native && results.has(native.id) && Number.isFinite(resultTimes.get(native.id))
+        && resultTimes.get(native.id)! > event.capturedAtMs;
+      const pendingInputs = resultAfterRequest ? []
+        : [...permissionInputs.values(), ...unfinishedFileInputs].filter(tool => !results.has(tool.id));
+      for (const tool of pendingInputs) {
+        if (tool.input.file_path === event.input.file_path && (tool.name !== event.toolName
+          || tool.cwd !== event.cwd || !isDeepStrictEqual(tool.input, event.input))) {
+          throw new Error('Native file permission changed input, name or cwd');
+        }
+      }
+      permissionRequests.push({ requestId: event.requestId, capturedAtMs: event.capturedAtMs, name: event.toolName, input: event.input, cwd: event.cwd,
+        result: resultAfterRequest ? results.get(native!.id) ? 'error' : 'completed' : 'pending',
+        ...(native && (!results.has(native.id) || resultAfterRequest) ? { nativeToolId: native.id } : {}) });
+    }
+  }
+  return { calls: [...calls.values()], ready: [...ready].some(id => !results.has(id)),
+    permissionTools: [...permissionTools.values()].filter(tool => !results.has(tool.id)),
+    permissionResults: [...permissionTools.keys()].filter(id => results.has(id)).map(id => ({ id, result: results.get(id) ? 'error' : 'completed' })),
+    permissionRequests,
+    permissionRequestCapture: events !== undefined,
+    pendingBytes: transcript.pendingBytes };
 }
 
 // Terminal markdown/positioning can remove whitespace and decoration; semantic
@@ -204,24 +273,24 @@ export function matchesNativeQuestion(question: NativeQuestion, visible: string,
 /** A lone pending tool is insufficient: its command/path must also identify
  * the displayed permission. Unsupported or repeated ambiguous grants fail.
  */
-export function currentFilePermissionTarget(visible: string): { operation: 'create' | 'edit'; filePath: string } | null {
+export function currentFilePermissionTarget(visible: string): { operation: 'create' | 'edit' | 'overwrite'; filePath: string } | null {
   const cursor = [...visible.matchAll(/❯\s*1\./g)].at(-1);
   if (!cursor) return null;
   // Bind the current menu's distinctive CLI controls, not a prose question
   // containing "create" or a stale permission earlier in scrollback.
   const controls = visible.slice(cursor.index).replace(/\s+/g, '');
   if (!/^❯1\.Yes2\.Yes,andswitchtoacceptedits\(auto-approvefileeditsandcommonfilecommands\)forthissession(?:\(shift\+tab\))?3\.No(?:\b|Esc)/.test(controls)) return null;
-  const prompt = /Do\s*you\s*want\s*to\s*(create|edit)\s+([^\r\n?]+)\?\s*$/.exec(visible.slice(0, cursor.index));
-  return prompt ? { operation: prompt[1] as 'create' | 'edit', filePath: prompt[2]!.trim() } : null;
+  const prompt = /Do\s*you\s*want\s*to\s*(create|edit|overwrite)\s+([^\r\n?]+)\?\s*$/.exec(visible.slice(0, cursor.index));
+  return prompt ? { operation: prompt[1] as 'create' | 'edit' | 'overwrite', filePath: prompt[2]!.trim() } : null;
 }
 
-export function nativePermissionKey(tool: NativePermissionTool, visible: string): string {
+export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermissionRequest, visible: string): string {
   const value = tool.name === 'Bash' ? tool.input.command
     : ['Read', 'Write', 'Edit'].includes(tool.name) ? tool.input.file_path : null;
   if (typeof value !== 'string' || !value.trim()) throw new Error('Unsupported native permission command or file path');
   const current = currentFilePermissionTarget(visible);
   if (current) {
-    const expectedTool = current.operation === 'create' ? 'Write' : 'Edit';
+    const expectedTool = current.operation === 'edit' ? 'Edit' : 'Write';
     const displayed = current.filePath;
     const resolved = path.isAbsolute(displayed) ? path.normalize(displayed)
       : tool.cwd && path.isAbsolute(tool.cwd) ? path.resolve(tool.cwd, displayed) : null;
@@ -243,6 +312,39 @@ export function nativePermissionKey(tool: NativePermissionTool, visible: string)
     throw new Error('Visible permission cannot be bound to its pending native command or file path');
   }
   return tool.name + ':' + normalize(value);
+}
+
+/** Reserve one current grant. Observer request IDs never stand in for native
+ * tool IDs; only an exact later native result can permit CREATE→OVERWRITE. */
+export function reserveNativePermissionGrant(
+  native: Pick<ReturnType<typeof readPlanSkillQuestions>, 'permissionTools' | 'permissionResults' | 'permissionRequests' | 'permissionRequestCapture'>,
+  visible: string, granted: Set<string>, requests: Map<string, NativePermissionGrant>,
+): boolean {
+  const pending = native.permissionRequests.filter(request => request.result === 'pending');
+  const owners = [...pending, ...native.permissionTools.filter(tool => !pending.some(request => request.nativeToolId === tool.id))];
+  if (!owners.length) return false;
+  if (owners.length > 1) throw new Error('Ambiguous native permission owner: multiple tools are pending');
+  const owner = owners[0]!;
+  if (native.permissionRequestCapture && !('requestId' in owner) && ['Write', 'Edit'].includes(owner.name)) return false;
+  const key = 'requestId' in owner ? `request:${owner.requestId}` : owner.id;
+  if (granted.has(key)) return false;
+  const request = nativePermissionKey(owner, visible);
+  const operation = currentFilePermissionTarget(visible)?.operation;
+  const prior = requests.get(request);
+  if (prior) {
+    const completed = prior.requestId
+      ? native.permissionRequests.some(item => item.requestId === prior.requestId && item.result === 'completed' && item.nativeToolId)
+      : native.permissionResults.some(item => item.id === prior.nativeId && item.result === 'completed');
+    // The new source event can arrive after the screen barrier. Wait while
+    // its same-path CREATE predecessor is still visible; never regrant it.
+    if (completed && prior.operation === 'create' && operation === 'create') return false;
+    if (!completed || prior.operation !== 'create' || operation !== 'overwrite') {
+      throw new Error('Repeated native permission request cannot be distinguished from stale rendering');
+    }
+  }
+  granted.add(key);
+  requests.set(request, { ...('requestId' in owner ? { requestId: owner.requestId } : { nativeId: owner.id }), operation });
+  return true;
 }
 
 export function isNativeQuestionSubmitVisible(visible: string): boolean {

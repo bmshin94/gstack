@@ -22,8 +22,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { readPlanSkillCompletion } from './plan-skill-completion';
-import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey, currentFilePermissionTarget, type NativeQuestion } from './plan-skill-questions';
+import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, type NativeQuestion, type NativePermissionGrant } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -2108,7 +2109,7 @@ export async function runPlanSkillCounting(opts: {
   const fingerprints: AskUserQuestionFingerprint[] = [];
   const submitted = new Map<string, { answeredQuestions: number; submitted: boolean; counted: boolean; fp: AskUserQuestionFingerprint }>();
   const grantedTools = new Set<string>();
-  const grantedRequests = new Set<string>();
+  const grantedRequests = new Map<string, NativePermissionGrant>();
   let boundaryFired = false;
   let step0Count = 0;
   let reviewCount = 0;
@@ -2176,11 +2177,6 @@ export async function runPlanSkillCounting(opts: {
       if (expired()) break;
       const visible = session.visibleSince(since);
       const questionWindow = session.visibleSince(questionSince);
-      const frame = await session.currentScreen?.();
-      const questionVisible = frame
-        ? frame.rawEnd > questionSince ? frame.text : ''
-        : questionWindow;
-      if (expired()) break;
 
       // Process exited?
       if (session.exited()) {
@@ -2218,6 +2214,16 @@ export async function runPlanSkillCounting(opts: {
 
       const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
       if (native.pendingBytes) continue;
+      // Bracket the async frame with native reads. Newly captured work or an
+      // ACK during sampling must wait for a consistent source/frame pair.
+      const frame = await session.currentScreen?.();
+      const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
+      if (expired()) break;
+      if (!isDeepStrictEqual(native, afterFrame)) continue;
+      const questionVisible = frame
+        ? frame.rawEnd > questionSince ? frame.text : ''
+        : questionWindow;
+      if (expired()) break;
       // An input write is not an answer. Count each native invocation only
       // after its matching successful result, including every tab in the call.
       for (const call of native.calls) {
@@ -2239,14 +2245,16 @@ export async function runPlanSkillCounting(opts: {
       // Soft terminal signals — check before AUQ processing so a final
       // completion-summary doesn't get misclassified as a bonus AUQ.
       const hasPendingQuestion = native.calls.some(call => call.result === 'pending');
-      if (!hasPendingQuestion && readPlanSkillCompletion(session.hermeticConfigDir, sessionId, visible)) {
+      const pendingPermissionRequests = native.permissionRequests.filter(request => request.result === 'pending');
+      const hasPendingWork = hasPendingQuestion || native.permissionTools.length > 0 || pendingPermissionRequests.length > 0;
+      if (!hasPendingWork && readPlanSkillCompletion(session.hermeticConfigDir, sessionId, visible)) {
         return snapshot(
           'completion_summary',
           `owned assistant completed its turn with a rendered completion summary / verdict / status line (step0=${step0Count}, review=${reviewCount})`,
           visible,
         );
       }
-      if (!hasPendingQuestion && native.ready && isPlanReadyVisible(questionWindow)) {
+      if (!hasPendingWork && native.ready && isPlanReadyVisible(questionWindow)) {
         return snapshot(
           'plan_ready',
           `skill emitted plan-mode "Ready to execute" confirmation (step0=${step0Count}, review=${reviewCount})`,
@@ -2259,15 +2267,9 @@ export async function runPlanSkillCounting(opts: {
       const call = pending[0];
       // Native permissions are separate from AUQs. Consume the rendered
       // window before writing, so old permission text cannot send again.
-      if (!call && native.permissionTools.length && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES))) {
-        if (native.permissionTools.length > 1) throw new Error('Ambiguous native permission owner: multiple tools are pending');
-        const owner = native.permissionTools[0]!;
-        if (grantedTools.has(owner.id)) continue;
-        const request = nativePermissionKey(owner, questionVisible.slice(-TAIL_SCAN_BYTES));
-        if (grantedRequests.has(request)) throw new Error('Repeated native permission request cannot be distinguished from stale rendering');
+      if (!call && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES))) {
         if (expired()) break;
-        grantedTools.add(owner.id);
-        grantedRequests.add(request);
+        if (!reserveNativePermissionGrant(native, questionVisible.slice(-TAIL_SCAN_BYTES), grantedTools, grantedRequests)) continue;
         questionSince = session.mark();
         session.send('1\r'); // Grant this request; AUQ preferences cannot enable session-wide access.
         await pause(1500);

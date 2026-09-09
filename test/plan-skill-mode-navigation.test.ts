@@ -174,6 +174,25 @@ test.skipIf(process.platform === 'win32')('post-mode hook invocation waits for a
   expect(result.sends).toEqual(['2', '\r']); expect(result.acknowledged).toBe(true);
 }, 15_000);
 
+test.skipIf(process.platform === 'win32').each(['post-permission-request', 'post-permission-request-navigation', 'post-permission-request-arrival-race'])('owned PermissionRequest grants Write before its native invocation (%s)', async scenario => {
+  const result = await run(scenario);
+  expect(result.error).toBeUndefined(); expect(result.earlyWithoutNativeInvocation).toBe(true);
+  expect(result.raceInjected).toBe(scenario.endsWith('arrival-race'));
+  expect(result.sends).toEqual(scenario.endsWith('arrival-race') ? ['1\r'] : ['1\r', scenario.endsWith('navigation') ? '3' : '2', '\r']);
+  expect(result.premature).toEqual([]); expect(result.acknowledged).toBe(true);
+  expect(result.closed).toBe(true); expect(result.diagnostic).toBeNull();
+}, 15_000);
+
+test.skipIf(process.platform === 'win32').each(['post-permission-request-no-ack', 'post-permission-request-unowned'])('permission failure remains failed with separate request identity (%s)', async scenario => {
+  const result = await run(scenario);
+  expect(result.error).toBeString(); expect(result.closed).toBe(true); expect(result.diagnosticBeforeClose).toBe(true);
+  expect(result.sends).toEqual(scenario.endsWith('unowned') ? [] : ['1\r', '2', '\r']);
+  const [request] = result.diagnostic.nativeSummary.permissionRequests;
+  expect(request.requestId.text).toMatch(/^[a-f0-9-]{36}$/);
+  expect(request.result).toBe('pending');
+  expect(result.diagnostic.phase).toBe('posture');
+}, 15_000);
+
 for (const [scenario, sends] of [
   ['post-no-mode-ack', []], ['post-no-ack', ['2', '\r']], ['post-error-ack', ['2', '\r']],
   ['post-stale', []], ['post-stale-after-pick', ['2']], ['post-unowned', []], ['post-unmatched', []],

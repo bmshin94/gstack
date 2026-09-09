@@ -1,8 +1,9 @@
 import { isNumberedOptionListVisible, isPermissionDialogVisible, parseNumberedOptions, MODE_RE, findModeOption, TAIL_SCAN_BYTES, type ClaudePtySession } from './claude-pty-runner';
-import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey } from './plan-skill-questions';
+import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, type NativePermissionGrant } from './plan-skill-questions';
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 /** Answer prior native invocations, then select and acknowledge the requested
  * mode. A rendered preview cannot supply either prompt identity or inventory.
@@ -50,7 +51,7 @@ async function driveModeQuestions(
     ? { id: postMode.toolUseId, modeIndex: postMode.modeIndex, sincePick: postMode.sincePick } : null;
   const answered = new Map<string, { questions: number; submitted: boolean; counted: boolean }>();
   const granted = new Set<string>();
-  const grantedRequests = new Set<string>();
+  const grantedRequests = new Map<string, NativePermissionGrant>();
   let lastNative: ReturnType<typeof readPlanSkillQuestions> | null = null;
   let lastVisible = '';
   let lastSend: { data: string; inputMark: number; visibleBefore: string;
@@ -79,6 +80,7 @@ async function driveModeQuestions(
       const error = String(cause);
       const calls = native?.calls ?? [];
       const permissions = native?.permissionTools ?? [];
+      const permissionRequests = native?.permissionRequests ?? [];
       const diagnostic = {
         schemaVersion: 1, sessionId: opts.sessionId, configDir: configDir && tail(configDir), targetMode, budgetMs,
         error: error.slice(0, 1024), errorCodeUnits: error.length, errorTruncated: error.length > 1024,
@@ -97,6 +99,11 @@ async function driveModeQuestions(
           permissionTools: permissions.slice(-64).map(tool => ({ id: identity(tool.id), name: identity(tool.name),
             filePath: typeof tool.input.file_path === 'string' ? tail(tool.input.file_path) : null })),
           permissionCount: permissions.length, permissionToolsOmitted: Math.max(0, permissions.length - 64),
+          permissionRequests: permissionRequests.slice(-64).map(request => ({ requestId: identity(request.requestId),
+            capturedAtMs: request.capturedAtMs, name: request.name, result: request.result,
+            nativeToolId: request.nativeToolId ? identity(request.nativeToolId) : null,
+            filePath: typeof request.input.file_path === 'string' ? tail(request.input.file_path) : null })),
+          permissionRequestCount: permissionRequests.length, permissionRequestsOmitted: Math.max(0, permissionRequests.length - 64),
         },
         native: tail(JSON.stringify(native)), raw: tail(raw), inputRaw: tail(raw.slice(questionSince)),
         inputVisible: tail(visible), lastObservedVisible: tail(lastVisible),
@@ -153,14 +160,18 @@ async function driveModeQuestions(
     if (postMode && session.exited()) throw new Error(
       `claude exited (code=${session.exitCode()}) after mode pick.\nDownstream:\n${session.visibleSince(postMode.sincePick).slice(-2000)}`,
     );
+    const native = readPlanSkillQuestions(session.hermeticConfigDir, opts.sessionId, session.nativeQuestionEvents);
     const frame = await session.currentScreen?.();
+    const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, opts.sessionId, session.nativeQuestionEvents);
     const visible = frame
       ? frame.rawEnd > questionSince ? frame.text : ''
       : session.visibleSince(questionSince);
-    const native = readPlanSkillQuestions(session.hermeticConfigDir, opts.sessionId, session.nativeQuestionEvents);
     lastVisible = visible;
     lastNative = native;
     if (Date.now() >= deadline) break;
+    // A new permission or ACK during the async screen barrier invalidates
+    // this pair for counting, completion and input alike.
+    if (!isDeepStrictEqual(native, afterFrame)) continue;
     if (native.pendingBytes) continue;
     for (const call of native.calls) {
       const state = answered.get(call.id);
@@ -183,19 +194,14 @@ async function driveModeQuestions(
       const posture = readNativeModePosture(session.hermeticConfigDir, opts.sessionId, postMode.toolUseId,
         downstreamSnapshot, postMode.postureRe);
       if (Date.now() >= deadline) break;
-      if (posture && [...answered.values()].every(state => state.counted)) return postMode;
+      if (posture && [...answered.values()].every(state => state.counted) && !native.permissionTools.length
+        && !native.permissionRequests.some(request => request.result === 'pending')) return postMode;
     }
     const pending = native.calls.filter(call => call.result === 'pending');
     if (pending.length > 1) throw new Error('Concurrent native AskUserQuestion calls are unsupported during mode navigation');
     const call = pending[0];
-    if (!call && native.permissionTools.length && isNumberedOptionListVisible(visible) && isPermissionDialogVisible(visible.slice(-TAIL_SCAN_BYTES))) {
-      if (native.permissionTools.length > 1) throw new Error('Ambiguous native permission owner: multiple tools are pending');
-      const owner = native.permissionTools[0]!;
-      if (granted.has(owner.id)) continue;
-      const request = nativePermissionKey(owner, visible.slice(-TAIL_SCAN_BYTES));
-      if (grantedRequests.has(request)) throw new Error('Repeated native permission request cannot be distinguished from stale rendering');
-      granted.add(owner.id);
-      grantedRequests.add(request);
+    if (!call && isNumberedOptionListVisible(visible) && isPermissionDialogVisible(visible.slice(-TAIL_SCAN_BYTES))) {
+      if (!reserveNativePermissionGrant(native, visible.slice(-TAIL_SCAN_BYTES), granted, grantedRequests)) continue;
       questionSince = session.mark();
       if (!send('1\r')) break;
       await pause(1500);

@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { setupQuestionEventSource, readQuestionEvents } from './helpers/plan-skill-question-events';
+import { setupQuestionEventSource, readQuestionEvents, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
 const otherSession = '00000000-0000-4000-8000-000000000002';
@@ -44,14 +44,131 @@ function createFixture() {
 test('silent native hook publishes the pending invocation before its assistant JSONL exists', () => fixture(f => {
   expect(readQuestionEvents(f.source, f.expected)).toEqual([]);
   f.run();
-  expect(readQuestionEvents(f.source, f.expected)).toEqual([{ id: 'toolu_current', input, cwd: f.cwd }]);
+  expect(readQuestionEvents(f.source, f.expected)).toEqual([{ id: 'toolu_current', toolName: 'AskUserQuestion', input, cwd: f.cwd }]);
   expect(fs.readFileSync(f.transcriptFile, 'utf8')).not.toContain('AskUserQuestion');
   const call = readQuestionEvents(f.source, f.expected)[0]!;
   expect(call).not.toHaveProperty('result'); expect(call).not.toHaveProperty('answered');
   expect(f.settings.hooks.PreToolUse).toHaveLength(1);
   expect(f.settings.hooks.PreToolUse[0].matcher).toBe('^AskUserQuestion$');
+  expect(f.settings.hooks.PermissionRequest).toHaveLength(1);
+  expect(f.settings.hooks.PermissionRequest[0]).toEqual({ matcher: '^(Write|Edit)$',
+    hooks: [{ type: 'command', command: f.command, timeout: 5 }] });
   expect(f.settings.hooks.PreToolUse[0].hooks[0]).toEqual({ type: 'command', command: f.command, timeout: 5 });
   expect(Object.keys(f.settings)).toEqual(['hooks']);
+}));
+
+function permissionEvent(f: ReturnType<typeof createFixture>, toolName: 'Write' | 'Edit', toolInput: Record<string, unknown>) {
+  return { hook_event_name: 'PermissionRequest', session_id: sessionId, transcript_path: f.transcriptFile,
+    cwd: f.cwd, tool_name: toolName, tool_input: toolInput };
+}
+
+for (const toolName of ['Write', 'Edit'] as const) {
+  test(`silent ${toolName} permission observer preserves full input without a native ID or grant`, () => fixture(f => {
+    const file = path.join(f.cwd, 'plan with spaces.md');
+    const content = Array.from({ length: 518 }, (_, index) => `${index}: Exact 日本語 plan line.\n`).join('');
+    const toolInput = toolName === 'Write' ? { file_path: file, content }
+      : { file_path: file, old_string: 'old\ntext', new_string: content, replace_all: false };
+    const before = Date.now();
+    f.run({ ...permissionEvent(f, toolName, toolInput), requestId: 'payload-cannot-choose', tool_use_id: 'invented-native-id', capturedAtMs: 1,
+      hookSpecificOutput: { permissionDecision: 'allow', updatedInput: { file_path: '/not-the-source' } } });
+    const calls = readPermissionRequestEvents(f.source, f.expected);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ requestId: expect.stringMatching(/^[a-f0-9-]{36}$/), capturedAtMs: expect.any(Number), toolName, input: toolInput, cwd: f.cwd });
+    expect(calls[0]!.capturedAtMs).toBeGreaterThanOrEqual(before);
+    expect(calls[0]!.capturedAtMs).toBeLessThanOrEqual(Date.now());
+    expect(calls[0]!.requestId).not.toBe('payload-cannot-choose');
+    for (const key of ['id', 'tool_use_id', 'result', 'permissionDecision']) expect(calls[0]).not.toHaveProperty(key);
+    expect(readQuestionEvents(f.source, f.expected)).toEqual([]);
+    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.readFileSync(f.transcriptFile, 'utf8')).not.toContain(toolName);
+    const record = JSON.parse(fs.readFileSync(path.join(f.events, fs.readdirSync(f.events)[0]!), 'utf8'));
+    expect(record.hookEventName).toBe('PermissionRequest'); expect(record.toolName).toBe(toolName);
+    expect(record.input).toEqual(toolInput); expect(record).not.toHaveProperty('id');
+  }));
+
+  test(`${toolName} permission observer retains exact session, main-agent and cwd boundaries`, async () => {
+    for (const patch of [{ session_id: otherSession }, { agent_id: 'fork' }]) await fixture(f => {
+      f.run({ ...permissionEvent(f, toolName, { file_path: 'plan.md', content: 'original' }), ...patch });
+      expect(readPermissionRequestEvents(f.source, f.expected)).toEqual([]);
+    });
+    await fixture(f => {
+      f.run({ ...permissionEvent(f, toolName, { file_path: 'plan.md', content: 'original' }), cwd: f.root });
+      expect(() => readPermissionRequestEvents(f.source, f.expected)).toThrow('capture failed');
+    });
+  });
+}
+
+test('separate identical and changed permission requests stay distinct without replacing observed input', () => fixture(f => {
+  const event = permissionEvent(f, 'Write', { file_path: 'plan.md', content: 'first' });
+  f.run(event); const first = readPermissionRequestEvents(f.source, f.expected)[0]!;
+  const file = path.join(f.events, fs.readdirSync(f.events)[0]!); const original = fs.readFileSync(file);
+  f.run(event); f.run({ ...event, tool_input: { ...event.tool_input, content: 'changed later' } });
+  const calls = readPermissionRequestEvents(f.source, f.expected);
+  expect(calls).toHaveLength(3); expect(new Set(calls.map(call => call.requestId)).size).toBe(3);
+  expect(calls).toContainEqual(first); expect(fs.readFileSync(file)).toEqual(original);
+}));
+
+test('a stored permission input or tool-name change cannot alter observed authority', async () => {
+  for (const patch of [{ toolName: 'Edit' }, { input: { file_path: 'other.md', content: 'changed' } }, { capturedAtMs: 1 }]) await fixture(f => {
+    f.run(permissionEvent(f, 'Write', { file_path: 'plan.md', content: 'first' }));
+    expect(readPermissionRequestEvents(f.source, f.expected)).toHaveLength(1);
+    const file = path.join(f.events, fs.readdirSync(f.events)[0]!);
+    const event = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({ ...event, ...patch }) + '\n');
+    expect(() => readPermissionRequestEvents(f.source, f.expected)).toThrow('Previously observed');
+    expect(() => readQuestionEvents(f.source, f.expected)).toThrow('Previously observed');
+  });
+});
+
+test('permission records require a finite real capture timestamp', async () => {
+  for (const capturedAtMs of [undefined, null, '2026-09-09', 0, -1, 1.5, 8_640_000_000_000_001]) await fixture(f => {
+    f.run(permissionEvent(f, 'Write', { file_path: 'plan.md', content: 'first' }));
+    const file = path.join(f.events, fs.readdirSync(f.events)[0]!);
+    const event = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({ ...event, capturedAtMs }) + '\n');
+    expect(() => readPermissionRequestEvents(f.source, f.expected)).toThrow('identity');
+  });
+});
+
+test('permission records cannot be recast as native-ID events', () => fixture(f => {
+  f.run(permissionEvent(f, 'Write', { file_path: 'plan.md', content: 'first' }));
+  expect(readPermissionRequestEvents(f.source, f.expected)).toHaveLength(1);
+  const file = path.join(f.events, fs.readdirSync(f.events)[0]!);
+  const event = JSON.parse(fs.readFileSync(file, 'utf8')); event.id = event.requestId;
+  fs.writeFileSync(file, JSON.stringify(event) + '\n');
+  expect(() => readPermissionRequestEvents(f.source, f.expected)).toThrow('identity');
+}));
+
+test('colliding native and observer identity strings poison the ledger instead of replacing a request', () => fixture(f => {
+  f.run(permissionEvent(f, 'Write', { file_path: 'plan.md', content: 'first' }));
+  const request = readPermissionRequestEvents(f.source, f.expected)[0]!;
+  const file = path.join(f.events, fs.readdirSync(f.events)[0]!); const original = fs.readFileSync(file);
+  f.run({ ...f.event, tool_use_id: request.requestId });
+  expect(() => readPermissionRequestEvents(f.source, f.expected)).toThrow('capture failed');
+  expect(fs.readFileSync(file)).toEqual(original);
+}));
+
+test('file permission admission rechecks competing PermissionRequest hooks', () => fixture(f => {
+  f.run(permissionEvent(f, 'Write', { file_path: 'plan.md', content: 'first' }));
+  expect(readPermissionRequestEvents(f.source, f.expected)).toHaveLength(1);
+  fs.writeFileSync(path.join(f.configDir, 'settings.local.json'), JSON.stringify({ hooks: { PermissionRequest: [
+    { matcher: 'Write', hooks: [{ type: 'command', command: 'must-not-run' }] },
+  ] } }));
+  expect(() => readPermissionRequestEvents(f.source, f.expected)).toThrow('Unsupported question hook scope');
+}));
+
+test('AUQ and file permission evidence stay separate in one immutable ledger', () => fixture(f => {
+  f.run();
+  f.run(permissionEvent(f, 'Write', { file_path: 'plan.md', content: 'first' }));
+  f.run(permissionEvent(f, 'Edit', { file_path: 'plan.md', old_string: 'first', new_string: 'second' }));
+  expect(readQuestionEvents(f.source, f.expected)).toEqual([{ id: 'toolu_current', toolName: 'AskUserQuestion', input, cwd: f.cwd }]);
+  expect(readPermissionRequestEvents(f.source, f.expected).map(call => call.toolName).sort()).toEqual(['Edit', 'Write']);
+}));
+
+test('Write permission input cannot exceed the unchanged event byte limit', () => fixture(f => {
+  f.run(permissionEvent(f, 'Write', { file_path: 'plan.md', content: 'x'.repeat(256 * 1024) }));
+  expect(() => readPermissionRequestEvents(f.source, f.expected)).toThrow('capture failed');
+  expect(fs.existsSync(path.join(f.cwd, 'plan.md'))).toBe(false);
 }));
 
 test.skipIf(process.platform === 'win32')('a parent-directory alias binds canonical native paths without accepting a redirected alias', () => fixture(f => {
@@ -73,7 +190,7 @@ test.skipIf(process.platform === 'win32')('a parent-directory alias binds canoni
   const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PreToolUse[0].hooks[0].command;
   const result = spawnSync('/bin/sh', ['-c', command], { input: JSON.stringify({ ...f.event, cwd, transcript_path: transcriptFile }), encoding: 'utf8', timeout: 5000 });
   expect(result.error).toBeUndefined(); expect(result.status).toBe(0); expect(result.stdout).toBe(''); expect(result.stderr).toBe('');
-  const calls = [{ id: 'toolu_current', input, cwd }];
+  const calls = [{ id: 'toolu_current', toolName: 'AskUserQuestion', input, cwd }];
   expect(readQuestionEvents(source, { configDir: logicalConfig, sessionId, transcriptFile: logicalTranscript })).toEqual(calls);
   expect(readQuestionEvents(source, { configDir: logicalConfig, sessionId, transcriptFile })).toEqual(calls);
   expect(readQuestionEvents(source, { configDir, sessionId, transcriptFile })).toEqual(calls);
@@ -134,7 +251,7 @@ test.skipIf(process.platform === 'win32')('FIFO event, binding and settings file
     const fs = require('node:fs'), path = require('node:path');
     const { spawnSync } = require('node:child_process');
     const { createHash } = require('node:crypto');
-    const { setupQuestionEventSource, readQuestionEvents } = require(helperFile);
+    const { setupQuestionEventSource, readQuestionEvents, readPermissionRequestEvents } = require(helperFile);
     const sessionId = ${JSON.stringify(sessionId)};
     const { source, settingsPath } = setupQuestionEventSource({ configDir, cwd, sessionId, rootDir: path.dirname(configDir) });
     const directory = path.dirname(settingsPath);
@@ -188,7 +305,7 @@ for (const patch of [{ session_id: otherSession }, { session_id: 'served:foreign
   }));
 }
 
-for (const patch of [{ hook_event_name: 'PostToolUse' }, { tool_name: 'Write' }, { tool_name: 'mcp__foreign__AskUserQuestion' },
+for (const patch of [{ hook_event_name: 'PostToolUse' }, { tool_name: 'Write' }, { tool_name: 'Edit' }, { tool_name: 'Read' }, { hook_event_name: 'PermissionRequest' }, { tool_name: 'mcp__foreign__AskUserQuestion' },
   { tool_use_id: '' }, { tool_use_id: 'x'.repeat(257) }, { tool_input: null }, { tool_input: [] }]) {
   test(`malformed own hook fails closed without affecting provider output: ${JSON.stringify(patch).slice(0, 100)}`, () => fixture(f => {
     f.run({ ...f.event, ...patch });
@@ -227,7 +344,7 @@ test('the payload cannot choose an output path or inject a permission decision',
   const outside = path.join(f.root, 'do-not-create');
   f.run({ ...f.event, destination: outside, hookSpecificOutput: { permissionDecision: 'allow', updatedInput: { answers: { question: 'choice' } } } });
   expect(fs.existsSync(outside)).toBe(false);
-  expect(readQuestionEvents(f.source, f.expected)).toEqual([{ id: 'toolu_current', input, cwd: f.cwd }]);
+  expect(readQuestionEvents(f.source, f.expected)).toEqual([{ id: 'toolu_current', toolName: 'AskUserQuestion', input, cwd: f.cwd }]);
 }));
 test('setup creates distinct private settings, event directories and nonces for concurrent sessions', () => fixture(f => {
   const second = setupQuestionEventSource({ configDir: f.configDir, cwd: f.cwd, sessionId: otherSession, rootDir: f.root });

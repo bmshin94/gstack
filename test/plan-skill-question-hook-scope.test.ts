@@ -100,9 +100,9 @@ const child = String.raw`
     case 'changed-plugin-registry': { const file = path.join(configDir, 'plugins', 'installed_plugins.json'); json(file, {version: 2, plugins: {}}); const scope = passes(); json(file, {version: 3, plugins: {}}); refuses(() => check(scope)); break; }
     case 'plugin-container-symlink': { const scope = passes(); const outside = path.join(root, 'external-plugins'); fs.mkdirSync(outside); fs.symlinkSync(outside, path.join(configDir, 'plugins'), 'dir'); refuses(() => check(scope)); break; }
     case 'plugin-container-nondirectory': { const scope = passes(); write(path.join(configDir, 'plugins'), ''); refuses(() => check(scope)); break; }
-    case 'literal-non-auq':
+    case 'literal-noncaptured':
       json(settings, hooks('Bash')); json(path.join(project, '.claude', 'settings.local.json'), hooks('Read'));
-      write(skillFile, '---\nname: review\nhooks:\n  PreToolUse:\n    - matcher: Write\n      hooks: []\n---\n');
+      write(skillFile, '---\nname: review\nhooks:\n  PreToolUse:\n    - matcher: Grep\n      hooks: []\n---\n');
       passes(); break;
     case 'auq-settings': json(settings, hooks('AskUserQuestion')); refuses(() => setup({configDir,cwd})); break;
     case 'substring-settings': json(settings, hooks('Question')); refuses(() => setup({configDir,cwd})); break;
@@ -138,7 +138,21 @@ const child = String.raw`
     case 'invalid-utf8': write(settings, Buffer.from([0xff])); refuses(() => setup({configDir,cwd})); break;
     case 'forged-descriptor': refuses(() => check({})); break;
     case 'fifo': { const result = require('node:child_process').spawnSync('mkfifo', [settings], {timeout: 1000}); assert.equal(result.status, 0); refuses(() => setup({configDir,cwd})); break; }
-    default: throw new Error('unknown scenario');
+    default: {
+      const match = /^file-tool-(PreToolUse|PermissionRequest)-(Write|Edit)-(settings|frontmatter|managed|drift)$/.exec(scenario);
+      if (!match) throw new Error('unknown scenario');
+      const [, event, tool, location] = match;
+      const scope = location === 'drift' ? passes() : null;
+      if (location === 'frontmatter') {
+        write(skillFile, '---\nname: review\nhooks:\n  ' + event + ':\n    - matcher: ' + tool + '\n      hooks: []\n---\n');
+      } else {
+        const file = location === 'managed' ? path.join(managedFixture, 'managed-settings.json') : settings;
+        json(file, {hooks: {[event]: hooks(tool).hooks.PreToolUse}});
+      }
+      if (event === 'PreToolUse' && location !== 'drift') passes();
+      else refuses(() => scope ? check(scope) : setup({configDir,cwd}));
+      break;
+    }
   }
   assert(checks > 0); fs.writeSync(1, JSON.stringify({ scenario, checks }));
   } catch (error) {
@@ -151,13 +165,18 @@ const scenarios = ['clean', 'all-generated-skills', 'actual-hermetic-registry', 
   'project-same-name-skill', 'project-cross-name-skill', 'project-external-skill',
   'project-pretool-mutation', 'project-permission-mutation', 'project-skill-drift',
   'empty-plugins-container', 'new-plugin-registry', 'changed-plugin-registry', 'plugin-container-symlink', 'plugin-container-nondirectory',
-  'literal-non-auq', 'auq-settings', 'substring-settings', 'lowercase-auq',
+  'literal-noncaptured', 'auq-settings', 'substring-settings', 'lowercase-auq',
   'permission-auq', 'permission-other-tool',
   'regex-settings', 'wildcard-settings', 'omitted-matcher', 'malformed-hooks', 'ancestor-settings',
   'managed-settings', 'managed-dropin', 'auq-frontmatter', 'invalid-frontmatter', 'enabled-plugin',
   'disabled-plugin', 'installed-plugin', 'module-config', 'created-settings', 'changed-settings',
   'deleted-settings', 'new-managed-dropin', 'new-skill', 'changed-skill', 'external-registry',
   'external-skill', 'settings-symlink', 'oversized-settings', 'invalid-utf8', 'forged-descriptor'];
+for (const event of ['PreToolUse', 'PermissionRequest']) {
+  for (const tool of ['Write', 'Edit']) {
+    for (const location of ['settings', 'frontmatter', 'managed', 'drift']) scenarios.push(`file-tool-${event}-${tool}-${location}`);
+  }
+}
 if (process.platform !== 'win32') scenarios.push('fifo');
 
 for (const scenario of scenarios) test(`controlled question hook scope: ${scenario}`, () => {

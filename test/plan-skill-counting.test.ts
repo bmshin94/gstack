@@ -53,6 +53,69 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.step0Count).toBe(1);
     expect(result.observation.reviewCount).toBe(2);
   }, 15_000);
+  test('a current overwrite dialog is decoded and grants only the exact native Write before completion', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-current-overwrite');
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1', '1', '1']);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['native', 'overwrite', 'stale-create', 'arrival-race', 'first-arrival-race', 'completion-arrival-race', 'ready-arrival-race', 'old-completion', 'old-ready'])('CREATE to final OVERWRITE waits for owned permission and native completion (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `permission-final-${variant}`);
+    expect(result.error).toBeUndefined();
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.raceInjected).toBe(variant.endsWith('arrival-race'));
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1', '1', '1', '1\r']);
+    expect(result.permissionWrites).toEqual(['create', 'overwrite']);
+    expect(result.writtenPlanLines).toBe(518);
+    expect(result.writtenPlanTail).toEndWith('## GSTACK REVIEW REPORT\nVERDICT: APPROVED');
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['no-prior-ack', 'error-prior-ack', 'repeat-overwrite', 'mismatch'])('file permission refuses unsafe repeated ownership (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `permission-final-${variant}`);
+    expect(result.error).toMatch(/Ambiguous native permission|Repeated native permission|changed input|cannot be bound/);
+    expect(result.permissionWrites).toEqual(variant === 'repeat-overwrite' ? ['create', 'overwrite'] : ['create']);
+    expect(result.sends.filter((value: string) => value === '1\r')).toHaveLength(variant === 'repeat-overwrite' ? 2 : 1);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('an unowned overwrite preview never grants or completes the report', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-final-unowned');
+    expect(result.error).toBeUndefined();
+    expect(result.permissionWrites).toEqual(['create']);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.writtenPlanLines).toBeLessThan(518);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('capture-enabled file input waits for its PermissionRequest even with a stable native Write and dialog', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-final-missing-request');
+    expect(result.error).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('a granted file request is sent once but cannot complete without its native result', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-final-no-final-ack');
+    expect(result.error).toBeUndefined();
+    expect(result.permissionWrites).toEqual(['create', 'overwrite']);
+    expect(result.sends.filter((value: string) => value === '1\r')).toHaveLength(2);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('a file request arriving after the frame cannot inherit a conflicting native-only Write', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-final-input-race');
+    expect(result.raceInjected).toBe(true);
+    expect(result.error).toContain('changed input');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.closed).toBe(true);
+  }, 15_000);
   test('a decoded create dialog cannot grant a different pending path', async () => {
     const result = await runFakeCounting('**DONE**', 'permission-current-create-mismatch');
     expect(result.error).toContain('cannot be bound');

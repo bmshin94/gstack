@@ -57,11 +57,14 @@ function inventory(opts: Options): string {
         if (entries === undefined) continue;
         if (!Array.isArray(entries)) fail(`unparseable ${event} hooks`);
         for (const entry of entries) {
-          // Literal tool names exclude AUQ without interpreting arbitrary regex.
+          // AUQ is observed before permission; file input is observed at the
+          // permission request, after legitimate PreToolUse safety hooks.
+          // Reject matching mutators at or after each observation boundary.
           // Substrings are conservatively refused too, independent of anchoring.
           if (!object(entry) || typeof entry.matcher !== 'string'
             || !/^[A-Za-z][A-Za-z0-9_]*$/.test(entry.matcher)
-            || 'askuserquestion'.includes(entry.matcher.toLowerCase())
+            || (event === 'PreToolUse' ? ['askuserquestion'] : ['askuserquestion', 'write', 'edit'])
+              .some(tool => tool.includes(entry.matcher.toLowerCase()))
             || !Array.isArray(entry.hooks)) fail(`competing or unsupported ${event} matcher`);
         }
       }
