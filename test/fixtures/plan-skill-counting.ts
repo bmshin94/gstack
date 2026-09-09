@@ -67,7 +67,8 @@ const RETAINED_PARENTHESIZED_MODE_INPUT = {
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
-  const filePermissionCase = scenario.startsWith('permission-final-');
+  const editPermissionCase = scenario.startsWith('permission-edit-');
+  const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
   const timing = scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
@@ -92,6 +93,7 @@ async function main() {
   const unsolicitedWrites: string[] = [];
   const prematureAnswers: string[] = [];
   const permissionWrites: string[] = [];
+  const fileNativeBeforeGrant: boolean[] = [];
   let publishDuringScreen: (() => void) | null = null;
   let raceInjected = false;
   let raceJustInjected = false;
@@ -142,11 +144,11 @@ async function main() {
       let finalWriteCount = 0;
       const finalReport = [...Array.from({ length: 516 }, (_, i) => `Report line ${i + 1}`), '## GSTACK REVIEW REPORT', 'VERDICT: APPROVED'].join('\n');
       const fileDialog = (operation: string) => `\x1b[2J\x1b[HDo you want to ${operation} plan.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel`;
-      const recordFilePermission = (input: Record<string, unknown>) => {
+      const recordFilePermission = (input: Record<string, unknown>, name = 'Write') => {
         const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
         const recorded = Bun.spawnSync(['bash', '-c', settings.hooks.PermissionRequest[0].hooks[0].command], {
           timeout: 5000, stdin: Buffer.from(JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: sessionId,
-            transcript_path: file, cwd: options.cwd, tool_name: 'Write', tool_input: input })), stdout: 'pipe', stderr: 'pipe',
+            transcript_path: file, cwd: options.cwd, tool_name: name, tool_input: input })), stdout: 'pipe', stderr: 'pipe',
         });
         if (recorded.exitCode !== 0 || recorded.stdout.length) throw new Error(`Permission recorder failed: ${recorded.stderr}`);
       };
@@ -181,7 +183,28 @@ async function main() {
         append({ type: 'assistant', message: { id: 'final', role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: completion }] } });
         emit('\n' + completion.replace(/\*|#| /g, '') + '\n');
       };
+      // Same append shape as the retained final-report Edit: the observer can
+      // precede its native invocation, but it cannot supply that invocation's ACK.
+      const resolvedParagraph = '### Unresolved Decisions\n\nNone. The review choices were answered.';
+      const reportAppend = '\n\n---\n\n## GSTACK REVIEW REPORT\n\n| Review | Runs | Status | Findings |\n| CEO | 1 | CLEAR | Review complete |\n\nVERDICT: APPROVED';
+      const requestFinalEdit = () => {
+        finalPermissionPending = true;
+        permissionInput = { file_path: path.join(project, 'plan.md'), old_string: resolvedParagraph,
+          new_string: resolvedParagraph + reportAppend, replace_all: false };
+        permissionId = scenario === 'permission-edit-native' ? tool('Edit', permissionInput) : `tool-${++sequence}`;
+        const publish = () => recordFilePermission(permissionInput!, 'Edit');
+        if (scenario === 'permission-edit-arrival-race') {
+          emit(fileDialog('make this edit to'));
+          // The hook arrives during the old frame snapshot. No input may be
+          // sent on that mixed-source pass, even though the path is unchanged.
+          publishDuringScreen = () => {
+            publish(); raceInjected = true; raceJustInjected = true;
+            emit(fileDialog('make this edit to'));
+          };
+        } else { publish(); emit(fileDialog('make this edit to')); }
+      };
       const requestFinalWrite = () => {
+        if (editPermissionCase) { requestFinalEdit(); return; }
         finalPermissionPending = true;
         permissionOperation = 'overwrite';
         permissionInput = { file_path: path.join(project, scenario === 'permission-final-mismatch' ? 'different.md' : 'plan.md'), content: finalReport + (finalWriteCount ? '\nAnother overwrite' : '') };
@@ -287,6 +310,14 @@ async function main() {
               return;
             }
             if (filePermissionCase) {
+              if (editPermissionCase) {
+                fs.writeFileSync(path.join(project, 'plan.md'), 'Draft');
+                permissionInput = { file_path: path.join(project, 'plan.md'), old_string: 'Draft', new_string: resolvedParagraph, replace_all: false };
+                permissionId = tool('Edit', permissionInput);
+                recordFilePermission(permissionInput, 'Edit');
+                emit(fileDialog('make this edit to'));
+                return;
+              }
               permissionInput = { file_path: path.join(project, 'plan.md'), content: plan };
               permissionId = scenario === 'permission-final-first-arrival-race' ? `tool-${++sequence}` : tool('Write', permissionInput);
               initialPermissionId = permissionId;
@@ -338,6 +369,37 @@ async function main() {
               if (data !== '1\r') throw new Error('Permission must select only the current request');
               if (filePermissionCase) {
                 if (raceJustInjected || finalPermissionPending && pendingRedrawSleeps > 0) prematureAnswers.push(data);
+                if (editPermissionCase) {
+                  fileNativeBeforeGrant.push(fs.readFileSync(file, 'utf8').trim().split('\n').some(line => {
+                    const content = JSON.parse(line).message?.content;
+                    return Array.isArray(content) && content.some(block => block.type === 'tool_use' && block.id === permissionId);
+                  }));
+                  if (finalPermissionPending && scenario !== 'permission-edit-native') {
+                    append({ type: 'assistant', cwd: options.cwd, message: { id: permissionId, role: 'assistant', stop_reason: 'tool_use',
+                      content: [{ type: 'tool_use', id: permissionId, name: 'Edit', input: permissionInput }] } });
+                  }
+                  if (!(finalPermissionPending && scenario === 'permission-edit-no-final-ack')) {
+                    append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Edit complete' }] } });
+                  }
+                  const planFile = path.join(project, 'plan.md');
+                  const before = fs.readFileSync(planFile, 'utf8');
+                  if (!before.includes(permissionInput!.old_string as string)) throw new Error('Edit old_string must match the actual plan');
+                  fs.writeFileSync(planFile, before.replace(permissionInput!.old_string as string, permissionInput!.new_string as string));
+                  permissionWrites.push('edit');
+                  permissionId = null;
+                  if (finalPermissionPending) finish();
+                  else {
+                    const showMode = () => {
+                      ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
+                      emit('\x1b[2J\x1b[HD1 — Pick a mode\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\n');
+                    };
+                    if (scenario === 'permission-edit-stale-redraw') {
+                      emit(fileDialog('make this edit to'));
+                      delayedRender = showMode; pendingRedrawSleeps = 3;
+                    } else showMode();
+                  }
+                  return;
+                }
                 if (finalPermissionPending && scenario !== 'permission-final-native'
                   || !finalPermissionPending && scenario === 'permission-final-first-arrival-race') {
                   append({ type: 'assistant', cwd: options.cwd, message: { id: permissionId, role: 'assistant', stop_reason: 'tool_use',
@@ -439,7 +501,7 @@ async function main() {
       error = String(cause);
     }
     const writtenPlan = fs.existsSync(path.join(project, 'plan.md')) ? fs.readFileSync(path.join(project, 'plan.md'), 'utf8') : '';
-    console.log(JSON.stringify({ observation, error, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, raceInjected,
+    console.log(JSON.stringify({ observation, error, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

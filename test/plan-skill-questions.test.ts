@@ -296,6 +296,74 @@ test('modern native Edit wording does not regrant an indistinguishable completed
   expect(() => reserveNativePermissionGrant(readPlanSkillQuestions(config, sessionId), dialog, granted, requests)).toThrow('cannot be distinguished');
 });
 
+// The retained cfa50758 PermissionRequest appended GSTACK REVIEW REPORT by
+// replacing an existing final paragraph with that paragraph plus the report.
+// Reproduce that Edit shape with synthetic content and a launcher-owned hook.
+async function scopedEditSequence(variant = 'native') {
+  const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
+  const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PermissionRequest[0].hooks[0].command;
+  const emit = (input: unknown) => {
+    const previous = new Set(readPermissionRequestEvents(source, { configDir: config, sessionId, transcriptFile: file }).map(event => event.requestId));
+    const child = Bun.spawnSync(['bash', '-c', command], { timeout: 5000,
+      stdin: Buffer.from(JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: sessionId,
+        transcript_path: file, cwd: config, tool_name: 'Edit', tool_input: input })), stdout: 'pipe', stderr: 'pipe' });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    return readPermissionRequestEvents(source, { configDir: config, sessionId, transcriptFile: file })
+      .find(event => !previous.has(event.requestId))!;
+  };
+  const old_string = '### Unresolved Decisions\n\nNone. The review choices were answered.';
+  const firstInput = { file_path: path.join(config, 'plan.md'), old_string: 'Draft', new_string: old_string, replace_all: false };
+  const nextInput = variant === 'same-input' ? firstInput : {
+    file_path: path.join(config, variant === 'wrong-path' ? 'other.md' : 'plan.md'), old_string,
+    new_string: old_string + '\n\n## GSTACK REVIEW REPORT\n\n| Review | Runs | Status | Findings |\n| CEO | 1 | CLEAR | Review complete |\n\n**VERDICT:** CEO CLEARED\n\nNO UNRESOLVED DECISIONS',
+    replace_all: false,
+  };
+  const first = nativeWrite('scoped-edit-1', firstInput, config, 'Edit');
+  write(first);
+  const firstEvent = emit(firstInput);
+  const dialog = createDialog('plan.md').replace('create', 'make this edit to');
+  const granted = new Set<string>(); const requests = new Map<string, NativePermissionGrant>();
+  const read = () => readPlanSkillQuestions(config, sessionId, variant === 'no-observer' ? undefined : source);
+  expect(reserveNativePermissionGrant(read(), dialog, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(read(), dialog, granted, requests)).toBe(false);
+  const resultAtMs = firstEvent.capturedAtMs + (variant === 'before-result' ? 60_000 : 1);
+  const rows: unknown[] = [variant === 'unfinished-prior' ? nativeWrite('scoped-edit-1', firstInput, config, 'Edit', null) : first];
+  if (variant !== 'no-ack') rows.push(nativeWriteResult('scoped-edit-1', new Date(resultAtMs).toISOString(), variant === 'error'));
+  if (variant !== 'early') rows.push(nativeWrite(variant === 'changed-id' ? 'scoped-edit-1' : 'scoped-edit-2', nextInput,
+    variant === 'wrong-cwd' ? path.dirname(config) : config, 'Edit'));
+  if (variant === 'multiple-owner') rows.push(nativeWrite('other-pending', { command: 'true' }, config, 'Bash'));
+  write(...rows);
+  await Bun.sleep(5);
+  const nextEvent = emit(nextInput);
+  if (variant === 'equal-result') {
+    rows[1] = nativeWriteResult('scoped-edit-1', new Date(nextEvent.capturedAtMs).toISOString());
+    write(...rows);
+  }
+  return { read, dialog, granted, requests, firstEvent, nextEvent, resultAtMs, nextInput };
+}
+
+test.each(['native', 'early'])('fresh scoped Edit can append the terminal report after a completed Edit (%s)', async variant => {
+  const sequence = await scopedEditSequence(variant);
+  const native = sequence.read();
+  const prior = native.permissionRequests.find(item => item.requestId === sequence.firstEvent.requestId)!;
+  expect(prior).toMatchObject({ result: 'completed', nativeToolId: 'scoped-edit-1', nativeResultAtMs: sequence.resultAtMs });
+  expect(sequence.nextEvent.requestId).not.toBe(sequence.firstEvent.requestId);
+  expect(sequence.nextEvent.capturedAtMs).toBeGreaterThan(sequence.resultAtMs);
+  expect(native.permissionRequests.find(item => item.requestId === sequence.nextEvent.requestId)).toMatchObject({ result: 'pending', input: sequence.nextInput });
+  expect(reserveNativePermissionGrant(native, sequence.dialog, sequence.granted, sequence.requests)).toBe(true);
+  expect(reserveNativePermissionGrant(native, sequence.dialog, sequence.granted, sequence.requests)).toBe(false);
+  expect(sequence.granted.size).toBe(2);
+  expect(sequence.requests.get(`Edit:${path.join(config, 'plan.md')}`)?.requestId).toBe(sequence.nextEvent.requestId);
+});
+
+test.each(['no-ack', 'error', 'before-result', 'equal-result', 'unfinished-prior', 'same-input', 'changed-id', 'wrong-path', 'wrong-cwd', 'multiple-owner', 'no-observer'])
+('fresh scoped Edit preserves refusal for %s', async variant => {
+  const sequence = await scopedEditSequence(variant);
+  expect(() => reserveNativePermissionGrant(sequence.read(), sequence.dialog, sequence.granted, sequence.requests))
+    .toThrow(/Repeated native permission|Indistinguishable|changed input|cannot be bound|Ambiguous native permission/);
+  expect(sequence.granted.size).toBe(1);
+});
+
 test('modern overwrite permission uses the exact current Write path and controls', () => {
   const filePath = path.join(config, 'plan.md');
   const dialog = createDialog('plan.md').replace('create', 'overwrite');

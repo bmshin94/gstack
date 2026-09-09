@@ -123,6 +123,30 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.sends.filter((value: string) => value === '1\r')).toHaveLength(variant === 'repeat-overwrite' ? 2 : 1);
     expect(result.closed).toBe(true);
   }, 15_000);
+  test.each(['native', 'early', 'arrival-race', 'stale-redraw'])('a later owned Edit appends the report after the prior Edit completes (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `permission-edit-${variant}`);
+    expect(result.error).toBeUndefined();
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.raceInjected).toBe(variant === 'arrival-race');
+    expect(result.fileNativeBeforeGrant).toEqual([true, variant === 'native']);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1', '1', '1', '1\r']);
+    expect(result.permissionWrites).toEqual(['edit', 'edit']);
+    expect(result.writtenPlanTail).toEndWith('VERDICT: APPROVED');
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('completion_summary');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('a second owned Edit grant cannot complete without its own later native result', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-edit-no-final-ack');
+    expect(result.error).toBeUndefined();
+    expect(result.fileNativeBeforeGrant).toEqual([true, false]);
+    expect(result.permissionWrites).toEqual(['edit', 'edit']);
+    expect(result.sends.filter((value: string) => value === '1\r')).toHaveLength(2);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
   test('an unowned overwrite preview never grants or completes the report', async () => {
     const result = await runFakeCounting('**DONE**', 'permission-final-unowned');
     expect(result.error).toBeUndefined();

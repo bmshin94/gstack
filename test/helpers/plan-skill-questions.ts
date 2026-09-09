@@ -23,6 +23,7 @@ export interface NativeFilePermissionRequest {
   cwd: string;
   result: 'pending' | 'completed' | 'error';
   nativeToolId?: string;
+  nativeResultAtMs?: number;
 }
 export interface NativePermissionGrant { nativeId?: string; requestId?: string; operation?: 'create' | 'edit' | 'overwrite' }
 
@@ -148,6 +149,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       }
       permissionRequests.push({ requestId: event.requestId, capturedAtMs: event.capturedAtMs, name: event.toolName, input: event.input, cwd: event.cwd,
         result: resultAfterRequest ? results.get(native!.id) ? 'error' : 'completed' : 'pending',
+        ...(resultAfterRequest ? { nativeResultAtMs: resultTimes.get(native!.id)! } : {}),
         ...(native && (!results.has(native.id) || resultAfterRequest) ? { nativeToolId: native.id } : {}) });
     }
   }
@@ -342,7 +344,7 @@ export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermi
 }
 
 /** Reserve one current grant. Observer request IDs never stand in for native
- * tool IDs; only an exact later native result can permit CREATE→OVERWRITE. */
+ * tool IDs; only an exact later native result can retire the prior request. */
 export function reserveNativePermissionGrant(
   native: Pick<ReturnType<typeof readPlanSkillQuestions>, 'permissionTools' | 'permissionResults' | 'permissionRequests' | 'permissionRequestCapture'>,
   visible: string, granted: Set<string>, requests: Map<string, NativePermissionGrant>,
@@ -359,13 +361,24 @@ export function reserveNativePermissionGrant(
   const operation = currentFilePermissionTarget(visible)?.operation;
   const prior = requests.get(request);
   if (prior) {
+    const completedRequest = prior.requestId
+      ? native.permissionRequests.find(item => item.requestId === prior.requestId && item.result === 'completed' && item.nativeToolId)
+      : undefined;
     const completed = prior.requestId
-      ? native.permissionRequests.some(item => item.requestId === prior.requestId && item.result === 'completed' && item.nativeToolId)
+      ? completedRequest !== undefined
       : native.permissionResults.some(item => item.id === prior.nativeId && item.result === 'completed');
     // The new source event can arrive after the screen barrier. Wait while
     // its same-path CREATE predecessor is still visible; never regrant it.
     if (completed && prior.operation === 'create' && operation === 'create') return false;
-    if (!completed || prior.operation !== 'create' || operation !== 'overwrite') {
+    // A distinct observer after Edit1's exact successful ACK can own Edit2
+    // at this same cwd/path before Edit2's native invocation is persisted.
+    // The caller still brackets the current one-time menu with source reads.
+    const nextEdit = completedRequest?.name === 'Edit' && prior.operation === 'edit' && operation === 'edit'
+      && owner.name === 'Edit' && 'requestId' in owner && owner.requestId !== completedRequest.requestId
+      && Number.isFinite(completedRequest.nativeResultAtMs) && owner.capturedAtMs > completedRequest.nativeResultAtMs!
+      && owner.cwd === completedRequest.cwd && owner.input.file_path === completedRequest.input.file_path
+      && !isDeepStrictEqual(owner.input, completedRequest.input);
+    if (!completed || !(prior.operation === 'create' && operation === 'overwrite') && !nextEdit) {
       throw new Error('Repeated native permission request cannot be distinguished from stale rendering');
     }
   }
