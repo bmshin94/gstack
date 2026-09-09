@@ -49,7 +49,7 @@ test('shared native input dependencies select every PTY consumer without changin
   expect(expected).toHaveLength(22);
   expect(expected.filter(id => E2E_TIERS[id] === 'gate')).toHaveLength(7);
   expect(expected.filter(id => E2E_TIERS[id] === 'periodic')).toHaveLength(15);
-  for (const file of ['test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts',
+  for (const file of ['test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
     'test/helpers/plan-skill-questions.ts', 'test/plan-skill-questions.test.ts',
     'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts',
     'test/helpers/plan-skill-question-hook-scope.ts', 'test/plan-skill-question-hook-scope.test.ts']) {

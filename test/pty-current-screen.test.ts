@@ -156,9 +156,8 @@ test.skipIf(process.platform === 'win32').each(['normal', 'already-exited', 'bod
   const wrapper = path.join(tmp, 'native-wrapper');
   const probe = path.join(tmp, 'probe.ts');
   const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
-  fs.writeFileSync(native, `const paint=()=>{const rows=process.stdout.rows;process.stdout.write('\\x1b[2J\\x1b[HNATIVE:'+process.stdout.columns+'x'+rows+'\\x1b['+(rows-2)+';1HLOW:'+rows);};
-    process.stdout.on('resize',paint);paint();setInterval(()=>{},1000);${scenario === 'already-exited' ? 'setTimeout(()=>process.exit(0),1200);' : ''}`);
-  fs.writeFileSync(wrapper, '#!/bin/sh\nexec ' + quote(process.execPath) + ' ' + quote(native) + '\n', { mode: 0o700 });
+  fs.copyFileSync(path.join(import.meta.dir, 'fixtures', 'native-viewport.ts'), native);
+  fs.writeFileSync(wrapper, '#!/bin/sh\nexec ' + quote(process.execPath) + ' ' + quote(native) + ' ' + quote(scenario) + '\n', { mode: 0o700 });
   fs.writeFileSync(probe, `import { launchClaudePty } from ${JSON.stringify(path.join(import.meta.dir, 'helpers', 'claude-pty-runner.ts'))};
     const session=await launchClaudePty({cwd:${JSON.stringify(tmp)},captureScreen:true,captureQuestionsForSession:crypto.randomUUID(),timeoutMs:5000});
     let evidence,observedError=null;
