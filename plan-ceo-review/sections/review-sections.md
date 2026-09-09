@@ -4,7 +4,17 @@
 
 **Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-11) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
-**Anti-shortcut clause:** The plan file is the OUTPUT of the interactive review, not a substitute for it. Writing every finding into one plan write and calling ExitPlanMode without firing AskUserQuestion is the precise failure mode of the May 2026 transcript bug — the model explored, found issues, and dumped them into a deliverable rather than walking the user through them. If you have ANY non-trivial finding in any review section, the path from finding to ExitPlanMode goes THROUGH AskUserQuestion. Zero findings in every section is the only path to ExitPlanMode that bypasses AskUserQuestion. If you find yourself wanting to write a plan with findings before asking, stop and call AskUserQuestion now — that's the bug, recognize it.
+**Anti-shortcut clause:** Analyze → resolve → apply for each section before advancing. The plan file records the interactive review; it cannot replace it. Do not prewrite the remaining sections or their implementation tasks and then walk through a fixed question list. Proposed findings are not accepted plan changes: mark them pending until their actual decisions are made. Ask once per unresolved or reopened issue, wait for the answer, and apply only the exact accepted choice and scope to the working plan. An earlier approach selection does not authorize unrelated choices. Keep established contracts, accepted decisions, and their evidence available to later sections; new material risks or changed remedies still need approval. Cross-referencing settled decisions never replaces the full review and terminal report. Follow the working review decisions below; never invent a question merely because a new section starts.
+
+### Working review decisions
+
+Keep a working ledger in the plan: issue ID, owner section, evidence, exact accepted choice and scope, decision reference, and status (unresolved, approved, or reopened). Seed it with declared unchanged contracts and actual earlier decisions. Keep proposed findings separate from accepted amendments. Selecting an approach is not blanket approval of every implementation choice: carry its explicit commitments forward, then resolve the remaining tradeoffs.
+
+**Analyze.** Evaluate the current section against the amended plan and ledger. Carry forward declared contracts and concerns already judged mitigated, with their evidence. A later subsection's silence does not invalidate a stated contract. Reopen one only with concrete new evidence or a changed assumption; identify the contradiction or failure mechanism. Keep the risk and required verification visible even after its planning decision is approved.
+
+**Resolve.** Give the same underlying issue one complete choice in its natural owner section. For example, a missing test plan and its contradictory reliance on existing tests belong together in Test Review; earlier sections can cross-reference that pending issue. Do not defer a newly discovered critical risk to reach its owner section: resolve it now and carry the decision forward. Topic names alone never establish equivalence: compare the specific failure, proposed action, and accepted scope. Distinct choices remain separate: email recovery does not settle request instrumentation; correcting test wording does not choose test depth. A materially different remedy, scope, or risk needs its own explicit decision, even on the same topic. State what changed and cite the earlier decision when reopening. An obvious recommendation is still a decision when it has not been accepted.
+
+**Apply.** After the user answers, record that actual choice and update only its authorized plan amendments before advancing to the next section. Approval settles the planning choice; it does not prove the mitigation is implemented or verified. In later sections, cross-reference an exact settled decision instead of asking it again. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
 
 ### Section 1: Architecture Review
 Evaluate and diagram:
@@ -29,7 +39,7 @@ Evaluate and diagram:
 **SELECTIVE EXPANSION:** If any accepted cherry-picks from Step 0D affect the architecture, evaluate their architectural fit here. Flag any that create coupling concerns or don't integrate cleanly — this is a chance to revisit the decision with new information.
 
 Required ASCII diagram: full system architecture showing new components and their relationships to existing ones.
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 2: Error & Rescue Map
@@ -59,7 +69,7 @@ Rules for this section:
 * Every rescued error must either: retry with backoff, degrade gracefully with a user-visible message, or re-raise with added context. "Swallow and continue" is almost never acceptable.
 * For each GAP (unrescued error that should be rescued): specify the rescue action and what the user should see.
 * For LLM/AI service calls specifically: what happens when the response is malformed? When it's empty? When it hallucinates invalid JSON? When the model returns a refusal? Each of these is a distinct failure mode.
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 3: Security & Threat Model
@@ -75,7 +85,7 @@ Evaluate:
 * Audit logging. For sensitive operations: is there an audit trail?
 
 For each finding: threat, likelihood (High/Med/Low), impact (High/Med/Low), and whether the plan mitigates it.
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 4: Data Flow & Interaction Edge Cases
@@ -112,7 +122,7 @@ For each node: what happens on each shadow path? Is it tested?
                        | Queue backs up 2 hours | ?        |
 ```
 Flag any unhandled edge case as a gap. For each gap, specify the fix.
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 5: Code Quality Review
@@ -125,7 +135,7 @@ Evaluate:
 * Over-engineering check. Any new abstraction solving a problem that doesn't exist yet?
 * Under-engineering check. Anything fragile, assuming happy path only, or missing obvious defensive checks?
 * Cyclomatic complexity. Flag any new method that branches more than 5 times. Propose a refactor.
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 6: Test Review
@@ -166,7 +176,7 @@ Flakiness risk: Flag any test depending on time, randomness, external services, 
 Load/stress test requirements: For any new codepath called frequently or processing significant data.
 
 For LLM/prompt changes: Check CLAUDE.md for the "Prompt/LLM changes" file patterns. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against.
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 7: Performance Review
@@ -178,7 +188,7 @@ Evaluate:
 * Background job sizing. For every new job: worst-case payload, runtime, retry behavior?
 * Slow paths. Top 3 slowest new codepaths and estimated p99 latency.
 * Connection pool pressure. New DB connections, Redis connections, HTTP connections?
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 8: Observability & Debuggability Review
@@ -195,7 +205,7 @@ Evaluate:
 
 **EXPANSION and SELECTIVE EXPANSION addition:**
 * What observability would make this feature a joy to operate? (For SELECTIVE EXPANSION, include observability for any accepted cherry-picks.)
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 9: Deployment & Rollout Review
@@ -211,7 +221,7 @@ Evaluate:
 
 **EXPANSION and SELECTIVE EXPANSION addition:**
 * What deploy infrastructure would make shipping this feature routine? (For SELECTIVE EXPANSION, assess whether accepted cherry-picks change the deployment risk profile.)
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 10: Long-Term Trajectory Review
@@ -227,7 +237,7 @@ Evaluate:
 * What comes after this ships? Phase 2? Phase 3? Does the architecture support that trajectory?
 * Platform potential. Does this create capabilities other features can leverage?
 * (SELECTIVE EXPANSION only) Retrospective: Were the right cherry-picks accepted? Did any rejected expansions turn out to be load-bearing for the accepted ones?
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 11: Design & UX Review (skip if no UI scope detected)
@@ -250,7 +260,7 @@ Evaluate:
 Required ASCII diagram: user flow showing screens/states and transitions.
 
 If this plan has significant UI scope, recommend: "Consider running /plan-design-review for a deep design review of this plan before implementation."
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
+**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ## Outside Voice — Independent Plan Challenge (default-on)
@@ -454,9 +464,11 @@ SOURCE = "codex" if Codex ran, "claude" if subagent ran.
 
 ### Outside Voice Integration Rule
 
-Outside voice findings are INFORMATIONAL until the user explicitly approves each one.
-Do NOT incorporate outside voice recommendations into the plan without presenting each
-finding via AskUserQuestion and getting explicit approval. This applies even when you
+Outside-voice findings use the same working decision ledger. Cross-reference evidence
+for an exact settled decision; agreement alone does not settle an unresolved choice.
+New or reopened decisions still require explicit approval. Do NOT incorporate those
+outside voice recommendations into the plan without presenting each decision via
+AskUserQuestion and getting explicit approval. This applies even when you
 agree with the outside voice. Cross-model consensus is a strong signal — present it as
 such — but the user makes the decision.
 
@@ -471,7 +483,7 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 * For each option: effort, risk, and maintenance burden in one line.
 * **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference.
 * Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
-* **Zero findings:** if a section has zero findings, state "No issues, moving on" and proceed. Otherwise, use AskUserQuestion for each finding — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan.
+* **Section decisions:** retain all findings, cross-reference settled decisions, and ask once per unresolved or reopened decision. If none remain, report the section's findings and their existing dispositions, then proceed. If there are zero findings, state "No issues, moving on". An "obvious fix" still needs approval when it is not covered by an exact accepted choice.
 
 ## Required Outputs
 
@@ -854,7 +866,7 @@ If promoted, copy the CEO plan content to `docs/designs/{FEATURE}.md` (create th
 * NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).
 * Label with NUMBER + LETTER (e.g., "3A", "3B").
 * One sentence max per option.
-* After each section, pause and wait for feedback.
+* After each section, reconcile its findings with the working ledger. Pause for unresolved or reopened decisions; otherwise continue with the existing dispositions visible.
 * Use **CRITICAL GAP** / **WARNING** / **OK** for scannability.
 
 ## Capture Learnings

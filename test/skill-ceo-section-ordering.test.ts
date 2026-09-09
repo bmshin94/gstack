@@ -23,11 +23,87 @@ import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { createHash } from 'node:crypto';
 import { validateCeoReviewCompletion } from './helpers/auq-sdk-capture';
+import { generateAntiShortcutClause } from '../scripts/resolvers/review';
+import type { TemplateContext } from '../scripts/resolvers/types';
+import { ALL_HOST_CONFIGS } from '../hosts';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const SKELETON = path.join(ROOT, 'plan-ceo-review', 'SKILL.md');
 const SECTION = path.join(ROOT, 'plan-ceo-review', 'sections', 'review-sections.md');
+
+// These are source-contract checks, not model-behavior evidence. Read the
+// template and resolve its shared clause directly so an old generated carrier
+// cannot conceal conflicting per-section instructions during implementation.
+describe('CEO review decision continuity contract', () => {
+  const template = fs.readFileSync(`${SECTION}.tmpl`, 'utf8');
+  const clauses = ALL_HOST_CONFIGS.map(host => generateAntiShortcutClause({
+    skillName: 'plan-ceo-review', host: host.name,
+  } as TemplateContext));
+  const continuity = template.split('### Working review decisions')[1]?.split('### Section 1:')[0] ?? '';
+
+  test('analysis, decision, and approved amendment precede advancing to the next section', () => {
+    expect(continuity).not.toBe('');
+    const positions = ['**Analyze.**', '**Resolve.**', '**Apply.**'].map(step => continuity.indexOf(step));
+    expect(positions.every(position => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(continuity).toContain('before advancing to the next section');
+    for (const clause of clauses) {
+      expect(clause).toContain('Analyze → resolve → apply');
+      expect(clause).toContain('Do not prewrite the remaining sections');
+      expect(clause).toContain('Proposed findings are not accepted plan changes');
+      expect(clause).toContain('full review and terminal report');
+    }
+  });
+
+  test('all eleven section gates preserve decisions without manufacturing a question per section', () => {
+    const sections = [...template.matchAll(/^### Section (\d+):([^]*?)(?=^### Section \d+:|^\{\{CODEX_PLAN_REVIEW\}\})/gm)];
+    expect(sections.map(section => Number(section[1]))).toEqual(Array.from({ length: 11 }, (_, i) => i + 1));
+    for (const [, number, body] of sections) {
+      expect(body, `Section ${number}`).toContain('For each unresolved or reopened decision');
+      expect(body, `Section ${number}`).toContain('one issue = one AskUserQuestion call');
+      expect(body, `Section ${number}`).toContain('STOP until the user responds');
+      expect(body, `Section ${number}`).toContain('If no decision remains');
+    }
+    expect(template).not.toContain('If the section has findings, you MUST call AskUserQuestion');
+    expect(template).not.toContain('Otherwise, use AskUserQuestion for each finding');
+    expect(template).not.toContain('After each section, pause and wait for feedback');
+    expect(template).toContain('Never condense, abbreviate, or skip any review section (1-11)');
+    expect(template).toContain('### Completion Summary');
+    expect(template).toContain('{{PLAN_FILE_REVIEW_REPORT}}');
+  });
+
+  test('the ledger carries exact approvals and declared contracts without claiming implementation', () => {
+    for (const requirement of ['issue ID', 'owner section', 'evidence', 'exact accepted choice and scope',
+      'decision reference', 'unresolved, approved, or reopened',
+      'Selecting an approach is not blanket approval',
+      'Approval settles the planning choice; it does not prove the mitigation is implemented',
+      'declared unchanged contracts', 'concrete new evidence or a changed assumption',
+      'Keep the risk and required verification visible']) expect(continuity).toContain(requirement);
+  });
+
+  test('ownership never defers a critical risk or merges distinct choices by topic', () => {
+    for (const requirement of ['Do not defer a newly discovered critical risk',
+      'Topic names alone never establish equivalence', 'materially different remedy, scope, or risk',
+      'one complete choice in its natural owner section', 'Distinct choices remain separate',
+      'email recovery does not settle request instrumentation',
+      'correcting test wording does not choose test depth']) expect(continuity).toContain(requirement);
+    expect(template).toContain('Outside-voice findings use the same working decision ledger');
+    expect(template).toContain('New or reopened decisions still require explicit approval');
+  });
+
+  test('non-CEO consumers retain the exact preceding anti-shortcut contract on every host', () => {
+    // SHA-256 of the e801b515 resolver output; detects collateral prompt changes.
+    const original = '82e55bcd35a16a20d243978707c786f25e24ac5d6a197d9fedb2cb0bb223abb7';
+    for (const skillName of ['plan-eng-review', 'plan-devex-review', 'plan-design-review']) {
+      for (const host of ALL_HOST_CONFIGS) {
+        const clause = generateAntiShortcutClause({ skillName, host: host.name } as TemplateContext);
+        expect(createHash('sha256').update(clause).digest('hex'), `${skillName}/${host.name}`).toBe(original);
+      }
+    }
+  });
+});
 
 describe('plan-ceo-review carve — static ordering', () => {
   const skeleton = fs.readFileSync(SKELETON, 'utf-8');
