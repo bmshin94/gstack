@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { inspectCeoModePreference, runCeoModePreferenceObservation } from './helpers/ceo-mode-preference';
 import { readOwnedClaudeTranscript, type OwnedClaudeTranscript } from './helpers/owned-claude-transcript';
 import { stripAnsi, type ClaudePtySession } from './helpers/claude-pty-runner';
+import { PtyCurrentScreen } from './helpers/pty-current-screen';
 
 const automatic = 'Mode is HOLD SCOPE (auto-decided from plan-tune preference).';
 const scopedAutomatic = '**Auto-decided:** Review mode → **SELECTIVE EXPANSION** (your preference for this question).';
@@ -13,6 +14,78 @@ const approach = 'D1 — Which implementation approach? <gstack-qid:plan-ceo-rev
 const mode = 'D2 — Which review mode? <gstack-qid:plan-ceo-review-mode>\nA) HOLD SCOPE\nB) SCOPE EXPANSION';
 const assistant = (text: string, stop_reason = 'end_turn', id = 'message-1') => ({ type: 'assistant', message: { role: 'assistant', id, stop_reason, content: [{ type: 'text', text }] } });
 const transcript = (...rows: any[]): OwnedClaudeTranscript => ({ rows, file: null, completedLines: rows.length, pendingBytes: 0 });
+
+const screenBrief = [
+  'Audit complete. Before the mode selection and the 11-section review, the workflow needs one decision from you: which implementation approach the plan commits to.',
+  '', '## D1 — Which implementation approach for the CSV export?', '',
+  'Reply with **A**, **B**, or **C**. `<gstack-qid:plan-ceo-review-approach>`', '',
+  'A) Client-side formatter over the existing settings API (recommended)',
+  'B) Server-side CSV endpoint', 'C) Client-side formatter behind a serializer seam',
+].join('\n');
+
+test.each(['redraw', 'stale-frame', 'native-during-frame', 'output-during-frame', 'preview', 'deferred', 'deadline-during-frame'])(
+  'prose input requires a faithful current screen and stable owned source: %s', async scenario => {
+    const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-screen-'));
+    const screen = new PtyCurrentScreen({ cols: 120, rows: 120 });
+    let raw = ''; let file = ''; let sessionId = ''; let time = 0; let typed = ''; let changed = false; let closed = false;
+    const writes: string[] = []; let enters = 0; let launchOptions: any;
+    const text = scenario === 'deferred' ? 'Do not answer this decision yet.\n\n' + screenBrief : screenBrief;
+    const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ ...row, sessionId }) + '\n');
+    const output = (bytes: string) => { raw += bytes; screen.feed(bytes); };
+    const session = {
+      hermeticConfigDir: config, mark: () => raw.length, visibleSince: (since = 0) => stripAnsi(raw.slice(since)),
+      rawOutput: () => raw, visibleText: () => stripAnsi(raw), exited: () => false,
+      close: async () => { closed = true; screen.dispose(); },
+      currentScreen: async () => {
+        const rawEnd = raw.length; const pending = screen.snapshot();
+        if (!changed && scenario === 'native-during-frame') {
+          changed = true; append(assistant('Another owner is working.', 'tool_use', 'next'));
+        }
+        const frame = await pending;
+        if (!changed && scenario === 'output-during-frame') {
+          changed = true; output('\x1b[2J\x1b[HAnother dialog');
+        }
+        if (scenario === 'deadline-during-frame') time = 30_000;
+        return { text: frame.text, rawEnd: scenario === 'stale-frame' ? 0 : rawEnd };
+      },
+      send(value: string) {
+        if (value.startsWith('/')) {
+          if (scenario === 'preview') append({ type: 'assistant', message: { id: 'preview', role: 'assistant',
+            stop_reason: 'tool_use', content: [{ type: 'tool_use', name: 'Write', input: { content: text } }] } });
+          append(assistant(text));
+          // A real cursor overwrite preserves the displayed introduction while
+          // ANSI stripping leaves an extra character. No native text is used
+          // as a replacement screen in the observation driver.
+          const split = text.indexOf('\n');
+          output('\x1b[2J\x1b[H' + text.slice(0, split - 1) + 'X\x1b[D' + text[split - 1]
+            + text.slice(split).replaceAll('\n', '\r\n'));
+          return;
+        }
+        writes.push(value); typed = value; output('\r\n❯ ' + value);
+      },
+      sendKey(key: string) {
+        expect(key).toBe('Enter'); enters++;
+        append({ type: 'user', message: { role: 'user', content: typed } });
+        append(assistant(automatic, 'end_turn', 'done')); output('\r\n' + automatic);
+      },
+    } as unknown as ClaudePtySession;
+    try {
+      const observation = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
+        now: () => time, pause: async ms => { time += ms; }, launch: async opts => {
+          launchOptions = opts; sessionId = opts.extraArgs![1];
+          file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+          fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
+        },
+      });
+      expect(closed).toBe(true);
+      expect(observation.outcome).toBe(scenario === 'redraw' ? 'auto_decided' : 'timeout');
+      expect(writes).toEqual(scenario === 'redraw' ? ['For plan-ceo-review-approach, I choose option A. Continue the review.'] : []);
+      expect(enters).toBe(scenario === 'redraw' ? 1 : 0);
+      expect(observation.answered).toEqual(scenario === 'redraw' ? ['message-1'] : []);
+      expect(launchOptions).toMatchObject({ captureScreen: true, rows: 120, timeoutMs: 30_000 });
+      expect(stripAnsi(raw)).not.toContain(text.split('\n')[0]);
+    } finally { screen.dispose(); fs.rmSync(config, { recursive: true, force: true }); }
+  });
 
 test('mode-only preference does not reject an implementation-approach question', () => {
   expect(inspectCeoModePreference(transcript(assistant(approach)), approach)).toMatchObject({ kind: 'unrelated', questionId: 'plan-ceo-review-approach-select', answer: 'A' });
@@ -244,6 +317,7 @@ test.each(['automatic', 'saved-automatic', 'target', 'timeout', 'expired-boot', 
   const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ ...row, sessionId }) + '\n');
   const session = {
     hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
+    currentScreen: async () => ({ text: visible, rawEnd: visible.length }),
     exited: () => scenario === 'exited', close: async () => { closed = true; },
     send(data: string) {
       sends.push(data);
@@ -251,7 +325,7 @@ test.each(['automatic', 'saved-automatic', 'target', 'timeout', 'expired-boot', 
         append({ type: 'assistant', message: { id: 'preview', role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', name: 'Write', id: 'w1', input: { content: mode } }] } });
         visible += mode;
       } else if (data.startsWith('For plan-ceo-review-approach-select,')) {
-        typed = data;
+        typed = data; visible += '\n❯ ' + data;
       } else throw new Error('Unsolicited input: ' + data);
     },
     sendKey(key: string) {
@@ -311,6 +385,7 @@ test.each([
   };
   const session = {
     hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
+    currentScreen: async () => ({ text: visible, rawEnd: visible.length }),
     rawOutput: () => visible, visibleText: () => visible, pid: () => 1, exitCode: () => exited ? 0 : null,
     exited: () => exited, close: async () => { closed = true; },
     send(data: string) {
@@ -394,7 +469,7 @@ test.each([
     }
     expect(closed).toBe(true);
     expect(writes.filter(write => write.text.startsWith('For ')).map(write => write.text)).toEqual([payload]);
-    expect(entered).toBe(scenario.endsWith('before Enter') || scenario === 'throw on type' ? 0 : 1);
+    expect(entered).toBe(scenario.endsWith('before Enter') || scenario === 'throw on type' || scenario === 'dropped text' ? 0 : 1);
     if (entered) expect(enterPoll).toBeGreaterThan(typePoll);
     const saved = JSON.parse(fs.readFileSync(path.join(evidenceRoot, sessionId, 'observation.json'), 'utf8')).evidence;
     expect(saved.answered).toEqual(accepted ? ['message-1'] : []);
@@ -825,6 +900,7 @@ test.each([false, true])('a previous input-window preview cannot answer a new ow
   const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ ...row, sessionId }) + '\n');
   const session = {
     hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
+    currentScreen: async () => ({ text: visible, rawEnd: visible.length }),
     exited: () => false, close: async () => { closed = true; },
     send(data: string) {
       sends.push(data);
@@ -835,7 +911,7 @@ test.each([false, true])('a previous input-window preview cannot answer a new ow
         append(assistant(approach));
         visible += second + '\n' + approach;
       } else if (data.startsWith('For ')) {
-        typed = data;
+        typed = data; visible += '\n❯ ' + data;
       } else throw new Error('Unsolicited input: ' + data);
     },
     sendKey(key: string) {
@@ -864,6 +940,9 @@ test.each([false, true])('a previous input-window preview cannot answer a new ow
         if (firstAcknowledged && !secondRendered && showCurrent) {
           secondRendered = true; visible += '\n' + capturedImplementation.visible;
         }
+        // New bytes do not establish that the old preview still in the
+        // viewport was rendered for this input epoch's new native owner.
+        if (firstAcknowledged && !showCurrent) visible += '\nWorking…';
       },
     });
     expect(closed).toBe(true);

@@ -32,7 +32,7 @@ test('private evidence preserves JSON and counters, redacts secrets and refuses 
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test.each(['success', 'timeout', 'runner-error', 'launch-error', 'cleanup-error', 'write-error', 'transcript-error', 'terminal-error'] as const)(
+test.each(['success', 'timeout', 'runner-error', 'launch-error', 'cleanup-error', 'write-error', 'transcript-error', 'terminal-error', 'screen-error'] as const)(
   'observation retains %s evidence before session cleanup and preserves failures', async scenario => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-attempt-'));
     const config = path.join(root, 'config');
@@ -43,6 +43,10 @@ test.each(['success', 'timeout', 'runner-error', 'launch-error', 'cleanup-error'
     if (scenario === 'write-error') fs.writeFileSync(evidenceRoot, 'not a directory');
     const session = {
       hermeticConfigDir: config, mark: () => text.length,
+      currentScreen: async () => {
+        if (scenario === 'screen-error') throw new Error('screen exploded');
+        return { text, rawEnd: text.length };
+      },
       visibleSince: (since = 0) => text.slice(since), rawOutput: () => {
         if (scenario === 'terminal-error') throw new Error('terminal read exploded');
         return text;
@@ -76,7 +80,8 @@ test.each(['success', 'timeout', 'runner-error', 'launch-error', 'cleanup-error'
       if (['success', 'timeout'].includes(scenario)) {
         expect((await attempt).outcome).toBe(scenario === 'success' ? 'auto_decided' : 'timeout');
       } else await expect(attempt).rejects.toThrow(
-        scenario === 'runner-error' ? 'runner exploded' : scenario === 'launch-error' ? 'launch exploded' : 'evidence/cleanup failed');
+        scenario === 'runner-error' ? 'runner exploded' : scenario === 'launch-error' ? 'launch exploded'
+          : scenario === 'screen-error' ? 'screen exploded' : 'evidence/cleanup failed');
       expect(closed).toBe(scenario !== 'launch-error');
       if (scenario === 'write-error') return;
       expect(fs.readdirSync(evidenceRoot)).toEqual([sessionId]);
@@ -90,6 +95,7 @@ test.each(['success', 'timeout', 'runner-error', 'launch-error', 'cleanup-error'
         expect(fs.existsSync(config)).toBe(false);
       }
       if (scenario === 'runner-error') expect(saved.failure).toContain('runner exploded');
+      if (scenario === 'screen-error') expect(saved.failure).toBe('Error: screen exploded');
       if (scenario === 'cleanup-error') expect(saved.finalizationErrors).toEqual(['Error: cleanup exploded']);
       if (scenario === 'transcript-error') {
         expect(saved.snapshot.rawTerminal).toBe(text);

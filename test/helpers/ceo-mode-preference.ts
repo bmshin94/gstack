@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   isNumberedOptionListVisible, isPlanReadyVisible,
   launchClaudePty, MODE_RE, parseNumberedOptions, type ClaudePtySession,
@@ -288,8 +289,10 @@ export type ModePreferenceSignal =
 
 /** Inspect main-assistant text, never Write previews or preference-tool output.
  * A preference for the mode question says nothing about an approach question.
+ * A decoded question viewport still needs its reply in the current raw input
+ * window; newly arriving bytes do not make retained viewport text current.
  */
-export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visible: string, questionVisible = visible): ModePreferenceSignal {
+export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visible: string, questionVisible = visible, inputVisible = questionVisible): ModePreferenceSignal {
   if (transcript.pendingBytes) return { kind: 'working' };
   const messages = new Map<string, { text: string[]; complete: boolean }>();
   let latestAssistantId: string | null = null;
@@ -380,6 +383,9 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       const reply = proseReply(nativeText, questionIds[0], selectors);
       if (introduction && !reply) continue;
       const signature = renderedProse(reply ?? text);
+      // A current viewport can retain an old preview after new output. Its
+      // directive must also have rendered within this exact input epoch.
+      if (!renderedProse(inputVisible).includes(signature)) continue;
       const previewText = [...toolText, toolText.join('\n')].map(renderedProse);
       // A same-input tool preview/result can display the identical directive.
       // Its rendering cannot establish that this later native question is on
@@ -422,6 +428,8 @@ export async function runCeoModePreferenceObservation(opts: {
   const deadline = startedAt + opts.timeoutMs;
   const sessionId = randomUUID();
   const answered = new Set<string>();
+  let lastScreen: { text: string; rawEnd: number } | null = null;
+  let lastScreenInputMark = 0;
   let pendingReply: {
     id: string; questionId: string; answer: string; text: string;
     nativeRowCount: number; nativePrefixSha256: string; nextInputSince: number;
@@ -445,12 +453,14 @@ export async function runCeoModePreferenceObservation(opts: {
     if (now() >= deadline) return result('timeout', 'Budget expired before launch');
     session = await (deps.launch ?? launchClaudePty)({
       permissionMode: 'plan', seedSkills: true, cwd: opts.cwd, env: opts.env,
+      captureScreen: true, rows: 120, // Keep a full prose introduction and choices in view.
       extraArgs: ['--session-id', sessionId, '--disallowedTools', 'AskUserQuestion'], timeoutMs: opts.timeoutMs,
     });
     since = session.mark(); inputSince = since;
     await sleep(8000);
     if (now() >= deadline) return result('timeout', 'Budget expired during boot');
     since = session.mark(); inputSince = since;
+    lastScreenInputMark = since;
     session.send('/plan-ceo-review\r');
     while (now() < deadline) {
       await sleep(2000);
@@ -459,6 +469,16 @@ export async function runCeoModePreferenceObservation(opts: {
       if (session.exited()) return result('exited', visible);
       const transcript = readOwnedClaudeTranscript(session.hermeticConfigDir, sessionId);
       if (now() >= deadline) break;
+      // Owned source → decoded frame → same source/output epoch → scoped input.
+      if (!session.currentScreen) throw new Error('Mode preference screen capture unavailable');
+      const frame = await session.currentScreen();
+      lastScreen = frame;
+      const afterFrame = readOwnedClaudeTranscript(session.hermeticConfigDir, sessionId);
+      if (now() >= deadline) break;
+      if (frame.rawEnd !== session.mark() || !isDeepStrictEqual(transcript, afterFrame)) continue;
+      const currentInput = () => now() < deadline && !session!.exited()
+        && frame.rawEnd > lastScreenInputMark && frame.rawEnd === session!.mark()
+        && isDeepStrictEqual(transcript, readOwnedClaudeTranscript(session!.hermeticConfigDir, sessionId));
       if (pendingReply && !pendingReply.invalidated && !transcript.pendingBytes) {
         // A write is only an attempt. Bind the acknowledgement to this exact
         // owned prefix; reset/truncation or an intervening owner cannot ack it.
@@ -506,7 +526,9 @@ export async function runCeoModePreferenceObservation(opts: {
           }
         }
       }
-      const signal = inspectCeoModePreference(transcript, visible, session.visibleSince(inputSince));
+      // The mode oracle keeps its whole-review history. Only answering an
+      // unrelated question depends on the current decoded viewport.
+      const signal = inspectCeoModePreference(transcript, visible, frame.text, session.visibleSince(inputSince));
       lastSignal = signal;
       if (now() >= deadline) break;
       if (signal.kind === 'asked' || signal.kind === 'auto_decided' && !pendingReply) return result(signal.kind, signal.evidence);
@@ -517,13 +539,15 @@ export async function runCeoModePreferenceObservation(opts: {
           && !pendingReply.enterWriteAttempted && signal.kind === 'unrelated'
           && signal.id === pendingReply.id && signal.questionId === pendingReply.questionId
           && signal.answer === pendingReply.answer) {
-          if (now() >= deadline) break;
+          if (!currentInput()) continue;
           pendingReply.enterWriteAttempted = true;
+          lastScreenInputMark = session.mark();
           session.sendKey('Enter');
         }
         continue;
       }
       if (signal.kind === 'unrelated' && !answered.has(signal.id)) {
+        if (!currentInput()) continue;
         pendingReply = {
           id: signal.id, questionId: signal.questionId, answer: signal.answer,
           text: `For ${signal.questionId}, I choose option ${signal.answer}. Continue the review.`,
@@ -532,6 +556,7 @@ export async function runCeoModePreferenceObservation(opts: {
         };
         if (now() >= deadline) break;
         pendingReply.textWriteAttempted = true;
+        lastScreenInputMark = session.mark();
         session.send(pendingReply.text);
         continue;
       }
@@ -541,13 +566,15 @@ export async function runCeoModePreferenceObservation(opts: {
       const pending = native.calls.filter(call => call.result === 'pending');
       if (pending.length > 1) throw new Error('Ambiguous concurrent question in mode-preference fixture');
       const call = pending[0];
-      const questionVisible = session.visibleSince(inputSince);
+      const questionVisible = frame.text;
       if (call && !answered.has(call.id) && isNumberedOptionListVisible(questionVisible)) {
         if (call.questions.length !== 1 || call.questions[0].multiSelect) throw new Error('Unsupported unrelated question shape in mode-preference fixture');
         const question = call.questions[0];
         if (matchesNativeQuestion(question, questionVisible, parseNumberedOptions(questionVisible), native.calls.flatMap(call => call.questions))) {
+          if (!currentInput()) continue;
           answered.add(call.id); inputSince = session.mark();
           if (now() >= deadline) break;
+          lastScreenInputMark = session.mark();
           session.send('1\r');
         }
       }
@@ -573,6 +600,7 @@ export async function runCeoModePreferenceObservation(opts: {
       capture('visibleTerminal', () => session!.visibleText());
       capture('observationVisible', () => session!.visibleSince(since));
       capture('inputVisible', () => session!.visibleSince(inputSince));
+      snapshot.currentScreen = lastScreen;
       capture('transcript', () => readOwnedClaudeTranscript(session!.hermeticConfigDir, sessionId));
       capture('process', () => ({ pid: session!.pid(), exited: session!.exited(), exitCode: session!.exitCode() }));
     }
