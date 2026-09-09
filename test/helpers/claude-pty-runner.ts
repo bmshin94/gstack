@@ -2084,6 +2084,25 @@ export interface PlanSkillCountObservation {
   step0Count: number;
   /** Count of fingerprints with `preReview === false`. */
   reviewCount: number;
+  /** Last sampled guard state, not a fresh read at timeout. No native inputs/text. */
+  diagnostics: {
+    lastLoopStage: string;
+    observationAgeMs: number | null;
+    lastObservation: {
+      observedAtMs: number;
+      ready: boolean;
+      pendingBytes: number;
+      hasPendingWork: boolean;
+      pendingQuestions: { count: number; ids: string[] };
+      pendingTools: { count: number; items: Array<{ id: string; name: string }> };
+      pendingFileRequests: { count: number; items: Array<{ requestId: string; name: string; nativeToolId: string | null }> };
+      questionWindowPlanReady: boolean;
+      visiblePlanReady: boolean;
+      nativeStable: boolean | null;
+      frame: { rawEnd: number; questionSince: number; viewportInputSince: number; fresh: boolean; planReady: boolean; exitConfirmation: boolean } | null;
+      questionMatch: 'not-evaluated' | 'none' | 'digit' | 'preview';
+    } | null;
+  };
 }
 
 /**
@@ -2181,6 +2200,8 @@ export async function runPlanSkillCounting(opts: {
   let step0Count = 0;
   let reviewCount = 0;
   let isFirstAUQ = true;
+  let lastLoopStage = 'before-launch';
+  let lastObservation: PlanSkillCountObservation['diagnostics']['lastObservation'] = null;
 
   const timeoutSummary = () => `no terminal outcome within ${timeoutMs}ms (step0=${step0Count}, review=${reviewCount})`;
   const expired = () => Date.now() >= deadlineAt;
@@ -2207,6 +2228,11 @@ export async function runPlanSkillCounting(opts: {
       fingerprints,
       step0Count,
       reviewCount,
+      diagnostics: {
+        lastLoopStage,
+        observationAgeMs: lastObservation ? capturedAt - startedAt - lastObservation.observedAtMs : null,
+        lastObservation,
+      },
     };
   }
 
@@ -2230,11 +2256,13 @@ export async function runPlanSkillCounting(opts: {
   // Case setup → remaining entry deadline → boot/polls → bounded close.
   // Bun's separate finalization allowance never extends model work.
   try {
+    lastLoopStage = 'boot-grace';
     await pause(8000); // boot grace + auto-trust handler window
     if (expired()) return snapshot('timeout', timeoutSummary(), session.visibleSince(since));
     since = session.mark();
     questionSince = since;
     session.send(`${opts.slashCommand}\r`);
+    lastLoopStage = 'slash-command-sent';
     await pause(3000);
     if (expired()) return snapshot('timeout', timeoutSummary(), session.visibleSince(since));
     if (opts.followUpPrompt) session.send(`${opts.followUpPrompt}\r`);
@@ -2280,13 +2308,33 @@ export async function runPlanSkillCounting(opts: {
       }
 
       const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
-      if (native.pendingBytes) continue;
+      // Observe the same prefix used by the guards. A partial row or changed
+      // frame bracket remains explicitly incomplete, never a completion proof.
+      const diagnosticQuestions = native.calls.filter(call => call.result === 'pending');
+      const diagnosticRequests = native.permissionRequests.filter(request => request.result === 'pending');
+      lastObservation = {
+        observedAtMs: Date.now() - startedAt, ready: native.ready, pendingBytes: native.pendingBytes,
+        hasPendingWork: diagnosticQuestions.length > 0 || native.permissionTools.length > 0 || diagnosticRequests.length > 0,
+        pendingQuestions: { count: diagnosticQuestions.length, ids: diagnosticQuestions.slice(-8).map(call => call.id.slice(0, 128)) },
+        pendingTools: { count: native.permissionTools.length, items: native.permissionTools.slice(-8).map(tool => ({ id: tool.id.slice(0, 128), name: typeof tool.name === 'string' ? tool.name.slice(0, 64) : typeof tool.name })) },
+        pendingFileRequests: { count: diagnosticRequests.length, items: diagnosticRequests.slice(-8).map(request => ({ requestId: request.requestId.slice(0, 128), name: request.name, nativeToolId: request.nativeToolId?.slice(0, 128) ?? null })) },
+        questionWindowPlanReady: isPlanReadyVisible(questionWindow), visiblePlanReady: isPlanReadyVisible(visible),
+        nativeStable: null, frame: null, questionMatch: 'not-evaluated',
+      };
+      if (native.pendingBytes) { lastLoopStage = 'pending-native-bytes'; continue; }
       // Bracket the async frame with native reads. Newly captured work or an
       // ACK during sampling must wait for a consistent source/frame pair.
+      lastLoopStage = 'sampling-frame';
       const frame = await session.currentScreen?.();
       const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
+      lastObservation.nativeStable = isDeepStrictEqual(native, afterFrame);
+      if (frame) lastObservation.frame = {
+        rawEnd: frame.rawEnd, questionSince, viewportInputSince,
+        fresh: frame.rawEnd > Math.max(questionSince, viewportInputSince),
+        planReady: isPlanReadyVisible(frame.text), exitConfirmation: isNativeExitPlanConfirmationVisible(frame.text),
+      };
       if (expired()) break;
-      if (!isDeepStrictEqual(native, afterFrame)) continue;
+      if (!isDeepStrictEqual(native, afterFrame)) { lastLoopStage = 'native-frame-changed'; continue; }
       const questionVisible = frame
         ? frame.rawEnd > Math.max(questionSince, viewportInputSince) ? frame.text : ''
         : questionWindow;
@@ -2296,6 +2344,7 @@ export async function runPlanSkillCounting(opts: {
         if (!owner || !isDeepStrictEqual(owner.questions, viewport.questions)) throw new Error('Expanded native question changed ownership or input');
         if (owner.result === 'error') throw new Error(`Native AskUserQuestion ${owner.id} returned an error`);
         if (owner.result !== 'pending') {
+          lastLoopStage = 'restoring-question-viewport';
           const restored = await session.resizeQuestionViewport!(40, deadlineAt);
           if (restored !== null) { viewportInputSince = restored; viewport = null; }
           continue;
@@ -2321,6 +2370,7 @@ export async function runPlanSkillCounting(opts: {
 
       // Soft terminal signals — check before AUQ processing so a final
       // completion-summary doesn't get misclassified as a bonus AUQ.
+      lastLoopStage = 'terminal-checks';
       const hasPendingQuestion = native.calls.some(call => call.result === 'pending');
       const pendingPermissionRequests = native.permissionRequests.filter(request => request.result === 'pending');
       const hasPendingWork = hasPendingQuestion || native.permissionTools.length > 0 || pendingPermissionRequests.length > 0;
@@ -2352,6 +2402,7 @@ export async function runPlanSkillCounting(opts: {
       // Native permissions are separate from AUQs. Consume the rendered
       // window before writing, so old permission text cannot send again.
       if (!call && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES))) {
+        lastLoopStage = 'permission-grant';
         if (expired()) break;
         if (!reserveNativePermissionGrant(native, questionVisible.slice(-TAIL_SCAN_BYTES), grantedTools, grantedRequests)) continue;
         questionSince = session.mark();
@@ -2360,9 +2411,10 @@ export async function runPlanSkillCounting(opts: {
         continue;
       }
 
-      if (!call) continue;
+      if (!call) { lastLoopStage = 'no-pending-question'; continue; }
       let state = submitted.get(call.id);
       if (state?.answeredQuestions === call.questions.length) {
+        lastLoopStage = 'awaiting-question-result';
         // Multi-question and multi-select calls have an explicit final review
         // screen. Single-select one-question calls submit automatically.
         if (!state.submitted && isNativeQuestionSubmitVisible(questionVisible)) {
@@ -2379,7 +2431,9 @@ export async function runPlanSkillCounting(opts: {
       if (question.multiSelect) throw new Error('Native multiSelect AskUserQuestion requires checkbox navigation unsupported by the counting driver');
       const renderedOptions = parseNumberedOptions(questionVisible);
       const selection = nativeQuestionSelection(question, questionVisible, renderedOptions, native.calls.flatMap(call => call.questions));
+      lastObservation.questionMatch = selection?.kind ?? 'none';
       if (!selection) {
+        lastLoopStage = 'unmatched-question';
         const key = `${call.id}:${state?.answeredQuestions ?? 0}`;
         const attempts = viewportAttempts.get(key) ?? 0;
         if (frame && isNumberedOptionListVisible(questionVisible) && session.resizeQuestionViewport && attempts < 2 && viewport?.rows !== 120) {
@@ -2393,7 +2447,7 @@ export async function runPlanSkillCounting(opts: {
         }
         continue;
       }
-      if (selection.kind === 'preview' && !frame) continue;
+      if (selection.kind === 'preview' && !frame) { lastLoopStage = 'preview-without-frame'; continue; }
       const fp: AskUserQuestionFingerprint = {
         signature: call.id, toolUseId: call.id, questions: call.questions,
         promptSnippet: question.question.slice(0, 240),
@@ -2410,8 +2464,9 @@ export async function runPlanSkillCounting(opts: {
         submitted.set(call.id, state);
       }
       if (expired()) break;
-      if (state.previewFocus !== undefined && selection.kind !== 'preview') continue;
+      if (state.previewFocus !== undefined && selection.kind !== 'preview') { lastLoopStage = 'awaiting-preview-focus'; continue; }
       if (selection.kind === 'preview' && selection.focusedIndex !== pickIdx) {
+        lastLoopStage = 'awaiting-preview-focus';
         // Focus alone is not an answer. Send once, then require a new owned
         // current frame proving the desired focus before committing it.
         if (state.previewFocus !== undefined) continue;
@@ -2428,6 +2483,7 @@ export async function runPlanSkillCounting(opts: {
       // Ordinary digits advance; preview Enter commits the current focus.
       // Final multi-tab submission remains a separate screen-bound action.
       session.send(selection.kind === 'preview' ? '\r' : String(pickIdx));
+      lastLoopStage = 'question-input-sent';
 
       // Give the agent a beat to advance to the next state.
       await pause(2000);

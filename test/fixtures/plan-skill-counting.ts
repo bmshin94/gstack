@@ -67,12 +67,13 @@ const RETAINED_PARENTHESIZED_MODE_INPUT = {
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
+  const terminalDiagnosticCase = scenario.startsWith('terminal-diagnostic-');
   const editPermissionCase = scenario.startsWith('permission-edit-');
   const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
   const exitConfirmationCase = scenario.startsWith('exit-confirmation-');
-  const timing = exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const timing = terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
@@ -99,7 +100,7 @@ async function main() {
   let raceInjected = false;
   let raceJustInjected = false;
   const originalScreenSnapshot = PtyCurrentScreen.prototype.snapshot;
-  if (scenario.endsWith('arrival-race') || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
+  if (scenario.endsWith('arrival-race') || scenario === 'terminal-diagnostic-frame-race' || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
     const frame = await originalScreenSnapshot.call(this);
     if (scenario === 'viewport-flush-deadline' && frame.rows === 40 && frame.text.includes('Clipped native prompt') && ++viewportSnapshots === 2) clock = caseBudgetMs;
     const publish = publishDuringScreen;
@@ -357,6 +358,26 @@ async function main() {
           }
           if (data.startsWith('/')) {
             seededBeforeSlash = fs.readFileSync(path.join(options.cwd, 'review-input.md'), 'utf8') === plan;
+            if (terminalDiagnosticCase) {
+              // The existing full-plan predicate matches this observed footer;
+              // only owned native state may authorize a read-only terminal.
+              if (!scenario.endsWith('no-owner')) tool('ExitPlanMode', {});
+              if (scenario.endsWith('pending-tool')) tool('ToolSearch', { query: 'PRIVATE_DIAGNOSTIC_INPUT' });
+              if (scenario.endsWith('pending-auq')) ask('PRIVATE_DIAGNOSTIC_QUESTION', ['PRIVATE_OPTION_ONE', 'PRIVATE_OPTION_TWO']);
+              if (scenario.endsWith('pending-file')) recordFilePermission({ file_path: path.join(project, 'plan.md'), content: 'PRIVATE_DIAGNOSTIC_INPUT' });
+              if (scenario.endsWith('pending-bytes')) fs.appendFileSync(file, '{"type":"assistant"');
+              if (scenario.endsWith('bounded')) for (let i = 0; i < 20; i++) {
+                const id = `pending-${i}-` + 'i'.repeat(256);
+                append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id,
+                  name: 'n'.repeat(128), input: { secret: 'PRIVATE_DIAGNOSTIC_INPUT' } }] } });
+              }
+              if (scenario.endsWith('frame-race')) {
+                const publish = () => { tool('ToolSearch', { query: 'PRIVATE_DIAGNOSTIC_INPUT' }); publishDuringScreen = publish; };
+                publishDuringScreen = publish;
+              }
+              emit('\x1b[2J\x1b[HReady to code?\nHere is Claude\'s plan:\nClaude has written up a plan and is ready to execute. Would you like to proceed?\n❯ 1. Yes, and use auto mode\n  2. Yes, manually approve edits\n  3. Tell Claude what to change\n');
+              return;
+            }
             if (scenario === 'exit-confirmation-stale-frame') { requestExitConfirmation(); return; }
             if (scenario === 'setup-budget' || scenario === 'launch-budget' || scenario === 'setup-exhausted') {
               emit('WORK_IN_PROGRESS\n');

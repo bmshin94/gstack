@@ -147,6 +147,7 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
           throw new Error(
             `plan-ceo-review finding-count FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
+              `last sampled counting state: ${JSON.stringify(obs.diagnostics)}\n` +
               `fingerprints (last 8):\n` +
               obs.fingerprints
                 .slice(-8)

@@ -21,6 +21,68 @@ async function runFakeCounting(completion: string, scenario: string) {
 }
 
 describe('real plan counting loop with an isolated fake PTY', () => {
+  test.each(['no-owner', 'pending-tool', 'pending-auq', 'pending-file', 'pending-bytes', 'frame-race'])('terminal diagnostics distinguish blocked native state without approving the visible plan (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `terminal-diagnostic-${variant}`);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.observation.reviewCount).toBe(0);
+    const diagnostic = result.observation.diagnostics;
+    const last = diagnostic.lastObservation;
+    expect(diagnostic.observationAgeMs).toBeGreaterThanOrEqual(0);
+    expect(last.questionWindowPlanReady).toBe(true);
+    expect(last.visiblePlanReady).toBe(true);
+    expect(last.ready).toBe(variant !== 'no-owner');
+    expect(last.hasPendingWork).toBe(['pending-tool', 'pending-auq', 'pending-file', 'frame-race'].includes(variant));
+    if (variant === 'pending-tool') expect(last.pendingTools.items).toEqual([{ id: 'tool-2', name: 'ToolSearch' }]);
+    if (variant === 'pending-auq') {
+      expect(last.pendingQuestions.ids).toEqual(['tool-2']);
+      expect(last.questionMatch).toBe('none');
+    }
+    if (variant === 'pending-file') {
+      expect(last.pendingFileRequests.count).toBe(1);
+      expect(last.pendingFileRequests.items[0].name).toBe('Write');
+    }
+    if (variant === 'pending-bytes') {
+      expect(last.pendingBytes).toBeGreaterThan(0);
+      expect(last.frame).toBeNull();
+      expect(last.nativeStable).toBeNull();
+      expect(diagnostic.lastLoopStage).toBe('pending-native-bytes');
+    } else {
+      expect(last.frame.planReady).toBe(true);
+      expect(last.nativeStable).toBe(variant !== 'frame-race');
+    }
+    if (variant === 'frame-race') expect(diagnostic.lastLoopStage).toBe('native-frame-changed');
+    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('terminal diagnostics retain bounded IDs and names without native inputs', async () => {
+    const result = await runFakeCounting('**DONE**', 'terminal-diagnostic-bounded');
+    const diagnostic = result.observation.diagnostics;
+    expect(result.observation.outcome).toBe('timeout');
+    expect(diagnostic.lastObservation.pendingTools.count).toBe(20);
+    expect(diagnostic.lastObservation.pendingTools.items).toHaveLength(8);
+    for (const item of diagnostic.lastObservation.pendingTools.items) {
+      expect(item.id.length).toBe(128);
+      expect(item.name.length).toBe(64);
+      expect(Object.keys(item).sort()).toEqual(['id', 'name']);
+    }
+    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+  }, 15_000);
+  test('terminal diagnostics distinguish the existing full-plan terminal from a stale decoded frame', async () => {
+    const ready = await runFakeCounting('**DONE**', 'terminal-diagnostic-ready');
+    expect(ready.observation.outcome).toBe('plan_ready');
+    expect(ready.observation.diagnostics.lastObservation.ready).toBe(true);
+    expect(ready.observation.diagnostics.lastObservation.hasPendingWork).toBe(false);
+    expect(ready.sends).toEqual(['/plan-ceo-review\r']);
+    const stale = await runFakeCounting('**DONE**', 'exit-confirmation-stale-frame');
+    expect(stale.observation.outcome).toBe('timeout');
+    expect(stale.observation.diagnostics.lastObservation.frame.fresh).toBe(false);
+    const corrected = await runFakeCounting('**DONE**', 'screen-only-plan-ready');
+    expect(corrected.observation.outcome).toBe('timeout');
+    expect(corrected.observation.diagnostics.lastObservation.questionWindowPlanReady).toBe(false);
+    expect(corrected.observation.diagnostics.lastObservation.frame.planReady).toBe(true);
+  }, 15_000);
   test('letter-prefixed retained mode ACK ends setup exactly once before later review ACKs', async () => {
     const result = await runFakeCounting('**DONE**', 'letter-prefixed-mode');
     expect(result.error).toBeUndefined();
