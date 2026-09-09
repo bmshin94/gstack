@@ -11,11 +11,9 @@
  * the question but the agent ignores the choice (e.g. always defaults
  * to EXPANSION) would not be caught by any prior test.
  *
- * Tier: periodic (not gate). Each run navigates 8-12 prior AskUserQuestions (telemetry,
- * proactive, routing, vendoring, brain, office-hours, premise×3, approach)
- * before reaching Step 0F. At ~30s per AskUserQuestion that's a 4-6 min navigation
- * phase per case. The full 2-case suite runs ~12-15 min, $3-4. Too slow
- * for gate-tier; weekly is fine.
+ * Tier: periodic (not gate). The supplied plan and design satisfy prerequisite
+ * discovery; each run still navigates the review's premise and approach
+ * decisions before Step 0F, then verifies the selected mode's downstream posture.
  *
  * Mode coverage: HOLD SCOPE + SCOPE EXPANSION cover the two posture poles
  * (rigor vs ambition). SELECTIVE EXPANSION and SCOPE REDUCTION are V2 once
@@ -67,6 +65,8 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
         try {
           // Both choices start from the same user request. An ambient branch can
           // otherwise look like a bug fix and legitimately bypass the mode menu.
+          // Supply the same mode-neutral design as the saved-preference fixture
+          // to avoid the missing-design Office Hours detour.
           seedCeoFindingProject(project, `# Export saved settings
 
 Add a CSV export button to the settings page. Reuse the existing settings API;
@@ -75,7 +75,21 @@ page, a CSV formatter, and formatter tests. Review this plan before implementati
 
 Please present the full review-mode choice and wait for my selection before
 selecting a mode. I have not chosen a review mode for this plan.
-`);
+`, [
+            '# Design: export saved settings', '',
+            '## Problem',
+            'Operators need a spreadsheet of their saved settings for offline comparison',
+            'and support investigations. The existing settings page is the entry point.', '',
+            '## Chosen approach',
+            'Add one CSV download button. Read the existing authenticated settings API,',
+            'format its saved values with a focused CSV formatter, and test escaping',
+            'for commas, quotes, and newlines before wiring the button.', '',
+            '## Alternatives and boundaries',
+            'A new backend export endpoint duplicates the existing read API. A generic',
+            'multi-format framework adds work before there is a second consumer.',
+            'Importing settings, changing authorization, and adding export formats are',
+            'outside this proposal. Review gaps and risks before implementation.', '',
+          ].join('\n'));
           const sessionId = randomUUID();
           session = await launchClaudePty({
             cwd: project,

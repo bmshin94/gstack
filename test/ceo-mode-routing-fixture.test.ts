@@ -30,6 +30,9 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
     facts.push(current);
     current.input = fs.readFileSync(path.join(opts.cwd, 'review-input.md'), 'utf8');
     current.committed = execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: opts.cwd, encoding: 'utf8', timeout: 5000 });
+    current.design = fs.readFileSync(path.join(opts.cwd, 'DESIGN.md'), 'utf8');
+    current.committedDesign = execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd: opts.cwd, encoding: 'utf8', timeout: 5000 });
+    current.status = execFileSync('git', ['status', '--porcelain'], { cwd: opts.cwd, encoding: 'utf8', timeout: 5000 });
     current.diff = execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd: opts.cwd, encoding: 'utf8', timeout: 5000 });
     if (scenario === 'launch') throw new Error('fixture launch failed');
     return {
@@ -74,9 +77,16 @@ await import(path.join(root, 'test/skill-e2e-plan-ceo-mode-routing.test.ts'));
     expect(facts).toHaveLength(2);
     expect(facts[0].cwd).not.toBe(facts[1].cwd);
     expect(facts[0].input).toBe(facts[1].input);
+    expect(facts[0].design).toBe(facts[1].design);
     for (const fact of facts) {
       expect(fact.cwd).not.toBe(ROOT);
       expect(fact.committed).toBe(fact.input);
+      expect(fact.committedDesign).toBe(fact.design);
+      expect(fact.design).toContain('## Problem');
+      expect(fact.design).toContain('## Chosen approach');
+      expect(fact.design).toContain('## Alternatives and boundaries');
+      expect(fact.design).not.toMatch(/HOLD SCOPE|SCOPE EXPANSION|rigor|bulletproof|10x|delight|dream|cathedral|opt[\s-]?in/i);
+      expect(fact.status).toBe('');
       expect(fact.diff).toBe('');
       expect(fact.input).toContain('present the full review-mode choice and wait for my selection');
       expect(fact.input).not.toMatch(/HOLD SCOPE|SCOPE EXPANSION|rigor|bulletproof|10x|delight|dream|cathedral|opt[\s-]?in/i);
