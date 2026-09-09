@@ -83,13 +83,11 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
           throw new Error(
             `plan-devex-review finding-count FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
-              `fingerprints (last 8):\n` +
+              `last sampled counting state: ${JSON.stringify(obs.diagnostics)}\n` +
+              `All-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
               obs.fingerprints
                 .slice(-8)
-                .map(
-                  (f, i) =>
-                    `  ${i}. preReview=${f.preReview} sig=${f.signature.slice(0, 12)} prompt="${f.promptSnippet.slice(0, 60)}"`,
-                )
+                .map((f) => `  - ${JSON.stringify({ preReview: f.preReview, nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
                 .join('\n') +
               `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
