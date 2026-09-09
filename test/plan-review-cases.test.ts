@@ -7,6 +7,21 @@ const menu = (labels: string[], header = 'Next review', question = "D12 — What
   header, question, multiSelect: false, options: labels.map(label => ({ label, description: 'Offered choice' })),
 });
 
+test('Eng independent-remedy rule is loaded before Step 0 and retains outside-voice consent', () => {
+  const definition = 'Treat each independently selectable remedy as its own finding';
+  for (const suffix of ['.tmpl', '']) {
+    const skeleton = readFileSync(`plan-eng-review/SKILL.md${suffix}`, 'utf8');
+    const sections = readFileSync(`plan-eng-review/sections/review-sections.md${suffix}`, 'utf8');
+    const rule = skeleton.indexOf(definition);
+    expect(rule).toBeGreaterThan(0);
+    expect(rule).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
+    expect(skeleton.slice(rule, rule + 350)).toContain('keep implementation details and tests that directly establish one chosen contract together');
+    expect((skeleton + sections).split(definition)).toHaveLength(2);
+    expect(sections).toContain('Outside voice findings are INFORMATIONAL until the user explicitly approves each one');
+    expect(sections).toContain('Do NOT incorporate outside voice recommendations into the plan without presenting each');
+  }
+});
+
 describe('plan-review manual handoff selection', () => {
   test('declines the retained native two-option next-review offer', () => {
     expect(pickPlanReviewQuestion(menu(['Run /plan-eng-review', 'Skip — handle reviews manually']))).toBe(2);
