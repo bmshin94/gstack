@@ -38,6 +38,20 @@ test('letter-prefixed native mode without ACK cannot start posture', async () =>
   expect(result.sends).toEqual(['1', '3']);
   expect(result.acknowledged).toBe(false);
 }, 15_000);
+test.each([['parenthesized', 1], ['parenthesized-hold', 3]] as const)('parenthesized retained mode selects the requested native index (%s)', async (scenario, index) => {
+  const result = await run(scenario);
+  expect(result.error).toBeUndefined();
+  expect(result.premature).toEqual([]);
+  expect(result.sends).toEqual(['1', String(index)]);
+  expect(result.navigation).toMatchObject({ modeIndex: index, toolUseId: 'mode' });
+  expect(result.acknowledged).toBe(true);
+}, 15_000);
+test('parenthesized retained mode without ACK cannot start posture', async () => {
+  const result = await run('parenthesized-unacknowledged');
+  expect(result.error).toContain('not acknowledged');
+  expect(result.sends).toEqual(['1', '1']);
+  expect(result.acknowledged).toBe(false);
+}, 15_000);
 test('two native tabs select with digits and submit once after both answers', async () => {
   const result = await run('multi-tab');
   expect(result.error).toBeUndefined();

@@ -35,13 +35,42 @@ const RETAINED_LETTER_PREFIXED_MODE_INPUT = {
   ]
 };
 
+// Exact retained native input: toolu_01KR2ec2WnBuP9vMvXmRFq4N.
+const RETAINED_PARENTHESIZED_MODE_INPUT = {
+  "questions": [
+    {
+      "question": "D1 — Which CEO review mode should I run?\n\nProject: CSV export button for settings page | Branch: main\n\nELI10: The mode controls how aggressively I expand the plan’s scope. EXPANSION means I’ll push you to build a bigger, more ambitious version and advocate for it. SELECTIVE EXPANSION holds your current scope but surfaces each possible expansion individually so you can cherry-pick. HOLD SCOPE reviews what you have with maximum rigor and no scope changes. SCOPE REDUCTION cuts the plan to its absolute minimum.\n\nStakes if we pick wrong: A mode that’s too expansive turns a 2-hour feature into a week-long project; a mode that’s too restrictive misses easy wins sitting right next to the change you’re already making.\n\nRecommendation: B (SELECTIVE EXPANSION) because this is an incremental enhancement to an existing page — the baseline is right, but there may be adjacent 30-minute wins (e.g. copy-to-clipboard, JSON alternative) worth surfacing individually so you can opt in.\n\nNote: options differ in kind, not coverage — no completeness score.",
+      "header": "Review Mode",
+      "options": [
+        {
+          "label": "A) SCOPE EXPANSION",
+          "description": "Dream big. I’ll propose a 10x more ambitious version and advocate enthusiastically for each scope expansion. You approve each one individually. Good for: when you’re open to rethinking the feature’s ceiling."
+        },
+        {
+          "label": "B) SELECTIVE EXPANSION (recommended)",
+          "description": "Hold current scope as the baseline, surface each expansion opportunity individually for you to cherry-pick or skip. Neutral posture — I present the option, you decide. Good for: iteration on an existing system where the baseline is right but you want visibility into adjacent opportunities."
+        },
+        {
+          "label": "C) HOLD SCOPE",
+          "description": "The scope is right. Maximum rigor review: architecture, security, error paths, edge cases, observability, deployment. No expansions surfaced. Good for: when the plan is already well-defined and you want ruthless QA, not new ideas."
+        },
+        {
+          "label": "D) SCOPE REDUCTION",
+          "description": "Cut to the absolute minimum that ships value. Good for: when the plan is overbuilt or you need to ship something smaller and faster than what’s currently planned."
+        }
+      ],
+      "multiSelect": false
+    }
+  ]
+};
+
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
   const filePermissionCase = scenario.startsWith('permission-final-');
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
-  const timing = scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const timing = scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
@@ -290,9 +319,10 @@ async function main() {
             }
             const previewId = tool('Read', { content: '## GSTACK REVIEW REPORT\nVERDICT: APPROVED' });
             append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: previewId, content: 'Preview read' }] } });
-            if (scenario.startsWith('letter-prefixed-mode')) {
-              pendingId = tool('AskUserQuestion', RETAINED_LETTER_PREFIXED_MODE_INPUT);
-              const question = RETAINED_LETTER_PREFIXED_MODE_INPUT.questions[0];
+            if (scenario.startsWith('letter-prefixed-mode') || scenario.startsWith('parenthesized-mode')) {
+              const input = scenario.startsWith('parenthesized-mode') ? RETAINED_PARENTHESIZED_MODE_INPUT : RETAINED_LETTER_PREFIXED_MODE_INPUT;
+              pendingId = tool('AskUserQuestion', input);
+              const question = input.questions[0];
               emit(`\x1b[2J\x1b[H☐ ${question.header}\n${question.question.split('\n')[0]}\n`
                 + question.options.map((option, i) => `${i === 0 ? '❯' : ''}${i + 1}.${option.label}`).join('\n') + '\n');
               return;
@@ -348,7 +378,7 @@ async function main() {
               emit(batchQuestion === 1 ? finding(2) : '\nReview your answers\nReady to submit your answers?\nSubmit answers\n');
               return;
             }
-            if (scenario === 'letter-prefixed-mode-no-ack' && answer === 1) { emit('\nWORK_IN_PROGRESS\n'); return; }
+            if (['letter-prefixed-mode-no-ack', 'parenthesized-mode-no-ack'].includes(scenario) && answer === 1) { emit('\nWORK_IN_PROGRESS\n'); return; }
             if (['no-ack', 'hook-no-ack'].includes(scenario) && answer === 2) { emit('\nWORK_IN_PROGRESS\n'); return; }
             acknowledge();
             if (scenario === 'viewport-ready-no-restore-output') { tool('ExitPlanMode', {}); emit('\nReady to execute?\n'); return; }

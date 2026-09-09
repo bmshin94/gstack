@@ -7,6 +7,35 @@ import { setupQuestionEventSource } from '../helpers/plan-skill-question-events'
 import { spawnSync } from 'node:child_process';
 import type { ClaudePtySession } from '../helpers/claude-pty-runner';
 
+// Exact retained native input: toolu_01KR2ec2WnBuP9vMvXmRFq4N.
+const RETAINED_PARENTHESIZED_MODE_INPUT = {
+  "questions": [
+    {
+      "question": "D1 — Which CEO review mode should I run?\n\nProject: CSV export button for settings page | Branch: main\n\nELI10: The mode controls how aggressively I expand the plan’s scope. EXPANSION means I’ll push you to build a bigger, more ambitious version and advocate for it. SELECTIVE EXPANSION holds your current scope but surfaces each possible expansion individually so you can cherry-pick. HOLD SCOPE reviews what you have with maximum rigor and no scope changes. SCOPE REDUCTION cuts the plan to its absolute minimum.\n\nStakes if we pick wrong: A mode that’s too expansive turns a 2-hour feature into a week-long project; a mode that’s too restrictive misses easy wins sitting right next to the change you’re already making.\n\nRecommendation: B (SELECTIVE EXPANSION) because this is an incremental enhancement to an existing page — the baseline is right, but there may be adjacent 30-minute wins (e.g. copy-to-clipboard, JSON alternative) worth surfacing individually so you can opt in.\n\nNote: options differ in kind, not coverage — no completeness score.",
+      "header": "Review Mode",
+      "options": [
+        {
+          "label": "A) SCOPE EXPANSION",
+          "description": "Dream big. I’ll propose a 10x more ambitious version and advocate enthusiastically for each scope expansion. You approve each one individually. Good for: when you’re open to rethinking the feature’s ceiling."
+        },
+        {
+          "label": "B) SELECTIVE EXPANSION (recommended)",
+          "description": "Hold current scope as the baseline, surface each expansion opportunity individually for you to cherry-pick or skip. Neutral posture — I present the option, you decide. Good for: iteration on an existing system where the baseline is right but you want visibility into adjacent opportunities."
+        },
+        {
+          "label": "C) HOLD SCOPE",
+          "description": "The scope is right. Maximum rigor review: architecture, security, error paths, edge cases, observability, deployment. No expansions surfaced. Good for: when the plan is already well-defined and you want ruthless QA, not new ideas."
+        },
+        {
+          "label": "D) SCOPE REDUCTION",
+          "description": "Cut to the absolute minimum that ships value. Good for: when the plan is overbuilt or you need to ship something smaller and faster than what’s currently planned."
+        }
+      ],
+      "multiSelect": false
+    }
+  ]
+};
+
 // Retained clipped modal: no invented header or substring-match authority.
 const viewportReplay = {
   "question": {
@@ -79,7 +108,9 @@ let acknowledged = false;
 const sends: string[] = [];
 const premature: string[] = [];
 const letterPrefixed = scenario.startsWith('letter-prefixed');
-const labels = letterPrefixed ? ['C — HOLD SCOPE (Recommended)', 'B — SELECTIVE EXPANSION', 'A — SCOPE EXPANSION', 'D — SCOPE REDUCTION'] : scenario === 'missing' ? ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION'] : ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION', 'SCOPE EXPANSION'];
+const parenthesized = scenario.startsWith('parenthesized');
+const targetMode = scenario === 'parenthesized-hold' ? 'HOLD SCOPE' : 'SCOPE EXPANSION';
+const labels = parenthesized ? RETAINED_PARENTHESIZED_MODE_INPUT.questions[0].options.map(option => option.label) : letterPrefixed ? ['C — HOLD SCOPE (Recommended)', 'B — SELECTIVE EXPANSION', 'A — SCOPE EXPANSION', 'D — SCOPE REDUCTION'] : scenario === 'missing' ? ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION'] : ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION', 'SCOPE EXPANSION'];
 const session = {
   exited: () => false, exitCode: () => null,
   get hermeticConfigDir() {
@@ -119,11 +150,23 @@ const session = {
         return;
       }
       result('approach');
-      tool('mode', 'Choose review mode', labels);
+      if (parenthesized) append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{
+        type: 'tool_use', id: 'mode', name: 'AskUserQuestion', input: RETAINED_PARENTHESIZED_MODE_INPUT,
+      }] } });
+      else tool('mode', 'Choose review mode', labels);
       stage = 'mode';
       // Native input is authoritative even when the current viewport only
       // renders two choices. The target remains the actual native index.
-      buffer += `\nChoose review mode\n❯1.${labels[0]}\n2.${labels[1]}\n`;
+      const question = RETAINED_PARENTHESIZED_MODE_INPUT.questions[0];
+      buffer += parenthesized
+        ? `\n☐ ${question.header}\n${question.question.split('\n')[0]}\n` + labels.map((label, i) => `${i === 0 ? '❯' : ''}${i + 1}.${label}`).join('\n') + '\n'
+        : `\nChoose review mode\n❯1.${labels[0]}\n2.${labels[1]}\n`;
+    } else if (stage === 'mode' && parenthesized && /^[1-4]$/.test(data)) {
+      // Any offered digit gets a real native ACK, including the old driver's
+      // default 1. Only recognized target selection can finish navigation.
+      if (scenario !== 'parenthesized-unacknowledged') { result('mode'); acknowledged = true; }
+      stage = 'done';
+      buffer += `\n${labels[Number(data) - 1]} posture\n`;
     } else if (stage === 'mode' && data === (letterPrefixed ? '3' : '4')) {
       if (scenario !== 'unacknowledged' && scenario !== 'letter-prefixed-unacknowledged') { result('mode'); acknowledged = true; }
       stage = 'done';
@@ -144,7 +187,7 @@ try {
   let navigation;
   let error;
   let originalSendErrorPreserved = false;
-  try { navigation = await navigateToModeAskUserQuestion(session, 0, 'SCOPE EXPANSION', { sessionId, budgetMs: scenario === 'invalid-budget' ? Number.NaN : 30_000 }); }
+  try { navigation = await navigateToModeAskUserQuestion(session, 0, targetMode, { sessionId, budgetMs: scenario === 'invalid-budget' ? Number.NaN : 30_000 }); }
   catch (cause) { error = String(cause); originalSendErrorPreserved = cause === sendFailure; }
   // Native cleanup happens before reading the persisted failure artifact.
   // Retention under GSTACK_EVAL_DIR must survive this exact lifecycle.

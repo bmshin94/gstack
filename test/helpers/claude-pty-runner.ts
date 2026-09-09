@@ -846,9 +846,9 @@ export function parseNumberedOptions(
  * everywhere instead of drifting per-test.
  */
 // Terminal repainting can remove spaces inside a label. Match the mode at
-// the label's start, allowing the native A–D em-dash prefix, so appended
-// descriptions or old screen text cannot supply an unoffered mode.
-export const MODE_RE = /^\s*(?:\*\*)?(?:[A-D]\s*—\s*)?(HOLD\s*SCOPE|SCOPE\s*EXPANSION|SELECTIVE\s*EXPANSION|SCOPE\s*REDUCTION)\b/i;
+// the label's start, allowing native A–D em-dash or closing-parenthesis
+// prefixes, so descriptions or old screen text cannot supply an unoffered mode.
+export const MODE_RE = /^\s*(?:\*\*)?(?:[A-D]\s*[—)]\s*)?(HOLD\s*SCOPE|SCOPE\s*EXPANSION|SELECTIVE\s*EXPANSION|SCOPE\s*REDUCTION)\b/i;
 
 /** Select the requested mode using the same rendering rules as detection. */
 export function findModeOption(
