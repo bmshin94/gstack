@@ -24,6 +24,20 @@ test('mode navigation ignores a mode-looking preview, selects native option four
   expect(result.navigation.modeIndex).toBe(4);
   expect(result.acknowledged).toBe(true);
 }, 15_000);
+test('letter-prefixed native mode selects requested expansion at index three and requires its ACK', async () => {
+  const result = await run('letter-prefixed');
+  expect(result.error).toBeUndefined();
+  expect(result.premature).toEqual([]);
+  expect(result.sends).toEqual(['1', '3']);
+  expect(result.navigation).toMatchObject({ modeIndex: 3, toolUseId: 'mode' });
+  expect(result.acknowledged).toBe(true);
+}, 15_000);
+test('letter-prefixed native mode without ACK cannot start posture', async () => {
+  const result = await run('letter-prefixed-unacknowledged');
+  expect(result.error).toContain('not acknowledged');
+  expect(result.sends).toEqual(['1', '3']);
+  expect(result.acknowledged).toBe(false);
+}, 15_000);
 test('two native tabs select with digits and submit once after both answers', async () => {
   const result = await run('multi-tab');
   expect(result.error).toBeUndefined();

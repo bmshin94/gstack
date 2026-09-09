@@ -78,7 +78,8 @@ let stage = 'preview';
 let acknowledged = false;
 const sends: string[] = [];
 const premature: string[] = [];
-const labels = scenario === 'missing' ? ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION'] : ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION', 'SCOPE EXPANSION'];
+const letterPrefixed = scenario.startsWith('letter-prefixed');
+const labels = letterPrefixed ? ['C — HOLD SCOPE (Recommended)', 'B — SELECTIVE EXPANSION', 'A — SCOPE EXPANSION', 'D — SCOPE REDUCTION'] : scenario === 'missing' ? ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION'] : ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION', 'SCOPE EXPANSION'];
 const session = {
   exited: () => false, exitCode: () => null,
   get hermeticConfigDir() {
@@ -121,10 +122,10 @@ const session = {
       tool('mode', 'Choose review mode', labels);
       stage = 'mode';
       // Native input is authoritative even when the current viewport only
-      // renders two choices. The target remains native option four.
-      buffer += '\nChoose review mode\n❯1.HOLD SCOPE\n2.SELECTIVE EXPANSION\n';
-    } else if (stage === 'mode' && data === '4') {
-      if (scenario !== 'unacknowledged') { result('mode'); acknowledged = true; }
+      // renders two choices. The target remains the actual native index.
+      buffer += `\nChoose review mode\n❯1.${labels[0]}\n2.${labels[1]}\n`;
+    } else if (stage === 'mode' && data === (letterPrefixed ? '3' : '4')) {
+      if (scenario !== 'unacknowledged' && scenario !== 'letter-prefixed-unacknowledged') { result('mode'); acknowledged = true; }
       stage = 'done';
       buffer += '\nSCOPE EXPANSION posture\n';
     } else premature.push(data);

@@ -21,6 +21,26 @@ async function runFakeCounting(completion: string, scenario: string) {
 }
 
 describe('real plan counting loop with an isolated fake PTY', () => {
+  test('letter-prefixed retained mode ACK ends setup exactly once before later review ACKs', async () => {
+    const result = await runFakeCounting('**DONE**', 'letter-prefixed-mode');
+    expect(result.error).toBeUndefined();
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.fingerprints.map((entry: { preReview: boolean }) => entry.preReview)).toEqual([true, false, false]);
+    expect(result.observation.outcome).toBe('completion_summary');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('letter-prefixed mode without native ACK cannot count or end setup', async () => {
+    const result = await runFakeCounting('**DONE**', 'letter-prefixed-mode-no-ack');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1']);
+    expect(result.observation.step0Count).toBe(0);
+    expect(result.observation.reviewCount).toBe(0);
+    expect(result.observation.fingerprints).toEqual([]);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
   test('pre-transcript question events drive real counting only after native acknowledgements', async () => {
     const result = await runFakeCounting('**DONE**', 'hook-only');
     expect(result.unsolicitedWrites).toEqual([]);

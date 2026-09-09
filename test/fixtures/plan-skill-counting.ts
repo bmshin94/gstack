@@ -6,13 +6,42 @@ import { seedCeoFindingProject } from '../helpers/ceo-finding-fixture';
 import { ceoStep0Boundary, runPlanSkillCounting } from '../helpers/claude-pty-runner';
 import { PtyCurrentScreen } from '../helpers/pty-current-screen';
 
+// Exact retained native D3 input from the preview pilot; labels stay intact.
+const RETAINED_LETTER_PREFIXED_MODE_INPUT = {
+  "questions": [
+    {
+      "question": "D3 — Which review mode should this CEO review run in?\n\nELI10: This plan has a critical SQL injection vulnerability and zero planned tests for new payment code. The plan also bypasses existing safety middleware. We’ve chosen the ideal architecture approach (Approach B), which fixes the root issues. The mode determines how we evaluate the rest of the plan: do we make it bulletproof as-is, or do we also explore what else could be added?\n\nStakes if we pick wrong: SELECTIVE EXPANSION risks spreading attention across new features when the foundation has critical defects. HOLD SCOPE ensures every failure mode, edge case, and security surface gets mapped before shipping.\n\nRecommendation: C (HOLD SCOPE) because critical security defects in payment processing code demand maximum rigor over scope expansion. Get this right before adding features.\nNote: options differ in kind, not coverage — no completeness score.\n\nPros / cons:\nA) SCOPE EXPANSION\n  ✅ Surfaces ambitious improvements and 10x opportunities\n  ❌ Wrong mode when the plan has a SQL injection — expands scope before fixing the foundation\nB) SELECTIVE EXPANSION\n  ✅ Holds baseline scope, cherry-picks improvements individually\n  ❌ Payment processing with active security holes isn’t ready for expansion surfacing\nC) HOLD SCOPE (Recommended)\n  ✅ Maximum rigor: maps every failure mode, test gap, security vector, and edge case\n  ✅ Right posture for payment code with a SQL injection and no test coverage\n  ❌ Does not surface new features or expansions\nD) SCOPE REDUCTION\n  ✅ Strips to the minimum viable change\n  ❌ The current scope (Approach B) is already well-calibrated — reduction would cut necessary fixes\n\nNet: payment processing + SQL injection + no tests = maximum rigor, not more scope.",
+      "header": "Review mode",
+      "multiSelect": false,
+      "options": [
+        {
+          "label": "C — HOLD SCOPE (Recommended)",
+          "description": "Maximum rigor: map every failure mode, security surface, edge case, and test gap. No expansions."
+        },
+        {
+          "label": "B — SELECTIVE EXPANSION",
+          "description": "Hold current scope as baseline, surface cherry-pick opportunities for the user to opt into."
+        },
+        {
+          "label": "A — SCOPE EXPANSION",
+          "description": "Dream big: propose ambitious additions, present each for opt-in."
+        },
+        {
+          "label": "D — SCOPE REDUCTION",
+          "description": "Find the minimum viable version and cut everything else."
+        }
+      ]
+    }
+  ]
+};
+
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
   const filePermissionCase = scenario.startsWith('permission-final-');
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
-  const timing = viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const timing = scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
@@ -261,6 +290,13 @@ async function main() {
             }
             const previewId = tool('Read', { content: '## GSTACK REVIEW REPORT\nVERDICT: APPROVED' });
             append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: previewId, content: 'Preview read' }] } });
+            if (scenario.startsWith('letter-prefixed-mode')) {
+              pendingId = tool('AskUserQuestion', RETAINED_LETTER_PREFIXED_MODE_INPUT);
+              const question = RETAINED_LETTER_PREFIXED_MODE_INPUT.questions[0];
+              emit(`\x1b[2J\x1b[H☐ ${question.header}\n${question.question.split('\n')[0]}\n`
+                + question.options.map((option, i) => `${i === 0 ? '❯' : ''}${i + 1}.${option.label}`).join('\n') + '\n');
+              return;
+            }
             if (scenario !== 'preview-only') ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
             // Actual failure: a preview in PTY while the assistant still uses tools.
             emit('Read: GSTACK REVIEW REPORT\nVERDICT: APPROVED\n\nD1 — Pick a mode\n\n❯ 1. HOLD SCOPE\n  2. SCOPE EXPANSION\n');
@@ -312,6 +348,7 @@ async function main() {
               emit(batchQuestion === 1 ? finding(2) : '\nReview your answers\nReady to submit your answers?\nSubmit answers\n');
               return;
             }
+            if (scenario === 'letter-prefixed-mode-no-ack' && answer === 1) { emit('\nWORK_IN_PROGRESS\n'); return; }
             if (['no-ack', 'hook-no-ack'].includes(scenario) && answer === 2) { emit('\nWORK_IN_PROGRESS\n'); return; }
             acknowledge();
             if (scenario === 'viewport-ready-no-restore-output') { tool('ExitPlanMode', {}); emit('\nReady to execute?\n'); return; }

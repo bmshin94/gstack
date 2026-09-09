@@ -76,6 +76,24 @@ describe('saved preference annotation', () => {
 });
 
 describe('mode option rendering', () => {
+  test('letter-prefixed native mode labels retain their actual target indices', () => {
+    const options = ['C — HOLD SCOPE (Recommended)', 'B — SELECTIVE EXPANSION', 'A — SCOPE EXPANSION', 'D — SCOPE REDUCTION']
+      .map((label, i) => ({ index: i + 1, label }));
+    expect(options.every(option => MODE_RE.test(option.label))).toBe(true);
+    for (const [mode, index] of [['HOLD SCOPE', 1], ['SELECTIVE EXPANSION', 2], ['SCOPE EXPANSION', 3], ['SCOPE REDUCTION', 4]] as const) {
+      expect(findModeOption(options, mode)?.index).toBe(index);
+    }
+    expect(findModeOption(options.filter(option => option.index !== 3), 'SCOPE EXPANSION')).toBeUndefined();
+  });
+  test('letter-prefixed matching excludes prose, unrelated choices and unsupported framing', () => {
+    for (const label of ['Choose C — HOLD SCOPE', 'Approach C — HOLD SCOPE', 'C — Keep this approach\nHOLD SCOPE',
+      'B — Ideal Architecture (Recommended)', 'A — Fix-Only (Minimal Viable)', 'CC — HOLD SCOPE', 'E — HOLD SCOPE',
+      '1 — HOLD SCOPE', 'C: HOLD SCOPE', 'C - HOLD SCOPE', 'C — SCOPE EXPANSIONIST']) {
+      expect(MODE_RE.test(label), label).toBe(false);
+      expect(findModeOption([{ index: 1, label }], 'HOLD SCOPE'), label).toBeUndefined();
+    }
+    expect(findModeOption([{ index: 1, label: 'C — HOLD SCOPE\nPrefer this over A — SCOPE EXPANSION.' }], 'SCOPE EXPANSION')).toBeUndefined();
+  });
   test('selects the actual collapsed-space mode from the failed periodic menu', () => {
     const options = [
       { index: 1, label: 'HOLDSCOPE(recommended)\rMake the reliability wave bulletproof.' },
@@ -1146,6 +1164,15 @@ describe('Step0BoundaryPredicate per-skill', () => {
   }
 
   describe('ceoStep0Boundary', () => {
+    test('FIRES on retained letter-prefixed mode labels, not letter-prefixed architecture', () => {
+      expect(ceoStep0Boundary(fp('D3 — Which review mode should this CEO review run in?', [
+        'C — HOLD SCOPE (Recommended)', 'B — SELECTIVE EXPANSION', 'A — SCOPE EXPANSION', 'D — SCOPE REDUCTION',
+      ]))).toBe(true);
+      expect(ceoStep0Boundary(fp('D2 — Which implementation approach should this plan follow?', [
+        'B — Ideal Architecture (Recommended)', 'A — Fix-Only (Minimal Viable)',
+      ]))).toBe(false);
+      expect(ceoStep0Boundary(fp('Prefer HOLD SCOPE for this decision?', ['C — Keep the dispatcher', 'A — Replace it']))).toBe(false);
+    });
     test('FIRES on Step 0F mode-pick AUQ (HOLD SCOPE in options)', () => {
       const f = fp('Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION']);
       expect(ceoStep0Boundary(f)).toBe(true);
