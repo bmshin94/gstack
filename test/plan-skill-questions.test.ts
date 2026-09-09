@@ -204,6 +204,47 @@ test('errors and malformed native input never become successful acknowledgements
   expect(() => readPlanSkillQuestions(config, sessionId)).toThrow('Unsupported native');
   expect(() => readPlanSkillQuestions(null, sessionId)).toThrow('owned hermetic');
 });
+test('overflow rejection identifies the native call and option count without disclosing content', () => {
+  const privateText = 'private-question-label-description';
+  const overflow = { ...question, question: privateText, header: privateText,
+    options: Array.from({ length: 5 }, () => ({ label: privateText, description: privateText })) };
+  write(call('overflow-call', [overflow]));
+  let message = '';
+  try { readPlanSkillQuestions(config, sessionId); } catch (error) { message = (error as Error).message; }
+  expect(message).toStartWith('Unsupported native AskUserQuestion input shape: toolId="overflow-call"');
+  const shape = JSON.parse(message.split(' shape=')[1]);
+  expect(shape).toMatchObject({ questionsType: 'array', questionCount: 1, questionsTruncated: false });
+  expect(shape.questions[0]).toMatchObject({ optionCount: 5, optionsTruncated: true,
+    questionType: 'string', questionNonempty: true, headerType: 'string', headerNonempty: true });
+  expect(shape.questions[0].options).toHaveLength(4);
+  expect(message).not.toContain(privateText);
+
+  write(call('long-id-'.repeat(100), Array.from({ length: 50 }, () => ({ ...overflow,
+    options: Array.from({ length: 50 }, () => overflow.options[0]) }))));
+  try { readPlanSkillQuestions(config, sessionId); } catch (error) { message = (error as Error).message; }
+  const bounded = JSON.parse(message.split(' shape=')[1]);
+  expect(bounded).toMatchObject({ questionCount: 50, questionsTruncated: true });
+  expect(bounded.questions).toHaveLength(4);
+  expect(bounded.questions.every((q: any) => q.optionCount === 50 && q.options.length === 4)).toBe(true);
+  expect(message).toContain(' (truncated) shape=');
+  expect(message.length).toBeLessThan(4_000);
+  expect(message).not.toContain(privateText);
+});
+test('missing required option fields remain rejected with types after native defaults apply', () => {
+  const { multiSelect, ...defaulted } = question;
+  const { description, ...missingDescription } = question.options[0];
+  write(call('missing-description', [{ ...defaulted,
+    options: [missingDescription, question.options[1]] } as NativeQuestion]));
+  let message = '';
+  try { readPlanSkillQuestions(config, sessionId); } catch (error) { message = (error as Error).message; }
+  expect(message).toStartWith('Unsupported native AskUserQuestion input shape: toolId="missing-description"');
+  const shape = JSON.parse(message.split(' shape=')[1]);
+  expect(shape.questions[0]).toMatchObject({ multiSelectType: 'boolean', optionCount: 2 });
+  expect(shape.questions[0].options[0]).toEqual({ type: 'object', labelType: 'string',
+    labelNonempty: true, descriptionType: 'undefined' });
+  expect(message).not.toContain(question.question);
+  expect(message).not.toContain(missingDescription.label);
+});
 test('a native box heading tolerates wrapped/repainted body and below-viewport choices', () => {
   const visible = stripAnsi('☐ Approach\nD1 — Which\x1b[2Capproach?\nMak it reliable. Enforce the delivery policy.\n❯1.Extend dispatcher\n2.Queue fanout\n');
   expect(matchesNativeQuestion(question, visible, parseNumberedOptions(visible))).toBe(true);

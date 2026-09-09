@@ -36,6 +36,29 @@ function questionInputWithDefaults(input: any): any {
       ? { ...question, multiSelect: false } : question) };
 }
 
+/** Bounded schema diagnostics only; never include question or option content. */
+function questionInputShape(input: any): string {
+  const type = (value: unknown) => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  const nonempty = (value: unknown) => typeof value === 'string' && !!value.trim();
+  const questions = input?.questions;
+  return JSON.stringify({
+    inputType: type(input), questionsType: type(questions),
+    questionCount: Array.isArray(questions) ? questions.length : null,
+    questionsTruncated: Array.isArray(questions) && questions.length > 4,
+    questions: Array.isArray(questions) ? questions.slice(0, 4).map(q => ({
+      type: type(q), questionType: type(q?.question), questionNonempty: nonempty(q?.question),
+      headerType: type(q?.header), headerNonempty: nonempty(q?.header),
+      multiSelectType: type(q?.multiSelect), optionsType: type(q?.options),
+      optionCount: Array.isArray(q?.options) ? q.options.length : null,
+      optionsTruncated: Array.isArray(q?.options) && q.options.length > 4,
+      options: Array.isArray(q?.options) ? q.options.slice(0, 4).map((o: any) => ({
+        type: type(o), labelType: type(o?.label), labelNonempty: nonempty(o?.label),
+        descriptionType: type(o?.description),
+      })) : [],
+    })) : [],
+  });
+}
+
 /** The launch's native PreToolUse event can precede transcript persistence.
  * Both sources must agree; only an owned transcript result acknowledges input.
  * PTY scrollback and tool previews supply neither invocation nor acknowledgement.
@@ -67,7 +90,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       typeof q?.question !== 'string' || !q.question.trim() || typeof q.header !== 'string' || !q.header.trim()
       || typeof q.multiSelect !== 'boolean' || !Array.isArray(q.options) || q.options.length < 2 || q.options.length > 4
       || q.options.some((o: any) => typeof o?.label !== 'string' || !o.label.trim() || typeof o.description !== 'string')
-    )) throw new Error('Unsupported native AskUserQuestion input shape');
+    )) throw new Error(`Unsupported native AskUserQuestion input shape: toolId=${JSON.stringify(id.slice(0, 128))}${id.length > 128 ? ' (truncated)' : ''} shape=${questionInputShape(input)}`);
     if (inputs.has(id) && !isDeepStrictEqual(inputs.get(id), input)) {
       throw new Error('Native AskUserQuestion changed input for an existing tool ID');
     }
