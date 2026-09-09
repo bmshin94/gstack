@@ -85,13 +85,12 @@ describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () 
         if (obs.reviewCount < FLOOR) {
           throw new Error(
             `BATCHING REGRESSION: reviewCount=${obs.reviewCount} < FLOOR=${FLOOR}.\n` +
-              `Agent surfaced fewer review-phase AUQs than findings — this is the\n` +
-              `May 2026 transcript bug shape: model batched multiple findings into\n` +
-              `a single plan write + ExitPlanMode instead of asking one per finding.\n` +
-              `Review-phase fingerprints:\n` +
+              `outcome=${obs.outcome} step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
+              `Review-phase count is below the expected floor; inspect the phase boundary and complete native question history before attributing a cause.\n` +
+              `All-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
               obs.fingerprints
-                .filter((f) => !f.preReview)
-                .map((f) => `  - "${f.promptSnippet.slice(0, 80)}"`)
+                .slice(-8)
+                .map((f) => `  - ${JSON.stringify({ preReview: f.preReview, nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
                 .join('\n') +
               `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
