@@ -75,7 +75,14 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
         }
         if (obs.reviewCount > CEILING_PAIRED) {
           throw new Error(
-            `PAIRED CONTROL FAIL: reviewCount=${obs.reviewCount} > CEILING=${CEILING_PAIRED} (over-asking on a 2-finding fixture).`,
+            `PAIRED CONTROL FAIL: reviewCount=${obs.reviewCount} > CEILING=${CEILING_PAIRED} (over-asking on a 2-finding fixture).\n` +
+              `outcome=${obs.outcome} step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
+              `Review-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
+              obs.fingerprints
+                .filter((f) => !f.preReview)
+                .slice(-8)
+                .map((f) => `  - ${JSON.stringify({ nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
+                .join('\n'),
           );
         }
       } finally {
