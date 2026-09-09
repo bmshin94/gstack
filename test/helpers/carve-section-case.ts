@@ -69,6 +69,8 @@ export function registerCarveSectionCase(skill: string): void {
           planDir,
           skillName: guard.skill,
           scenario: guard.scenario,
+          // Keep DX's required plan/report in one artifact, without requesting a second copy.
+          reportFile: guard.skill === 'plan-devex-review' ? 'PLAN.md' : undefined,
           // This scenario produces an HTML implementation, whose complete
           // document need not contain any of the prose report keywords.
           reportMarker: guard.skill === 'design-html'
