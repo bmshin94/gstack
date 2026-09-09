@@ -86,7 +86,7 @@ describeE2E('/office-hours full section-loading workflow (periodic)', () => {
         // Nine missing findings exhausted the shared 1024-token default and
         // truncated JSON. Keep this output allowance local to the comparison.
         await validateOfficeHoursReviewPreservation(reviewEvidence,
-          prompt => callJudge(prompt, undefined, { temperature: 0, max_tokens: 2048, signal: abort.signal }));
+          prompt => callJudge(prompt, undefined, { max_tokens: 2048, signal: abort.signal }));
       } finally {
         clearTimeout(timer);
       }
