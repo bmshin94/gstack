@@ -21,6 +21,46 @@ async function runFakeCounting(completion: string, scenario: string) {
 }
 
 describe('real plan counting loop with an isolated fake PTY', () => {
+  test.each(['ambiguous', 'binding', 'queue-operation', 'queue-content'])('early %s failure retains only owned diagnostic metadata before cleanup', async variant => {
+    const result = await runFakeCounting('**DONE**', `retention-${variant}`);
+    expect(result.error).toContain(variant === 'ambiguous' ? 'Ambiguous native permission owner' : variant === 'binding' ? 'cannot be bound' : 'Unsupported queue operation');
+    expect(result.observation).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.closed).toBe(true);
+    expect(result.nativeRemoved).toBe(true);
+    expect(result.retainedBeforeClose).toBe(true);
+    expect(result.diagnosticFiles).toHaveLength(1);
+    const diagnostic = result.diagnostic;
+    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_');
+    expect(diagnostic.calls[0]).toMatchObject({ result: 'completed', input: { type: 'object', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) } });
+    expect(diagnostic.rawTail.text).toBeUndefined();
+    expect(diagnostic.visibleTail.text).toBeUndefined();
+    if (variant.startsWith('queue-')) {
+      expect(diagnostic.counting.queueOperations.rows).toHaveLength(1);
+      expect(diagnostic.counting.queueOperations.rows[0]).toMatchObject({
+        operation: { text: variant === 'queue-operation' ? 'unrecognized' : 'enqueue' },
+        content: { type: variant === 'queue-content' ? 'object' : 'string', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      });
+    } else {
+      expect(diagnostic.counting.permissionRequests).toHaveLength(1);
+      expect(diagnostic.counting.permissionRequests[0]).toMatchObject({ name: 'Write', result: 'pending', nativeToolId: 'tool-1', input: { filePath: expect.stringContaining('/plan.md') } });
+      expect(diagnostic.counting.permissionTools).toHaveLength(variant === 'ambiguous' ? 2 : 1);
+      expect(diagnostic.counting.dialog.currentFileTarget).toMatchObject({ operation: 'create' });
+    }
+  }, 15_000);
+  test('diagnostic failure cannot replace the original exception or prevent cleanup', async () => {
+    const failedWrite = await runFakeCounting('**DONE**', 'retention-write-failure');
+    expect(failedWrite.error).toContain('Ambiguous native permission owner');
+    expect(failedWrite.diagnosticFiles).toEqual([]);
+    expect(failedWrite.closed).toBe(true);
+    expect(failedWrite.nativeRemoved).toBe(true);
+    const original = await runFakeCounting('**DONE**', 'retention-original-error');
+    expect(original.sameError).toBe(true);
+    expect(original.retainedBeforeClose).toBe(true);
+    expect(original.closed).toBe(true);
+    expect(JSON.stringify(original.diagnostic)).not.toContain('PRIVATE_CALLBACK_ERROR');
+  }, 15_000);
+
   test('null phase ceiling reaches owned completion beyond the old cap and picks manual handoff once', async () => {
     const result = await runFakeCounting('**DONE**', 'ceiling-null');
     expect(result.error).toBeUndefined();

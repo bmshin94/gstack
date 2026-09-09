@@ -23,6 +23,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { retainAutoplanFailure } from './autoplan-phase-order';
 import { readPlanSkillCompletion } from './plan-skill-completion';
 import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, type NativeQuestion, type NativePermissionGrant } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
@@ -2212,6 +2213,8 @@ export async function runPlanSkillCounting(opts: {
   let isFirstAUQ = true;
   let lastLoopStage = 'before-launch';
   let lastObservation: PlanSkillCountObservation['diagnostics']['lastObservation'] = null;
+  let lastNative: ReturnType<typeof readPlanSkillQuestions> | null = null;
+  let lastDialog = '';
 
   const timeoutSummary = () => `no terminal outcome within ${timeoutMs}ms (step0=${step0Count}, review=${reviewCount})`;
   const expired = () => Date.now() >= deadlineAt;
@@ -2318,6 +2321,7 @@ export async function runPlanSkillCounting(opts: {
       }
 
       const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
+      lastNative = native;
       // Observe the same prefix used by the guards. A partial row or changed
       // frame bracket remains explicitly incomplete, never a completion proof.
       const diagnosticQuestions = native.calls.filter(call => call.result === 'pending');
@@ -2336,7 +2340,9 @@ export async function runPlanSkillCounting(opts: {
       // ACK during sampling must wait for a consistent source/frame pair.
       lastLoopStage = 'sampling-frame';
       const frame = await session.currentScreen?.();
+      lastDialog = frame?.text ?? questionWindow;
       const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
+      lastNative = afterFrame;
       lastObservation.nativeStable = isDeepStrictEqual(native, afterFrame);
       if (frame) lastObservation.frame = {
         rawEnd: frame.rawEnd, questionSince, viewportInputSince,
@@ -2506,6 +2512,12 @@ export async function runPlanSkillCounting(opts: {
       timeoutSummary(),
       session.visibleSince(since),
     );
+  } catch (cause) {
+    // Native failure → bounded metadata → original rejection → session cleanup.
+    retainAutoplanFailure({ configDir: session.hermeticConfigDir, sessionId,
+      observation: { lastLoopStage, lastObservation, step0Count, reviewCount },
+      raw: session.rawOutput, visible: session.visibleText, counting: { native: lastNative, dialog: lastDialog } });
+    throw cause;
   } finally {
     await session.close();
   }

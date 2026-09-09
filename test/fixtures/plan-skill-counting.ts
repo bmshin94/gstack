@@ -67,6 +67,8 @@ const RETAINED_PARENTHESIZED_MODE_INPUT = {
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
+  const retentionCase = scenario.startsWith('retention-');
+  const injectedError = new Error('PRIVATE_CALLBACK_ERROR');
   const ceilingCase = scenario.startsWith('ceiling-');
   const multiQuestionCase = scenario === 'multi-question' || scenario.startsWith('question-picker-multi');
   const terminalDiagnosticCase = scenario.startsWith('terminal-diagnostic-');
@@ -81,6 +83,10 @@ async function main() {
   const reusedOptions = multiQuestionCase || ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'question-picker-redraw'].includes(scenario);
   const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
+  const evalDir = path.join(project, 'evals');
+  if (retentionCase) process.env.GSTACK_EVAL_DIR = evalDir;
+  let nativeFile = '';
+  let retainedBeforeClose = false;
   const sends: string[] = [];
   const pickerCalls: Array<{ question: unknown; isFirst: boolean }> = [];
   const resizes: number[][] = [];
@@ -123,6 +129,7 @@ async function main() {
   const caseStartedAt = Date.now();
   try {
     seedCeoFindingProject(project, plan);
+    if (scenario === 'retention-write-failure') fs.writeFileSync(evalDir, 'not a directory');
     clock += setupMs;
     process.env.BROWSE_TERMINAL_BINARY = process.execPath;
     process.env.EVALS_HERMETIC = '1';
@@ -132,6 +139,7 @@ async function main() {
       const sessionId = _command[_command.indexOf('--session-id') + 1];
       const file = path.join(options.env.CLAUDE_CONFIG_DIR, 'projects', 'fixture', `${sessionId}.jsonl`);
       fs.mkdirSync(path.dirname(file), { recursive: true });
+      nativeFile = file;
       const append = (row: Record<string, unknown>) => fs.appendFileSync(file, JSON.stringify({ sessionId, timestamp: new Date(originalNow()).toISOString(), ...row }) + '\n');
       append({ type: 'user', message: { role: 'user', content: 'Review the supplied plan.' } });
       // A real PTY's ONLCR output converts these fixture newlines to CRLF.
@@ -459,6 +467,26 @@ async function main() {
               emit(`\x1b7\x1b[1;${prompt.indexOf('pln.md') + 3}H\x1b[@a\x1b8`);
               return;
             }
+            if (retentionCase && scenario !== 'retention-original-error') {
+              append({ type: 'assistant', message: { role: 'assistant', content: [
+                { type: 'thinking', thinking: 'PRIVATE_THINKING', signature: 'PRIVATE_SIGNATURE' },
+                { type: 'tool_use', id: 'completed-tool', name: 'Bash', input: { command: 'PRIVATE_BASH_ENV=secret' } },
+              ] } });
+              append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'completed-tool', content: 'PRIVATE_RESULT' }] } });
+              if (scenario.startsWith('retention-queue-')) {
+                append({ type: 'queue-operation', operation: scenario.endsWith('operation') ? 'unrecognized' : 'enqueue',
+                  content: scenario.endsWith('content') ? { text: 'PRIVATE_QUEUE' } : 'PRIVATE_QUEUE', uuid: 'queue-1' });
+                emit('PRIVATE_SCREEN_PREVIEW\n');
+                return;
+              }
+              const input = { file_path: path.join(project, 'plan.md'), content: 'PRIVATE_WRITE_CONTENT' };
+              permissionId = tool('Write', input);
+              recordFilePermission(input);
+              if (scenario === 'retention-ambiguous') tool('Edit', { file_path: path.join(project, 'other.md'), old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });
+              emit(fileDialog(scenario === 'retention-binding' ? 'create different.md instead of' : 'create') + '\nPRIVATE_SCREEN_PREVIEW');
+              if (scenario === 'retention-write-failure') tool('Read', { file_path: '/fixture' });
+              return;
+            }
             if (['permission-redraw', 'permission-ambiguous', 'permission-owner-change'].includes(scenario)) {
               permissionId = tool('Bash', { command: 'true' });
               if (scenario === 'permission-ambiguous') tool('Read', { file_path: '/fixture' });
@@ -610,7 +638,13 @@ async function main() {
             else finish();
           }
         } },
-        kill() { closed = true; end(0); },
+        kill() {
+          if (retentionCase) {
+            retainedBeforeClose = fs.existsSync(path.join(evalDir, 'plan-counting', `${sessionId}.json`));
+            fs.rmSync(file, { force: true });
+          }
+          closed = true; end(0);
+        },
       };
     }) as typeof Bun.spawn;
     Bun.sleep = (async (ms: number) => {
@@ -628,23 +662,29 @@ async function main() {
       : scenario === 'invalid-cap-unsafe' ? Number.MAX_SAFE_INTEGER + 1 : scenario === 'ceiling-zero' ? 0 : 4;
     let observation;
     let error;
+    let sameError = false;
     try { observation = await runPlanSkillCounting({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
       cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling, timeoutMs: helperTimeoutMs,
       defaultPick: previewCase ? scenario === 'preview-menu-focused' ? 1 : 2 : scenario === 'permission-current-create-pick-two' ? 2 : undefined,
       firstAUQPick: scenario === 'first-route' || scenario === 'question-picker-first' ? () => 2 : undefined,
-      questionPick: ceilingCase || scenario.includes('picker') ? (question, isFirst) => {
+      questionPick: retentionCase || ceilingCase || scenario.includes('picker') ? (question, isFirst) => {
+        if (scenario === 'retention-original-error') throw injectedError;
         pickerCalls.push({ question, isFirst });
         if (previewCase) return 2;
         if (question.question === 'How should we continue after this review?' || multiQuestionCase && question.question.includes('Failure')) return 2;
         return 1;
       } : undefined,
     }); } catch (cause) {
-      if (!viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
+      if (!retentionCase && !viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
       error = String(cause);
+      sameError = cause === injectedError;
     }
     const writtenPlan = fs.existsSync(path.join(project, 'plan.md')) ? fs.readFileSync(path.join(project, 'plan.md'), 'utf8') : '';
-    console.log(JSON.stringify({ observation, error, pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    const diagnosticDirectory = path.join(evalDir, 'plan-counting');
+    const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
+    const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
+    console.log(JSON.stringify({ observation, error, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {
