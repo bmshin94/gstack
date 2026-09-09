@@ -155,8 +155,13 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
               && !(raw.content === '' && (raw.originalFile ?? '') === '')
               && !(Array.isArray(raw.structuredPatch) && raw.structuredPatch.length === 0 && raw.originalFile === null)
               ? { ...raw, content: '', originalFile: null } : raw;
+          // CLI 2.1.263's transcript append writer also clears originalFile
+          // above 10,000 JavaScript UTF-16 units, after any tool storage form.
+          const appended = (value: Record<string, unknown>) => typeof value.originalFile === 'string'
+            && value.originalFile.length > 10_000 ? { ...value, originalFile: null } : value;
           if (block.is_error === true || row.toolUseResult !== undefined
-            && !isDeepStrictEqual(row.toolUseResult, raw) && !isDeepStrictEqual(row.toolUseResult, stored)) {
+            && !isDeepStrictEqual(row.toolUseResult, raw) && !isDeepStrictEqual(row.toolUseResult, stored)
+            && !isDeepStrictEqual(row.toolUseResult, appended(raw)) && !isDeepStrictEqual(row.toolUseResult, appended(stored))) {
             throw new Error('Native file completion conflicts with its later result');
           }
         }

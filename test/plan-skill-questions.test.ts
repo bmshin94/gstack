@@ -1088,3 +1088,54 @@ test.each(['preserved', 'clearable', 'cleared-mismatch'])('Write update storage 
   if (variant === 'cleared-mismatch') expect(s.read).toThrow('conflicts with its later result');
   else expect(s.read().permissionRequests[0]).toMatchObject({ result: 'completed', completionEvidence: 'PostToolUse' });
 });
+
+test.each([
+  ['small', 'Draft', false],
+  ['10000 units', 'a'.repeat(10_000), false],
+  ['10001 units', 'a'.repeat(10_001), true],
+  ['10000 UTF16 units despite more UTF8 bytes', '😀'.repeat(5_000), false],
+  ['10001 UTF16 units', '😀'.repeat(5_000) + 'x', true],
+  ['already cleared', '', false],
+] as const)('native append storage nulls Edit originalFile only above its exact bound (%s)', (_name, originalFile, accepted) => {
+  const s = earlyFileCompletion();
+  const response = { ...s.response, originalFile };
+  s.complete({ tool_response: response });
+  expect(s.read().permissionRequests[0].result).toBe('completed');
+  write(nativeWrite('unflushed-file-1', s.firstInput, config, 'Edit'), {
+    ...nativeWriteResult('unflushed-file-1', new Date().toISOString()),
+    toolUseResult: { ...response, originalFile: null },
+  });
+  if (accepted) expect(s.read().permissionRequests[0]).toMatchObject({ result: 'completed', completionEvidence: 'PostToolUse' });
+  else expect(s.read).toThrow('conflicts with its later result');
+  expect(s.granted.size).toBe(1);
+});
+
+test.each(['raw', 'tool-specific-stored', 'append-raw', 'append-stored'] as const)
+('native append storage composes with exact Write storage (%s)', variant => {
+  const s = earlyFileCompletion('Write');
+  const response = { ...s.response, type: 'update', originalFile: 'a'.repeat(10_001) };
+  s.complete({ tool_response: response });
+  const stored = variant === 'tool-specific-stored' || variant === 'append-stored'
+    ? { ...response, content: '', originalFile: null }
+    : variant === 'append-raw' ? { ...response, originalFile: null } : response;
+  write(nativeWrite('unflushed-file-1', s.firstInput), {
+    ...nativeWriteResult('unflushed-file-1', new Date().toISOString()), toolUseResult: stored,
+  });
+  expect(s.read().permissionRequests[0]).toMatchObject({ result: 'completed', completionEvidence: 'PostToolUse' });
+});
+
+test.each(['changed-field', 'missing-field', 'extra-field', 'error'] as const)
+('native append storage preserves every other result conflict (%s)', variant => {
+  const s = earlyFileCompletion();
+  const response = { ...s.response, originalFile: 'a'.repeat(10_001) };
+  s.complete({ tool_response: response });
+  const stored: Record<string, unknown> = { ...response, originalFile: null };
+  if (variant === 'changed-field') stored.newString = 'Different completed edit';
+  if (variant === 'missing-field') delete stored.originalFile;
+  if (variant === 'extra-field') stored.unexplained = true;
+  write(nativeWrite('unflushed-file-1', s.firstInput, config, 'Edit'), {
+    ...nativeWriteResult('unflushed-file-1', new Date().toISOString(), variant === 'error'), toolUseResult: stored,
+  });
+  expect(s.read).toThrow('conflicts with its later result');
+  expect(s.granted.size).toBe(1);
+});
