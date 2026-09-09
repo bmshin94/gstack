@@ -199,6 +199,53 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.evidence).toContain('Reay to execute?');
     expect(result.closed).toBe(true);
   }, 15_000);
+  test.each(['normal', 'no-focus-choice', 'ascii-fallback', 'current-frame', 'history'])('native ExitPlanMode confirmation is a read-only counting terminal (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `exit-confirmation-${variant}`);
+    expect(result.error).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.fingerprints).toHaveLength(3);
+    expect(result.observation.outcome).toBe('plan_ready');
+    expect(result.observation.summary).toContain('awaiting its current native confirmation');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['no-owner', 'unfinished-owner', 'foreign-owner', 'tool-search', 'completed-owner', 'error-owner',
+    'pending-question', 'pending-write', 'pending-file-request', 'completed-arrival-race', 'write-arrival-race'])('native ExitPlanMode confirmation cannot replace pending ownership and stable native state (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `exit-confirmation-${variant}`);
+    expect(result.error).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.raceInjected).toBe(variant.endsWith('arrival-race'));
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['missing-rule', 'rounded-rule', 'short-rule-fallback', 'clipped-no', 'wrong-mode', 'no-pointer', 'duplicate-pointer', 'duplicate-option',
+    'extra-option', 'invented-footer', 'prose', 'quoted', 'fenced', 'open-fence'])('native ExitPlanMode confirmation refuses incomplete or copied modal text (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `exit-confirmation-${variant}`);
+    expect(result.error).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('native ExitPlanMode confirmation cannot reuse a frame from before the latest input', async () => {
+    const result = await runFakeCounting('**DONE**', 'exit-confirmation-stale-frame');
+    expect(result.error).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.observation.step0Count).toBe(0);
+    expect(result.observation.reviewCount).toBe(0);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
   test('cursor-corrected question text matches its native invocation and still requires acknowledgement', async () => {
     const result = await runFakeCounting('**DONE**', 'screen-question-redraw');
     expect(result.unsolicitedWrites).toEqual([]);

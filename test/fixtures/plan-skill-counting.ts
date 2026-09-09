@@ -71,7 +71,8 @@ async function main() {
   const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
-  const timing = scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const exitConfirmationCase = scenario.startsWith('exit-confirmation-');
+  const timing = exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
@@ -172,6 +173,64 @@ async function main() {
         } else append({ type: 'assistant', cwd: options.cwd, message: { id, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input }] } });
         return id;
       };
+      // Synthetic full modal from pinned CLI 2.1.257's empty-plan renderer.
+      // The failed pilot retained only a truncated suffix, not this full frame.
+      const exitConfirmation = () => {
+        const focus = scenario === 'exit-confirmation-no-focus-choice' ? 2 : 1;
+        const pointer = scenario === 'exit-confirmation-ascii-fallback' ? '>' : '❯';
+        const yes = ['exit-confirmation-ascii-fallback', 'exit-confirmation-short-rule-fallback'].includes(scenario) ? 'Yes'
+          : 'Yes, and switch to default (ask each time) for this session';
+        let text = '─'.repeat(120) + '\n Exit plan mode?\n\n  Claude wants to exit plan mode\n\n'
+          + `  ${focus === 1 ? pointer : ' '} 1. ${yes}\n  ${focus === 2 ? pointer : ' '} 2. No\n`;
+        if (scenario === 'exit-confirmation-missing-rule') text = text.slice(text.indexOf('\n') + 1);
+        if (scenario === 'exit-confirmation-rounded-rule') text = '╭' + text.slice(1, 119) + '╮' + text.slice(120);
+        if (scenario === 'exit-confirmation-short-rule-fallback') text = '─'.repeat(10) + text.slice(120);
+        if (scenario === 'exit-confirmation-clipped-no') text = text.replace('2. No', '2.N');
+        if (scenario === 'exit-confirmation-wrong-mode') text = text.replace('default (ask each time)', 'accept edits (auto-approve edits)');
+        if (scenario === 'exit-confirmation-no-pointer') text = text.replace('❯', ' ');
+        if (scenario === 'exit-confirmation-duplicate-pointer') text = text.replace('    2. No', '  ❯ 2. No');
+        if (scenario === 'exit-confirmation-duplicate-option') text = text.replace('2. No', '1. No');
+        if (scenario === 'exit-confirmation-extra-option') text += '    3. Later\n';
+        if (scenario === 'exit-confirmation-invented-footer') text += 'Enter to confirm\n';
+        if (scenario === 'exit-confirmation-prose') text = 'The dialog will say Exit plan mode? Claude wants to exit plan mode, with Yes or No.\n';
+        if (scenario === 'exit-confirmation-quoted') text = text.split('\n').map(line => '> ' + line).join('\n');
+        if (scenario === 'exit-confirmation-fenced') text = '```text\n' + text + '```\n';
+        if (scenario === 'exit-confirmation-open-fence') text = '```text\n' + text;
+        if (scenario === 'exit-confirmation-history') text = 'Finished writing the report.\n```text\nEarlier example\n```\n' + text;
+        return text;
+      };
+      const requestExitConfirmation = () => {
+        let id: string | undefined;
+        if (scenario === 'exit-confirmation-unfinished-owner' || scenario === 'exit-confirmation-foreign-owner') {
+          id = `tool-${++sequence}`;
+          append({ type: 'assistant', ...(scenario.endsWith('foreign-owner') ? { sessionId: '11111111-1111-4111-8111-111111111111' } : {}),
+            message: { id, role: 'assistant', stop_reason: scenario.endsWith('unfinished-owner') ? null : 'tool_use',
+              content: [{ type: 'tool_use', id, name: 'ExitPlanMode', input: {} }] } });
+        } else if (scenario === 'exit-confirmation-tool-search') tool('ToolSearch', { query: 'select:ExitPlanMode' });
+        else if (scenario !== 'exit-confirmation-no-owner') id = tool('ExitPlanMode', {});
+        const completeExit = (isError = false) => append({ type: 'user', message: { role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: id, content: 'Exit request resolved', ...(isError ? { is_error: true } : {}) }] } });
+        if (scenario === 'exit-confirmation-completed-owner' || scenario === 'exit-confirmation-error-owner') completeExit(scenario.endsWith('error-owner'));
+        if (scenario === 'exit-confirmation-pending-question') {
+          pendingId = tool('AskUserQuestion', { questions: [{ question: 'Which remaining finding should we address?', header: 'Finding', multiSelect: false,
+            options: ['Address it', 'Keep reviewing'].map(label => ({ label, description: label })) }] });
+        }
+        const pendingWrite = () => tool('Write', { file_path: path.join(project, 'plan.md'), content: plan });
+        if (scenario === 'exit-confirmation-pending-write') pendingWrite();
+        if (scenario === 'exit-confirmation-pending-file-request') recordFilePermission({ file_path: path.join(project, 'plan.md'), content: plan });
+        if (scenario === 'exit-confirmation-completed-arrival-race' || scenario === 'exit-confirmation-write-arrival-race') {
+          publishDuringScreen = () => {
+            raceInjected = true;
+            if (scenario.endsWith('completed-arrival-race')) completeExit(); else pendingWrite();
+          };
+        }
+        if (scenario === 'exit-confirmation-stale-frame') return;
+        const text = exitConfirmation();
+        if (scenario === 'exit-confirmation-current-frame') {
+          emit('\x1b[2J\x1b[H' + text.replace('Exit plan mode?', 'Exit pln mode?'));
+          emit('\x1b7\x1b[2;9H\x1b[@a\x1b8');
+        } else emit('\x1b[2J\x1b[H' + text);
+      };
       const ask = (question: string, labels: string[]) => {
         pendingId = tool('AskUserQuestion', { questions: [{ question, header: question, multiSelect: scenario === 'multi-select', options: labels.map(label => ({ label, description: `Choose ${label}` })) }] });
       };
@@ -267,6 +326,8 @@ async function main() {
           options: previewLabels.map((label, i) => ({ label, description: label, ...(i === 0 ? { preview: 'Choice details' } : {}) })) }] });
         showPreview();
       };
+      // A native request arriving later cannot reuse this pre-command frame.
+      if (scenario === 'exit-confirmation-stale-frame') emit('\x1b[2J\x1b[H' + exitConfirmation());
       return {
         exited: new Promise<number>(resolve => { end = resolve; }),
         terminal: {
@@ -296,6 +357,7 @@ async function main() {
           }
           if (data.startsWith('/')) {
             seededBeforeSlash = fs.readFileSync(path.join(options.cwd, 'review-input.md'), 'utf8') === plan;
+            if (scenario === 'exit-confirmation-stale-frame') { requestExitConfirmation(); return; }
             if (scenario === 'setup-budget' || scenario === 'launch-budget' || scenario === 'setup-exhausted') {
               emit('WORK_IN_PROGRESS\n');
               return;
@@ -475,7 +537,8 @@ async function main() {
                 pendingRedrawSleeps = 3;
                 delayedRender = showSecondFinding;
               } else showSecondFinding();
-            } else if (filePermissionCase) requestFinalWrite();
+            } else if (exitConfirmationCase) requestExitConfirmation();
+            else if (filePermissionCase) requestFinalWrite();
             else finish();
           }
         } },

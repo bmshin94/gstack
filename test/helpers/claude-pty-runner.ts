@@ -188,6 +188,43 @@ export function isPlanReadyVisible(visible: string): boolean {
   return /readytoexecute|Wouldyouliketoproceed/i.test(collapsed);
 }
 
+/** The native empty-plan permission dialog has no footer. This exact current
+ * frame is only a counting terminal when an owned ExitPlanMode is pending;
+ * recognizing it never answers or approves the dialog. */
+function isNativeExitPlanConfirmationVisible(visible: string): boolean {
+  const lines = visible.split('\n').map(line => line.trimEnd());
+  while (lines.length && lines.at(-1) === '') lines.pop();
+  const start = lines.length - 7;
+  if (start < 0) return false;
+  const rule = /^( *)─{3,}$/.exec(lines[start]!);
+  if (!rule) return false;
+  if (lines.slice(start + 1).some(line => line.length > lines[start]!.length)) return false;
+  const indent = rule[1]!;
+  if (lines[start + 1] !== `${indent} Exit plan mode?` || lines[start + 2] !== ''
+    || lines[start + 3] !== `${indent}  Claude wants to exit plan mode` || lines[start + 4] !== '') return false;
+  // A quoted/fenced example is not a native modal. History may precede the
+  // top rule, but it cannot leave this block inside an unfinished code fence.
+  let fence = '';
+  for (const line of lines.slice(0, start)) {
+    const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!marker) continue;
+    if (!fence) fence = marker[1]!;
+    else if (marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = '';
+  }
+  if (fence) return false;
+  let focused = 0;
+  for (let index = 1; index <= 2; index++) {
+    const line = lines[start + 4 + index]!;
+    if (!line.startsWith(`${indent}  `)) return false;
+    const option = /^([❯> ]) ([12])\. (.+)$/.exec(line.slice(indent.length + 2));
+    if (!option || Number(option[2]) !== index) return false;
+    if (option[1] !== ' ') focused++;
+    if (index === 1 ? !['Yes', 'Yes, and switch to default (ask each time) for this session'].includes(option[3]!)
+      : option[3] !== 'No') return false;
+  }
+  return focused === 1;
+}
+
 /**
  * Detect the AUTO_DECIDE preamble template firing. The model prints
  * "Auto-decided <summary> → <option> (your preference). Change with /plan-tune."
@@ -2293,6 +2330,13 @@ export async function runPlanSkillCounting(opts: {
         return snapshot(
           'plan_ready',
           `skill emitted plan-mode "Ready to execute" confirmation (step0=${step0Count}, review=${reviewCount})`,
+          visible,
+        );
+      }
+      if (!hasPendingWork && native.ready && frame && isNativeExitPlanConfirmationVisible(questionVisible)) {
+        return snapshot(
+          'plan_ready',
+          `owned ExitPlanMode is awaiting its current native confirmation (step0=${step0Count}, review=${reviewCount})`,
           visible,
         );
       }
