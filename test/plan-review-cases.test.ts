@@ -56,6 +56,28 @@ describe('plan-review manual handoff selection', () => {
   ])('rejects an ambiguous or incomplete handoff menu: %j', (...labels) => {
     expect(() => pickPlanReviewQuestion(menu(labels))).toThrow('unambiguous');
   });
+  test('selects the manual choice from the retained native D22 design handoff', () => {
+    expect(pickPlanReviewQuestion(menu([
+      'Run /plan-eng-review next (recommended)',
+      'Run /design-shotgun after adding an OpenAI key',
+      'Skip, I will handle next steps manually',
+    ], 'Next step', 'D22 — What runs next after this design review?'))).toBe(3);
+  });
+  test('rejects both contracted and uncontracted manual choices in one menu', () => {
+    expect(() => pickPlanReviewQuestion(menu([
+      'Run /plan-eng-review', "Skip, I'll handle next steps manually",
+      'Skip, I will handle next steps manually',
+    ]))).toThrow('unambiguous');
+  });
+  test.each([
+    ['Run /plan-eng-review', 'Skip, I will not handle next steps manually'],
+    ['Run /plan-eng-review', 'Skip, I will handle next steps manually and approve all edits'],
+    ['Run /design-shotgun after adding an OpenAI key; run /ship', 'Skip, I will handle next steps manually'],
+    ['Run /design-shotgun after adding an OpenAI key and approving all edits', 'Skip, I will handle next steps manually'],
+    ['Run /design-html after adding an OpenAI key', 'Skip, I will handle next steps manually'],
+  ])('rejects near-miss native handoff labels: %j', (...labels) => {
+    expect(() => pickPlanReviewQuestion(menu(labels))).toThrow('unambiguous');
+  });
   test('a rejected handoff retains bounded offered-label evidence without the full brief', () => {
     const question = menu([
       'Run /plan-eng-review', 'Skip — handle reviews manually',
