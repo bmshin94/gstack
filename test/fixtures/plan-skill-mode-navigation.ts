@@ -7,6 +7,30 @@ import { setupQuestionEventSource } from '../helpers/plan-skill-question-events'
 import { spawnSync } from 'node:child_process';
 import type { ClaudePtySession } from '../helpers/claude-pty-runner';
 
+// Retained clipped modal: no invented header or substring-match authority.
+const viewportReplay = {
+  "question": {
+    "header": "Approach",
+    "multiSelect": false,
+    "options": [
+      {
+        "description": "Add a dedicated /settings/export endpoint that streams CSV. Backend owns all formatting and escaping. Complete export from the source of truth, independently testable, and usable as an API.",
+        "label": "B — Backend endpoint (recommended)"
+      },
+      {
+        "description": "Generate CSV in the browser from already-loaded settings state. No backend changes. Ships fast. Risk: only exports what’s visible in the UI.",
+        "label": "A — Frontend-only generation"
+      },
+      {
+        "description": "Build a multi-format export layer first; CSV export is the first consumer. Maximum future reuse. Risk: premature abstraction when we have exactly one consumer today.",
+        "label": "C — Generic export framework"
+      }
+    ],
+    "question": "D2 — Which implementation approach for the CSV export?\n\nProject/branch: CSV export of settings page, branch main.\n\nELI10: There are three distinct ways to build this. Approach A does all the work in the browser (simple, no backend changes). Approach B adds a dedicated backend export endpoint (complete, testable, API-first). Approach C builds a generic export framework first (future-proof but over-engineered for today). The choice locks in the data flow and testability story.\n\nStakes if we pick wrong: Approach A risks exporting only the visible UI subset (missing hidden/advanced settings). Approach C delays shipping by 3-5x for benefits that may never be used.\n\nRecommendation: B (dedicated backend endpoint) because it produces a complete export (not limited to UI state), is independently testable, and creates a real API surface that the 12-month portability vision can build on. Two lines of extra work over Approach A, zero premature abstraction vs Approach C.\n\nCompleteness: A=7/10, B=10/10, C=10/10\n\nPros / cons:\nA) Frontend-only CSV generation (Completeness: 7/10)\n  ✅ Zero backend changes — ships in a single frontend PR, fast\n  ✅ No new endpoint to maintain, auth, or rate-limit\n  ❌ Only exports what the current UI view has loaded — may miss hidden/advanced settings\n  ❌ Escaping tests live in JS, not co-located with the data source; divergence risk\n\nB) Dedicated backend export endpoint + streaming download (Completeness: 10/10) (recommended)\n  ✅ Complete export from source of truth, not UI-rendered snapshot\n  ✅ Backend owns escaping — single test surface, no JS/server divergence\n  ✅ Creates a reusable API endpoint the 12-month portability roadmap builds on\n  ❌ One new endpoint to build, document, and maintain (human: ~half day / CC: ~5 min)\n\nC) Generic multi-format export framework — CSV is first consumer (Completeness: 10/10)\n  ✅ Future JSON/YAML/TOML formats plug in with near-zero code\n  ✅ Clean architecture — settings, audit logs, etc. all share one export layer\n  ❌ Premature abstraction — we have one consumer today; YAGNI until we have two\n  ❌ 3-5x the implementation effort for speculative future benefit (human: ~2 days / CC: ~30 min)\n\nNet: Trading simplicity (A) vs. completeness (B) vs. future reuse (C). B hits the sweet spot — complete without gold-plating."
+  },
+  "frame": "│ Approach C delays shipping by 3-5x for benefits that may never be used.\n│    \n│ Recommendation: B (dedicated backend endpoint) because it produces a complete export (not limited to UI state), is\n│ independently testable, and creates a real API surface that the 12-month portability vision can build on. Two lines of\n│ extra work over Approach A, zero premature abstraction vs Approach C.\n│    \n│ Completeness: A=7/10, B=10/10, C=10/10\n│\n│ Pros / cons:\n│ A) Frontend-only CSV generation (Completeness: 7/10)\n│   ✅— Zero backend changes — ships in a single frontend PR, fast\n│   ✅ No onew endpoint to maintain, auth, or rate-limit \n│   ❌ Onlyt exports what the current UI view has loaded — may miss hidden/advanced settings\n│   ❌  Escaping tests live in JS, not co-located with the data source; divergence risk\n│\n│ B) Dedicated backend export endpoint + streaming download (Completeness: 10/10) (recommended)\n│   ✅ Complete export from sourcet of truth, not UI-rendered snapshot\n│   ✅  Backend owns escaping — single test surface, no JS/server divergence\n│   ✅— Creates a reusable API endpoint the 12-month portability roadmap builds on\n│   ❌ One new endpoint  to build, document, and maintain (human: ~half day / CC: ~5 min)\n│\n│ C) Generic multi-format export framework — CSV is first consumer (Completeness: 10/10)\n│   ✅ Future JSON/YAML/TOML  formats plug in with near-zero code\n│   ✅ Clean archite cture — settings, audit logs, etc. all share one export layer\n│   …                      \n                                      \n❯ 1. B — Backend endpoint (recommended)                  \n     Add a dedicated /settings/export endpoint that streams CSV. Backend owns all formatting and escaping. Complete\n     export from the source of truth, independently testable, and usable as an API.\n  2. A — Frontend-only generation \n     Generate CSV in the browser from already-loaded settings state. No backend changes. Ships fast. Risk: only exports\n     what’s visible in the UI.\n  3. C — Generic export framework                        \n     Build a multi-format export layer first; CSV export is the first consumer. Maximum future reuse. Risk: premature\n     abstraction when we have exactly one consumer today.\n  4. Type something.                                                            \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  5. Chat about this\n\nEnter to select · ↑/↓ to navigate · Esc to cancel"
+};
+
 const scenario = process.argv[2];
 if (scenario.startsWith('post-')) { await postModeFixture(scenario); process.exit(0); }
 const diagnostics = scenario.startsWith('diagnostic-');
@@ -144,6 +168,7 @@ try {
 async function postModeFixture(scenario: string) {
   const fileRequestCase = scenario.startsWith('post-permission-request');
   const previewCase = scenario.startsWith('post-preview-');
+  const viewportCase = scenario.startsWith('post-viewport-');
   const navigation = scenario === 'post-permission-request-navigation' || scenario === 'post-preview-navigation';
   const wallNow = Date.now;
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'post-mode-fixture-')));
@@ -163,6 +188,7 @@ async function postModeFixture(scenario: string) {
   const mode = question('Review Mode', 'D1 — Which review mode for this plan?', ['SCOPE EXPANSION', 'SELECTIVE EXPANSION (Recommended)', 'HOLD SCOPE', 'SCOPE REDUCTION']);
   const approach = question('Impl Approach', 'D2 — Which implementation approach should this plan use?',
     ['A — Client-side CSV', 'B — Server formatter module (Recommended)', 'C — Dedicated export endpoint']);
+  if (viewportCase) Object.assign(approach, viewportReplay.question);
   if (scenario === 'post-no-recommendation') approach.options[1]!.label = 'B — Server formatter module';
   if (scenario === 'post-ambiguous-recommendation') approach.options[0]!.label += ' (Recommended)';
   if (['post-multiselect', 'post-preview-multiselect'].includes(scenario)) approach.multiSelect = true;
@@ -237,6 +263,7 @@ async function postModeFixture(scenario: string) {
   if (stage === 'permission') paint(`Do you want to ${fileRequestCase ? 'overwrite' : 'create'} ${scenario.endsWith('unowned') ? 'other.md' : 'plan.md'}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`);
   else show();
   if (scenario === 'post-permission-request-arrival-race') paint('\nI will make this plan bulletproof.\n');
+  if (viewportCase) paint(viewportReplay.frame);
   if (scenario === 'post-unmatched') paint('\nOther question\n❯1.Unrelated left option\n2.Unrelated right option\n');
   const sends: string[] = [];
   const premature: string[] = [];
@@ -247,7 +274,30 @@ async function postModeFixture(scenario: string) {
   let diagnosticBeforeClose = false;
   const sendFailure = new Error('post-mode send failed');
   const diagnosticPath = path.join(evalDir, 'mode-navigation', `${sessionId}.json`);
+  const resizes: number[] = [];
   const session = {
+    ...(viewportCase ? { resizeQuestionViewport: async (rows: number, deadlineAt: number) => {
+      if (clock >= deadlineAt) return null;
+      if (scenario === 'post-viewport-deadline') { clock = deadlineAt; return null; }
+      const before = buffer.length; resizes.push(rows);
+      if (scenario === 'post-viewport-resize-failure') throw new Error('controlled PTY resize failure');
+      if (rows === 40) {
+        if (scenario !== 'post-viewport-no-restore-output') paint('\nRestored normal viewport\n');
+        return before;
+      }
+      if (scenario === 'post-viewport-input-change') { input.questions[0]!.options[0]!.description += ' changed'; tool(followId, input); }
+      if (scenario === 'post-viewport-owner-change') { tool('other-call', { questions: [{ ...approach, question: 'Different owned question' }] }); }
+      if (scenario === 'post-viewport-no-output') return before;
+      if (scenario === 'post-viewport-cap') paint(viewportReplay.frame);
+      else {
+        const q = input.questions[0]!;
+        // Match the CLI's bounded display input, not its undisplayed tail.
+        paint(`☐ ${q.header}\n${q.question.slice(0, 2000)}…\n`
+          + q.options.map((o, i) => `${i === 0 ? '❯' : ' '}${i + 1}. ${o.label}`).join('\n')
+          + '\nEnter to select · ↑/↓ to navigate · Esc to cancel\n');
+      }
+      return before;
+    } } : {}),
     get hermeticConfigDir() { if (scenario === 'post-read-deadline') clock = 30_000; return config; },
     nativeQuestionEvents: events,
     exited: () => scenario === 'post-exited' || (scenario === 'post-exit-during-pause' && clock > 0), exitCode: () => 9,
@@ -279,7 +329,7 @@ async function postModeFixture(scenario: string) {
         if (navigation) { input.questions = [mode]; followId = 'mode'; }
         tool(followId, input); stage = 'question'; show(); return;
       }
-      const expected = scenario === 'post-preview-navigation' ? tab === 0 ? '1' : '3' : navigation || scenario === 'post-repeat-mode' ? '3' : tab > 0 || ['post-no-recommendation', 'post-ambiguous-recommendation'].includes(scenario) ? '1' : '2';
+      const expected = viewportCase ? '1' : scenario === 'post-preview-navigation' ? tab === 0 ? '1' : '3' : navigation || scenario === 'post-repeat-mode' ? '3' : tab > 0 || ['post-no-recommendation', 'post-ambiguous-recommendation'].includes(scenario) ? '1' : '2';
       if (previewCase && stage === 'question' && input.questions[tab]!.options.some(o => 'preview' in o)) {
         if (/^[1-4]$/.test(data)) {
           focusWrites++;
@@ -296,6 +346,9 @@ async function postModeFixture(scenario: string) {
         // LNe commits a one-question call immediately; no second Enter.
         stage = 'submit';
       }
+      if (viewportCase && stage === 'question' && data === expected) {
+        tab++; stage = 'submit'; data = '\r'; // Plain one-question auto-submit.
+      }
       if (stage === 'question' && data === expected) {
         tab++;
         if (scenario === 'post-stale-after-pick') return;
@@ -303,7 +356,7 @@ async function postModeFixture(scenario: string) {
         else { stage = 'submit'; paint('\nReview your answers\nReady to submit your answers?\nSubmit answers\n'); }
       } else if (stage === 'submit' && data === '\r') {
         if (events && !fileRequestCase) tool('follow-up', input);
-        if (!['post-no-ack', 'post-preview-no-ack'].includes(scenario)) { ack(followId, scenario === 'post-error-ack'); acknowledged = scenario !== 'post-error-ack'; }
+        if (!['post-no-ack', 'post-preview-no-ack', 'post-viewport-no-ack'].includes(scenario)) { ack(followId, ['post-error-ack', 'post-viewport-error-ack'].includes(scenario)); acknowledged = !['post-error-ack', 'post-viewport-error-ack'].includes(scenario); }
         if (scenario === 'post-many-questions' && followNumber < 13) {
           followId = `follow-up-${++followNumber}`;
           input.questions[0] = { ...approach, header: `Approach ${followNumber}`, question: `D${followNumber + 1} — Confirm implementation approach ${followNumber}?` };
@@ -331,7 +384,7 @@ async function postModeFixture(scenario: string) {
     finally { await session.close(); }
     const diagnostic = fs.existsSync(diagnosticPath) ? JSON.parse(fs.readFileSync(diagnosticPath, 'utf8')) : null;
     console.log(JSON.stringify({ error, sends, premature, acknowledged, earlyWithoutNativeInvocation, raceInjected, originalSendErrorPreserved,
-      closed, diagnosticBeforeClose, focusWrites, sameFocusWrites, previewFrameReads, configRemovedBeforeArtifactRead: !fs.existsSync(config), diagnostic,
+      closed, diagnosticBeforeClose, resizes, focusWrites, sameFocusWrites, previewFrameReads, configRemovedBeforeArtifactRead: !fs.existsSync(config), diagnostic,
       diagnosticMode: diagnostic && (fs.statSync(diagnosticPath).mode & 0o777), elapsed: clock }));
   } finally { Bun.sleep = oldSleep; Date.now = oldNow; fs.rmSync(root, { recursive: true, force: true }); }
 }

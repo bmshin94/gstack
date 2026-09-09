@@ -126,3 +126,77 @@ test('a stalled decoder has a bounded rejection and import failures restore navi
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }, 10_000);
+
+test('resizing the decoded viewport requires a completed barrier and creates no new output', async () => {
+  const projection = new PtyCurrentScreen();
+  try {
+    projection.feed('Old viewport');
+    const pending = projection.snapshot();
+    expect(() => projection.resize(120, 80)).toThrow('snapshot is pending');
+    const before = await pending;
+    projection.resize(120, 80);
+    const after = await projection.snapshot();
+    expect(after.rows).toBe(80);
+    expect(after.cols).toBe(120);
+    expect(after.inputOffset).toBe(before.inputOffset);
+    projection.feed('\x1b[2J\x1b[HNew heading\x1b[70;1HNew low row');
+    const repainted = await projection.snapshot();
+    expect(repainted.lines[0].text).toBe('New heading');
+    expect(repainted.lines[69].text).toBe('New low row');
+    expect(repainted.inputOffset).toBeGreaterThan(after.inputOffset);
+    projection.resize(120, 40);
+    expect((await projection.snapshot()).rows).toBe(40);
+  } finally { projection.dispose(); }
+  expect(() => projection.resize(120, 80)).toThrow('disposed');
+});
+
+test.skipIf(process.platform === 'win32').each(['normal', 'already-exited', 'body-error'])('owned local PTY resize redraws at decoder geometry and session.close releases the parent (%s)', async scenario => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'native-viewport-free-')));
+  const native = path.join(tmp, 'native.ts');
+  const wrapper = path.join(tmp, 'native-wrapper');
+  const probe = path.join(tmp, 'probe.ts');
+  const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+  fs.writeFileSync(native, `const paint=()=>{const rows=process.stdout.rows;process.stdout.write('\\x1b[2J\\x1b[HNATIVE:'+process.stdout.columns+'x'+rows+'\\x1b['+(rows-2)+';1HLOW:'+rows);};
+    process.stdout.on('resize',paint);paint();setInterval(()=>{},1000);${scenario === 'already-exited' ? 'setTimeout(()=>process.exit(0),1200);' : ''}`);
+  fs.writeFileSync(wrapper, '#!/bin/sh\nexec ' + quote(process.execPath) + ' ' + quote(native) + '\n', { mode: 0o700 });
+  fs.writeFileSync(probe, `import { launchClaudePty } from ${JSON.stringify(path.join(import.meta.dir, 'helpers', 'claude-pty-runner.ts'))};
+    const session=await launchClaudePty({cwd:${JSON.stringify(tmp)},captureScreen:true,captureQuestionsForSession:crypto.randomUUID(),timeoutMs:5000});
+    let evidence,observedError=null;
+    try {
+      await session.waitFor('NATIVE:120x40',{timeoutMs:2000});
+      const before=await session.currentScreen();
+      const mark=await session.resizeQuestionViewport(80,Date.now()+2000);
+      await session.waitFor('NATIVE:120x80',{since:mark,timeoutMs:2000});
+      const expanded=await session.currentScreen();
+      const noResize=await session.resizeQuestionViewport(120,Date.now()-1);
+      const restoredMark=await session.resizeQuestionViewport(40,Date.now()+2000);
+      await session.waitFor('NATIVE:120x40',{since:restoredMark,timeoutMs:2000});
+      const restored=await session.currentScreen();
+      evidence={before:before.text,mark,expanded:expanded.text,expandedMark:expanded.rawEnd,noResize,restored:restored.text};
+      if (${JSON.stringify(scenario)}==='already-exited') { const end=Date.now()+2000;while(!session.exited()&&Date.now()<end)await Bun.sleep(20);if(!session.exited())throw new Error('Native child failed to exit'); }
+      if (${JSON.stringify(scenario)}==='body-error') throw new Error('controlled body failure');
+    } catch(cause) { observedError=String(cause); } finally { await session.close(); await session.close(); }
+    console.log(JSON.stringify({...evidence,observedError,exited:session.exited()}));`);
+  const child = Bun.spawn([process.execPath, probe], { cwd: tmp, env: { PATH: process.env.PATH ?? '', HOME: tmp, TMPDIR: tmp,
+    TERM: 'xterm-256color', EVALS_HERMETIC: '1', BROWSE_TERMINAL_BINARY: wrapper }, stdout: 'pipe', stderr: 'pipe' });
+  let timedOut = false;
+  const watchdog = setTimeout(() => { timedOut = true; child.kill(); }, 8000);
+  try {
+    const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    expect(timedOut, stderr).toBe(false);
+    expect(exit, stderr).toBe(0);
+    const result = JSON.parse(stdout.trim());
+    expect(result.before).toContain('NATIVE:120x40');
+    expect(result.expanded.startsWith('NATIVE:120x80')).toBe(true);
+    expect(result.expanded.split('\n')[77]).toBe('LOW:80');
+    expect(result.expandedMark).toBeGreaterThan(result.mark);
+    expect(result.noResize).toBeNull();
+    expect(result.restored).toContain('NATIVE:120x40');
+    expect(result.exited).toBe(true);
+    expect(result.observedError).toBe(scenario === 'body-error' ? 'Error: controlled body failure' : null);
+  } finally {
+    clearTimeout(watchdog);
+    if (child.exitCode === null) { child.kill(); await child.exited; }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}, 12_000);

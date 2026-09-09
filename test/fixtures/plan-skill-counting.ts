@@ -11,13 +11,17 @@ async function main() {
   const scenario = process.argv[3] ?? 'normal';
   const filePermissionCase = scenario.startsWith('permission-final-');
   const previewCase = scenario.startsWith('preview-menu-');
-  const timing = previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
-  const caseBudgetMs = previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
+  const viewportCase = scenario.startsWith('viewport-');
+  const timing = viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const caseBudgetMs = viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
   const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
   const sends: string[] = [];
+  const resizes: number[][] = [];
+  let terminalCloseCount = 0;
+  let viewportSnapshots = 0;
   const sendTimes: number[] = [];
   let seededBeforeSlash = false;
   let closed = false;
@@ -34,8 +38,9 @@ async function main() {
   let raceInjected = false;
   let raceJustInjected = false;
   const originalScreenSnapshot = PtyCurrentScreen.prototype.snapshot;
-  if (scenario.endsWith('arrival-race') || scenario === 'permission-final-input-race') PtyCurrentScreen.prototype.snapshot = async function () {
+  if (scenario.endsWith('arrival-race') || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
     const frame = await originalScreenSnapshot.call(this);
+    if (scenario === 'viewport-flush-deadline' && frame.rows === 40 && frame.text.includes('Clipped native prompt') && ++viewportSnapshots === 2) clock = caseBudgetMs;
     const publish = publishDuringScreen;
     publishDuringScreen = null;
     publish?.();
@@ -63,7 +68,11 @@ async function main() {
       const append = (row: Record<string, unknown>) => fs.appendFileSync(file, JSON.stringify({ sessionId, timestamp: new Date(originalNow()).toISOString(), ...row }) + '\n');
       append({ type: 'user', message: { role: 'user', content: 'Review the supplied plan.' } });
       // A real PTY's ONLCR output converts these fixture newlines to CRLF.
-      const emit = (value: string) => options.terminal.data(null, Buffer.from(value.replace(/(?<!\r)\n/g, '\r\n')));
+      let latestPaint = '';
+      const emit = (value: string) => { latestPaint = value; options.terminal.data(null, Buffer.from(value.replace(/(?<!\r)\n/g, '\r\n'))); };
+      const longQuestion = 'D1 — Pick a mode\n' + Array.from({ length: 45 }, (_, i) => `Context paragraph ${i}: Review the supplied design carefully.`).join('\n');
+      const clipped = 'Clipped native prompt\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\nEnter to select · ↑/↓ to navigate · Esc to cancel\n';
+      const complete = '☐ Review mode\n' + longQuestion.slice(0, 2000) + '…\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\nEnter to select · ↑/↓ to navigate · Esc to cancel\n';
       const finding = (number: number) => `\nFinding ${number} — ${number === 1 ? 'Success' : 'Failure'} test\n\n❯ 1. ${reusedOptions ? 'Add test' : number === 1 ? 'Add receipt assertion' : 'Add retry assertion'}\n  2. ${reusedOptions ? 'Skip test' : number === 1 ? 'Skip receipt test' : 'Skip retry test'}\n`;
       let sequence = 0;
       let pendingId: string | null = null;
@@ -177,7 +186,15 @@ async function main() {
       };
       return {
         exited: new Promise<number>(resolve => { end = resolve; }),
-        terminal: { write(data: string) {
+        terminal: {
+          ...(viewportCase ? { resize(cols: number, rows: number) {
+            resizes.push([cols, rows]);
+            if (scenario === 'viewport-resize-failure') throw new Error('controlled resize failure');
+            if (scenario === 'viewport-no-output' || rows === 40 && scenario === 'viewport-ready-no-restore-output') return;
+            const paint = rows === 40 ? latestPaint : scenario === 'viewport-cap' ? clipped : complete;
+            emit('\x1b[2J\x1b[H' + paint);
+          }, close() { terminalCloseCount++; } } : {}),
+          write(data: string) {
           sends.push(data);
           sendTimes.push(Date.now() - caseStartedAt);
           if (previewCase) {
@@ -199,6 +216,11 @@ async function main() {
             if (scenario === 'setup-budget' || scenario === 'launch-budget' || scenario === 'setup-exhausted') {
               emit('WORK_IN_PROGRESS\n');
               return;
+            }
+            if (viewportCase) {
+              pendingId = tool('AskUserQuestion', { questions: [{ question: longQuestion, header: 'Review mode', multiSelect: false,
+                options: ['HOLD SCOPE', 'SCOPE EXPANSION'].map(label => ({ label, description: label })) }] });
+              emit('\x1b[2J\x1b[H' + clipped); return;
             }
             if (scenario === 'screen-only-plan-ready') {
               tool('ExitPlanMode', {});
@@ -292,6 +314,7 @@ async function main() {
             }
             if (['no-ack', 'hook-no-ack'].includes(scenario) && answer === 2) { emit('\nWORK_IN_PROGRESS\n'); return; }
             acknowledge();
+            if (scenario === 'viewport-ready-no-restore-output') { tool('ExitPlanMode', {}); emit('\nReady to execute?\n'); return; }
             if (answer === 1) {
               if (scenario === 'multi-question') {
                 pendingId = tool('AskUserQuestion', { questions: ['Finding 1 — Success test', 'Finding 2 — Failure test'].map(question => ({
@@ -345,11 +368,11 @@ async function main() {
       defaultPick: previewCase ? scenario === 'preview-menu-focused' ? 1 : 2 : scenario === 'permission-current-create-pick-two' ? 2 : undefined,
       firstAUQPick: scenario === 'first-route' ? () => 2 : undefined,
     }); } catch (cause) {
-      if (!filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
+      if (!viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
       error = String(cause);
     }
     const writtenPlan = fs.existsSync(path.join(project, 'plan.md')) ? fs.readFileSync(path.join(project, 'plan.md'), 'utf8') : '';
-    console.log(JSON.stringify({ observation, error, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, raceInjected,
+    console.log(JSON.stringify({ observation, error, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, raceInjected,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

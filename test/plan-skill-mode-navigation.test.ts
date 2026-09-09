@@ -246,3 +246,43 @@ for (const [scenario, sends] of [
   expect(result.diagnosticBeforeClose).toBe(true);
   expect(result.closed).toBe(true);
 }, 15_000);
+
+
+test('a bounded viewport redraw restores the exact retained clipped question before ordinary selection', async () => {
+  const result = await run('post-viewport-restored');
+  expect(result.error).toBeUndefined();
+  expect(result.sends).toEqual(['1']);
+  expect(result.resizes).toEqual([80, 40]);
+  expect(result.premature).toEqual([]);
+  expect(result.acknowledged).toBe(true);
+  expect(result.closed).toBe(true);
+}, 15_000);
+
+for (const [scenario, resizes, sends] of [
+  ['post-viewport-cap', [80, 120], []],
+  ['post-viewport-no-output', [80], []],
+  ['post-viewport-input-change', [80], []],
+  ['post-viewport-owner-change', [80], []],
+  ['post-viewport-deadline', [], []],
+  ['post-viewport-resize-failure', [80], []],
+  ['post-viewport-no-ack', [80], ['1']],
+  ['post-viewport-error-ack', [80], ['1']],
+] as const) test(`viewport changes never replace native matching or ACK: ${scenario}`, async () => {
+  const result = await run(scenario);
+  expect(result.error).toBeDefined();
+  expect(result.resizes).toEqual(resizes);
+  expect(result.sends).toEqual(sends);
+  expect(result.acknowledged).toBe(false);
+  expect(result.closed).toBe(true);
+  expect(result.diagnosticBeforeClose).toBe(true);
+}, 15_000);
+
+
+test('restoring geometry does not invalidate already owned post-mode completion', async () => {
+  const result = await run('post-viewport-no-restore-output');
+  expect(result.error).toBeUndefined();
+  expect(result.sends).toEqual(['1']);
+  expect(result.resizes).toEqual([80, 40]);
+  expect(result.acknowledged).toBe(true);
+  expect(result.diagnosticBeforeClose).toBe(false);
+}, 15_000);

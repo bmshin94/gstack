@@ -115,6 +115,15 @@ export class PtyCurrentScreen {
     });
   }
 
+  /** The caller must flush before coordinating this with the actual PTY.
+   * Resizing changes geometry only; it contributes no output or input epoch. */
+  resize(cols: number, rows: number): void {
+    if (![cols, rows].every(value => Number.isSafeInteger(value) && value > 0)) throw new Error('Screen dimensions must be positive integers');
+    if (this.pending.size) throw new Error('Cannot resize while a screen snapshot is pending');
+    try { this.getTerminal().resize(cols, rows); }
+    catch (cause) { this.close(cause instanceof Error ? cause : new Error(String(cause))); throw cause; }
+  }
+
   private close(error: Error): void {
     if (this.closed) return;
     this.closed = error;

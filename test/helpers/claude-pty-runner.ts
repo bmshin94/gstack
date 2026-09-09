@@ -130,6 +130,10 @@ export interface ClaudePtySession {
   /** Active screen at a completed decode barrier; rawEnd counts raw UTF-16
    * code units and can be compared with mark(). Present only when requested. */
   currentScreen?(): Promise<{ text: string; rawEnd: number }>;
+  /** Owned question sessions only. Coordinates decoder and PTY geometry;
+   * returns the post-flush/pre-resize mark, or null without resizing when
+   * the deadline or a changing decoder barrier prevents the transaction. */
+  resizeQuestionViewport?(rows: 40 | 80 | 120, deadlineAt: number): Promise<number | null>;
   /**
    * Wait for any of the supplied patterns to appear in visibleText. Resolves
    * with the first match. Throws on timeout (with last 2KB of visible text).
@@ -1545,26 +1549,24 @@ export async function launchClaudePty(
     await waitForAny([pattern], waitOpts);
   }
 
+  let terminalClosed = false;
   async function close(): Promise<void> {
     clearTimeout(wallTimer);
     clearTimeout(trustWatcherStop);
     clearInterval(trustWatcher);
     screen?.dispose();
-    if (exited) return;
     try {
-      proc.kill?.('SIGINT');
-    } catch {
-      /* ignore */
-    }
-    // Wait up to 2s for graceful exit.
-    await Promise.race([exitedPromise, Bun.sleep(2000)]);
-    if (!exited) {
-      try {
-        proc.kill?.('SIGKILL');
-      } catch {
-        /* ignore */
+      if (exited) return;
+      try { proc.kill?.('SIGINT'); } catch { /* ignore */ }
+      // Preserve the existing bounded child-exit grace.
+      await Promise.race([exitedPromise, Bun.sleep(2000)]);
+      if (!exited) {
+        try { proc.kill?.('SIGKILL'); } catch { /* ignore */ }
+        await Promise.race([exitedPromise, Bun.sleep(1000)]);
       }
-      await Promise.race([exitedPromise, Bun.sleep(1000)]);
+    } finally {
+      // Child exit alone does not release Bun's owned PTY handle.
+      if (!terminalClosed) { terminalClosed = true; proc.terminal?.close?.(); }
     }
   }
 
@@ -1575,6 +1577,26 @@ export async function launchClaudePty(
     visibleText: () => stripAnsi(buffer),
     mark,
     visibleSince,
+    ...(screen && nativeQuestionEvents && cols === 120 && rows === 40 && typeof proc.terminal?.resize === 'function' ? { resizeQuestionViewport: async (nextRows: 40 | 80 | 120, deadlineAt: number) => {
+      if (![40, 80, 120].includes(nextRows) || !Number.isFinite(deadlineAt)) throw new Error('Unsupported question viewport request');
+      if (screenError) throw screenError;
+      if (exited || Date.now() >= deadlineAt) return null;
+      const flushed = await screen!.snapshot();
+      if (exited || Date.now() >= deadlineAt || flushed.inputOffset !== screen!.inputOffset) return null;
+      const rawMark = buffer.length;
+      try {
+        if (typeof proc.terminal?.resize !== 'function') throw new Error('Owned PTY cannot resize its question viewport');
+        // No await between the two operations: output from SIGWINCH must be
+        // decoded at the same geometry. Failure poisons all later snapshots.
+        screen!.resize(cols, nextRows);
+        proc.terminal.resize(cols, nextRows);
+      } catch (cause) {
+        screenError = cause;
+        screen!.dispose();
+        throw cause;
+      }
+      return rawMark;
+    } } : {}),
     ...(screen ? { currentScreen: async () => {
       if (screenError) throw screenError;
       const rawEnd = buffer.length;
@@ -2108,6 +2130,9 @@ export async function runPlanSkillCounting(opts: {
 
   const fingerprints: AskUserQuestionFingerprint[] = [];
   const submitted = new Map<string, { answeredQuestions: number; previewFocus?: number; submitted: boolean; counted: boolean; fp: AskUserQuestionFingerprint }>();
+  let viewport: { id: string; questions: NativeQuestion[]; rows: 80 | 120 } | null = null;
+  const viewportAttempts = new Map<string, number>();
+  let viewportInputSince = 0;
   const grantedTools = new Set<string>();
   const grantedRequests = new Map<string, NativePermissionGrant>();
   let boundaryFired = false;
@@ -2221,9 +2246,19 @@ export async function runPlanSkillCounting(opts: {
       if (expired()) break;
       if (!isDeepStrictEqual(native, afterFrame)) continue;
       const questionVisible = frame
-        ? frame.rawEnd > questionSince ? frame.text : ''
+        ? frame.rawEnd > Math.max(questionSince, viewportInputSince) ? frame.text : ''
         : questionWindow;
       if (expired()) break;
+      if (viewport) {
+        const owner = native.calls.find(call => call.id === viewport!.id);
+        if (!owner || !isDeepStrictEqual(owner.questions, viewport.questions)) throw new Error('Expanded native question changed ownership or input');
+        if (owner.result === 'error') throw new Error(`Native AskUserQuestion ${owner.id} returned an error`);
+        if (owner.result !== 'pending') {
+          const restored = await session.resizeQuestionViewport!(40, deadlineAt);
+          if (restored !== null) { viewportInputSince = restored; viewport = null; }
+          continue;
+        }
+      }
       // An input write is not an answer. Count each native invocation only
       // after its matching successful result, including every tab in the call.
       for (const call of native.calls) {
@@ -2295,7 +2330,21 @@ export async function runPlanSkillCounting(opts: {
       if (question.multiSelect) throw new Error('Native multiSelect AskUserQuestion requires checkbox navigation unsupported by the counting driver');
       const renderedOptions = parseNumberedOptions(questionVisible);
       const selection = nativeQuestionSelection(question, questionVisible, renderedOptions, native.calls.flatMap(call => call.questions));
-      if (!selection || selection.kind === 'preview' && !frame) continue;
+      if (!selection) {
+        const key = `${call.id}:${state?.answeredQuestions ?? 0}`;
+        const attempts = viewportAttempts.get(key) ?? 0;
+        if (frame && isNumberedOptionListVisible(questionVisible) && session.resizeQuestionViewport && attempts < 2 && viewport?.rows !== 120) {
+          const rows = viewport?.rows === 80 ? 120 : 80;
+          const resized = await session.resizeQuestionViewport(rows, deadlineAt);
+          if (resized !== null) {
+            viewportAttempts.set(key, attempts + 1);
+            viewport = { id: call.id, questions: call.questions, rows };
+            viewportInputSince = resized;
+          }
+        }
+        continue;
+      }
+      if (selection.kind === 'preview' && !frame) continue;
       const fp: AskUserQuestionFingerprint = {
         signature: call.id, toolUseId: call.id, questions: call.questions,
         promptSnippet: question.question.slice(0, 240),

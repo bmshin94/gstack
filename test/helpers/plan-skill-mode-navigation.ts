@@ -1,5 +1,5 @@
 import { isNumberedOptionListVisible, isPermissionDialogVisible, parseNumberedOptions, MODE_RE, findModeOption, TAIL_SCAN_BYTES, type ClaudePtySession } from './claude-pty-runner';
-import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, type NativePermissionGrant } from './plan-skill-questions';
+import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, type NativePermissionGrant, type NativeQuestion } from './plan-skill-questions';
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -50,6 +50,9 @@ async function driveModeQuestions(
   let selected: { id: string; modeIndex: number; sincePick: number } | null = postMode
     ? { id: postMode.toolUseId, modeIndex: postMode.modeIndex, sincePick: postMode.sincePick } : null;
   const answered = new Map<string, { questions: number; previewFocus?: number; submitted: boolean; counted: boolean }>();
+  let viewport: { id: string; questions: NativeQuestion[]; rows: 80 | 120 } | null = null;
+  const viewportAttempts = new Map<string, number>();
+  let viewportInputSince = 0;
   const granted = new Set<string>();
   const grantedRequests = new Map<string, NativePermissionGrant>();
   let lastNative: ReturnType<typeof readPlanSkillQuestions> | null = null;
@@ -88,7 +91,11 @@ async function driveModeQuestions(
         ...(postMode ? { phase: 'posture', modeToolUseId: identity(postMode.toolUseId), downstream: tail(downstreamSnapshot) } : {}),
         selected: selected && { ...selected, id: identity(selected.id) }, priorAnswered,
         answered: [...answered].slice(-64).map(([id, state]) => ({ id: identity(id), ...state })),
-        answeredCount: answered.size, answeredOmitted: Math.max(0, answered.size - 64),
+        answeredCount: answered.size,
+        viewport: viewport ? { id: identity(viewport.id), rows: viewport.rows } : null,
+        viewportInputSince,
+        viewportAttempts: [...viewportAttempts].slice(-64).map(([key, attempts]) => ({ key: identity(key), attempts })),
+        viewportAttemptsOmitted: Math.max(0, viewportAttempts.size - 64), answeredOmitted: Math.max(0, answered.size - 64),
         granted: [...granted].slice(-64).map(identity),
         grantedCount: granted.size, grantedOmitted: Math.max(0, granted.size - 64),
         grantedRequestCount: grantedRequests.size,
@@ -164,7 +171,7 @@ async function driveModeQuestions(
     const frame = await session.currentScreen?.();
     const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, opts.sessionId, session.nativeQuestionEvents);
     const visible = frame
-      ? frame.rawEnd > questionSince ? frame.text : ''
+      ? frame.rawEnd > Math.max(questionSince, viewportInputSince) ? frame.text : ''
       : session.visibleSince(questionSince);
     lastVisible = visible;
     lastNative = native;
@@ -173,6 +180,16 @@ async function driveModeQuestions(
     // this pair for counting, completion and input alike.
     if (!isDeepStrictEqual(native, afterFrame)) continue;
     if (native.pendingBytes) continue;
+    if (viewport) {
+      const owner = native.calls.find(call => call.id === viewport!.id);
+      if (!owner || !isDeepStrictEqual(owner.questions, viewport.questions)) throw new Error('Expanded native question changed ownership or input');
+      if (owner.result === 'error') throw new Error(`Native AskUserQuestion ${owner.id} returned an error during mode navigation`);
+      if (owner.result !== 'pending') {
+        const restored = await session.resizeQuestionViewport!(40, deadline);
+        if (restored !== null) { viewportInputSince = restored; viewport = null; }
+        continue;
+      }
+    }
     for (const call of native.calls) {
       const state = answered.get(call.id);
       if (!state || state.counted || call.result === 'pending') continue;
@@ -220,7 +237,21 @@ async function driveModeQuestions(
     const question = call.questions[state?.questions ?? 0]!;
     if (question.multiSelect) throw new Error('Native multiSelect AskUserQuestion requires unsupported checkbox navigation');
     const selection = nativeQuestionSelection(question, visible, parseNumberedOptions(visible), native.calls.flatMap(call => call.questions));
-    if (!selection || selection.kind === 'preview' && !frame) continue;
+    if (!selection) {
+      const key = `${call.id}:${state?.questions ?? 0}`;
+      const attempts = viewportAttempts.get(key) ?? 0;
+      if (frame && isNumberedOptionListVisible(visible) && session.resizeQuestionViewport && attempts < 2 && viewport?.rows !== 120) {
+        const rows = viewport?.rows === 80 ? 120 : 80;
+        const resized = await session.resizeQuestionViewport(rows, deadline);
+        if (resized !== null) {
+          viewportAttempts.set(key, attempts + 1);
+          viewport = { id: call.id, questions: call.questions, rows };
+          viewportInputSince = resized;
+        }
+      }
+      continue;
+    }
+    if (selection.kind === 'preview' && !frame) continue;
     const options = question.options.map((option, index) => ({ index: index + 1, label: option.label }));
     const isMode = options.some(option => MODE_RE.test(option.label));
     const target = isMode ? findModeOption(options, targetMode) : null;
