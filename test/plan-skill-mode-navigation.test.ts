@@ -211,3 +211,38 @@ for (const [scenario, sends] of [
     if (scenario === 'post-send-failure') expect(result.originalSendErrorPreserved).toBe(true);
   }, 15_000);
 }
+
+
+for (const [scenario, sends] of [
+  ['post-preview-already-focused', ['\r']],
+  ['post-preview-focus', ['2', '\r']],
+  ['post-preview-navigation', ['\r', '3', '\r', '\r']],
+  ['post-preview-mixed', ['2', '\r', '1', '\r']],
+] as const) test(`preview menus commit the focused native choice separately: ${scenario}`, async () => {
+  const result = await run(scenario);
+  expect(result.error).toBeUndefined();
+  expect(result.sends).toEqual(sends);
+  expect(result.premature).toEqual([]);
+  expect(result.sameFocusWrites).toBe(0);
+  expect(result.acknowledged).toBe(true);
+  expect(result.closed).toBe(true);
+}, 15_000);
+
+for (const [scenario, sends] of [
+  ['post-preview-stale-focus', ['2']],
+  ['post-preview-wrong-focus', ['2']],
+  ['post-preview-unowned', []],
+  ['post-preview-multiselect', []],
+  ['post-preview-deadline', ['2']],
+  ['post-preview-input-change', ['2']],
+  ['post-preview-no-ack', ['2', '\r']],
+  ['post-preview-send-failure', ['2', '\r']],
+] as const) test(`preview input never substitutes for a fresh frame and native ACK: ${scenario}`, async () => {
+  const result = await run(scenario);
+  expect(result.error).toBeDefined();
+  expect(result.sends).toEqual(sends);
+  expect(result.premature).toEqual([]);
+  expect(result.acknowledged).toBe(false);
+  expect(result.diagnosticBeforeClose).toBe(true);
+  expect(result.closed).toBe(true);
+}, 15_000);

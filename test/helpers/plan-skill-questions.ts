@@ -7,7 +7,7 @@ export interface NativeQuestion {
   question: string;
   header: string;
   multiSelect: boolean;
-  options: Array<{ label: string; description: string }>;
+  options: Array<{ label: string; description: string; preview?: string }>;
 }
 export interface NativeQuestionCall {
   id: string;
@@ -165,7 +165,8 @@ const compact = (value: string) => value.replace(/<gstack-qid:[^>]+>/g, '').repl
 
 /** Read only a physical side-preview frame. Other layouts retain the existing
  * parser; preview text never supplies label characters. */
-function previewQuestionOptions(question: NativeQuestion, menu: string): Array<{ index: number; label: string }> | null {
+function previewQuestionOptions(question: NativeQuestion, menu: string): { options: Array<{ index: number; label: string }>; focusedIndex: number } | null {
+  const invalid = { options: [], focusedIndex: 0 };
   let lines = menu.split(/\r?\n/);
   // A glyph in an offered label is not a preview. Require a separated border
   // band corroborated by an aligned right-column body or bottom row.
@@ -179,31 +180,36 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): Array<{
   });
   if (!apparentPreview) return null;
   const top = /┌─+┐[ \t]*$/.exec(lines[0]!);
-  if (!top) return [];
+  if (!top) return invalid;
   const column = top.index;
   const edge = column + top[0].trimEnd().length - 1;
-  if (column < 6 || !/ {2}$/.test(lines[0]!.slice(0, column))) return [];
+  if (column < 6 || !/ {2}$/.test(lines[0]!.slice(0, column))) return invalid;
   let bottom = -1;
   for (let i = 1; i < lines.length; i++) {
     const row = lines[i]!;
     if (row[column] === '└') {
-      if (row[edge] !== '┘' || !/^─+$/.test(row.slice(column + 1, edge)) || row.slice(edge + 1).trim()) return [];
+      if (row[edge] !== '┘' || !/^─+$/.test(row.slice(column + 1, edge)) || row.slice(edge + 1).trim()) return invalid;
       bottom = i;
       break;
     }
-    if (row[column] !== '│' || row[edge] !== '│' || row.slice(edge + 1).trim()) return [];
+    if (row[column] !== '│' || row[edge] !== '│' || row.slice(edge + 1).trim()) return invalid;
   }
-  if (bottom < 0) return [];
+  if (bottom < 0) return invalid;
   // Only cursor tokens inside a verified preview are decorative. A later
   // menu after this frame restores the existing latest-menu selection.
-  for (const match of menu.matchAll(/❯\s*1\./g)) {
-    if (match.index === lines[0]!.indexOf('❯')) continue;
+  let focusedIndex = 0;
+  for (const match of menu.matchAll(/❯\s*([1-9])\./g)) {
     const before = menu.slice(0, match.index);
     const row = before.split('\n').length - 1;
     const cursorColumn = match.index - (before.lastIndexOf('\n') + 1);
     if (row > bottom) return null;
+    if (cursorColumn < column && /^[ \t]*❯[ \t]*[1-9]\./.test(lines[row]!)) {
+      if (focusedIndex || /[\r\n]/.test(match[0])) return invalid;
+      focusedIndex = Number(match[1]);
+      continue;
+    }
     if (row < 1 || row >= bottom || cursorColumn <= column
-      || cursorColumn + match[0].length > edge || /[\r\n]/.test(match[0])) return [];
+      || cursorColumn + match[0].length > edge || /[\r\n]/.test(match[0])) return invalid;
   }
   lines = lines.slice(0, bottom + 1).map(line => line.slice(0, column).trimEnd());
   const found: Array<{ index: number; label: string }> = [];
@@ -213,16 +219,16 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): Array<{
     if (numbered) {
       const index = Number(numbered[1]);
       if (index > question.options.length) break; // Native Other/Chat controls.
-      if (index !== found.length + 1) return [];
+      if (index !== found.length + 1) return invalid;
       const previous = found.at(-1);
-      if (previous && !compact(previous.label).startsWith(compact(question.options[previous.index - 1]!.label))) return [];
+      if (previous && !compact(previous.label).startsWith(compact(question.options[previous.index - 1]!.label))) return invalid;
       found.push({ index, label: numbered[2]! });
     } else {
       const previous = found.at(-1);
-      if (!previous) return [];
+      if (!previous) return invalid;
       const complete = compact(previous.label).startsWith(compact(question.options[previous.index - 1]!.label));
       if (!/^ {4,}\S/.test(line)) {
-        if (!complete && lines.slice(row).some(tail => tail.trim())) return [];
+        if (!complete && lines.slice(row).some(tail => tail.trim())) return invalid;
         break;
       }
       if (complete) continue; // A description is not another offered label.
@@ -231,11 +237,11 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): Array<{
     const current = found.at(-1)!;
     const offered = compact(question.options[current.index - 1]!.label);
     const rendered = compact(current.label);
-    if (!rendered || (!offered.startsWith(rendered) && !rendered.startsWith(offered))) return [];
+    if (!rendered || (!offered.startsWith(rendered) && !rendered.startsWith(offered))) return invalid;
   }
   // The final choice may extend below the viewport. Its prefix is validated
   // above; the caller still requires two other complete offered labels.
-  return found;
+  return { options: found, focusedIndex };
 }
 
 export function matchesNativeQuestion(question: NativeQuestion, visible: string, options: Array<{ index: number; label: string }>, others: NativeQuestion[] = []): boolean {
@@ -243,7 +249,7 @@ export function matchesNativeQuestion(question: NativeQuestion, visible: string,
     && compact(other.header) === compact(question.header) && JSON.stringify(other.options.map(o => o.label)) === JSON.stringify(question.options.map(o => o.label)))) {
     throw new Error('Indistinguishable repeated native question: current rendering cannot identify a new invocation');
   }
-  const physicalCursor = [...visible.matchAll(/^[ \t]*❯[ \t]*1\./gm)].at(-1);
+  const physicalCursor = [...visible.matchAll(/^[ \t]*(?:❯[ \t]*)?1\./gm)].at(-1);
   const physicalOptions = physicalCursor ? previewQuestionOptions(question, visible.slice(physicalCursor.index)) : null;
   const cursor = physicalOptions === null ? [...visible.matchAll(/❯\s*1\./g)].at(-1) : physicalCursor;
   if (!cursor) return false;
@@ -263,11 +269,32 @@ export function matchesNativeQuestion(question: NativeQuestion, visible: string,
   if (!promptMatches) return false;
   // Rendered choices corroborate the prompt; the complete offered inventory
   // and numeric selection come from native input, even below the viewport.
-  const renderedOptions = physicalOptions ?? options;
+  const renderedOptions = physicalOptions?.options ?? options;
   return renderedOptions.filter(rendered => {
     const offered = question.options[rendered.index - 1];
     return offered && compact(rendered.label).startsWith(compact(offered.label));
   }).length >= 2;
+}
+
+/** Normal single-select digits commit immediately. The CLI's preview menu
+ * instead focuses with a digit and commits the rendered focus with Enter.
+ * Require both native preview inventory and its current physical controls;
+ * accessible/plain rendering of preview input is deliberately unsupported.
+ */
+export function nativeQuestionSelection(question: NativeQuestion, visible: string,
+  options: Array<{ index: number; label: string }>, others: NativeQuestion[] = []):
+  { kind: 'digit' } | { kind: 'preview'; focusedIndex: number } | null {
+  if (question.multiSelect || !matchesNativeQuestion(question, visible, options, others)) return null;
+  const first = [...visible.matchAll(/^[ \t]*(?:❯[ \t]*)?1\./gm)].at(-1);
+  const frame = first ? previewQuestionOptions(question, visible.slice(first.index)) : null;
+  const preview = question.options.some(option => option.preview !== undefined);
+  if (!preview && frame === null) return { kind: 'digit' };
+  if (!preview || !frame || !frame.focusedIndex) return null;
+  const focused = frame.options.find(option => option.index === frame.focusedIndex);
+  const offered = question.options[frame.focusedIndex - 1];
+  if (!focused || !offered || !compact(focused.label).startsWith(compact(offered.label))) return null;
+  if (!/^Enter to select · ↑\/↓ to navigate · n to add notes(?: · Tab to switch questions)? · Esc to cancel$/.test(visible.trim().split('\n').at(-1)!.trim())) return null;
+  return { kind: 'preview', focusedIndex: frame.focusedIndex };
 }
 
 /** A lone pending tool is insufficient: its command/path must also identify

@@ -10,8 +10,9 @@ async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
   const filePermissionCase = scenario.startsWith('permission-final-');
-  const timing = filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
-  const caseBudgetMs = filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
+  const previewCase = scenario.startsWith('preview-menu-');
+  const timing = previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const caseBudgetMs = previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
   const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
@@ -158,11 +159,41 @@ async function main() {
       let end: (code: number) => void = () => {};
       let answer = 0;
       let batchQuestion = 0;
+      let previewFocus = 1;
+      let previewQuestion = '';
+      let previewLabels: string[] = [];
+      const showPreview = () => emit('\x1b[2J\x1b[H' + `☐ ${previewQuestion}\n${previewQuestion}\n`
+        + previewLabels.map((label, i) => `${previewFocus === i + 1 ? '❯' : ' '} ${i + 1}. ${label}`.padEnd(40)
+          + (i === 0 ? '┌' + '─'.repeat(30) + '┐' : '│' + 'No preview available'.padEnd(30) + '│')).join('\n')
+        + '\n' + ' '.repeat(40) + '└' + '─'.repeat(30) + '┘'
+        + '\nEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel\n');
+      const nextPreview = () => {
+        previewFocus = 1;
+        previewQuestion = answer === 0 ? 'D1 — Pick a mode' : `Finding ${answer} — Preview choice`;
+        previewLabels = answer === 0 ? ['HOLD SCOPE', 'SCOPE EXPANSION'] : [`Add test ${answer}`, `Skip test ${answer}`];
+        pendingId = tool('AskUserQuestion', { questions: [{ question: previewQuestion, header: previewQuestion, multiSelect: false,
+          options: previewLabels.map((label, i) => ({ label, description: label, ...(i === 0 ? { preview: 'Choice details' } : {}) })) }] });
+        showPreview();
+      };
       return {
         exited: new Promise<number>(resolve => { end = resolve; }),
         terminal: { write(data: string) {
           sends.push(data);
           sendTimes.push(Date.now() - caseStartedAt);
+          if (previewCase) {
+            if (data.startsWith('/')) { seededBeforeSlash = fs.readFileSync(path.join(options.cwd, 'review-input.md'), 'utf8') === plan; nextPreview(); return; }
+            if (/^[12]$/.test(data)) {
+              if (Number(data) === previewFocus) return; // React no-op: no redraw.
+              if (scenario !== 'preview-menu-stale-focus') { previewFocus = Number(data); showPreview(); }
+              return;
+            }
+            const desired = scenario === 'preview-menu-focused' ? 1 : 2;
+            if (data !== '\r' || previewFocus !== desired || !pendingId) { prematureAnswers.push(data); return; }
+            if (scenario === 'preview-menu-no-ack') return;
+            acknowledge(); answer++;
+            if (answer === 3) finish(); else nextPreview();
+            return;
+          }
           if (data.startsWith('/')) {
             seededBeforeSlash = fs.readFileSync(path.join(options.cwd, 'review-input.md'), 'utf8') === plan;
             if (scenario === 'setup-budget' || scenario === 'launch-budget' || scenario === 'setup-exhausted') {
@@ -311,7 +342,7 @@ async function main() {
     try { observation = await runPlanSkillCounting({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
       cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling: 4, timeoutMs: helperTimeoutMs,
-      defaultPick: scenario === 'permission-current-create-pick-two' ? 2 : undefined,
+      defaultPick: previewCase ? scenario === 'preview-menu-focused' ? 1 : 2 : scenario === 'permission-current-create-pick-two' ? 2 : undefined,
       firstAUQPick: scenario === 'first-route' ? () => 2 : undefined,
     }); } catch (cause) {
       if (!filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;

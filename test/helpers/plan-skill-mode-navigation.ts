@@ -1,5 +1,5 @@
 import { isNumberedOptionListVisible, isPermissionDialogVisible, parseNumberedOptions, MODE_RE, findModeOption, TAIL_SCAN_BYTES, type ClaudePtySession } from './claude-pty-runner';
-import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, type NativePermissionGrant } from './plan-skill-questions';
+import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, type NativePermissionGrant } from './plan-skill-questions';
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -49,7 +49,7 @@ async function driveModeQuestions(
   let priorAnswered = 0;
   let selected: { id: string; modeIndex: number; sincePick: number } | null = postMode
     ? { id: postMode.toolUseId, modeIndex: postMode.modeIndex, sincePick: postMode.sincePick } : null;
-  const answered = new Map<string, { questions: number; submitted: boolean; counted: boolean }>();
+  const answered = new Map<string, { questions: number; previewFocus?: number; submitted: boolean; counted: boolean }>();
   const granted = new Set<string>();
   const grantedRequests = new Map<string, NativePermissionGrant>();
   let lastNative: ReturnType<typeof readPlanSkillQuestions> | null = null;
@@ -219,23 +219,34 @@ async function driveModeQuestions(
     }
     const question = call.questions[state?.questions ?? 0]!;
     if (question.multiSelect) throw new Error('Native multiSelect AskUserQuestion requires unsupported checkbox navigation');
-    if (!isNumberedOptionListVisible(visible) || !matchesNativeQuestion(question, visible, parseNumberedOptions(visible), native.calls.flatMap(call => call.questions))) continue;
+    const selection = nativeQuestionSelection(question, visible, parseNumberedOptions(visible), native.calls.flatMap(call => call.questions));
+    if (!selection || selection.kind === 'preview' && !frame) continue;
     const options = question.options.map((option, index) => ({ index: index + 1, label: option.label }));
     const isMode = options.some(option => MODE_RE.test(option.label));
     const target = isMode ? findModeOption(options, targetMode) : null;
     if (isMode && !target) throw new Error(`Native mode AskUserQuestion does not offer requested "${targetMode}"`);
     if (!postMode && !isMode && selected?.id !== call.id && priorAnswered >= maxNav) throw new Error(`Navigated ${maxNav} prior AskUserQuestions without reaching the mode AskUserQuestion`);
     if (!state) { state = { questions: 0, submitted: false, counted: false }; answered.set(call.id, state); }
-    state.questions++;
-    questionSince = session.mark();
-    if (target && !postMode) selected = { id: call.id, modeIndex: target.index, sincePick: questionSince };
     // A recommendation is a native option label, never text from the preview.
     // Ambiguous or absent recommendation keeps the existing first-option default.
     const recommended = postMode ? options.filter(option => /\(\s*recommended\s*\)\s*$/i.test(option.label)) : [];
-    const pick = target?.index ?? (recommended.length === 1 ? recommended[0]!.index : 1);
-    // A digit already selects and advances the native single-select menu.
-    // Final submit is a separate action after all owned tabs are answered.
-    if (!send(String(pick))) break;
+    const pick = state.previewFocus ?? target?.index ?? (recommended.length === 1 ? recommended[0]!.index : 1);
+    if (state.previewFocus !== undefined && selection.kind !== 'preview') continue;
+    if (selection.kind === 'preview' && selection.focusedIndex !== pick) {
+      if (state.previewFocus !== undefined) continue;
+      state.previewFocus = pick;
+      questionSince = session.mark();
+      if (!send(String(pick))) break;
+      await pause(2000);
+      continue;
+    }
+    delete state.previewFocus;
+    state.questions++;
+    questionSince = session.mark();
+    if (target && !postMode) selected = { id: call.id, modeIndex: target.index, sincePick: questionSince };
+    // Preview Enter commits focus; ordinary digits select and advance.
+    // Final submit is separate after all owned tabs have been answered.
+    if (!send(selection.kind === 'preview' ? '\r' : String(pick))) break;
     await pause(2000);
   }
   if (postMode) throw new Error(

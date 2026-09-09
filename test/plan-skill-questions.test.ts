@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, nativePermissionKey, type NativeQuestion } from './helpers/plan-skill-questions';
+import { readPlanSkillQuestions, matchesNativeQuestion, nativeQuestionSelection, isNativeQuestionSubmitVisible, nativePermissionKey, type NativeQuestion } from './helpers/plan-skill-questions';
 import { isPermissionDialogVisible, parseNumberedOptions, stripAnsi } from './helpers/claude-pty-runner';
 import { setupQuestionEventSource, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
 
@@ -437,4 +437,94 @@ test('missing preview corners cannot promote right-column decoy labels', () => {
       + ' '.repeat(24) + '└' + '─'.repeat(28) + '┘';
     expect(matchesNativeQuestion(current, visible, parseNumberedOptions(visible))).toBe(false);
   }
+});
+
+
+// Exact current modal and native input retained from expansion first-attempt
+// diagnostic 13288fb0. Preview prose is display content, never choice authority.
+const previewInputFrame = {
+  "question": {
+    "question": "Which implementation approach should anchor the review?",
+    "header": "Approach",
+    "multiSelect": false,
+    "options": [
+      {
+        "label": "A — Client-side CSV (recommended)",
+        "description": "Smallest diff. Reuses settings API response directly in the browser. One formatter util + tests. Completeness: 9/10 — covers the full happy path and edge-case escaping; misses server-auth-gate on export (not needed for settings).",
+        "preview": "button onClick → fetch existing API → csvFormatter(data) → Blob URL download\n\nFiles touched: settings page (+button), csvFormatter.ts (new), csvFormatter.test.ts (new)"
+      },
+      {
+        "label": "B — Server-side endpoint",
+        "description": "Cleaner for large datasets; adds new route + handler + auth wiring. Completeness: 10/10 — fresh data, proper headers, server auth gate. Over-engineering for a settings page.",
+        "preview": "GET /settings/export.csv\n  → auth middleware\n  → settingsService.getAll()\n  → csvSerializer()\n  → stream response\n\nFiles touched: route, handler, serializer, serializer.test, settings page (+button)"
+      },
+      {
+        "label": "C — Client-side CSV + JSON bonus",
+        "description": "Near-zero extra cost after A; adds a format dropdown. Completeness: 9/10 — same as A plus programmatic-use JSON format. Minor scope expansion.",
+        "preview": "button [Export ▾]\n  ├ CSV → csvFormatter(data) → download\n  └ JSON → JSON.stringify(data, null, 2) → download\n\nSame files as A + dropdown component"
+      }
+    ]
+  },
+  "visible": [
+    " ☐ Approach  ",
+    "    ",
+    "Which implementation approach should anchor the review?",
+    "             ",
+    "❯ 1. A — Client-side CSV          ┌────────────────────────────────────────────────────────────────────────────────────┐",
+    "    (recommended)                 │ button onClick → fetch existing API → csvFormatter(data) → Blob URL download       │",
+    "  2. B — Server-side endpoint     │                                                                                    │",
+    "  3. C — Client-side CSV +        │ Files touched: settings page (+button), csvFormatter.ts (new),                     │",
+    "    JSON bonus                    │ csvFormatter.test.ts (new)                                                         │",
+    "                                  └────────────────────────────────────────────────────────────────────────────────────┘",
+    "",
+    "                                  Notes: press n to add notes",
+    "                                                                                ",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "  Chat about this",
+    "",
+    "Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel"
+  ]
+};
+const currentPreview = previewInputFrame.visible.join('\n');
+const previewInput = previewInputFrame.question;
+const selectPreview = (visible = currentPreview, input: NativeQuestion = previewInput) =>
+  nativeQuestionSelection(input, visible, parseNumberedOptions(visible));
+const focusPreview = (index: number) => currentPreview.replace('❯ 1.', '  1.').replace(`  ${index}.`, `❯ ${index}.`);
+
+test('retained preview selection follows its own left-column focus for each native choice', () => {
+  expect(selectPreview()).toEqual({ kind: 'preview', focusedIndex: 1 });
+  expect(selectPreview(focusPreview(2))).toEqual({ kind: 'preview', focusedIndex: 2 });
+  expect(selectPreview(focusPreview(3))).toEqual({ kind: 'preview', focusedIndex: 3 });
+});
+
+test('mixed native preview options retain the preview protocol for an option without preview', () => {
+  const mixed = { ...previewInput, options: previewInput.options.map((option, index) => {
+    const { preview, ...plain } = option; return index === 0 ? option : plain;
+  }) };
+  expect(selectPreview(focusPreview(2), mixed)).toEqual({ kind: 'preview', focusedIndex: 2 });
+});
+
+test('preview cursor content cannot substitute for missing, duplicate or wrong left-column focus', () => {
+  const decoy = currentPreview.replace(/│ button onClick[^\n]*│/, '│ ' + '❯ 2. B — Server-side endpoint'.padEnd(82) + ' │');
+  expect(selectPreview(decoy)).toEqual({ kind: 'preview', focusedIndex: 1 });
+  expect(selectPreview(decoy.replace('❯ 1.', '  1.'))).toBeNull();
+  expect(selectPreview(currentPreview.replace('  2.', '❯ 2.'))).toBeNull();
+  expect(selectPreview(focusPreview(2).replace('B — Server-side endpoint', 'B — Foreign-side endpoint'))).toBeNull();
+});
+
+test('preview commit requires native inventory, current prompt, rectangle and actual footer', () => {
+  const noPreview = { ...previewInput, options: previewInput.options.map(({ preview, ...option }) => option) };
+  expect(selectPreview(currentPreview, noPreview)).toBeNull();
+  expect(selectPreview(currentPreview.replace('Which implementation approach should anchor the review?', 'An unrelated later question'))).toBeNull();
+  expect(selectPreview(currentPreview.replace('└', ' '))).toBeNull();
+  expect(selectPreview(currentPreview.replace('Enter to select', 'Enter to confirm'))).toBeNull();
+  expect(selectPreview(currentPreview + '\n☐ Different question\nOther prompt\n❯1.First\n2.Second')).toBeNull();
+});
+
+test('normal native input retains digit-only selection and preview input in a plain frame waits', () => {
+  const noPreview = { ...previewInput, options: previewInput.options.map(({ preview, ...option }) => option) };
+  const plain = `☐ ${noPreview.header}\n${noPreview.question}\n`
+    + noPreview.options.map((option, i) => `${i === 0 ? '❯' : ' '}${i + 1}. ${option.label}`).join('\n');
+  expect(selectPreview(plain, noPreview)).toEqual({ kind: 'digit' });
+  expect(selectPreview(plain)).toBeNull();
 });

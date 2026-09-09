@@ -295,3 +295,22 @@ test('real Bun retry starts only after the prior counting deadline closes', asyn
     fs.rmSync(root, { recursive: true, force: true });
   }
 }, 15_000);
+
+
+for (const [scenario, keys] of [
+  ['preview-menu-focused', ['\r', '\r', '\r']],
+  ['preview-menu-mixed-options', ['2', '\r', '2', '\r', '2', '\r']],
+] as const) test(`counting commits preview choices only through native acknowledgement: ${scenario}`, async () => {
+  const result = await runFakeCounting('**DONE**', scenario);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', ...keys]);
+  expect(result.prematureAnswers).toEqual([]);
+  expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
+  expect(result.closed).toBe(true);
+}, 15_000);
+
+test.each(['preview-menu-stale-focus', 'preview-menu-no-ack'])('counting refuses stale preview focus or missing ACK: %s', async scenario => {
+  const result = await runFakeCounting('**DONE**', scenario);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '2', ...(scenario.endsWith('no-ack') ? ['\r'] : [])]);
+  expect(result.observation).toMatchObject({ outcome: 'timeout', step0Count: 0, reviewCount: 0 });
+  expect(result.closed).toBe(true);
+}, 15_000);

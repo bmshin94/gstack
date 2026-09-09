@@ -24,7 +24,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { readPlanSkillCompletion } from './plan-skill-completion';
-import { readPlanSkillQuestions, matchesNativeQuestion, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, type NativeQuestion, type NativePermissionGrant } from './plan-skill-questions';
+import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, type NativeQuestion, type NativePermissionGrant } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -2107,7 +2107,7 @@ export async function runPlanSkillCounting(opts: {
   const deadlineAt = startedAt + timeoutMs;
 
   const fingerprints: AskUserQuestionFingerprint[] = [];
-  const submitted = new Map<string, { answeredQuestions: number; submitted: boolean; counted: boolean; fp: AskUserQuestionFingerprint }>();
+  const submitted = new Map<string, { answeredQuestions: number; previewFocus?: number; submitted: boolean; counted: boolean; fp: AskUserQuestionFingerprint }>();
   const grantedTools = new Set<string>();
   const grantedRequests = new Map<string, NativePermissionGrant>();
   let boundaryFired = false;
@@ -2293,9 +2293,9 @@ export async function runPlanSkillCounting(opts: {
       // Native checkbox questions require a distinct focus/Next protocol.
       // Digit+Enter toggles twice on the standard CLI; never pretend it answered.
       if (question.multiSelect) throw new Error('Native multiSelect AskUserQuestion requires checkbox navigation unsupported by the counting driver');
-      if (!isNumberedOptionListVisible(questionVisible)) continue;
       const renderedOptions = parseNumberedOptions(questionVisible);
-      if (!matchesNativeQuestion(question, questionVisible, renderedOptions, native.calls.flatMap(call => call.questions))) continue;
+      const selection = nativeQuestionSelection(question, questionVisible, renderedOptions, native.calls.flatMap(call => call.questions));
+      if (!selection || selection.kind === 'preview' && !frame) continue;
       const fp: AskUserQuestionFingerprint = {
         signature: call.id, toolUseId: call.id, questions: call.questions,
         promptSnippet: question.question.slice(0, 240),
@@ -2305,19 +2305,31 @@ export async function runPlanSkillCounting(opts: {
       // Reserve before writing; a repaint or delayed result cannot re-answer
       // this question. First-question routing applies once per launch.
       const pickIdx =
-        isFirstAUQ && opts.firstAUQPick ? opts.firstAUQPick(fp) : defaultPick;
+        state?.previewFocus ?? (isFirstAUQ && opts.firstAUQPick ? opts.firstAUQPick(fp) : defaultPick);
       if (!Number.isInteger(pickIdx) || pickIdx < 1 || pickIdx > question.options.length) throw new Error('Native AskUserQuestion selection is outside its owned options');
       if (!state) {
         state = { answeredQuestions: 0, submitted: false, counted: false, fp };
         submitted.set(call.id, state);
       }
       if (expired()) break;
+      if (state.previewFocus !== undefined && selection.kind !== 'preview') continue;
+      if (selection.kind === 'preview' && selection.focusedIndex !== pickIdx) {
+        // Focus alone is not an answer. Send once, then require a new owned
+        // current frame proving the desired focus before committing it.
+        if (state.previewFocus !== undefined) continue;
+        state.previewFocus = pickIdx;
+        questionSince = session.mark();
+        session.send(String(pickIdx));
+        await pause(2000);
+        continue;
+      }
+      delete state.previewFocus;
       state.answeredQuestions += 1;
       isFirstAUQ = false;
       questionSince = session.mark();
-      // Native single-select digits select and advance immediately. Enter
-      // would act on the next tab; submit only after every tab is answered.
-      session.send(String(pickIdx));
+      // Ordinary digits advance; preview Enter commits the current focus.
+      // Final multi-tab submission remains a separate screen-bound action.
+      session.send(selection.kind === 'preview' ? '\r' : String(pickIdx));
 
       // Give the agent a beat to advance to the next state.
       await pause(2000);
