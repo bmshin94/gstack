@@ -357,6 +357,27 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): { optio
   return { options: found, focusedIndex };
 }
 
+/** A plain menu may wrap only its recommendation annotation to the next
+ * physical line. Both fragments must render; descriptions/previews cannot
+ * complete a missing label and native input never supplies display text. */
+function plainRecommendedOptions(question: NativeQuestion, menu: string, options: Array<{ index: number; label: string }>): Array<{ index: number; label: string }> {
+  if (question.options.some(option => option.preview !== undefined)) return options;
+  const lines = menu.split(/\r?\n/);
+  return options.map(option => {
+    const offered = question.options[option.index - 1];
+    if (!offered?.label.endsWith(' (recommended)')) return option;
+    const matches = lines.flatMap((line, index) => {
+      const row = /^[ \t]*(?:❯[ \t]*)?([1-9])\.[ \t]*(\S.*)$/.exec(line);
+      return row && Number(row[1]) === option.index && compact(row[2]!) === compact(option.label) ? [index] : [];
+    });
+    if (matches.length !== 1) return option;
+    const continuation = lines[matches[0]! + 1];
+    if (!continuation || !/^[ \t]*\(recommended\)[ \t]*$/.test(continuation)) return option;
+    const label = option.label + ' ' + continuation.trim();
+    return compact(label) === compact(offered.label) ? { ...option, label } : option;
+  });
+}
+
 export function matchesNativeQuestion(question: NativeQuestion, visible: string, options: Array<{ index: number; label: string }>, others: NativeQuestion[] = []): boolean {
   if (others.some(other => other !== question && compact(other.question) === compact(question.question)
     && compact(other.header) === compact(question.header) && JSON.stringify(other.options.map(o => o.label)) === JSON.stringify(question.options.map(o => o.label)))) {
@@ -382,7 +403,7 @@ export function matchesNativeQuestion(question: NativeQuestion, visible: string,
   if (!promptMatches) return false;
   // Rendered choices corroborate the prompt; the complete offered inventory
   // and numeric selection come from native input, even below the viewport.
-  const renderedOptions = physicalOptions?.options ?? options;
+  const renderedOptions = physicalOptions?.options ?? plainRecommendedOptions(question, visible.slice(cursor.index), options);
   return renderedOptions.filter(rendered => {
     const offered = question.options[rendered.index - 1];
     return offered && compact(rendered.label).startsWith(compact(offered.label));

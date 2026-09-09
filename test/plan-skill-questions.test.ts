@@ -664,6 +664,46 @@ test('the retained preview menu corroborates physical label continuations', () =
   expect(matchesWrapped(wrappedPreviewFixture.visible, wrappedModeQuestion)).toBe(false);
 });
 
+
+const recommendedWrapQuestion: NativeQuestion = {
+  header: 'Accessibility', multiSelect: false,
+  question: 'D12 — Issue 9: Add the accessibility spec (keyboard, screen reader, contrast, motion) to the plan?',
+  options: [
+    { label: '9A) Full a11y spec: landmarks, focus order, live regions, contrast targets, reduced motion, test checklist (recommended)', description: 'Rail as nav landmark; visible labels and a manual test checklist.' },
+    { label: '9B) Contrast fix only, as the seed plan proposed', description: 'Resolve only the contrast defect.' },
+  ],
+};
+const recommendedWrapFrame = '☐ Accessibility\n' + recommendedWrapQuestion.question
+  + '\n❯ 1. ' + recommendedWrapQuestion.options[0]!.label.replace(' (recommended)', '')
+  + '\n    (recommended)\n    Rail as nav landmark; visible labels and a manual test checklist.\n  2. '
+  + recommendedWrapQuestion.options[1]!.label + '\n    Resolve only the contrast defect.\n  3. Type something.\nEnter to select · ↑/↓ to navigate · Esc to cancel';
+const matchRecommendedWrap = (frame: string, owned = recommendedWrapQuestion) =>
+  nativeQuestionSelection(owned, frame, parseNumberedOptions(frame));
+
+test('plain owned label accepts its immediately wrapped recommendation suffix', () => {
+  expect(parseNumberedOptions(recommendedWrapFrame)[0]!.label).not.toContain('(recommended)');
+  expect(matchRecommendedWrap(recommendedWrapFrame)).toEqual({ kind: 'digit' });
+  expect(matchRecommendedWrap(recommendedWrapFrame.replaceAll('    ', '').replaceAll('❯ 1. ', '❯1. '))).toEqual({ kind: 'digit' });
+  expect(matchRecommendedWrap(recommendedWrapFrame, { ...recommendedWrapQuestion,
+    options: recommendedWrapQuestion.options.map(option => ({ ...option, preview: 'Owned preview requires its own frame.' })) })).toBeNull();
+});
+
+test.each([
+  (frame: string) => frame.replace('\n    (recommended)', ''),
+  (frame: string) => frame.replace('(recommended)', '(not recommended)'),
+  (frame: string) => frame.replace('(recommended)', '(recommended by the example)'),
+  (frame: string) => frame.replace('\n    (recommended)', '\n\n    (recommended)'),
+  (frame: string) => frame.replace('\n    (recommended)', '\n    Description first\n    (recommended)'),
+  (frame: string) => frame.replace('❯ 1.', '(recommended)\n❯ 1.').replace('\n    (recommended)', ''),
+  (frame: string) => frame.replace('test checklist', 'different checklist'),
+  (frame: string) => frame.replace('2. 9B)', '2. Other action'),
+  (frame: string) => frame.replace('\n    (recommended)', '\n  2. Another menu\n    (recommended)'),
+  (frame: string) => frame.replace('D12 — Issue 9:', 'D13 — Different issue:'),
+  (frame: string) => frame + '\n☐ Different\nD13 — Another question?\n❯ 1. Other action\n  2. Keep current state',
+])('wrapped recommendation cannot bridge missing, changed, stale or interrupted labels %#', change => {
+  expect(matchRecommendedWrap(change(recommendedWrapFrame))).toBeNull();
+});
+
 test('plain wrapped menus retain the existing parser behavior', () => {
   const visible = '☐ Approach\n' + wrappedQuestion.question + '\n❯ 1. B: Hook + transcript\n    (current approach)\n    (recommended)\n  2. A: Transcript-only with\n    retry\n';
   expect(matchesWrapped(visible)).toBe(false);
