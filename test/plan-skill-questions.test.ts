@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readPlanSkillQuestions, matchesNativeQuestion, nativeQuestionSelection, isNativeQuestionSubmitVisible, nativePermissionKey, type NativeQuestion } from './helpers/plan-skill-questions';
+import { readPlanSkillQuestions, matchesNativeQuestion, nativeQuestionSelection, isNativeQuestionSubmitVisible, currentFilePermissionTarget, nativePermissionKey, reserveNativePermissionGrant, type NativeQuestion, type NativePermissionGrant } from './helpers/plan-skill-questions';
 import { isPermissionDialogVisible, parseNumberedOptions, stripAnsi } from './helpers/claude-pty-runner';
 import { setupQuestionEventSource, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
 
@@ -233,6 +233,68 @@ test('permission binding rejects command prefixes and matching paths in another 
 });
 
 const createDialog = (target: string) => `Do you want to create ${target}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`;
+
+test('modern native Edit wording binds its exact owned relative or absolute path', () => {
+  // Claude 2.1.257 Io(Edit) + Cwo: "Do you want to make this edit to <fileName>?"
+  const filePath = path.join(config, 'plan.md');
+  write(nativeWrite('edit', { file_path: filePath, old_string: 'Draft', new_string: 'Final report' }, config, 'Edit'));
+  const owner = readPlanSkillQuestions(config, sessionId).permissionTools[0]!;
+  for (const displayed of ['plan.md', filePath]) {
+    const dialog = createDialog(displayed).replace('create', 'make this edit to');
+    expect(currentFilePermissionTarget(dialog)).toEqual({ operation: 'edit', filePath: displayed });
+    expect(isPermissionDialogVisible(dialog)).toBe(true);
+    expect(nativePermissionKey(owner, dialog)).toBe(`Edit:${filePath}`);
+  }
+});
+
+test('modern native Edit wording keeps malformed and restricted menus unsupported', () => {
+  const dialog = createDialog('plan.md').replace('create', 'make this edit to');
+  for (const malformed of [
+    dialog.replace('make this edit to', 'make these edits to'),
+    dialog.replace('make this edit to', 'make this edit for'),
+    dialog.replace('make this edit to', 'make this edit'),
+    dialog.replace('make this edit to', 'write to'),
+    dialog.replace('auto-approve file edits and common file commands', 'review this plan'),
+    'Do you want to make this edit to plan.md?\n❯1.Yes\n2.No',
+  ]) {
+    expect(currentFilePermissionTarget(malformed)).toBeNull();
+    expect(isPermissionDialogVisible(malformed)).toBe(false);
+  }
+});
+
+test('modern native Edit wording cannot bind a different path, cwd, tool or later menu', () => {
+  const filePath = path.join(config, 'plan.md');
+  const owner = { id: 'edit', name: 'Edit', cwd: config, input: { file_path: filePath, old_string: 'Draft', new_string: 'Final' } };
+  const dialog = createDialog('plan.md').replace('create', 'make this edit to');
+  expect(() => nativePermissionKey({ ...owner, name: 'Write' }, dialog)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...owner, cwd: path.dirname(config) }, dialog)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey(owner, dialog.replace('plan.md', 'other.md'))).toThrow('cannot be bound');
+  expect(() => nativePermissionKey(owner, `${dialog}\n${createDialog('other.md')}`)).toThrow('cannot be bound');
+});
+
+test('modern native Edit wording preserves ordinary Write create and overwrite ownership', () => {
+  const filePath = path.join(config, 'plan.md');
+  const owner = { id: 'write', name: 'Write', cwd: config, input: { file_path: filePath, content: 'Final report' } };
+  for (const operation of ['create', 'overwrite'] as const) {
+    const dialog = createDialog('plan.md').replace('create', operation);
+    expect(currentFilePermissionTarget(dialog)).toEqual({ operation, filePath: 'plan.md' });
+    expect(nativePermissionKey(owner, dialog)).toBe(`Write:${filePath}`);
+    expect(() => nativePermissionKey({ ...owner, name: 'Edit' }, dialog)).toThrow('cannot be bound');
+  }
+});
+
+test('modern native Edit wording does not regrant an indistinguishable completed Edit', () => {
+  const input = { file_path: path.join(config, 'plan.md'), old_string: 'Draft', new_string: 'Final' };
+  const dialog = createDialog('plan.md').replace('create', 'make this edit to');
+  const granted = new Set<string>();
+  const requests = new Map<string, NativePermissionGrant>();
+  write(nativeWrite('edit-first', input, config, 'Edit'));
+  const first = readPlanSkillQuestions(config, sessionId);
+  expect(reserveNativePermissionGrant(first, dialog, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(first, dialog, granted, requests)).toBe(false);
+  write(nativeWrite('edit-first', input, config, 'Edit'), nativeWriteResult('edit-first'), nativeWrite('edit-again', input, config, 'Edit'));
+  expect(() => reserveNativePermissionGrant(readPlanSkillQuestions(config, sessionId), dialog, granted, requests)).toThrow('cannot be distinguished');
+});
 
 test('modern overwrite permission uses the exact current Write path and controls', () => {
   const filePath = path.join(config, 'plan.md');

@@ -307,8 +307,8 @@ export function currentFilePermissionTarget(visible: string): { operation: 'crea
   // containing "create" or a stale permission earlier in scrollback.
   const controls = visible.slice(cursor.index).replace(/\s+/g, '');
   if (!/^❯1\.Yes2\.Yes,andswitchtoacceptedits\(auto-approvefileeditsandcommonfilecommands\)forthissession(?:\(shift\+tab\))?3\.No(?:\b|Esc)/.test(controls)) return null;
-  const prompt = /Do\s*you\s*want\s*to\s*(create|edit|overwrite)\s+([^\r\n?]+)\?\s*$/.exec(visible.slice(0, cursor.index));
-  return prompt ? { operation: prompt[1] as 'create' | 'edit' | 'overwrite', filePath: prompt[2]!.trim() } : null;
+  const prompt = /Do\s*you\s*want\s*to\s*(create|edit|overwrite|make\s+this\s+edit\s+to)\s+([^\r\n?]+)\?\s*$/.exec(visible.slice(0, cursor.index));
+  return prompt ? { operation: prompt[1]!.startsWith('make') ? 'edit' : prompt[1] as 'create' | 'edit' | 'overwrite', filePath: prompt[2]!.trim() } : null;
 }
 
 export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermissionRequest, visible: string): string {
