@@ -61,6 +61,7 @@ const viewportReplay = {
 };
 
 const scenario = process.argv[2];
+if (scenario.startsWith('review-start-')) { await reviewStartFixture(scenario); process.exit(0); }
 if (scenario.startsWith('post-')) { await postModeFixture(scenario); process.exit(0); }
 const diagnostics = scenario.startsWith('diagnostic-');
 const diagnosticRoot = diagnostics ? fs.mkdtempSync(path.join(os.tmpdir(), 'mode-diagnostic-output-')) : null;
@@ -209,6 +210,79 @@ try {
 /** The retained HOLD sequence: mode ACK, then Impl Approach blocks posture.
  * Native rows are the authority; the current frame only corroborates them.
  */
+async function reviewStartFixture(scenario: string) {
+  const seed = await import('../helpers/ceo-finding-fixture');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mode-review-start-'));
+  const sid = '00000000-0000-4000-8000-000000000001';
+  const file = path.join(root, 'projects', 'fixture', sid + '.jsonl');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const append = (row: object) => fs.appendFileSync(file, JSON.stringify({ sessionId: sid, ...row }) + '\n');
+  const base = { question: 'D1 — Run /office-hours before this review?', header: 'Prerequisite', multiSelect: false,
+    options: ['A) Run /office-hours first', 'B) Skip — standard review (recommended)'].map(label => ({ label, description: label,
+      ...(scenario.includes('preview') ? { preview: 'Preview' } : {}) })) };
+  if (scenario.includes('plain')) Object.assign(base, { question: 'D1 — No design doc found: run /office-hours before the review?',
+    options: ['Run /office-hours now', 'Skip — proceed with review (Recommended)'].map(label => ({ label, description: label })) });
+  const later = { ...base, question: 'D2 — Run /office-hours before this review?', header: 'Later prerequisite' };
+  const mode = { question: 'Choose review mode', header: 'Mode', multiSelect: false,
+    options: ['SCOPE EXPANSION', 'SELECTIVE EXPANSION', 'HOLD SCOPE', 'SCOPE REDUCTION'].map(label => ({ label, description: label })) };
+  const tool = (id: string, questions: typeof base[]) => append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions } }] } });
+  const ack = (id: string) => append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'Answer accepted' }] } });
+  let current = scenario.endsWith('mode-first') ? mode : base;
+  let id = scenario.endsWith('mode-first') ? 'mode' : 'first';
+  let tab = 0, focus = 1, clock = 0, buffer = '', screen = '', calls = 0;
+  const sends: string[] = [];
+  const preview = scenario.includes('preview');
+  const show = () => {
+    screen = `☐ ${current.header}\n${current.question}\n`;
+    if (preview && id !== 'mode') {
+      const left = (value: string) => value.padEnd(62);
+      screen += current.options.map((o, i) => left(`${focus === i + 1 ? '❯' : ' '} ${i + 1}. ${o.label}`)
+        + (i === 0 ? '┌──────────────────┐' : i === 1 ? '│ Preview          │' : '')).join('\n');
+      screen += '\n' + left('') + '└──────────────────┘';
+      screen += '\n\n' + left('') + 'Notes: press n to add notes';
+    } else screen += current.options.map((o, i) => `${i === 0 ? '❯' : ' '} ${i + 1}. ${o.label}`).join('\n');
+    screen += preview && id !== 'mode' ? '\nEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel\n'
+      : '\nEnter to select · ↑/↓ to navigate · Esc to cancel\n'; buffer += screen;
+  };
+  if (scenario.endsWith('previous-owner')) { tool('older', [{ ...base, question: 'Earlier setup', header: 'Setup' }]); ack('older'); }
+  if (scenario.endsWith('unowned')) {
+    append({ sessionId: '00000000-0000-4000-8000-000000000002', type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions: [current] } }] } });
+  } else tool(id, scenario.endsWith('tabs') ? [base, later] : [current]);
+  show();
+  const session = {
+    hermeticConfigDir: root, exited: () => false, exitCode: () => null,
+    visibleSince: (mark = 0) => buffer.slice(mark), rawOutput: () => buffer, mark: () => buffer.length,
+    currentScreen: async () => ({ text: screen, rawEnd: scenario.endsWith('stale') ? 0 : buffer.length }),
+    send: (value: string) => {
+      sends.push(value);
+      if (preview && id !== 'mode' && value !== '\r') { focus = Number(value); show(); return; }
+      const pick = preview && id !== 'mode' ? focus : Number(value);
+      if (id === 'mode') { if (!scenario.endsWith('no-mode-ack')) ack(id); buffer += '\nMode selected\n'; screen = 'Mode selected'; return; }
+      if (id === 'first' && tab === 0 && pick !== 2) { screen = 'Office Hours interview is still running'; buffer += screen; return; }
+      if (scenario.endsWith('no-first-ack')) { screen = 'Waiting for native acknowledgement'; buffer += screen; return; }
+      if (scenario.endsWith('tabs') && tab++ === 0) { current = later; focus = 1; show(); return; }
+      ack(id);
+      if (scenario.endsWith('later') && id === 'first') { current = later; id = 'later'; }
+      else { current = mode; id = 'mode'; }
+      tool(id, [current]); focus = 1; show();
+    },
+  } as unknown as ClaudePtySession;
+  const oldNow = Date.now, oldSleep = Bun.sleep;
+  Date.now = () => clock; Bun.sleep = (async (ms: number) => { clock += ms; }) as typeof Bun.sleep;
+  let navigation, error;
+  try {
+    try {
+      navigation = await navigateToModeAskUserQuestion(session, 0, 'HOLD SCOPE', { sessionId: sid, budgetMs: 30_000,
+        ...(!scenario.endsWith('no-policy') ? { firstAUQPick: (question: any) => {
+          calls++;
+          return scenario.endsWith('invalid-pick') ? 9 : seed.pickSuppliedCeoModeStart(question);
+        } } : {}),
+      });
+    } catch (cause) { error = String(cause); }
+    console.log(JSON.stringify({ navigation, error, sends, calls }));
+  } finally { Date.now = oldNow; Bun.sleep = oldSleep; fs.rmSync(root, { recursive: true, force: true }); }
+}
+
 async function postModeFixture(scenario: string) {
   const fileRequestCase = scenario.startsWith('post-permission-request');
   const previewCase = scenario.startsWith('post-preview-');

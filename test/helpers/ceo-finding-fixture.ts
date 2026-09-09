@@ -15,6 +15,22 @@ export function pickSuppliedCeoPlanStart({ options }: { options: Array<{ index: 
   return choices.length === 2 && run.length === 1 && skip.length === 1 ? skip[0]!.index : 1;
 }
 
+/** Mode fixtures already have a review target. These two observed prerequisite
+ * offers explicitly continue that review; no other Office Hours mention does. */
+export function pickSuppliedCeoModeStart({ question, options }: {
+  question: string; options: Array<{ index: number; label: string }>;
+}): number {
+  if (!/^D[1-9]\d* — (?:Run \/office-hours before this review|No design doc found: run \/office-hours before the review)\?$/i.test(question.split(/\r?\n/, 1)[0]!)) return 1;
+  const choices = options.map(option => ({ ...option, label: option.label.trim()
+    .replace(/^[A-D][).]\s+/, '').replace(/\s*\(Recommended\)\s*$/i, '').trim() }));
+  if (choices.length !== 2 || choices.some((option, i) => option.index !== i + 1)
+    || choices.filter(option => /^Run \/office-hours (?:first|now)$/i.test(option.label)).length !== 1
+    || choices.filter(option => /^Skip — (?:standard review|proceed with review)$/i.test(option.label)).length !== 1) return 1;
+  return pickSuppliedCeoPlanStart({ options: choices.map(option => ({ ...option,
+    label: option.label.replace(/ first$/i, ' now').replace(/proceed with review$/i, 'standard review'),
+  })) });
+}
+
 export function seedCeoFindingProject(projectDir: string, plan: string): void {
   seedPlanReviewProject(projectDir, plan, 'plan-ceo-review');
 }

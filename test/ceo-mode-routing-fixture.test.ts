@@ -45,6 +45,10 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
 mock.module(path.join(root, 'test/helpers/plan-skill-mode-navigation.ts'), () => ({
   navigateToModeAskUserQuestion: async (_session, since, mode, opts) => {
     current.navigation = { since, mode, opts };
+    current.reviewStartPicks = typeof opts.firstAUQPick === 'function' ? [
+      ['D1 — Run /office-hours before this review?', ['A) Run /office-hours first', 'B) Skip — standard review (recommended)']],
+      ['D1 — No design doc found: run /office-hours before the review?', ['Run /office-hours now', 'Skip — proceed with review (Recommended)']],
+    ].map(([question, labels]) => opts.firstAUQPick({ question, options: labels.map((label, i) => ({ index: i + 1, label })) })) : null;
     if (scenario === 'navigation') throw new Error('fixture navigation failed');
     return { sincePick: 23, toolUseId: 'owned-mode-choice' };
   },
@@ -83,6 +87,7 @@ await import(path.join(root, 'test/skill-e2e-plan-ceo-mode-routing.test.ts'));
       if (scenario === 'launch') expect(fact.navigation).toBeNull();
       else {
         expect(fact.navigation.since).toBe(11);
+        expect(fact.reviewStartPicks).toEqual([2, 2]);
         expect(fact.navigation.opts.sessionId).toBe(fact.options.captureQuestionsForSession);
         if (scenario !== 'navigation') expect(fact.posture).toEqual({ selection: { sincePick: 23, toolUseId: 'owned-mode-choice' },
           mode: fact.navigation.mode, budgetMs: 240_000, sessionId: fact.options.captureQuestionsForSession });

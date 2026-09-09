@@ -10,10 +10,11 @@ import { isDeepStrictEqual } from 'node:util';
  */
 type ModeSelection = { modeIndex: number; sincePick: number; toolUseId: string };
 type ModeTarget = 'HOLD SCOPE' | 'SCOPE EXPANSION';
+type InitialQuestionPick = (question: { question: string; options: Array<{ index: number; label: string }> }) => number;
 
 export async function navigateToModeAskUserQuestion(
   session: ClaudePtySession, since: number, targetMode: ModeTarget,
-  opts: { sessionId: string; maxNav?: number; budgetMs?: number },
+  opts: { sessionId: string; maxNav?: number; budgetMs?: number; firstAUQPick?: InitialQuestionPick },
 ): Promise<ModeSelection> {
   return driveModeQuestions(session, since, targetMode, opts);
 }
@@ -36,7 +37,7 @@ async function driveModeQuestions(
   session: ClaudePtySession,
   since: number,
   targetMode: ModeTarget,
-  opts: { sessionId: string; maxNav?: number; budgetMs?: number;
+  opts: { sessionId: string; maxNav?: number; budgetMs?: number; firstAUQPick?: InitialQuestionPick;
     postMode?: ModeSelection & { postureRe: RegExp } },
 ): Promise<ModeSelection> {
   const maxNav = opts.maxNav ?? 12;
@@ -261,7 +262,12 @@ async function driveModeQuestions(
     // A recommendation is a native option label, never text from the preview.
     // Ambiguous or absent recommendation keeps the existing first-option default.
     const recommended = postMode ? options.filter(option => /\(\s*recommended\s*\)\s*$/i.test(option.label)) : [];
-    const pick = state.previewFocus ?? target?.index ?? (recommended.length === 1 ? recommended[0]!.index : 1);
+    // An explicit fixture goal may choose the first offered route. Only a sole
+    // initial native invocation's first tab qualifies; frozen focus and mode win.
+    const initial = !postMode && native.calls.length === 1 && answered.size === 1 && state.questions === 0;
+    const pick = state.previewFocus ?? target?.index ?? (initial && opts.firstAUQPick
+      ? opts.firstAUQPick({ question: question.question, options }) : recommended.length === 1 ? recommended[0]!.index : 1);
+    if (!Number.isInteger(pick) || !options.some(option => option.index === pick)) throw new Error('Native question choice must name an offered option');
     if (state.previewFocus !== undefined && selection.kind !== 'preview') continue;
     if (selection.kind === 'preview' && selection.focusedIndex !== pick) {
       if (state.previewFocus !== undefined) continue;

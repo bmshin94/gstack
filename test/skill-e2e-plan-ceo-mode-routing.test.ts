@@ -35,7 +35,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
+import { seedCeoFindingProject, pickSuppliedCeoModeStart } from './helpers/ceo-finding-fixture';
 import { navigateToModeAskUserQuestion, waitForNativeModePosture } from './helpers/plan-skill-mode-navigation';
 import { PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
@@ -90,7 +90,7 @@ selecting a mode. I have not chosen a review mode for this plan.
           const since = session.mark();
           session.send('/plan-ceo-review\r');
 
-          const selection = await navigateToModeAskUserQuestion(session, since, c.mode, { sessionId });
+          const selection = await navigateToModeAskUserQuestion(session, since, c.mode, { sessionId, firstAUQPick: pickSuppliedCeoModeStart });
           await waitForNativeModePosture(session, selection, c.mode, { sessionId, postureRe: c.postureRe, budgetMs: 240_000 });
         } finally {
           try { await session?.close(); }

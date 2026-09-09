@@ -16,6 +16,28 @@ async function run(scenario: string) {
   } finally { clearTimeout(watchdog); if (child.exitCode === null) { child.kill(); await child.exited; } }
 }
 
+test.each(['plain', 'preview', 'later', 'tabs'])('supplied-review first choice keeps native mode and ACK routing (%s)', async variant => {
+  const result = await run('review-start-' + variant);
+  expect(result.error).toBeUndefined();
+  expect(result.navigation).toMatchObject({ modeIndex: 3, toolUseId: 'mode' });
+  expect(result.calls).toBe(1);
+  expect(result.sends).toEqual(variant === 'preview' ? ['2', '\r', '3'] : ['later', 'tabs'].includes(variant) ? ['2', '1', '3'] : ['2', '3']);
+});
+test.each(['stale', 'unowned', 'no-first-ack', 'no-mode-ack', 'no-policy', 'previous-owner', 'invalid-pick'])('supplied-review selector cannot bypass native input or completion guards (%s)', async variant => {
+  const result = await run('review-start-' + variant);
+  expect(result.navigation).toBeUndefined();
+  expect(result.error).toBeDefined();
+  expect(result.sends).toEqual(['stale', 'unowned', 'invalid-pick'].includes(variant) ? [] : variant === 'no-mode-ack' ? ['2', '3'] : ['no-policy', 'previous-owner'].includes(variant) ? ['1'] : ['2']);
+  expect(result.calls).toBe(['stale', 'unowned', 'no-policy', 'previous-owner'].includes(variant) ? 0 : 1);
+});
+test('a first-question target mode outranks the optional supplied-review selector', async () => {
+  const result = await run('review-start-mode-first');
+  expect(result.error).toBeUndefined();
+  expect(result.navigation).toMatchObject({ modeIndex: 3, toolUseId: 'mode' });
+  expect(result.sends).toEqual(['3']);
+  expect(result.calls).toBe(0);
+});
+
 test('mode navigation ignores a mode-looking preview, selects native option four and waits for its result', async () => {
   const result = await run('native');
   expect(result.error).toBeUndefined();

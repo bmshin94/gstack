@@ -4,9 +4,29 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { seedCeoFindingProject, seedPlanReviewProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
+import * as ceoFixture from './helpers/ceo-finding-fixture';
 import { FORCING_SPLIT_OVERFLOW_CEO } from './fixtures/forcing-finding-seeds';
 
 const ROOT = path.resolve(import.meta.dir, '..');
+
+const reviewStartLead = 'D1 — Run /office-hours before this review?';
+const reviewStartLabels = ['A) Run /office-hours first', 'B) Skip — standard review (recommended)'];
+test.each([
+  [reviewStartLead, reviewStartLabels, 2],
+  ['D1 — No design doc found: run /office-hours before the review?', ['Run /office-hours now', 'Skip — proceed with review (Recommended)'], 2],
+  [reviewStartLead, ['Skip — standard review', 'Run /office-hours first'], 1],
+  ...['Example: ', 'If approved: ', 'Do not ', '> ', '    ', '"', '`'].map(prefix => [prefix + reviewStartLead, reviewStartLabels, 1]),
+  ['D1 — Discuss /office-hours in our documentation?', reviewStartLabels, 1],
+  ['D1 — Run /office-hours instead of this review?', reviewStartLabels, 1],
+  [reviewStartLead, ['Run /office-hours first', 'Skip'], 1],
+  [reviewStartLead, ['Run /office-hours first', 'Skip security review'], 1],
+  [reviewStartLead, ['Run /office-hours first', 'Skip — standard review', 'Something else'], 1],
+  [reviewStartLead, ['Skip — standard review', 'Skip — proceed with review'], 1],
+  [reviewStartLead, ['Run /office-hours first', '"Skip — standard review"'], 1],
+  [reviewStartLead, ['Run /office-hours first if approved', 'Skip — standard review'], 1],
+] as const)('mode start recognizes only the explicit supplied-review route (%s)', (question, labels, expected) => {
+  expect(ceoFixture.pickSuppliedCeoModeStart({ question, options: labels.map((label, i) => ({ index: i + 1, label })) })).toBe(expected);
+});
 
 test.each([
   { labels: ['Run /office-hours now', 'Skip — standard review (Recommended)'], expected: 2 },
