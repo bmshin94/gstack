@@ -8,6 +8,7 @@ import { stripAnsi, type ClaudePtySession } from './helpers/claude-pty-runner';
 
 const automatic = 'Mode is HOLD SCOPE (auto-decided from plan-tune preference).';
 const scopedAutomatic = '**Auto-decided:** Review mode → **SELECTIVE EXPANSION** (your preference for this question).';
+const savedAutomatic = 'Auto-decided review mode → **SELECTIVE EXPANSION** (saved preference).';
 const approach = 'D1 — Which implementation approach? <gstack-qid:plan-ceo-review-approach-select>\nA) Reuse the formatter (recommended)\nB) Add a dependency';
 const mode = 'D2 — Which review mode? <gstack-qid:plan-ceo-review-mode>\nA) HOLD SCOPE\nB) SCOPE EXPANSION';
 const assistant = (text: string, stop_reason = 'end_turn', id = 'message-1') => ({ type: 'assistant', message: { role: 'assistant', id, stop_reason, content: [{ type: 'text', text }] } });
@@ -62,7 +63,30 @@ test('a real standard annotation is accepted at sentence level', () => {
 test('mode annotation punctuation and explicit question attribution preserve the decision meaning', () => {
   expect(inspectCeoModePreference(transcript(assistant(scopedAutomatic, 'tool_use')), scopedAutomatic).kind).toBe('auto_decided');
 });
-test.each([automatic, 'Auto-decided review mode → HOLD SCOPE (your preference).', scopedAutomatic])('future or quote-wrapped mode annotations are not decisions: %s', annotation => {
+test('retained saved-preference wording is a rendered mode decision even during a tool turn', () => {
+  // Completed owned attempt 999c96c7: the lookup returned AUTO_DECIDE and the
+  // assistant used this literal attribution; terminal wrapping split it.
+  const native = 'No brain context, no prior learnings, Aside unavailable. ' + savedAutomatic
+    + ' No design doc found — proceeding with standard review from `review-input.md` directly (the plan is clear and self-contained; /office-hours not needed here).'
+    + '\n\nSetting up learnings (first time in this project):';
+  const rendered = 'Auto-decided review mode → SELECTIVE EXPANSION (saved\rpreference).';
+  expect(inspectCeoModePreference(transcript(assistant(native, 'tool_use')), rendered))
+    .toEqual({ kind: 'auto_decided', evidence: savedAutomatic.replaceAll('**', '') });
+});
+test.each([
+  'Auto-decided review mode → SELECTIVE EXPANSION (feature enhancement, default).',
+  'Auto-decided review mode → SELECTIVE EXPANSION (saved default).',
+  'Auto-decided review mode → SELECTIVE EXPANSION (not saved preference).',
+  'Auto-decided review mode → SELECTIVE EXPANSION (saved preference for another question).',
+  'Auto-decided review mode → SELECTIVE EXPANSION (saved preference, probably).',
+  'Auto-decided review mode → SELECTIVE EXPANSION (saved preference)?',
+  'Auto-decided review mode → SELECTIVE EXPANSION (saved preference) if approved.',
+  'Auto-decided implementation approach → SELECTIVE EXPANSION (saved preference).',
+  'Auto-decided review mode → HOLD SCOPE or SELECTIVE EXPANSION (saved preference).',
+])('saved-preference recognition does not accept defaults, uncertainty, or another decision: %s', text => {
+  expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+});
+test.each([automatic, 'Auto-decided review mode → HOLD SCOPE (your preference).', scopedAutomatic, savedAutomatic])('future or quote-wrapped mode annotations are not decisions: %s', annotation => {
   for (const text of [
     'I will print this later:\n' + annotation,
     'I will print this later:\n\n' + annotation,
@@ -104,7 +128,7 @@ test.each([
 ])('a bounded mode subject and saved preference establish the decision: %s', annotation => {
   expect(inspectCeoModePreference(transcript(assistant(annotation)), annotation).kind).toBe('auto_decided');
 });
-test.each([automatic, scopedAutomatic].flatMap(annotation => [
+test.each([automatic, scopedAutomatic, savedAutomatic].flatMap(annotation => [
     "'The owners' example.\n" + annotation + "\n'",
     "'The owners' example.\n\n" + annotation + "\n'",
     "'The owners'\nexample.\n\n" + annotation + "\n'",
@@ -144,7 +168,7 @@ test.each([
 ])('an incomplete or qualified mode claim is not a decision: %s', annotation => {
   expect(inspectCeoModePreference(transcript(assistant(annotation)), annotation).kind).toBe('working');
 });
-test.each([automatic, scopedAutomatic])('unrelated context cannot erase an affirmative mode decision: %s', annotation => {
+test.each([automatic, scopedAutomatic, savedAutomatic])('unrelated context cannot erase an affirmative mode decision: %s', annotation => {
   for (const prefix of [
     'I will test the formatter later.',
     'Do not answer the implementation question yet.',
@@ -172,7 +196,7 @@ test('distinct affirmative sentences retain their independent evidence', () => {
   expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('auto_decided');
   expect(inspectCeoModePreference(transcript(assistant(automatic), assistant(scopedAutomatic, 'end_turn', 'later')), text).kind).toBe('auto_decided');
 });
-test.each([automatic, scopedAutomatic])('contrary questions and native provenance still control mode evidence: %s', annotation => {
+test.each([automatic, scopedAutomatic, savedAutomatic])('contrary questions and native provenance still control mode evidence: %s', annotation => {
   for (const rows of [
     [assistant(mode), assistant(annotation, 'end_turn', 'later')],
     [assistant(annotation), assistant(mode, 'end_turn', 'later')],
@@ -212,7 +236,7 @@ test('quoted templates and previously acknowledged or superseded questions canno
   expect(inspectCeoModePreference(transcript(assistant(approach), reply), approach).kind).toBe('working');
 });
 
-test.each(['automatic', 'target', 'timeout', 'expired-boot', 'exited'] as const)('driver handles %s without replaying the unrelated answer or accepting a preview', async scenario => {
+test.each(['automatic', 'saved-automatic', 'target', 'timeout', 'expired-boot', 'exited'] as const)('driver handles %s without replaying the unrelated answer or accepting a preview', async scenario => {
   const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-preference-free-'));
   const sends: string[] = [];
   let typed = '';
@@ -250,15 +274,15 @@ test.each(['automatic', 'target', 'timeout', 'expired-boot', 'exited'] as const)
       pause: async ms => {
         time += ms;
         if (++polls === 3) { append(assistant(approach)); visible += '\n' + approach; }
-        if (polls === 6 && ['automatic', 'target'].includes(scenario)) {
-          const text = scenario === 'automatic' ? automatic : mode;
+        if (polls === 6 && ['automatic', 'saved-automatic', 'target'].includes(scenario)) {
+          const text = scenario === 'automatic' ? automatic : scenario === 'saved-automatic' ? savedAutomatic : mode;
           append(assistant(text, 'end_turn', 'last')); visible += '\n' + text;
         }
       },
     });
     expect(closed).toBe(true);
     expect(sends.filter(text => text.startsWith('For ')).length).toBe(['expired-boot', 'exited'].includes(scenario) ? 0 : 1);
-    expect(observation.outcome).toBe(scenario === 'automatic' ? 'auto_decided' : scenario === 'target' ? 'asked' : scenario === 'exited' ? 'exited' : 'timeout');
+    expect(observation.outcome).toBe(['automatic', 'saved-automatic'].includes(scenario) ? 'auto_decided' : scenario === 'target' ? 'asked' : scenario === 'exited' ? 'exited' : 'timeout');
   } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });
 

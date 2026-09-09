@@ -28,7 +28,7 @@ function dialogue(text: string, includeIllustrations = false): string {
 
 function automaticModeEvidence(text: string): string | undefined {
   const label = '(?:HOLD\\s+SCOPE|SELECTIVE\\s+EXPANSION|SCOPE\\s+REDUCTION|SCOPE\\s+EXPANSION)';
-  const standard = new RegExp('^Auto-decided(?:\\s*:\\s*|\\s+)(?:CEO )?(?:review )?mode(?: selection)?\\s*(?:→|:|—)\\s*' + label + '\\s*\\(your preference(?: for this question)?\\)[.!]?$', 'i');
+  const standard = new RegExp('^Auto-decided(?:\\s*:\\s*|\\s+)(?:CEO )?(?:review )?mode(?: selection)?\\s*(?:→|:|—)\\s*' + label + '\\s*\\((?:your preference(?: for this question)?|saved preference)\\)[.!]?$', 'i');
   const observed = new RegExp('^(?:Review )?Mode is ' + label + '\\s*\\(auto-decided from plan-tune preference\\)[.!]?$', 'i');
   // Presentation wrappers own their following prose even across blank lines.
   // A wrapper introducing a closed code/quotation block owns that block only.
