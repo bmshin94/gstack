@@ -37,12 +37,16 @@ afterAll(() => fs.rmSync(base, { recursive: true, force: true }));
 describe('generator artifact and dry-run contract', () => {
   test('all host artifacts validate, with canonical links and host exclusions', () => {
     expect([...new Set(generated.artifacts.filter(a => a.host).map(a => a.host))].sort()).toEqual([...ALL_HOST_NAMES].sort());
-    expect([...new Set(generated.artifacts.map(a => a.kind))].sort()).toEqual(['digest', 'index', 'metadata', 'openclaw', 'section', 'skill']);
+    expect([...new Set(generated.artifacts.map(a => a.kind))].sort()).toEqual(['asset', 'digest', 'index', 'metadata', 'openclaw', 'section', 'skill']);
     expect(generated.artifacts.some(a => a.relativePath === 'claude/SKILL.md')).toBe(false);
     expect(generated.artifacts.some(a => a.relativePath === '.agents/skills/gstack-claude/SKILL.md')).toBe(true);
     expect(generated.artifacts.some(a => a.relativePath === '.agents/skills/gstack-codex/SKILL.md')).toBe(false);
     expect(fs.readFileSync(path.join(render, 'ship/SKILL.md'), 'utf-8')).toContain('~/.claude/skills/gstack/ship/sections/');
     expect(generated.artifacts.flatMap(a => validateGeneratedArtifact(render, a))).toEqual([]);
+    expect(generated.artifacts.filter(a => a.kind === 'asset')).toEqual([
+      { relativePath: 'review/design-checklist.md', kind: 'asset', host: 'claude' },
+      { relativePath: 'lib/dom-dump.js', kind: 'asset', host: 'claude' },
+    ]);
   });
 
   test('include-minus-skip semantics share one predicate', () => {
@@ -80,6 +84,7 @@ describe('generator artifact and dry-run contract', () => {
     '.agents/skills/gstack-ship/agents/openai.yaml',
     'openclaw/gstack-lite-CLAUDE.md', 'openclaw/gstack-full-CLAUDE.md', 'openclaw/gstack-plan-CLAUDE.md',
     'gstack/llms.txt', 'agents-digest/gstack-AGENTS.md',
+    'review/design-checklist.md', 'lib/dom-dump.js',
   ]) {
     test(`changed ${relativePath} is stale and never repaired by dry-run`, async () => {
       const file = path.join(render, relativePath);
@@ -140,7 +145,7 @@ describe('generator artifact and dry-run contract', () => {
     expect(fs.readFileSync(path.join(outputRoot, '.agents'), 'utf-8')).toBe('blocks only the Codex output tree');
   });
 
-  for (const relativePath of ['gstack/llms.txt', 'agents-digest/gstack-AGENTS.md']) {
+  for (const relativePath of ['gstack/llms.txt', 'agents-digest/gstack-AGENTS.md', 'review/design-checklist.md', 'lib/dom-dump.js']) {
     for (const dryRun of [true, false]) {
       test(`shared artifact failure is awaited: ${relativePath}, dryRun=${dryRun}`, async () => {
         const outputRoot = fs.mkdtempSync(path.join(base, 'shared-error-'));

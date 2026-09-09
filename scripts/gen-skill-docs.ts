@@ -12,6 +12,8 @@
 import { discoverTemplates, discoverSectionTemplates, includesSkill } from './discover-skills';
 import { generateLlmsTxt } from './gen-llms-txt';
 import { generateAgentsDigest, DIGEST_RELPATH, DIGEST_BYTE_BUDGET } from './gen-agents-digest';
+import { generateDesignChecklistMd } from './resolvers/design-checklist';
+import { DOM_DUMP_SCRIPT, DOM_DUMP_FILE } from '../lib/dom-dump-script';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Host, TemplateContext } from './resolvers/types';
@@ -50,7 +52,7 @@ interface RenderOptions {
 
 export interface GeneratedArtifact {
   relativePath: string;
-  kind: 'skill' | 'section' | 'metadata' | 'openclaw' | 'index' | 'digest';
+  kind: 'skill' | 'section' | 'metadata' | 'openclaw' | 'index' | 'digest' | 'asset';
   host?: Host;
 }
 
@@ -1011,6 +1013,14 @@ export async function runGeneration(settings: GenerationOptions = {}): Promise<G
         const result = processSectionTemplate(path.join(ROOT, section.tmpl), section.skillDir, host, options);
         emit(result.outputPath, result.content, 'section', host);
         tokenBudget.push({ skill: rel(result.outputPath), lines: result.content.split('\n').length, tokens: Math.round(result.content.length / 4) });
+      }
+
+      // Claude owns these catalog-derived runtime assets. Use the same host
+      // inclusion rule and compare-or-write path as every other artifact.
+      if (host === 'claude' && includesSkill(hostConfig, 'review')) {
+        emit(path.join(options.outputRoot, 'review', 'design-checklist.md'),
+          generateDesignChecklistMd(), 'asset', host);
+        emit(path.join(options.outputRoot, DOM_DUMP_FILE), DOM_DUMP_SCRIPT + '\n', 'asset', host);
       }
 
       if (host === 'openclaw') {
