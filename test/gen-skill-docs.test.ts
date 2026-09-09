@@ -920,6 +920,33 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
     }
   });
 
+  test('planned regression coverage gets its own approved contract without making coverage optional', () => {
+    const regression = planSkill.split('### REGRESSION RULE (mandatory)')[1]!.split('**Step 4.')[0]!;
+    expect(regression).toContain('critical requirement');
+    expect(regression).toContain('one dedicated AskUserQuestion');
+    expect(regression).toContain('behavior to preserve, intentional changes, and acceptance assertions');
+    expect(regression).toContain('Ask how to cover it, not whether to skip it');
+    expect(regression).toContain('before adding the approved contract to the plan');
+    expect(regression).not.toContain('No AskUserQuestion');
+    expect(regression).not.toContain('the diff broke');
+    expect(regression).toContain('not proof that running code already broke');
+  });
+
+  test('plan gap additions wait for their test-contract decision', () => {
+    const action = planSkill.split('**Step 5. Add missing tests to the plan:**')[1]!.split('### Test Plan Artifact')[0]!;
+    expect(action).toContain('present its test contract in a dedicated AskUserQuestion');
+    expect(action).toContain('then add the approved requirement to the plan');
+    expect(action).not.toContain('For each GAP identified in the diagram, add a test requirement');
+    expect(action).not.toContain('explain what broke');
+  });
+
+  test('implemented regressions still require an immediate test without a question', () => {
+    const regression = shipSkill.split('### REGRESSION RULE (mandatory)')[1]!.split('**4.')[0]!;
+    expect(regression).toContain('code that previously worked but the diff broke');
+    expect(regression).toContain('written immediately. No AskUserQuestion. No skipping.');
+    expect(regression).toContain('The change introduces a new failure mode for existing callers');
+  });
+
   test('plan and ship modes include test framework detection', () => {
     // Review mode delegates to Testing specialist
     for (const skill of [planSkill, shipSkill]) {

@@ -359,11 +359,16 @@ When checking each branch, also determine whether a unit test or E2E/integration
 - Edge case of a single function (null input, empty array)
 - Obscure/rare flow that isn't customer-facing`);
 
-  // ── Regression rule (shared) ──
-  sections.push(`
+  // ── Regression requirement; plan contracts need the review's approval gate ──
+  sections.push(mode === 'plan' ? `
 ### REGRESSION RULE (mandatory)
 
-**IRON RULE:** When the coverage audit identifies a REGRESSION — code that previously worked but the diff broke — a regression test is ${mode === 'plan' ? 'added to the plan as a critical requirement' : 'written immediately'}. No AskUserQuestion. No skipping. Regressions are the highest-priority test because they prove something broke.
+**IRON RULE:** When a planned change puts existing behavior at risk without regression coverage, that coverage is a critical requirement. Use one dedicated AskUserQuestion to settle the regression test contract — behavior to preserve, intentional changes, and acceptance assertions — before adding the approved contract to the plan. Ask how to cover it, not whether to skip it. Do not silently include it under a different test-depth question.
+
+A proposed rewrite is a regression risk, not proof that running code already broke. Name the existing callers and behavior at risk; preserve unchanged behavior and explicitly identify intended differences. No skipping regression coverage.` : `
+### REGRESSION RULE (mandatory)
+
+**IRON RULE:** When the coverage audit identifies a REGRESSION — code that previously worked but the diff broke — a regression test is written immediately. No AskUserQuestion. No skipping. Regressions are the highest-priority test because they prove something broke.
 
 A regression is when:
 - The diff modifies existing behavior (not new code)
@@ -405,11 +410,11 @@ Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke ch
     sections.push(`
 **Step 5. Add missing tests to the plan:**
 
-For each GAP identified in the diagram, add a test requirement to the plan. Be specific:
+For each GAP identified in the diagram, present its test contract in a dedicated AskUserQuestion, then add the approved requirement to the plan. Carry forward an already approved contract without asking it again. Be specific:
 - What test file to create (match existing naming conventions)
 - What the test should assert (specific inputs → expected outputs/behavior)
 - Whether it's a unit test, E2E test, or eval (use the decision matrix)
-- For regressions: flag as **CRITICAL** and explain what broke
+- For regression risks: flag as **CRITICAL** and name the behavior to protect
 
 The plan should be complete enough that when implementation begins, every test is written alongside the feature code — not deferred to a follow-up.`);
 
