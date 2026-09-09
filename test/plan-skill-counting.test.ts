@@ -21,6 +21,84 @@ async function runFakeCounting(completion: string, scenario: string) {
 }
 
 describe('real plan counting loop with an isolated fake PTY', () => {
+  test('null phase ceiling reaches owned completion beyond the old cap and picks manual handoff once', async () => {
+    const result = await runFakeCounting('**DONE**', 'ceiling-null');
+    expect(result.error).toBeUndefined();
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 6 });
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1', '1', '1', '1', '2']);
+    expect(result.pickerCalls).toHaveLength(7);
+    expect(result.pickerCalls.map((entry: any) => entry.isFirst)).toEqual([true, false, false, false, false, false, false]);
+    const handoff = result.pickerCalls.filter((entry: any) => entry.question.question === 'How should we continue after this review?');
+    expect(handoff).toHaveLength(1);
+    expect(handoff[0].question).toMatchObject({ header: 'How should we continue after this review?', multiSelect: false,
+      options: [{ label: 'Run eng review now', description: 'Choose Run eng review now' }, { label: 'Continue manually', description: 'Choose Continue manually' }] });
+    expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[1], [1], [1], [1], [1], [1], [2]]);
+    expect(result.sendTimes.every((ms: number) => ms < result.caseBudgetMs)).toBe(true);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('numeric phase ceiling still stops before further questions', async () => {
+    const result = await runFakeCounting('**DONE**', 'ceiling-numeric');
+    expect(result.observation).toMatchObject({ outcome: 'ceiling_reached', step0Count: 1, reviewCount: 4 });
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1', '1', '1']);
+    expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[1], [1], [1], [1], [1]]);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('zero phase ceiling preserves its immediate-stop behavior', async () => {
+    const result = await runFakeCounting('**DONE**', 'ceiling-zero');
+    expect(result.observation).toMatchObject({ outcome: 'ceiling_reached', step0Count: 0, reviewCount: 0 });
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.observation.fingerprints).toEqual([]);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['timeout', 'no-owner', 'no-ack'])('null phase ceiling preserves deadline, ownership, and ACK requirements (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `ceiling-null-${variant}`);
+    expect(result.observation).toMatchObject({ outcome: 'timeout', step0Count: 1, reviewCount: variant === 'no-owner' ? 6 : 5 });
+    expect(result.observation.elapsedMs).toBe(result.helperTimeoutMs);
+    expect(result.sendTimes.every((ms: number) => ms < result.caseBudgetMs)).toBe(true);
+    expect(result.caseElapsedMs).toBeLessThan(result.caseBudgetMs + PLAN_SKILL_COUNT_FINALIZE_MS);
+    expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual(
+      variant === 'no-owner' ? [[1], [1], [1], [1], [1], [1], [2]] : [[1], [1], [1], [1], [1], [1]]);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('question picker receives every native tab and records its selected indexes only after final ACK', async () => {
+    const result = await runFakeCounting('**DONE**', 'question-picker-multi');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '2', '\r']);
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 1 });
+    expect(result.pickerCalls.map((entry: any) => entry.isFirst)).toEqual([true, false, false]);
+    expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[1], [1, 2]]);
+    expect(result.observation.fingerprints[1].questions).toEqual(result.pickerCalls.slice(1).map((entry: any) => entry.question));
+    expect(result.closed).toBe(true);
+    const noAck = await runFakeCounting('**DONE**', 'question-picker-multi-no-ack');
+    expect(noAck.sends).toEqual(['/plan-ceo-review\r', '1', '1', '2', '\r']);
+    expect(noAck.observation).toMatchObject({ outcome: 'timeout', step0Count: 1, reviewCount: 0 });
+    expect(noAck.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[1]]);
+  }, 15_000);
+  test('firstAUQPick takes precedence over the per-question picker exactly once', async () => {
+    const result = await runFakeCounting('**DONE**', 'question-picker-first');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '2', '1', '1']);
+    expect(result.pickerCalls).toHaveLength(2);
+    expect(result.pickerCalls.map((entry: any) => entry.isFirst)).toEqual([false, false]);
+    expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[2], [1], [1]]);
+    expect(result.observation.outcome).toBe('completion_summary');
+  }, 15_000);
+  test('redraw cannot call the picker again or add a selected option', async () => {
+    const result = await runFakeCounting('**DONE**', 'question-picker-redraw');
+    expect(result.redraws).toBe(1);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.pickerCalls).toHaveLength(3);
+    expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[1], [1], [1]]);
+    expect(result.observation.outcome).toBe('completion_summary');
+  }, 15_000);
+  test.each(['stale-focus', 'no-ack'])('preview picker is called once but cannot record a selection without ACK (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `preview-menu-picker-${variant}`);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '2', ...(variant === 'no-ack' ? ['\r'] : [])]);
+    expect(result.pickerCalls).toHaveLength(1);
+    expect(result.pickerCalls[0].isFirst).toBe(true);
+    expect(result.observation).toMatchObject({ outcome: 'timeout', step0Count: 0, reviewCount: 0 });
+    expect(result.observation.fingerprints).toEqual([]);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+
   test.each(['no-owner', 'pending-tool', 'pending-auq', 'pending-file', 'pending-bytes', 'frame-race'])('terminal diagnostics distinguish blocked native state without approving the visible plan (%s)', async variant => {
     const result = await runFakeCounting('**DONE**', `terminal-diagnostic-${variant}`);
     expect(result.observation.outcome).toBe('timeout');
@@ -444,6 +522,13 @@ describe('counting work deadline and finalization', () => {
       expect(result.observation.reviewCount).toBe(1);
       expect(result.observation.evidence).toContain('WORK_IN_PROGRESS');
     }
+  }, 15_000);
+
+  test.each(['nan', 'infinity', 'negative', 'fraction', 'unsafe'])('invalid numeric phase cap (%s) fails before PTY launch', async variant => {
+    const result = await runFakeCounting('**DONE**', `invalid-cap-${variant}`);
+    expect(result.error).toContain('reviewCountCeiling must be null or a nonnegative safe integer');
+    expect(result.launches).toBe(0);
+    expect(result.sends).toEqual([]);
   }, 15_000);
 
   test.each(['invalid-nan', 'invalid-infinity'])('%s fails before any PTY launch', async scenario => {

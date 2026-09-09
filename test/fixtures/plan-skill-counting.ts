@@ -67,19 +67,22 @@ const RETAINED_PARENTHESIZED_MODE_INPUT = {
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
+  const ceilingCase = scenario.startsWith('ceiling-');
+  const multiQuestionCase = scenario === 'multi-question' || scenario.startsWith('question-picker-multi');
   const terminalDiagnosticCase = scenario.startsWith('terminal-diagnostic-');
   const editPermissionCase = scenario.startsWith('permission-edit-');
   const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
   const exitConfirmationCase = scenario.startsWith('exit-confirmation-');
-  const timing = terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
-  const caseBudgetMs = viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
+  const timing = ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const caseBudgetMs = ceilingCase || viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
-  const reusedOptions = ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'multi-question'].includes(scenario);
+  const reusedOptions = multiQuestionCase || ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'question-picker-redraw'].includes(scenario);
   const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
   const sends: string[] = [];
+  const pickerCalls: Array<{ question: unknown; isFirst: boolean }> = [];
   const resizes: number[][] = [];
   let terminalCloseCount = 0;
   let viewportSnapshots = 0;
@@ -269,7 +272,7 @@ async function main() {
         pendingId = null;
       };
       const finish = () => {
-        append({ type: 'assistant', message: { id: 'final', role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: completion }] } });
+        if (scenario !== 'ceiling-null-no-owner') append({ type: 'assistant', message: { id: 'final', role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: completion }] } });
         emit('\n' + completion.replace(/\*|#| /g, '') + '\n');
       };
       // Same append shape as the retained final-report Edit: the observer can
@@ -375,12 +378,12 @@ async function main() {
             if (data.startsWith('/')) { seededBeforeSlash = fs.readFileSync(path.join(options.cwd, 'review-input.md'), 'utf8') === plan; nextPreview(); return; }
             if (/^[12]$/.test(data)) {
               if (Number(data) === previewFocus) return; // React no-op: no redraw.
-              if (scenario !== 'preview-menu-stale-focus') { previewFocus = Number(data); showPreview(); }
+              if (!scenario.endsWith('stale-focus')) { previewFocus = Number(data); showPreview(); }
               return;
             }
             const desired = scenario === 'preview-menu-focused' ? 1 : 2;
             if (data !== '\r' || previewFocus !== desired || !pendingId) { prematureAnswers.push(data); return; }
-            if (scenario === 'preview-menu-no-ack' || scenario === 'preview-menu-clipping-ruler-no-ack') return;
+            if (scenario.endsWith('no-ack')) return;
             acknowledge(); answer++;
             if (answer === 3) finish(); else nextPreview();
             return;
@@ -475,7 +478,8 @@ async function main() {
             if (scenario !== 'preview-only') ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
             // Actual failure: a preview in PTY while the assistant still uses tools.
             emit('Read: GSTACK REVIEW REPORT\nVERDICT: APPROVED\n\nD1 — Pick a mode\n\n❯ 1. HOLD SCOPE\n  2. SCOPE EXPANSION\n');
-          } else if (data === '\r' && scenario === 'multi-question' && batchQuestion === 2) {
+          } else if (data === '\r' && multiQuestionCase && batchQuestion === 2) {
+            if (scenario.endsWith('no-ack')) return;
             acknowledge();
             finish();
           } else if (/^[12]\r?$/.test(data)) {
@@ -549,17 +553,31 @@ async function main() {
             if (scenario === 'wrong-question' && pendingRedrawSleeps > 0) prematureAnswers.push(data);
             if (!pendingId) { unsolicitedWrites.push(data); return; }
             answer++;
-            if (scenario === 'multi-question' && answer > 1) {
+            if (multiQuestionCase && answer > 1) {
               batchQuestion++;
               emit(batchQuestion === 1 ? finding(2) : '\nReview your answers\nReady to submit your answers?\nSubmit answers\n');
               return;
             }
             if (['letter-prefixed-mode-no-ack', 'parenthesized-mode-no-ack'].includes(scenario) && answer === 1) { emit('\nWORK_IN_PROGRESS\n'); return; }
             if (['no-ack', 'hook-no-ack'].includes(scenario) && answer === 2) { emit('\nWORK_IN_PROGRESS\n'); return; }
+            if (ceilingCase) {
+              if (answer === 7 && scenario.endsWith('no-ack')) { emit('WORK_IN_PROGRESS\n'); return; }
+              acknowledge();
+              if (answer < 6) {
+                const question = `Finding ${answer} — Independent test gap`;
+                ask(question, ['Add test', 'Skip test']);
+                emit(`\x1b[2J\x1b[H${question}\n❯1.Add test\n2.Skip test\n`);
+              } else if (answer === 6) {
+                if (scenario.endsWith('timeout')) { emit('WORK_IN_PROGRESS\n'); return; }
+                ask('How should we continue after this review?', ['Run eng review now', 'Continue manually']);
+                emit('\x1b[2J\x1b[HHow should we continue after this review?\n❯1.Run eng review now\n2.Continue manually\n');
+              } else finish();
+              return;
+            }
             acknowledge();
             if (scenario === 'viewport-ready-no-restore-output') { tool('ExitPlanMode', {}); emit('\nReady to execute?\n'); return; }
             if (answer === 1) {
-              if (scenario === 'multi-question') {
+              if (multiQuestionCase) {
                 pendingId = tool('AskUserQuestion', { questions: ['Finding 1 — Success test', 'Finding 2 — Failure test'].map(question => ({
                   question, header: question, multiSelect: false, options: ['Add test', 'Skip test'].map(label => ({ label, description: label })),
                 })) });
@@ -579,7 +597,7 @@ async function main() {
                 emit(finding(1));
                 delayedRender = () => emit(finding(2));
                 pendingRedrawSleeps = 3;
-              } else if (scenario === 'redraw' || scenario === 'stale-redraw') {
+              } else if (scenario === 'redraw' || scenario === 'stale-redraw' || scenario === 'question-picker-redraw') {
                 redraws++;
                 emit(scenario === 'stale-redraw' ? finding(1).trimEnd() + ' Working frame 2\n' : finding(1));
                 // One post-answer pause, then a poll sees the same question;
@@ -604,19 +622,29 @@ async function main() {
     }) as typeof Bun.sleep;
     const helperTimeoutMs = scenario === 'invalid-nan' ? Number.NaN : scenario === 'invalid-infinity' ? Number.POSITIVE_INFINITY
       : caseBudgetMs - (Date.now() - caseStartedAt);
+    const reviewCountCeiling = scenario.startsWith('ceiling-null') ? null
+      : scenario === 'invalid-cap-nan' ? Number.NaN : scenario === 'invalid-cap-infinity' ? Number.POSITIVE_INFINITY
+      : scenario === 'invalid-cap-negative' ? -1 : scenario === 'invalid-cap-fraction' ? 1.5
+      : scenario === 'invalid-cap-unsafe' ? Number.MAX_SAFE_INTEGER + 1 : scenario === 'ceiling-zero' ? 0 : 4;
     let observation;
     let error;
     try { observation = await runPlanSkillCounting({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
-      cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling: 4, timeoutMs: helperTimeoutMs,
+      cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling, timeoutMs: helperTimeoutMs,
       defaultPick: previewCase ? scenario === 'preview-menu-focused' ? 1 : 2 : scenario === 'permission-current-create-pick-two' ? 2 : undefined,
-      firstAUQPick: scenario === 'first-route' ? () => 2 : undefined,
+      firstAUQPick: scenario === 'first-route' || scenario === 'question-picker-first' ? () => 2 : undefined,
+      questionPick: ceilingCase || scenario.includes('picker') ? (question, isFirst) => {
+        pickerCalls.push({ question, isFirst });
+        if (previewCase) return 2;
+        if (question.question === 'How should we continue after this review?' || multiQuestionCase && question.question.includes('Failure')) return 2;
+        return 1;
+      } : undefined,
     }); } catch (cause) {
       if (!viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
       error = String(cause);
     }
     const writtenPlan = fs.existsSync(path.join(project, 'plan.md')) ? fs.readFileSync(path.join(project, 'plan.md'), 'utf8') : '';
-    console.log(JSON.stringify({ observation, error, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

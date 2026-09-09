@@ -1084,6 +1084,8 @@ export interface AskUserQuestionFingerprint {
   /** Present on native counting observations: full invocation input, including tabs. */
   toolUseId?: string;
   questions?: NativeQuestion[];
+  /** One 1-based selected option per native question, present only after its successful ACK. */
+  selectedOptions?: number[];
   /** Stable hash combining normalized prompt text + options signature. */
   signature: string;
   /** First 240 chars of the rendered question prompt (post-normalization). */
@@ -2129,7 +2131,9 @@ export interface PlanSkillCountObservation {
  *        prompts fail before input; stale redraws cannot increment counts.
  *      - Hard ceiling: if `reviewCount >= reviewCountCeiling`, return
  *        `ceiling_reached`. This bounds runaway counts; tests should set
- *        the ceiling above their assertion CEILING.
+ *        the ceiling above their assertion CEILING. Explicit null disables
+ *        this phase-count guard for callers validating finding semantics;
+ *        the finite work deadline still applies.
  *      - Soft terminals: completed owned assistant summary, corroborated in
  *        rendered output → `completion_summary`;
  *        owned ExitPlanMode plus rendered confirmation → `plan_ready`; silent write outside
@@ -2156,13 +2160,15 @@ export async function runPlanSkillCounting(opts: {
   isLastStep0AUQ: Step0BoundaryPredicate;
   /** Hard cap on review-phase count; helper returns when reached. Should be
    *  set ABOVE the test's assertion ceiling so the test sees the cap as a
-   *  failure rather than a silent stop. */
-  reviewCountCeiling: number;
+   *  failure rather than a silent stop. Explicit null disables only this cap;
+   *  the finite case work deadline still applies. */
+  reviewCountCeiling: number | null;
   /** Numbered option to press by default. Defaults to 1 (recommended). */
   defaultPick?: number;
   /**
    * Optional override for the FIRST AUQ observed. Receives the fingerprint;
-   * returns the option index to press. Subsequent AUQs always use defaultPick.
+   * returns the option index to press. Takes precedence over questionPick
+   * for that first answer; subsequent questions use questionPick/defaultPick.
    *
    * Skill-specific routing helper: /plan-ceo-review's first AUQ asks "what
    * scope?" with options like "branch diff" / "describe inline" / "skip
@@ -2172,6 +2178,8 @@ export async function runPlanSkillCounting(opts: {
    * follow-up plan content the test sent, not the git diff.
    */
   firstAUQPick?: (fp: AskUserQuestionFingerprint) => number;
+  /** Choose each owned question/tab once. isFirst means no question has yet been answered. */
+  questionPick?: (question: NativeQuestion, isFirst: boolean) => number;
   /** Working directory. Default process.cwd() (repo cwd holds skill registry). */
   cwd?: string;
   /** Remaining case work budget, measured from helper entry including boot. Default 25 min. */
@@ -2183,13 +2191,16 @@ export async function runPlanSkillCounting(opts: {
 }): Promise<PlanSkillCountObservation> {
   const startedAt = Date.now();
   const defaultPick = opts.defaultPick ?? 1;
+  if (opts.reviewCountCeiling !== null && (!Number.isSafeInteger(opts.reviewCountCeiling) || opts.reviewCountCeiling < 0)) {
+    throw new Error('Plan counting reviewCountCeiling must be null or a nonnegative safe integer');
+  }
   const requestedTimeoutMs = opts.timeoutMs ?? 1_500_000;
   if (!Number.isFinite(requestedTimeoutMs)) throw new Error('Plan counting timeoutMs must be finite');
   const timeoutMs = Math.max(0, requestedTimeoutMs);
   const deadlineAt = startedAt + timeoutMs;
 
   const fingerprints: AskUserQuestionFingerprint[] = [];
-  const submitted = new Map<string, { answeredQuestions: number; previewFocus?: number; submitted: boolean; counted: boolean; fp: AskUserQuestionFingerprint }>();
+  const submitted = new Map<string, { answeredQuestions: number; selectedOptions: number[]; previewFocus?: number; submitted: boolean; counted: boolean; fp: AskUserQuestionFingerprint }>();
   let viewport: { id: string; questions: NativeQuestion[]; rows: 80 | 120 } | null = null;
   const viewportAttempts = new Map<string, number>();
   let viewportInputSince = 0;
@@ -2358,12 +2369,13 @@ export async function runPlanSkillCounting(opts: {
         if (state.answeredQuestions !== call.questions.length) throw new Error(`Native AskUserQuestion ${call.id} completed before all questions were answered`);
         state.counted = true;
         state.fp.preReview = !boundaryFired;
+        state.fp.selectedOptions = [...state.selectedOptions];
         fingerprints.push(state.fp);
         if (boundaryFired) reviewCount += 1;
         else step0Count += 1;
         if (!boundaryFired && call.questions.some(q => opts.isLastStep0AUQ({ ...state.fp, promptSnippet: q.question.slice(0, 240), options: q.options.map((o, i) => ({ index: i + 1, label: o.label })) }))) boundaryFired = true;
       }
-      if (reviewCount >= opts.reviewCountCeiling) {
+      if (opts.reviewCountCeiling !== null && reviewCount >= opts.reviewCountCeiling) {
         return snapshot('ceiling_reached', `review-phase AUQ count reached ceiling (${opts.reviewCountCeiling})`, visible);
       }
 
@@ -2456,10 +2468,10 @@ export async function runPlanSkillCounting(opts: {
       // Reserve before writing; a repaint or delayed result cannot re-answer
       // this question. First-question routing applies once per launch.
       const pickIdx =
-        state?.previewFocus ?? (isFirstAUQ && opts.firstAUQPick ? opts.firstAUQPick(fp) : defaultPick);
+        state?.previewFocus ?? (isFirstAUQ && opts.firstAUQPick ? opts.firstAUQPick(fp) : opts.questionPick?.(question, isFirstAUQ) ?? defaultPick);
       if (!Number.isInteger(pickIdx) || pickIdx < 1 || pickIdx > question.options.length) throw new Error('Native AskUserQuestion selection is outside its owned options');
       if (!state) {
-        state = { answeredQuestions: 0, submitted: false, counted: false, fp };
+        state = { answeredQuestions: 0, selectedOptions: [], submitted: false, counted: false, fp };
         submitted.set(call.id, state);
       }
       if (expired()) break;
@@ -2477,6 +2489,7 @@ export async function runPlanSkillCounting(opts: {
       }
       delete state.previewFocus;
       state.answeredQuestions += 1;
+      state.selectedOptions.push(pickIdx);
       isFirstAUQ = false;
       questionSince = session.mark();
       // Ordinary digits advance; preview Enter commits the current focus.
