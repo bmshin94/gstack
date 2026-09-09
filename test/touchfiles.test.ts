@@ -61,6 +61,28 @@ describe('matchGlob', () => {
 // --- selectTests ---
 
 describe('selectTests', () => {
+  test.each(['test/helpers/coverage-audit.ts', 'test/coverage-audit.test.ts'])(
+    'coverage-audit validation changes select all three gate cases: %s', (file) => {
+      const result = selectTests([file], E2E_TOUCHFILES);
+      expect(result.selected.sort()).toEqual(['plan-eng-coverage-audit', 'review-coverage-audit', 'ship-coverage-audit']);
+      expect(result.selected.every(id => E2E_TIERS[id] === 'gate')).toBe(true);
+    },
+  );
+
+  test('the shared recording lifecycle selects coverage-audit attempts', () => {
+    const result = selectTests(['test/helpers/office-hours-attempt.ts'], E2E_TOUCHFILES);
+    const expected = {
+      'office-hours-forcing-energy': 'periodic',
+      'office-hours-builder-wildness': 'periodic',
+      'office-hours-brain-writeback': 'periodic',
+      'review-coverage-audit': 'gate',
+      'plan-eng-coverage-audit': 'gate',
+      'ship-coverage-audit': 'gate',
+    };
+    expect(result.selected.sort()).toEqual(Object.keys(expected).sort());
+    for (const [id, tier] of Object.entries(expected)) expect(E2E_TIERS[id]).toBe(tier);
+  });
+
   test('browse/src change selects browse and qa tests', () => {
     const result = selectTests(['browse/src/commands.ts'], E2E_TOUCHFILES);
     expect(result.selected).toContain('browse-basic');

@@ -294,9 +294,9 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
 
 
   // Coverage audit (shared fixture) + triage + gates
-  'ship-coverage-audit': ['ship/**', 'test/fixtures/coverage-audit-fixture.ts', 'bin/gstack-repo-mode', 'test/skill-e2e-workflow.test.ts'],
-  'review-coverage-audit': ['review/**', 'test/fixtures/coverage-audit-fixture.ts', 'test/skill-e2e-coverage-audit.test.ts'],
-  'plan-eng-coverage-audit': ['plan-eng-review/**', 'test/fixtures/coverage-audit-fixture.ts', 'test/skill-e2e-coverage-audit.test.ts'],
+  'ship-coverage-audit': ['ship/**', 'test/fixtures/coverage-audit-fixture.ts', 'test/helpers/coverage-audit.ts', 'test/helpers/office-hours-attempt.ts', 'test/coverage-audit.test.ts', 'bin/gstack-repo-mode', 'test/skill-e2e-workflow.test.ts'],
+  'review-coverage-audit': ['review/**', 'test/fixtures/coverage-audit-fixture.ts', 'test/helpers/coverage-audit.ts', 'test/helpers/office-hours-attempt.ts', 'test/coverage-audit.test.ts', 'test/skill-e2e-coverage-audit.test.ts'],
+  'plan-eng-coverage-audit': ['plan-eng-review/**', 'test/fixtures/coverage-audit-fixture.ts', 'test/helpers/coverage-audit.ts', 'test/helpers/office-hours-attempt.ts', 'test/coverage-audit.test.ts', 'test/skill-e2e-coverage-audit.test.ts'],
   'ship-triage': ['ship/**', 'bin/gstack-repo-mode', 'test/skill-e2e-triage.test.ts'],
   'ship-docsync': ['ship/**', 'document-release/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/sections.ts', 'test/skill-e2e-ship-docsync.test.ts'],
   // #2733 behavioral proof: the JSON contract survives a firing gate inside a
