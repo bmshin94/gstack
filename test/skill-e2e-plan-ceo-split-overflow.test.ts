@@ -43,7 +43,7 @@ import {
   ceoStep0Boundary,
 } from './helpers/claude-pty-runner';
 import { FORCING_SPLIT_OVERFLOW_CEO } from './fixtures/forcing-finding-seeds';
-import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
+import { seedCeoFindingProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
 
 const describeE2E = describeE2ETier('periodic');
 
@@ -75,6 +75,7 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
           followUpPrompt: '', // review-input.md is present before scope selection
+          firstAUQPick: pickSuppliedCeoPlanStart,
           isLastStep0AUQ: ceoStep0Boundary,
           reviewCountCeiling: N + 3, // hard cap above floor + tolerance
           cwd: tmpDir,

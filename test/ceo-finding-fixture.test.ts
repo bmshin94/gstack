@@ -3,10 +3,26 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { seedCeoFindingProject, seedPlanReviewProject } from './helpers/ceo-finding-fixture';
+import { seedCeoFindingProject, seedPlanReviewProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
 import { FORCING_SPLIT_OVERFLOW_CEO } from './fixtures/forcing-finding-seeds';
 
 const ROOT = path.resolve(import.meta.dir, '..');
+
+test.each([
+  { labels: ['Run /office-hours now', 'Skip — standard review (Recommended)'], expected: 2 },
+  { labels: ['Skip — standard review', 'Run /office-hours now'], expected: 1 },
+  { labels: ['A) Run /office-hours now', 'B) Skip (standard review without design doc context)'], expected: 2 },
+  { labels: ['Run /office-hours', 'Skip'], expected: 2 },
+  { labels: ['SCOPE EXPANSION', 'HOLD SCOPE (Recommended)'], expected: 1 },
+  { labels: ['Approach A', 'Approach B (Recommended)'], expected: 1 },
+  { labels: ['Run /office-hours now', 'Skip security review'], expected: 1 },
+  { labels: ['Discuss /office-hours later', 'Skip — standard review'], expected: 1 },
+  { labels: ['Run /office-hours now', 'Skip — standard review', 'Skip'], expected: 1 },
+  { labels: ['Run /office-hours now', 'Skip — standard review', 'Something else'], expected: 1 },
+])('supplied CEO plan chooses only the explicit prerequisite skip: $labels', ({ labels, expected }) => {
+  const options = labels.map((label, i) => ({ index: i + 1, label }));
+  expect(pickSuppliedCeoPlanStart({ options })).toBe(expected);
+});
 
 describe('CEO finding fixture establishes scope before launch', () => {
   test.each(['plan-eng-review', 'plan-design-review', 'plan-devex-review'] as const)('%s receives its own committed target and routing', skill => {
@@ -157,6 +173,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assertReviewReportAtBottom, ceoStep0Boundary, PLAN_SKILL_COUNT_FINALIZE_MS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
+import { pickSuppliedCeoPlanStart } from ${JSON.stringify(path.join(ROOT, 'test/helpers/ceo-finding-fixture.ts'))};
 const reportAssertion = assertReviewReportAtBottom;
 const step0Boundary = ceoStep0Boundary;
 const finalizeMs = PLAN_SKILL_COUNT_FINALIZE_MS;
@@ -189,6 +206,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     })).toBe('');
     expect(opts).toEqual({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
+      firstAUQPick: pickSuppliedCeoPlanStart,
       isLastStep0AUQ: step0Boundary, reviewCountCeiling: 8, cwd: opts.cwd,
       timeoutMs: expect.any(Number), env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
     });

@@ -1,7 +1,7 @@
 /** Paired finding control in its own process; original count bounds and 25-minute model budget. */
 import { test } from 'bun:test';
 import { describeE2ETier } from './helpers/e2e-gate';
-import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
+import { seedCeoFindingProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -46,6 +46,7 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
           followUpPrompt: '', // same fixture-first scope contract as the distinct case
+          firstAUQPick: pickSuppliedCeoPlanStart,
           isLastStep0AUQ: ceoStep0Boundary,
           reviewCountCeiling: CEILING_PAIRED + 1,
           cwd: tmpDir,

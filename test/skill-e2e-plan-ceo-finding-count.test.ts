@@ -16,7 +16,7 @@
 
 import { test } from 'bun:test';
 import { describeE2ETier } from './helpers/e2e-gate';
-import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
+import { seedCeoFindingProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -135,6 +135,7 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
           followUpPrompt: '', // review-input.md is available before the first scope question
+          firstAUQPick: pickSuppliedCeoPlanStart,
           isLastStep0AUQ: ceoStep0Boundary,
           reviewCountCeiling: CEILING_DISTINCT + 1, // hard cap above assertion ceiling
           cwd: tmpDir,

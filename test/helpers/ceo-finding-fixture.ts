@@ -5,6 +5,16 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+/** These cases review a supplied plan. Decline only the initial, explicit
+ * Office Hours prerequisite pair; every other question keeps the driver default. */
+export function pickSuppliedCeoPlanStart({ options }: { options: Array<{ index: number; label: string }> }): number {
+  const choices = options.map(option => ({ ...option, label: option.label.trim()
+    .replace(/^[A-D][).]\s+/, '').replace(/\s*\(Recommended\)\s*$/i, '').trim() }));
+  const run = choices.filter(option => /^Run \/office-hours(?: now)?$/i.test(option.label));
+  const skip = choices.filter(option => /^Skip(?:\s*[—–-]\s*standard review|\s*\(standard review without design doc context\))?$/i.test(option.label));
+  return choices.length === 2 && run.length === 1 && skip.length === 1 ? skip[0]!.index : 1;
+}
+
 export function seedCeoFindingProject(projectDir: string, plan: string): void {
   seedPlanReviewProject(projectDir, plan, 'plan-ceo-review');
 }
