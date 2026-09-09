@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { JUDGE_MS, CAPTURE_MS } from './helpers/eval-budgets';
-import { runSkillTest } from './helpers/session-runner';
+import { runSkillTest, SESSION_DRAIN_GRACE_MS } from './helpers/session-runner';
 import {
   ROOT, runId, describeIfSelected, testConcurrentIfSelected,
   logCost, recordE2E, createEvalCollector, finalizeEvalCollector,
@@ -12,6 +12,9 @@ import * as path from 'path';
 import * as os from 'os';
 
 const evalCollector = createEvalCollector('e2e-review-army');
+// Let consensus capture cleanup and assertions settle before Bun retries or
+// removes its shared fixture. This adds no model work time.
+const CONSENSUS_FINALIZE_MS = SESSION_DRAIN_GRACE_MS + 5_000;
 
 // Helper: create a git repo with a feature branch
 function setupRepo(prefix: string): { dir: string; run: (cmd: string, args: string[]) => void } {
@@ -586,7 +589,7 @@ Write findings to ${dir}/review-output.md`,
         content.includes('interpolat');
       expect(hasSqlFinding).toBe(true);
     }
-  }, CAPTURE_MS);
+  }, CAPTURE_MS + CONSENSUS_FINALIZE_MS);
 });
 
 // --- Review Army: Simplification specialist (activation) ---
