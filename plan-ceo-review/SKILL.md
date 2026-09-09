@@ -946,11 +946,9 @@ Context-dependent defaults:
 * User says "go big" / "ambitious" / "cathedral" → EXPANSION, no question
 * User says "hold scope but tempt me" / "show me options" / "cherry-pick" → SELECTIVE EXPANSION, no question
 
-Before further analysis or tools, confirm the chosen mode and approved 0C-bis approach in a visible assistant message. Ask before changing approaches: EXPANSION may favor ideal architecture; REDUCTION, the minimal viable approach.
-
-Once selected, commit fully. Do not silently drift.
-
 If mode selection needs an answer, use the preamble's question format and transport: include RECOMMENDATION. Modes differ in kind (review posture), not coverage — do NOT emit `Completeness: N/10` per option. Include: `Note: options differ in kind, not coverage — no completeness score.`
+
+Once selected (AUTO_DECIDE too), first send normal assistant text before analysis/tools: `Mode: <mode>; approach: <approved 0C-bis approach>`. Keep attribution; stay in that mode. Ask before approach changes: ideal architecture may fit EXPANSION; the minimal viable approach, REDUCTION.
 
 For unresolved decisions, use the preamble's transport, ask once per issue, do NOT batch, and **STOP until the user responds**. Recommend + WHY; even an "obvious fix" needs a decision before changing the plan. If none remain, state "No issues, moving on" and proceed. Settled preferences and spawned sessions follow the preamble's precedence.
 Then continue to 0D-prelude, 0D, 0D-POST, and 0E as applicable.
