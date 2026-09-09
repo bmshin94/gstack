@@ -274,10 +274,13 @@ export async function runCodexSkill(opts: {
     let exitCode: number | undefined;
     let timedOut = false;
     let drainExpired = false;
-    let streamError: Error | undefined;
+    let streamError: { stream: 'stdout' | 'stderr'; error: Error } | undefined;
     let spawnError: Error | undefined;
     let stdoutDone = false;
     let stderrDone = false;
+    let stdoutEnded = false;
+    let stderrEnded = false;
+    let finalized = false;
     let workTimer: ReturnType<typeof setTimeout> | undefined;
     let drainTimer: ReturnType<typeof setTimeout> | undefined;
     let finish!: () => void;
@@ -319,15 +322,23 @@ export async function runCodexSkill(opts: {
       maybeFinish();
     };
     const onSpawnError = (error: Error) => {
+      if (finalized) return;
       spawnError = error;
       exitCode = 1;
       closePipes();
       finish();
     };
-    const onStdoutDone = () => { stdoutDone = true; maybeFinish(); };
-    const onStderrDone = () => { stderrDone = true; maybeFinish(); };
-    const onStreamError = (error: Error) => { streamError = error; };
+    // Closure releases lifecycle waits, but only 'end' proves all bytes were
+    // drained. A destroyed pipe can emit 'close' without either EOF or error.
+    const onStdoutDone = () => { if (!finalized) { stdoutDone = true; maybeFinish(); } };
+    const onStderrDone = () => { if (!finalized) { stderrDone = true; maybeFinish(); } };
+    const onStdoutEnd = () => { if (!finalized) { stdoutEnded = true; onStdoutDone(); } };
+    const onStderrEnd = () => { if (!finalized) { stderrEnded = true; onStderrDone(); } };
+    const onStreamError = (stream: 'stdout' | 'stderr', error: Error) => {
+      if (!finalized) streamError ??= { stream, error };
+    };
     const onStdout = (chunk: string) => {
+      if (finalized) return;
       stdoutBuffer += chunk;
       const lines = stdoutBuffer.split('\n');
       stdoutBuffer = lines.pop() || '';
@@ -348,7 +359,7 @@ export async function runCodexSkill(opts: {
         } catch { /* malformed JSONL is ignored by parseCodexJSONL too */ }
       }
     };
-    const onStderr = (chunk: string) => { stderr += chunk; };
+    const onStderr = (chunk: string) => { if (!finalized) stderr += chunk; };
 
     proc.on('exit', onExit);
     proc.on('error', onSpawnError);
@@ -356,8 +367,8 @@ export async function runCodexSkill(opts: {
     proc.stderr!.setEncoding('utf8');
     proc.stdout!.on('data', onStdout);
     proc.stderr!.on('data', onStderr);
-    proc.stdout!.on('end', onStdoutDone).on('close', onStdoutDone).on('error', onStreamError);
-    proc.stderr!.on('end', onStderrDone).on('close', onStderrDone).on('error', onStreamError);
+    proc.stdout!.on('end', onStdoutEnd).on('close', onStdoutDone).on('error', error => onStreamError('stdout', error));
+    proc.stderr!.on('end', onStderrEnd).on('close', onStderrDone).on('error', error => onStreamError('stderr', error));
     signal?.addEventListener('abort', stopRun, { once: true });
     workTimer = setTimeout(stopRun, Math.max(0, deadline - Date.now()));
     if (signal?.aborted || Date.now() >= deadline) stopRun();
@@ -375,15 +386,18 @@ export async function runCodexSkill(opts: {
       };
       if (stderr.trim()) process.stderr.write(`  [codex stderr] ${stderr.trim().slice(0, 200)}\n`);
       if (spawnError) throw new CodexHarnessError(`Could not start Codex: ${spawnError.message}`, result);
-      if (result.exitCode === 0 && (drainExpired || streamError)) {
+      const incompleteStreams = [!stdoutEnded && 'stdout', !stderrEnded && 'stderr'].filter(Boolean).join(' and ');
+      if (result.exitCode === 0 && (drainExpired || streamError || incompleteStreams)) {
         throw new CodexHarnessError(
           drainExpired ? `Codex output drain exceeded ${CODEX_DRAIN_GRACE_MS}ms after exit 0`
-            : `Codex output stream failed: ${streamError!.message}`,
+            : streamError ? `Codex ${streamError.stream} stream failed: ${streamError.error.message}`
+            : `Codex ${incompleteStreams} closed before EOF after exit 0`,
           result,
         );
       }
       return result;
     } finally {
+      finalized = true;
       clearTimeout(workTimer);
       clearTimeout(drainTimer);
       signal?.removeEventListener('abort', stopRun);

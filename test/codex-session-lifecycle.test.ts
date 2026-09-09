@@ -1,7 +1,7 @@
 /** Free behavioral tests: every Codex launch goes through our temporary shim.
  * Uses '/bin/bash' to launch the shim (excluded from Windows curation).
  */
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -250,4 +250,188 @@ process.exit(${exitCode});
       expect(pids()).toEqual([]);
     });
   });
+});
+
+// Module mocks live in a fresh Bun process so they cannot affect this file's
+// real fake-executable cases or any other free test in the parent shard.
+describe('Codex stream terminal events', () => {
+  const cases = [
+    { stream: 'stdout', fault: 'none', exitCode: 0 },
+    ...(['stdout', 'stderr'] as const).flatMap(stream =>
+      (['premature-close', 'error'] as const).flatMap(fault =>
+        [0, 2, 124].map(exitCode => ({ stream, fault, exitCode })))),
+  ];
+  let fixtureDir = '';
+  let observations: any[];
+
+  beforeAll(() => {
+    fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-stream-events-'));
+    const script = path.join(fixtureDir, 'stream-events.test.ts');
+    const output = path.join(fixtureDir, 'observations.json');
+    fs.writeFileSync(script, `
+import { mock, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+const fixtureDir = ${JSON.stringify(fixtureDir)};
+const cases = ${JSON.stringify(cases)};
+const skillDir = path.join(fixtureDir, 'skill');
+const temporaryDir = path.join(fixtureDir, 'temporary');
+const operatorConfig = path.join(fixtureDir, 'operator-codex');
+for (const dir of [skillDir, temporaryDir, operatorConfig]) fs.mkdirSync(dir);
+fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\\nname: fixture\\ndescription: fixture\\n---\\nReview the fixture.\\n');
+process.env.TMPDIR = temporaryDir;
+process.env.CODEX_HOME = operatorConfig;
+let active;
+mock.module('child_process', () => ({
+  spawn(command, args, options) {
+    if (command !== 'codex') throw new Error('Unexpected executable');
+    const current = active;
+    current.spawns++;
+    current.home = options.env.HOME;
+    queueMicrotask(() => {
+      const { child, scenario } = current;
+      child.stdout.write(JSON.stringify({ type: 'item.completed', item: {
+        type: 'agent_message', text: 'The gstack review found no issues in the current branch diff.',
+      } }) + '\\n');
+      child.stderr.write('retained fixture stderr\\n');
+      const affected = child[scenario.stream];
+      const other = child[scenario.stream === 'stdout' ? 'stderr' : 'stdout'];
+      if (scenario.fault === 'none') affected.end();
+      else if (scenario.fault === 'premature-close') affected.destroy();
+      else {
+        // The runner must preserve the first real stream error when another
+        // stream subsequently reports an error during cleanup.
+        affected.once('error', () => other.emit('error', new Error('secondary cleanup error')));
+        affected.destroy(new Error(scenario.stream + ' primary stream failure'));
+      }
+      other.end();
+      child.exitCode = scenario.exitCode;
+      child.emit('exit', scenario.exitCode, null);
+    });
+    return current.child;
+  },
+  spawnSync: () => { throw new Error('Unexpected synchronous subprocess'); },
+}));
+mock.module(${JSON.stringify(path.resolve(import.meta.dir, '../scripts/test-strict-output.ts'))}, () => ({
+  killProcessGroup(child, signal) {
+    if (child !== active.child) throw new Error('Unknown child');
+    active.kills.push(signal);
+  },
+}));
+Bun.spawnSync = (args) => {
+  if (JSON.stringify(args) !== JSON.stringify(['which', 'codex'])) throw new Error('Unexpected binary lookup');
+  active.lookups++;
+  return { exitCode: 0, stdout: Buffer.from('/fixture/codex\\n'), stderr: Buffer.alloc(0), signalCode: null };
+};
+const { runCodexSkill } = await import(${JSON.stringify(path.join(import.meta.dir, 'helpers/codex-session-runner.ts'))});
+const { runRecordedCodexEval, validateCodexReview } = await import(${JSON.stringify(path.join(import.meta.dir, 'helpers/codex-eval.ts'))});
+test('observe real runner and recorder with controlled stream lifecycles', async () => {
+  const observations = [];
+  for (const scenario of cases) {
+    const child = Object.assign(new EventEmitter(), {
+      pid: undefined, stdout: new PassThrough(), stderr: new PassThrough(), exitCode: null,
+      kill() { throw new Error('Group cleanup must be intercepted, never sent to an OS process'); },
+    });
+    const events = [];
+    for (const name of ['stdout', 'stderr']) {
+      for (const event of ['end', 'close', 'error']) child[name].on(event, () => events.push(name + ':' + event));
+    }
+    active = { child, scenario, spawns: 0, lookups: 0, kills: [], home: '' };
+    const records = [];
+    let result;
+    let failure;
+    try {
+      await runRecordedCodexEval({
+        name: 'stream-fixture', suite: 'codex-stream-fixture', budgetMs: 1000,
+        run: async signal => {
+          result = await runCodexSkill({ skillDir, prompt: 'fixture', timeoutMs: 1000, signal });
+          return result;
+        },
+        validate: validateCodexReview,
+        record: entry => records.push(entry),
+      });
+    } catch (error) { failure = error; result ??= error.result; }
+    const beforeLate = JSON.stringify({ result, records });
+    const observedEvents = [...events];
+    const eof = { stdout: child.stdout.readableEnded, stderr: child.stderr.readableEnded };
+    // Cleanup retains harmless error listeners. Late notifications cannot
+    // mutate an already returned result or manufacture another attempt.
+    child.emit('error', new Error('late process error'));
+    child.emit('exit', 99, null);
+    for (const name of ['stdout', 'stderr']) {
+      child[name].emit('end');
+      child[name].emit('close');
+      child[name].emit('error', new Error('late stream error'));
+      child[name].emit('data', 'late stream data');
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));
+    observations.push({
+      scenario, result, records, events: observedEvents, eof,
+      failure: failure ? { name: failure.name, message: failure.message } : null,
+      lateUnchanged: beforeLate === JSON.stringify({ result, records }),
+      spawns: active.spawns, lookups: active.lookups, kills: active.kills,
+      temporaryHomeRemoved: !!active.home && !fs.existsSync(active.home),
+      streamsDestroyed: child.stdout.destroyed && child.stderr.destroyed,
+    });
+  }
+  fs.writeFileSync(${JSON.stringify(output)}, JSON.stringify(observations));
+}, 5000);
+`);
+    const child = spawnSync(process.execPath, ['test', script, '--timeout=5000'], {
+      encoding: 'utf8', timeout: 10_000,
+    });
+    expect(child.status, child.stderr || child.stdout).toBe(0);
+    observations = JSON.parse(fs.readFileSync(output, 'utf8'));
+    expect(observations).toHaveLength(cases.length);
+  }, 15_000);
+
+  afterAll(() => {
+    if (fixtureDir) fs.rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  for (const [index, scenario] of cases.entries()) {
+    test(`${scenario.stream} ${scenario.fault} with exit ${scenario.exitCode}`, () => {
+      const observation = observations[index];
+      expect(observation.spawns).toBe(1);
+      expect(observation.lookups).toBe(1);
+      expect(observation.kills).toEqual(['SIGKILL']);
+      expect(observation.temporaryHomeRemoved).toBe(true);
+      expect(observation.streamsDestroyed).toBe(true);
+      expect(observation.lateUnchanged).toBe(true);
+      expect(observation.records).toHaveLength(1);
+      expect(observation.result).toMatchObject({
+        exitCode: scenario.exitCode,
+        output: 'The gstack review found no issues in the current branch diff.',
+        stderr: 'retained fixture stderr\n',
+      });
+      const entry = observation.records[0];
+      if (scenario.fault === 'none') {
+        expect(observation.failure).toBeNull();
+        expect(observation.eof).toEqual({ stdout: true, stderr: true });
+        expect(entry).toMatchObject({ passed: true, exit_reason: 'success' });
+      } else {
+        expect(entry.passed).toBe(false);
+        expect(entry.error).toContain('retained fixture stderr');
+        if (scenario.exitCode !== 0) {
+          expect(entry.exit_reason).toBe(scenario.exitCode === 124 ? 'timeout' : `exit_code_${scenario.exitCode}`);
+          expect(observation.failure.message).toContain(`Codex exited with code ${scenario.exitCode}`);
+        } else {
+          expect(observation.failure.name).toBe('CodexHarnessError');
+          expect(entry.exit_reason).toBe('harness_error');
+          if (scenario.fault === 'error') {
+            expect(entry.error).toContain(`${scenario.stream} primary stream failure`);
+            expect(entry.error).not.toContain('secondary cleanup error');
+          } else {
+            expect(observation.eof[scenario.stream]).toBe(false);
+            expect(observation.events).not.toContain(`${scenario.stream}:end`);
+            expect(observation.events).not.toContain(`${scenario.stream}:error`);
+            expect(entry.error).toContain(scenario.stream);
+            expect(entry.error).toContain('before EOF');
+          }
+        }
+      }
+    });
+  }
 });
