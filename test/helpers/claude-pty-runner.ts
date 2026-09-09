@@ -1621,7 +1621,7 @@ export async function launchClaudePty(
     visibleText: () => stripAnsi(buffer),
     mark,
     visibleSince,
-    ...(screen && nativeQuestionEvents && cols === 120 && rows === 40 && typeof proc.terminal?.resize === 'function' ? { resizeQuestionViewport: async (nextRows: 40 | 80 | 120, deadlineAt: number) => {
+    ...(screen && nativeQuestionEvents && [120, 240].includes(cols) && rows === 40 && typeof proc.terminal?.resize === 'function' ? { resizeQuestionViewport: async (nextRows: 40 | 80 | 120, deadlineAt: number) => {
       if (![40, 80, 120].includes(nextRows) || !Number.isFinite(deadlineAt)) throw new Error('Unsupported question viewport request');
       if (screenError) throw screenError;
       if (exited || Date.now() >= deadlineAt) return null;
@@ -2260,6 +2260,9 @@ export async function runPlanSkillCounting(opts: {
   const session = await launchClaudePty({
     permissionMode: 'plan',
     captureQuestionsForSession: sessionId,
+    // Canonical state paths can exceed 120 columns. Keep the complete file
+    // header visible so permission binding never relies on a clipped path.
+    cols: 240,
     cwd: opts.cwd,
     timeoutMs: Math.max(1, deadlineAt - Date.now()),
     env: opts.env,

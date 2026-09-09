@@ -708,7 +708,7 @@ test.each(['malformed', 'no-ack'])('counting preview clipping-ruler refuses %s c
 test('counting expands an owned clipped question then restores baseline only after native ACK', async () => {
   const result = await runFakeCounting('**DONE**', 'viewport-restored');
   expect(result.error).toBeUndefined();
-  expect(result.resizes).toEqual([[120, 80], [120, 40]]);
+  expect(result.resizes).toEqual([[240, 80], [240, 40]]);
   expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
   expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
   expect(result.terminalCloseCount).toBe(1);
@@ -716,8 +716,8 @@ test('counting expands an owned clipped question then restores baseline only aft
 }, 15_000);
 
 for (const [scenario, resizes] of [
-  ['viewport-cap', [[120, 80], [120, 120]]],
-  ['viewport-no-output', [[120, 80]]],
+  ['viewport-cap', [[240, 80], [240, 120]]],
+  ['viewport-no-output', [[240, 80]]],
   ['viewport-flush-deadline', []],
 ] as const) test(`counting viewport refuses unresolved clipping: ${scenario}`, async () => {
   const result = await runFakeCounting('**DONE**', scenario);
@@ -740,7 +740,7 @@ test('a failed viewport transaction sends no answer and closes its owned session
 test('viewport restoration preserves the raw Ready marker following the actual answer', async () => {
   const result = await runFakeCounting('**DONE**', 'viewport-ready-no-restore-output');
   expect(result.error).toBeUndefined();
-  expect(result.resizes).toEqual([[120, 80], [120, 40]]);
+  expect(result.resizes).toEqual([[240, 80], [240, 40]]);
   expect(result.sends).toEqual(['/plan-ceo-review\r', '1']);
   expect(result.observation).toMatchObject({ outcome: 'plan_ready', step0Count: 1, reviewCount: 0 });
   expect(result.closed).toBe(true);
