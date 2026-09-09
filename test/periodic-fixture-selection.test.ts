@@ -10,6 +10,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/helpers/setup-gbrain-fixture-command.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['bin/gstack-paths', ['autoplan-chain-pty']],
     ['test/gstack-paths.test.ts', ['autoplan-chain-pty']],
+    ['test/fixtures/autoplan-existing-app/src/auth.ts', ['autoplan-chain-pty']],
+    ['test/fixtures/autoplan-existing-app/db/schema.sql', ['autoplan-chain-pty']],
     ['test/helpers/ceo-mode-preference.ts', ['auto-decide-preserved']],
     ['test/helpers/ceo-mode-evidence.ts', ['auto-decide-preserved']],
     ['test/ceo-mode-evidence.test.ts', ['auto-decide-preserved']],

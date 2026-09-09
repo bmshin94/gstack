@@ -1,5 +1,7 @@
 /** The chain fixture must reach /autoplan without project-routing onboarding. */
 import { describe, expect, test } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { pathToFileURL } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -33,6 +35,63 @@ function withFixture(check: (project: string, runStart: () => string, state: str
 }
 
 describe('autoplan project fixture preamble', () => {
+  test('actual seed contains the existing app contracts while leaving the dashboard proposed', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-app-fixture-'));
+    const db = new Database(':memory:');
+    try {
+      const git = (args: string[]) => execFileSync('git', args, { cwd: project, encoding: 'utf8', timeout: 5000 });
+      git(['init', '-b', 'main']);
+      const state = seedAutoplanProject(project);
+      const auth = await import(pathToFileURL(path.join(project, 'src/auth.ts')).href);
+      const token = 'a'.repeat(64);
+      const seen: string[] = [];
+      const lookup = async (hash: string) => { seen.push(hash); return { user_id: 'alice', expires_at: 2000 }; };
+      expect(await auth.sessionUser(new Request('https://app.test/api/session?userId=alice'), lookup, 1000)).toBeNull();
+      expect(seen).toEqual([]);
+      const request = new Request('https://app.test/api/session?userId=bob', { headers: { cookie: `session=${token}` } });
+      expect(await auth.sessionUser(request, lookup, 1000)).toBe('alice');
+      expect(seen).toEqual([auth.tokenHash(token)]);
+      expect(seen[0]).not.toBe(token);
+      expect(await auth.sessionUser(request, lookup, 2000)).toBeNull();
+      expect(await auth.sessionUser(request, async () => undefined, 1000)).toBeNull();
+
+      // The exact portable DDL is accepted by PostgreSQL and SQLite. SQLite
+      // checks its real constraints/data shape here; this is not a live PG test.
+      db.exec('PRAGMA foreign_keys = ON');
+      db.exec(fs.readFileSync(path.join(project, 'db/schema.sql'), 'utf8'));
+      db.exec("INSERT INTO users VALUES ('alice', 'alice@example.test', 'hash'), ('bob', 'bob@example.test', 'hash')");
+      db.exec("INSERT INTO notifications VALUES ('n1', 'alice', 'Ready', 1, NULL), ('n2', 'bob', 'Ready', 2, 3)");
+      expect(db.query('SELECT message, read_at FROM notifications WHERE user_id = ?').all('alice')).toEqual([{ message: 'Ready', read_at: null }]);
+      expect(db.query('SELECT read_at FROM notifications WHERE user_id = ?').get('bob')).toEqual({ read_at: 3 });
+      expect(() => db.exec("INSERT INTO activity VALUES ('a1', 'unknown', 'Invalid owner', 1)")).toThrow();
+      db.exec("INSERT INTO activity VALUES ('a1', 'alice', 'Created project', 1)");
+      expect(db.query('SELECT description FROM activity WHERE user_id = ?').get('alice')).toEqual({ description: 'Created project' });
+      db.exec("INSERT INTO sessions VALUES ('hash', 'alice', 2000)");
+      expect(db.query('SELECT user_id, expires_at FROM sessions WHERE token_hash = ?').get('hash')).toEqual({ user_id: 'alice', expires_at: 2000 });
+
+      expect(fs.readFileSync(path.join(project, '.claude/plans/ui-heavy-feature.md'), 'utf8'))
+        .toBe(fs.readFileSync(path.join(ROOT, 'test/fixtures/plans/ui-heavy-feature.md'), 'utf8'));
+      expect(fs.readdirSync(path.join(project, 'src/pages'))).toEqual(['Workspace.tsx']);
+      expect(fs.existsSync(path.join(project, 'src/components'))).toBe(false);
+      const server = fs.readFileSync(path.join(project, 'src/server.ts'), 'utf8');
+      expect(server).not.toContain('/dashboard');
+      expect(server).not.toContain('/api/notifications');
+      const manifest = JSON.parse(fs.readFileSync(path.join(project, 'package.json'), 'utf8'));
+      expect(Object.keys(manifest.dependencies).sort()).toEqual(['react', 'react-dom']);
+      expect(manifest.devDependencies.tailwindcss).toBeDefined();
+      const transpiler = new Bun.Transpiler({ loader: 'tsx' });
+      for (const file of ['src/main.tsx', 'src/pages/Workspace.tsx']) {
+        expect(transpiler.transformSync(fs.readFileSync(path.join(project, file), 'utf8')).length).toBeGreaterThan(0);
+      }
+      git(['add', '.']);
+      git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-m', 'Seed existing app and proposed dashboard']);
+      expect(git(['status', '--porcelain'])).toBe('');
+      expect(git(['show', 'HEAD:src/auth.ts'])).toBe(fs.readFileSync(path.join(project, 'src/auth.ts'), 'utf8'));
+      expect(git(['ls-files', '.gstack'])).toBe('');
+      expect(fs.existsSync(path.join(state, 'config.yaml'))).toBe(true);
+    } finally { db.close(); fs.rmSync(project, { recursive: true, force: true }); }
+  });
+
   test('the actual restore block respects private state instead of operator HOME', () => {
     withFixture((project, _runStart, state, home) => {
       const template = fs.readFileSync(path.join(ROOT, 'autoplan/SKILL.md.tmpl'), 'utf8');
