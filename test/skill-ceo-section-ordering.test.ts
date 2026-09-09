@@ -33,6 +33,60 @@ const ROOT = path.resolve(import.meta.dir, '..');
 const SKELETON = path.join(ROOT, 'plan-ceo-review', 'SKILL.md');
 const SECTION = path.join(ROOT, 'plan-ceo-review', 'sections', 'review-sections.md');
 
+// Boundary checks stay on source templates: generated carriers remain the
+// integration owner's responsibility, and these do not prove model behavior.
+describe('CEO review decision boundaries contract', () => {
+  const skeleton = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
+  const section = fs.readFileSync(`${SECTION}.tmpl`, 'utf8');
+  const alternatives = skeleton.split('### 0C-bis.')[1]?.split('### 0D-prelude.')[0] ?? '';
+  const temporal = skeleton.split('### 0E.')[1]?.split('### 0F.')[0] ?? '';
+  const apply = section.split('**Apply.**')[1]?.split('### Section 1:')[0] ?? '';
+
+  test('architecture alternatives hold accepted requirements constant and separate independent remedies', () => {
+    expect(alternatives).toContain('same accepted requirements and declared unchanged contracts');
+    expect(alternatives).toContain('can vary without changing the architecture');
+    expect(alternatives).toContain('one issue per AskUserQuestion');
+    expect(alternatives).toContain('explain why they must be chosen together');
+    expect(alternatives).toContain('"minimal viable"');
+    expect(alternatives).toContain('"ideal architecture"');
+    expect(alternatives).toContain('Do NOT proceed to mode selection (0F) without user approval');
+  });
+
+  test('coverage scoring is conditional and legitimate early decisions retain their exact approval', () => {
+    expect(alternatives).toContain('only when these alternatives differ in coverage');
+    expect(alternatives).toContain('Note: options differ in kind, not coverage — no completeness score.');
+    expect(alternatives).not.toContain('These approaches differ in coverage (minimal viable vs ideal architecture)');
+    expect(temporal).toContain('separate questions for the user NOW');
+    expect(temporal).toContain('Do not defer a critical risk');
+    expect(temporal).toContain('An explicit Step 0 answer remains valid');
+    expect(temporal).toContain('exact accepted choice and scope');
+    expect(temporal).toContain('Do not ask again merely to move a decision into a review section');
+  });
+
+  test('an unresolved section decision is answered before its scoped plan amendment', () => {
+    const steps = [
+      'If the current section has an unresolved or reopened decision, call AskUserQuestion',
+      'After the actual answer, use a scoped Edit',
+      'Once the current section\'s decisions have answers, record its review conclusions',
+    ].map(step => apply.indexOf(step));
+    expect(steps.every(position => position >= 0)).toBe(true);
+    expect(steps).toEqual([...steps].sort((a, b) => a - b));
+    expect(apply).toContain('STOP until the user responds');
+    expect(apply).toContain('If no plan file exists, first create it from the provided input and explicitly accepted Step 0 decisions');
+    expect(apply).toContain('Preserve existing plan content and exact earlier approvals');
+    expect(apply).toContain('before advancing to the next section');
+  });
+
+  test('pending labels authorize only unresolved notes, not an outcome or future review conclusions', () => {
+    expect(apply).toContain('only the pending issue, evidence, and alternatives in the ledger');
+    expect(apply).toContain('A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome');
+    expect(apply).toContain('including an explicit deferral if that is what the user chose');
+    expect(apply).toContain('Add later sections\' review conclusions and implementation tasks only after evaluating those sections');
+    expect(apply).toContain('Approval settles the planning choice; it does not prove the mitigation is implemented');
+    expect(apply).toContain('Retain unresolved choices and supporting findings in the ledger and final report');
+  });
+});
+
 // These are source-contract checks, not model-behavior evidence. Read the
 // template and resolve its shared clause directly so an old generated carrier
 // cannot conceal conflicting per-section instructions during implementation.

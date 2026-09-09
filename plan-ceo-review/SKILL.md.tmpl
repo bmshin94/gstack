@@ -273,6 +273,8 @@ APPROACH C: [Name] (optional — include if a meaningfully different path exists
 **RECOMMENDATION:** Choose [X] because [one-line reason mapped to engineering preferences].
 
 Rules:
+- Compare architectural alternatives against the same accepted requirements and declared unchanged contracts. "Minimal viable" means the smallest implementation of that baseline, not silently dropping an accepted requirement.
+- Separate independently decidable remedies from the architecture choice. If error policy, test depth, or performance work can vary without changing the architecture, present each unresolved tradeoff separately, one issue per AskUserQuestion. Include a remedy in an approach only when it is coupled to that architecture; explain why they must be chosen together and the exact scope being approved. Do not create extra questions for requirements or remedies already explicitly accepted.
 - At least 2 approaches required. 3 preferred for non-trivial plans.
 - One approach must be the "minimal viable" (fewest files, smallest diff).
 - One approach must be the "ideal architecture" (best long-term trajectory).
@@ -280,7 +282,7 @@ Rules:
 - If only one approach exists, explain concretely why alternatives were eliminated.
 - Do NOT proceed to mode selection (0F) without user approval of the chosen approach.
 
-Present these approach options via AskUserQuestion using the preamble's AskUserQuestion Format section: include RECOMMENDATION and `Completeness: N/10` on every option. These approaches differ in coverage (minimal viable vs ideal architecture), so completeness scoring applies directly.
+Present these approach options via AskUserQuestion using the preamble's AskUserQuestion Format section: include RECOMMENDATION. Include `Completeness: N/10` on every option only when these alternatives differ in coverage of the same decision. If they differ in kind, include: `Note: options differ in kind, not coverage — no completeness score.`
 
 **STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis. A "clearly winning approach" is still an approach decision and still needs explicit user approval before it lands in the plan.
 **Reminder: Do NOT make any code changes. Review only.**
@@ -387,7 +389,7 @@ NOTE: These represent human-team implementation hours. With CC + gstack,
 are identical — the implementation speed is 10-20x faster. Always present
 both scales when discussing effort.
 
-Surface these as questions for the user NOW, not as "figure it out later."
+Surface decisions that must be settled now as separate questions for the user NOW, one issue per AskUserQuestion. Do not defer a critical risk to a later review section. An explicit Step 0 answer remains valid: carry its exact accepted choice and scope into the working review ledger. Do not ask again merely to move a decision into a review section; new material tradeoffs or changed assumptions still require their own approval.
 
 ### 0F. Mode Selection
 In every mode, you are 100% in control. No scope is added without your explicit approval.
