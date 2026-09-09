@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { CAPTURE_MS, CAPTURE_LONG_MS } from './helpers/eval-budgets';
-import { runSkillTest } from './helpers/session-runner';
+import { runSkillTest, SESSION_DRAIN_GRACE_MS } from './helpers/session-runner';
 import {
   ROOT, runId, evalsEnabled,
   describeIfSelected, logCost, recordE2E,
@@ -12,6 +12,9 @@ import * as path from 'path';
 import * as os from 'os';
 
 const evalCollector = createEvalCollector('e2e-cso');
+// Let the owned capture drain and assertions settle before Bun retries it.
+// This is outer finalization time only; runner work budgets stay unchanged.
+const CSO_FINALIZE_MS = SESSION_DRAIN_GRACE_MS + 5_000;
 
 afterAll(() => {
   finalizeEvalCollector(evalCollector);
@@ -107,7 +110,7 @@ IMPORTANT:
     }
 
     recordE2E(evalCollector, 'cso-full-audit', 'e2e-cso', result);
-  }, CAPTURE_MS);
+  }, CAPTURE_MS + CSO_FINALIZE_MS);
 });
 
 describeIfSelected('CSO v2 — diff mode', ['cso-diff-mode'], () => {
@@ -260,5 +263,5 @@ IMPORTANT:
     ).toBe(true);
 
     recordE2E(evalCollector, 'cso-infra-scope', 'e2e-cso', result);
-  }, CAPTURE_LONG_MS);
+  }, CAPTURE_LONG_MS + CSO_FINALIZE_MS);
 });
