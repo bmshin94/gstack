@@ -997,17 +997,16 @@ Both are outcome-framed. Only one makes the user feel the cathedral. Lead with t
 After the opt-in/cherry-pick ceremony, write the plan to disk so the vision and decisions survive beyond this conversation. Only run this step for EXPANSION and SELECTIVE EXPANSION modes.
 
 ```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG/ceo-plans
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+CEO_PLANS="$GSTACK_STATE_ROOT/projects/$SLUG/ceo-plans"
+mkdir -p "$CEO_PLANS"
+echo "CEO_PLANS=$CEO_PLANS"
 ```
 
-Before writing, check for existing CEO plans in the ceo-plans/ directory. If any are >30 days old or their branch has been merged/deleted, offer to archive them:
+Use the printed `CEO_PLANS` absolute path below. Before writing, offer to archive existing plans >30 days old or from merged/deleted branches. If approved, create its `archive/` subdirectory and move each stale plan there.
 
-```bash
-mkdir -p ~/.gstack/projects/$SLUG/ceo-plans/archive
-# For each stale plan: mv ~/.gstack/projects/$SLUG/ceo-plans/{old-plan}.md ~/.gstack/projects/$SLUG/ceo-plans/archive/
-```
-
-Write to `~/.gstack/projects/$SLUG/ceo-plans/{date}-{feature-slug}.md` using this format:
+Write to `{printed CEO_PLANS}/{date}-{feature-slug}.md` using this format:
 
 ```markdown
 ---
