@@ -8,6 +8,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/office-hours-writeback-env.test.ts', ['office-hours-brain-writeback']],
     ['test/helpers/setup-gbrain-sandbox.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['test/helpers/setup-gbrain-fixture-command.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
+    ['bin/gstack-paths', ['autoplan-chain-pty']],
+    ['test/gstack-paths.test.ts', ['autoplan-chain-pty']],
     ['test/helpers/ceo-mode-preference.ts', ['auto-decide-preserved']],
     ['test/helpers/ceo-mode-evidence.ts', ['auto-decide-preserved']],
     ['test/ceo-mode-evidence.test.ts', ['auto-decide-preserved']],

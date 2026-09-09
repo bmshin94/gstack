@@ -3,8 +3,83 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, retainAutoplanFailure, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
+import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, reserveAutoplanFilePermission, retainAutoplanFailure, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
 import { stripAnsi } from './helpers/claude-pty-runner';
+import type { readPlanSkillQuestions, NativePermissionGrant } from './helpers/plan-skill-questions';
+
+describe('autoplan file grants stay inside their owned fixture', () => {
+  let root: string;
+  let cwd: string;
+  let planDir: string;
+  let native: ReturnType<typeof readPlanSkillQuestions>;
+  let granted: Set<string>;
+  let requests: Map<string, NativePermissionGrant>;
+  const dialog = (file: string) => `Do you want to create ${file}?\n❯ 1. Yes\n  2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session\n  3. No\nEsc to cancel`;
+  const reserve = (file = String(native.permissionRequests[0]?.input.file_path), visible = dialog(file)) =>
+    reserveAutoplanFilePermission(native, visible, { cwd, planDir, granted, requests });
+  beforeEach(() => {
+    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-permission-')));
+    cwd = path.join(root, 'project');
+    planDir = path.join(root, 'config', 'plans');
+    fs.mkdirSync(cwd);
+    fs.mkdirSync(planDir, { recursive: true });
+    granted = new Set();
+    requests = new Map();
+    native = { calls: [], ready: false, pendingExitPlanModeIds: [], pendingBytes: 0,
+      permissionTools: [], permissionResults: [], permissionRequestCapture: true,
+      permissionRequests: [{ requestId: 'owned-write', capturedAtMs: 1, name: 'Write', cwd,
+        input: { file_path: path.join(cwd, '.gstack', 'projects', 'fixture', 'restore.md') }, result: 'pending' }] };
+  });
+  afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
+
+  test('reserves a current fixture-owned restore request only once', () => {
+    expect(reserve()).toBe(true);
+    expect(reserve()).toBe(false);
+    expect([...granted]).toEqual(['request:owned-write']);
+  });
+
+  test('allows the launch-owned native plan directory', () => {
+    native.permissionRequests[0]!.input.file_path = path.join(planDir, 'review.md');
+    expect(reserve()).toBe(true);
+  });
+
+  test.each(['outside', 'sibling-prefix', 'dotdot'])('rejects the %s path before reserving', kind => {
+    const file = kind === 'outside' ? path.join(root, 'operator-home', '.gstack', 'restore.md')
+      : kind === 'sibling-prefix' ? cwd + '-other/restore.md' : path.join(cwd, '..', 'restore.md');
+    native.permissionRequests[0]!.input.file_path = file;
+    expect(() => reserve()).toThrow('outside its fixture');
+    expect(granted.size).toBe(0);
+  });
+
+  test.skipIf(process.platform === 'win32')('rejects a symlink that redirects a fixture path outside', () => {
+    fs.mkdirSync(path.join(root, 'outside'));
+    fs.symlinkSync(path.join(root, 'outside'), path.join(cwd, '.gstack'), 'dir');
+    expect(() => reserve()).toThrow('symlink');
+    expect(granted.size).toBe(0);
+  });
+
+  test('rejects a request from another cwd', () => {
+    native.permissionRequests[0]!.cwd = root;
+    expect(() => reserve()).toThrow('cwd differs');
+  });
+
+  test.each(['no-capture', 'no-request', 'partial', 'exit', 'question'])('does not grant with %s evidence', kind => {
+    if (kind === 'no-capture') native.permissionRequestCapture = false;
+    if (kind === 'no-request') native.permissionRequests = [];
+    if (kind === 'partial') native.pendingBytes = 1;
+    if (kind === 'exit') native.ready = true;
+    if (kind === 'question') native.calls = [{ id: 'question', result: 'pending', questions: [] }];
+    expect(reserve(path.join(cwd, 'restore.md'))).toBe(false);
+    expect(granted.size).toBe(0);
+  });
+
+  test('keeps the shared rejection of a different or ambiguous native owner', () => {
+    expect(() => reserve(path.join(cwd, 'other.md'))).toThrow('bound to its pending');
+    native.permissionTools = [{ id: 'other', name: 'Bash', input: { command: 'echo other' } }];
+    expect(() => reserve()).toThrow('multiple tools are pending');
+    expect(granted.size).toBe(0);
+  });
+});
 
 describe('autoplan announcements from the owned main transcript', () => {
   const sessionId = 'b4a90d12-0134-4ecf-9931-a2d453cc874a';

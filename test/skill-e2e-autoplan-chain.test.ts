@@ -24,7 +24,7 @@
  */
 
 import { test } from 'bun:test';
-import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, retainAutoplanFailure, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
+import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, reserveAutoplanFilePermission, retainAutoplanFailure, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
 import { PTY_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
@@ -33,6 +33,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { readPlanSkillQuestions, type NativePermissionGrant } from './helpers/plan-skill-questions';
 import {
   launchClaudePty,
   isPlanReadyVisible,
@@ -55,7 +57,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         gitRun(['config', 'user.email', 'test@test.com']);
         gitRun(['config', 'user.name', 'Test']);
 
-        seedAutoplanProject(tempDir);
+        const stateDir = seedAutoplanProject(tempDir);
         gitRun(['add', '.']);
         gitRun(['commit', '-m', 'init UI-heavy fixture']);
 
@@ -65,7 +67,10 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
           cwd: tempDir,
           timeoutMs: 1_080_000, // 18 min, slightly above test budget
           seedSkills: true,
-          extraArgs: ['--session-id', sessionId],
+          env: { GSTACK_HOME: stateDir },
+          captureQuestionsForSession: sessionId,
+          captureScreen: true,
+          rows: 120, // Preserve the full file title/subtitle above the restore preview.
         });
 
         let transcript: AutoplanTranscriptObservation = { file: null, phases: [], completedLines: 0, pendingBytes: 0 };
@@ -89,7 +94,9 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
           // STOP-Reads each one at its phase boundary):
           //   "**Phase 1 complete." / "**Phase 2 complete." / "**Phase 2.5 complete." / "**Phase 3 complete."
 
-          let lastPermSig = '';
+          const granted = new Set<string>();
+          const requests = new Map<string, NativePermissionGrant>();
+          let lastPermissionInputMark = -1;
           while (Date.now() - start < budgetMs) {
             await Bun.sleep(5000);
             if (session.exited()) {
@@ -101,15 +108,19 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
             const visible = session.visibleSince(since);
             evidence = visible.slice(-3000);
 
-            // Auto-grant any permission dialog so autoplan can keep moving
-            // through its phases. The autoplan template auto-decides AskUserQuestions
-            // it owns; only permission prompts (file/tool grants) need our
-            // hand-pressing. Classify on tail to avoid stale matches.
-            const recentTail = visible.slice(-1500);
-            if (isNumberedOptionListVisible(recentTail) && isPermissionDialogVisible(recentTail)) {
-              const sig = visible.slice(-500);
-              if (sig !== lastPermSig) {
-                lastPermSig = sig;
+            // Autoplan owns its decisions. Only grant a current, owned file
+            // permission within this fixture or its private native plan folder.
+            const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
+            const frame = await session.currentScreen!();
+            const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
+            if (frame.rawEnd !== session.mark() || !isDeepStrictEqual(native, afterFrame)) continue;
+            const recentTail = frame.text;
+            if (frame.rawEnd > lastPermissionInputMark && isNumberedOptionListVisible(recentTail) && isPermissionDialogVisible(recentTail)) {
+              if (Date.now() - start >= budgetMs) break;
+              if (reserveAutoplanFilePermission(native, recentTail, {
+                cwd: tempDir, planDir: path.join(fs.realpathSync(session.hermeticConfigDir!), 'plans'), granted, requests,
+              })) {
+                lastPermissionInputMark = session.mark();
                 session.send('1\r');
                 await Bun.sleep(2000);
                 continue;

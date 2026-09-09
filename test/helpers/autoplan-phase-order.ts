@@ -1,8 +1,35 @@
-import { currentFilePermissionTarget, type readPlanSkillQuestions } from './plan-skill-questions';
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
+import { currentFilePermissionTarget, reserveNativePermissionGrant, type readPlanSkillQuestions, type NativePermissionGrant } from './plan-skill-questions';
+
+/** The chain may grant file edits in its fixture and native plan directory.
+ * The shared reservation still requires the exact owned request and menu;
+ * a permission-looking screen alone never authorizes an input. */
+export function reserveAutoplanFilePermission(
+  native: ReturnType<typeof readPlanSkillQuestions>, visible: string,
+  opts: { cwd: string; planDir: string; granted: Set<string>; requests: Map<string, NativePermissionGrant> },
+): boolean {
+  if (native.pendingBytes || native.ready || native.calls.some(call => call.result === 'pending')) return false;
+  const pending = native.permissionRequests.filter(request => request.result === 'pending');
+  if (!native.permissionRequestCapture || pending.length !== 1) return false;
+  const request = pending[0]!;
+  const cwd = fs.realpathSync(opts.cwd);
+  if (request.cwd !== cwd) throw new Error('Autoplan file permission cwd differs from its fixture');
+  const file = request.input.file_path;
+  if (typeof file !== 'string' || !path.isAbsolute(file)) throw new Error('Autoplan file permission lacks an absolute path');
+  const normalized = path.normalize(file);
+  const root = [cwd, opts.planDir].find(root => normalized.startsWith(root + path.sep));
+  if (!root) throw new Error('Autoplan file permission is outside its fixture and native plan directory');
+  // Reject symlink escapes, including a not-yet-created file below a link.
+  for (let entry = normalized; entry !== path.dirname(root); entry = path.dirname(entry)) {
+    if (fs.lstatSync(entry, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      throw new Error('Autoplan file permission traverses a symlink');
+    }
+  }
+  return reserveNativePermissionGrant(native, visible, opts.granted, opts.requests);
+}
 
 /** The PTY renders Markdown without stars and may position spaces via ANSI.
  * Keep complete-word bounds and stream order; callers dedupe first observations.

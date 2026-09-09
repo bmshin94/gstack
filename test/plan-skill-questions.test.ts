@@ -347,6 +347,44 @@ test('permission binding rejects command prefixes and matching paths in another 
 
 const createDialog = (target: string) => `Do you want to create ${target}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`;
 
+// Pinned Claude 2.1.263: Mo uses basename in its question, Se uses the
+// cwd-relative subtitle, and gs/Gz render title then subtitle above the diff.
+const nestedFileDialog = (operation: 'create' | 'edit' | 'overwrite', subtitle: string, basename = path.basename(subtitle)) =>
+  '─'.repeat(120) + '\n ' + ({ create: 'Create', edit: 'Edit', overwrite: 'Overwrite' }[operation]) + ' file\n ' + subtitle +
+  '\n' + '╌'.repeat(120) + '\n  1 Plan content\n' + '╌'.repeat(120) + '\n ' +
+  createDialog(basename).replace('create', operation === 'edit' ? 'make this edit to' : operation);
+
+test.each(['create', 'edit', 'overwrite'] as const)('current %s title and subtitle bind a nested basename to its owned file', operation => {
+  const relative = path.join('.gstack', 'projects', 'fixture', 'restore.md');
+  const filePath = path.join(config, relative);
+  const owner = { id: 'file', name: operation === 'edit' ? 'Edit' : 'Write', cwd: config, input: { file_path: filePath } };
+  const dialog = nestedFileDialog(operation, relative);
+  expect(currentFilePermissionTarget(dialog)).toEqual({ operation, filePath: relative });
+  expect(nativePermissionKey(owner, dialog)).toBe(`${owner.name}:${filePath}`);
+  expect(nativePermissionKey(owner, dialog.replace('Plan content', 'Example ❯ 1. text'))).toBe(`${owner.name}:${filePath}`);
+  expect(() => nativePermissionKey({ ...owner, input: { file_path: path.join(config, 'other', 'restore.md') } }, dialog)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...owner, cwd: undefined }, dialog)).toThrow('cannot be bound');
+});
+
+test('nested file binding refuses clipped, conflicting, quoted or ambiguous header evidence', () => {
+  const relative = '.gstack/projects/fixture/restore.md';
+  const owner = { id: 'file', name: 'Write', cwd: config, input: { file_path: path.join(config, relative) } };
+  const dialog = nestedFileDialog('create', relative);
+  for (const invalid of [
+    createDialog('restore.md'), // basename alone still resolves only at cwd
+    dialog.slice(dialog.indexOf('╌')),
+    dialog.replace(relative, '…/fixture/restore.md'),
+    dialog.replace(relative, '.gstack/projects/other/restore.md'),
+    dialog.replace(relative, '.gstack/projects/fixture/other.md'),
+    dialog.replace('Create file', 'Edit file'),
+    dialog.replace(' Create file', '  1 Create file'),
+    dialog.replace(' Create file', '> Create file'),
+    dialog.replace('─'.repeat(120), 'quoted header'),
+    nestedFileDialog('create', relative) + '\n' + createDialog('restore.md'),
+    dialog.replace('\n ' + relative, '\n ' + relative + '\n Create file\n ' + relative),
+  ]) expect(() => nativePermissionKey(owner, invalid)).toThrow('cannot be bound');
+});
+
 test('modern native Edit wording binds its exact owned relative or absolute path', () => {
   // Claude 2.1.257 Io(Edit) + Cwo: "Do you want to make this edit to <fileName>?"
   const filePath = path.join(config, 'plan.md');
