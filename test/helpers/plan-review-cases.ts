@@ -74,7 +74,14 @@ export function pickPlanReviewQuestion(question: NativeQuestion): number {
   const futureChoices = labels.flatMap((label, index) => future(label) ? [index + 1] : []);
   const choices = manualChoices.length ? manualChoices : futureChoices;
   if (choices.length !== 1 || labels.some(label => !run(label) && !manual(label) && !future(label))) {
-    throw new Error('Review handoff has no unambiguous offered manual or future-follow-up choice');
+    throw new Error('Review handoff has no unambiguous offered manual or future-follow-up choice\n' + JSON.stringify({
+      header: question.header.slice(0, 80), lead: lead.slice(0, 240), optionCount: labels.length,
+      options: question.options.slice(0, 8).map((option, index) => ({
+        index: index + 1, label: option.label.slice(0, 256),
+        run: run(labels[index]!), manual: manual(labels[index]!), future: future(labels[index]!),
+      })),
+      omittedOptions: Math.max(0, labels.length - 8),
+    }));
   }
   return choices[0]!;
 }

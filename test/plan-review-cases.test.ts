@@ -56,4 +56,29 @@ describe('plan-review manual handoff selection', () => {
   ])('rejects an ambiguous or incomplete handoff menu: %j', (...labels) => {
     expect(() => pickPlanReviewQuestion(menu(labels))).toThrow('unambiguous');
   });
+  test('a rejected handoff retains bounded offered-label evidence without the full brief', () => {
+    const question = menu([
+      'Run /plan-eng-review', 'Skip — handle reviews manually',
+      'Unsupported "choice"\n' + 'x'.repeat(400) + 'PRIVATE_LABEL_TAIL',
+      ...Array.from({ length: 7 }, (_, i) => `Unrecognized ${i}`),
+    ], 'Next steps ' + 'h'.repeat(100), "D20 — What's next? " + 'q'.repeat(300) + '\nPRIVATE_BRIEF_BODY');
+    question.options[0]!.description = 'PRIVATE_OPTION_DESCRIPTION';
+    let error: Error | undefined;
+    try { pickPlanReviewQuestion(question); } catch (cause) { error = cause as Error; }
+    expect(error).toBeInstanceOf(Error);
+    const lines = error!.message.split('\n');
+    expect(lines).toHaveLength(2); // Newlines in offered labels stay JSON-escaped.
+    const details = JSON.parse(lines[1]!);
+    expect(details.header).toHaveLength(80);
+    expect(details.lead).toHaveLength(240);
+    expect(details.optionCount).toBe(10);
+    expect(details.options).toHaveLength(8);
+    expect(details.omittedOptions).toBe(2);
+    expect(details.options[0]).toEqual({ index: 1, label: 'Run /plan-eng-review', run: true, manual: false, future: false });
+    expect(details.options[1]).toEqual({ index: 2, label: 'Skip — handle reviews manually', run: false, manual: true, future: false });
+    expect(details.options[2].label).toHaveLength(256);
+    expect(details.options[2]).toMatchObject({ index: 3, run: false, manual: false, future: false });
+    expect(error!.message).not.toMatch(/PRIVATE_(?:LABEL_TAIL|BRIEF_BODY|OPTION_DESCRIPTION)/);
+    expect(error!.message.length).toBeLessThan(4_000);
+  });
 });
