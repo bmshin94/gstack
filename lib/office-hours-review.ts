@@ -154,8 +154,8 @@ export function renderOfficeHoursReviewerPrompt({ document, verdictPath, previou
 Document: ${document}
 Verdict: ${verdictPath}
 
-Read the design at ${JSON.stringify(document)} and review all 5 dimensions independently, including new defects.
-Use the Write tool to save your complete verdict as JSON to ${JSON.stringify(verdictPath)}, then return that identical JSON as your entire response (no Markdown fences or prose).
+Use only Read and Write for this review. Read the design at ${JSON.stringify(document)} with Read and review all 5 dimensions independently, including new defects. Do not use Bash or Edit, and do not change the design.
+Use Write only to save your complete verdict as JSON to ${JSON.stringify(verdictPath)}, then return that identical JSON as your entire response (no Markdown fences or prose). The parent runs the formatter to validate your saved JSON.
 The saved JSON is your sole findings inventory: include every unresolved problem and necessary remedy, including minor findings that a short conclusion might omit.
 Use one finding per distinct obligation. An exact duplicate shares a finding; a shared component does not combine separate decisions, behavior, or effort.
 
