@@ -93,17 +93,12 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
         if (obs.reviewCount < FLOOR) {
           throw new Error(
             `SPLIT-OVERFLOW REGRESSION: reviewCount=${obs.reviewCount} < FLOOR=${FLOOR}.\n` +
-              `Agent surfaced fewer review-phase AUQs than independent scope options.\n` +
-              `This is the original drop-to-fit-4-options failure mode:\n` +
-              `  expected: ${N} per-option calls (or compliant ≤4-group batching with follow-up)\n` +
-              `  got:      ${obs.reviewCount} call(s)\n` +
-              `Most likely the agent dropped one option to fit Conductor's 4-option\n` +
-              `cap, the exact bug scripts/resolvers/preamble/generate-ask-user-format.ts\n` +
-              `"Handling 5+ options — split, never drop" exists to prevent.\n` +
-              `Review-phase fingerprints:\n` +
+              `outcome=${obs.outcome} step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
+              `Inspect Step-0 classification and question evidence before diagnosing dropped options.\n` +
+              `All-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
               obs.fingerprints
-                .filter((f) => !f.preReview)
-                .map((f) => `  - "${f.promptSnippet.slice(0, 80)}"`)
+                .slice(-8)
+                .map((f) => `  - ${JSON.stringify({ preReview: f.preReview, nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
                 .join('\n') +
               `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
