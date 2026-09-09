@@ -11,6 +11,21 @@ describe('plan-review manual handoff selection', () => {
   test('declines the retained native two-option next-review offer', () => {
     expect(pickPlanReviewQuestion(menu(['Run /plan-eng-review', 'Skip — handle reviews manually']))).toBe(2);
   });
+  test('selects the retained Engineering readiness offer by its native position', () => {
+    const labels = ['C) Ready to implement (recommended)', 'B) Run /plan-ceo-review'];
+    expect(pickPlanReviewQuestion(menu(labels, 'Next steps',
+      'Next steps: any further review before implementation?'))).toBe(1);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next steps',
+      'Next steps: any further review before implementation?'))).toBe(2);
+  });
+  test.each([
+    ['Run /plan-ceo-review', 'Ready to implement now'],
+    ['Run /plan-ceo-review', 'Ready to implement and approve all edits'],
+    ['Run /plan-ceo-review', 'Ready to implement; run /ship'],
+    ['Ready to implement', 'Ready to implement — run /ship when done'],
+  ])('rejects added execution authority or ambiguous readiness: %j', (...labels) => {
+    expect(() => pickPlanReviewQuestion(menu(labels))).toThrow('unambiguous');
+  });
   test('selects the source-prescribed manual choice after both applicable reviews', () => {
     expect(pickPlanReviewQuestion(menu([
       'A) Run /plan-eng-review next (required gate) (Recommended)',

@@ -67,7 +67,7 @@ export function pickPlanReviewQuestion(question: NativeQuestion): number {
     || /^Run \/design-shotgun(?: after adding an OpenAI key|\s*[—–-]\s*explore visual design variants for issues found)?$/i.test(label)
     || /^Run \/design-html(?:\s*[—–-]\s*generate Pretext-native HTML from approved mockups)?$/i.test(label);
   const manual = (label: string) => /^Skip\s*[,—–-]\s*(?:I(?:['’]ll| will)\s+)?handle (?:reviews|next steps) manually$/i.test(label);
-  const future = (label: string) => /^Ready to implement\s*[—–-]\s*run \/ship when done$/i.test(label)
+  const future = (label: string) => /^Ready to implement(?:\s*[—–-]\s*run \/ship when done)?$/i.test(label)
     || /^Ready to implement, run \/devex-review after shipping$/i.test(label);
   if (!labels.some(label => run(label) || manual(label) || future(label))) return 1;
   const manualChoices = labels.flatMap((label, index) => manual(label) ? [index + 1] : []);
