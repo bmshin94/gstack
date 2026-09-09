@@ -255,6 +255,8 @@ async function main() {
       const showPreview = () => emit('\x1b[2J\x1b[H' + `☐ ${previewQuestion}\n${previewQuestion}\n`
         + previewLabels.map((label, i) => `${previewFocus === i + 1 ? '❯' : ' '} ${i + 1}. ${label}`.padEnd(40)
           + (i === 0 ? '┌' + '─'.repeat(30) + '┐' : '│' + 'No preview available'.padEnd(30) + '│')).join('\n')
+        + (previewFocus === 2 && scenario.startsWith('preview-menu-clipping-ruler')
+          ? '\n' + ' '.repeat(40) + (scenario.endsWith('malformed') ? '├─── x ─── 1 lines hidden ' : '├─── ✂ ─── 1 lines hidden ').padEnd(31, '─') + '┤' : '')
         + '\n' + ' '.repeat(40) + '└' + '─'.repeat(30) + '┘'
         + '\nEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel\n');
       const nextPreview = () => {
@@ -287,7 +289,7 @@ async function main() {
             }
             const desired = scenario === 'preview-menu-focused' ? 1 : 2;
             if (data !== '\r' || previewFocus !== desired || !pendingId) { prematureAnswers.push(data); return; }
-            if (scenario === 'preview-menu-no-ack') return;
+            if (scenario === 'preview-menu-no-ack' || scenario === 'preview-menu-clipping-ruler-no-ack') return;
             acknowledge(); answer++;
             if (answer === 3) finish(); else nextPreview();
             return;

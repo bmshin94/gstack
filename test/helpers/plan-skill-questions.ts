@@ -194,6 +194,13 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): { optio
       bottom = i;
       break;
     }
+    // Native clipping adds one ruler immediately before the bottom. The
+    // independent left column may still contain an option or continuation.
+    if (row[column] === '├') {
+      if (row[edge] !== '┤' || !/^├─── ✂ ─── [1-9]\d* lines hidden ─*┤$/.test(row.slice(column, edge + 1))
+        || row.slice(edge + 1).trim() || lines[i + 1]?.[column] !== '└') return invalid;
+      continue;
+    }
     if (row[column] !== '│' || row[edge] !== '│' || row.slice(edge + 1).trim()) return invalid;
   }
   if (bottom < 0) return invalid;

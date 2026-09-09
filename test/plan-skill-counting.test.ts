@@ -379,6 +379,24 @@ test.each(['preview-menu-stale-focus', 'preview-menu-no-ack'])('counting refuses
   expect(result.closed).toBe(true);
 }, 15_000);
 
+test('counting commits a preview clipping-ruler focus only through native acknowledgement', async () => {
+  const result = await runFakeCounting('**DONE**', 'preview-menu-clipping-ruler');
+  expect(result.error).toBeUndefined();
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '2', '\r', '2', '\r', '2', '\r']);
+  expect(result.prematureAnswers).toEqual([]);
+  expect(result.resizes).toEqual([]);
+  expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
+  expect(result.closed).toBe(true);
+}, 15_000);
+
+test.each(['malformed', 'no-ack'])('counting preview clipping-ruler refuses %s completion', async suffix => {
+  const result = await runFakeCounting('**DONE**', `preview-menu-clipping-ruler-${suffix}`);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '2', ...(suffix === 'no-ack' ? ['\r'] : [])]);
+  expect(result.resizes).toEqual([]);
+  expect(result.observation).toMatchObject({ outcome: 'timeout', step0Count: 0, reviewCount: 0 });
+  expect(result.closed).toBe(true);
+}, 15_000);
+
 
 test('counting expands an owned clipped question then restores baseline only after native ACK', async () => {
   const result = await runFakeCounting('**DONE**', 'viewport-restored');

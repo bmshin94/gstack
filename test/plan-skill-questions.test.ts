@@ -627,6 +627,69 @@ test('retained preview selection follows its own left-column focus for each nati
   expect(selectPreview(focusPreview(3))).toEqual({ kind: 'preview', focusedIndex: 3 });
 });
 
+// Exact clipping row and columns from the retained expansion-mode preview.
+const retainedClippingRuler = '                                  ├─── ✂ ─── 1 lines hidden ───────────────────────────────────────────────────────────┤';
+const clippedPreview = focusPreview(2).replace(/^( +└)/m, `${retainedClippingRuler}\n$1`);
+
+test.each([1, 12])('preview clipping-ruler preserves owned left-column focus (%i hidden lines)', count => {
+  const ruler = `├─── ✂ ─── ${count} lines hidden `.padEnd(85, '─') + '┤';
+  const visible = clippedPreview.replace(retainedClippingRuler, ' '.repeat(34) + ruler);
+  expect(selectPreview(visible)).toEqual({ kind: 'preview', focusedIndex: 2 });
+});
+
+test('preview clipping-ruler supports zero trailing dashes and a left-column label continuation', () => {
+  const ruler = '├─── ✂ ─── 1 lines hidden ┤';
+  const innerWidth = ruler.length - 2;
+  const narrow = clippedPreview.split('\n').map(line => {
+    const left = line.slice(0, 34);
+    const pane = line.slice(34);
+    if (pane.startsWith('├')) return left + ruler;
+    if (pane.startsWith('┌')) return left + '┌' + '─'.repeat(innerWidth) + '┐';
+    if (pane.startsWith('└')) return left + '└' + '─'.repeat(innerWidth) + '┘';
+    if (pane.startsWith('│')) return left + '│' + pane.slice(1, innerWidth + 1).padEnd(innerWidth) + '│';
+    return line;
+  }).join('\n');
+  expect(selectPreview(narrow)).toEqual({ kind: 'preview', focusedIndex: 2 });
+  const sharedRow = focusPreview(3).replace(/^    JSON bonus +│[^\n]*│$/m,
+    '    JSON bonus'.padEnd(34) + retainedClippingRuler.slice(34));
+  expect(selectPreview(sharedRow)).toEqual({ kind: 'preview', focusedIndex: 3 });
+});
+
+test.each([
+  ['shifted left edge', retainedClippingRuler.slice(1)],
+  ['shifted right edge', retainedClippingRuler.replace('─┤', '──┤')],
+  ['shortened right edge', retainedClippingRuler.replace('─┤', '┤')],
+  ['missing left junction', retainedClippingRuler.replace('├', '│')],
+  ['missing right junction', retainedClippingRuler.replace('┤', '│')],
+  ['wrong scissors', retainedClippingRuler.replace('✂', 'x')],
+  ['wrong delimiter', retainedClippingRuler.replace('✂ ───', '✂ ─ ─')],
+  ['tab separator', retainedClippingRuler.replace('✂ ', '✂\t')],
+  ['zero count', retainedClippingRuler.replace('1 lines', '0 lines')],
+  ['negative count', retainedClippingRuler.replace('1 lines', '-1 lines').replace('──┤', '─┤')],
+  ['leading zero', retainedClippingRuler.replace('1 lines', '01 lines').replace('──┤', '─┤')],
+  ['wrong wording', retainedClippingRuler.replace('lines hidden', 'lines folded')],
+  ['trailing content', retainedClippingRuler + ' x'],
+  ['wrapped ruler', retainedClippingRuler.replace('lines hidden', 'lines\nhidden')],
+] as const)('preview clipping-ruler rejects malformed frames: %s', (_name, ruler) => {
+  expect(selectPreview(clippedPreview.replace(retainedClippingRuler, ruler))).toBeNull();
+});
+
+test('preview clipping-ruler must occur once immediately before the bottom border', () => {
+  expect(selectPreview(clippedPreview.replace(retainedClippingRuler, `${retainedClippingRuler}\n${retainedClippingRuler}`))).toBeNull();
+  expect(selectPreview(clippedPreview.replace(retainedClippingRuler, `${retainedClippingRuler}\n`))).toBeNull();
+  const interior = focusPreview(2).replace(/^(    JSON bonus)/m, `${retainedClippingRuler}\n$1`);
+  expect(selectPreview(interior)).toBeNull();
+});
+
+test('preview clipping-ruler cannot replace label, focus, rectangle, inventory or footer evidence', () => {
+  expect(selectPreview(clippedPreview.replace('B — Server-side endpoint', 'B — Foreign-side endpoint'))).toBeNull();
+  expect(selectPreview(clippedPreview.replace('  1.', '❯ 1.'))).toBeNull();
+  expect(selectPreview(clippedPreview.replace('❯ 2.', '  2.'))).toBeNull();
+  expect(selectPreview(clippedPreview.replace('└', ' '))).toBeNull();
+  expect(selectPreview(clippedPreview, { ...previewInput, options: previewInput.options.map(({ preview, ...option }) => option) })).toBeNull();
+  expect(selectPreview(clippedPreview.replace('Enter to select', 'Enter to confirm'))).toBeNull();
+});
+
 test('mixed native preview options retain the preview protocol for an option without preview', () => {
   const mixed = { ...previewInput, options: previewInput.options.map((option, index) => {
     const { preview, ...plain } = option; return index === 0 ? option : plain;
