@@ -434,12 +434,23 @@ export function nativeQuestionSelection(question: NativeQuestion, visible: strin
 /** A lone pending tool is insufficient: its command/path must also identify
  * the displayed permission. Unsupported or repeated ambiguous grants fail.
  */
-export function currentFilePermissionTarget(visible: string): { operation: 'create' | 'edit' | 'overwrite'; filePath: string } | null {
+function currentFilePermissionDetails(visible: string): { operation: 'create' | 'edit' | 'overwrite'; filePath: string; accessDirectory?: string } | null {
   const cursor = [...visible.matchAll(/❯\s*1\./g)].at(-1);
   if (!cursor) return null;
   // Bind the current menu's distinctive CLI controls, not a prose question
   // containing "create" or a stale permission earlier in scrollback.
-  const controls = visible.slice(cursor.index).replace(/\s+/g, '');
+  let menu = visible.slice(cursor.index);
+  // The CLI combines edit-mode and outside-directory access in option 2.
+  // Keep its complete directory as text: whitespace compaction would make
+  // distinct paths equal or hide a clipped/wrapped path. We still grant only 1.
+  const extension = /;\s*Yes,\s*and\s+always\s+allow\s+access\s+to[ \n]+([^\s][^\r\n\t\u0000-\u001f]*?)[ \n]+for\s+this\s+session(?=[ \n]*(?:\(shift\+tab\))?[ \n]*3\.)/.exec(menu);
+  const accessDirectory = extension?.[1];
+  if (extension) {
+    if (!accessDirectory || !path.isAbsolute(accessDirectory) || accessDirectory !== accessDirectory.trim()
+      || accessDirectory.includes('…') || accessDirectory.includes('...')) return null;
+    menu = menu.slice(0, extension.index) + menu.slice(extension.index + extension[0].length);
+  }
+  const controls = menu.replace(/\s+/g, '');
   if (!/^❯1\.Yes2\.Yes,andswitchtoacceptedits\(auto-approvefileeditsandcommonfilecommands\)forthissession(?:\(shift\+tab\))?3\.No(?:\b|Esc)/.test(controls)) return null;
   const prompt = /Do\s*you\s*want\s*to\s*(create|edit|overwrite|make\s+this\s+edit\s+to)\s+([^\r\n?]+)\?\s*$/.exec(visible.slice(0, cursor.index));
   if (!prompt) return null;
@@ -463,14 +474,19 @@ export function currentFilePermissionTarget(visible: string): { operation: 'crea
       || before.slice(index, index + 2).some(line => line.length > rule.length)) return null;
     filePath = subtitle;
   }
-  return { operation, filePath };
+  return { operation, filePath, ...(accessDirectory ? { accessDirectory } : {}) };
+}
+
+export function currentFilePermissionTarget(visible: string): { operation: 'create' | 'edit' | 'overwrite'; filePath: string } | null {
+  const current = currentFilePermissionDetails(visible);
+  return current ? { operation: current.operation, filePath: current.filePath } : null;
 }
 
 export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermissionRequest, visible: string): string {
   const value = tool.name === 'Bash' ? tool.input.command
     : ['Read', 'Write', 'Edit'].includes(tool.name) ? tool.input.file_path : null;
   if (typeof value !== 'string' || !value.trim()) throw new Error('Unsupported native permission command or file path');
-  const current = currentFilePermissionTarget(visible);
+  const current = currentFilePermissionDetails(visible);
   if (current) {
     const expectedTool = current.operation === 'edit' ? 'Edit' : 'Write';
     const displayed = current.filePath;
@@ -478,7 +494,8 @@ export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermi
       : tool.cwd && path.isAbsolute(tool.cwd) ? path.resolve(tool.cwd, displayed) : null;
     // A basename alone has no authority. Its exact path must resolve through
     // the cwd on this owned tool record; missing/corrupted names stay errors.
-    if (tool.name !== expectedTool || !path.isAbsolute(value) || resolved !== path.normalize(value)) {
+    if (tool.name !== expectedTool || !path.isAbsolute(value) || resolved !== path.normalize(value)
+      || (current.accessDirectory && path.normalize(current.accessDirectory) !== path.dirname(path.normalize(value)))) {
       throw new Error('Visible permission cannot be bound to its pending native command or file path');
     }
     return tool.name + ':' + path.normalize(value);

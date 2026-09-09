@@ -354,6 +354,84 @@ const nestedFileDialog = (operation: 'create' | 'edit' | 'overwrite', subtitle: 
   '\n' + '╌'.repeat(120) + '\n  1 Plan content\n' + '╌'.repeat(120) + '\n ' +
   createDialog(basename).replace('create', operation === 'edit' ? 'make this edit to' : operation);
 
+// Exact option-2 wrapping from the owned Claude 2.1.263 fake-Write capture.
+// It advertises a directory grant; the driver still reserves only option 1.
+const directoryFileDialog = (operation: 'create' | 'edit' | 'overwrite', subtitle: string, directory: string) =>
+  nestedFileDialog(operation, subtitle).replace('for this session (shift+tab)',
+    `for this session; Yes, and\n      always allow access to\n      ${directory}\n      for this session (shift+tab)`);
+
+test.each(['create', 'edit', 'overwrite'] as const)('extended %s menu binds the complete header and exact owned parent directory', operation => {
+  const filePath = path.join(path.dirname(config), 'private state', 'ceo-plans', 'plan.md');
+  const owner = { id: 'file', name: operation === 'edit' ? 'Edit' : 'Write', cwd: config, input: { file_path: filePath } };
+  for (const subtitle of [path.relative(config, filePath), filePath]) {
+    const dialog = directoryFileDialog(operation, subtitle, path.dirname(filePath));
+    expect(currentFilePermissionTarget(dialog)).toEqual({ operation, filePath: subtitle });
+    expect(nativePermissionKey(owner, dialog)).toBe(`${owner.name}:${filePath}`);
+    expect(nativePermissionKey(owner, dialog.replace(/\n      /g, ' '))).toBe(`${owner.name}:${filePath}`);
+  }
+});
+
+// Full current-screen capture from the one-Write 120-column CLI diagnostic.
+// The selected option is 1; the compound option 2 is never granted here.
+test('retained complete outside-directory menu binds its exact native Write', () => {
+  const frame = "\n ▐▛███▛█   Claude Code v2.1.263\n▝▜██████▀  Fable 5.1 · API Usage Billing\n  ▝▝ ▝▝    /tmp/gstack-hermetic-3734902-j94Svq/gstack-e2e-plan-ceo-paired-KdquY1\n\n\n❯ Use the Write tool exactly once to create \"/tmp/gstack-hermetic-3734902-j94Svq/permission-state-ZmakWx/projects/gstac\n  k-e2e-plan-ceo-paired-KdquY1/ceo-plans/2026-09-09-payment-test-coverage.md\" with exactly this content: \"# Fake CEO\n  plan\\nDiagnostic marker: 6ef6a97d-8eb6-4cae-87df-357ca47565ad\\nNo real project data.\\n\". This is a private\n  permission-dialog diagnostic. Do not use Bash, run a review, or create any other file.\n\n● Creating the diagnostic file now.\n\n● Write(/tmp/gstack-hermetic-3734902-j94Svq/permission-state-ZmakWx/projects/gstac…/2026-09-09-payment-test-coverage.md)\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n Create file\n ../permission-state-ZmakWx/projects/gstack-e2e-plan-ceo-paired-KdquY1/ceo-plans/2026-09-09-payment-test-coverage.md\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n  1 # Fake CEO plan\n  2 Diagnostic marker: 6ef6a97d-8eb6-4cae-87df-357ca47565ad\n  3 No real project data.\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n Do you want to create 2026-09-09-payment-test-coverage.md?\n ❯ 1. Yes\n   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and\n      always allow access to\n      /tmp/gstack-hermetic-3734902-j94Svq/permission-state-ZmakWx/projects/gstack-e2e-plan-ceo-paired-KdquY1/ceo-plans\n      for this session (shift+tab)\n   3. No\n\n Esc to cancel · Tab to amend\n                                                                                                     \n\n\n                                                                                                      \n\n\n\n";
+  const tool = {
+  "id": "toolu_015EevmuskBCGKqz88djcKnM",
+  "name": "Write",
+  "input": {
+    "file_path": "/tmp/gstack-hermetic-3734902-j94Svq/permission-state-ZmakWx/projects/gstack-e2e-plan-ceo-paired-KdquY1/ceo-plans/2026-09-09-payment-test-coverage.md",
+    "content": "# Fake CEO plan\nDiagnostic marker: 6ef6a97d-8eb6-4cae-87df-357ca47565ad\nNo real project data.\n"
+  },
+  "cwd": "/tmp/gstack-hermetic-3734902-j94Svq/gstack-e2e-plan-ceo-paired-KdquY1"
+};
+  expect(currentFilePermissionTarget(frame)).toEqual({ operation: 'create',
+    filePath: path.relative(tool.cwd, tool.input.file_path) });
+  expect(nativePermissionKey(tool, frame)).toBe('Write:' + tool.input.file_path);
+  expect(() => nativePermissionKey({ ...tool, input: { ...tool.input, file_path: tool.input.file_path + '.other' } }, frame)).toThrow();
+  expect(() => nativePermissionKey(tool, frame.replace(' ❯ 1. Yes', '   1. Yes').replace('   2. Yes,', ' ❯ 2. Yes,'))).toThrow();
+});
+
+test('extended menu refuses mismatched, clipped, wrapped, relative or malformed directory identity', () => {
+  const filePath = path.join(path.dirname(config), 'private state', 'ceo-plans', 'plan.md');
+  const directory = path.dirname(filePath);
+  const owner = { id: 'file', name: 'Write', cwd: config, input: { file_path: filePath } };
+  const dialog = directoryFileDialog('create', path.relative(config, filePath), directory);
+  for (const invalid of [
+    directoryFileDialog('create', path.relative(config, filePath), path.dirname(directory)),
+    directoryFileDialog('create', path.relative(config, filePath), directory + '-other'),
+    directoryFileDialog('create', path.relative(config, filePath), path.relative(config, directory)),
+    directoryFileDialog('create', path.relative(config, filePath), directory.replace('private state', 'privatestate')),
+    dialog.replace(directory, directory.replace('ceo-plans', 'ceo-\n      plans')),
+    dialog.replace(directory, directory.replace('ceo-plans', '…/ceo-plans')),
+    dialog.replace(directory, directory + '\t'),
+    dialog.replace('always allow access to', 'always allow access everywhere including'),
+    dialog.replace('3.No', '3.Yes\n4.No'),
+    dialog.replace(' Do you want to create plan.md?', ' Do you want to create other.md?'),
+    dialog.slice(dialog.indexOf('╌')),
+  ]) expect(() => nativePermissionKey(owner, invalid)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...owner, name: 'Edit' }, dialog)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...owner, cwd: undefined }, dialog)).toThrow('cannot be bound');
+});
+
+test('extended menu reserves the hook-owned Write once and keeps multiple writable owners ambiguous', () => {
+  const input = { file_path: path.join(path.dirname(config), 'private-state', 'ceo-plans', 'plan.md'), content: 'Fake plan' };
+  write(nativeWrite('owned-write', input));
+  const { source, event } = filePermissionRequest(input);
+  const native = readPlanSkillQuestions(config, sessionId, source);
+  const dialog = directoryFileDialog('create', path.relative(config, input.file_path), path.dirname(input.file_path));
+  const granted = new Set<string>(), requests = new Map<string, NativePermissionGrant>();
+  expect(reserveNativePermissionGrant(native, dialog, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(native, dialog, granted, requests)).toBe(false);
+  expect([...granted]).toEqual([`request:${event.requestId}`]);
+  expect([...requests.keys()]).toEqual([`Write:${input.file_path}`]);
+  native.permissionTools.push({ id: 'other-read', name: 'Read', cwd: config, input: { file_path: path.join(config, 'README.md') } });
+  expect(reserveNativePermissionGrant(native, dialog, new Set(), new Map())).toBe(true);
+  native.permissionRequests.push({ ...native.permissionRequests[0]!, requestId: 'other-write', nativeToolId: undefined });
+  const refused = new Set<string>();
+  expect(() => reserveNativePermissionGrant(native, dialog, refused, new Map())).toThrow('Ambiguous');
+  expect(refused.size).toBe(0);
+});
+
 test.each(['create', 'edit', 'overwrite'] as const)('current %s title and subtitle bind a nested basename to its owned file', operation => {
   const relative = path.join('.gstack', 'projects', 'fixture', 'restore.md');
   const filePath = path.join(config, relative);
