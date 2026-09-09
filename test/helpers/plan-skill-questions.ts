@@ -439,8 +439,23 @@ export function reserveNativePermissionGrant(
   const pending = native.permissionRequests.filter(request => request.result === 'pending');
   const owners = [...pending, ...native.permissionTools.filter(tool => !pending.some(request => request.nativeToolId === tool.id))];
   if (!owners.length) return false;
-  if (owners.length > 1) throw new Error('Ambiguous native permission owner: multiple tools are pending');
-  const owner = owners[0]!;
+  let owner = owners[0]!;
+  if (owners.length > 1) {
+    const ambiguous = () => new Error('Ambiguous native permission owner: multiple tools are pending');
+    // Only the current native file controls disambiguate parallel Read/Bash
+    // work. Multiple writable owners and legacy/Bash dialogs still fail closed.
+    if (!native.permissionRequestCapture || !currentFilePermissionTarget(visible)
+      || owners.filter(item => ['Write', 'Edit'].includes(item.name)).length !== 1) throw ambiguous();
+    const matches = owners.filter(item => {
+      try { nativePermissionKey(item, visible); return true; }
+      catch (error) {
+        if (error instanceof Error && error.message === 'Visible permission cannot be bound to its pending native command or file path') return false;
+        throw error; // Unsupported or malformed owners are not harmless mismatches.
+      }
+    });
+    if (matches.length !== 1) throw ambiguous();
+    owner = matches[0]!;
+  }
   if (native.permissionRequestCapture && !('requestId' in owner) && ['Write', 'Edit'].includes(owner.name)) return false;
   const key = 'requestId' in owner ? `request:${owner.requestId}` : owner.id;
   if (granted.has(key)) return false;

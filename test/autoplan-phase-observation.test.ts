@@ -75,9 +75,17 @@ describe('autoplan file grants stay inside their owned fixture', () => {
 
   test('keeps the shared rejection of a different or ambiguous native owner', () => {
     expect(() => reserve(path.join(cwd, 'other.md'))).toThrow('bound to its pending');
-    native.permissionTools = [{ id: 'other', name: 'Bash', input: { command: 'echo other' } }];
+    native.permissionTools = [{ id: 'other', name: 'Write', cwd, input: { ...native.permissionRequests[0]!.input } }];
     expect(() => reserve()).toThrow('multiple tools are pending');
     expect(granted.size).toBe(0);
+  });
+
+  test('an unrelated pending Bash does not own the current file grant', () => {
+    native.permissionTools = [{ id: 'other', name: 'Bash', input: { command: 'echo other' } }];
+    expect(reserve()).toBe(true);
+    expect(reserve()).toBe(false);
+    expect([...granted]).toEqual(['request:owned-write']);
+    expect(native.permissionTools.map(tool => tool.id)).toEqual(['other']);
   });
 });
 

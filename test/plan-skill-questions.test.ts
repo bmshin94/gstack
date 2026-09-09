@@ -483,6 +483,8 @@ async function scopedEditSequence(variant = 'native') {
   if (variant !== 'early') rows.push(nativeWrite(variant === 'changed-id' ? 'scoped-edit-1' : 'scoped-edit-2', nextInput,
     variant === 'wrong-cwd' ? path.dirname(config) : config, 'Edit'));
   if (variant === 'multiple-owner') rows.push(nativeWrite('other-pending', { command: 'true' }, config, 'Bash'));
+  if (variant === 'parallel-read') rows.push(nativeWrite('other-pending', { file_path: path.join(config, 'README.md') }, config, 'Read'));
+  if (variant === 'same-path-owner') rows.push(nativeWrite('other-pending', { ...nextInput, new_string: 'Different pending edit' }, config, 'Edit'));
   write(...rows);
   await Bun.sleep(5);
   const nextEvent = emit(nextInput);
@@ -493,7 +495,7 @@ async function scopedEditSequence(variant = 'native') {
   return { read, dialog, granted, requests, firstEvent, nextEvent, resultAtMs, nextInput };
 }
 
-test.each(['native', 'early'])('fresh scoped Edit can append the terminal report after a completed Edit (%s)', async variant => {
+test.each(['native', 'early', 'multiple-owner', 'parallel-read'])('fresh scoped Edit can append the terminal report after a completed Edit (%s)', async variant => {
   const sequence = await scopedEditSequence(variant);
   const native = sequence.read();
   const prior = native.permissionRequests.find(item => item.requestId === sequence.firstEvent.requestId)!;
@@ -505,14 +507,44 @@ test.each(['native', 'early'])('fresh scoped Edit can append the terminal report
   expect(reserveNativePermissionGrant(native, sequence.dialog, sequence.granted, sequence.requests)).toBe(false);
   expect(sequence.granted.size).toBe(2);
   expect(sequence.requests.get(`Edit:${path.join(config, 'plan.md')}`)?.requestId).toBe(sequence.nextEvent.requestId);
+  if (variant === 'multiple-owner' || variant === 'parallel-read') {
+    expect(native.permissionTools.some(tool => tool.id === 'other-pending')).toBe(true);
+    expect(sequence.granted.has('other-pending')).toBe(false);
+  }
 });
 
-test.each(['no-ack', 'error', 'before-result', 'equal-result', 'unfinished-prior', 'same-input', 'changed-id', 'wrong-path', 'wrong-cwd', 'multiple-owner', 'no-observer'])
+test.each(['no-ack', 'error', 'before-result', 'equal-result', 'unfinished-prior', 'same-input', 'changed-id', 'wrong-path', 'wrong-cwd', 'same-path-owner', 'no-observer'])
 ('fresh scoped Edit preserves refusal for %s', async variant => {
   const sequence = await scopedEditSequence(variant);
   expect(() => reserveNativePermissionGrant(sequence.read(), sequence.dialog, sequence.granted, sequence.requests))
     .toThrow(/Repeated native permission|Indistinguishable|changed input|cannot be bound|Ambiguous native permission/);
   expect(sequence.granted.size).toBe(1);
+});
+
+test.each(['same-path', 'mixed-operation', 'granted-shadow', 'no-observer', 'legacy-file', 'legacy-bash', 'malformed', 'unsupported', 'no-match'])
+('a current file dialog with parallel work preserves refusal for %s', async variant => {
+  const sequence = await scopedEditSequence('multiple-owner');
+  const native = variant === 'no-observer' ? readPlanSkillQuestions(config, sessionId) : sequence.read();
+  const owner = native.permissionRequests.find(request => request.requestId === sequence.nextEvent.requestId)!;
+  let dialog = sequence.dialog;
+  if (variant === 'same-path' || variant === 'granted-shadow') {
+    native.permissionRequests.push({ ...owner, requestId: 'distinct-pending-request', nativeToolId: undefined });
+    if (variant === 'granted-shadow') sequence.granted.add(`request:${owner.requestId}`);
+  }
+  if (variant === 'mixed-operation') native.permissionTools.push({
+    id: 'same-path-write', name: 'Write', cwd: config,
+    input: { file_path: sequence.nextInput.file_path, content: 'Other pending write' },
+  });
+  if (variant === 'legacy-file') dialog = `Edit to ${sequence.nextInput.file_path}`;
+  if (variant === 'legacy-bash') dialog = 'Bash command true requires permission';
+  if (variant === 'malformed') native.permissionTools.find(tool => tool.id === 'other-pending')!.input = { command: 42 };
+  if (variant === 'unsupported') native.permissionTools.find(tool => tool.id === 'other-pending')!.name = 'Grep';
+  if (variant === 'no-match') dialog = dialog.replace('plan.md', 'different.md');
+  const grantedBefore = [...sequence.granted], requestsBefore = [...sequence.requests];
+  expect(() => reserveNativePermissionGrant(native, dialog, sequence.granted, sequence.requests))
+    .toThrow(variant === 'malformed' || variant === 'unsupported' ? 'Unsupported native permission' : 'Ambiguous native permission');
+  expect([...sequence.granted]).toEqual(grantedBefore);
+  expect([...sequence.requests]).toEqual(requestsBefore);
 });
 
 test('modern overwrite permission uses the exact current Write path and controls', () => {
