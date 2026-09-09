@@ -81,16 +81,19 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
       // intercept the one question whose never-ask behavior this case checks.
       seedHermeticGstackHome(tmpHome);
 
-      // 1. Bootstrap the tmp GSTACK_HOME with question_tuning=true.
+      // 1. Keep this private fixture's learnings project-scoped, with question
+      // tuning enabled. Unsettled cross-project consent would precede the mode.
       const configBin = path.join(ROOT, 'bin', 'gstack-config');
-      const setRes = spawnSync(configBin, ['set', 'question_tuning', 'true'], {
-        cwd: project,
-        env: { ...process.env, GSTACK_HOME: tmpHome },
-        encoding: 'utf-8',
-        timeout: 30_000,
-      });
-      if (setRes.status !== 0) {
-        throw new Error(`gstack-config set failed: ${setRes.stderr || setRes.stdout}`);
+      for (const [key, value] of [['question_tuning', 'true'], ['cross_project_learnings', 'false']]) {
+        const setRes = spawnSync(configBin, ['set', key, value], {
+          cwd: project,
+          env: { ...process.env, GSTACK_HOME: tmpHome },
+          encoding: 'utf-8',
+          timeout: 30_000,
+        });
+        if (setRes.status !== 0) {
+          throw new Error(`gstack-config set ${key} failed: ${setRes.stderr || setRes.stdout}`);
+        }
       }
 
       // 2. Resolve slug for the project (uses git remote — same as the spawned

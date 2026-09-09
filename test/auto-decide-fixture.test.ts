@@ -1,6 +1,6 @@
 /** Real preamble/preference checks for the explicit AUTO_DECIDE state override. */
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -40,6 +40,7 @@ function withFixture(check: (fixture: {
     // Same explicit baseline as the paid case; never seed a blanket preference.
     seedHermeticGstackHome(state);
     run('gstack-config', ['set', 'question_tuning', 'true']);
+    run('gstack-config', ['set', 'cross_project_learnings', 'false']);
     run('gstack-question-preference', ['--write', JSON.stringify({
       question_id: TARGET, preference: 'never-ask', source: 'plan-tune',
     })]);
@@ -55,6 +56,55 @@ function withFixture(check: (fixture: {
 }
 
 describe('AUTO_DECIDE explicit fixture state', () => {
+  test('actual paid setup declines cross-project sharing while preserving only the mode preference', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-decide-body-'));
+    const script = path.join(dir, 'body.fixture.test.ts');
+    const factsFile = path.join(dir, 'facts.json');
+    fs.mkdirSync(path.join(dir, '.gstack'));
+    const operatorConfig = path.join(dir, '.gstack', 'config.yaml');
+    fs.writeFileSync(operatorConfig, 'operator sentinel\n');
+    fs.writeFileSync(script, `
+import { describe, expect, mock } from 'bun:test';
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+const root = ${JSON.stringify(ROOT)};
+mock.module(path.join(root, 'test/helpers/e2e-gate.ts'), () => ({ describeE2ETier: () => describe }));
+mock.module(path.join(root, 'test/helpers/ceo-mode-preference.ts'), () => ({
+  runCeoModePreferenceObservation: async opts => {
+    const run = (bin, args) => execFileSync(path.join(root, 'bin', bin), args, {
+      cwd: opts.cwd, env: { ...process.env, ...opts.env }, encoding: 'utf8', timeout: 10000,
+    }).trim();
+    const facts = { cwd: opts.cwd, state: opts.env.GSTACK_HOME,
+      crossProject: run('gstack-config', ['get', 'cross_project_learnings']),
+      target: run('gstack-question-preference', ['--check', ${JSON.stringify(TARGET)}]),
+      unrelated: run('gstack-question-preference', ['--check', ${JSON.stringify(UNRELATED)}]),
+    };
+    fs.writeFileSync(${JSON.stringify(factsFile)}, JSON.stringify(facts));
+    expect(facts.target).toBe('AUTO_DECIDE');
+    expect(facts.unrelated).toBe('ASK_NORMALLY');
+    expect(facts.crossProject).toBe('false');
+    return { outcome: 'auto_decided', evidence: 'controlled observation', answered: [] };
+  },
+}));
+await import(path.join(root, 'test/skill-e2e-auto-decide-preserved.test.ts'));
+`);
+    try {
+      const child = spawnSync(process.execPath, ['test', script], {
+        cwd: ROOT, encoding: 'utf8', timeout: 15_000,
+        env: { PATH: process.env.PATH ?? '', HOME: dir, TMPDIR: dir, TMP: dir, TEMP: dir,
+          GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(dir, '.gitconfig'),
+          ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
+      });
+      expect(child.error, child.stderr).toBeUndefined();
+      expect(child.status, child.stdout + child.stderr).toBe(0);
+      const facts = JSON.parse(fs.readFileSync(factsFile, 'utf8'));
+      expect(fs.existsSync(facts.cwd)).toBe(false);
+      expect(fs.existsSync(facts.state)).toBe(false);
+      expect(fs.readFileSync(operatorConfig, 'utf8')).toBe('operator sentinel\n');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }, 20_000);
+
   test('normal baseline reaches the target preference without unrelated onboarding', () => {
     withFixture(({ preferenceFile, run }) => {
       const output = run('gstack-skill-start', ['--skill', 'plan-ceo-review']);
@@ -64,6 +114,7 @@ describe('AUTO_DECIDE explicit fixture state', () => {
       expect(output).toContain('QUESTION_TUNING: true');
       expect(output).toContain('UPDATE_CHECK: false');
       expect(output).not.toContain('GSTACK_INSTRUCTION_BEGIN:');
+      expect(run('gstack-config', ['get', 'cross_project_learnings'])).toBe('false');
       expect(run('gstack-question-preference', ['--check', TARGET, '--summary-stdin'], 'Choose the CEO review mode')).toBe('AUTO_DECIDE\n');
       expect(run('gstack-question-preference', ['--check', UNRELATED, '--summary-stdin'], 'Enable continuous checkpoint auto-commits?')).toBe('ASK_NORMALLY\n');
       expect(JSON.parse(fs.readFileSync(preferenceFile, 'utf8'))).toEqual({ [TARGET]: 'never-ask' });
