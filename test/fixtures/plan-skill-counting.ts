@@ -72,12 +72,13 @@ async function main() {
   const ceilingCase = scenario.startsWith('ceiling-');
   const multiQuestionCase = scenario === 'multi-question' || scenario.startsWith('question-picker-multi');
   const terminalDiagnosticCase = scenario.startsWith('terminal-diagnostic-');
+  const longPermissionCase = scenario.startsWith('permission-long-frame');
   const editPermissionCase = scenario.startsWith('permission-edit-');
   const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
   const exitConfirmationCase = scenario.startsWith('exit-confirmation-');
-  const timing = scenario.startsWith('retention-timeout-') || ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const timing = longPermissionCase || scenario.startsWith('retention-timeout-') || ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = scenario === 'retention-timeout-boot' ? 4_000 : ceilingCase || viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = multiQuestionCase || ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'question-picker-redraw'].includes(scenario);
@@ -105,14 +106,16 @@ async function main() {
   const prematureAnswers: string[] = [];
   const permissionWrites: string[] = [];
   const fileNativeBeforeGrant: boolean[] = [];
+  let longPermissionFrame = '';
   let publishDuringScreen: (() => void) | null = null;
   let raceInjected = false;
   let raceJustInjected = false;
   let postExitOwnerRaceScreens = 0;
   const originalScreenSnapshot = PtyCurrentScreen.prototype.snapshot;
-  if (scenario.endsWith('arrival-race') || scenario === 'terminal-diagnostic-frame-race' || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
+  if (longPermissionCase || scenario.endsWith('arrival-race') || scenario === 'terminal-diagnostic-frame-race' || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
     if (scenario === 'exit-confirmation-early-owner-arrival-race' && raceInjected) postExitOwnerRaceScreens++;
     const frame = await originalScreenSnapshot.call(this);
+    if (longPermissionCase && frame.text.includes(' Create file')) longPermissionFrame = frame.text;
     if (scenario === 'viewport-flush-deadline' && frame.rows === 40 && frame.text.includes('Clipped native prompt') && ++viewportSnapshots === 2) clock = caseBudgetMs;
     const publish = publishDuringScreen;
     publishDuringScreen = null;
@@ -158,6 +161,15 @@ async function main() {
       let finalPermissionPending = false;
       let finalWriteCount = 0;
       const finalReport = [...Array.from({ length: 516 }, (_, i) => `Report line ${i + 1}`), '## GSTACK REVIEW REPORT', 'VERDICT: APPROVED'].join('\n');
+      const longPermissionPath = path.join(project, 'gstack-home/projects/gstack-e2e-plan-ceo-paired-fixture/ceo-plans/2026-09-09-payment-test-coverage.md');
+      // The retained V5 shape: complete 240-column header, preview and compound
+      // option 2. Its full native path must survive classification and binding.
+      const longPermissionDialog = () => '\x1b[2J\x1b[H' + '─'.repeat(240) + '\n Create file\n '
+        + path.relative(project, longPermissionPath) + '\n' + '╌'.repeat(240) + '\n'
+        + Array.from({ length: 8 }, (_, i) => ` ${i + 1} ${'Plan context '.repeat(8)}`).join('\n') + '\n' + '╌'.repeat(240)
+        + '\n Do you want to create ' + path.basename(longPermissionPath) + '?\n ❯ 1. Yes\n'
+        + '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and always allow access to\n      '
+        + path.dirname(longPermissionPath) + ' for this session (shift+tab)\n   3. No\n\n Esc to cancel · Tab to amend';
       const fileDialog = (operation: string) => `\x1b[2J\x1b[HDo you want to ${operation} plan.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel`;
       const recordFilePermission = (input: Record<string, unknown>, name = 'Write') => {
         const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
@@ -370,6 +382,7 @@ async function main() {
       // A native request arriving later cannot reuse this pre-command frame.
       if (scenario === 'exit-confirmation-stale-frame') emit('\x1b[2J\x1b[H' + exitConfirmation());
       if (scenario === 'retention-timeout-stale-frame') emit(fileDialog('create'));
+      if (scenario === 'permission-long-frame-stale') emit(longPermissionDialog());
       return {
         exited: new Promise<number>(resolve => { end = resolve; }),
         terminal: {
@@ -433,6 +446,14 @@ async function main() {
               tool('ExitPlanMode', {});
               emit('\x1b[2J\x1b[HReay to execute?\n');
               emit('\x1b7\x1b[1;4H\x1b[@d\x1b8');
+              return;
+            }
+            if (longPermissionCase) {
+              permissionInput = { file_path: longPermissionPath + (scenario.endsWith('mismatch') ? '.other' : ''), content: plan };
+              permissionId = tool('Write', permissionInput);
+              recordFilePermission(permissionInput);
+              if (scenario.endsWith('ambiguous')) tool('Write', { file_path: path.join(project, 'other.md'), content: 'Other' });
+              if (!scenario.endsWith('stale')) emit(longPermissionDialog());
               return;
             }
             if (filePermissionCase) {
@@ -520,6 +541,13 @@ async function main() {
           } else if (/^[12]\r?$/.test(data)) {
             if (permissionId) {
               if (data !== '1\r') throw new Error('Permission must select only the current request');
+              if (longPermissionCase) {
+                append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Write complete' }] } });
+                permissionWrites.push('create'); permissionId = null;
+                ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
+                emit('\x1b[2J\x1b[HD1 — Pick a mode\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\n');
+                return;
+              }
               if (filePermissionCase) {
                 if (raceJustInjected || finalPermissionPending && pendingRedrawSleeps > 0) prematureAnswers.push(data);
                 if (editPermissionCase) {
@@ -683,7 +711,7 @@ async function main() {
         return 1;
       } : undefined,
     }); } catch (cause) {
-      if (!retentionCase && !viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
+      if (!longPermissionCase && !retentionCase && !viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
       error = String(cause);
       sameError = cause === injectedError;
     }
@@ -691,7 +719,7 @@ async function main() {
     const diagnosticDirectory = path.join(evalDir, 'plan-counting');
     const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
     const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
-    console.log(JSON.stringify({ observation, error, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, longPermissionFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

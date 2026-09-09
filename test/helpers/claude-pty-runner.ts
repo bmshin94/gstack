@@ -2425,12 +2425,15 @@ export async function runPlanSkillCounting(opts: {
       // Record the same selected frame/tail predicates without retaining text.
       lastObservation.permissionMenu = { numbered: isNumberedOptionListVisible(questionVisible),
         permissionTail: isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES)) };
+      // A fresh decoded frame is already bounded to the active viewport.
+      // Slicing it can sever the exact file header; only raw history needs a tail.
+      const permissionVisible = frame ? questionVisible : questionVisible.slice(-TAIL_SCAN_BYTES);
       // Native permissions are separate from AUQs. Consume the rendered
       // window before writing, so old permission text cannot send again.
-      if (!call && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES))) {
+      if (!call && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
         lastLoopStage = 'permission-grant';
         if (expired()) break;
-        if (!reserveNativePermissionGrant(native, questionVisible.slice(-TAIL_SCAN_BYTES), grantedTools, grantedRequests)) continue;
+        if (!reserveNativePermissionGrant(native, permissionVisible, grantedTools, grantedRequests)) continue;
         questionSince = session.mark();
         session.send('1\r'); // Grant this request; AUQ preferences cannot enable session-wide access.
         await pause(1500);

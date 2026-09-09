@@ -224,6 +224,25 @@ test.skipIf(process.platform === 'win32')('post-mode hook invocation waits for a
   expect(result.sends).toEqual(['2', '\r']); expect(result.acknowledged).toBe(true);
 }, 15_000);
 
+test.skipIf(process.platform === 'win32').each(['post-permission-request-long', 'post-permission-request-long-navigation'])('full current-frame permission keeps the owned path through navigation/posture (%s)', async scenario => {
+  const result = await run(scenario);
+  expect(result.error).toBeUndefined();
+  expect(result.longPermissionFrame.length).toBeGreaterThan(1500);
+  expect(result.sends).toEqual(scenario.endsWith('navigation') ? ['1\r', '3', '\r'] : ['1\r', '2', '\r']);
+  expect(result.premature).toEqual([]); expect(result.acknowledged).toBe(true);
+  expect(result.closed).toBe(true);
+});
+test.skipIf(process.platform === 'win32').each(['stale', 'unowned', 'history'])('full current-frame permission retains navigation %s refusal', async variant => {
+  const result = await run('post-permission-request-long-' + variant);
+  expect(result.error).toBeString(); expect(result.sends).toEqual([]);
+  expect(result.closed).toBe(true);
+});
+test.skipIf(process.platform === 'win32')('full current-frame permission keeps the short recent-history fallback', async () => {
+  const result = await run('post-permission-request-history');
+  expect(result.error).toBeUndefined(); expect(result.sends).toEqual(['1\r', '2', '\r']);
+  expect(result.acknowledged).toBe(true); expect(result.closed).toBe(true);
+});
+
 test.skipIf(process.platform === 'win32').each(['post-permission-request', 'post-permission-request-navigation', 'post-permission-request-arrival-race'])('owned PermissionRequest grants Write before its native invocation (%s)', async scenario => {
   const result = await run(scenario);
   expect(result.error).toBeUndefined(); expect(result.earlyWithoutNativeInvocation).toBe(true);

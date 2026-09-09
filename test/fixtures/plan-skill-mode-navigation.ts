@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { navigateToModeAskUserQuestion, waitForNativeModePosture } from '../helpers/plan-skill-mode-navigation';
 import { setupQuestionEventSource } from '../helpers/plan-skill-question-events';
 import { spawnSync } from 'node:child_process';
+import { PtyCurrentScreen } from '../helpers/pty-current-screen';
 import type { ClaudePtySession } from '../helpers/claude-pty-runner';
 
 // Exact retained native input: toolu_01KR2ec2WnBuP9vMvXmRFq4N.
@@ -285,14 +286,16 @@ async function reviewStartFixture(scenario: string) {
 
 async function postModeFixture(scenario: string) {
   const fileRequestCase = scenario.startsWith('post-permission-request');
+  const longPermissionCase = scenario.startsWith('post-permission-request-long');
   const previewCase = scenario.startsWith('post-preview-');
   const shortPreview = scenario.startsWith('post-preview-short');
   const viewportCase = scenario.startsWith('post-viewport-');
-  const navigation = scenario === 'post-permission-request-navigation' || scenario === 'post-preview-navigation' || shortPreview;
+  const navigation = scenario === 'post-permission-request-long-navigation' || scenario === 'post-permission-request-navigation' || scenario === 'post-preview-navigation' || shortPreview;
   const wallNow = Date.now;
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'post-mode-fixture-')));
   const config = path.join(root, '.claude');
   const cwd = path.join(root, 'project');
+  const permissionPath = longPermissionCase ? path.join(root, 'gstack-home/projects/gstack-e2e-plan-ceo-paired-fixture/ceo-plans/2026-09-09-payment-test-coverage.md') : path.join(cwd, 'plan.md');
   const evalDir = path.join(root, 'eval');
   const sessionId = '00000000-0000-4000-8000-000000000001';
   const file = path.join(config, 'projects', 'fixture', `${sessionId}.jsonl`);
@@ -333,7 +336,7 @@ async function postModeFixture(scenario: string) {
     const command = JSON.parse(fs.readFileSync(capture.settingsPath, 'utf8')).hooks.PermissionRequest[0].hooks[0].command;
     const publish = () => {
       const child = spawnSync('/bin/sh', ['-c', command], { input: JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: sessionId,
-        transcript_path: file, cwd, tool_name: 'Write', tool_input: { file_path: path.join(cwd, 'plan.md'), content: 'Plan' } }), encoding: 'utf8', timeout: 5000 });
+        transcript_path: file, cwd, tool_name: 'Write', tool_input: { file_path: permissionPath, content: 'Plan' } }), encoding: 'utf8', timeout: 5000 });
       if (child.error || child.status || child.stdout || child.stderr) throw new Error('Silent local permission observer fixture failed');
       earlyWithoutNativeInvocation = !fs.readFileSync(file, 'utf8').includes('"name":"Write"');
     };
@@ -350,7 +353,7 @@ async function postModeFixture(scenario: string) {
     if (child.error || child.status || child.stdout || child.stderr) throw new Error('Silent local observer fixture failed');
     earlyWithoutNativeInvocation = !fs.readFileSync(file, 'utf8').includes('follow-up');
   } else if (scenario.startsWith('post-permission')) {
-    append({ type: 'assistant', cwd, message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'write', name: 'Write', input: { file_path: path.join(cwd, 'plan.md'), content: 'Plan' } }] } });
+    append({ type: 'assistant', cwd, message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'write', name: 'Write', input: { file_path: permissionPath, content: 'Plan' } }] } });
   } else {
     tool('follow-up', input, ['post-unowned', 'post-preview-unowned', 'post-preview-short-unowned'].includes(scenario) ? { sessionId: '00000000-0000-4000-8000-000000000002' } : {});
     if (scenario === 'post-concurrent') tool('other-follow-up', input);
@@ -358,7 +361,9 @@ async function postModeFixture(scenario: string) {
   let buffer = '\nHOLD SCOPE selected\n';
   const sincePick = 0;
   let screen = '';
-  const paint = (text: string) => { screen = text; buffer += text; };
+  const decoder = longPermissionCase ? new PtyCurrentScreen({ cols: 240, rows: 40 }) : null;
+  let longPermissionFrame = '';
+  const paint = (text: string) => { screen = text; buffer += text; decoder?.feed(Buffer.from('\x1b[2J\x1b[H' + text.replace(/(?<!\r)\n/g, '\r\n'))); };
   let tab = 0;
   let stage = scenario.startsWith('post-permission') ? 'permission' : 'question';
   let focused = scenario === 'post-preview-already-focused' ? 2 : 1;
@@ -391,7 +396,15 @@ async function postModeFixture(scenario: string) {
     }
     paint(`\n☐ ${q.header}\n${q.question}\n` + q.options.map((o, i) => `${i === 0 ? '❯' : ' '}${i + 1}. ${o.label}`).join('\n') + '\n');
   };
-  if (stage === 'permission') paint(`Do you want to ${fileRequestCase ? 'overwrite' : 'create'} ${scenario.endsWith('unowned') ? 'other.md' : 'plan.md'}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`);
+  if (longPermissionCase) {
+    const displayed = permissionPath + (scenario.endsWith('unowned') ? '.other' : '');
+    paint('─'.repeat(240) + '\n Overwrite file\n ' + path.relative(cwd, displayed) + '\n' + '╌'.repeat(240) + '\n'
+      + Array.from({ length: 8 }, (_, i) => ` ${i + 1} ${'Plan context '.repeat(8)}`).join('\n') + '\n' + '╌'.repeat(240)
+      + '\n Do you want to overwrite ' + path.basename(displayed) + '?\n ❯ 1. Yes\n'
+      + '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and always allow access to\n      '
+      + path.dirname(displayed) + ' for this session (shift+tab)\n   3. No\n\n Esc to cancel · Tab to amend');
+  }
+  else if (stage === 'permission') paint(`Do you want to ${fileRequestCase ? 'overwrite' : 'create'} ${scenario.endsWith('unowned') ? 'other.md' : 'plan.md'}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`);
   else show();
   if (scenario === 'post-permission-request-arrival-race') paint('\nI will make this plan bulletproof.\n');
   if (viewportCase) paint(viewportReplay.frame);
@@ -434,7 +447,9 @@ async function postModeFixture(scenario: string) {
     exited: () => scenario === 'post-exited' || (scenario === 'post-exit-during-pause' && clock > 0), exitCode: () => 9,
     visibleSince: (mark = 0) => buffer.slice(mark), rawOutput: () => buffer,
     currentScreen: async () => {
-      const frame = { text: screen, rawEnd: scenario === 'post-stale' ? 0 : buffer.length };
+      const decoded = decoder ? await decoder.snapshot() : null;
+      if (decoded && stage === 'permission') longPermissionFrame = decoded.text;
+      const frame = { text: decoded?.text ?? screen, rawEnd: scenario === 'post-stale' || scenario === 'post-permission-request-long-stale' ? 0 : buffer.length };
       if (previewCase) {
         previewFrameReads++;
         if (focusWrites && scenario === 'post-preview-deadline') clock = 30_000;
@@ -452,7 +467,7 @@ async function postModeFixture(scenario: string) {
       if (scenario === 'post-send-failure') throw sendFailure;
       if (stage === 'permission' && data === '1\r') {
         if (fileRequestCase) append({ type: 'assistant', cwd, message: { role: 'assistant', stop_reason: 'tool_use',
-          content: [{ type: 'tool_use', id: 'write', name: 'Write', input: { file_path: path.join(cwd, 'plan.md'), content: 'Plan' } }] } });
+          content: [{ type: 'tool_use', id: 'write', name: 'Write', input: { file_path: permissionPath, content: 'Plan' } }] } });
         if (scenario !== 'post-permission-request-no-ack') ack('write');
         if (scenario === 'post-permission-request-arrival-race') {
           acknowledged = true; stage = 'done'; paint('\nI will make this plan bulletproof.\n'); return;
@@ -499,8 +514,9 @@ async function postModeFixture(scenario: string) {
         paint(scenario === 'post-not-rendered' ? '\nReview continues\n' : '\n' + text + '\n');
       } else premature.push(data);
     },
-    close: async () => { closed = true; diagnosticBeforeClose = fs.existsSync(diagnosticPath); fs.rmSync(config, { recursive: true, force: true }); },
+    close: async () => { decoder?.dispose(); closed = true; diagnosticBeforeClose = fs.existsSync(diagnosticPath); fs.rmSync(config, { recursive: true, force: true }); },
   } as unknown as ClaudePtySession;
+  if (scenario.endsWith('-history')) delete session.currentScreen;
   const oldSleep = Bun.sleep, oldNow = Date.now;
   Bun.sleep = (async (ms: number) => { clock += ms; }) as typeof Bun.sleep;
   Date.now = () => clock;
@@ -514,7 +530,7 @@ async function postModeFixture(scenario: string) {
     catch (cause) { error = String(cause); originalSendErrorPreserved = cause === sendFailure; }
     finally { await session.close(); }
     const diagnostic = fs.existsSync(diagnosticPath) ? JSON.parse(fs.readFileSync(diagnosticPath, 'utf8')) : null;
-    console.log(JSON.stringify({ error, sends, premature, acknowledged, earlyWithoutNativeInvocation, raceInjected, originalSendErrorPreserved,
+    console.log(JSON.stringify({ error, sends, longPermissionFrame, premature, acknowledged, earlyWithoutNativeInvocation, raceInjected, originalSendErrorPreserved,
       closed, diagnosticBeforeClose, resizes, focusWrites, sameFocusWrites, previewFrameReads, configRemovedBeforeArtifactRead: !fs.existsSync(config), diagnostic,
       diagnosticMode: diagnostic && (fs.statSync(diagnosticPath).mode & 0o777), elapsed: clock }));
   } finally { Bun.sleep = oldSleep; Date.now = oldNow; fs.rmSync(root, { recursive: true, force: true }); }

@@ -315,6 +315,23 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.outcome).toBe('timeout');
     expect(result.closed).toBe(true);
   }, 15_000);
+  test('full current-frame permission keeps a long owned path through the real counting loop', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-long-frame');
+    expect(result.error).toBeUndefined();
+    expect(result.longPermissionFrame.length).toBeGreaterThan(1500);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1', '1', '1']);
+    expect(result.permissionWrites).toEqual(['create']);
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
+    expect(result.closed).toBe(true);
+  });
+  test.each(['stale', 'mismatch', 'ambiguous'])('full current-frame permission retains counting %s refusal', async variant => {
+    const result = await runFakeCounting('**DONE**', 'permission-long-frame-' + variant);
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.permissionWrites).toEqual([]);
+    if (variant === 'stale') expect(result.observation.outcome).toBe('timeout');
+    else expect(result.error).toMatch(/cannot be bound|Ambiguous native permission owner/);
+    expect(result.closed).toBe(true);
+  });
   test('a current create dialog is decoded and granted only for its exact owned path', async () => {
     const result = await runFakeCounting('**DONE**', 'permission-current-create');
     expect(result.unsolicitedWrites).toEqual([]);

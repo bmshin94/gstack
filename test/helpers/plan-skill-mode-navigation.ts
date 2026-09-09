@@ -218,8 +218,10 @@ async function driveModeQuestions(
     const pending = native.calls.filter(call => call.result === 'pending');
     if (pending.length > 1) throw new Error('Concurrent native AskUserQuestion calls are unsupported during mode navigation');
     const call = pending[0];
-    if (!call && isNumberedOptionListVisible(visible) && isPermissionDialogVisible(visible.slice(-TAIL_SCAN_BYTES))) {
-      if (!reserveNativePermissionGrant(native, visible.slice(-TAIL_SCAN_BYTES), granted, grantedRequests)) continue;
+    // Keep a fresh decoded header intact; only the history fallback needs a tail.
+    const permissionVisible = frame ? visible : visible.slice(-TAIL_SCAN_BYTES);
+    if (!call && isNumberedOptionListVisible(visible) && isPermissionDialogVisible(permissionVisible)) {
+      if (!reserveNativePermissionGrant(native, permissionVisible, granted, grantedRequests)) continue;
       questionSince = session.mark();
       if (!send('1\r')) break;
       await pause(1500);
