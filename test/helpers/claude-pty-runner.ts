@@ -1344,7 +1344,12 @@ export const engStep0Boundary: Step0BoundaryPredicate = (fp) =>
 export const designStep0Boundary: Step0BoundaryPredicate = (fp) =>
   /design system|design posture|design score|first dimension/i.test(
     fp.promptSnippet,
-  );
+  ) ||
+  // Step 0D's prescribed focus question uses none of the legacy phrases.
+  // A long gap list can exceed the diagnostic snippet; inspect each owned
+  // question separately, after the complete invocation's native ACK.
+  (fp.questions?.map(q => q.question) ?? [fp.promptSnippet]).some(question =>
+    /\bI(?:['’]ve| have) rated this plan (?:10(?:\.0+)?|[0-9](?:\.\d+)?)\/10 on design completeness\.[\s\S]*\bWant me to focus on specific areas instead of all 7\?/i.test(question));
 
 export const devexStep0Boundary: Step0BoundaryPredicate = (fp) =>
   /developer persona|target persona|persona selection|TTHW target/i.test(

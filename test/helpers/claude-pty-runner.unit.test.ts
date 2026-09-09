@@ -1253,6 +1253,47 @@ describe('Step0BoundaryPredicate per-skill', () => {
   });
 
   describe('designStep0Boundary', () => {
+    const focusTemplate = readFileSync(new URL('../../plan-design-review/SKILL.md.tmpl', import.meta.url), 'utf8')
+      .match(/### 0D\. Focus Areas\nAskUserQuestion: "([^\n]+)"/)?.[1] ?? '';
+    const focusQuestion = (gaps: string) => focusTemplate.replace('{N}', '4').replace('{X, Y, Z}', gaps);
+    const focusOptions = ['Review all 7 dimensions', 'Focus on specific areas'];
+    const nativeFocus = (question: string): AskUserQuestionFingerprint => ({
+      ...fp(question.slice(0, 240), focusOptions),
+      toolUseId: 'toolu-design-focus',
+      questions: [{ question, header: 'Focus areas', multiSelect: false,
+        options: focusOptions.map(label => ({ label, description: label })) }],
+    });
+
+    test('FIRES on the current template Step 0D focus-area question', () => {
+      expect(focusTemplate).toContain('Want me to focus on specific areas instead of all 7?');
+      const question = focusQuestion('hierarchy, spacing, contrast');
+      expect(question.length).toBeLessThanOrEqual(240);
+      expect(designStep0Boundary(fp(question, focusOptions))).toBe(true);
+    });
+
+    test('reads the owned full focus question when its gap list exceeds the diagnostic snippet', () => {
+      const question = focusQuestion('primary-action hierarchy, inconsistent vertical rhythm, inaccessible error contrast, label-size drift, absent loading feedback, and missing recovery states');
+      const fingerprint = nativeFocus(question);
+      expect(fingerprint.promptSnippet).not.toContain('Want me to focus');
+      expect(question.length).toBeGreaterThan(240);
+      expect(designStep0Boundary(fingerprint)).toBe(true);
+    });
+
+    test.each([
+      "I've rated this plan 4/10 on design completeness. Should we add a loading state?",
+      'Want me to focus on specific areas instead of all 7?',
+      "I've rated the error message 4/10 on design completeness. Want me to focus on specific areas instead of all 7?",
+      "I've rated this plan 4/10 on design completeness. Should we focus on correcting error contrast?",
+    ])('does NOT turn a later finding into setup from a partial focus match: %s', question => {
+      expect(designStep0Boundary(nativeFocus(question))).toBe(false);
+    });
+
+    test('does NOT combine partial focus matches across separate native question tabs', () => {
+      const fingerprint = nativeFocus("I've rated this plan 4/10 on design completeness. Should we add a loading state?");
+      fingerprint.questions!.push({ ...fingerprint.questions![0], question: 'Want me to focus on specific areas instead of all 7?' });
+      expect(designStep0Boundary(fingerprint)).toBe(false);
+    });
+
     test('FIRES on design system / posture mention', () => {
       const f = fp('Pick a design posture for this review', ['Polish', 'Triage', 'Expansion']);
       expect(designStep0Boundary(f)).toBe(true);
