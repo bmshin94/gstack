@@ -30,6 +30,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { runSkillTest, type SkillTestResult } from './helpers/session-runner';
+import { asideDriveOptions } from './helpers/third-party-actions';
+import { resolveEvalModel } from '../lib/eval-model';
 import {
   ROOT, describeIfSelected, testIfSelected, createEvalCollector,
   finalizeEvalCollector, recordE2E, runId, logCost,
@@ -58,7 +60,7 @@ async function recordAttempt(name: string, body: (run: typeof runSkillTest) => P
       evalCollector?.addTest({
         name, suite: 'e2e-third-party-actions', tier: 'e2e', passed: false,
         duration_ms: Date.now() - started, cost_usd: 0,
-        model: process.env.EVALS_MODEL ?? 'claude-sonnet-4-6', exit_reason: 'harness_error',
+        model: process.env.EVALS_MODEL ?? resolveEvalModel('capture'), exit_reason: 'harness_error',
         error: `${failure instanceof Error ? failure.message : String(failure)}\nRunner returned no result; cost and usage unavailable.`,
       });
     }
@@ -210,7 +212,7 @@ describeIfSelected('third-party-actions consent gate', TPA_TESTS, () => {
       expect(result.exitReason).toBe('success');
       const text = assistantText(result.transcript);
       expect(text).not.toMatch(/download it at aside\.com/i); // no pitch off-macOS (narration that mentions the domain is fine)
-      expect(text).not.toMatch(/in your Aside browser/i); // no phantom Aside drive offer
+      expect(asideDriveOptions(text)).toEqual([]); // no phantom Aside drive offer
       // Still a lettered consent question. The contract fixes letters only in
       // the detected case; here agents legitimately either re-letter from A or
       // keep the contract's B/C/D lettering with A dropped (observed live).
@@ -235,7 +237,7 @@ describeIfSelected('third-party-actions consent gate', TPA_TESTS, () => {
       logCost('tpa-broken', result);
       expect(result.exitReason).toBe('success');
       const text = assistantText(result.transcript);
-      expect(text).not.toMatch(/in your Aside browser/i); // load-bearing negative
+      expect(asideDriveOptions(text)).toEqual([]); // rejects conditional offers too
       // Either outcome the contract permits in one-shot `claude -p`: the
       // "open the Aside app" ask (agent stops at the re-probe), or the lettered
       // gstack drive / manual / defer question (any letter — agents keep the
@@ -265,7 +267,7 @@ describeIfSelected('third-party-actions consent gate', TPA_TESTS, () => {
       // pinned in prose by test/third-party-actions.test.ts.
       expect(text).toMatch(/download it at aside\.com/i);
       expect(text).toContain('macOS 15');
-      expect(text).not.toMatch(/in your Aside browser/i); // pitch, not a drive offer
+      expect(asideDriveOptions(text)).toEqual([]); // narration is not a drive offer
     } finally { cleanup(); }
   }), 6 * 60_000);
 

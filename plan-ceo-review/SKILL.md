@@ -925,6 +925,37 @@ Present these approach options via AskUserQuestion using the preamble's AskUserQ
 **STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis. A "clearly winning approach" is still an approach decision and still needs explicit user approval before it lands in the plan.
 **Reminder: Do NOT make any code changes. Review only.**
 
+### 0F. Mode Selection
+Run after 0C-bis and before 0D; labels remain stable for cross-references.
+In every mode, you are 100% in control. No scope is added without your explicit approval.
+
+Use registered ID `plan-ceo-review-mode` and the preamble's session-kind precedence. If an interactive user has not chosen a mode and `QUESTION_TUNING: true`, run the documented `gstack-question-preference --check` for this ID before choosing or presenting modes. On `AUTO_DECIDE`, say "Auto-decided review mode → <mode> (your preference). Change with /plan-tune." The defaults below recommend a mode; the saved preference authorizes skipping its question. Keep `(your preference)` unchanged and give any contextual rationale in a separate sentence. Otherwise follow `ASK_NORMALLY`. `CONDUCTOR_SESSION: true` selects prose transport, not mode.
+
+Available modes:
+1. **SCOPE EXPANSION:** The plan is good but could be great. Dream big — propose the ambitious version. Every expansion is presented individually for your approval. You opt in to each one.
+2. **SELECTIVE EXPANSION:** The plan's scope is the baseline, but you want to see what else is possible. Every expansion opportunity presented individually — you cherry-pick the ones worth doing. Neutral recommendations.
+3. **HOLD SCOPE:** The plan's scope is right. Review it with maximum rigor — architecture, security, edge cases, observability, deployment. Make it bulletproof. No expansions surfaced.
+4. **SCOPE REDUCTION:** The plan is overbuilt or wrong-headed. Propose a minimal version that achieves the core goal, then review that.
+
+Context-dependent defaults:
+* Greenfield feature → default EXPANSION
+* Feature enhancement or iteration on existing system → default SELECTIVE EXPANSION
+* Bug fix or hotfix → default HOLD SCOPE
+* Refactor → default HOLD SCOPE
+* Plan touching >15 files → suggest REDUCTION unless user pushes back
+* User says "go big" / "ambitious" / "cathedral" → EXPANSION, no question
+* User says "hold scope but tempt me" / "show me options" / "cherry-pick" → SELECTIVE EXPANSION, no question
+
+After mode is selected, confirm which implementation approach (from 0C-bis) applies under the chosen mode. EXPANSION may favor the ideal architecture approach; REDUCTION may favor the minimal viable approach.
+
+Once selected, commit fully. Do not silently drift.
+
+If mode selection needs an answer, use the preamble's question format and transport: include RECOMMENDATION. Modes differ in kind (review posture), not coverage — do NOT emit `Completeness: N/10` per option. Include: `Note: options differ in kind, not coverage — no completeness score.`
+
+For unresolved decisions, use the preamble's transport, ask once per issue, do NOT batch, and **STOP until the user responds**. Recommend + WHY; even an "obvious fix" needs a decision before changing the plan. If none remain, state "No issues, moving on" and proceed. Settled preferences and spawned sessions follow the preamble's precedence.
+Then continue to 0D-prelude, 0D, 0D-POST, and 0E as applicable.
+**Reminder: Do NOT make any code changes. Review only.**
+
 ### 0D-prelude. Expansion Framing (shared by EXPANSION and SELECTIVE EXPANSION)
 
 Every expansion proposal you generate in SCOPE EXPANSION or SELECTIVE EXPANSION mode follows this framing pattern:
@@ -1090,35 +1121,6 @@ are identical — the implementation speed is 10-20x faster. Always present
 both scales when discussing effort.
 
 Surface decisions that must be settled now as separate questions for the user NOW, one issue per AskUserQuestion. Do not defer a critical risk to a later review section. An explicit Step 0 answer remains valid: carry its exact accepted choice and scope into the working review ledger. Do not ask again merely to move a decision into a review section; new material tradeoffs or changed assumptions still require their own approval.
-
-### 0F. Mode Selection
-In every mode, you are 100% in control. No scope is added without your explicit approval.
-
-Use registered ID `plan-ceo-review-mode` and the preamble's session-kind precedence. If an interactive user has not chosen a mode and `QUESTION_TUNING: true`, run the documented `gstack-question-preference --check` for this ID before choosing or presenting modes. On `AUTO_DECIDE`, say "Auto-decided review mode → <mode> (your preference). Change with /plan-tune." The defaults below recommend a mode; the saved preference authorizes skipping its question. Keep `(your preference)` unchanged and give any contextual rationale in a separate sentence. Otherwise follow `ASK_NORMALLY`. `CONDUCTOR_SESSION: true` selects prose transport, not mode.
-
-Available modes:
-1. **SCOPE EXPANSION:** The plan is good but could be great. Dream big — propose the ambitious version. Every expansion is presented individually for your approval. You opt in to each one.
-2. **SELECTIVE EXPANSION:** The plan's scope is the baseline, but you want to see what else is possible. Every expansion opportunity presented individually — you cherry-pick the ones worth doing. Neutral recommendations.
-3. **HOLD SCOPE:** The plan's scope is right. Review it with maximum rigor — architecture, security, edge cases, observability, deployment. Make it bulletproof. No expansions surfaced.
-4. **SCOPE REDUCTION:** The plan is overbuilt or wrong-headed. Propose a minimal version that achieves the core goal, then review that.
-
-Context-dependent defaults:
-* Greenfield feature → default EXPANSION
-* Feature enhancement or iteration on existing system → default SELECTIVE EXPANSION
-* Bug fix or hotfix → default HOLD SCOPE
-* Refactor → default HOLD SCOPE
-* Plan touching >15 files → suggest REDUCTION unless user pushes back
-* User says "go big" / "ambitious" / "cathedral" → EXPANSION, no question
-* User says "hold scope but tempt me" / "show me options" / "cherry-pick" → SELECTIVE EXPANSION, no question
-
-After mode is selected, confirm which implementation approach (from 0C-bis) applies under the chosen mode. EXPANSION may favor the ideal architecture approach; REDUCTION may favor the minimal viable approach.
-
-Once selected, commit fully. Do not silently drift.
-
-If mode selection needs an answer, use the preamble's question format and transport: include RECOMMENDATION. Modes differ in kind (review posture), not coverage — do NOT emit `Completeness: N/10` per option. Include: `Note: options differ in kind, not coverage — no completeness score.`
-
-For unresolved decisions, use the preamble's transport, ask once per issue, do NOT batch, and **STOP until the user responds**. Recommend + WHY; even an "obvious fix" needs a decision before changing the plan. If none remain, state "No issues, moving on" and proceed. Settled preferences and spawned sessions follow the preamble's precedence.
-**Reminder: Do NOT make any code changes. Review only.**
 
 > **STOP.** Before running the 11-section deep review, required outputs, and review report (only after Step 0 scope and mode are agreed), Read `~/.claude/skills/gstack/plan-ceo-review/sections/review-sections.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.

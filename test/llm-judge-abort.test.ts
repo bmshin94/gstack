@@ -25,7 +25,7 @@ describe('callJudge cancellation', () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(create.mock.calls[0]).toEqual([{
       model: resolveEvalModel('judge'),
-      max_tokens: 1024,
+      max_tokens: 8192,
       messages: [{ role: 'user', content: 'Judge this.' }],
     }, undefined]);
   });
