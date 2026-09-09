@@ -212,8 +212,9 @@ try {
 async function postModeFixture(scenario: string) {
   const fileRequestCase = scenario.startsWith('post-permission-request');
   const previewCase = scenario.startsWith('post-preview-');
+  const shortPreview = scenario.startsWith('post-preview-short');
   const viewportCase = scenario.startsWith('post-viewport-');
-  const navigation = scenario === 'post-permission-request-navigation' || scenario === 'post-preview-navigation';
+  const navigation = scenario === 'post-permission-request-navigation' || scenario === 'post-preview-navigation' || shortPreview;
   const wallNow = Date.now;
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'post-mode-fixture-')));
   const config = path.join(root, '.claude');
@@ -238,9 +239,9 @@ async function postModeFixture(scenario: string) {
   if (['post-multiselect', 'post-preview-multiselect'].includes(scenario)) approach.multiSelect = true;
   if (previewCase) {
     Object.assign(approach.options[0]!, { preview: 'Client-side CSV details' });
-    Object.assign(mode.options[0]!, { preview: 'Expansion details' });
+    Object.assign(mode.options[shortPreview ? 1 : 0]!, { preview: 'Expansion details' });
   }
-  const input = { questions: scenario === 'post-preview-navigation' ? [approach, mode] : scenario === 'post-preview-mixed'
+  const input = { questions: shortPreview ? [mode] : scenario === 'post-preview-navigation' ? [approach, mode] : scenario === 'post-preview-mixed'
     ? [approach, question('Filename', 'Choose CSV filename', ['settings.csv', 'export.csv'])] : scenario === 'post-repeat-mode' ? [{ ...mode, header: 'Confirm Mode', question: 'D3 — Confirm the review mode for the chosen approach?' }] : scenario === 'post-identical-mode' ? [mode] : scenario === 'post-multi-tab'
     ? [approach, question('Filename', 'Choose CSV filename', ['settings.csv', 'export.csv'])] : [approach] };
   if (fileRequestCase) append({ type: 'user', message: { role: 'user', content: 'Review the supplied plan.' } });
@@ -277,7 +278,7 @@ async function postModeFixture(scenario: string) {
   } else if (scenario.startsWith('post-permission')) {
     append({ type: 'assistant', cwd, message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'write', name: 'Write', input: { file_path: path.join(cwd, 'plan.md'), content: 'Plan' } }] } });
   } else {
-    tool('follow-up', input, ['post-unowned', 'post-preview-unowned'].includes(scenario) ? { sessionId: '00000000-0000-4000-8000-000000000002' } : {});
+    tool('follow-up', input, ['post-unowned', 'post-preview-unowned', 'post-preview-short-unowned'].includes(scenario) ? { sessionId: '00000000-0000-4000-8000-000000000002' } : {});
     if (scenario === 'post-concurrent') tool('other-follow-up', input);
   }
   let buffer = '\nHOLD SCOPE selected\n';
@@ -292,6 +293,18 @@ async function postModeFixture(scenario: string) {
   let previewFrameReads = 0;
   const show = () => {
     const q = input.questions[tab]!;
+    if (shortPreview) {
+      const left = q.options.flatMap((option, index) => {
+        const [label, recommendation] = option.label.split(' (');
+        return [`${index + 1 === focused ? '❯' : ' '} ${index + 1}. ${label}`,
+          ...(recommendation ? [`    (${recommendation}`] : [])];
+      });
+      const right = ['┌' + '─'.repeat(54) + '┐', '│ ' + 'No preview available'.padEnd(53) + '│',
+        '└' + '─'.repeat(54) + '┘', '', 'Notes: press n to add notes'];
+      paint(`\n☐ ${q.header}\n${q.question}\n` + left.map((row, index) => row.padEnd(34) + right[index]).join('\n')
+        + '\n\nEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel\n');
+      return;
+    }
     if (previewCase && q.options.some(o => 'preview' in o)) {
       const rows = q.options.map((o, i) => `${i + 1 === focused ? '❯' : ' '} ${i + 1}. ${o.label}`.padEnd(59));
       while (rows.length < 3) rows.push(' '.repeat(59));
@@ -379,7 +392,7 @@ async function postModeFixture(scenario: string) {
           focusWrites++;
           if (focused === Number(data)) sameFocusWrites++;
           else if (scenario === 'post-preview-wrong-focus') show();
-          else if (scenario !== 'post-preview-stale-focus') { focused = Number(data); show(); }
+          else if (!['post-preview-stale-focus', 'post-preview-short-stale-focus'].includes(scenario)) { focused = Number(data); show(); }
           return;
         }
         if (data !== '\r' || focused !== Number(expected)) { premature.push(data); return; }
@@ -400,7 +413,7 @@ async function postModeFixture(scenario: string) {
         else { stage = 'submit'; paint('\nReview your answers\nReady to submit your answers?\nSubmit answers\n'); }
       } else if (stage === 'submit' && data === '\r') {
         if (events && !fileRequestCase) tool('follow-up', input);
-        if (!['post-no-ack', 'post-preview-no-ack', 'post-viewport-no-ack'].includes(scenario)) { ack(followId, ['post-error-ack', 'post-viewport-error-ack'].includes(scenario)); acknowledged = !['post-error-ack', 'post-viewport-error-ack'].includes(scenario); }
+        if (!['post-no-ack', 'post-preview-no-ack', 'post-preview-short-no-ack', 'post-viewport-no-ack'].includes(scenario)) { ack(followId, ['post-error-ack', 'post-viewport-error-ack'].includes(scenario)); acknowledged = !['post-error-ack', 'post-viewport-error-ack'].includes(scenario); }
         if (scenario === 'post-many-questions' && followNumber < 13) {
           followId = `follow-up-${++followNumber}`;
           input.questions[0] = { ...approach, header: `Approach ${followNumber}`, question: `D${followNumber + 1} — Confirm implementation approach ${followNumber}?` };

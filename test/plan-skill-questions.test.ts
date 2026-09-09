@@ -721,3 +721,67 @@ test('normal native input retains digit-only selection and preview input in a pl
   expect(selectPreview(plain, noPreview)).toEqual({ kind: 'digit' });
   expect(selectPreview(plain)).toBeNull();
 });
+
+// Exact complete retained 40-row frames and native input from HOLD diagnostic 9a5717f1.
+const shortPreviewFrame = {
+  "question": {
+    "header": "Review mode",
+    "multiSelect": false,
+    "options": [
+      {
+        "description": "The plan is good but could be great. Dream big — propose the ambitious version (e.g., CSV + JSON + import/restore + scheduled backups). Every expansion proposed individually for your approval. You opt in to each one.",
+        "label": "SCOPE EXPANSION"
+      },
+      {
+        "description": "The CSV export scope is the baseline. Separately surface cherry-pick opportunities (e.g., JSON format option, copy-to-clipboard, column filtering) for you to individually accept or defer. Neutral recommendations — you decide what's worth adding.",
+        "label": "SELECTIVE EXPANSION (recommended)",
+        "preview": "Baseline: CSV export button + client-side formatting\nCherry-picks surfaced individually:\n  [ ] JSON export option?\n  [ ] Copy-to-clipboard fallback?\n  [ ] Column selection UI?\n  [ ] Download filename with timestamp?"
+      },
+      {
+        "description": "The scope is right. Maximum rigor review only: architecture, security, edge cases (empty settings, special chars, large payloads), observability, deployment. No expansions surfaced.",
+        "label": "HOLD SCOPE"
+      },
+      {
+        "description": "Propose the minimum viable version: just the download trigger wired to the existing API, skip the formatter abstraction. Ruthlessly cut everything that isn't strictly necessary to ship the button.",
+        "label": "SCOPE REDUCTION"
+      }
+    ],
+    "question": "D2 — Which review mode do you want for this plan?"
+  },
+  "before": "\n  Read 1 file, ran 1 shell command\n\n● Now let me run the pre-review system audit and check for design docs.\n\n  Ran 4 shell commands\n\n● No design doc, no handoff note, fresh repo. Let me run the premise analysis inline and present the implementation\n  alternatives per the skill workflow.\n\n  Ran 1 shell command\n\n● Updated plan\n  ⎿  /plan to preview\n\n● Pre-review analysis done. Plan is well-framed — no premise issues. The question is how the formatter module connects\n  to the download trigger. Per the skill workflow, I need your call on implementation approach before selecting review\n  mode.\n\n● User answered Claude's questions:\n  ⎿  · D1 — How should the CSV formatter connect to the settings export? (0C-bis: Implementation Approach) → A)\n     Client-side only\n\n● Got it — client-side only, no formatter module. Now the mode selection you asked for.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n ☐ Review mode\n\nD2 — Which review mode do you want for this plan?\n\n❯ 1. SCOPE EXPANSION              ┌──────────────────────────────────────────────────────┐\n  2. SELECTIVE EXPANSION          │ No preview available                                 │\n    (recommended)                 └──────────────────────────────────────────────────────┘\n  3. HOLD SCOPE \n  4. SCOPE REDUCTION              Notes: press n to add notes\n                                                                                \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  Chat about this\n\nEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel",
+  "focused": "\n  Read 1 file, ran 1 shell command\n\n● Now let me run the pre-review system audit and check for design docs.\n\n  Ran 4 shell commands\n\n● No design doc, no handoff note, fresh repo. Let me run the premise analysis inline and present the implementation\n  alternatives per the skill workflow.\n\n  Ran 1 shell command\n\n● Updated plan\n  ⎿  /plan to preview\n\n● Pre-review analysis done. Plan is well-framed — no premise issues. The question is how the formatter module connects\n  to the download trigger. Per the skill workflow, I need your call on implementation approach before selecting review\n  mode.\n\n● User answered Claude's questions:\n  ⎿  · D1 — How should the CSV formatter connect to the settings export? (0C-bis: Implementation Approach) → A)\n     Client-side only\n\n● Got it — client-side only, no formatter module. Now the mode selection you asked for.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n ☐ Review mode\n\nD2 — Which review mode do you want for this plan?\n\n  1. SCOPE EXPANSION              ┌──────────────────────────────────────────────────────┐\n  2. SELECTIVE EXPANSION          │ No preview available                                 │\n    (recommended)                 └──────────────────────────────────────────────────────┘\n❯ 3. HOLD SCOPE \n  4. SCOPE REDUCTION              Notes: press n to add notes\n                                                                                \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  Chat about this\n\nEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel"
+};
+const selectShortPreview = (visible = shortPreviewFrame.focused, input: NativeQuestion = shortPreviewFrame.question) =>
+  nativeQuestionSelection(input, visible, parseNumberedOptions(visible));
+
+test('short preview panes retain the complete owned option column below their bottom', () => {
+  expect(selectShortPreview(shortPreviewFrame.before)).toEqual({ kind: 'preview', focusedIndex: 1 });
+  expect(selectShortPreview()).toEqual({ kind: 'preview', focusedIndex: 3 });
+  expect(selectShortPreview(shortPreviewFrame.focused.replace('❯ 3.', '  3.').replace('  4.', '❯ 4.')))
+    .toEqual({ kind: 'preview', focusedIndex: 4 });
+});
+
+test.each([
+  ['changed label below pane', shortPreviewFrame.focused.replace('HOLD SCOPE', 'HOLD OTHER')],
+  ['duplicate focus', shortPreviewFrame.focused.replace('  4.', '❯ 4.')],
+  ['missing focus', shortPreviewFrame.focused.replace('❯ 3.', '  3.')],
+  ['gapped index below pane', shortPreviewFrame.focused.replace('❯ 3.', '❯ 4.')],
+  ['clipped final label', shortPreviewFrame.focused.replace('SCOPE REDUCTION', 'SCOPE RED')],
+  ['missing label continuation', shortPreviewFrame.focused.replace('    (recommended)', ' '.repeat(17))],
+  ['right-column decoy', shortPreviewFrame.focused.replace('Notes: press n to add notes', '❯ 4. SCOPE REDUCTION')],
+  ['unknown right-column text', shortPreviewFrame.focused.replace('Notes: press n to add notes', 'HOLD SCOPE confirmed')],
+  ['broken bottom corner', shortPreviewFrame.focused.replace('└', ' ')],
+  ['changed footer', shortPreviewFrame.focused.replace('Enter to select', 'Enter to confirm')],
+] as const)('short preview panes refuse incomplete or ambiguous frames: %s', (_name, visible) => {
+  expect(selectShortPreview(visible)).toBeNull();
+});
+
+test('a short preview pane cannot own a later menu or substitute for native preview inventory', () => {
+  const later = shortPreviewFrame.focused + '\n☐ Other question\nD3 — Choose another action?\n❯ 1. First\n  2. Second';
+  expect(selectShortPreview(later)).toBeNull();
+  const noPreview = { ...shortPreviewFrame.question, options: shortPreviewFrame.question.options.map(({ preview, ...option }) => option) };
+  expect(selectShortPreview(shortPreviewFrame.focused, noPreview)).toBeNull();
+  expect(() => nativeQuestionSelection(shortPreviewFrame.question, shortPreviewFrame.focused,
+    parseNumberedOptions(shortPreviewFrame.focused), [structuredClone(shortPreviewFrame.question)]))
+    .toThrow('Indistinguishable repeated native question');
+});

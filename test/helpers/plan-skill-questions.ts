@@ -204,6 +204,21 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): { optio
     if (row[column] !== '│' || row[edge] !== '│' || row.slice(edge + 1).trim()) return invalid;
   }
   if (bottom < 0) return invalid;
+  // The option column can be taller than the preview (including its empty
+  // state). Continue only inside that same column; the native Notes hint is
+  // the sole supported right-column content below the verified rectangle.
+  let optionEnd = bottom + 1;
+  let notes = false;
+  for (; optionEnd < lines.length; optionEnd++) {
+    const row = lines[optionEnd]!;
+    const left = row.slice(0, column).trimEnd();
+    if (!/^[ \t]*(?:❯[ \t]*)?[1-9]\.[ \t]*\S/.test(left) && !/^ {4,}\S/.test(left)) break;
+    const right = row.slice(column).trimEnd();
+    if (right.trim()) {
+      if (notes || right !== 'Notes: press n to add notes' || !/ {2}$/.test(row.slice(0, column))) return invalid;
+      notes = true;
+    }
+  }
   // Only cursor tokens inside a verified preview are decorative. A later
   // menu after this frame restores the existing latest-menu selection.
   let focusedIndex = 0;
@@ -211,7 +226,7 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): { optio
     const before = menu.slice(0, match.index);
     const row = before.split('\n').length - 1;
     const cursorColumn = match.index - (before.lastIndexOf('\n') + 1);
-    if (row > bottom) return null;
+    if (row >= optionEnd) return null;
     if (cursorColumn < column && /^[ \t]*❯[ \t]*[1-9]\./.test(lines[row]!)) {
       if (focusedIndex || /[\r\n]/.test(match[0])) return invalid;
       focusedIndex = Number(match[1]);
@@ -220,7 +235,7 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): { optio
     if (row < 1 || row >= bottom || cursorColumn <= column
       || cursorColumn + match[0].length > edge || /[\r\n]/.test(match[0])) return invalid;
   }
-  lines = lines.slice(0, bottom + 1).map(line => line.slice(0, column).trimEnd());
+  lines = lines.slice(0, optionEnd).map(line => line.slice(0, column).trimEnd());
   const found: Array<{ index: number; label: string }> = [];
   for (let row = 0; row < lines.length; row++) {
     const line = lines[row]!;
@@ -248,6 +263,10 @@ function previewQuestionOptions(question: NativeQuestion, menu: string): { optio
     const rendered = compact(current.label);
     if (!rendered || (!offered.startsWith(rendered) && !rendered.startsWith(offered))) return invalid;
   }
+  // Extending below the pane requires the complete owned option inventory,
+  // not an unbounded continuation or a second menu joined to this frame.
+  if (optionEnd > bottom + 1 && (found.length !== question.options.length || found.some(option =>
+    !compact(option.label).startsWith(compact(question.options[option.index - 1]!.label))))) return invalid;
   // The final choice may extend below the viewport. Its prefix is validated
   // above; the caller still requires two other complete offered labels.
   return { options: found, focusedIndex };

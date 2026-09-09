@@ -314,3 +314,26 @@ test('restoring geometry does not invalidate already owned post-mode completion'
   expect(result.acknowledged).toBe(true);
   expect(result.diagnosticBeforeClose).toBe(false);
 }, 15_000);
+
+
+test('short preview mode navigation focuses HOLD below the pane and waits for native acknowledgement', async () => {
+  const result = await run('post-preview-short');
+  expect(result.error).toBeUndefined();
+  expect(result.sends).toEqual(['3', '\r']);
+  expect(result.premature).toEqual([]);
+  expect(result.sameFocusWrites).toBe(0);
+  expect(result.acknowledged).toBe(true);
+}, 15_000);
+
+test.each([
+  ['post-preview-short-stale-focus', ['3']],
+  ['post-preview-short-unowned', []],
+  ['post-preview-short-no-ack', ['3', '\r']],
+] as const)('short preview mode navigation retains frame, ownership and ACK barriers: %s', async (scenario, sends) => {
+  const result = await run(scenario);
+  expect(result.error).toBeDefined();
+  expect(result.sends).toEqual(sends);
+  expect(result.premature).toEqual([]);
+  expect(result.acknowledged).toBe(false);
+  expect(result.closed).toBe(true);
+}, 15_000);
