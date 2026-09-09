@@ -77,8 +77,8 @@ async function main() {
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
   const exitConfirmationCase = scenario.startsWith('exit-confirmation-');
-  const timing = ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
-  const caseBudgetMs = ceilingCase || viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
+  const timing = scenario.startsWith('retention-timeout-') || ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const caseBudgetMs = scenario === 'retention-timeout-boot' ? 4_000 : ceilingCase || viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = multiQuestionCase || ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'question-picker-redraw'].includes(scenario);
   const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
@@ -129,7 +129,7 @@ async function main() {
   const caseStartedAt = Date.now();
   try {
     seedCeoFindingProject(project, plan);
-    if (scenario === 'retention-write-failure') fs.writeFileSync(evalDir, 'not a directory');
+    if (scenario === 'retention-write-failure' || scenario === 'retention-timeout-write-failure') fs.writeFileSync(evalDir, 'not a directory');
     clock += setupMs;
     process.env.BROWSE_TERMINAL_BINARY = process.execPath;
     process.env.EVALS_HERMETIC = '1';
@@ -369,6 +369,7 @@ async function main() {
       };
       // A native request arriving later cannot reuse this pre-command frame.
       if (scenario === 'exit-confirmation-stale-frame') emit('\x1b[2J\x1b[H' + exitConfirmation());
+      if (scenario === 'retention-timeout-stale-frame') emit(fileDialog('create'));
       return {
         exited: new Promise<number>(resolve => { end = resolve; }),
         terminal: {
@@ -482,6 +483,12 @@ async function main() {
               const input = { file_path: path.join(project, 'plan.md'), content: 'PRIVATE_WRITE_CONTENT' };
               permissionId = tool('Write', input);
               recordFilePermission(input);
+              if (scenario.startsWith('retention-timeout-')) {
+                if (scenario === 'retention-timeout-stale-frame') return;
+                emit(scenario === 'retention-timeout-numbered' ? 'Requested permissions to create plan.md\nPRIVATE_SCREEN_PREVIEW'
+                  : 'PRIVATE_SCREEN_PREVIEW\n❯1.Yes\n2.No\n');
+                return;
+              }
               if (scenario === 'retention-ambiguous') tool('Edit', { file_path: path.join(project, 'other.md'), old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });
               emit(fileDialog(scenario === 'retention-binding' ? 'create different.md instead of' : 'create') + '\nPRIVATE_SCREEN_PREVIEW');
               if (scenario === 'retention-write-failure') tool('Edit', { file_path: path.join(project, 'other.md'), old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });

@@ -2103,6 +2103,7 @@ export interface PlanSkillCountObservation {
       nativeStable: boolean | null;
       frame: { rawEnd: number; questionSince: number; viewportInputSince: number; fresh: boolean; planReady: boolean; exitConfirmation: boolean } | null;
       questionMatch: 'not-evaluated' | 'none' | 'digit' | 'preview';
+      permissionMenu: { numbered: boolean; permissionTail: boolean } | null;
     } | null;
   };
 }
@@ -2215,6 +2216,7 @@ export async function runPlanSkillCounting(opts: {
   let lastObservation: PlanSkillCountObservation['diagnostics']['lastObservation'] = null;
   let lastNative: ReturnType<typeof readPlanSkillQuestions> | null = null;
   let lastDialog = '';
+  let returnedTimeout = false;
 
   const timeoutSummary = () => `no terminal outcome within ${timeoutMs}ms (step0=${step0Count}, review=${reviewCount})`;
   const expired = () => Date.now() >= deadlineAt;
@@ -2233,6 +2235,7 @@ export async function runPlanSkillCounting(opts: {
       outcome = 'timeout';
       summary = timeoutSummary();
     }
+    returnedTimeout = outcome === 'timeout';
     return {
       outcome,
       summary,
@@ -2333,7 +2336,7 @@ export async function runPlanSkillCounting(opts: {
         pendingTools: { count: native.permissionTools.length, items: native.permissionTools.slice(-8).map(tool => ({ id: tool.id.slice(0, 128), name: typeof tool.name === 'string' ? tool.name.slice(0, 64) : typeof tool.name })) },
         pendingFileRequests: { count: diagnosticRequests.length, items: diagnosticRequests.slice(-8).map(request => ({ requestId: request.requestId.slice(0, 128), name: request.name, nativeToolId: request.nativeToolId?.slice(0, 128) ?? null })) },
         questionWindowPlanReady: isPlanReadyVisible(questionWindow), visiblePlanReady: isPlanReadyVisible(visible),
-        nativeStable: null, frame: null, questionMatch: 'not-evaluated',
+        nativeStable: null, frame: null, questionMatch: 'not-evaluated', permissionMenu: null,
       };
       if (native.pendingBytes) { lastLoopStage = 'pending-native-bytes'; continue; }
       // Bracket the async frame with native reads. Newly captured work or an
@@ -2416,6 +2419,9 @@ export async function runPlanSkillCounting(opts: {
       const pending = native.calls.filter(call => call.result === 'pending');
       if (pending.length > 1) throw new Error('Concurrent native AskUserQuestion calls are unsupported by the counting driver');
       const call = pending[0];
+      // Record the same selected frame/tail predicates without retaining text.
+      lastObservation.permissionMenu = { numbered: isNumberedOptionListVisible(questionVisible),
+        permissionTail: isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES)) };
       // Native permissions are separate from AUQs. Consume the rendered
       // window before writing, so old permission text cannot send again.
       if (!call && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES))) {
@@ -2519,6 +2525,12 @@ export async function runPlanSkillCounting(opts: {
       raw: session.rawOutput, visible: session.visibleText, counting: { native: lastNative, dialog: lastDialog } });
     throw cause;
   } finally {
+    if (returnedTimeout) {
+      // A returned deadline outcome needs the same metadata before native cleanup.
+      retainAutoplanFailure({ configDir: session.hermeticConfigDir, sessionId,
+        observation: { outcome: 'timeout', lastLoopStage, lastObservation, step0Count, reviewCount },
+        raw: session.rawOutput, visible: session.visibleText, counting: { native: lastNative, dialog: lastDialog } });
+    }
     await session.close();
   }
 }

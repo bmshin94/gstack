@@ -61,6 +61,55 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(JSON.stringify(original.diagnostic)).not.toContain('PRIVATE_CALLBACK_ERROR');
   }, 15_000);
 
+  test.each([
+    ['menu', true, false, true],
+    ['numbered', false, true, true],
+    ['stale-frame', false, false, false],
+  ] as const)('returned timeout retains the sampled %s guards before native cleanup', async (variant, numbered, permissionTail, fresh) => {
+    const result = await runFakeCounting('**DONE**', `retention-timeout-${variant}`);
+    expect(result.error).toBeUndefined();
+    expect(result.observation).toMatchObject({ outcome: 'timeout', step0Count: 0, reviewCount: 0, elapsedMs: result.helperTimeoutMs });
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.closed).toBe(true);
+    expect(result.nativeRemoved).toBe(true);
+    expect(result.retainedBeforeClose).toBe(true);
+    expect(result.diagnosticFiles).toHaveLength(1);
+    const diagnostic = result.diagnostic;
+    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_');
+    expect(diagnostic.rawTail.text).toBeUndefined();
+    expect(diagnostic.visibleTail.text).toBeUndefined();
+    expect(diagnostic.counting.dialog.text).toBeUndefined();
+    expect(diagnostic.counting.dialog.sha256).toMatch(/^[a-f0-9]{64}$/);
+    const retained = JSON.parse(diagnostic.observation.text);
+    expect(retained).toMatchObject({ outcome: 'timeout', lastLoopStage: 'no-pending-question', step0Count: 0, reviewCount: 0 });
+    expect(retained.lastObservation.permissionMenu).toEqual({ numbered, permissionTail });
+    expect(retained.lastObservation.frame.fresh).toBe(fresh);
+    expect(result.observation.diagnostics.lastObservation.permissionMenu).toEqual({ numbered, permissionTail });
+    expect(diagnostic.counting.permissionRequests).toHaveLength(1);
+    expect(diagnostic.counting.permissionRequests[0]).toMatchObject({ name: 'Write', result: 'pending', nativeToolId: 'tool-1' });
+  }, 15_000);
+  test('returned boot timeout retains metadata before cleanup without sending a command', async () => {
+    const result = await runFakeCounting('**DONE**', 'retention-timeout-boot');
+    expect(result.error).toBeUndefined();
+    expect(result.observation).toMatchObject({ outcome: 'timeout', elapsedMs: result.helperTimeoutMs, step0Count: 0, reviewCount: 0 });
+    expect(result.sends).toEqual([]);
+    expect(result.retainedBeforeClose).toBe(true);
+    expect(result.diagnosticFiles).toHaveLength(1);
+    expect(JSON.parse(result.diagnostic.observation.text)).toMatchObject({ outcome: 'timeout', lastLoopStage: 'boot-grace', lastObservation: null });
+    expect(result.closed).toBe(true);
+    expect(result.nativeRemoved).toBe(true);
+  }, 15_000);
+  test('diagnostic write failure preserves the returned timeout and session cleanup', async () => {
+    const result = await runFakeCounting('**DONE**', 'retention-timeout-write-failure');
+    expect(result.error).toBeUndefined();
+    expect(result.observation).toMatchObject({ outcome: 'timeout', elapsedMs: result.helperTimeoutMs, step0Count: 0, reviewCount: 0 });
+    expect(result.observation.diagnostics.lastObservation.permissionMenu).toEqual({ numbered: true, permissionTail: false });
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.diagnosticFiles).toEqual([]);
+    expect(result.closed).toBe(true);
+    expect(result.nativeRemoved).toBe(true);
+  }, 15_000);
+
   test('null phase ceiling reaches owned completion beyond the old cap and picks manual handoff once', async () => {
     const result = await runFakeCounting('**DONE**', 'ceiling-null');
     expect(result.error).toBeUndefined();
