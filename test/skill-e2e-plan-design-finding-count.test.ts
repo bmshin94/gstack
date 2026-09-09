@@ -97,10 +97,12 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
         if (obs.reviewCount < FLOOR) {
           throw new Error(
             `BAND FAIL (below floor): reviewCount=${obs.reviewCount} < FLOOR=${FLOOR}.\n` +
-              `Likely batching regression. Review-phase fingerprints:\n` +
+              `outcome=${obs.outcome} step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
+              `Inspect Step-0 classification and question evidence before diagnosing grouping.\n` +
+              `All-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
               obs.fingerprints
-                .filter((f) => !f.preReview)
-                .map((f) => `  - "${f.promptSnippet.slice(0, 80)}"`)
+                .slice(-8)
+                .map((f) => `  - ${JSON.stringify({ preReview: f.preReview, nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
                 .join('\n'),
           );
         }
