@@ -106,7 +106,13 @@ describeE2E('/plan-eng-review per-finding AskUserQuestion count (periodic)', () 
         }
         if (obs.reviewCount > CEILING) {
           throw new Error(
-            `BAND FAIL (above ceiling): reviewCount=${obs.reviewCount} > CEILING=${CEILING}.`,
+            `BAND FAIL (above ceiling): reviewCount=${obs.reviewCount} > CEILING=${CEILING}.\n` +
+              `outcome=${obs.outcome} step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
+              `All-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
+              obs.fingerprints
+                .slice(-8)
+                .map((f) => `  - ${JSON.stringify({ preReview: f.preReview, nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
+                .join('\n'),
           );
         }
 
