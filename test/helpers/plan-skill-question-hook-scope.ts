@@ -63,7 +63,7 @@ function inventory(opts: Options): string {
           // Substrings are conservatively refused too, independent of anchoring.
           if (!object(entry) || typeof entry.matcher !== 'string'
             || !/^[A-Za-z][A-Za-z0-9_]*$/.test(entry.matcher)
-            || (event === 'PreToolUse' ? ['askuserquestion'] : ['askuserquestion', 'write', 'edit'])
+            || (event === 'PreToolUse' ? ['askuserquestion', 'exitplanmode'] : ['askuserquestion', 'exitplanmode', 'write', 'edit'])
               .some(tool => tool.includes(entry.matcher.toLowerCase()))
             || !Array.isArray(entry.hooks)) fail(`competing or unsupported ${event} matcher`);
         }

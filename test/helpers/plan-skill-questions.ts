@@ -1,7 +1,7 @@
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { readQuestionEvents, readPermissionRequestEvents, type QuestionEventSource } from './plan-skill-question-events';
+import { readQuestionEvents, readExitPlanModeEvents, readPermissionRequestEvents, type QuestionEventSource } from './plan-skill-question-events';
 
 export interface NativeQuestion {
   question: string;
@@ -66,6 +66,8 @@ function questionInputShape(input: any): string {
 export function readPlanSkillQuestions(configDir: string | null, sessionId: string, events?: QuestionEventSource): {
   calls: NativeQuestionCall[];
   ready: boolean;
+  /** Keeps pending exit identity in the native/frame stability comparison. */
+  pendingExitPlanModeIds: string[];
   permissionTools: NativePermissionTool[];
   permissionResults: Array<{ id: string; result: 'completed' | 'error' }>;
   permissionRequests: NativeFilePermissionRequest[];
@@ -77,6 +79,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const results = new Map<string, boolean>();
   const resultTimes = new Map<string, number>();
   const ready = new Set<string>();
+  const earlyExits = new Map<string, { input: Record<string, unknown>; cwd: string }>();
   const permissionTools = new Map<string, NativePermissionTool>();
   const inputs = new Map<string, unknown>();
   const permissionInputs = new Map<string, NativePermissionTool>();
@@ -111,6 +114,11 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
     for (const event of readQuestionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
       addQuestion(event.id, event.input);
     }
+    for (const event of readExitPlanModeEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+      if (inputs.has(event.id)) throw new Error('Native ExitPlanMode changed input or name for an existing tool ID');
+      earlyExits.set(event.id, { input: event.input, cwd: event.cwd });
+      ready.add(event.id);
+    }
   }
   for (const row of transcript.rows) {
     const message = row.message;
@@ -119,6 +127,14 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         results.set(block.tool_use_id, block.is_error === true);
         resultTimes.set(block.tool_use_id, typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : Number.NaN);
+      }
+      // Exit's PreToolUse input is already normalized by the CLI. Preserve
+      // injected plan fields; even unfinished persisted conflicts fail closed.
+      const earlyExit = earlyExits.get(block?.id);
+      if (earlyExit && row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use'
+        && (block.name !== 'ExitPlanMode' || !isDeepStrictEqual(earlyExit.input, block.input)
+          || typeof row.cwd === 'string' && row.cwd !== earlyExit.cwd)) {
+        throw new Error('Native ExitPlanMode changed input, name or cwd for an existing tool ID');
       }
       // An unfinished assistant record cannot introduce a call, but it can
       // invalidate conflicting early evidence before any input is sent.
@@ -176,7 +192,8 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
         ...(native && (!results.has(native.id) || resultAfterRequest) ? { nativeToolId: native.id } : {}) });
     }
   }
-  return { calls: [...calls.values()], ready: [...ready].some(id => !results.has(id)),
+  const pendingExitPlanModeIds = [...ready].filter(id => !results.has(id));
+  return { calls: [...calls.values()], ready: pendingExitPlanModeIds.length > 0, pendingExitPlanModeIds,
     permissionTools: [...permissionTools.values()].filter(tool => !results.has(tool.id)),
     permissionResults: [...permissionTools.keys()].filter(id => results.has(id)).map(id => ({ id, result: results.get(id) ? 'error' : 'completed' })),
     permissionRequests,

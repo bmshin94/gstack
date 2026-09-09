@@ -49,13 +49,44 @@ test('silent native hook publishes the pending invocation before its assistant J
   const call = readQuestionEvents(f.source, f.expected)[0]!;
   expect(call).not.toHaveProperty('result'); expect(call).not.toHaveProperty('answered');
   expect(f.settings.hooks.PreToolUse).toHaveLength(1);
-  expect(f.settings.hooks.PreToolUse[0].matcher).toBe('^AskUserQuestion$');
+  expect(f.settings.hooks.PreToolUse[0].matcher).toBe('^(AskUserQuestion|ExitPlanMode)$');
   expect(f.settings.hooks.PermissionRequest).toHaveLength(1);
   expect(f.settings.hooks.PermissionRequest[0]).toEqual({ matcher: '^(Write|Edit)$',
     hooks: [{ type: 'command', command: f.command, timeout: 5 }] });
   expect(f.settings.hooks.PreToolUse[0].hooks[0]).toEqual({ type: 'command', command: f.command, timeout: 5 });
   expect(Object.keys(f.settings)).toEqual(['hooks']);
 }));
+
+test('early ExitPlanMode recorder preserves normalized input and never becomes AUQ/file permission', () => fixture(f => {
+  const toolInput = { plan: '# Plan\n日本語', planFilePath: path.join(f.cwd, 'plan.md'), allowedPrompts: [] };
+  const event = { ...f.event, tool_name: 'ExitPlanMode', tool_input: toolInput };
+  f.run(event); f.run(event);
+  expect(readQuestionEvents(f.source, f.expected)).toEqual([]);
+  expect(readPermissionRequestEvents(f.source, f.expected)).toEqual([]);
+  const records = fs.readdirSync(f.events);
+  expect(records).toHaveLength(1);
+  const record = JSON.parse(fs.readFileSync(path.join(f.events, records[0]!), 'utf8'));
+  expect(record).toMatchObject({ id: event.tool_use_id, hookEventName: 'PreToolUse', toolName: 'ExitPlanMode', input: toolInput, cwd: f.cwd });
+  for (const key of ['result', 'answered', 'requestId', 'permissionDecision']) expect(record).not.toHaveProperty(key);
+}));
+
+test('early ExitPlanMode recorder retains owner, immutable input and unchanged byte bounds', async () => {
+  for (const patch of [{ session_id: otherSession }, { agent_id: 'fork' }]) await fixture(f => {
+    f.run({ ...f.event, tool_name: 'ExitPlanMode', tool_input: {}, ...patch });
+    expect(readQuestionEvents(f.source, f.expected)).toEqual([]);
+    expect(fs.readdirSync(f.events)).toEqual([]);
+  });
+  for (const patch of [{ cwd: '/wrong' }, { tool_use_id: '' }, { tool_input: { plan: 'x'.repeat(256 * 1024) } }]) await fixture(f => {
+    f.run({ ...f.event, tool_name: 'ExitPlanMode', tool_input: {}, ...patch });
+    expect(() => readQuestionEvents(f.source, f.expected)).toThrow('capture failed');
+  });
+  await fixture(f => {
+    f.run({ ...f.event, tool_name: 'ExitPlanMode', tool_input: { plan: 'first' } });
+    expect(readQuestionEvents(f.source, f.expected)).toEqual([]);
+    f.run({ ...f.event, tool_name: 'ExitPlanMode', tool_input: { plan: 'changed' } });
+    expect(() => readQuestionEvents(f.source, f.expected)).toThrow('capture failed');
+  });
+});
 
 function permissionEvent(f: ReturnType<typeof createFixture>, toolName: 'Write' | 'Edit', toolInput: Record<string, unknown>) {
   return { hook_event_name: 'PermissionRequest', session_id: sessionId, transcript_path: f.transcriptFile,

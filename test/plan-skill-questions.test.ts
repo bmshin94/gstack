@@ -19,10 +19,10 @@ afterEach(() => fs.rmSync(config, { recursive: true, force: true }));
 function earlyQuestions() {
   const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
   const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PreToolUse[0].hooks[0].command;
-  return { source, emit(id: string, input: unknown = { questions: [question] }) {
+  return { source, emit(id: string, input: unknown = { questions: [question] }, toolName = 'AskUserQuestion') {
     const result = Bun.spawnSync(['bash', '-c', command], { timeout: 5000, stdin: Buffer.from(JSON.stringify({
       hook_event_name: 'PreToolUse', session_id: sessionId, transcript_path: file, cwd: config,
-      tool_name: 'AskUserQuestion', tool_use_id: id, tool_input: input,
+      tool_name: toolName, tool_use_id: id, tool_input: input,
     })), stdout: 'pipe', stderr: 'pipe' });
     expect(result.exitCode, result.stderr.toString()).toBe(0);
     expect(result.stdout.length).toBe(0);
@@ -46,6 +46,78 @@ const nativeWrite = (id: string, input: unknown, cwd = config, name = 'Write', s
 });
 const nativeWriteResult = (id: string, timestamp?: string, is_error = false) => ({
   type: 'user', sessionId, timestamp, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error, content: 'Done' }] },
+});
+
+// Normalized execution input: preserve injected plan fields and every extra key.
+const exitInput = () => ({ plan: '# Plan\n## GSTACK REVIEW REPORT\n日本語', planFilePath: path.join(config, 'plan.md'),
+  allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }], custom: { exact: true } });
+
+test.each([null, 'tool_use'])('early ExitPlanMode coalesces exact %s native input without AUQ or file authority', stopReason => {
+  write({ type: 'user', sessionId, message: { role: 'user', content: 'Review' } });
+  const early = earlyQuestions(), input = exitInput();
+  early.emit('early-exit', input, 'ExitPlanMode');
+  const initial = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(initial.ready).toBe(true);
+  expect(initial.pendingExitPlanModeIds).toEqual(['early-exit']);
+  expect(initial.calls).toEqual([]); expect(initial.permissionTools).toEqual([]);
+  expect(initial.permissionRequests).toEqual([]); expect(initial.permissionResults).toEqual([]);
+  write(nativeWrite('early-exit', input, config, 'ExitPlanMode', stopReason));
+  expect(readPlanSkillQuestions(config, sessionId, early.source)).toEqual(initial);
+  if (stopReason === null) expect(readPlanSkillQuestions(config, sessionId).ready).toBe(false);
+});
+
+test.each([false, true])('early ExitPlanMode retires on an owned result including preexisting/error=%s', isError => {
+  const early = earlyQuestions(), input = exitInput();
+  write(nativeWriteResult('early-exit', undefined, isError));
+  early.emit('early-exit', input, 'ExitPlanMode');
+  for (let repeat = 0; repeat < 2; repeat++) {
+    early.emit('early-exit', input, 'ExitPlanMode');
+    const state = readPlanSkillQuestions(config, sessionId, early.source);
+    expect(state.ready).toBe(false); expect(state.pendingExitPlanModeIds).toEqual([]);
+    expect(state.calls).toEqual([]); expect(state.permissionResults).toEqual([]);
+  }
+});
+
+test.each(['foreign', 'sidechain', 'child', 'wrong-id'])('early ExitPlanMode ignores a %s native result', variant => {
+  const early = earlyQuestions(), input = exitInput();
+  const result: any = nativeWriteResult(variant === 'wrong-id' ? 'other-exit' : 'early-exit');
+  if (variant === 'foreign') result.sessionId = '00000000-0000-4000-8000-000000000002';
+  if (variant === 'sidechain') result.isSidechain = true;
+  if (variant === 'child') result.parent_tool_use_id = 'parent';
+  write(result); early.emit('early-exit', input, 'ExitPlanMode');
+  expect(readPlanSkillQuestions(config, sessionId, early.source).ready).toBe(true);
+  fs.appendFileSync(file, JSON.stringify(nativeWriteResult('early-exit')) + '\n');
+  expect(readPlanSkillQuestions(config, sessionId, early.source).ready).toBe(false);
+});
+
+test.each(['plan', 'path', 'extra', 'nested-schema-extra', 'cwd', 'AskUserQuestion', 'Write', 'Edit', 'Bash'])('early ExitPlanMode rejects unfinished same-ID %s conflicts', variant => {
+  write(); const early = earlyQuestions(), input = exitInput();
+  early.emit('early-exit', input, 'ExitPlanMode');
+  expect(readPlanSkillQuestions(config, sessionId, early.source).ready).toBe(true);
+  const changed = structuredClone(input);
+  if (variant === 'plan') changed.plan += '\nChanged';
+  if (variant === 'path') changed.planFilePath += '.other';
+  if (variant === 'extra') changed.custom.exact = false;
+  // Deprecated nested keys stripped by CLI schema are conservatively rejected.
+  if (variant === 'nested-schema-extra') (changed.allowedPrompts[0] as any).extra = 'not in execution input';
+  const name = ['AskUserQuestion', 'Write', 'Edit', 'Bash'].includes(variant) ? variant : 'ExitPlanMode';
+  write(nativeWrite('early-exit', changed, variant === 'cwd' ? path.dirname(config) : config, name, null));
+  expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('changed input');
+});
+
+test('early ExitPlanMode keeps missing transcript, partial bytes and owner changes observable', () => {
+  const early = earlyQuestions(), input = exitInput();
+  early.emit('exit-one', input, 'ExitPlanMode');
+  expect(readPlanSkillQuestions(config, sessionId, early.source).ready).toBe(false);
+  write(); const first = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(first.ready).toBe(true);
+  fs.appendFileSync(file, '{"type":');
+  expect(readPlanSkillQuestions(config, sessionId, early.source).pendingBytes).toBeGreaterThan(0);
+  write(nativeWriteResult('exit-one'));
+  early.emit('exit-two', input, 'ExitPlanMode');
+  const second = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(second.ready).toBe(true); expect(second.pendingExitPlanModeIds).toEqual(['exit-two']);
+  expect(second).not.toEqual(first);
 });
 
 test('permission request identity remains separate until an exact later native result completes it', () => {

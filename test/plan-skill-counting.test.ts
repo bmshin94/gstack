@@ -261,7 +261,7 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.evidence).toContain('Reay to execute?');
     expect(result.closed).toBe(true);
   }, 15_000);
-  test.each(['normal', 'no-focus-choice', 'ascii-fallback', 'current-frame', 'history'])('native ExitPlanMode confirmation is a read-only counting terminal (%s)', async variant => {
+  test.each(['normal', 'no-focus-choice', 'ascii-fallback', 'current-frame', 'history', 'early-only', 'early-unfinished', 'early-persisted'])('native ExitPlanMode confirmation is a read-only counting terminal (%s)', async variant => {
     const result = await runFakeCounting('**DONE**', `exit-confirmation-${variant}`);
     expect(result.error).toBeUndefined();
     expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
@@ -274,8 +274,29 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.summary).toContain('awaiting its current native confirmation');
     expect(result.closed).toBe(true);
   }, 15_000);
+  test('early ExitPlanMode also waits at the existing full-plan confirmation without approving it', async () => {
+    const result = await runFakeCounting('**DONE**', 'exit-confirmation-early-full-plan');
+    expect(result.observation.outcome).toBe('plan_ready');
+    expect(result.observation.summary).toContain('Ready to execute');
+    expect(result.observation.step0Count).toBe(1);
+    expect(result.observation.reviewCount).toBe(2);
+    expect(result.observation.fingerprints).toHaveLength(3);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('early ExitPlanMode owner replacement resamples even while ready stays true', async () => {
+    const result = await runFakeCounting('**DONE**', 'exit-confirmation-early-owner-arrival-race');
+    expect(result.observation.outcome).toBe('plan_ready');
+    expect(result.raceInjected).toBe(true);
+    expect(result.postExitOwnerRaceScreens).toBeGreaterThan(0);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.closed).toBe(true);
+  }, 15_000);
   test.each(['no-owner', 'unfinished-owner', 'foreign-owner', 'tool-search', 'completed-owner', 'error-owner',
-    'pending-question', 'pending-write', 'pending-file-request', 'completed-arrival-race', 'write-arrival-race'])('native ExitPlanMode confirmation cannot replace pending ownership and stable native state (%s)', async variant => {
+    'pending-question', 'pending-write', 'pending-file-request', 'completed-arrival-race', 'write-arrival-race',
+    'early-completed', 'early-error', 'early-pending-write', 'early-pending-bytes', 'early-completed-arrival-race'])('native ExitPlanMode confirmation cannot replace pending ownership and stable native state (%s)', async variant => {
     const result = await runFakeCounting('**DONE**', `exit-confirmation-${variant}`);
     expect(result.error).toBeUndefined();
     expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
@@ -283,7 +304,10 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.permissionWrites).toEqual([]);
     expect(result.raceInjected).toBe(variant.endsWith('arrival-race'));
     expect(result.observation.step0Count).toBe(1);
-    expect(result.observation.reviewCount).toBe(2);
+    // An incomplete row pauses the whole native observation before counting
+    // the last ACK; its visible terminal cannot bypass that existing guard.
+    expect(result.observation.reviewCount).toBe(variant === 'early-pending-bytes' ? 1 : 2);
+    if (variant === 'early-pending-bytes') expect(result.observation.diagnostics.lastLoopStage).toBe('pending-native-bytes');
     expect(result.observation.outcome).toBe('timeout');
     expect(result.closed).toBe(true);
   }, 15_000);

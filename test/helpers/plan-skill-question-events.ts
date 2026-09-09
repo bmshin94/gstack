@@ -36,6 +36,12 @@ export interface QuestionEventCall {
   input: Record<string, unknown>;
   cwd: string;
 }
+export interface ExitPlanModeEventCall {
+  id: string;
+  toolName: 'ExitPlanMode';
+  input: Record<string, unknown>;
+  cwd: string;
+}
 export interface PermissionRequestEventCall {
   /** Observer identity only: PermissionRequest supplies no native tool_use_id. */
   requestId: string;
@@ -47,7 +53,7 @@ export interface PermissionRequestEventCall {
 type EventRecord = Binding & {
   transcriptFile: string;
   input: Record<string, unknown>;
-} & ({ hookEventName: 'PreToolUse'; toolName: 'AskUserQuestion'; id: string }
+} & ({ hookEventName: 'PreToolUse'; toolName: 'AskUserQuestion' | 'ExitPlanMode'; id: string }
   | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit'; requestId: string; capturedAtMs: number });
 const eventId = (event: EventRecord): string => event.hookEventName === 'PreToolUse' ? event.id : event.requestId;
 
@@ -135,7 +141,7 @@ export function setupQuestionEventSource(opts: {
     fs.writeFileSync(bindingPath, bindingBytes, { flag: 'wx', mode: 0o600 });
     const command = [process.execPath, import.meta.path, '--record-question-event', bindingPath, binding.nonce].map(quote).join(' ');
     const settingsBytes = JSON.stringify({ hooks: {
-      PreToolUse: [{ matcher: '^AskUserQuestion$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PreToolUse: [{ matcher: '^(AskUserQuestion|ExitPlanMode)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
       PermissionRequest: [{ matcher: '^(Write|Edit)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
     } }) + '\n';
     fs.writeFileSync(settingsPath, settingsBytes, { flag: 'wx', mode: 0o600 });
@@ -168,9 +174,9 @@ function eventFromInput(value: unknown, binding: Binding): EventRecord | null {
     || !object(value.tool_input)) throw new Error('Native question hook ownership or input mismatch');
   // Full tool-input validation belongs to the shared native reader, once for
   // both transcript and event inputs. Nothing here grants permission or ACKs.
-  if (value.hook_event_name === 'PreToolUse' && value.tool_name === 'AskUserQuestion'
+  if (value.hook_event_name === 'PreToolUse' && (value.tool_name === 'AskUserQuestion' || value.tool_name === 'ExitPlanMode')
     && typeof value.tool_use_id === 'string' && value.tool_use_id.trim() && value.tool_use_id.length <= 256) {
-    return { ...binding, hookEventName: 'PreToolUse', toolName: 'AskUserQuestion',
+    return { ...binding, hookEventName: 'PreToolUse', toolName: value.tool_name,
       transcriptFile: value.transcript_path, id: value.tool_use_id, input: value.tool_input };
   }
   if (value.hook_event_name === 'PermissionRequest' && (value.tool_name === 'Write' || value.tool_name === 'Edit')) {
@@ -224,7 +230,7 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
 
 function readCapturedEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
-}): (QuestionEventCall | PermissionRequestEventCall)[] {
+}): (QuestionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall)[] {
   if (expected.configDir === null || canonicalDirectory(expected.configDir) !== source.configDir
     || expected.sessionId !== source.sessionId) throw new Error('Question event source belongs to another session');
   const scope = hookScopes.get(source);
@@ -249,7 +255,7 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
   if (expected.transcriptFile === null) return [];
   const transcriptFile = expectedTranscript(expected.transcriptFile, expected.configDir, binding);
   let total = 0;
-  const calls: (QuestionEventCall | PermissionRequestEventCall)[] = [];
+  const calls: (QuestionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall)[] = [];
   const observed = observedEvents.get(source);
   if (!observed) throw new Error('Question event source was not created by this launcher');
   if ([...observed.keys()].some(file => !files.includes(file))) throw new Error('Previously observed native question event disappeared');
@@ -262,19 +268,19 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
     if (!object(event) || event.schemaVersion !== 1 || event.nonce !== binding.nonce
       || event.sessionId !== binding.sessionId || event.configDir !== binding.configDir || event.cwd !== binding.cwd
       || event.transcriptFile !== transcriptFile || !object(event.input)) throw new Error('Native question event identity or input changed');
-    const question = event.hookEventName === 'PreToolUse' && event.toolName === 'AskUserQuestion'
+    const native = event.hookEventName === 'PreToolUse' && (event.toolName === 'AskUserQuestion' || event.toolName === 'ExitPlanMode')
       && typeof event.id === 'string' && !!event.id.trim() && event.id.length <= 256;
     const permission = event.hookEventName === 'PermissionRequest' && (event.toolName === 'Write' || event.toolName === 'Edit')
       && typeof event.requestId === 'string' && UUID.test(event.requestId)
       && typeof event.capturedAtMs === 'number' && Number.isSafeInteger(event.capturedAtMs)
       && event.capturedAtMs > 0 && event.capturedAtMs <= 8_640_000_000_000_000;
-    const identityKey = question ? 'id' : 'requestId';
-    if ((!question && !permission) || file !== sha(event[identityKey] as string) + '.json'
+    const identityKey = native ? 'id' : 'requestId';
+    if ((!native && !permission) || file !== sha(event[identityKey] as string) + '.json'
       || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', identityKey, 'input', ...(permission ? ['capturedAtMs'] : [])].includes(key))) throw new Error('Native question event identity or input changed');
     const hash = sha(bytes);
     if (observed.has(file) && observed.get(file) !== hash) throw new Error('Previously observed native question event changed');
     observed.set(file, hash);
-    if (question) calls.push({ id: event.id as string, toolName: 'AskUserQuestion', input: event.input, cwd: event.cwd });
+    if (native) calls.push({ id: event.id as string, toolName: event.toolName as 'AskUserQuestion' | 'ExitPlanMode', input: event.input, cwd: event.cwd });
     else calls.push({ requestId: event.requestId as string, capturedAtMs: event.capturedAtMs as number,
       toolName: event.toolName as 'Write' | 'Edit', input: event.input, cwd: event.cwd });
   }
@@ -288,11 +294,18 @@ export function readQuestionEvents(source: QuestionEventSource, expected: {
   return readCapturedEvents(source, expected).filter((call): call is QuestionEventCall => call.toolName === 'AskUserQuestion');
 }
 
+/** Pending native ExitPlanMode only: no approval, result or AUQ authority. */
+export function readExitPlanModeEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): ExitPlanModeEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is ExitPlanModeEventCall => call.toolName === 'ExitPlanMode');
+}
+
 /** Post-PreToolUse permission requests. requestId is never a native ID or ACK. */
 export function readPermissionRequestEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
 }): PermissionRequestEventCall[] {
-  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => call.toolName !== 'AskUserQuestion');
+  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => call.toolName === 'Write' || call.toolName === 'Edit');
 }
 
 if (import.meta.main && process.argv.length === 5 && process.argv[2] === '--record-question-event') {

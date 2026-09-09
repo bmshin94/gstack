@@ -99,8 +99,10 @@ async function main() {
   let publishDuringScreen: (() => void) | null = null;
   let raceInjected = false;
   let raceJustInjected = false;
+  let postExitOwnerRaceScreens = 0;
   const originalScreenSnapshot = PtyCurrentScreen.prototype.snapshot;
   if (scenario.endsWith('arrival-race') || scenario === 'terminal-diagnostic-frame-race' || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
+    if (scenario === 'exit-confirmation-early-owner-arrival-race' && raceInjected) postExitOwnerRaceScreens++;
     const frame = await originalScreenSnapshot.call(this);
     if (scenario === 'viewport-flush-deadline' && frame.rows === 40 && frame.text.includes('Clipped native prompt') && ++viewportSnapshots === 2) clock = caseBudgetMs;
     const publish = publishDuringScreen;
@@ -177,6 +179,10 @@ async function main() {
       // Synthetic full modal from pinned CLI 2.1.257's empty-plan renderer.
       // The failed pilot retained only a truncated suffix, not this full frame.
       const exitConfirmation = () => {
+        if (scenario === 'exit-confirmation-early-full-plan') return 'Ready to code?\n\nHere is Claude\'s plan:\n'
+          + '# Review complete\n## GSTACK REVIEW REPORT\nVERDICT: APPROVED\n'
+          + 'Claude has written up a plan and is ready to execute. Would you like to proceed?\n'
+          + '❯ 1. Yes, and use auto mode\n  2. Yes, manually approve edits\n  3. Tell Claude what to change\n';
         const focus = scenario === 'exit-confirmation-no-focus-choice' ? 2 : 1;
         const pointer = scenario === 'exit-confirmation-ascii-fallback' ? '>' : '❯';
         const yes = ['exit-confirmation-ascii-fallback', 'exit-confirmation-short-rule-fallback'].includes(scenario) ? 'Yes'
@@ -202,7 +208,30 @@ async function main() {
       };
       const requestExitConfirmation = () => {
         let id: string | undefined;
-        if (scenario === 'exit-confirmation-unfinished-owner' || scenario === 'exit-confirmation-foreign-owner') {
+        if (scenario.startsWith('exit-confirmation-early-')) {
+          id = `tool-${++sequence}`;
+          const input = { plan: finalReport, planFilePath: path.join(project, 'plan.md'), allowedPrompts: [] };
+          const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
+          const recordExit = () => {
+            const recorded = Bun.spawnSync(['bash', '-c', settings.hooks.PreToolUse[0].hooks[0].command], {
+              timeout: 5000, stdin: Buffer.from(JSON.stringify({ hook_event_name: 'PreToolUse', session_id: sessionId,
+                transcript_path: file, cwd: options.cwd, tool_name: 'ExitPlanMode', tool_use_id: id, tool_input: input })),
+              stdout: 'pipe', stderr: 'pipe',
+            });
+            if (recorded.exitCode !== 0 || recorded.stdout.length) throw new Error(`Exit recorder failed: ${recorded.stderr}`);
+          };
+          recordExit();
+          if (scenario.endsWith('unfinished') || scenario.endsWith('persisted')) append({ type: 'assistant', cwd: options.cwd,
+            message: { role: 'assistant', stop_reason: scenario.endsWith('unfinished') ? null : 'tool_use',
+              content: [{ type: 'tool_use', id, name: 'ExitPlanMode', input }] } });
+          if (scenario.endsWith('pending-bytes')) fs.appendFileSync(file, '{"type":');
+          if (scenario.endsWith('owner-arrival-race')) publishDuringScreen = () => {
+            raceInjected = true;
+            append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id }] } });
+            id = `tool-${++sequence}`;
+            recordExit();
+          };
+        } else if (scenario === 'exit-confirmation-unfinished-owner' || scenario === 'exit-confirmation-foreign-owner') {
           id = `tool-${++sequence}`;
           append({ type: 'assistant', ...(scenario.endsWith('foreign-owner') ? { sessionId: '11111111-1111-4111-8111-111111111111' } : {}),
             message: { id, role: 'assistant', stop_reason: scenario.endsWith('unfinished-owner') ? null : 'tool_use',
@@ -211,15 +240,15 @@ async function main() {
         else if (scenario !== 'exit-confirmation-no-owner') id = tool('ExitPlanMode', {});
         const completeExit = (isError = false) => append({ type: 'user', message: { role: 'user',
           content: [{ type: 'tool_result', tool_use_id: id, content: 'Exit request resolved', ...(isError ? { is_error: true } : {}) }] } });
-        if (scenario === 'exit-confirmation-completed-owner' || scenario === 'exit-confirmation-error-owner') completeExit(scenario.endsWith('error-owner'));
+        if (scenario === 'exit-confirmation-completed-owner' || scenario === 'exit-confirmation-error-owner' || scenario === 'exit-confirmation-early-completed' || scenario === 'exit-confirmation-early-error') completeExit(scenario.endsWith('error-owner') || scenario.endsWith('early-error'));
         if (scenario === 'exit-confirmation-pending-question') {
           pendingId = tool('AskUserQuestion', { questions: [{ question: 'Which remaining finding should we address?', header: 'Finding', multiSelect: false,
             options: ['Address it', 'Keep reviewing'].map(label => ({ label, description: label })) }] });
         }
         const pendingWrite = () => tool('Write', { file_path: path.join(project, 'plan.md'), content: plan });
-        if (scenario === 'exit-confirmation-pending-write') pendingWrite();
+        if (scenario === 'exit-confirmation-pending-write' || scenario === 'exit-confirmation-early-pending-write') pendingWrite();
         if (scenario === 'exit-confirmation-pending-file-request') recordFilePermission({ file_path: path.join(project, 'plan.md'), content: plan });
-        if (scenario === 'exit-confirmation-completed-arrival-race' || scenario === 'exit-confirmation-write-arrival-race') {
+        if (scenario === 'exit-confirmation-completed-arrival-race' || scenario === 'exit-confirmation-write-arrival-race' || scenario === 'exit-confirmation-early-completed-arrival-race') {
           publishDuringScreen = () => {
             raceInjected = true;
             if (scenario.endsWith('completed-arrival-race')) completeExit(); else pendingWrite();
@@ -587,7 +616,7 @@ async function main() {
       error = String(cause);
     }
     const writtenPlan = fs.existsSync(path.join(project, 'plan.md')) ? fs.readFileSync(path.join(project, 'plan.md'), 'utf8') : '';
-    console.log(JSON.stringify({ observation, error, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected,
+    console.log(JSON.stringify({ observation, error, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {
