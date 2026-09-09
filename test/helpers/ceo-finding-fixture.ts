@@ -31,15 +31,16 @@ export function pickSuppliedCeoModeStart({ question, options }: {
   })) });
 }
 
-export function seedCeoFindingProject(projectDir: string, plan: string): void {
-  seedPlanReviewProject(projectDir, plan, 'plan-ceo-review');
+export function seedCeoFindingProject(projectDir: string, plan: string, design?: string): void {
+  seedPlanReviewProject(projectDir, plan, 'plan-ceo-review', design);
 }
 
-export function seedPlanReviewProject(projectDir: string, plan: string, skill: 'plan-ceo-review' | 'plan-eng-review' | 'plan-design-review' | 'plan-devex-review'): void {
+export function seedPlanReviewProject(projectDir: string, plan: string, skill: 'plan-ceo-review' | 'plan-eng-review' | 'plan-design-review' | 'plan-devex-review', design?: string): void {
   if (!fs.lstatSync(projectDir).isDirectory() || fs.readdirSync(projectDir).length !== 0) {
     throw new Error('Plan review fixture requires a fresh private directory');
   }
   fs.writeFileSync(path.join(projectDir, 'review-input.md'), plan, { flag: 'wx' });
+  if (design !== undefined) fs.writeFileSync(path.join(projectDir, 'DESIGN.md'), design, { flag: 'wx' });
   fs.writeFileSync(path.join(projectDir, 'README.md'), `# ${skill} fixture\n`, { flag: 'wx' });
   fs.writeFileSync(path.join(projectDir, 'CLAUDE.md'), [
     `# ${skill}`, '',
@@ -51,7 +52,7 @@ export function seedPlanReviewProject(projectDir: string, plan: string, skill: '
   ].join('\n'), { flag: 'wx' });
   const git = (args: string[]) => execFileSync('git', args, { cwd: projectDir, stdio: 'pipe', timeout: 10_000 });
   git(['init', '-b', 'main']);
-  git(['add', 'README.md', 'CLAUDE.md', 'review-input.md']);
+  git(['add', 'README.md', 'CLAUDE.md', 'review-input.md', ...(design === undefined ? [] : ['DESIGN.md'])]);
   git(['-c', 'user.name=Finding fixture', '-c', 'user.email=fixture@gstack.test', 'commit', '-m', 'Seed review input']);
   git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
 }

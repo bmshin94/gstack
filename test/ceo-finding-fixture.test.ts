@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { seedCeoFindingProject, seedPlanReviewProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
 import * as ceoFixture from './helpers/ceo-finding-fixture';
 import { FORCING_SPLIT_OVERFLOW_CEO } from './fixtures/forcing-finding-seeds';
+import { DESIGN_DOC_DISCOVERY_BLOCK } from '../scripts/resolvers/design-doc-discovery';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
@@ -45,6 +46,26 @@ test.each([
 });
 
 describe('CEO finding fixture establishes scope before launch', () => {
+  test('a supplied design satisfies actual prerequisite discovery without becoming a branch change', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-design-seed-'));
+    try {
+      const cwd = path.join(root, 'project');
+      const home = path.join(root, 'home');
+      fs.mkdirSync(cwd); fs.mkdirSync(home);
+      const plan = '# Export saved settings\nReview the CSV formatter before implementation.\n';
+      const design = '# Settings export design\n\n## Problem\nOperators need saved settings in a spreadsheet for offline comparison.\n\n## Approach\nReuse the settings API and escape commas, quotes, and newlines in a CSV formatter.\n';
+      seedCeoFindingProject(cwd, plan, design);
+      const output = execFileSync('bash', ['-c', `SLUG=fixture; BRANCH=main; ${DESIGN_DOC_DISCOVERY_BLOCK}`], {
+        cwd, env: { PATH: process.env.PATH!, HOME: home }, encoding: 'utf8', timeout: 10_000,
+      });
+      expect(output).toBe(`Design doc found: ${path.join(cwd, 'DESIGN.md')}\n`);
+      expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8' })).toBe(design);
+      expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd, encoding: 'utf8' })).toBe(plan);
+      expect(execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' })).toBe('');
+      expect(execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd, encoding: 'utf8' })).toBe('');
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
   test.each(['plan-eng-review', 'plan-design-review', 'plan-devex-review'] as const)('%s receives its own committed target and routing', skill => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'review-fixture-'));
     try {

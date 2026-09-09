@@ -57,7 +57,25 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
     fs.mkdirSync(tmpHome);
     fs.mkdirSync(project);
     try {
-      seedCeoFindingProject(project, '# Export saved settings\n\nAdd a CSV export button to the settings page. Reuse the existing settings API;\nvalidate escaping for commas, quotes, and newlines. The change touches the settings\npage, a CSV formatter, and formatter tests. Review this plan before implementation.\n');
+      // Supply the real prerequisite artifact so this mode-preference case
+      // does not spend its deadline on an optional Office Hours detour.
+      // The design and review target belong to the same clean seed commit;
+      // neither dictates a review mode or grants another question preference.
+      seedCeoFindingProject(project, '# Export saved settings\n\nAdd a CSV export button to the settings page. Reuse the existing settings API;\nvalidate escaping for commas, quotes, and newlines. The change touches the settings\npage, a CSV formatter, and formatter tests. Review this plan before implementation.\n', [
+        '# Design: export saved settings', '',
+        '## Problem',
+        'Operators need a spreadsheet of their saved settings for offline comparison',
+        'and support investigations. The existing settings page is the entry point.', '',
+        '## Chosen approach',
+        'Add one CSV download button. Read the existing authenticated settings API,',
+        'format its saved values with a focused CSV formatter, and test escaping',
+        'for commas, quotes, and newlines before wiring the button.', '',
+        '## Alternatives and boundaries',
+        'A new backend export endpoint duplicates the existing read API. A generic',
+        'multi-format framework adds work before there is a second consumer.',
+        'Importing settings, changing authorization, and adding export formats are',
+        'outside this proposal. Review gaps and risks before implementation.', '',
+      ].join('\n'));
       // This explicit override replaces the default hermetic state. Keep its
       // normal onboarding/update baseline so unrelated setup prompts cannot
       // intercept the one question whose never-ask behavior this case checks.
