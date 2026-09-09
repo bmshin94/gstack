@@ -30,7 +30,7 @@ export interface PlanReviewDecision {
   optionActions: Array<{ optionIndex: number; action: Action }>;
 }
 export interface PlanReviewDecisionJudgment { questions: PlanReviewDecision[] }
-export type PlanReviewJudge = (prompt: string, model?: string, opts?: { signal?: AbortSignal }) => Promise<unknown>;
+export type PlanReviewJudge = (prompt: string, model?: string, opts?: { signal?: AbortSignal; max_tokens?: number }) => Promise<unknown>;
 const MAX_INPUT_BYTES = 8 * 1024 * 1024;
 const text = (value: unknown, max: number): value is string => typeof value === 'string' && !!value.trim() && value.length <= max;
 const record = (value: unknown): value is Record<string, any> => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -200,7 +200,10 @@ export async function evaluatePlanReviewDecisions(input: PlanReviewDecisionInput
   try {
     const raw = await Promise.race([deadline, Promise.resolve().then(() => {
       remaining(snapshot);
-      return judge(prompt, undefined, { signal: controller.signal });
+      // A full 18-question review needed 10,991 output tokens, including
+      // 5,235 thinking tokens. Keep the case deadline and local validators;
+      // allow the classifier to finish its complete JSON inventory.
+      return judge(prompt, undefined, { signal: controller.signal, max_tokens: 16_384 });
     })]);
     remaining(snapshot);
     console.log(JSON.stringify({ type: 'plan-review-decisions-raw-judgment', validated: false, judgment: raw }));
