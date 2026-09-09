@@ -81,6 +81,10 @@ describeE2E('/ship section-loading E2E (periodic, SDK capture)', () => {
         reportMarker: /version|changelog|review|ship/i,
         testName: 'ship-section-loading',
         runId,
+        // The two 300s attempts each reached report finalization at cutoff.
+        // Use one 540s capture within the existing 600s outer budget, keeping
+        // 60s for setup/draining instead of repeating the review startup.
+        timeout: CAPTURE_LONG_MS - 60_000,
       });
 
       const missing = REQUIRED_SECTIONS.filter(s => !readSections.has(s));
@@ -92,6 +96,6 @@ describeE2E('/ship section-loading E2E (periodic, SDK capture)', () => {
       // Guard against an empty pass: the report must have real content.
       expect(output.trim().length).toBeGreaterThan(200);
     },
-    CAPTURE_LONG_MS,
+    { timeout: CAPTURE_LONG_MS, retry: 0 },
   );
 });
