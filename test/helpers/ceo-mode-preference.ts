@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { Lexer } from 'marked';
 import {
   isNumberedOptionListVisible, isPlanReadyVisible,
   launchClaudePty, MODE_RE, parseNumberedOptions, type ClaudePtySession,
@@ -163,7 +164,7 @@ function proseReply(text: string, questionId: string, selectors: string[]): stri
   const instruction = reply.replace(/`?<gstack-qid:[a-z0-9-]+>`?/, '').trim();
   // Parse a selector list, optionally with "to ..." descriptions. This is a
   // structural choice grammar; no question-specific phrasing or fuzzy matching.
-  const clause = '[A-D1-4](?:\\s+to\\s+.+?)?';
+  const clause = '(?:[A-D1-4]|`[A-D1-4]`)(?:\\s+to\\s+.+?)?';
   if (!new RegExp('^Reply(?:\\s+with)?\\s+' + clause + '(?:(?:,\\s*|,?\\s+or\\s+)' + clause + '){1,3}[.!]?$').test(instruction)) return undefined;
   const offered = [...instruction.matchAll(/\b([A-D]|[1-4])\b/g)].map(match => match[1]);
   if (offered.length !== selectors.length || new Set(offered).size !== offered.length
@@ -256,7 +257,7 @@ function noncurrentBriefContext(text: string): boolean {
     || statement('(?:(?:only|just)\\s+(?:an?\\s+)?(?:example|template|rehearsal)|(?:ready\\s+)?rehearsal (?:material|report))\\s*[:—-]?(?=[.!?;\\n]|$)');
 }
 
-function liveBriefIntroduction(text: string): string | undefined {
+function liveBriefIntroduction(text: string, visible: string): string | undefined {
   if (noncurrentBriefContext(text)) return undefined;
   const nativeLines = text.split('\n');
   const lines = nativeLines.map(line => line.replace(/\*\*/g, ''));
@@ -264,16 +265,49 @@ function liveBriefIntroduction(text: string): string | undefined {
   if (headings.length !== 1) return undefined;
   const before = nativeLines.slice(0, headings[0]);
   if (before.every(line => !line.trim() || /^[-*_]{3,}$/.test(line.trim()))) return '';
-  // A lead is provenance to corroborate, not an authorization vocabulary.
-  // Keep its physical quotation/code context instead of manufacturing a live
-  // introduction by filtering those lines. Bold and multiple plain paragraphs
-  // are harmless; the explicit owned Reply below establishes the request.
-  if (before.some(line => {
-    if (/^(?: {4}|\t)|^\s*(?:>|`{3,}|~{3,})/.test(line)) return true;
+  // Only closed, unlabeled top-level context fences may precede a real D1.
+  // Keep their entire bodies in the introduction comparison. Quoted requests,
+  // nested/labeled fences and code-only leads cannot establish live input.
+  let fence = false; let sawFence = false; let prose = false;
+  let body: string[] = [];
+  for (const line of before) {
+    if (/^```[ \t]*$/.test(line)) {
+      // Code punctuation/case is content, unlike prose Markdown styling.
+      if (fence) {
+        const literal = body.join('\n').replace(/\s/g, '');
+        // A second copy elsewhere cannot corroborate a changed body here.
+        if (!literal || !visible.replace(/\s/g, '').includes(literal)
+          || renderedProse(visible).split(renderedProse(literal)).length !== 2) return undefined;
+      }
+      fence = !fence; sawFence = true; body = []; continue;
+    }
+    if (/^\s*(?:`{3,}|~{3,})/.test(line)) return undefined;
+    if (fence) {
+      if (/<gstack-qid:|\b(?:reply|answer|respond|choose|select)\b|\b(?:present|render|ask)\s+(?:(?:the|this|that|a)\s+)?(?:question|decision|brief|request)\b/i.test(line)) return undefined;
+      body.push(line); continue;
+    }
+    if (/^(?: {4}|\t)|^\s*>/.test(line)) return undefined;
     const code = line.trim().replace(/[*_]/g, '').match(/^(`+)(.*)\1$/);
-    return code !== null && !code[2].includes(code[1]);
-  })) return undefined;
+    if (code !== null && !code[2].includes(code[1])) return undefined;
+    if (line.trim() && !/^\s*(?:[#*-]|\d+[.)]\s)/.test(line)) prose = true;
+  }
+  if (fence || sawFence && !prose) return undefined;
   return nativeLines.slice(0, headings[0] + 1).join('\n');
+}
+
+// CLI 2.1.263 renders an ordinary Markdown link as "label (URL)" without
+// hyperlink support. Preserve both fields; leave titles, escaped/nested
+// syntax, code, images, and other link kinds outside this narrow projection.
+function renderPlainInlineLinks(value: string): string {
+  if (!value.includes('](')) return value;
+  return Lexer.lexInline(value).map(token => {
+    if (token.type !== 'link' || token.title
+      || !/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/.test(token.text)
+      || !/^https?:\/\/[A-Za-z0-9._~:/?#@!$&+,;=%-]+$/.test(token.href)
+      || token.raw !== `[${token.text}](${token.href})`
+      || token.href === `http://${token.text}` || token.href === `https://${token.text}`) return token.raw;
+    return `${token.text} (${token.href})`;
+  }).join('');
 }
 
 // Tokenize before dropping whitespace: a bare qid ends at CR/space, while a
@@ -370,8 +404,10 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
     if (questionIds.length === 1 && !isModeQuestion && id === latestAssistantId && !userReplied) {
       // The envelope applies to full-text corroboration too: a fully rendered
       // deferred/example brief is still not a request for current input.
-      const introduction = liveBriefIntroduction(nativeText);
-      if (introduction === undefined || introduction && !renderedProse(questionVisible).includes(renderedProse(introduction))) continue;
+      const introduction = liveBriefIntroduction(nativeText, questionVisible);
+      if (introduction === undefined) continue;
+      const prefixes = [introduction, renderPlainInlineLinks(introduction)].map(renderedProse);
+      if (introduction && !prefixes.some(prefix => renderedProse(questionVisible).includes(prefix))) continue;
       if ([...nativeText.matchAll(/<gstack-qid:([a-z0-9-]+)>/g)].length !== 1) continue;
       const selectors = options.map(option => option[1]);
       if (selectors.length < 2 || selectors.length > 4 || new Set(selectors).size !== selectors.length
@@ -392,13 +428,14 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       // screen. Exact repeats are ambiguous; mere qid/plan references are not.
       if (previewText.some(value => value.includes(signature))) continue;
       if (introduction) {
-        const prefix = renderedProse(introduction);
-        if (previewText.some(value => value.includes(prefix))) continue;
+        if (previewText.some(value => prefixes.some(prefix => value.includes(prefix)))) continue;
         // A redraw can repeat either fragment. At least one complete prefix
         // must precede the exact reply within this same input window.
         const current = renderedProse(questionVisible);
-        const start = current.indexOf(prefix);
-        if (start < 0 || reply && current.indexOf(signature, start + prefix.length) < 0) continue;
+        if (!prefixes.some(prefix => {
+          const start = current.indexOf(prefix);
+          return start >= 0 && (!reply || current.indexOf(signature, start + prefix.length) >= 0);
+        })) continue;
       }
       if (!compact(questionVisible).includes(compact(text))
         && (!reply || !renderedProse(questionVisible).includes(signature))) continue;
@@ -453,7 +490,7 @@ export async function runCeoModePreferenceObservation(opts: {
     if (now() >= deadline) return result('timeout', 'Budget expired before launch');
     session = await (deps.launch ?? launchClaudePty)({
       permissionMode: 'plan', seedSkills: true, cwd: opts.cwd, env: opts.env,
-      captureScreen: true, rows: 120, // Keep a full prose introduction and choices in view.
+      captureScreen: true, rows: 240, // Keep the complete report, diagrams and choices in view.
       extraArgs: ['--session-id', sessionId, '--disallowedTools', 'AskUserQuestion'], timeoutMs: opts.timeoutMs,
     });
     since = session.mark(); inputSince = since;

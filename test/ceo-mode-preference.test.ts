@@ -23,13 +23,140 @@ const screenBrief = [
   'B) Server-side CSV endpoint', 'C) Client-side formatter behind a serializer seam',
 ].join('\n');
 
-test.each(['redraw', 'stale-frame', 'native-during-frame', 'output-during-frame', 'preview', 'deferred', 'deadline-during-frame'])(
-  'prose input requires a faithful current screen and stable owned source: %s', async scenario => {
+const linkedIntro = 'Audit complete. Sources: [RFC 4180 guide](https://example.test/rfc-4180) and [CSV escaping rules](https://example.test/csv?format=plain).';
+const linkedScreenIntro = 'Audit complete. Sources: RFC 4180 guide (https://example.test/rfc-4180) and CSV escaping rules (https://example.test/csv?format=plain).';
+const linkedBrief = linkedIntro + screenBrief.slice(screenBrief.indexOf('\n'));
+const linkedScreen = linkedScreenIntro + screenBrief.slice(screenBrief.indexOf('\n'));
+
+test('prose link rendering preserves the complete introduction, labels, and destinations', () => {
+  expect(inspectCeoModePreference(transcript(assistant(linkedBrief)), linkedScreen, linkedScreen, linkedScreen))
+    .toMatchObject({ kind: 'unrelated', questionId: 'plan-ceo-review-approach', answer: 'A' });
+  expect(inspectCeoModePreference(transcript(assistant(linkedBrief)), linkedBrief).kind).toBe('unrelated');
+  for (const screen of [
+    linkedScreen.replace('RFC 4180 guide', 'Different guide'),
+    linkedScreen.replace('example.test/rfc-4180', 'other.test/rfc-4180'),
+    linkedScreen.replace(' (https://example.test/rfc-4180)', ''),
+    linkedScreen.slice(linkedScreen.indexOf('## D1')),
+  ]) expect(inspectCeoModePreference(transcript(assistant(linkedBrief)), screen).kind).toBe('working');
+});
+
+test('link rendering cannot turn code, images, escaped links, titles, or nested labels into input', () => {
+  for (const source of [
+    '`[RFC 4180 guide](https://example.test/rfc-4180)`',
+    '![RFC 4180 guide](https://example.test/rfc-4180)',
+    '\\[RFC 4180 guide](https://example.test/rfc-4180)',
+    '[RFC 4180 guide](https://example.test/rfc-4180 "different title")',
+    '[**RFC 4180 guide**](https://example.test/rfc-4180)',
+  ]) {
+    const text = linkedBrief.replace('[RFC 4180 guide](https://example.test/rfc-4180)', source);
+    expect(inspectCeoModePreference(transcript(assistant(text)), linkedScreen).kind).toBe('working');
+  }
+});
+
+test('rendered links retain current-input, preview, and message ownership guards', () => {
+  const owned = transcript(assistant(linkedBrief));
+  expect(inspectCeoModePreference(owned, linkedScreen, linkedScreen, 'Working...').kind).toBe('working');
+  expect(inspectCeoModePreference({ ...owned, pendingBytes: 1 }, linkedScreen).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(linkedBrief, 'tool_use')), linkedScreen).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(linkedBrief), assistant('Working...', 'tool_use', 'next')), linkedScreen).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(linkedBrief, 'end_turn', 'earlier'), assistant(linkedBrief)), linkedScreen).kind).toBe('working');
+  for (const preview of [linkedBrief, linkedScreen]) {
+    const tool = { type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'tool_use',
+      content: [{ type: 'tool_use', name: 'Write', input: { content: preview } }] } };
+    expect(inspectCeoModePreference(transcript(tool, assistant(linkedBrief)), linkedScreen).kind).toBe('working');
+  }
+});
+
+
+// Closed architectural context precedes the actual owned D1. The code body
+// remains part of its introduction; only the renderer's delimiters disappear.
+const contextBody = '  CURRENT STATE -> THIS PLAN -> IDEAL\n  Settings UI   -> CSV button -> Portable settings';
+const contextLead = 'Audit done. The first decision follows.\n\n```\n' + contextBody + '\n```\n\nThe formatter stays client-side.\n';
+const contextBrief = contextLead + screenBrief.slice(screenBrief.indexOf('\n'));
+const contextScreen = contextBrief.replaceAll('```', '');
+const codeReplyBrief = screenBrief.replace('**A**, **B**, or **C**', '`A`, `B`, or `C`');
+const tallLead = 'Audit done. The complete current report follows.\n'
+  + Array.from({ length: 130 }, (_, index) => `Context row ${index}: the formatter keeps quoting separate from settings.`).join('\n');
+const tallBrief = tallLead + screenBrief.slice(screenBrief.indexOf('\n'));
+
+test('closed context body remains fully corroborated before the owned decision', () => {
+  expect(inspectCeoModePreference(transcript(assistant(contextBrief)), contextScreen))
+    .toMatchObject({ kind: 'unrelated', questionId: 'plan-ceo-review-approach', answer: 'A' });
+  for (const visible of [contextScreen.replace(contextBody, ''), contextScreen.replace('CSV button', 'New API'),
+    contextScreen.replace(contextBody, contextBody.split('\n').reverse().join('\n'))]) {
+    expect(inspectCeoModePreference(transcript(assistant(contextBrief)), visible).kind).toBe('working');
+  }
+});
+
+test('context body punctuation stays literal despite prose formatting normalization', () => {
+  const body = '  Quoting: input * rows # retained `literal`';
+  const text = contextBrief.replace(contextBody, body);
+  const visible = text.replaceAll('```', '');
+  expect(inspectCeoModePreference(transcript(assistant(text)), visible).kind).toBe('unrelated');
+  for (const changed of [body.replace('*', ''), body.replace('#', ''), body.replaceAll('`', ''), body.replace('Quoting', 'QUOTING')]) {
+    expect(inspectCeoModePreference(transcript(assistant(text)), visible.replace(body, changed)).kind).toBe('working');
+    // A correct copy elsewhere cannot corroborate a changed body in this lead.
+    expect(inspectCeoModePreference(transcript(assistant(text)), visible.replace(body, changed) + '\n' + body).kind).toBe('working');
+  }
+});
+
+test.each([
+  '```\n' + contextBody, // Unclosed before D1.
+  '```text\n' + contextBody + '\n```', // Only the observed unlabeled top-level form.
+  '  ```\n' + contextBody + '\n  ```',
+  '````\n' + contextBody + '\n````',
+  '```\n```text\n' + contextBody + '\n```\n```',
+  '```\nD7 — Cached example?\nA) Yes\nB) No\n```',
+  '```\nReply with A or B.\n```',
+  '```\n<gstack-qid:plan-ceo-review-approach>\n```',
+  "```\nI'll present the question now.\n```",
+  '```\nDo not answer this decision yet.\n```',
+])('code or question examples cannot authorize the following request: %s', lead => {
+  const text = 'Audit complete.\n' + lead + '\n\n' + screenBrief;
+  expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+});
+
+test('context requires ordinary prose and retains deferred, preview, and current-input guards', () => {
+  const onlyCode = '```\n' + contextBody + '\n```' + screenBrief.slice(screenBrief.indexOf('\n'));
+  expect(inspectCeoModePreference(transcript(assistant(onlyCode)), onlyCode).kind).toBe('working');
+  const owned = transcript(assistant(contextBrief));
+  expect(inspectCeoModePreference(owned, contextScreen, contextScreen, '').kind).toBe('working');
+  expect(inspectCeoModePreference({ ...owned, pendingBytes: 1 }, contextScreen).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(contextBrief), assistant('New turn', 'tool_use', 'next')), contextScreen).kind).toBe('working');
+  for (const lead of ['Example only; do not answer:', 'I will present this later:', '> Quoted request:']) {
+    const text = lead + '\n' + contextBrief;
+    expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+  }
+  const heading = contextScreen.indexOf('## D1');
+  const reordered = contextScreen.slice(heading) + contextScreen.slice(0, heading) + '## D1 — Which implementation approach for the CSV export?';
+  expect(inspectCeoModePreference(owned, reordered).kind).toBe('working');
+  for (const preview of [contextBrief, contextScreen]) {
+    const tool = { type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'tool_use',
+      content: [{ type: 'tool_use', name: 'Write', input: { content: preview } }] } };
+    expect(inspectCeoModePreference(transcript(tool, assistant(contextBrief)), contextScreen).kind).toBe('working');
+  }
+});
+
+test('each offered selector may be one exact inline-code atom', () => {
+  expect(inspectCeoModePreference(transcript(assistant(codeReplyBrief)), codeReplyBrief.replaceAll('`', '')))
+    .toMatchObject({ kind: 'unrelated', questionId: 'plan-ceo-review-approach', answer: 'A' });
+  for (const atom of ['``A``', '`A', 'A`', '`A or B`', '`AB`', '`A extra`', '`D`', '`B`']) {
+    const text = codeReplyBrief.replace('`A`', atom);
+    expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('working');
+  }
+  expect(inspectCeoModePreference(transcript(assistant(codeReplyBrief)), codeReplyBrief, codeReplyBrief, '').kind).toBe('working');
+});
+
+test.each(['redraw', 'stale-frame', 'native-during-frame', 'output-during-frame', 'preview', 'deferred', 'deadline-during-frame']
+  .flatMap(scenario => ['plain', 'links', 'tall'].map(layout => [scenario, layout] as const)))(
+  'prose input requires a faithful current screen and stable owned source: %s, layout=%s', async (scenario, layout) => {
     const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-screen-'));
-    const screen = new PtyCurrentScreen({ cols: 120, rows: 120 });
+    let screen: PtyCurrentScreen;
     let raw = ''; let file = ''; let sessionId = ''; let time = 0; let typed = ''; let changed = false; let closed = false;
     const writes: string[] = []; let enters = 0; let launchOptions: any;
-    const text = scenario === 'deferred' ? 'Do not answer this decision yet.\n\n' + screenBrief : screenBrief;
+    const lead = scenario === 'deferred' ? 'Do not answer this decision yet.\n\n' : '';
+    const text = lead + (layout === 'links' ? linkedBrief : layout === 'tall' ? tallBrief : screenBrief);
+    const rendered = lead + (layout === 'links' ? linkedScreen : layout === 'tall' ? tallBrief : screenBrief);
     const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ ...row, sessionId }) + '\n');
     const output = (bytes: string) => { raw += bytes; screen.feed(bytes); };
     const session = {
@@ -56,9 +183,9 @@ test.each(['redraw', 'stale-frame', 'native-during-frame', 'output-during-frame'
           // A real cursor overwrite preserves the displayed introduction while
           // ANSI stripping leaves an extra character. No native text is used
           // as a replacement screen in the observation driver.
-          const split = text.indexOf('\n');
-          output('\x1b[2J\x1b[H' + text.slice(0, split - 1) + 'X\x1b[D' + text[split - 1]
-            + text.slice(split).replaceAll('\n', '\r\n'));
+          const split = rendered.indexOf('\n');
+          output('\x1b[2J\x1b[H' + rendered.slice(0, split - 1) + 'X\x1b[D' + rendered[split - 1]
+            + rendered.slice(split).replaceAll('\n', '\r\n'));
           return;
         }
         writes.push(value); typed = value; output('\r\n❯ ' + value);
@@ -73,6 +200,7 @@ test.each(['redraw', 'stale-frame', 'native-during-frame', 'output-during-frame'
       const observation = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
         now: () => time, pause: async ms => { time += ms; }, launch: async opts => {
           launchOptions = opts; sessionId = opts.extraArgs![1];
+          screen = new PtyCurrentScreen({ cols: 120, rows: opts.rows });
           file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
           fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
         },
@@ -82,7 +210,7 @@ test.each(['redraw', 'stale-frame', 'native-during-frame', 'output-during-frame'
       expect(writes).toEqual(scenario === 'redraw' ? ['For plan-ceo-review-approach, I choose option A. Continue the review.'] : []);
       expect(enters).toBe(scenario === 'redraw' ? 1 : 0);
       expect(observation.answered).toEqual(scenario === 'redraw' ? ['message-1'] : []);
-      expect(launchOptions).toMatchObject({ captureScreen: true, rows: 120, timeoutMs: 30_000 });
+      expect(launchOptions).toMatchObject({ captureScreen: true, rows: 240, timeoutMs: 30_000 });
       expect(stripAnsi(raw)).not.toContain(text.split('\n')[0]);
     } finally { screen.dispose(); fs.rmSync(config, { recursive: true, force: true }); }
   });
