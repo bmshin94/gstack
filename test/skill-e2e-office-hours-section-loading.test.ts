@@ -43,7 +43,7 @@ describeE2E('/office-hours full section-loading workflow (periodic)', () => {
     fs.chmodSync(formatter, 0o755);
     const capture = await captureSectionReads({
       planDir, skillName: guard.skill, scenario: guard.scenario,
-      artifactCommands: `Use the fixture's actual formatter at ${formatter} for prepare/check/finalize. Creating the local review directory and running this formatter are authorized artifact writes, alongside Write/Edit; keep every output inside this fixture.`,
+      artifactCommands: `Use ${formatter} for prepare/check/finalize; Bash is only for those commands and creating the local review directory. Use Read for skills, sections, reviewer prompts and designs, never Bash. Reviewers must save verdicts with Write as the prepared contract requires. Use targeted Edit for local design revisions, preserving every finding and remedy. Do not inspect formatter source unless its command fails. Keep all artifacts inside this fixture.`,
       reportMarker: /report|review|summary|design doc|handoff/i,
       testName: 'office-hours-section-loading', runId, timeout: OFFICE_HOURS_CAPTURE_MS,
       maxTurns: 40,

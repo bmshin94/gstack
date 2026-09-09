@@ -73,7 +73,7 @@ describeE2E('/plan-ceo-review section-loading E2E (periodic, SDK capture)', () =
         planDir,
         skillName: 'plan-ceo-review',
         scenario:
-          'Review the plan in PLAN.md. Hold the current scope (HOLD SCOPE mode) — do not challenge or expand scope. Run the full CEO review and produce the review report. For the independent outside-voice plan review, use the available Agent tool. Read-only delegation is permitted and is part of this review, not environment setup.',
+          'Review the plan in PLAN.md. Hold the current scope (HOLD SCOPE mode) — do not challenge or expand scope. Run the full CEO review and produce the review report. For the independent outside-voice plan review, use the available Agent tool. Read-only delegation is permitted and is part of this review, not environment setup. Use Read for the skill, sections and plan, never Bash. After all review sections and outside-voice integration, write REPORT.md once with concise prose and every required finding, decision, diagram and output; finish without repeating the report in chat.',
         reportMarker: /GSTACK REVIEW REPORT|COMPLETION SUMMARY|review/i,
         testName: 'plan-ceo-section-loading',
         runId,

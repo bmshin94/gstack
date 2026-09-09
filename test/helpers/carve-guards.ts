@@ -309,9 +309,11 @@ remain an open question or an assignment.
   Willingness to pay and repeat usage are unknown. The seven interview contacts
   are my only distribution channel; no invented acquisition metrics.
 
-Use the available read-only Agent tool for the independent opinion and spec
-review when the workflow calls for them; an automated test is not a reason to
-skip them. This fixture checks separate real tool calls: obtain the independent
+Use the available Agent tool for the independent opinion and spec review when
+the workflow calls for them. The independent opinion is read-only. The spec
+reviewer may use Write only for the exact JSON verdict path assigned by prepare;
+all other reviewer mutations remain prohibited. An automated test is not a reason
+to skip them. This fixture checks separate real tool calls: obtain the independent
 opinion on RosterCheck before writing the design, then have a reviewer read the
 written design. A self-authored "second opinion" is not a subagent result.
 Keep the normal revision/convergence rules and report any unresolved concerns
