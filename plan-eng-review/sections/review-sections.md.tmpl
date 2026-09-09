@@ -69,6 +69,10 @@ finding via AskUserQuestion and getting explicit approval. This applies even whe
 agree with the outside voice. Cross-model consensus is a strong signal — present it as
 such — but the user makes the decision.
 
+Treat each independently selectable remedy as its own finding even when an outside voice
+groups several under one topic. Split those remedies into separate AskUserQuestion calls;
+keep implementation details and tests that directly establish one chosen contract together.
+
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
 * **One issue = one AskUserQuestion call.** Never combine multiple issues into one question.
