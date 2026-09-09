@@ -76,6 +76,65 @@ describe('owned assistant plan review completion', () => {
     expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBe('DONE');
   });
 
+  // Claude 2.1.263 / wdn: each real removal emits one event, including
+  // dequeueAll/popAllEditable. Non-string command values omit content entirely.
+  // Dequeue has no payload identity; remove/pop include only string values.
+  const queue = (operation: string, content?: string) => ({ type: 'queue-operation', sessionId, operation,
+    timestamp: '2026-09-09T19:00:00.000Z', ...(content !== undefined ? { content } : {}) });
+  test.each(['dequeue', 'remove', 'popOne', 'popAll'])('native %s consumes one queued item, never the whole batch', operation => {
+    const enqueue = queue('enqueue', 'Review the plan');
+    const removal = queue(operation, operation === 'dequeue' ? undefined : 'Review the plan');
+    write(enqueue, enqueue, removal, assistant(text('DONE')));
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBeNull();
+    write(enqueue, enqueue, removal, assistant(text('DONE')), removal);
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBeNull();
+    write(enqueue, enqueue, removal, removal, assistant(text('DONE')));
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBe('DONE');
+  });
+  test.each(['dequeue', 'remove', 'popOne', 'popAll'])('native %s supports an opaque command whose content was omitted', operation => {
+    write(queue('enqueue'), assistant(text('DONE')));
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBeNull();
+    write(queue('enqueue'), queue(operation), assistant(text('DONE')));
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBe('DONE');
+  });
+  test('an anonymously drained queue permits a new enqueue only after its identities resolve', () => {
+    const prefix = [queue('enqueue', 'later A'), queue('enqueue', 'next B'), queue('dequeue')];
+    write(...prefix, queue('enqueue', 'new C'), assistant(text('DONE')));
+    expect(() => readPlanSkillCompletion(config, sessionId, 'DONE')).toThrow('mixed queue history');
+    write(...prefix, queue('remove', 'later A'), queue('enqueue', 'new C'), assistant(text('DONE')));
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBeNull();
+    write(...prefix, queue('remove', 'later A'), queue('enqueue', 'new C'), queue('popOne', 'new C'), assistant(text('DONE')));
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBe('DONE');
+  });
+  test('dequeue with one possible payload preserves duplicate counts and allows later input', () => {
+    const prefix = [queue('enqueue', 'A'), queue('enqueue', 'A'), queue('dequeue'), queue('enqueue', 'B')];
+    write(...prefix, queue('remove', 'A'), assistant(text('DONE')));
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBeNull();
+    write(...prefix, queue('remove', 'A'), queue('popOne', 'B'), assistant(text('DONE')));
+    expect(readPlanSkillCompletion(config, sessionId, 'DONE')).toBe('DONE');
+  });
+  test('anonymous consumption cannot be reassigned to a later enqueue', () => {
+    write(queue('enqueue', 'A'), queue('enqueue', 'B'), queue('dequeue'), queue('enqueue', 'C'),
+      queue('remove', 'A'), queue('remove', 'B'), assistant(text('DONE')));
+    expect(() => readPlanSkillCompletion(config, sessionId, 'DONE')).toThrow('mixed queue history');
+  });
+  test.each(['dequeue', 'remove', 'popOne', 'popAll'])('native %s without its enqueue fails closed on incomplete history', operation => {
+    write(queue(operation), assistant(text('DONE')));
+    expect(() => readPlanSkillCompletion(config, sessionId, 'DONE')).toThrow('lacks its enqueue');
+  });
+  test('distinguishable unmatched removal cannot consume another queued input', () => {
+    write(queue('enqueue', 'Pending'), queue('remove', 'Different'), assistant(text('DONE')));
+    expect(() => readPlanSkillCompletion(config, sessionId, 'DONE')).toThrow('does not match');
+  });
+  test.each([
+    { operation: 'clear' }, { operation: null }, { operation: 'enqueue', content: {} },
+    { operation: 'enqueue', content: null }, { operation: 'remove', content: [] },
+    { operation: 'popAll', content: 1 }, { operation: 'dequeue', content: 'Not emitted by the producer' },
+  ])('unknown or malformed queue schema stays rejected (%j)', invalid => {
+    write({ ...queue('enqueue'), ...invalid }, assistant(text('DONE')));
+    expect(() => readPlanSkillCompletion(config, sessionId, 'DONE')).toThrow('Unsupported queue operation');
+  });
+
   test('quoted, fenced, indented, and future-example markers cannot complete a review', () => {
     write(assistant(text('I will print DONE later.\n> DONE\n    DONE\n\tDONE\n```md\n## GSTACK REVIEW REPORT\n```\n~~~\nVERDICT: APPROVED\n~~~')));
     expect(readPlanSkillCompletion(config, sessionId, 'DONE GSTACK REVIEW REPORT VERDICT: APPROVED')).toBeNull();
