@@ -1,14 +1,10 @@
-/**
- * /plan-devex-review per-finding AskUserQuestion count (periodic, paid, real-PTY).
- *
- * Same shape as skill-e2e-plan-ceo-finding-count: drives /plan-devex-review
- * against a 5-finding seeded plan and asserts review-phase AUQ count ∈ [N-1, N+2].
- * Plus D19: review report at bottom of produced plan file.
- *
- * Tier: periodic (~25 min, ~$5/run). Sequential by default per plan §D15.
- */
+/** Periodic real-PTY review: validate every seeded decision across all phases,
+ * count substantive calls within the existing band, and reject bundled issues.
+ * The 25-minute work budget includes the final semantic judgment. */
 
 import { test } from 'bun:test';
+import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
+import { DEVEX_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
@@ -56,7 +52,7 @@ const planDevex5Findings = (planPath: string) => [
 
 describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', () => {
   test(
-    `5-finding plan emits ${FLOOR}-${CEILING} review-phase AskUserQuestions`,
+    `5-finding plan emits ${FLOOR}-${CEILING} substantive finding calls`,
     async () => {
       const caseStartedAt = Date.now();
       // Per-run artifact dir: a hardcoded shared /tmp path collides under
@@ -66,20 +62,26 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
       const planPath = path.join(tmpDir, 'gstack-test-plan-devex.md');
 
       try {
-        seedPlanReviewProject(tmpDir, planDevex5Findings(planPath), 'plan-devex-review');
+        const planText = planDevex5Findings(planPath);
+        seedPlanReviewProject(tmpDir, planText, 'plan-devex-review');
         const obs = await runPlanSkillCounting({
           skillName: 'plan-devex-review',
           slashCommand: '/plan-devex-review',
           followUpPrompt: '', // plan already committed before the first model turn
           isLastStep0AUQ: devexStep0Boundary,
-          reviewCountCeiling: CEILING + 1,
+          reviewCountCeiling: null, // classify findings after actual workflow completion
+          questionPick: pickPlanReviewQuestion,
           // The review target is present before scope selection.
           cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt),
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
-        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome)) {
+        console.log('Plan review native evidence:', JSON.stringify({
+          plan: planText, outcome: obs.outcome, fingerprints: obs.fingerprints, diagnostics: obs.diagnostics,
+        }));
+
+        if (!['plan_ready', 'completion_summary'].includes(obs.outcome)) {
           throw new Error(
             `plan-devex-review finding-count FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
@@ -92,22 +94,6 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
               `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
         }
-        if (obs.reviewCount < FLOOR) {
-          throw new Error(
-            `BAND FAIL (below floor): reviewCount=${obs.reviewCount} < FLOOR=${FLOOR}.\n` +
-              `Likely batching regression. Review-phase fingerprints:\n` +
-              obs.fingerprints
-                .filter((f) => !f.preReview)
-                .map((f) => `  - "${f.promptSnippet.slice(0, 80)}"`)
-                .join('\n'),
-          );
-        }
-        if (obs.reviewCount > CEILING) {
-          throw new Error(
-            `BAND FAIL (above ceiling): reviewCount=${obs.reviewCount} > CEILING=${CEILING}.`,
-          );
-        }
-
         if (!fs.existsSync(planPath)) {
           throw new Error(
             `D19 FAIL: agent did not produce expected plan file at ${planPath}. ` +
@@ -125,6 +111,14 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
               `--- plan content (last 1KB) ---\n${planContent.slice(-1024)}`,
           );
         }
+        const decisions = await evaluatePlanReviewDecisions({
+          plan: planText, targets: DEVEX_FINDINGS, fingerprints: obs.fingerprints,
+          kind: 'findings', floor: FLOOR, ceiling: CEILING,
+          deadlineAt: caseStartedAt + 1_500_000,
+        });
+        console.log('Plan review decisions verified:', JSON.stringify({
+          count: decisions.count, coveredTargetIds: decisions.coveredTargetIds, report: 'D19 passed',
+        }));
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });

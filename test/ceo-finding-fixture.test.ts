@@ -105,8 +105,8 @@ describe('CEO finding fixture establishes scope before launch', () => {
 });
 
 // Import the actual paid registration only after replacing its observation
-// boundary. The real seeder, Step-0 boundary and report assertion stay in use.
-test.each(['success4', 'success7', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw'])('count registration: %s', scenario => {
+// and semantic-judge boundaries. Real seeding, outcome/report checks, and cleanup stay in use.
+test.each(['success5', 'success7', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw', 'judge-error'])('count registration: %s', scenario => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-count-body-')));
   const script = path.join(root, 'registration.test.ts');
   const factsPath = path.join(root, 'facts.json');
@@ -194,6 +194,7 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assertReviewReportAtBottom, ceoStep0Boundary, PLAN_SKILL_COUNT_FINALIZE_MS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
 import { pickSuppliedCeoPlanStart } from ${JSON.stringify(path.join(ROOT, 'test/helpers/ceo-finding-fixture.ts'))};
+import { CEO_FINDINGS, pickPlanReviewQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
 const reportAssertion = assertReviewReportAtBottom;
 const step0Boundary = ceoStep0Boundary;
 const finalizeMs = PLAN_SKILL_COUNT_FINALIZE_MS;
@@ -227,7 +228,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts).toEqual({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
       firstAUQPick: pickSuppliedCeoPlanStart,
-      isLastStep0AUQ: step0Boundary, reviewCountCeiling: 8, cwd: opts.cwd,
+      isLastStep0AUQ: step0Boundary, reviewCountCeiling: null, questionPick: pickPlanReviewQuestion, cwd: opts.cwd,
       timeoutMs: expect.any(Number), env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
     });
     expect(opts.timeoutMs).toBeGreaterThan(0);
@@ -240,10 +241,28 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
       '# Reviewed plan\\n\\n## GSTACK REVIEW REPORT\\nVERDICT: APPROVED\\n' +
       (scenario === 'trailing-report' ? '\\n## Unreviewed tail\\n' : ''));
     return {
-      outcome: scenario === 'timeout' ? 'timeout' : scenario === 'above' ? 'ceiling_reached' : 'plan_ready',
-      reviewCount: { success4: 4, success7: 7, below: 3, above: 8 }[scenario] ?? 5,
+      outcome: scenario === 'timeout' ? 'timeout' : 'plan_ready',
+      reviewCount: { success5: 5, success7: 7, below: 3, above: 8 }[scenario] ?? 5,
       step0Count: 2, elapsedMs: 1000, fingerprints: [], evidence: 'controlled observation',
     };
+  },
+}));
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
+  evaluatePlanReviewDecisions: async input => {
+    const facts = JSON.parse(fs.readFileSync(${JSON.stringify(factsPath)}, 'utf8'));
+    facts.judgeCalls = (facts.judgeCalls ?? 0) + 1;
+    fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify(facts));
+    expect(input).toEqual({
+      plan: fs.readFileSync(path.join(facts.cwd, 'review-input.md'), 'utf8'),
+      targets: CEO_FINDINGS, fingerprints: [], kind: 'findings', floor: 4, ceiling: 7,
+      deadlineAt: expect.any(Number),
+    });
+    expect(input.deadlineAt).toBeGreaterThan(Date.now());
+    expect(input.deadlineAt).toBeLessThanOrEqual(Date.now() + 1_500_000);
+    if (scenario === 'below') throw new Error('controlled finding floor failure');
+    if (scenario === 'above') throw new Error('controlled finding ceiling failure');
+    if (scenario === 'judge-error') throw new Error('controlled classification failure');
+    return { count: scenario === 'success7' ? 7 : 5, coveredTargetIds: CEO_FINDINGS.map(target => target.id) };
   },
 }));
 await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-finding-count.test.ts'))});
@@ -261,12 +280,14 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-finding-c
     expect(child.error, output).toBeUndefined();
     const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'));
     expect(facts.calls).toBe(1);
+    expect(facts.judgeCalls ?? 0).toBe(['success5', 'success7', 'below', 'above', 'judge-error'].includes(scenario) ? 1 : 0);
     expect(facts.validated, output).toBe(true);
     expect(fs.existsSync(facts.cwd), 'actual paid finally must remove its owned fixture').toBe(false);
     expect(child.status, output).toBe(scenario.startsWith('success') ? 0 : 1);
     const failures: Record<string, string> = {
-      below: 'BAND FAIL (below floor): reviewCount=3 < FLOOR=4.',
-      above: 'BAND FAIL (above ceiling): reviewCount=8 > CEILING=7.',
+      below: 'controlled finding floor failure',
+      above: 'controlled finding ceiling failure',
+      'judge-error': 'controlled classification failure',
       'missing-report': 'D19 FAIL: agent did not produce expected plan file',
       'trailing-report': 'trailing ## heading(s) after GSTACK REVIEW REPORT',
       timeout: 'finding-count FAILED: outcome=timeout',

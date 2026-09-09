@@ -1,38 +1,10 @@
-/**
- * /plan-ceo-review split-overflow regression (periodic, paid, real-PTY).
- *
- * Catches the original failure mode the user complained about: when the
- * agent has 5+ options for ONE conceptual decision, it must split into N
- * sequential AskUserQuestion calls (or batch into compatible ≤4-groups),
- * NOT drop an option arbitrarily to fit Conductor's 4-option cap.
- *
- * Pre-fix reasoning trace from the user transcript that motivated this:
- *   "I'm hitting Conductor's limit of 4 options in the AUQ, so I need
- *    to cut one. E4 is the largest lift and probably beyond scope...
- *    Trimming: E4. Moving to TODOs without asking. Re-firing with 4."
- *
- * The fixture seeds 5 independent scope candidates (chat-platform
- * integrations) — each carries an independent include/defer/cut decision.
- * With the split rule active, the natural compliant shape is a per-option
- * chain at parent D<N>; the test asserts the agent fires at least
- * [N-1] review-phase AUQs (standard tolerance band from the existing
- * finding-count tests, which accounts for one expected scope-reduction
- * call before the per-option chain begins).
- *
- * Why a separate test from skill-e2e-plan-ceo-finding-count and
- * skill-e2e-plan-eng-multi-finding-batching:
- *   - finding-count tests fire one AUQ per finding (Architecture, Code
- *     Quality, etc) — they exercise the "one issue per call" rule, not
- *     the "5+ options for ONE decision" split rule.
- *   - This test fixtures ONE scope decision with 5 options inside it,
- *     which is exactly the shape that hits Conductor's 4-option cap and
- *     triggers the new split-vs-drop guidance.
- *
- * Tier: periodic (~25 min, ~$0.30-$5.00/run depending on agent path).
- * Sequential by default.
- */
+/** Periodic real-PTY review: validate every seeded decision across all phases,
+ * count substantive calls within the existing band, and reject bundled issues.
+ * The 25-minute work budget includes the final semantic judgment. */
 
 import { test } from 'bun:test';
+import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
+import { CEO_SCOPE_CANDIDATES, pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -57,7 +29,7 @@ const FIXTURE_PLAN_PATH = '/tmp/gstack-test-plan-ceo-split-overflow.md';
 
 describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
   test(
-    `5-option scope decision emits >= ${FLOOR} review-phase AskUserQuestions (no dropping)`,
+    `5-option scope decision retains every option and emits >= ${FLOOR} substantive finding calls (no dropping)`,
     async () => {
       const caseStartedAt = Date.now();
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-ceo-split-overflow-'));
@@ -70,39 +42,40 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
       }
 
       try {
-        seedCeoFindingProject(tmpDir, followUpPrompt);
+        const planText = followUpPrompt;
+        seedCeoFindingProject(tmpDir, planText);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
           followUpPrompt: '', // review-input.md is present before scope selection
           firstAUQPick: pickSuppliedCeoPlanStart,
           isLastStep0AUQ: ceoStep0Boundary,
-          reviewCountCeiling: N + 3, // hard cap above floor + tolerance
+          reviewCountCeiling: null, // classify findings after actual workflow completion
+          questionPick: pickPlanReviewQuestion,
           cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt), // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
-        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome)) {
+        console.log('Plan review native evidence:', JSON.stringify({
+          plan: planText, outcome: obs.outcome, fingerprints: obs.fingerprints, diagnostics: obs.diagnostics,
+        }));
+
+        if (!['plan_ready', 'completion_summary'].includes(obs.outcome)) {
           throw new Error(
             `split-overflow test FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
               `--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
         }
-        if (obs.reviewCount < FLOOR) {
-          throw new Error(
-            `SPLIT-OVERFLOW REGRESSION: reviewCount=${obs.reviewCount} < FLOOR=${FLOOR}.\n` +
-              `outcome=${obs.outcome} step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
-              `Inspect Step-0 classification and question evidence before diagnosing dropped options.\n` +
-              `All-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
-              obs.fingerprints
-                .slice(-8)
-                .map((f) => `  - ${JSON.stringify({ preReview: f.preReview, nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
-                .join('\n') +
-              `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
-          );
-        }
+        const decisions = await evaluatePlanReviewDecisions({
+          plan: planText, targets: CEO_SCOPE_CANDIDATES, fingerprints: obs.fingerprints,
+          kind: 'scope', floor: FLOOR,
+          deadlineAt: caseStartedAt + 1_500_000,
+        });
+        console.log('Plan review decisions verified:', JSON.stringify({
+          count: decisions.count, coveredTargetIds: decisions.coveredTargetIds,
+        }));
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });

@@ -1,20 +1,10 @@
-/**
- * /plan-ceo-review per-finding AskUserQuestion count (periodic, paid, real-PTY).
- *
- * Asserts the load-bearing rule "One issue = one AskUserQuestion call" by
- * driving /plan-ceo-review against a 5-finding seeded plan and counting
- * distinct review-phase AUQs. Passes when count is in [N-1, N+2].
- *
- * This file covers the 5-finding distinct fixture. The 2-finding paired
- * control has its own paid process in skill-e2e-plan-ceo-paired-control.test.ts
- * so both cases retain their complete 25-minute budget even in serial runs.
- *
- * Tier: periodic. Each run drives Step 0 + 11 review sections end-to-end
- * (~25 min, ~$5/run). Sequential by default per plan §D15. See
- * test/helpers/claude-pty-runner.ts for runPlanSkillCounting internals.
- */
+/** Periodic real-PTY review: validate every seeded decision across all phases,
+ * count substantive calls within the existing band, and reject bundled issues.
+ * The 25-minute work budget includes the final semantic judgment. */
 
 import { test } from 'bun:test';
+import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
+import { CEO_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { seedCeoFindingProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
 import * as fs from 'node:fs';
@@ -120,7 +110,7 @@ const planCeo5Findings = (planPath: string) => [
 
 describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () => {
   test(
-    `5-finding plan emits ${FLOOR_DISTINCT}-${CEILING_DISTINCT} review-phase AskUserQuestions`,
+    `5-finding plan emits ${FLOOR_DISTINCT}-${CEILING_DISTINCT} substantive finding calls`,
     async () => {
       const caseStartedAt = Date.now();
       // Per-run artifact dir: a hardcoded shared /tmp path collides under
@@ -130,20 +120,26 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
       const planPath = path.join(tmpDir, 'gstack-test-plan-ceo.md');
 
       try {
-        seedCeoFindingProject(tmpDir, planCeo5Findings(planPath));
+        const planText = planCeo5Findings(planPath);
+        seedCeoFindingProject(tmpDir, planText);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
           followUpPrompt: '', // review-input.md is available before the first scope question
           firstAUQPick: pickSuppliedCeoPlanStart,
           isLastStep0AUQ: ceoStep0Boundary,
-          reviewCountCeiling: CEILING_DISTINCT + 1, // hard cap above assertion ceiling
+          reviewCountCeiling: null, // classify findings after actual workflow completion
+          questionPick: pickPlanReviewQuestion,
           cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt), // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
-        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome)) {
+        console.log('Plan review native evidence:', JSON.stringify({
+          plan: planText, outcome: obs.outcome, fingerprints: obs.fingerprints, diagnostics: obs.diagnostics,
+        }));
+
+        if (!['plan_ready', 'completion_summary'].includes(obs.outcome)) {
           throw new Error(
             `plan-ceo-review finding-count FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
@@ -159,29 +155,6 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
               `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
         }
-        if (obs.reviewCount < FLOOR_DISTINCT) {
-          throw new Error(
-            `BAND FAIL (below floor): reviewCount=${obs.reviewCount} < FLOOR=${FLOOR_DISTINCT}.\n` +
-              `Check scope, Step-0 boundary, and finding evidence before diagnosing batching.\n` +
-              `outcome=${obs.outcome} step0=${obs.step0Count} elapsed=${obs.elapsedMs}ms\n` +
-              `Fingerprints (review-phase only):\n` +
-              obs.fingerprints
-                .filter((f) => !f.preReview)
-                .map((f) => `  - "${f.promptSnippet.slice(0, 80)}"`)
-                .join('\n'),
-          );
-        }
-        if (obs.reviewCount > CEILING_DISTINCT) {
-          throw new Error(
-            `BAND FAIL (above ceiling): reviewCount=${obs.reviewCount} > CEILING=${CEILING_DISTINCT}.\n` +
-              `Possible over-asking regression. Review-phase fingerprints:\n` +
-              obs.fingerprints
-                .filter((f) => !f.preReview)
-                .map((f) => `  - "${f.promptSnippet.slice(0, 80)}"`)
-                .join('\n'),
-          );
-        }
-
         // D19: review report at bottom of plan file.
         if (!fs.existsSync(planPath)) {
           throw new Error(
@@ -202,6 +175,14 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
               `--- plan content (last 1KB) ---\n${planContent.slice(-1024)}`,
           );
         }
+        const decisions = await evaluatePlanReviewDecisions({
+          plan: planText, targets: CEO_FINDINGS, fingerprints: obs.fingerprints,
+          kind: 'findings', floor: FLOOR_DISTINCT, ceiling: CEILING_DISTINCT,
+          deadlineAt: caseStartedAt + 1_500_000,
+        });
+        console.log('Plan review decisions verified:', JSON.stringify({
+          count: decisions.count, coveredTargetIds: decisions.coveredTargetIds, report: 'D19 passed',
+        }));
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });

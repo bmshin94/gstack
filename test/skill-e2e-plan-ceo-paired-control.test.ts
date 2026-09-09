@@ -1,5 +1,9 @@
-/** Paired finding control in its own process; original count bounds and 25-minute model budget. */
+/** Periodic real-PTY review: validate every seeded decision across all phases,
+ * count substantive calls within the existing band, and reject bundled issues.
+ * The 25-minute work budget includes the final semantic judgment. */
 import { test } from 'bun:test';
+import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
+import { CEO_PAIRED_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { seedCeoFindingProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
 import * as fs from 'node:fs';
@@ -41,50 +45,40 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
       const planPath = path.join(tmpDir, 'gstack-test-plan-ceo-paired.md');
 
       try {
-        seedCeoFindingProject(tmpDir, planCeo2PairedFindings(planPath));
+        const planText = planCeo2PairedFindings(planPath);
+        seedCeoFindingProject(tmpDir, planText);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
           followUpPrompt: '', // same fixture-first scope contract as the distinct case
           firstAUQPick: pickSuppliedCeoPlanStart,
           isLastStep0AUQ: ceoStep0Boundary,
-          reviewCountCeiling: CEILING_PAIRED + 1,
+          reviewCountCeiling: null, // classify findings after actual workflow completion
+          questionPick: pickPlanReviewQuestion,
           cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt),
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
-        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome)) {
+        console.log('Plan review native evidence:', JSON.stringify({
+          plan: planText, outcome: obs.outcome, fingerprints: obs.fingerprints, diagnostics: obs.diagnostics,
+        }));
+
+        if (!['plan_ready', 'completion_summary'].includes(obs.outcome)) {
           throw new Error(
             `paired-finding control FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount}\n` +
               `--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
         }
-        if (obs.reviewCount < FLOOR_PAIRED) {
-          throw new Error(
-            `PAIRED CONTROL FAIL: reviewCount=${obs.reviewCount} < FLOOR=${FLOOR_PAIRED}.\n` +
-              `Expected separate finding questions; check scope and Step-0 classification before diagnosing batching.\n` +
-              `outcome=${obs.outcome} step0=${obs.step0Count} elapsed=${obs.elapsedMs}ms\n` +
-              `Review-phase fingerprints:\n` +
-              obs.fingerprints
-                .filter((f) => !f.preReview)
-                .map((f) => `  - "${f.promptSnippet.slice(0, 80)}"`)
-                .join('\n'),
-          );
-        }
-        if (obs.reviewCount > CEILING_PAIRED) {
-          throw new Error(
-            `PAIRED CONTROL FAIL: reviewCount=${obs.reviewCount} > CEILING=${CEILING_PAIRED} (over-asking on a 2-finding fixture).\n` +
-              `outcome=${obs.outcome} step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
-              `Review-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
-              obs.fingerprints
-                .filter((f) => !f.preReview)
-                .slice(-8)
-                .map((f) => `  - ${JSON.stringify({ nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
-                .join('\n'),
-          );
-        }
+        const decisions = await evaluatePlanReviewDecisions({
+          plan: planText, targets: CEO_PAIRED_FINDINGS, fingerprints: obs.fingerprints,
+          kind: 'findings', floor: FLOOR_PAIRED, ceiling: CEILING_PAIRED,
+          deadlineAt: caseStartedAt + 1_500_000,
+        });
+        console.log('Plan review decisions verified:', JSON.stringify({
+          count: decisions.count, coveredTargetIds: decisions.coveredTargetIds,
+        }));
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });

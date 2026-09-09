@@ -1,30 +1,10 @@
-/**
- * /plan-eng-review multi-finding batching regression (periodic, paid, real-PTY).
- *
- * Catches the specific shape of the May 2026 transcript bug that the
- * single-finding gate-tier floor test cannot detect: a model that fires
- * one AskUserQuestion and then batches the remaining findings into a
- * single "## Decisions to confirm" plan write + ExitPlanMode.
- *
- * Why a separate test from skill-e2e-plan-eng-finding-floor:
- *   - The gate-tier floor (runPlanSkillFloorCheck) exits on the first AUQ
- *     render and returns success. A model that fires once-then-batches
- *     would pass that test trivially.
- *   - This test uses runPlanSkillCounting at periodic tier (~25 min budget,
- *     N-AUQ tracking, ceiling-bounded retries) to actually count distinct
- *     review-phase AUQs and assert the model fires one per finding.
- *
- * Why a separate test from skill-e2e-plan-eng-finding-count (the existing
- * 5-finding count test):
- *   - The fixture here mirrors the D1-D4 transcript shape (4 findings) and
- *     the floor matches that exact threshold (3, the [N-1] tolerance band).
- *     This is the tightest regression test for the original bug class —
- *     not a band-around-N test, but a "did the agent batch?" test.
- *
- * Tier: periodic (~25 min, ~$5/run). Sequential by default.
- */
+/** Periodic real-PTY review: validate every seeded decision across all phases,
+ * count substantive calls within the existing band, and reject bundled issues.
+ * The 25-minute work budget includes the final semantic judgment. */
 
 import { test } from 'bun:test';
+import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
+import { ENG_BATCHING_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
@@ -49,7 +29,7 @@ const FIXTURE_PLAN_PATH = '/tmp/gstack-test-plan-eng-batching.md';
 
 describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () => {
   test(
-    `4-finding plan emits >= ${FLOOR} review-phase AskUserQuestions (no batching)`,
+    `4-finding plan emits >= ${FLOOR} substantive finding calls (no batching)`,
     async () => {
       const caseStartedAt = Date.now();
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-eng-batching-'));
@@ -62,39 +42,40 @@ describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () 
       }
 
       try {
-        seedPlanReviewProject(tmpDir, followUpPrompt, 'plan-eng-review');
+        const planText = followUpPrompt;
+        seedPlanReviewProject(tmpDir, planText, 'plan-eng-review');
         const obs = await runPlanSkillCounting({
           skillName: 'plan-eng-review',
           slashCommand: '/plan-eng-review',
           followUpPrompt: '', // plan already committed before the first model turn
           isLastStep0AUQ: engStep0Boundary,
-          reviewCountCeiling: N + 3, // hard cap above floor + tolerance
+          reviewCountCeiling: null, // classify findings after actual workflow completion
+          questionPick: pickPlanReviewQuestion,
           // The review target is present before scope selection.
           cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt), // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
-        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome)) {
+        console.log('Plan review native evidence:', JSON.stringify({
+          plan: planText, outcome: obs.outcome, fingerprints: obs.fingerprints, diagnostics: obs.diagnostics,
+        }));
+
+        if (!['plan_ready', 'completion_summary'].includes(obs.outcome)) {
           throw new Error(
             `multi-finding batching test FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
               `--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
         }
-        if (obs.reviewCount < FLOOR) {
-          throw new Error(
-            `BATCHING REGRESSION: reviewCount=${obs.reviewCount} < FLOOR=${FLOOR}.\n` +
-              `outcome=${obs.outcome} step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
-              `Review-phase count is below the expected floor; inspect the phase boundary and complete native question history before attributing a cause.\n` +
-              `All-phase fingerprints (last 8; bounded native IDs and prompt snippets):\n` +
-              obs.fingerprints
-                .slice(-8)
-                .map((f) => `  - ${JSON.stringify({ preReview: f.preReview, nativeToolId: f.toolUseId?.slice(0, 256) ?? null, promptSnippet: f.promptSnippet.slice(0, 80) })}`)
-                .join('\n') +
-              `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
-          );
-        }
+        const decisions = await evaluatePlanReviewDecisions({
+          plan: planText, targets: ENG_BATCHING_FINDINGS, fingerprints: obs.fingerprints,
+          kind: 'findings', floor: FLOOR,
+          deadlineAt: caseStartedAt + 1_500_000,
+        });
+        console.log('Plan review decisions verified:', JSON.stringify({
+          count: decisions.count, coveredTargetIds: decisions.coveredTargetIds,
+        }));
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });
