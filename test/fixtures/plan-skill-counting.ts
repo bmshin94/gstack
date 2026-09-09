@@ -484,7 +484,7 @@ async function main() {
               recordFilePermission(input);
               if (scenario === 'retention-ambiguous') tool('Edit', { file_path: path.join(project, 'other.md'), old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });
               emit(fileDialog(scenario === 'retention-binding' ? 'create different.md instead of' : 'create') + '\nPRIVATE_SCREEN_PREVIEW');
-              if (scenario === 'retention-write-failure') tool('Read', { file_path: '/fixture' });
+              if (scenario === 'retention-write-failure') tool('Edit', { file_path: path.join(project, 'other.md'), old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });
               return;
             }
             if (['permission-redraw', 'permission-ambiguous', 'permission-owner-change'].includes(scenario)) {
