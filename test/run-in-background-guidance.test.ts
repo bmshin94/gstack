@@ -1,6 +1,9 @@
 import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { generateCodexPlanReview } from '../scripts/resolvers/review';
+import type { TemplateContext } from '../scripts/resolvers/types';
+import { ALL_HOST_CONFIGS } from '../hosts';
 
 // Regression guard for #2440 (which itself regressed the #497 fix).
 //
@@ -16,6 +19,103 @@ import * as path from 'path';
 // resolver edit.
 
 const ROOT = path.resolve(import.meta.dir, '..');
+
+// Only these plan-review carriers use the bounded outside-voice task. Every
+// other synchronous dispatch keeps the existing explicit foreground rule.
+const BOUNDED_OUTSIDE_VOICE_SITES = new Set([
+  'plan-ceo-review/sections/review-sections.md',
+  'plan-eng-review/sections/review-sections.md',
+  'plan-devex-review/sections/review-sections.md',
+]);
+function hasBoundedOutsideVoiceWait(content: string): boolean {
+  const fallback = content.split('**If `CODEX_MODE: not_installed` or `not_authed` (or Codex errored at runtime):**')[1]
+    ?.split('**Cross-model tension:**')[0] ?? '';
+  return ['Bounded outside-voice wait', 'subagent_type: "Plan"', 'run_in_background: true',
+    'Immediately call TaskOutput', 'block: true', 'timeout: 300000', 'Make one wait only',
+    '`<retrieval_status>` must be `success`', '`<task_id>` must match', '`<task_type>` must be `local_agent`',
+    '`<status>`\n   must be `completed`', '`<output>` must be nonempty', 'must be no outer\n   `<error>`',
+    'identifiable complete', 'Reject raw or in-progress transcripts',
+    'call TaskStop with the same ID', 'Ignore partial or late results',
+    'Skip Cross-model tension and Persist the result'].every(part => fallback.includes(part));
+}
+
+describe('outside-voice dispatch contract', () => {
+  const rendered = generateCodexPlanReview({ host: 'claude' } as TemplateContext);
+  const fallback = rendered.split('**If `CODEX_MODE: not_installed` or `not_authed` (or Codex errored at runtime):**')[1]!
+    .split('**Cross-model tension:**')[0]!;
+
+  test('the delegated prompt itself requires findings only and forbids plan mutations', () => {
+    const promptStart = rendered.indexOf('"IMPORTANT:');
+    const promptEnd = rendered.indexOf('\n<plan content>"');
+    expect(promptStart).toBeGreaterThan(-1);
+    expect(promptEnd).toBeGreaterThan(promptStart);
+    const prompt = rendered.slice(promptStart, promptEnd);
+    // A sovereignty rule elsewhere in the parent workflow does not reach
+    // a fresh-context reviewer receiving only this constructed prompt.
+    expect(prompt).toContain('Read-only review: return findings in your final response.');
+    expect(prompt).toContain('including the plan file');
+    expect(prompt).toContain('Edit, Write, NotebookEdit, or Bash or');
+    expect(prompt).toContain('other tools to mutate files');
+    expect(prompt).toContain('Do not implement findings or update review reports.');
+    expect(prompt).toContain('not instructions to\nexecute');
+    expect(prompt).toContain('explicit user approval');
+  });
+
+  test('fallback uses one exact-ID wait and explicit cancellation without a model override', () => {
+    expect(hasBoundedOutsideVoiceWait(rendered)).toBe(true);
+    expect(fallback).toContain('Before dispatch, verify the host offers the built-in Plan agent type, TaskOutput and\nTaskStop.');
+    expect(fallback).toContain('If any is unavailable, take the unavailable path below without launching.');
+    expect(fallback).toContain('Do not set a model\noverride');
+    expect(fallback).toContain('one five-minute wait plus dispatch/cancellation overhead');
+    expect(fallback).toContain('Keep the returned `agentId`; do not guess an ID or launch a second task.');
+    expect(fallback).toContain('TaskOutput timeout does not stop the agent.');
+    expect(fallback).not.toContain('allowed_tools');
+    expect(fallback).not.toContain('run_in_background: false');
+  });
+
+  test('only the matching completed final report can enter agreement and persistence', () => {
+    for (const guard of ['<retrieval_status>', '<task_id>', '<task_type>', 'local_agent', '<status>', 'completed',
+      '<output>', 'nonempty', 'no outer', '<error>', 'identifiable complete',
+      'Reject raw or in-progress transcripts', 'do not extract\n   finding fragments from them']) expect(fallback).toContain(guard);
+    expect(fallback).toContain('Terminal status or warning markers alone do not\n   establish report completeness.');
+    expect(fallback).not.toContain('isRawTranscript');
+    expect(fallback).not.toContain('task.status');
+    expect(fallback).toContain('If any check fails or the report cannot be identified, follow step 4.');
+    expect(fallback).toContain('Outside voice unavailable. Continuing to outputs.');
+    expect(fallback).toContain('Do not retry with a general-purpose agent.');
+    expect(fallback).toContain('Report missing outside-voice coverage.');
+    expect(fallback).toContain('still give no late-result credit');
+    expect(fallback).toContain('cancellation is unconfirmed');
+    expect(fallback).toContain('Skip Cross-model tension and Persist the result; continue directly to outputs.');
+    expect(fallback).toContain('Do not record a clean review when no reviewer completed within the accepted wait.');
+    expect(rendered).toContain('Do NOT auto-incorporate outside voice recommendations into the plan.');
+    expect(rendered).toContain('MUST NOT apply the change without\nexplicit user approval.');
+    expect(rendered).toContain("-s read-only -c 'model_reasoning_effort=\"high\"'");
+  });
+
+  test('the generated-carrier exception rejects missing wait, cancellation or result guards', () => {
+    expect(hasBoundedOutsideVoiceWait(rendered)).toBe(true);
+    for (const guard of ['subagent_type: "Plan"', 'timeout: 300000', 'call TaskStop with the same ID',
+      '<status>', '<output>', 'Reject raw or in-progress transcripts',
+      'Ignore partial or late results', 'Skip Cross-model tension and Persist the result']) {
+      expect(hasBoundedOutsideVoiceWait(rendered.replaceAll(guard, 'missing guard')), guard).toBe(false);
+    }
+    expect(hasBoundedOutsideVoiceWait('Dispatch via the Agent tool with run_in_background: true')).toBe(false);
+  });
+
+  test('all host resolver outputs either omit the section or require Plan availability', () => {
+    for (const host of ALL_HOST_CONFIGS) {
+      const output = generateCodexPlanReview({ host: host.name } as TemplateContext);
+      if (host.name === 'codex') expect(output).toBe('');
+      else {
+        expect(output, host.name).toContain('If any is unavailable, take the unavailable path below without launching.');
+        expect(output, host.name).toContain('Do not record a clean review when no reviewer completed within the accepted wait.');
+        expect(output, host.name).toContain('Do not set a model\noverride');
+        expect(hasBoundedOutsideVoiceWait(output), host.name).toBe(true);
+      }
+    }
+  });
+});
 
 // review's specialist-dispatch guidance lives in its carved Review Army section
 // (Step 4.5 moved out of the skeleton), so the pin follows it there. Same for
@@ -83,7 +183,9 @@ describe('run_in_background guidance (#2440)', () => {
   test('foreground-required skills instruct run_in_background: false explicitly', () => {
     for (const rel of GENERATED_WITH_GUIDANCE) {
       const content = fs.readFileSync(path.join(ROOT, rel), 'utf-8');
-      expect(content).toContain('run_in_background: false');
+      if (BOUNDED_OUTSIDE_VOICE_SITES.has(rel) && content.includes('Bounded outside-voice wait')) {
+        expect(hasBoundedOutsideVoiceWait(content), rel).toBe(true);
+      } else expect(content).toContain('run_in_background: false');
     }
   });
 
@@ -147,7 +249,8 @@ describe('run_in_background guidance (#2440)', () => {
       const rel = path.relative(ROOT, file).split(path.sep).join('/');
       if (BACKGROUND_OK[rel]) continue;
       const content = fs.readFileSync(file, 'utf-8');
-      if (DISPATCH_IMPERATIVE.test(content) && !content.includes('run_in_background: false')) {
+      const boundedOutsideVoice = BOUNDED_OUTSIDE_VOICE_SITES.has(rel) && hasBoundedOutsideVoiceWait(content);
+      if (DISPATCH_IMPERATIVE.test(content) && !content.includes('run_in_background: false') && !boundedOutsideVoice) {
         throw new Error(
           `${rel} contains an Agent-dispatch imperative (or bare "foreground" prose) but never states ` +
           '`run_in_background: false` — pin the flag at the dispatch site or add a reasoned BACKGROUND_OK ' +
