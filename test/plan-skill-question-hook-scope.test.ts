@@ -139,7 +139,7 @@ const child = String.raw`
     case 'forged-descriptor': refuses(() => check({})); break;
     case 'fifo': { const result = require('node:child_process').spawnSync('mkfifo', [settings], {timeout: 1000}); assert.equal(result.status, 0); refuses(() => setup({configDir,cwd})); break; }
     default: {
-      const match = /^file-tool-(PreToolUse|PermissionRequest)-(Write|Edit|ExitPlanMode)-(settings|frontmatter|managed|drift)$/.exec(scenario);
+      const match = /^file-tool-(PreToolUse|PermissionRequest|PostToolUse)-(Write|Edit|ExitPlanMode)-(settings|frontmatter|managed|drift)$/.exec(scenario);
       if (!match) throw new Error('unknown scenario');
       const [, event, tool, location] = match;
       const scope = location === 'drift' ? passes() : null;
@@ -149,7 +149,7 @@ const child = String.raw`
         const file = location === 'managed' ? path.join(managedFixture, 'managed-settings.json') : settings;
         json(file, {hooks: {[event]: hooks(tool).hooks.PreToolUse}});
       }
-      if (event === 'PreToolUse' && tool !== 'ExitPlanMode' && location !== 'drift') passes();
+      if ((event === 'PreToolUse' && tool !== 'ExitPlanMode' || event === 'PostToolUse' && tool === 'ExitPlanMode') && location !== 'drift') passes();
       else refuses(() => scope ? check(scope) : setup({configDir,cwd}));
       break;
     }
@@ -172,7 +172,7 @@ const scenarios = ['clean', 'all-generated-skills', 'actual-hermetic-registry', 
   'disabled-plugin', 'installed-plugin', 'module-config', 'created-settings', 'changed-settings',
   'deleted-settings', 'new-managed-dropin', 'new-skill', 'changed-skill', 'external-registry',
   'external-skill', 'settings-symlink', 'oversized-settings', 'invalid-utf8', 'forged-descriptor'];
-for (const event of ['PreToolUse', 'PermissionRequest']) {
+for (const event of ['PreToolUse', 'PermissionRequest', 'PostToolUse']) {
   for (const tool of ['Write', 'Edit', 'ExitPlanMode']) {
     for (const location of ['settings', 'frontmatter', 'managed', 'drift']) scenarios.push(`file-tool-${event}-${tool}-${location}`);
   }

@@ -968,3 +968,123 @@ test('a short preview pane cannot own a later menu or substitute for native prev
     parseNumberedOptions(shortPreviewFrame.focused), [structuredClone(shortPreviewFrame.question)]))
     .toThrow('Indistinguishable repeated native question');
 });
+
+
+function earlyFileCompletion(toolName: 'Write' | 'Edit' = 'Edit') {
+  write({ type: 'user', sessionId, message: { role: 'user', content: 'Review' } });
+  const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
+  const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PermissionRequest[0].hooks[0].command;
+  const firstInput = toolName === 'Edit'
+    ? { file_path: path.join(config, 'plan.md'), old_string: 'Draft', new_string: 'Decision D9 approved', replace_all: false }
+    : { file_path: path.join(config, 'plan.md'), content: 'Decision D9 approved' };
+  const response = toolName === 'Edit'
+    ? { filePath: firstInput.file_path, oldString: 'Draft', newString: 'Decision D9 approved', originalFile: 'Draft', structuredPatch: [], userModified: false, replaceAll: false }
+    : { type: 'create', filePath: firstInput.file_path, content: 'Decision D9 approved', structuredPatch: [], originalFile: null, userModified: false };
+  const emit = (hookEvent: string, input: unknown, extra: Record<string, unknown> = {}) => {
+    const child = Bun.spawnSync(['bash', '-c', command], { timeout: 5000,
+      stdin: Buffer.from(JSON.stringify({ hook_event_name: hookEvent, session_id: sessionId,
+        transcript_path: file, cwd: config, tool_name: toolName, tool_input: input, ...extra })), stdout: 'pipe', stderr: 'pipe' });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    expect(child.stdout.length).toBe(0); expect(child.stderr.length).toBe(0);
+  };
+  const read = () => readPlanSkillQuestions(config, sessionId, source);
+  emit('PermissionRequest', firstInput);
+  const first = read().permissionRequests[0]!;
+  const dialog = toolName === 'Edit' ? createDialog('plan.md').replace('create', 'make this edit to') : createDialog('plan.md');
+  const granted = new Set<string>(); const requests = new Map<string, NativePermissionGrant>();
+  expect(reserveNativePermissionGrant(read(), dialog, granted, requests)).toBe(true);
+  const complete = (extra: Record<string, unknown> = {}) => emit('PostToolUse', firstInput,
+    { tool_use_id: 'unflushed-file-1', tool_response: response, ...extra });
+  const nextInput = toolName === 'Edit' ? { ...firstInput, old_string: 'Decision D9 approved', new_string: 'Decision D9 approved\nSecurity review' }
+    : { ...firstInput, content: 'Decision D9 approved\nSecurity review' };
+  const nextDialog = toolName === 'Edit' ? dialog : dialog.replace('create', 'overwrite');
+  return { source, read, emit, first, firstInput, response, complete, nextInput, nextDialog, granted, requests };
+}
+
+test.each(['Write', 'Edit'] as const)('owned PostToolUse completes %s before transcript publication and permits one fresh next grant', toolName => {
+  const s = earlyFileCompletion(toolName);
+  s.complete();
+  expect(fs.readFileSync(file, 'utf8')).not.toContain('unflushed-file-1');
+  expect(s.read().permissionRequests[0]).toMatchObject({ requestId: s.first.requestId, result: 'completed', nativeToolId: 'unflushed-file-1', completionEvidence: 'PostToolUse' });
+  expect(s.read().calls).toEqual([]); expect(s.read().ready).toBe(false);
+  s.emit('PermissionRequest', s.nextInput);
+  expect(reserveNativePermissionGrant(s.read(), s.nextDialog, s.granted, s.requests)).toBe(true);
+  expect(reserveNativePermissionGrant(s.read(), s.nextDialog, s.granted, s.requests)).toBe(false);
+  expect(s.granted.size).toBe(2);
+  // Matching later JSONL is corroboration, not a second completion/grant.
+  write(nativeWrite('unflushed-file-1', s.firstInput, config, toolName), {
+    ...nativeWriteResult('unflushed-file-1', new Date().toISOString()), toolUseResult: s.response,
+  });
+  expect(reserveNativePermissionGrant(s.read(), s.nextDialog, s.granted, s.requests)).toBe(false);
+});
+
+
+test.each(['missing', 'foreign-session', 'subagent', 'failure', 'malformed-response', 'wrong-response-path', 'changed-input', 'duplicate-request', 'duplicate-completion-id', 'late-completion'])
+('owned PostToolUse cannot retire an unproven request (%s)', variant => {
+  const s = earlyFileCompletion();
+  if (variant === 'duplicate-request') s.emit('PermissionRequest', s.firstInput);
+  if (variant === 'late-completion') s.emit('PermissionRequest', s.nextInput);
+  if (variant === 'failure') s.emit('PostToolUseFailure', s.firstInput, { tool_use_id: 'unflushed-file-1', error: 'Failed to write' });
+  else if (variant !== 'missing') s.complete(
+    variant === 'foreign-session' ? { session_id: '00000000-0000-4000-8000-000000000002' }
+      : variant === 'subagent' ? { agent_id: 'other-worker' }
+      : variant === 'malformed-response' ? { tool_response: { success: true } }
+      : variant === 'wrong-response-path' ? { tool_response: { ...s.response, filePath: '/wrong/plan.md' } }
+      : variant === 'changed-input' ? { tool_input: { ...s.firstInput, new_string: 'Not the requested edit' } } : {});
+  if (variant === 'duplicate-completion-id') s.complete({ tool_use_id: 'second-completion-for-one-request' });
+  if (variant !== 'late-completion') s.emit('PermissionRequest', s.nextInput);
+  expect(() => reserveNativePermissionGrant(s.read(), s.nextDialog, s.granted, s.requests)).toThrow();
+  expect(s.granted.size).toBe(1);
+});
+
+test.each(['name', 'input', 'cwd', 'unfinished-input', 'error', 'raw-response'])
+('owned PostToolUse refuses later native contradiction (%s)', variant => {
+  const s = earlyFileCompletion(); s.complete();
+  expect(s.read().permissionRequests[0].result).toBe('completed');
+  const input = variant.includes('input') ? { ...s.firstInput, new_string: 'Conflicting native edit' } : s.firstInput;
+  write(nativeWrite('unflushed-file-1', input, variant === 'cwd' ? path.dirname(config) : config,
+    variant === 'name' ? 'Write' : 'Edit', variant === 'unfinished-input' ? null : 'tool_use'), {
+    ...nativeWriteResult('unflushed-file-1', new Date().toISOString(), variant === 'error'),
+    toolUseResult: variant === 'raw-response' ? { ...s.response, newString: 'Different completed edit' } : s.response,
+  });
+  expect(s.read).toThrow(/changed input|conflicts with/);
+  expect(s.granted.size).toBe(1);
+});
+
+test('a duplicate success callback cannot replace its first immutable completion', () => {
+  const s = earlyFileCompletion(); s.complete();
+  expect(s.read().permissionRequests[0].result).toBe('completed');
+  s.complete({ tool_response: { ...s.response, newString: 'A different response' } });
+  expect(s.read).toThrow('capture failed');
+});
+
+test('unrequested successful file work carries no permission, AUQ or completion-modal authority', () => {
+  const s = earlyFileCompletion();
+  const other = { ...s.firstInput, file_path: path.join(config, 'auto-allowed.md') };
+  s.emit('PostToolUse', other, { tool_use_id: 'auto-allowed', tool_response: { ...s.response, filePath: other.file_path } });
+  const native = s.read();
+  expect(native.permissionRequests[0].result).toBe('pending');
+  expect(native.permissionTools).toEqual([]); expect(native.permissionResults).toEqual([]);
+  expect(native.calls).toEqual([]); expect(native.ready).toBe(false);
+});
+
+test('native storage may clear large Edit originalFile bytes but no other completion fields', () => {
+  const s = earlyFileCompletion(); s.complete();
+  write(nativeWrite('unflushed-file-1', s.firstInput, config, 'Edit'), {
+    ...nativeWriteResult('unflushed-file-1', new Date().toISOString()), toolUseResult: { ...s.response, originalFile: '' },
+  });
+  expect(s.read().permissionRequests[0]).toMatchObject({ result: 'completed', completionEvidence: 'PostToolUse' });
+});
+
+
+test.each(['preserved', 'clearable', 'cleared-mismatch'])('Write update storage preserves the exact native clearing condition (%s)', variant => {
+  const s = earlyFileCompletion('Write');
+  const response = { ...s.response, type: 'update', originalFile: variant === 'clearable' ? 'Previous plan' : null, structuredPatch: [] };
+  s.complete({ tool_response: response });
+  const stored = variant === 'preserved' ? response : { ...response, content: '', originalFile: null };
+  write(nativeWrite('unflushed-file-1', s.firstInput), {
+    ...nativeWriteResult('unflushed-file-1', new Date().toISOString()), toolUseResult: stored,
+  });
+  if (variant === 'cleared-mismatch') expect(s.read).toThrow('conflicts with its later result');
+  else expect(s.read().permissionRequests[0]).toMatchObject({ result: 'completed', completionEvidence: 'PostToolUse' });
+});

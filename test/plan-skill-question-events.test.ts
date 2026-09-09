@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { setupQuestionEventSource, readQuestionEvents, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
+import { setupQuestionEventSource, readQuestionEvents, readPermissionRequestEvents, readFileCompletionEvents } from './helpers/plan-skill-question-events';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
 const otherSession = '00000000-0000-4000-8000-000000000002';
@@ -52,6 +52,8 @@ test('silent native hook publishes the pending invocation before its assistant J
   expect(f.settings.hooks.PreToolUse[0].matcher).toBe('^(AskUserQuestion|ExitPlanMode)$');
   expect(f.settings.hooks.PermissionRequest).toHaveLength(1);
   expect(f.settings.hooks.PermissionRequest[0]).toEqual({ matcher: '^(Write|Edit)$',
+    hooks: [{ type: 'command', command: f.command, timeout: 5 }] });
+  expect(f.settings.hooks.PostToolUse[0]).toEqual({ matcher: '^(Write|Edit)$',
     hooks: [{ type: 'command', command: f.command, timeout: 5 }] });
   expect(f.settings.hooks.PreToolUse[0].hooks[0]).toEqual({ type: 'command', command: f.command, timeout: 5 });
   expect(Object.keys(f.settings)).toEqual(['hooks']);
@@ -282,7 +284,7 @@ test.skipIf(process.platform === 'win32')('FIFO event, binding and settings file
     const fs = require('node:fs'), path = require('node:path');
     const { spawnSync } = require('node:child_process');
     const { createHash } = require('node:crypto');
-    const { setupQuestionEventSource, readQuestionEvents, readPermissionRequestEvents } = require(helperFile);
+    const { setupQuestionEventSource, readQuestionEvents, readPermissionRequestEvents, readFileCompletionEvents } = require(helperFile);
     const sessionId = ${JSON.stringify(sessionId)};
     const { source, settingsPath } = setupQuestionEventSource({ configDir, cwd, sessionId, rootDir: path.dirname(configDir) });
     const directory = path.dirname(settingsPath);
@@ -448,3 +450,22 @@ test('event inventory and aggregate byte limits never admit a truncated subset',
     expect(() => readQuestionEvents(f.source, f.expected)).toThrow(message);
   });
 });
+
+
+test('successful file event preserves full native ID/input/response in the existing silent immutable channel', () => fixture(f => {
+  const toolInput = { file_path: path.join(f.cwd, 'plan.md'), content: 'Exact 日本語 report' };
+  const response = { type: 'create', filePath: toolInput.file_path, content: toolInput.content,
+    structuredPatch: [], originalFile: null, userModified: false };
+  f.run({ ...permissionEvent(f, 'Write', toolInput), hook_event_name: 'PostToolUse', tool_use_id: 'native-completed-write',
+    tool_response: response, capturedAtMs: 1, permissionDecision: 'allow' });
+  expect(readFileCompletionEvents(f.source, f.expected)).toEqual([{ id: 'native-completed-write',
+    capturedAtMs: expect.any(Number), toolName: 'Write', input: toolInput, response, cwd: f.cwd }]);
+  expect(readFileCompletionEvents(f.source, f.expected)[0].capturedAtMs).toBeGreaterThan(1);
+  expect(readPermissionRequestEvents(f.source, f.expected)).toEqual([]);
+  expect(readQuestionEvents(f.source, f.expected)).toEqual([]);
+  expect(fs.existsSync(toolInput.file_path)).toBe(false);
+  fs.writeFileSync(path.join(f.configDir, 'settings.local.json'), JSON.stringify({ hooks: { PostToolUse: [
+    { matcher: 'Write', hooks: [{ type: 'command', command: 'must-not-run' }] },
+  ] } }));
+  expect(() => readFileCompletionEvents(f.source, f.expected)).toThrow('Unsupported question hook scope');
+}));

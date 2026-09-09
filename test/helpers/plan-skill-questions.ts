@@ -1,7 +1,8 @@
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { readQuestionEvents, readExitPlanModeEvents, readPermissionRequestEvents, type QuestionEventSource } from './plan-skill-question-events';
+import { readQuestionEvents, readExitPlanModeEvents, readPermissionRequestEvents, readFileCompletionEvents,
+  type FileCompletionEventCall, type QuestionEventSource } from './plan-skill-question-events';
 
 export interface NativeQuestion {
   question: string;
@@ -24,6 +25,8 @@ export interface NativeFilePermissionRequest {
   result: 'pending' | 'completed' | 'error';
   nativeToolId?: string;
   nativeResultAtMs?: number;
+  /** For early success, nativeResultAtMs is the owned hook observation time. */
+  completionEvidence?: 'PostToolUse';
 }
 export interface NativePermissionGrant { nativeId?: string; requestId?: string; operation?: 'create' | 'edit' | 'overwrite' }
 
@@ -60,7 +63,8 @@ function questionInputShape(input: any): string {
 }
 
 /** The launch's native PreToolUse event can precede transcript persistence.
- * Both sources must agree; only an owned transcript result acknowledges input.
+ * Both sources must agree; AUQ input still needs an owned transcript result.
+ * File permission retirement may use its exact owned successful PostToolUse.
  * PTY scrollback and tool previews supply neither invocation nor acknowledgement.
  */
 export function readPlanSkillQuestions(configDir: string | null, sessionId: string, events?: QuestionEventSource): {
@@ -84,6 +88,8 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const inputs = new Map<string, unknown>();
   const permissionInputs = new Map<string, NativePermissionTool>();
   const unfinishedFileInputs: NativePermissionTool[] = [];
+  const requestEvents = events ? readPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
+  const earlyCompletions = new Map<string, FileCompletionEventCall>();
   const addQuestion = (id: unknown, input: any) => {
     if (typeof id !== 'string' || !id) throw new Error('Native AskUserQuestion is missing its tool ID');
     if (permissionInputs.has(id)) throw new Error('Native tool changed input or name for an existing tool ID');
@@ -119,12 +125,41 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       earlyExits.set(event.id, { input: event.input, cwd: event.cwd });
       ready.add(event.id);
     }
+    for (const event of readFileCompletionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+      const matches = requestEvents.filter(request => request.toolName === event.toolName
+        && request.cwd === event.cwd && isDeepStrictEqual(request.input, event.input));
+      if (matches.length > 1) throw new Error('Indistinguishable repeated native file permission request');
+      // Auto-allowed writes have no permission request to retire.
+      if (!matches.length) continue;
+      if (event.capturedAtMs <= matches[0]!.capturedAtMs) throw new Error('Native file completion does not follow its permission request');
+      if (inputs.has(event.id) || earlyExits.has(event.id) || earlyCompletions.has(event.id)) {
+        throw new Error('Native file completion changed input or name for an existing tool ID');
+      }
+      earlyCompletions.set(event.id, event);
+      addPermission({ id: event.id, name: event.toolName, input: event.input, cwd: event.cwd });
+    }
   }
   for (const row of transcript.rows) {
     const message = row.message;
     if (!Array.isArray(message?.content)) continue;
     for (const block of message.content) {
       if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+        const completion = earlyCompletions.get(block.tool_use_id);
+        if (completion) {
+          // tool_response is raw native data, not rendered tool_result text.
+          // CLI storage may clear only these large fields (Edit/Write schemas).
+          const raw = completion.response;
+          const stored = completion.toolName === 'Edit' && raw.originalFile
+            ? { ...raw, originalFile: '' }
+            : completion.toolName === 'Write' && raw.type === 'update'
+              && !(raw.content === '' && (raw.originalFile ?? '') === '')
+              && !(Array.isArray(raw.structuredPatch) && raw.structuredPatch.length === 0 && raw.originalFile === null)
+              ? { ...raw, content: '', originalFile: null } : raw;
+          if (block.is_error === true || row.toolUseResult !== undefined
+            && !isDeepStrictEqual(row.toolUseResult, raw) && !isDeepStrictEqual(row.toolUseResult, stored)) {
+            throw new Error('Native file completion conflicts with its later result');
+          }
+        }
         results.set(block.tool_use_id, block.is_error === true);
         resultTimes.set(block.tool_use_id, typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : Number.NaN);
       }
@@ -164,9 +199,13 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   for (const call of calls.values()) {
     if (results.has(call.id)) call.result = results.get(call.id) ? 'error' : 'answered';
   }
+  for (const completion of earlyCompletions.values()) {
+    results.set(completion.id, false);
+    resultTimes.set(completion.id, completion.capturedAtMs);
+  }
   const permissionRequests: NativeFilePermissionRequest[] = [];
   if (events) {
-    for (const event of readPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+    for (const event of requestEvents) {
       // PermissionRequest has no native tool ID. Its observer requestId is
       // separate; only a unique, exact native invocation/result can finish it.
       const candidates = [...permissionInputs.values()].filter(tool => tool.name === event.toolName
@@ -189,6 +228,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       permissionRequests.push({ requestId: event.requestId, capturedAtMs: event.capturedAtMs, name: event.toolName, input: event.input, cwd: event.cwd,
         result: resultAfterRequest ? results.get(native!.id) ? 'error' : 'completed' : 'pending',
         ...(resultAfterRequest ? { nativeResultAtMs: resultTimes.get(native!.id)! } : {}),
+        ...(resultAfterRequest && earlyCompletions.has(native!.id) ? { completionEvidence: 'PostToolUse' as const } : {}),
         ...(native && (!results.has(native.id) || resultAfterRequest) ? { nativeToolId: native.id } : {}) });
     }
   }

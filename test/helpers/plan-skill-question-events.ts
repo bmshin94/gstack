@@ -50,12 +50,36 @@ export interface PermissionRequestEventCall {
   input: Record<string, unknown>;
   cwd: string;
 }
+export interface FileCompletionEventCall {
+  id: string;
+  capturedAtMs: number;
+  toolName: 'Write' | 'Edit';
+  input: Record<string, unknown>;
+  response: Record<string, unknown>;
+  cwd: string;
+}
 type EventRecord = Binding & {
   transcriptFile: string;
   input: Record<string, unknown>;
 } & ({ hookEventName: 'PreToolUse'; toolName: 'AskUserQuestion' | 'ExitPlanMode'; id: string }
-  | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit'; requestId: string; capturedAtMs: number });
-const eventId = (event: EventRecord): string => event.hookEventName === 'PreToolUse' ? event.id : event.requestId;
+  | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit'; requestId: string; capturedAtMs: number }
+  | { hookEventName: 'PostToolUse'; toolName: 'Write' | 'Edit'; id: string; capturedAtMs: number; response: Record<string, unknown> });
+const eventId = (event: EventRecord): string => event.hookEventName === 'PermissionRequest' ? event.requestId : event.id;
+
+// Native successful Write/Edit output schemas, not a tool-result text guess.
+// Preserve the whole response; the CLI can normalize edit text internally.
+function fileResponse(tool: unknown, input: Record<string, unknown>, response: unknown): response is Record<string, unknown> {
+  if (!object(response) || typeof input.file_path !== 'string' || !path.isAbsolute(input.file_path)
+    || response.filePath !== input.file_path || !Array.isArray(response.structuredPatch)
+    || !(response.originalFile === null || typeof response.originalFile === 'string')) return false;
+  if (tool === 'Write') return typeof input.content === 'string' && typeof response.content === 'string'
+    && ['create', 'update'].includes(response.type as string)
+    && (response.userModified === undefined || typeof response.userModified === 'boolean');
+  return tool === 'Edit' && typeof input.old_string === 'string' && typeof input.new_string === 'string'
+    && (input.replace_all === undefined || typeof input.replace_all === 'boolean')
+    && typeof response.oldString === 'string' && typeof response.newString === 'string'
+    && typeof response.userModified === 'boolean' && typeof response.replaceAll === 'boolean';
+}
 
 function canonicalDirectory(directory: string): string {
   if (!path.isAbsolute(directory) || path.normalize(directory) !== directory
@@ -143,6 +167,7 @@ export function setupQuestionEventSource(opts: {
     const settingsBytes = JSON.stringify({ hooks: {
       PreToolUse: [{ matcher: '^(AskUserQuestion|ExitPlanMode)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
       PermissionRequest: [{ matcher: '^(Write|Edit)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PostToolUse: [{ matcher: '^(Write|Edit)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
     } }) + '\n';
     fs.writeFileSync(settingsPath, settingsBytes, { flag: 'wx', mode: 0o600 });
     const source = Object.freeze({ ...binding, directory,
@@ -184,6 +209,13 @@ function eventFromInput(value: unknown, binding: Binding): EventRecord | null {
     // provide this identity, and it must never masquerade as a native tool ID.
     return { ...binding, hookEventName: 'PermissionRequest', toolName: value.tool_name,
       transcriptFile: value.transcript_path, requestId: randomUUID(), capturedAtMs: Date.now(), input: value.tool_input };
+  }
+  if (value.hook_event_name === 'PostToolUse' && (value.tool_name === 'Write' || value.tool_name === 'Edit')
+    && typeof value.tool_use_id === 'string' && value.tool_use_id.trim() && value.tool_use_id.length <= 256
+    && fileResponse(value.tool_name, value.tool_input, value.tool_response)) {
+    return { ...binding, hookEventName: 'PostToolUse', toolName: value.tool_name,
+      transcriptFile: value.transcript_path, id: value.tool_use_id, capturedAtMs: Date.now(),
+      input: value.tool_input, response: value.tool_response };
   }
   throw new Error('Native question hook event or tool mismatch');
 }
@@ -230,7 +262,7 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
 
 function readCapturedEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
-}): (QuestionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall)[] {
+}): (QuestionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | FileCompletionEventCall)[] {
   if (expected.configDir === null || canonicalDirectory(expected.configDir) !== source.configDir
     || expected.sessionId !== source.sessionId) throw new Error('Question event source belongs to another session');
   const scope = hookScopes.get(source);
@@ -255,7 +287,7 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
   if (expected.transcriptFile === null) return [];
   const transcriptFile = expectedTranscript(expected.transcriptFile, expected.configDir, binding);
   let total = 0;
-  const calls: (QuestionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall)[] = [];
+  const calls: (QuestionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | FileCompletionEventCall)[] = [];
   const observed = observedEvents.get(source);
   if (!observed) throw new Error('Question event source was not created by this launcher');
   if ([...observed.keys()].some(file => !files.includes(file))) throw new Error('Previously observed native question event disappeared');
@@ -270,17 +302,21 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
       || event.transcriptFile !== transcriptFile || !object(event.input)) throw new Error('Native question event identity or input changed');
     const native = event.hookEventName === 'PreToolUse' && (event.toolName === 'AskUserQuestion' || event.toolName === 'ExitPlanMode')
       && typeof event.id === 'string' && !!event.id.trim() && event.id.length <= 256;
-    const permission = event.hookEventName === 'PermissionRequest' && (event.toolName === 'Write' || event.toolName === 'Edit')
-      && typeof event.requestId === 'string' && UUID.test(event.requestId)
-      && typeof event.capturedAtMs === 'number' && Number.isSafeInteger(event.capturedAtMs)
+    const timed = typeof event.capturedAtMs === 'number' && Number.isSafeInteger(event.capturedAtMs)
       && event.capturedAtMs > 0 && event.capturedAtMs <= 8_640_000_000_000_000;
-    const identityKey = native ? 'id' : 'requestId';
-    if ((!native && !permission) || file !== sha(event[identityKey] as string) + '.json'
-      || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', identityKey, 'input', ...(permission ? ['capturedAtMs'] : [])].includes(key))) throw new Error('Native question event identity or input changed');
+    const permission = event.hookEventName === 'PermissionRequest' && (event.toolName === 'Write' || event.toolName === 'Edit')
+      && typeof event.requestId === 'string' && UUID.test(event.requestId) && timed;
+    const completion = event.hookEventName === 'PostToolUse' && typeof event.id === 'string'
+      && !!event.id.trim() && event.id.length <= 256 && timed && fileResponse(event.toolName, event.input, event.response);
+    const identityKey = permission ? 'requestId' : 'id';
+    if ((!native && !permission && !completion) || file !== sha(event[identityKey] as string) + '.json'
+      || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', identityKey, 'input', ...(permission || completion ? ['capturedAtMs'] : []), ...(completion ? ['response'] : [])].includes(key))) throw new Error('Native question event identity or input changed');
     const hash = sha(bytes);
     if (observed.has(file) && observed.get(file) !== hash) throw new Error('Previously observed native question event changed');
     observed.set(file, hash);
     if (native) calls.push({ id: event.id as string, toolName: event.toolName as 'AskUserQuestion' | 'ExitPlanMode', input: event.input, cwd: event.cwd });
+    else if (completion) calls.push({ id: event.id as string, capturedAtMs: event.capturedAtMs as number,
+      toolName: event.toolName as 'Write' | 'Edit', input: event.input, response: event.response as Record<string, unknown>, cwd: event.cwd });
     else calls.push({ requestId: event.requestId as string, capturedAtMs: event.capturedAtMs as number,
       toolName: event.toolName as 'Write' | 'Edit', input: event.input, cwd: event.cwd });
   }
@@ -305,7 +341,14 @@ export function readExitPlanModeEvents(source: QuestionEventSource, expected: {
 export function readPermissionRequestEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
 }): PermissionRequestEventCall[] {
-  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => call.toolName === 'Write' || call.toolName === 'Edit');
+  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => 'requestId' in call);
+}
+
+/** Successful native execution, not a grant or an AUQ/ExitPlanMode result. */
+export function readFileCompletionEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): FileCompletionEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is FileCompletionEventCall => 'response' in call);
 }
 
 if (import.meta.main && process.argv.length === 5 && process.argv[2] === '--record-question-event') {

@@ -52,7 +52,7 @@ function inventory(opts: Options): string {
     if (!object(value)) fail('settings/frontmatter must be an object');
     if (value.hooks !== undefined) {
       if (!object(value.hooks)) fail('unparseable hooks');
-      for (const event of ['PreToolUse', 'PermissionRequest']) {
+      for (const event of ['PreToolUse', 'PermissionRequest', 'PostToolUse']) {
         const entries = value.hooks[event];
         if (entries === undefined) continue;
         if (!Array.isArray(entries)) fail(`unparseable ${event} hooks`);
@@ -63,7 +63,8 @@ function inventory(opts: Options): string {
           // Substrings are conservatively refused too, independent of anchoring.
           if (!object(entry) || typeof entry.matcher !== 'string'
             || !/^[A-Za-z][A-Za-z0-9_]*$/.test(entry.matcher)
-            || (event === 'PreToolUse' ? ['askuserquestion', 'exitplanmode'] : ['askuserquestion', 'exitplanmode', 'write', 'edit'])
+            || (event === 'PreToolUse' ? ['askuserquestion', 'exitplanmode']
+              : event === 'PostToolUse' ? ['write', 'edit'] : ['askuserquestion', 'exitplanmode', 'write', 'edit'])
               .some(tool => tool.includes(entry.matcher.toLowerCase()))
             || !Array.isArray(entry.hooks)) fail(`competing or unsupported ${event} matcher`);
         }
