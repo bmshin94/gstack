@@ -152,3 +152,43 @@ test('posture requires rendered assistant text after the selected mode result', 
     expect(read()).toBe('10x');
   } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });
+
+for (const [scenario, sends] of [
+  ['post-many-questions', Array.from({ length: 13 }, () => ['2', '\r']).flat()],
+  ['post-next-modal', ['2', '\r']], ['post-multi-tab', ['2', '1', '\r']],
+  ['post-repeat-mode', ['3', '\r']], ['post-no-recommendation', ['1', '\r']],
+  ['post-ambiguous-recommendation', ['1', '\r']], ['post-permission', ['1\r', '2', '\r']],
+] as const) {
+  test(`post-mode continuation preserves owned input and original posture: ${scenario}`, async () => {
+    const result = await run(scenario);
+    expect(result.error).toBeUndefined(); expect(result.sends).toEqual(sends);
+    expect(result.premature).toEqual([]); expect(result.acknowledged).toBe(true);
+    expect(result.closed).toBe(true); expect(result.diagnostic).toBeNull();
+    if (scenario === 'post-many-questions') expect(result.elapsed).toBeLessThan(240_000);
+  }, 15_000);
+}
+
+test.skipIf(process.platform === 'win32')('post-mode hook invocation waits for actual native JSONL acknowledgement', async () => {
+  const result = await run('post-early-event');
+  expect(result.error).toBeUndefined(); expect(result.earlyWithoutNativeInvocation).toBe(true);
+  expect(result.sends).toEqual(['2', '\r']); expect(result.acknowledged).toBe(true);
+}, 15_000);
+
+for (const [scenario, sends] of [
+  ['post-no-mode-ack', []], ['post-no-ack', ['2', '\r']], ['post-error-ack', ['2', '\r']],
+  ['post-stale', []], ['post-stale-after-pick', ['2']], ['post-unowned', []], ['post-unmatched', []],
+  ['post-concurrent', []], ['post-identical-mode', []], ['post-multiselect', []], ['post-permission-unowned', []],
+  ['post-wrong-posture', ['2', '\r']], ['post-missing-posture', ['2', '\r']], ['post-not-rendered', ['2', '\r']],
+  ['post-read-deadline', []], ['post-mark-deadline', []], ['post-exited', []], ['post-exit-during-pause', []], ['post-send-failure', ['2']],
+] as const) {
+  test(`post-mode failure remains failed and survives cleanup: ${scenario}`, async () => {
+    const result = await run(scenario);
+    expect(result.error).toBeString(); expect(result.sends).toEqual(sends); expect(result.premature).toEqual([]);
+    expect(result.closed).toBe(true); expect(result.diagnosticBeforeClose).toBe(true);
+    expect(result.configRemovedBeforeArtifactRead).toBe(true); expect(result.diagnostic.phase).toBe('posture');
+    expect(result.diagnostic.modeToolUseId.text).toBe('mode'); expect(result.diagnostic.error).toBe(result.error);
+    if (process.platform !== 'win32') expect(result.diagnosticMode).toBe(0o600);
+    expect(result.elapsed).toBeLessThanOrEqual(30_000);
+    if (scenario === 'post-send-failure') expect(result.originalSendErrorPreserved).toBe(true);
+  }, 15_000);
+}

@@ -7,19 +7,47 @@ import * as path from 'node:path';
 /** Answer prior native invocations, then select and acknowledge the requested
  * mode. A rendered preview cannot supply either prompt identity or inventory.
  */
+type ModeSelection = { modeIndex: number; sincePick: number; toolUseId: string };
+type ModeTarget = 'HOLD SCOPE' | 'SCOPE EXPANSION';
+
 export async function navigateToModeAskUserQuestion(
+  session: ClaudePtySession, since: number, targetMode: ModeTarget,
+  opts: { sessionId: string; maxNav?: number; budgetMs?: number },
+): Promise<ModeSelection> {
+  return driveModeQuestions(session, since, targetMode, opts);
+}
+
+/** A legitimate implementation-approach question can follow the mode ACK.
+ * Continue that owned interaction; only the original downstream posture oracle
+ * can pass this phase. Answered follow-ups must receive their native ACK first.
+ */
+export async function waitForNativeModePosture(
+  session: ClaudePtySession, selection: ModeSelection, targetMode: ModeTarget,
+  opts: { sessionId: string; postureRe: RegExp; budgetMs?: number },
+): Promise<void> {
+  await driveModeQuestions(session, selection.sincePick, targetMode, {
+    sessionId: opts.sessionId, budgetMs: opts.budgetMs ?? 240_000,
+    postMode: { ...selection, postureRe: opts.postureRe },
+  });
+}
+
+async function driveModeQuestions(
   session: ClaudePtySession,
   since: number,
-  targetMode: 'HOLD SCOPE' | 'SCOPE EXPANSION',
-  opts: { sessionId: string; maxNav?: number; budgetMs?: number },
-): Promise<{ modeIndex: number; sincePick: number; toolUseId: string }> {
+  targetMode: ModeTarget,
+  opts: { sessionId: string; maxNav?: number; budgetMs?: number;
+    postMode?: ModeSelection & { postureRe: RegExp } },
+): Promise<ModeSelection> {
   const maxNav = opts.maxNav ?? 12;
   const budgetMs = opts.budgetMs ?? 420_000;
   if (!Number.isFinite(budgetMs) || budgetMs < 0) throw new Error('Native mode navigation budgetMs must be finite and nonnegative');
   const deadline = Date.now() + budgetMs;
+  const postMode = opts.postMode;
+  let downstreamSnapshot = '';
   let questionSince = since;
   let priorAnswered = 0;
-  let selected: { id: string; modeIndex: number; sincePick: number } | null = null;
+  let selected: { id: string; modeIndex: number; sincePick: number } | null = postMode
+    ? { id: postMode.toolUseId, modeIndex: postMode.modeIndex, sincePick: postMode.sincePick } : null;
   const answered = new Map<string, { questions: number; submitted: boolean; counted: boolean }>();
   const granted = new Set<string>();
   const grantedRequests = new Set<string>();
@@ -55,6 +83,7 @@ export async function navigateToModeAskUserQuestion(
         schemaVersion: 1, sessionId: opts.sessionId, configDir: configDir && tail(configDir), targetMode, budgetMs,
         error: error.slice(0, 1024), errorCodeUnits: error.length, errorTruncated: error.length > 1024,
         since, questionSince, capturedAt: new Date().toISOString(),
+        ...(postMode ? { phase: 'posture', modeToolUseId: identity(postMode.toolUseId), downstream: tail(downstreamSnapshot) } : {}),
         selected: selected && { ...selected, id: identity(selected.id) }, priorAnswered,
         answered: [...answered].slice(-64).map(([id, state]) => ({ id: identity(id), ...state })),
         answeredCount: answered.size, answeredOmitted: Math.max(0, answered.size - 64),
@@ -116,9 +145,14 @@ export async function navigateToModeAskUserQuestion(
   };
   try {
   while (Date.now() < deadline) {
-    if (session.exited()) throw new Error(`claude exited (code=${session.exitCode()}) during native mode navigation`);
+    if (session.exited()) throw new Error(postMode
+      ? `claude exited (code=${session.exitCode()}) after mode pick.\nDownstream:\n${session.visibleSince(postMode.sincePick).slice(-2000)}`
+      : `claude exited (code=${session.exitCode()}) during native mode navigation`);
     await pause(2000);
     if (Date.now() >= deadline) break;
+    if (postMode && session.exited()) throw new Error(
+      `claude exited (code=${session.exitCode()}) after mode pick.\nDownstream:\n${session.visibleSince(postMode.sincePick).slice(-2000)}`,
+    );
     const frame = await session.currentScreen?.();
     const visible = frame
       ? frame.rawEnd > questionSince ? frame.text : ''
@@ -134,13 +168,23 @@ export async function navigateToModeAskUserQuestion(
       if (call.result === 'error') throw new Error(`Native AskUserQuestion ${call.id} returned an error during mode navigation`);
       if (state.questions !== call.questions.length) throw new Error('Native question completed before every question tab was answered');
       state.counted = true;
-      if (selected?.id === call.id) {
+      if (!postMode && selected?.id === call.id) {
         if (Date.now() >= deadline) break;
         return { modeIndex: selected.modeIndex, sincePick: selected.sincePick, toolUseId: selected.id };
       }
       priorAnswered++;
     }
     if (Date.now() >= deadline) break;
+    if (postMode) {
+      const modeCall = native.calls.find(call => call.id === postMode.toolUseId);
+      if (modeCall?.result === 'error') throw new Error('Selected native mode returned an error before posture');
+      if (modeCall?.result !== 'answered') continue;
+      downstreamSnapshot = session.visibleSince(postMode.sincePick);
+      const posture = readNativeModePosture(session.hermeticConfigDir, opts.sessionId, postMode.toolUseId,
+        downstreamSnapshot, postMode.postureRe);
+      if (Date.now() >= deadline) break;
+      if (posture && [...answered.values()].every(state => state.counted)) return postMode;
+    }
     const pending = native.calls.filter(call => call.result === 'pending');
     if (pending.length > 1) throw new Error('Concurrent native AskUserQuestion calls are unsupported during mode navigation');
     const call = pending[0];
@@ -174,16 +218,24 @@ export async function navigateToModeAskUserQuestion(
     const isMode = options.some(option => MODE_RE.test(option.label));
     const target = isMode ? findModeOption(options, targetMode) : null;
     if (isMode && !target) throw new Error(`Native mode AskUserQuestion does not offer requested "${targetMode}"`);
-    if (!isMode && selected?.id !== call.id && priorAnswered >= maxNav) throw new Error(`Navigated ${maxNav} prior AskUserQuestions without reaching the mode AskUserQuestion`);
+    if (!postMode && !isMode && selected?.id !== call.id && priorAnswered >= maxNav) throw new Error(`Navigated ${maxNav} prior AskUserQuestions without reaching the mode AskUserQuestion`);
     if (!state) { state = { questions: 0, submitted: false, counted: false }; answered.set(call.id, state); }
     state.questions++;
     questionSince = session.mark();
-    if (target) selected = { id: call.id, modeIndex: target.index, sincePick: questionSince };
+    if (target && !postMode) selected = { id: call.id, modeIndex: target.index, sincePick: questionSince };
+    // A recommendation is a native option label, never text from the preview.
+    // Ambiguous or absent recommendation keeps the existing first-option default.
+    const recommended = postMode ? options.filter(option => /\(\s*recommended\s*\)\s*$/i.test(option.label)) : [];
+    const pick = target?.index ?? (recommended.length === 1 ? recommended[0]!.index : 1);
     // A digit already selects and advances the native single-select menu.
     // Final submit is a separate action after all owned tabs are answered.
-    if (!send(String(target?.index ?? 1))) break;
+    if (!send(String(pick))) break;
     await pause(2000);
   }
+  if (postMode) throw new Error(
+    `Mode "${targetMode}" routing FAILED: no posture match for ${postMode.postureRe.source}.\n` +
+    `--- downstream visible since mode pick (last 3KB) ---\n` + downstreamSnapshot.slice(-3000),
+  );
   if (selected) throw new Error(`Selected native mode was not acknowledged within ${budgetMs}ms`);
   throw new Error(`Mode AskUserQuestion not reached within ${budgetMs}ms`);
   } catch (cause) {

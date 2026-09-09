@@ -7,7 +7,7 @@ import * as path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
-test.each(['success', 'launch', 'navigation', 'posture', 'close'])('mode fixture delivery and cleanup: %s', scenario => {
+test.each(['success', 'next-modal', 'launch', 'navigation', 'posture', 'close'])('mode fixture delivery and cleanup: %s', scenario => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-mode-body-'));
   const script = path.join(dir, 'body.fixture.test.ts');
   const factsPath = path.join(dir, 'facts.json');
@@ -48,10 +48,12 @@ mock.module(path.join(root, 'test/helpers/plan-skill-mode-navigation.ts'), () =>
     if (scenario === 'navigation') throw new Error('fixture navigation failed');
     return { sincePick: 23, toolUseId: 'owned-mode-choice' };
   },
-  readNativeModePosture: (config, sessionId, toolUseId, visible, pattern) => {
-    current.reads.push({ config, sessionId, toolUseId, visible });
-    const mode = current.navigation.mode;
-    return scenario !== 'posture' && pattern.test(mode) ? mode : null;
+  waitForNativeModePosture: async (session, selection, mode, opts) => {
+    current.posture = { selection, mode, budgetMs: opts.budgetMs, sessionId: opts.sessionId };
+    current.reads.push({ config: session.hermeticConfigDir, sessionId: opts.sessionId,
+      toolUseId: selection.toolUseId, visible: session.visibleSince(selection.sincePick) });
+    if (scenario === 'next-modal') { session.send('2'); session.send('\\r'); }
+    if (scenario === 'posture' || !opts.postureRe.test(mode)) throw new Error('routing FAILED: no posture match');
   },
 }));
 afterAll(() => fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify(facts)));
@@ -63,7 +65,7 @@ await import(path.join(root, 'test/skill-e2e-plan-ceo-mode-routing.test.ts'));
       env: { ...process.env, EVALS: '', EVALS_ALL: '', TMPDIR: dir, TMP: dir, TEMP: dir },
     });
     expect(child.error).toBeUndefined();
-    expect(child.status, child.stderr).toBe(scenario === 'success' ? 0 : 1);
+    expect(child.status, child.stderr).toBe(['success', 'next-modal'].includes(scenario) ? 0 : 1);
     const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'));
     expect(facts).toHaveLength(2);
     expect(facts[0].cwd).not.toBe(facts[1].cwd);
@@ -77,11 +79,13 @@ await import(path.join(root, 'test/skill-e2e-plan-ceo-mode-routing.test.ts'));
       expect(fact.options).toMatchObject({ permissionMode: 'plan', timeoutMs: 900_000, seedSkills: true, captureScreen: true });
       expect(fs.existsSync(fact.cwd)).toBe(false);
       expect(fact.closed).toBe(scenario !== 'launch');
-      expect(fact.sends).toEqual(scenario === 'launch' ? [] : ['/plan-ceo-review\r']);
+      expect(fact.sends).toEqual(scenario === 'launch' ? [] : scenario === 'next-modal' ? ['/plan-ceo-review\r', '2', '\r'] : ['/plan-ceo-review\r']);
       if (scenario === 'launch') expect(fact.navigation).toBeNull();
       else {
         expect(fact.navigation.since).toBe(11);
         expect(fact.navigation.opts.sessionId).toBe(fact.options.captureQuestionsForSession);
+        if (scenario !== 'navigation') expect(fact.posture).toEqual({ selection: { sincePick: 23, toolUseId: 'owned-mode-choice' },
+          mode: fact.navigation.mode, budgetMs: 240_000, sessionId: fact.options.captureQuestionsForSession });
       }
       for (const read of fact.reads) expect(read).toEqual({
         config: 'owned-config', sessionId: fact.options.captureQuestionsForSession,
@@ -90,7 +94,7 @@ await import(path.join(root, 'test/skill-e2e-plan-ceo-mode-routing.test.ts'));
       expect(fact.reads.length > 0).toBe(!['launch', 'navigation'].includes(scenario));
     }
     if (scenario === 'posture') expect(child.stderr).toContain('routing FAILED: no posture match');
-    else if (scenario !== 'success') expect(child.stderr).toContain('fixture ' + scenario + ' failed');
+    else if (!['success', 'next-modal'].includes(scenario)) expect(child.stderr).toContain('fixture ' + scenario + ' failed');
     expect(fs.readdirSync(dir).filter(name => name.startsWith('ceo-mode-routing-'))).toEqual([]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

@@ -36,13 +36,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { seedCeoFindingProject } from './helpers/ceo-finding-fixture';
-import { navigateToModeAskUserQuestion, readNativeModePosture } from './helpers/plan-skill-mode-navigation';
+import { navigateToModeAskUserQuestion, waitForNativeModePosture } from './helpers/plan-skill-mode-navigation';
 import { PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import {
   launchClaudePty,
-  isNumberedOptionListVisible,
-  isPlanReadyVisible,
   type ClaudePtySession,
 } from './helpers/claude-pty-runner';
 
@@ -92,49 +90,8 @@ selecting a mode. I have not chosen a review mode for this plan.
           const since = session.mark();
           session.send('/plan-ceo-review\r');
 
-          const { sincePick, toolUseId } = await navigateToModeAskUserQuestion(session, since, c.mode, { sessionId });
-
-          // Wait for downstream evidence: either next AskUserQuestion or plan_ready or
-          // a posture-distinctive substring shows up.
-          const budgetMs = 240_000;
-          const start = Date.now();
-          let postureMatched = false;
-          let downstreamSnapshot = '';
-          while (Date.now() - start < budgetMs) {
-            await Bun.sleep(Math.min(2500, budgetMs - (Date.now() - start)));
-            if (Date.now() - start >= budgetMs) break;
-            if (session.exited()) {
-              throw new Error(
-                `claude exited (code=${session.exitCode()}) after mode pick.\n` +
-                `Downstream:\n${session.visibleSince(sincePick).slice(-2000)}`,
-              );
-            }
-            downstreamSnapshot = session.visibleSince(sincePick);
-            const ownedPosture = readNativeModePosture(session.hermeticConfigDir, sessionId, toolUseId, downstreamSnapshot, c.postureRe);
-            if (Date.now() - start >= budgetMs) break;
-            if (ownedPosture) {
-              postureMatched = true;
-              break;
-            }
-            // Don't bail early on plan_ready alone — the posture text may
-            // arrive as the agent finishes writing the plan. Only break
-            // once we either match posture or run the clock.
-            if (
-              isPlanReadyVisible(downstreamSnapshot) &&
-              isNumberedOptionListVisible(downstreamSnapshot) &&
-              !c.postureRe.test(downstreamSnapshot)
-            ) {
-              // Plan-ready AND a follow-up AskUserQuestion are both visible but
-              // posture text has not appeared yet. Keep polling for a bit.
-            }
-          }
-          if (!postureMatched) {
-            throw new Error(
-              `Mode "${c.mode}" routing FAILED: no posture match for ${c.postureRe.source}.\n` +
-              `--- downstream visible since mode pick (last 3KB) ---\n` +
-              downstreamSnapshot.slice(-3000),
-            );
-          }
+          const selection = await navigateToModeAskUserQuestion(session, since, c.mode, { sessionId });
+          await waitForNativeModePosture(session, selection, c.mode, { sessionId, postureRe: c.postureRe, budgetMs: 240_000 });
         } finally {
           try { await session?.close(); }
           finally { fs.rmSync(project, { recursive: true, force: true }); }
