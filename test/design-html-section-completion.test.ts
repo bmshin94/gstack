@@ -31,12 +31,13 @@ import { expect, mock } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CARVE_GUARDS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/carve-guards.ts'))};
+import { resolveEvalModel } from ${JSON.stringify(path.join(ROOT, 'lib/eval-model.ts'))};
 const input = ${JSON.stringify(input)};
 const guard = CARVE_GUARDS[input.skill];
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/session-runner.ts'))}, () => ({
   runSkillTest: async opts => {
     expect(opts.prompt).toContain(guard.scenario);
-    expect(opts).toMatchObject({ maxTurns: 25, timeout: 480000, model: 'claude-sonnet-4-6' });
+    expect(opts).toMatchObject({ maxTurns: 25, timeout: 480000, model: resolveEvalModel('capture') });
     expect(opts.allowedTools).toEqual(['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent']);
     if (input.writeReport) fs.writeFileSync(path.join(opts.workingDirectory, 'REPORT.md'), input.output);
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ called: true }));

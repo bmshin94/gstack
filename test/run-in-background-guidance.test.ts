@@ -2,6 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { generateCodexPlanReview } from '../scripts/resolvers/review';
+import { CODEX_MODEL_CONFIG_FLAG } from '../scripts/resolvers/constants';
 import type { TemplateContext } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';
 
@@ -27,9 +28,13 @@ const BOUNDED_OUTSIDE_VOICE_SITES = new Set([
   'plan-eng-review/sections/review-sections.md',
   'plan-devex-review/sections/review-sections.md',
 ]);
+function boundedOutsideVoice(content: string): string {
+  // Host postprocessing can expand the preceding CODEX_MODE list (for example
+  // broken_install/model_unusable). Pin the actual bounded dispatch section.
+  return content.match(/\*\*Bounded outside-voice wait[\s\S]*?(?=\*\*Cross-model tension:\*\*)/)?.[0] ?? '';
+}
 function hasBoundedOutsideVoiceWait(content: string): boolean {
-  const fallback = content.split('**If `CODEX_MODE: not_installed` or `not_authed` (or Codex errored at runtime):**')[1]
-    ?.split('**Cross-model tension:**')[0] ?? '';
+  const fallback = boundedOutsideVoice(content);
   return ['Bounded outside-voice wait', 'subagent_type: "Plan"', 'run_in_background: true',
     'Immediately call TaskOutput', 'block: true', 'timeout: 300000', 'Make one wait only',
     '`<retrieval_status>` must be `success`', '`<task_id>` must match', '`<task_type>` must be `local_agent`',
@@ -41,8 +46,7 @@ function hasBoundedOutsideVoiceWait(content: string): boolean {
 
 describe('outside-voice dispatch contract', () => {
   const rendered = generateCodexPlanReview({ host: 'claude' } as TemplateContext);
-  const fallback = rendered.split('**If `CODEX_MODE: not_installed` or `not_authed` (or Codex errored at runtime):**')[1]!
-    .split('**Cross-model tension:**')[0]!;
+  const fallback = boundedOutsideVoice(rendered);
 
   test('the delegated prompt itself requires findings only and forbids plan mutations', () => {
     const promptStart = rendered.indexOf('"IMPORTANT:');
@@ -90,7 +94,7 @@ describe('outside-voice dispatch contract', () => {
     expect(fallback).toContain('Do not record a clean review when no reviewer completed within the accepted wait.');
     expect(rendered).toContain('Do NOT auto-incorporate outside voice recommendations into the plan.');
     expect(rendered).toContain('MUST NOT apply the change without\nexplicit user approval.');
-    expect(rendered).toContain("-s read-only -c 'model_reasoning_effort=\"high\"'");
+    expect(rendered).toContain(`-s read-only ${CODEX_MODEL_CONFIG_FLAG} -c 'model_reasoning_effort="high"'`);
   });
 
   test('the generated-carrier exception rejects missing wait, cancellation or result guards', () => {
@@ -101,6 +105,16 @@ describe('outside-voice dispatch contract', () => {
       expect(hasBoundedOutsideVoiceWait(rendered.replaceAll(guard, 'missing guard')), guard).toBe(false);
     }
     expect(hasBoundedOutsideVoiceWait('Dispatch via the Agent tool with run_in_background: true')).toBe(false);
+  });
+
+  test('expanded Codex availability states preserve the same bounded dispatch guards', () => {
+    const earlier = rendered.replace('`CODEX_MODE: not_installed`, `not_authed`, `broken_install`, or `model_unusable`',
+      '`CODEX_MODE: not_installed` or `not_authed`');
+    expect(earlier).not.toBe(rendered);
+    for (const content of [earlier, rendered]) {
+      expect(hasBoundedOutsideVoiceWait(content)).toBe(true);
+      expect(hasBoundedOutsideVoiceWait(content.replace('call TaskStop with the same ID', 'missing cancellation'))).toBe(false);
+    }
   });
 
   test('all host resolver outputs either omit the section or require Plan availability', () => {
