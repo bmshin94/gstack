@@ -107,6 +107,8 @@ describe('selectTests', () => {
     expect(result.selected).toContain('auq-format-gate');
     expect(result.selected).toContain('plan-ceo-mode-routing');
     expect(result.selected).toContain('autoplan-chain-pty');
+    // The dual-voice fixture loads the CEO skill as its Phase 1 dependency.
+    expect(result.selected).toContain('autoplan-dual-voice');
     // Per-finding count + review-report-at-bottom (v1.21.x)
     expect(result.selected).toContain('plan-ceo-finding-count');
     // v1.22+ AskUserQuestion-blocked regression: auto-decide-preserved
@@ -123,8 +125,8 @@ describe('selectTests', () => {
     expect(result.selected).toContain('plan-ceo-section-loading');
     expect(result.selected).toContain('codex-plan-ceo-format-mode');
     expect(result.selected).toContain('codex-plan-ceo-format-approach');
-    expect(result.selected.length).toBe(23);
-    expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 23);
+    expect(result.selected.length).toBe(24);
+    expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 24);
   });
 
   test('global touchfile triggers ALL tests', () => {
