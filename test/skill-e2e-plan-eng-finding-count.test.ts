@@ -5,7 +5,7 @@
 import { test } from 'bun:test';
 import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
 import { ENG_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
-import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
+import { seedEngFindingProject } from './helpers/eng-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -61,8 +61,7 @@ describeE2E('/plan-eng-review per-finding AskUserQuestion count (periodic)', () 
       const planPath = path.join(tmpDir, 'gstack-test-plan-eng.md');
 
       try {
-        const planText = planEng5Findings(planPath);
-        seedPlanReviewProject(tmpDir, planText, 'plan-eng-review');
+        const planText = seedEngFindingProject(tmpDir, planEng5Findings(planPath));
         const obs = await runPlanSkillCounting({
           skillName: 'plan-eng-review',
           slashCommand: '/plan-eng-review',

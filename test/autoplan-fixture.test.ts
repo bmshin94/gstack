@@ -8,6 +8,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
 import { generateSlugEval, generateSlugSetup } from '../scripts/resolvers/utility';
+import { DESIGN_DOC_DISCOVERY_BLOCK } from '../scripts/resolvers/design-doc-discovery';
 import type { TemplateContext } from '../scripts/resolvers/types';
 
 const ROOT = path.resolve(import.meta.dir, '..');
@@ -158,6 +159,7 @@ test('autoplan waits for a new permission frame after its preceding input', () =
 import { afterAll, describe, expect, mock } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import * as questions from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-skill-questions.ts'))};
 import { isNumberedOptionListVisible, isPermissionDialogVisible } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
 const root = ${JSON.stringify(ROOT)};
@@ -179,6 +181,13 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
   isNumberedOptionListVisible, isPermissionDialogVisible, isPlanReadyVisible: () => false,
   launchClaudePty: async opts => {
     cwd = fs.realpathSync(opts.cwd); file = path.join(cwd, '.gstack', 'projects', 'fixture', 'restore.md');
+    const design = fs.readFileSync(path.join(root, 'test/fixtures/plans/ui-heavy-feature-design.md'), 'utf8');
+    expect(fs.readFileSync(path.join(cwd, 'DESIGN.md'), 'utf8')).toBe(design);
+    expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8' })).toBe(design);
+    const discovery = execFileSync('bash', ['-c', ${JSON.stringify('SLUG=fixture; BRANCH=main; ' + DESIGN_DOC_DISCOVERY_BLOCK)}], {
+      cwd, env: { PATH: process.env.PATH, HOME: path.join(cwd, '.isolated-home') }, encoding: 'utf8', timeout: 5000,
+    });
+    expect(discovery).toBe('Design doc found: ' + path.join(cwd, 'DESIGN.md') + '\\n');
     config = path.join(cwd, '.native'); sessionId = opts.captureQuestionsForSession;
     fs.mkdirSync(path.join(config, 'projects', 'fixture'), { recursive: true });
     expect(opts).toMatchObject({ permissionMode: 'plan', timeoutMs: 1080000, seedSkills: true, captureScreen: true, rows: 120,

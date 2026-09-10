@@ -252,8 +252,9 @@ Read ${skillPath} and EXECUTE its workflow for this scenario:
 ${opts.scenario}
 
 Rules for this run:
-- Skip system-audit, environment-setup, telemetry, and codebase-exploration steps.
+- Skip system-audit, environment-setup, telemetry, and unrelated codebase exploration. Read the supplied plan's referenced fixture files when its review requires them.
 - At any decision point that would call AskUserQuestion, silently pick the skill's recommended option and continue. Do NOT stop to ask.
+- Resolve installed-root paths for section and companion Markdown files under ${opts.planDir}, where this fixture's skill package is copied.
 - This skill's body has been carved into on-demand sections/. When the skill gives a STOP-Read directive (for example "Read \`.../sections/<file>\` and execute it in full"), you MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers. Do not work from memory.
 - Do NOT run git, gh, commit, push, or any other mutating command${opts.artifactCommands ? ' except the local artifact commands explicitly authorized below' : ''}.${opts.artifactCommands ? `\n- ${opts.artifactCommands}` : ''}
 - When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.`;

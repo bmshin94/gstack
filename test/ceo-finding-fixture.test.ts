@@ -127,7 +127,7 @@ describe('CEO finding fixture establishes scope before launch', () => {
 
 // Import the actual paid registration only after replacing its observation
 // and semantic-judge boundaries. Real seeding, outcome/report checks, and cleanup stay in use.
-test.each(['success5', 'success7', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw', 'judge-error'])('count registration: %s', scenario => {
+test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw', 'judge-error'])('count registration: %s', scenario => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-count-body-')));
   const script = path.join(root, 'registration.test.ts');
   const factsPath = path.join(root, 'facts.json');
@@ -208,6 +208,15 @@ test.each(['success5', 'success7', 'below', 'above', 'missing-report', 'trailing
     'Each webhook lookup hits the database for the user, then fetches each',
     'order in a loop.',
   ].join('\n');
+  const pairedPlan = [
+    '# Plan: Payment Processing — Test Coverage', '',
+    '## Tests',
+    'We need test coverage for `processPayment()`. Specifically:',
+    '1. The happy path (successful Stripe charge — assert correct receipt is generated).',
+    '2. The error/timeout path (Stripe returns 502 — assert retry-with-backoff fires once, then fails clean).', '',
+    'Currently neither has a unit test. These are deliberately separate concerns:',
+    'the success path is correctness, the failure path is graceful degradation.',
+  ].join('\n');
   fs.writeFileSync(script, `
 import { describe, expect, mock } from 'bun:test';
 import * as fs from 'node:fs';
@@ -215,11 +224,12 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assertReviewReportAtBottom, ceoStep0Boundary, PLAN_SKILL_COUNT_FINALIZE_MS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
 import { pickSuppliedCeoPlanStart } from ${JSON.stringify(path.join(ROOT, 'test/helpers/ceo-finding-fixture.ts'))};
-import { CEO_FINDINGS, pickPlanReviewQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
+import { CEO_FINDINGS, CEO_PAIRED_FINDINGS, pickPlanReviewQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
 const reportAssertion = assertReviewReportAtBottom;
 const step0Boundary = ceoStep0Boundary;
 const finalizeMs = PLAN_SKILL_COUNT_FINALIZE_MS;
 const scenario = ${JSON.stringify(scenario)};
+const paired = scenario === 'success-paired';
 let calls = 0;
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
   describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
@@ -234,11 +244,14 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify(facts));
     expect(path.dirname(opts.cwd)).toBe(${JSON.stringify(root)});
     const input = fs.readFileSync(path.join(opts.cwd, 'review-input.md'), 'utf8');
-    const target = path.join(opts.cwd, 'gstack-test-plan-ceo.md');
+    const target = path.join(opts.cwd, paired ? 'gstack-test-plan-ceo-paired.md' : 'gstack-test-plan-ceo.md');
     expect(input).toBe([
       'Please review this plan thoroughly. As you go, write your plan-mode plan to ' + target + ' (use Edit/Write to that exact path).',
-      '', '# Plan: Payment Processing Integration', '',
-      ${JSON.stringify(established)}, '', ${JSON.stringify(originalDefects)},
+      'Use HOLD SCOPE mode for this review; examine the current plan with full rigor.', '',
+      ...(paired ? [${JSON.stringify(pairedPlan)}] : [
+        '# Plan: Payment Processing Integration', '',
+        ${JSON.stringify(established)}, '', ${JSON.stringify(originalDefects)},
+      ]),
     ].join('\\n'));
     expect(execFileSync('git', ['show', 'HEAD:review-input.md'], {
       cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
@@ -263,7 +276,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
       (scenario === 'trailing-report' ? '\\n## Unreviewed tail\\n' : ''));
     return {
       outcome: scenario === 'timeout' ? 'timeout' : 'plan_ready',
-      reviewCount: { success5: 5, success7: 7, below: 3, above: 8 }[scenario] ?? 5,
+      reviewCount: { success5: 5, success7: 7, 'success-paired': 2, below: 3, above: 8 }[scenario] ?? 5,
       step0Count: 2, elapsedMs: 1000, fingerprints: [], evidence: 'controlled observation',
     };
   },
@@ -275,7 +288,8 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions
     fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify(facts));
     expect(input).toEqual({
       plan: fs.readFileSync(path.join(facts.cwd, 'review-input.md'), 'utf8'),
-      targets: CEO_FINDINGS, fingerprints: [], kind: 'findings', floor: 4, ceiling: 7,
+      targets: paired ? CEO_PAIRED_FINDINGS : CEO_FINDINGS, fingerprints: [], kind: 'findings',
+      floor: paired ? 2 : 4, ceiling: paired ? 4 : 7,
       deadlineAt: expect.any(Number),
     });
     expect(input.deadlineAt).toBeGreaterThan(Date.now());
@@ -283,10 +297,12 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions
     if (scenario === 'below') throw new Error('controlled finding floor failure');
     if (scenario === 'above') throw new Error('controlled finding ceiling failure');
     if (scenario === 'judge-error') throw new Error('controlled classification failure');
-    return { count: scenario === 'success7' ? 7 : 5, coveredTargetIds: CEO_FINDINGS.map(target => target.id) };
+    return { count: paired ? 2 : scenario === 'success7' ? 7 : 5,
+      coveredTargetIds: (paired ? CEO_PAIRED_FINDINGS : CEO_FINDINGS).map(target => target.id) };
   },
 }));
-await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-finding-count.test.ts'))});
+await import(${JSON.stringify(path.join(ROOT, scenario === 'success-paired'
+  ? 'test/skill-e2e-plan-ceo-paired-control.test.ts' : 'test/skill-e2e-plan-ceo-finding-count.test.ts'))});
 `);
   try {
     const child = spawnSync(process.execPath, ['test', script], {
@@ -301,8 +317,8 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-finding-c
     expect(child.error, output).toBeUndefined();
     const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'));
     expect(facts.calls).toBe(1);
-    expect(facts.judgeCalls ?? 0).toBe(['success5', 'success7', 'below', 'above', 'judge-error'].includes(scenario) ? 1 : 0);
     expect(facts.validated, output).toBe(true);
+    expect(facts.judgeCalls ?? 0).toBe(['success5', 'success7', 'success-paired', 'below', 'above', 'judge-error'].includes(scenario) ? 1 : 0);
     expect(fs.existsSync(facts.cwd), 'actual paid finally must remove its owned fixture').toBe(false);
     expect(child.status, output).toBe(scenario.startsWith('success') ? 0 : 1);
     const failures: Record<string, string> = {

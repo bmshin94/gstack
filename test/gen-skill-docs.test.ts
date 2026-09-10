@@ -1448,7 +1448,7 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     expect(output).toContain('quality bonus, not an approval gate');
   });
 
-  test('CEO keeps its existing loop, scoring, failure handling, and reporting', () => {
+  test('CEO keeps its loop limits, scoring, failure handling, and reporting', () => {
     const ceo = render('plan-ceo-review');
     expect(ceo).toContain('Could an engineer implement this without asking questions? Ambiguous language?');
     expect(ceo).not.toContain('design and coaching document');
@@ -1456,8 +1456,8 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     expect(ceo.slice(ceo.indexOf('**Step 2:'), ceo.indexOf('If the subagent fails,')).trim()).toBe(`**Step 2: Fix and re-dispatch**
 
 If the reviewer returns issues:
-1. Fix each issue in the document on disk (use Edit tool)
-2. Re-dispatch the reviewer subagent with the updated document
+1. Fix each issue in its owning file (use Edit tool): requirements and behavior in the source plan, scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the scope summary.
+2. Re-dispatch the reviewer subagent with BOTH updated file paths and the same two-document instructions
 3. Maximum 3 iterations total
 
 **Convergence guard:** If the reviewer returns the same issues on consecutive iterations
@@ -1468,6 +1468,21 @@ further.`);
     expect(ceo).toContain('M issues caught and fixed');
     expect(ceo).toContain('Quality score: X/10');
     expect(ceo).toContain('spec-review.jsonl');
+  });
+
+  test('CEO spec review receives the full source plan as well as the scope artifact on every host', () => {
+    for (const host of Object.keys(HOST_PATHS)) {
+      const output = render('plan-ceo-review', host).replace(/\s+/g, ' ');
+      expect(output).toContain('absolute paths of BOTH the CEO scope document just written and the current amended plan it references');
+      expect(output).toContain('Read both files in full');
+      expect(output).toContain('Evaluate them together on all five dimensions');
+      expect(output).toContain('contradictions between the files, unsupported accepted expansions, and required behavior missing from both');
+      expect(output).toContain('report that failure instead of grading a partial input');
+    }
+    const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
+    expect(template).toContain('## Plan under review\n{absolute path to the current amended plan}');
+    expect(template).toContain('first save that complete plan to its own\nfile');
+    expect(template).toContain('distinct from this CEO artifact (never a self-reference)');
   });
 
   test('contains all 5 review dimensions', () => {

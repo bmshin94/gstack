@@ -309,6 +309,7 @@ reviewer-confirmed resolutions. An unavailable score is null, never invented.`;
 
 export function generateSpecReviewLoop(_ctx: TemplateContext): string {
   if (_ctx.skillName === 'office-hours') return generateOfficeHoursSpecReviewLoop();
+  const ceo = _ctx.skillName === 'plan-ceo-review';
   return `## Spec Review Loop
 
 Before presenting the document to the user for approval, run an adversarial review.
@@ -318,12 +319,19 @@ Before presenting the document to the user for approval, run an adversarial revi
 Use the Agent tool to dispatch an independent reviewer, passing \`run_in_background: false\`
 (subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}; this loop consumes the
 reviewer's verdict). The reviewer has fresh context
-and cannot see the brainstorming conversation — only the document. This ensures genuine
+and cannot see the brainstorming conversation — only ${ceo ? 'the CEO scope document and its source plan' : 'the document'}. This ensures genuine
 adversarial independence.
 
 Prompt the subagent with:
-- The file path of the document just written
-- "Read this document and review it on 5 dimensions. For each dimension, note PASS or
+- ${ceo ? 'The absolute paths of BOTH the CEO scope document just written and the current amended plan it references' : 'The file path of the document just written'}
+${ceo ? `- "Read both files in full. The CEO document records scope decisions; the source
+  plan supplies the requirements and implementation context. Evaluate them together
+  on all five dimensions below. A requirement present in the source plan is not
+  missing merely because the scope summary does not repeat it. Still flag
+  contradictions between the files, unsupported accepted expansions, and required
+  behavior missing from both. Cite the relevant file and requirement for every
+  finding. If either file cannot be read, report that failure instead of grading
+  a partial input."\n` : ''}- "Read ${ceo ? 'these documents' : 'this document'} and review ${ceo ? 'them' : 'it'} on 5 dimensions. For each dimension, note PASS or
   list specific issues with suggested fixes. At the end, output a quality score (1-10)
   across all dimensions."
 
@@ -341,8 +349,8 @@ The subagent should return:
 **Step 2: Fix and re-dispatch**
 
 If the reviewer returns issues:
-1. Fix each issue in the document on disk (use Edit tool)
-2. Re-dispatch the reviewer subagent with the updated document
+1. ${ceo ? 'Fix each issue in its owning file (use Edit tool): requirements and behavior in the source plan, scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the scope summary.' : 'Fix each issue in the document on disk (use Edit tool)'}
+2. Re-dispatch the reviewer subagent with ${ceo ? 'BOTH updated file paths and the same two-document instructions' : 'the updated document'}
 3. Maximum 3 iterations total
 
 **Convergence guard:** If the reviewer returns the same issues on consecutive iterations

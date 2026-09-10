@@ -571,6 +571,10 @@ API/CLI ergonomics > Everything else.
 Never skip Step 0, the persona interrogation, or the empathy narrative. These are
 the highest-leverage outputs.
 
+**One issue = one AskUserQuestion call.** This applies to every phase, including Step 0.
+Ask each independent substantive decision in its own call and wait for its answer;
+separate tabs in one call still bundle those decisions.
+
 ## PRE-REVIEW SYSTEM AUDIT (before Step 0)
 
 Before doing anything else, gather context about the developer-facing product.
@@ -960,6 +964,9 @@ AskUserQuestion:
 ### 0E. Mode Selection
 
 How deep should this DX review go?
+
+Use the mode the user explicitly requested for this review. If already chosen,
+skip the mode question and continue to 0F. Otherwise, ask below.
 
 Present three options:
 

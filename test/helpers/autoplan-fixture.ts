@@ -4,12 +4,14 @@ import * as path from 'node:path';
 import { seedHermeticGstackHome } from './hermetic-env';
 
 const UI_FIXTURE = path.resolve(import.meta.dir, '..', 'fixtures', 'plans', 'ui-heavy-feature.md');
+const DESIGN_FIXTURE = path.resolve(import.meta.dir, '..', 'fixtures', 'plans', 'ui-heavy-feature-design.md');
 const APP_FIXTURE = path.resolve(import.meta.dir, '..', 'fixtures', 'autoplan-existing-app');
 
 export function seedAutoplanProject(projectDir: string): string {
   const plansDir = path.join(projectDir, '.claude', 'plans');
   fs.mkdirSync(plansDir, { recursive: true });
   fs.copyFileSync(UI_FIXTURE, path.join(plansDir, 'ui-heavy-feature.md'));
+  fs.copyFileSync(DESIGN_FIXTURE, path.join(projectDir, 'DESIGN.md'));
   // The unchanged plan extends an existing React/Tailwind app and PostgreSQL
   // tables. Supply that source baseline, leaving the proposed dashboard absent.
   fs.cpSync(APP_FIXTURE, projectDir, { recursive: true, errorOnExist: true, force: false });

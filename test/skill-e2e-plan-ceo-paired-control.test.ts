@@ -23,6 +23,7 @@ const CEILING_PAIRED = 4;
 
 const planCeo2PairedFindings = (planPath: string) => [
   `Please review this plan thoroughly. As you go, write your plan-mode plan to ${planPath} (use Edit/Write to that exact path).`,
+  'Use HOLD SCOPE mode for this review; examine the current plan with full rigor.',
   '',
   '# Plan: Payment Processing — Test Coverage',
   '',

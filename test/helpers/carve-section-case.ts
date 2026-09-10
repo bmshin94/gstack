@@ -28,6 +28,7 @@ import { spawnSync } from 'node:child_process';
 import { CAPTURE_LONG_MS } from './eval-budgets';
 import { setupSkillDir, skillFromWorktree, captureSectionReads } from './auq-sdk-capture';
 import { CARVE_GUARDS } from './carve-guards';
+import { repositoryPlanFixtures } from './carve-plan-fixture';
 
 const runId = `carve-section-loading-${process.env.EVALS_RUN_ID ?? 'local'}`;
 const only = process.env.GSTACK_CARVE_SKILL?.trim();
@@ -67,7 +68,8 @@ export function registerCarveSectionCase(skill: string): void {
           '}',
           '',
         ].join('\n');
-        const fixtures = guard.behavioral === 'plan' ? { 'PLAN.md': PLAN_MD }
+        const fixtures = guard.skill === 'plan-eng-review' || guard.skill === 'plan-devex-review' ? repositoryPlanFixtures(PLAN_MD, guard.skill)
+          : guard.behavioral === 'plan' ? { 'PLAN.md': PLAN_MD }
           : guard.skill === 'codex' ? { 'src/invoice-access.ts': invoiceSource } : {};
         const planDir = setupSkillDir({
           skillName: guard.skill,

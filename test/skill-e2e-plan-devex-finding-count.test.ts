@@ -25,6 +25,7 @@ const CEILING = N + 2;
 
 const planDevex5Findings = (planPath: string) => [
   `Please review this plan thoroughly. As you go, write your plan-mode plan to ${planPath} (use Edit/Write to that exact path).`,
+  'Use DX POLISH mode for this review; examine the current plan with full rigor.',
   '',
   '# Plan: Public SDK Beta Launch',
   '',
