@@ -63,6 +63,9 @@ describe('AUTO_DECIDE explicit fixture state', () => {
     fs.mkdirSync(path.join(dir, '.gstack'));
     const operatorConfig = path.join(dir, '.gstack', 'config.yaml');
     fs.writeFileSync(operatorConfig, 'operator sentinel\n');
+    const legacyTask = path.join(dir, '.gstack', 'projects', 'project', 'tasks-ceo-review-20260909-081225.jsonl');
+    fs.mkdirSync(path.dirname(legacyTask), { recursive: true });
+    fs.writeFileSync(legacyTask, 'prior-run task sentinel\n');
     fs.writeFileSync(script, `
 import { describe, expect, mock } from 'bun:test';
 import { execFileSync } from 'node:child_process';
@@ -75,12 +78,19 @@ mock.module(path.join(root, 'test/helpers/ceo-mode-preference.ts'), () => ({
     const run = (bin, args) => execFileSync(path.join(root, 'bin', bin), args, {
       cwd: opts.cwd, env: { ...process.env, ...opts.env }, encoding: 'utf8', timeout: 10000,
     }).trim();
-    const facts = { cwd: opts.cwd, state: opts.env.GSTACK_HOME,
+    const slug = run('gstack-slug', []).match(/SLUG=([^\\s;]+)/)?.[1].replace(/['\"]/g, '');
+    const facts = { cwd: opts.cwd, state: opts.env.GSTACK_HOME, slug,
       crossProject: run('gstack-config', ['get', 'cross_project_learnings']),
       target: run('gstack-question-preference', ['--check', ${JSON.stringify(TARGET)}]),
       unrelated: run('gstack-question-preference', ['--check', ${JSON.stringify(UNRELATED)}]),
     };
-    fs.writeFileSync(${JSON.stringify(factsFile)}, JSON.stringify(facts));
+    const prior = fs.existsSync(${JSON.stringify(factsFile)}) ? JSON.parse(fs.readFileSync(${JSON.stringify(factsFile)}, 'utf8')) : [];
+    fs.writeFileSync(${JSON.stringify(factsFile)}, JSON.stringify([...prior, facts]));
+    expect(slug).toBe(path.basename(opts.cwd));
+    expect(slug).not.toBe('project');
+    expect(fs.existsSync(path.join(process.env.HOME, '.gstack', 'projects', slug, 'tasks-ceo-review-20260909-081225.jsonl'))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(opts.env.GSTACK_HOME, 'projects', slug, 'question-preferences.json'), 'utf8')))
+      .toEqual({ ${JSON.stringify(TARGET)}: 'never-ask' });
     expect(facts.target).toBe('AUTO_DECIDE');
     expect(facts.unrelated).toBe('ASK_NORMALLY');
     expect(facts.crossProject).toBe('false');
@@ -90,17 +100,24 @@ mock.module(path.join(root, 'test/helpers/ceo-mode-preference.ts'), () => ({
 await import(path.join(root, 'test/skill-e2e-auto-decide-preserved.test.ts'));
 `);
     try {
-      const child = spawnSync(process.execPath, ['test', script], {
-        cwd: ROOT, encoding: 'utf8', timeout: 15_000,
-        env: { PATH: process.env.PATH ?? '', HOME: dir, TMPDIR: dir, TMP: dir, TEMP: dir,
-          GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(dir, '.gitconfig'),
-          ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
-      });
-      expect(child.error, child.stderr).toBeUndefined();
-      expect(child.status, child.stdout + child.stderr).toBe(0);
-      const facts = JSON.parse(fs.readFileSync(factsFile, 'utf8'));
-      expect(fs.existsSync(facts.cwd)).toBe(false);
-      expect(fs.existsSync(facts.state)).toBe(false);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const child = spawnSync(process.execPath, ['test', script], {
+          cwd: ROOT, encoding: 'utf8', timeout: 15_000,
+          env: { PATH: process.env.PATH ?? '', HOME: dir, TMPDIR: dir, TMP: dir, TEMP: dir,
+            GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(dir, '.gitconfig'),
+            ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
+        });
+        expect(child.error, child.stderr).toBeUndefined();
+        expect(child.status, child.stdout + child.stderr).toBe(0);
+      }
+      const attempts = JSON.parse(fs.readFileSync(factsFile, 'utf8'));
+      expect(attempts).toHaveLength(2);
+      expect(new Set(attempts.map(fact => fact.slug)).size).toBe(2);
+      for (const facts of attempts) {
+        expect(fs.existsSync(facts.cwd)).toBe(false);
+        expect(fs.existsSync(facts.state)).toBe(false);
+      }
+      expect(fs.readFileSync(legacyTask, 'utf8')).toBe('prior-run task sentinel\n');
       expect(fs.readFileSync(operatorConfig, 'utf8')).toBe('operator sentinel\n');
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   }, 20_000);

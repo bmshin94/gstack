@@ -53,7 +53,8 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
   test('user-opted-in question still auto-decides when AskUserQuestion is --disallowedTools', async () => {
     const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-auto-decide-'));
     const tmpHome = path.join(fixture, 'state');
-    const project = path.join(fixture, 'project');
+    // Legacy HOME-based project discovery must not match another attempt's history.
+    const project = path.join(fixture, path.basename(fixture));
     fs.mkdirSync(tmpHome);
     fs.mkdirSync(project);
     try {
