@@ -80,11 +80,31 @@ describe('plan-review manual handoff selection', () => {
       'Tests', 'D8 — Should the regression test run the /plan-eng-review command?'))).toBe(1);
   });
   test.each([
-    ['Run /plan-eng-review', 'Skip'],
+    ['Run /plan-eng-review', 'Skip this review'],
     ['Run /plan-eng-review', 'Skip — handle reviews manually', 'Ship immediately'],
     ['Run /plan-eng-review', 'Skip — handle reviews manually', "Skip — I'll handle reviews manually"],
   ])('rejects an ambiguous or incomplete handoff menu: %j', (...labels) => {
     expect(() => pickPlanReviewQuestion(menu(labels))).toThrow('unambiguous');
+  });
+  test('declines the retained Design next-step menu with a bare Skip label', () => {
+    const labels = ['Run /plan-eng-review (recommended)', 'Run /design-shotgun', 'Skip'];
+    expect(pickPlanReviewQuestion(menu(labels, 'Next step', 'What should run next?'))).toBe(3);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next step', 'What should run next?'))).toBe(1);
+  });
+  test('bare Skip derives no authority from unrelated or unrecognized menus', () => {
+    expect(pickPlanReviewQuestion(menu(['Run /plan-eng-review', 'Skip'],
+      'Tests', 'D8 — Should this test run a review command?'))).toBe(1);
+    expect(pickPlanReviewQuestion(menu(['Keep current implementation', 'Skip'],
+      'Next step', 'What should run next?'))).toBe(1);
+  });
+  test.each([
+    ['Run /plan-eng-review', 'Skip', 'Skip'],
+    ['Run /plan-eng-review', 'Skip', 'Skip — handle reviews manually'],
+    ['Run /plan-eng-review', 'Skip', 'Ship immediately'],
+    ['Run /plan-eng-review', 'Skip and approve all edits'],
+    ['Run /plan-eng-review', 'Skip the remaining review'],
+  ])('rejects ambiguous, unsafe, or extended bare-Skip handoffs: %j', (...labels) => {
+    expect(() => pickPlanReviewQuestion(menu(labels, 'Next step', 'What should run next?'))).toThrow('unambiguous');
   });
   test('selects the manual choice from the retained native D22 design handoff', () => {
     expect(pickPlanReviewQuestion(menu([

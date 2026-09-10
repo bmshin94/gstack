@@ -66,7 +66,10 @@ export function pickPlanReviewQuestion(question: NativeQuestion): number {
   const run = (label: string) => /^Run \/plan-(?:ceo|eng|design|devex)-review(?: next)?(?:\s*\((?:required gate|only if UI scope detected(?: and no design review exists)?|only if fundamental product gaps found|only if significant product change and no CEO review exists)\))?$/i.test(label)
     || /^Run \/design-shotgun(?: after adding an OpenAI key|\s*[—–-]\s*explore visual design variants for issues found)?$/i.test(label)
     || /^Run \/design-html(?:\s*[—–-]\s*generate Pretext-native HTML from approved mockups)?$/i.test(label);
-  const manual = (label: string) => /^Skip\s*[,—–-]\s*(?:I(?:['’]ll| will)\s+)?handle (?:reviews|next steps) manually$/i.test(label);
+  // A bare Skip declines only an offered, recognized follow-up in this handoff.
+  const offersFollowUp = labels.some(run);
+  const manual = (label: string) => /^Skip\s*[,—–-]\s*(?:I(?:['’]ll| will)\s+)?handle (?:reviews|next steps) manually$/i.test(label)
+    || (offersFollowUp && /^Skip$/i.test(label));
   const future = (label: string) => /^Ready to implement(?:\s*[—–-]\s*run \/ship when done)?$/i.test(label)
     || /^Ready to implement, run \/devex-review after shipping$/i.test(label);
   if (!labels.some(label => run(label) || manual(label) || future(label))) return 1;
