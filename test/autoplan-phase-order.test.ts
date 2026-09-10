@@ -85,4 +85,43 @@ describe('autoplan phase order (Eng always last)', () => {
     expect(ceo).not.toContain('GATE: Present premises to user for confirmation');
     expect(ceo).toContain('Final');
   });
+
+  test('generated workflow loads each complete skill at its own phase boundary', () => {
+    const skill = read('autoplan/SKILL.md');
+    const phase0 = skill.slice(skill.indexOf('### Step 3:'), skill.indexOf('## Phase 1:'));
+    const setup = phase0.split('**Section skip list')[0]!;
+    expect(setup).toContain('test -r');
+    expect(setup).toContain('Do not preload');
+    expect(setup).not.toContain('/SKILL.md');
+    expect(setup).toContain('Read its skill in full before\nanalysis or reviewer dispatch');
+
+    const owners = [
+      { id: '1', name: 'ceo', next: '## Phase 2:' },
+      { id: '2', name: 'design', next: '## Phase 2.5:' },
+      { id: '2.5', name: 'devex', next: '## Phase 3:' },
+      { id: '3', name: 'eng', next: '## Decision Audit Trail' },
+    ];
+    for (const { id, name, next } of owners) {
+      const start = skill.indexOf(`## Phase ${id}:`);
+      const end = skill.indexOf(next, start);
+      expect(start).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(start);
+      const block = skill.slice(start, end);
+      const loads = [...block.matchAll(/Read `([^`]+\/SKILL\.md)` in full now/g)];
+      expect(loads.map(match => match[1])).toEqual([
+        `~/.claude/skills/gstack/plan-${name}-review/SKILL.md`,
+      ]);
+      // A phase cannot execute its carved body (or dispatch a reviewer) first.
+      expect(loads[0]!.index).toBeLessThan(block.indexOf('> **STOP.**'));
+      const child = name === 'devex' ? 'dx' : name;
+      expect(block).toContain(`/autoplan/sections/${child}-phase.md`);
+      if (id === '2' || id === '2.5') {
+        expect(block.indexOf('**Skip condition:**')).toBeLessThan(loads[0]!.index!);
+      }
+    }
+    const gate = skill.indexOf('## Phase 4: Final Approval Gate');
+    expect(gate).toBeGreaterThan(-1);
+    expect(skill.indexOf('Read `~/.claude/skills/gstack/autoplan/sections/tasks-aggregator.md`'))
+      .toBeGreaterThan(gate);
+  });
 });

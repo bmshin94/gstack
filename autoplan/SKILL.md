@@ -570,9 +570,8 @@ If none was produced (user may have cancelled), proceed with standard review.
 
 One command. Rough plan in, fully reviewed plan out.
 
-Read the full CEO, design, eng, and DX skills from disk at full interactive depth,
-rigor, and methodology. Auto-decide intermediate AskUserQuestions using the
-6 principles; surface Taste decisions at the final approval gate.
+Run each review at full interactive depth. Auto-decide intermediate questions
+using the 6 principles; surface Taste decisions at the final approval gate.
 
 ---
 
@@ -757,13 +756,12 @@ Then prepend a one-line HTML comment to the plan file:
   on top of) or if an AI agent is the primary user (OpenClaw actions, Claude Code skills,
   MCP servers).
 
-### Step 3: Load skill files from disk
+### Step 3: Defer reads to phase boundaries
 
-Read each file using the Read tool:
-- `~/.claude/skills/gstack/plan-ceo-review/SKILL.md`
-- `~/.claude/skills/gstack/plan-design-review/SKILL.md` (only if UI scope detected)
-- `~/.claude/skills/gstack/plan-eng-review/SKILL.md`
-- `~/.claude/skills/gstack/plan-devex-review/SKILL.md` (only if DX scope detected)
+Do not preload review skills, their carved sections, or the final tasks aggregator.
+Check availability with `test -r`. At each phase, Read its skill in full before
+analysis or reviewer dispatch, then follow its section STOP-Reads. Preserve all
+methodology and required outputs.
 
 **Section skip list — when following a loaded skill file, SKIP these sections
 (they are already handled by /autoplan):**
@@ -842,6 +840,8 @@ Claude subagent only — saves token spend on Codex prompts we can't use.
 
 ## Phase 1: CEO Review (Strategy & Scope)
 
+Read `~/.claude/skills/gstack/plan-ceo-review/SKILL.md` in full now.
+
 > **STOP.** Before starting Phase 1 (CEO review — always runs, after the Phase 0.5 preflight), Read `~/.claude/skills/gstack/autoplan/sections/ceo-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
 
@@ -859,6 +859,8 @@ Claude subagent only — saves token spend on Codex prompts we can't use.
 **Skip condition:** If UI scope was NOT detected in Phase 0, skip this phase
 entirely — do NOT read its section. Log: "Phase 2 skipped — no UI scope detected."
 
+Read `~/.claude/skills/gstack/plan-design-review/SKILL.md` in full now.
+
 > **STOP.** Before starting Phase 2 (design review — ONLY if UI scope was detected in Phase 0; skip the read entirely otherwise), Read `~/.claude/skills/gstack/autoplan/sections/design-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
 
@@ -868,6 +870,8 @@ entirely — do NOT read its section. Log: "Phase 2 skipped — no UI scope dete
 
 **Skip condition:** If DX scope was NOT detected in Phase 0, skip this phase
 entirely — do NOT read its section. Log: "Phase 2.5 skipped — no developer-facing scope detected."
+
+Read `~/.claude/skills/gstack/plan-devex-review/SKILL.md` in full now.
 
 > **STOP.** Before starting Phase 2.5 (DX review — ONLY if developer-facing scope was detected in Phase 0; skip the read entirely otherwise), Read `~/.claude/skills/gstack/autoplan/sections/dx-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
@@ -885,6 +889,8 @@ entirely — do NOT read its section. Log: "Phase 2.5 skipped — no developer-f
 - [ ] Phase-transition summary emitted
 
 ## Phase 3: Eng Review + Dual Voices (always runs, always LAST — the required gate reviews the final amended plan)
+
+Read `~/.claude/skills/gstack/plan-eng-review/SKILL.md` in full now.
 
 > **STOP.** Before starting Phase 3 (eng review — always runs, after the Pre-Phase 3 checklist), Read `~/.claude/skills/gstack/autoplan/sections/eng-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
