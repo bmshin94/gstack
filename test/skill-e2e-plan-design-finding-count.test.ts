@@ -28,6 +28,14 @@ const planDesign5Findings = (planPath: string) => [
   '',
   '# Plan: Settings Page UI redesign',
   '',
+  '## Existing page and accepted boundaries',
+  'This is an incremental redesign of the existing settings form. Preserve its',
+  'documented behavior and layout in DESIGN.md; these contracts are unchanged.',
+  'The proposal below changes action emphasis, section rhythm, error treatment,',
+  'form-label hierarchy, and the visual feedback during an in-flight Save.',
+  'The chosen treatments remain open for review. Other changes need new evidence',
+  'of a conflict with the existing page, rather than an omission from this proposal.',
+  '',
   '## Visual Hierarchy',
   'The "Save" button is rendered with the same size, weight, and color as',
   'three other buttons in the page header (Reset, Cancel, Export). Nothing',
@@ -50,6 +58,66 @@ const planDesign5Findings = (planPath: string) => [
   'see a frozen page; we should add a spinner or skeleton state.',
 ].join('\n');
 
+// The count fixture is an existing page, not a blank-slate product. These
+// contracts answer the unrelated questions observed in the native review;
+// none chooses a remedy for the five defects in the proposed change.
+const existingSettingsDesign = `# Existing settings page design
+
+## Purpose and information architecture
+Account administrators edit their own Profile, Notifications, and Security settings.
+The page is a flat form in a 640px-wide content column, with those three named
+sections in that order. A page heading and one sentence of purpose precede the
+form. Each section has its own heading and a short description. There are no
+cards, side navigation, new routes, or new section names in this change.
+
+## Existing actions and interaction contract
+Save persists the complete valid draft using the existing API. It is disabled
+until values differ from the saved state and there are no validation errors.
+The proposed visual emphasis of Save relative to the other actions is unresolved.
+During an in-flight Save, duplicate submission is blocked; fields keep their
+values, focus stays on Save, and cancellation does not discard the draft.
+The visual feedback during this delay is the unresolved part of the proposal.
+Success shows the existing saved-status line and announces it through the polite
+live region. Failure preserves every draft value and offers retry beside the
+error message. Partial saves are not supported: the API updates the form atomically.
+Cancel restores the saved values after a discard confirmation when the draft is
+dirty. Navigating away uses the same existing discard guard. Reset opens a dialog
+naming all three sections, then loads page-wide defaults into the draft; Save is
+still required to persist them. Export downloads the last saved settings as CSV
+through the existing flow and reports download failures inline. No new keyboard
+shortcut, action behavior, or per-section reset is part of this redesign.
+
+## Existing visual system
+The app uses its locally bundled Source Sans 3 face. Body and input text are 16px,
+page headings 24px, and section headings 20px. Form-label tiers are under review;
+the current inconsistent 14px, 16px, and 18px usage remains a defect to resolve.
+The app's primary accent is #0F6E6E on white. Neutral text is #1F2937 on white,
+with a visible two-pixel focus outline. Section gaps currently vary as described
+in the proposal; the redesign must choose a coherent rhythm. The error-message
+foreground/background pair is also unresolved; other colors remain unchanged.
+No new font, brand palette, dark mode, component library, or motion system is needed.
+
+## Responsive and accessible behavior already in place
+At 375px the form fits the viewport with 16px side padding; the header actions
+wrap in their existing order, without hiding actions or causing horizontal scroll.
+At 768px and above the content column remains at most 640px, centered with at least
+24px side gutters. Controls and touch targets are at least 44px high.
+There is one main landmark, a page heading, named form sections, and explicit
+labels linked to each input. Tab order follows the visual order. Buttons use
+native keyboard behavior, dialogs trap focus and return it to their trigger,
+validation links each message to its field, and the existing save-status live
+region announces progress and completion.
+The error-message color contrast in the proposal is the known accessibility gap.
+
+## Existing user journey
+Land and orient using the heading and named sections; scan saved values; edit
+with inline validation; save; see the persisted status and leave confidently.
+First-time and returning administrators use the same flow. Empty optional fields
+show their labels and helper text; an empty settings response shows the existing
+retry state. The proposal preserves this journey and improves the visual
+problems it identifies. No new storyboard or onboarding flow is required.
+`;
+
 describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', () => {
   test(
     `5-finding plan emits ${FLOOR}-${CEILING} substantive finding calls`,
@@ -63,7 +131,7 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
 
       try {
         const planText = planDesign5Findings(planPath);
-        seedPlanReviewProject(tmpDir, planText, 'plan-design-review');
+        seedPlanReviewProject(tmpDir, planText, 'plan-design-review', existingSettingsDesign);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-design-review',
           slashCommand: '/plan-design-review',

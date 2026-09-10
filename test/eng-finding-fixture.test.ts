@@ -18,6 +18,12 @@ test('Eng fixture commits a real legacy flow alongside the unchanged supplied de
     expect(input.startsWith(defects)).toBe(true);
     expect(git('show', 'HEAD:review-input.md')).toBe(input);
     expect(git('show', 'HEAD:src/legacy-auth.ts')).toBe(fs.readFileSync(path.resolve(import.meta.dir, 'fixtures/eng-existing-auth/legacy-auth.ts'), 'utf8'));
+    const pkg = git('show', 'HEAD:package.json');
+    expect(pkg).toBe(fs.readFileSync(path.resolve(import.meta.dir, 'fixtures/eng-existing-auth/package.json'), 'utf8'));
+    expect(JSON.parse(pkg).scripts.test).toBe('bun test');
+    expect(input).toContain('POLICIES order, not response-arrival order');
+    expect(input).toContain('prior build artifact for rollback');
+    expect(input).not.toContain('reverting that\nflag restores');
     expect(git('diff', 'origin/main...HEAD')).toBe('');
     expect(git('status', '--porcelain')).toBe('');
     expect(fs.readdirSync(path.join(cwd, 'src'))).toEqual(['legacy-auth.ts']);
@@ -58,4 +64,23 @@ test.each(['denied', 'provider_unavailable', 'session_unavailable'] as const)('l
   expect(failure.code).toBe(code);
   expect(failure.cause).toBe(code === 'denied' ? undefined : cause);
   expect(minted).toBe(code === 'session_unavailable' ? 1 : 0);
+});
+
+
+test('existing policy-order failure and short-circuit behavior stay unchanged', async () => {
+  const called: Policy[] = [];
+  let minted = false;
+  const result = await legacyAuthFlow(identity, {
+    checkPolicy: async (_identity, policy) => {
+      called.push(policy);
+      if (policy === 'tenant') return false;
+      if (policy === 'device') throw new Error('later unavailable policy');
+      return true;
+    },
+    issueSession: async () => { minted = true; return session; },
+  }).catch(error => error);
+  expect(result).toBeInstanceOf(AuthFailure);
+  expect(result.code).toBe('denied');
+  expect(called).toEqual(['account', 'tenant']);
+  expect(minted).toBe(false);
 });

@@ -11,18 +11,22 @@ export function seedEngFindingProject(projectDir: string, plan: string): string 
     'The HTTP admission middleware, IDP policy client, and session service keep their',
     'documented contracts. The five policy names identify the existing independent',
     'read-only verdict calls made by this function.',
-    'The refactor preserves the return value and three public failure codes.',
+    'Preserve the return value, all three public failure codes, and which outcome',
+    'wins: evaluate failures in the existing POLICIES order, not response-arrival order.',
     'No session lifecycle, HTTP protocol, schema, or deployment change is proposed.',
     'Those adapter implementations belong to the existing platform outside this',
     'fixture; their interface here defines the boundary of this refactor.',
-    'The current route remains behind the existing rollout flag, so reverting that',
-    'flag restores this implementation without migrating data or sessions.',
+    'The existing deployment system restores the prior build artifact for rollback;',
+    'there is no per-function rollout flag in this module or deployment change here.',
+    'This is a Bun TypeScript package. Use its existing `bun test` command for new',
+    'tests; choosing a different runner or adding a toolchain is outside the refactor.',
   ].join('\n') + '\n';
   seedPlanReviewProject(projectDir, input, 'plan-eng-review');
   fs.mkdirSync(path.join(projectDir, 'src'));
   fs.copyFileSync(path.resolve(import.meta.dir, '../fixtures/eng-existing-auth/legacy-auth.ts'), path.join(projectDir, 'src/legacy-auth.ts'));
+  fs.copyFileSync(path.resolve(import.meta.dir, '../fixtures/eng-existing-auth/package.json'), path.join(projectDir, 'package.json'));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: projectDir, stdio: 'pipe', timeout: 10_000 });
-  git('add', 'src/legacy-auth.ts');
+  git('add', 'src/legacy-auth.ts', 'package.json');
   git('-c', 'user.name=Finding fixture', '-c', 'user.email=fixture@gstack.test', 'commit', '-m', 'Supply existing auth behavior');
   git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   return input;

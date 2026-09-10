@@ -220,7 +220,7 @@ If yes, use `$D iterate` with feedback summarizing the changes, or `$D variants`
 
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan design reviews:
-* **One issue = one AskUserQuestion call.** Never combine multiple issues into one question.
+* **One issue = one AskUserQuestion call.** Never combine multiple issues into one question. Each call contains exactly one question; multiple question tabs in one call are also batching. If a user could choose either remedy without choosing the other, ask separately, even when both affect the same component or token file. Shared implementation work does not make independent design choices inseparable.
 * Describe the design gap concretely — what's missing, what the user will experience if it's not specified.
 * Present 2-3 options. For each: effort to specify now, risk if deferred.
 * **Map to Design Principles above.** One sentence connecting your recommendation to a specific principle.
