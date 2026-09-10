@@ -154,7 +154,7 @@ const GENERATED_WITH_GUIDANCE = [
   'autoplan/sections/eng-phase.md',
   'autoplan/sections/dx-phase.md',
   'cso/SKILL.md',
-  'design-consultation/SKILL.md',
+  'design-consultation/sections/proposal-and-preview.md',
   'design-review/SKILL.md',
   'design-shotgun/SKILL.md',
   'document-release/sections/release-body.md',
@@ -201,6 +201,15 @@ describe('run_in_background guidance (#2440)', () => {
         expect(hasBoundedOutsideVoiceWait(content), rel).toBe(true);
       } else expect(content).toContain('run_in_background: false');
     }
+  });
+
+  test('consultation loads the foreground dispatch section after research', () => {
+    const skeleton = fs.readFileSync(path.join(ROOT, 'design-consultation/SKILL.md'), 'utf-8');
+    const research = skeleton.indexOf('## Phase 2: Research');
+    const requiredRead = skeleton.match(/^> \*\*STOP\.\*\* Before [^\n]*, Read `[^`\n]*\/design-consultation\/sections\/proposal-and-preview\.md` and execute it$/m);
+    expect(research).toBeGreaterThan(-1);
+    expect(requiredRead).not.toBeNull();
+    expect(requiredRead!.index).toBeGreaterThan(research);
   });
 
   // Third recurrence (#497 → #2440 → /ship Step 18): a backgrounded doc-sync
