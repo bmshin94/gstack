@@ -950,7 +950,7 @@ Use the preamble's question format/transport: RECOMMENDATION and `Note: options 
 - Mode from `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
 - Explicit user/session mode: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
 
-Use one exact mode name; separate rationale. **Emit that line as your own chat text before the next tool call.** A tool description, automatic progress summary, shell output, or plan-file entry does not complete the handoff. Keep this mode; ask before changing the approved approach.
+Use one exact mode name; separate rationale. **Say that line in your own chat before any tool**, not tool/UI summaries, shell output, or plan edits. Keep this mode; ask before changing the approved approach.
 
 Unresolved decisions: recommend + WHY, ask once per issue, never batch, and **STOP until answered**, including obvious fixes. Honor preference/session precedence. With none, say "No issues, moving on." Continue through 0D-prelude, 0D, 0D-POST and 0E as applicable. Review only; no code changes.
 

@@ -8,58 +8,7 @@ import { runPlanSkillObservation, isProseAUQVisible, isNumberedOptionListVisible
 
 // A real PTY process consumes the actual paste/Enter/slash bytes and publishes
 // its own PID status and transcript. No provider or runner hooks are installed.
-const CLI = String.raw`
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-const dir=process.env.CLAUDE_CONFIG_DIR, scenario=process.env.SEED_CASE;
-const sid='aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb', cwd=process.cwd();
-const file=path.join(dir,'projects','fixture',sid+'.jsonl');
-const events=path.join(dir,'events.jsonl'), statusFile=path.join(dir,'sessions',process.pid+'.json');
-fs.mkdirSync(path.dirname(file),{recursive:true});fs.mkdirSync(path.dirname(statusFile),{recursive:true});
-const status={pid:process.pid,sessionId:sid,cwd,startedAt:Date.now(),kind:'interactive',entrypoint:'cli',version:'fixture',
- procStart:process.platform==='linux'?fs.readFileSync('/proc/self/stat','utf8').split(') ').pop().split(' ')[19]:'opaque-test-start',
- pidDomain:process.platform==='linux'?'linux:'+fs.readFileSync('/etc/machine-id','utf8').trim()+':'+fs.readlinkSync('/proc/self/ns/pid'):'test-domain'};
-if(scenario==='wrong-pid')status.pid++;
-if(scenario==='wrong-start')status.procStart+='0';
-if(scenario==='wrong-domain')status.pidDomain+='-different';
-fs.writeFileSync(statusFile,JSON.stringify(status));
-const event=(kind,value)=>fs.appendFileSync(events,JSON.stringify({kind,value,at:Date.now()})+'\n');
-const row=(type,content,stop)=>JSON.stringify({type,sessionId:sid,cwd,message:{role:type,content,stop_reason:stop}})+'\n';
-const text=s=>[{type:'text',text:s}];
-const append=(type,content,stop)=>fs.appendFileSync(file,row(type,content,stop));
-const frame=s=>process.stdout.write('\x1b[2J\x1b[H❯ '+s+'\r\n');
-let input='',seed='',submitted=false;
-process.stdin.setRawMode(true);process.stdin.resume();frame('');
-process.stdin.on('data',chunk=>{
- input+=chunk.toString();
- if(input.startsWith('\x1b[200~')&&input.endsWith('\x1b[201~')){
-  seed=input.slice(6,-6);input='';event('paste',seed);
-  frame('[Pasted text #1 +'+(seed.match(/\n/g)||[]).length+' lines]');return;
- }
- if(input==='\r'&&!submitted){
-  submitted=true;input='';event('enter',seed);frame('');
-  if(scenario==='no-ack')return;
-  append('user',text(scenario==='fused'?seed+'\n/plan-eng-review':seed));
-  if(scenario==='duplicate')append('user',text(seed));
-  if(scenario==='session-switch'){status.sessionId='bbbbbbbb-1111-2222-3333-aaaaaaaaaaaa';fs.writeFileSync(statusFile,JSON.stringify(status));return;}
-  if(scenario==='foreign-cwd'){fs.writeFileSync(file,row('user',text(seed)).replace(cwd,cwd+'-other'));return;}
-  if(scenario==='pending-tool'||scenario==='completed-tool'||scenario==='question'){
-   append('assistant',[{type:'tool_use',id:'call1',name:scenario==='question'?'AskUserQuestion':'Read',input:{}}],'tool_use');
-  }
-  if(scenario==='status-updating'){fs.writeFileSync(statusFile,'{\"pid\":');setTimeout(()=>fs.writeFileSync(statusFile,JSON.stringify(status)),120);}
-  if(scenario==='permission'){status.waitingFor='permission prompt';fs.writeFileSync(statusFile,JSON.stringify(status));}
-  setTimeout(()=>{
-   if(scenario==='no-end-turn')return;
-   if(scenario==='completed-tool')append('user',[{type:'tool_result',tool_use_id:'call1',content:'Read complete'}]);
-   append('assistant',text('Draft received; waiting for your skill command.'),'end_turn');event('end_turn',seed);
-   if(scenario==='partial')fs.appendFileSync(file,'{"type":');
-   frame(scenario==='prose-question' ? '\r\nWhich option do you prefer?\r\nA) Full review (recommended)\r\nB) Skip review\r\n❯ ' : '');
-  },180);return;
- }
- if(input==='/plan-eng-review\r'){event('slash',input);input='';}
-});
-setTimeout(()=>process.exit(0),scenario==='wrong-pid'?12000:5000);
-`;
+const CLI = fs.readFileSync(path.join(import.meta.dir, 'fixtures', 'plan-seed-cli.ts'), 'utf8');
 
 for (const scenario of ['success', 'completed-tool', 'status-updating', 'no-ack', 'fused', 'duplicate', 'session-switch', 'foreign-cwd',
   'pending-tool', 'question', 'prose-question', 'permission', 'no-end-turn', 'partial', 'wrong-pid',

@@ -76,7 +76,7 @@ test('shared native input dependencies select every PTY consumer without changin
   expect(expected).toHaveLength(22);
   expect(expected.filter(id => E2E_TIERS[id] === 'gate')).toHaveLength(7);
   expect(expected.filter(id => E2E_TIERS[id] === 'periodic')).toHaveLength(15);
-  for (const file of ['test/pty-workspace-trust.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
+  for (const file of ['test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
     'test/helpers/plan-skill-questions.ts', 'test/plan-skill-questions.test.ts',
     'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts',
     'test/helpers/plan-skill-question-hook-scope.ts', 'test/plan-skill-question-hook-scope.test.ts']) {
@@ -89,7 +89,7 @@ test('shared native input dependencies select every PTY consumer without changin
 
 test('seed submission dependencies select every seeded caller with its existing tier', () => {
   const expected = ['conductor-prose', 'plan-design-review-plan-mode', 'plan-eng-review-plan-mode', 'plan-mode-no-op'];
-  for (const file of ['test/helpers/plan-seed-submission.ts', 'test/plan-seed-submission.test.ts']) {
+  for (const file of ['test/helpers/plan-seed-submission.ts', 'test/plan-seed-submission.test.ts', 'test/fixtures/plan-seed-cli.ts']) {
     const result = selectTests([file], E2E_TOUCHFILES);
     expect(result.reason).toBe('diff');
     expect(result.selected.sort()).toEqual(expected);

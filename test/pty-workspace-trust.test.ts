@@ -148,11 +148,7 @@ describe('PTY temporary workspace trust', () => {
 test.skipIf(process.platform === 'win32')('a live PTY child receives only the scoped companion settings alongside native hooks', async () => {
   const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pty-companion-')));
   const binary = path.join(cwd, 'fake-cli.ts');
-  fs.writeFileSync(binary, `#!${process.execPath}\nimport fs from 'node:fs'; import path from 'node:path';
-const config = process.env.CLAUDE_CONFIG_DIR;
-console.log('COMPANION_SETTINGS ' + JSON.stringify({ settings: JSON.parse(fs.readFileSync(path.join(config, 'settings.json'), 'utf8')), args: process.argv.slice(2) }));
-setTimeout(() => process.exit(0), 3000);
-`, { mode: 0o700 });
+  fs.writeFileSync(binary, `#!${process.execPath}\n${fs.readFileSync(path.join(import.meta.dir, 'fixtures', 'pty-companion-cli.ts'), 'utf8')}`, { mode: 0o700 });
   const priorBinary = process.env.BROWSE_TERMINAL_BINARY, priorHermetic = process.env.EVALS_HERMETIC;
   process.env.BROWSE_TERMINAL_BINARY = binary; process.env.EVALS_HERMETIC = '1';
   let session: Awaited<ReturnType<typeof launchClaudePty>> | undefined;
