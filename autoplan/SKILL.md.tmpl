@@ -34,6 +34,17 @@ allowed-tools:
 
 {{BASE_BRANCH_DETECT}}
 
+## Design Doc Check
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
+{{DESIGN_DOC_DISCOVERY}}
+```
+If a design doc exists, read it and use its problem statement, constraints, and
+chosen approach as input to the review pipeline.
+
 {{BENEFITS_FROM}}
 
 # /autoplan — Auto-Review Pipeline

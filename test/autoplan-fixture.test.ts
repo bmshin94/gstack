@@ -36,6 +36,25 @@ function withFixture(check: (project: string, runStart: () => string, state: str
 }
 
 describe('autoplan project fixture preamble', () => {
+  test('generated Autoplan discovers the design before offering a prerequisite', () => {
+    const skill = fs.readFileSync(path.join(ROOT, 'autoplan', 'SKILL.md'), 'utf8');
+    const offerIndex = skill.indexOf('## Prerequisite Skill Offer');
+    expect(offerIndex).toBeGreaterThan(-1);
+    const beforeOffer = skill.slice(0, offerIndex);
+    const discovery = [...beforeOffer.matchAll(/```bash\n([\s\S]*?)```/g)]
+      .map(match => match[1]).find(block => block.includes('_LOCALDOC='));
+    expect(discovery).toBeDefined();
+    withFixture((project, _runStart, _state, home) => {
+      const check = () => execFileSync('bash', ['-c', discovery!], {
+        cwd: project, env: { PATH: process.env.PATH!, HOME: home },
+        encoding: 'utf8', timeout: 5000,
+      });
+      expect(check()).toBe(`Design doc found: ${path.join(project, 'DESIGN.md')}\n`);
+      fs.unlinkSync(path.join(project, 'DESIGN.md'));
+      expect(check()).toBe('No design doc found\n');
+    });
+  });
+
   test('actual seed contains the existing app contracts while leaving the dashboard proposed', async () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-app-fixture-'));
     const db = new Database(':memory:');
