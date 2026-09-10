@@ -22,6 +22,9 @@
  */
 
 import { test, expect } from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { CAPTURE_LONG_MS } from './eval-budgets';
 import { setupSkillDir, skillFromWorktree, captureSectionReads } from './auq-sdk-capture';
 import { CARVE_GUARDS } from './carve-guards';
@@ -56,7 +59,16 @@ export function registerCarveSectionCase(skill: string): void {
       `${guard.skill}: a real run Reads ${guard.requiredReads.join(', ')}`,
       async () => {
         const { skillMd, sectionsFrom } = skillFromWorktree(guard.skill);
-        const fixtures = guard.behavioral === 'plan' ? { 'PLAN.md': PLAN_MD } : {};
+        const invoiceSource = [
+          'type Invoice = { ownerId: string };',
+          '// Private invoices may only be read by their owner.',
+          'export function canReadInvoice(viewerId: string, invoice: Invoice): boolean {',
+          '  return viewerId === invoice.ownerId;',
+          '}',
+          '',
+        ].join('\n');
+        const fixtures = guard.behavioral === 'plan' ? { 'PLAN.md': PLAN_MD }
+          : guard.skill === 'codex' ? { 'src/invoice-access.ts': invoiceSource } : {};
         const planDir = setupSkillDir({
           skillName: guard.skill,
           skillMd,
@@ -64,6 +76,19 @@ export function registerCarveSectionCase(skill: string): void {
           fixtures,
           tmpPrefix: `gstack-${guard.skill}-secload-`,
         });
+        if (guard.skill === 'codex') {
+          // Give Review mode a real source diff; copied skill files stay on main.
+          const git = (...args: string[]) => {
+            const result = spawnSync('git', args, { cwd: planDir, encoding: 'utf8', timeout: 5000 });
+            if (result.error) throw result.error;
+            if (result.status !== 0) throw new Error(`Codex carve fixture git ${args[0]} failed: ${result.stderr}`);
+          };
+          git('checkout', '-b', 'invoice-access-refactor');
+          fs.writeFileSync(path.join(planDir, 'src/invoice-access.ts'),
+            invoiceSource.replace('viewerId === invoice.ownerId', 'viewerId.length > 0'));
+          git('add', 'src/invoice-access.ts');
+          git('commit', '-m', 'Refactor invoice access check');
+        }
 
         const { readSections, reportProduced: completionMarked, reportWritten, output } = await captureSectionReads({
           planDir,

@@ -20,6 +20,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/ceo-mode-preference-adjacent-render.json', ['auto-decide-preserved']],
     ['test/fixtures/ceo-mode-preference-context-render.json', ['auto-decide-preserved']],
     ['test/helpers/carve-section-case.ts', ['carve-section-loading']],
+    ['test/codex-carve-fixture.test.ts', ['carve-section-loading']],
     ['test/design-html-section-completion.test.ts', ['carve-section-loading']],
     ['test/fixtures/design-html-section-complete.md', ['carve-section-loading']],
     ['test/plan-design-floor-fixture.test.ts', ['plan-design-finding-floor']],
