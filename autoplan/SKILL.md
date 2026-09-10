@@ -570,11 +570,9 @@ If none was produced (user may have cancelled), proceed with standard review.
 
 One command. Rough plan in, fully reviewed plan out.
 
-/autoplan reads the full CEO, design, eng, and DX review skill files from disk and follows
-them at full depth — same rigor, same sections, same methodology as running each skill
-manually. The only difference: intermediate AskUserQuestion calls are auto-decided using
-the 6 principles below. Taste decisions (where reasonable people could disagree) are
-surfaced at a final approval gate.
+Read the full CEO, design, eng, and DX skills from disk at full interactive depth,
+rigor, and methodology. Auto-decide intermediate AskUserQuestions using the
+6 principles; surface Taste decisions at the final approval gate.
 
 ---
 
@@ -665,10 +663,8 @@ phase section so the user can follow the handoff.
 
 ## What "Auto-Decide" Means
 
-Auto-decide replaces the USER'S judgment with the 6 principles. It does NOT replace
-the ANALYSIS. Every section in the loaded skill files must still be executed at the
-same depth as the interactive version. The only thing that changes is who answers the
-AskUserQuestion: you do, instead of the user.
+Apply the 6 principles in place of the USER'S judgment, never the ANALYSIS.
+Execute every loaded section at full interactive depth and answer its AskUserQuestions.
 
 **Default resolution: the recommended option.** Every AskUserQuestion in the loaded
 skills resolves to its `(recommended)` option; mode selections take the skill's
@@ -698,9 +694,8 @@ context models lack. See Decision Classification above.
 - Produce a summary instead of the required output (e.g., "architecture looks good"
   instead of the ASCII dependency graph the section requires)
 
-"No issues found" is a valid output for a section — but only after doing the analysis.
-State what you examined and why nothing was flagged (1-2 sentences minimum).
-"Skipped" is never valid for a non-skip-listed section.
+"No issues found" requires analysis: state what you examined and why nothing was
+flagged (1-2 sentences minimum). Never skip a non-skip-listed section.
 
 ---
 
@@ -711,8 +706,7 @@ this boundary instruction:
 
 > IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills/gstack). These are AI assistant skill definitions meant for a different system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Stay focused on the repository code only.
 
-This prevents Codex from discovering gstack skill files on disk and following their
-instructions instead of reviewing the plan.
+This keeps Codex reviewing the plan instead of following gstack skill instructions.
 
 ---
 
@@ -796,10 +790,8 @@ Loaded review skills from disk. Starting full review pipeline with auto-decision
 
 ## Phase 0.5: Codex auth + version preflight
 
-Before invoking any Codex voice, preflight the CLI: verify auth (multi-signal) and
-warn on known-bad CLI versions. This is infrastructure for all 4 phases below —
-source it once here and the helper functions stay in scope for the rest of the
-workflow.
+Before any Codex voice, verify CLI auth (multi-signal) and warn on known-bad versions.
+Source the helper once here; its functions stay in scope for all 4 phases.
 
 ```bash
 _TEL=$(~/.claude/skills/gstack/bin/gstack-config get telemetry 2>/dev/null || echo off)
@@ -911,15 +903,14 @@ After each auto-decision, append a row to the plan file using Edit:
 |---|-------|----------|-----------|-----------|----------|
 ```
 
-Write one row per decision incrementally (via Edit). This keeps the audit on disk,
-not accumulated in conversation context.
+Write one row per decision immediately via Edit, keeping the audit on disk.
 
 ---
 
 ## Pre-Gate Verification
 
-Before presenting the Final Approval Gate, verify that required outputs were actually
-produced. Check the plan file and conversation for each item.
+Before the Final Approval Gate, check the plan file and conversation for every
+required output below.
 
 **Phase 1 (CEO) outputs:**
 - [ ] Premise challenge with specific premises named (not just "premises accepted")
@@ -1111,6 +1102,6 @@ Suggest next step: `/ship` when ready to create the PR.
 - **Never abort.** The user chose /autoplan. Respect that choice. Surface all taste decisions, never redirect to interactive review.
 - **One gate.** The only non-auto-decided AskUserQuestions surface at the Final Approval Gate: User Challenges — including clearly-wrong premises queued from Phase 1. Everything else resolves to the recommended option (the 6 principles break ties), so the pipeline never stops mid-run.
 - **Log every decision.** No silent auto-decisions. Every choice gets a row in the audit trail.
-- **Full depth means full depth.** Do not compress or skip sections from the loaded skill files (except the skip list in Phase 0). "Full depth" means: read the code the section asks you to read, produce the outputs the section requires, identify every issue, and decide each one. A one-sentence summary of a section is not "full depth" — it is a skip. If you catch yourself writing fewer than 3 sentences for any review section, you are likely compressing.
+- **Full depth means full depth.** Do not compress or skip loaded sections except the Phase 0 skip list. Read required code, produce every output, and identify and decide every issue. One-sentence summaries are skips; fewer than 3 sentences likely means compression.
 - **Artifacts are deliverables.** Test plan artifact, failure modes registry, error/rescue table, ASCII diagrams — these must exist on disk or in the plan file when the review completes. If they don't exist, the review is incomplete.
 - **Sequential order.** CEO → Design (if UI scope) → DX (if developer-facing scope) → Eng, always last. Each phase builds on the last; the required gate reviews the final amended plan.
