@@ -1,6 +1,86 @@
 <!-- AUTO-GENERATED from proposal-and-preview.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
 <!-- The font-selection procedure and the three-looks calibration in this section are derived from pbakaus/impeccable reference/new-work.md (Apache-2.0), rewritten and modified. See NOTICE.md. -->
+## Design Outside Voices (parallel)
+
+Use AskUserQuestion:
+> "Want outside design voices? Codex evaluates against OpenAI's design hard rules + litmus checks; Claude subagent does an independent design direction proposal."
+>
+> A) Yes — run outside design voices
+> B) No — proceed without
+
+If user chooses B, skip this step and continue.
+
+**Before Phase 3:** Create a private shared brief:
+```bash
+_DESIGN_BRIEF=$(mktemp /tmp/gstack-design-brief-XXXXXXXX) || exit 1
+printf 'DESIGN_BRIEF=%s\n' "$_DESIGN_BRIEF"
+```
+Write the confirmed product, users, project type, memorable-thing answer, constraints, and research findings (or skipped/unavailable) to the printed path. Both voices read the same brief; neither inherits this conversation. Rebind `$_DESIGN_BRIEF` to that path in each Bash call; use it in the Agent prompt. Never paste brief contents into shell source.
+
+**Check Codex availability:**
+```bash
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+```
+
+**Dispatch:** If Codex is available, send Bash and foreground Agent calls together; await both actual results before the Phase 3 synthesis. If it is unavailable, run the Agent alone. Keep proposals independent.
+
+1. **Codex design voice** (via Bash):
+```bash
+test -s "$_DESIGN_BRIEF" || { echo "ERROR: missing product brief" >&2; exit 1; }
+TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
+_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
+codex exec "Read the complete product brief at \"$_DESIGN_BRIEF\" before proposing.
+
+Propose a complete design direction:
+- Visual thesis: one sentence describing mood, material, and energy
+- Typography: specific font names (not defaults — no Inter/Roboto/Arial/system) + hex colors
+- Color system: CSS variables for background, surface, primary text, muted text, accent
+- Layout: composition-first, not component-first. First viewport as poster, not document
+- Differentiation: 2 deliberate departures from category norms
+- Anti-slop: none of purple gradient palette, the 3-column feature grid, centered everything, decorative blobs and dividers, nested cards, kicker above heading, icon tile above every heading, dark-mode glow
+
+Be opinionated. Be specific. Do not hedge. This is YOUR design direction — own it." -C "$_REPO_ROOT" -s read-only -c "model=\"${GSTACK_CODEX_MODEL:-gpt-6-astra}\"" -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR_DESIGN"
+```
+Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
+```bash
+cat "$TMPERR_DESIGN" && rm -f "$TMPERR_DESIGN"
+```
+
+2. **Claude design subagent** (via Agent tool, `run_in_background: false` — subagents default to background since Claude Code v2.1.198):
+Dispatch a subagent with this prompt:
+"Read the complete product brief at [the absolute DESIGN_BRIEF path printed above].
+
+Propose a design direction that would SURPRISE. What would the cool indie studio do that the enterprise UI team wouldn't?
+- Propose an aesthetic direction, typography stack (specific font names), color palette (hex values)
+- 2 deliberate departures from category norms
+- What emotional reaction should the user have in the first 3 seconds?
+
+Be bold. Be specific. No hedging."
+
+**Error handling (all non-blocking):**
+- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run `codex login` to authenticate."
+- **Timeout:** "Codex timed out after 5 minutes."
+- **Empty response:** "Codex returned no response."
+- On any Codex error: proceed with Claude subagent output only, tagged `[single-model]`.
+- If Claude subagent also fails: "Outside voices unavailable — continuing with primary review."
+
+Present only completed, available voice outputs; label a sole voice `[single-model]`.
+Present Codex output under a `CODEX SAYS (design direction):` header.
+Present subagent output under a `CLAUDE SUBAGENT (design direction):` header.
+
+**Synthesis:** Claude main references both Codex and subagent proposals in the Phase 3 proposal. Present:
+- Areas of agreement between all three voices (Claude main + Codex + subagent)
+- Genuine divergences as creative alternatives for the user to choose from
+- "Codex and I agree on X. Codex suggested Y where I'm proposing Z — here's why..."
+After both voices finish (including failure), remove the private brief with `rm -f -- "$_DESIGN_BRIEF"`.
+
+**Log the result:**
+```bash
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+```
+Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable". For proposals: clean = usable directions, no unresolved risks; issues_found = unresolved risk or unavailable voice. SOURCE names actual responders.
+
 ## Phase 3: The Complete Proposal
 
 This is the soul of the skill. Propose EVERYTHING as one coherent package.
@@ -14,7 +94,7 @@ AESTHETIC: [direction] — [one-line rationale]
 DECORATION: [level] — [why this pairs with the aesthetic]
 LAYOUT: [approach] — [why this fits the product type]
 COLOR: [approach] + proposed palette (hex values) — [rationale]
-TYPOGRAPHY: [3 font recommendations with roles] — [why these fonts]
+TYPOGRAPHY: [display, body, label, mono assignments; a face may serve multiple roles] — [why these fonts]
 SPACING: [base unit + density] — [rationale]
 MOTION: [approach] — [rationale]
 
@@ -60,7 +140,7 @@ The SAFE/RISK breakdown is critical. Design coherence is table stakes — every 
 
 **Motion approaches:** minimal-functional (only transitions that aid comprehension) / intentional (subtle entrance animations, meaningful state transitions) / expressive (full choreography, scroll-driven, playful)
 
-**Choosing faces: a procedure, not a menu.** Type comes from the subject's world, in the mode's register. (1) Name the world: the publication, notation, identity program, or object this audience already reads. (2) Shortlist three faces per role (display, body, label, mono) from that world. (3) Strike anything on the overused list for the role it would play. (4) Verify availability this session: WebSearch or Aside the Google Fonts / Fontshare page, or confirm the license of a self-hosted face. Unverified faces do not go in the proposal. (5) State the loading strategy with the name.
+**Choosing faces: a procedure, not a menu.** Type comes from the subject's world, in the mode's register. (1) Name the world: the publication, notation, identity program, or object this audience already reads. (2) Shortlist three faces per role (display, body, label, mono) from that world. (3) Strike anything on the overused list for the role it would play. (4) Verify availability this session: WebSearch or Aside the Google Fonts / Fontshare page, or inspect existing repository font assets and their license. Competitive research is optional; font verification still applies. Without online tools, use verified licensed repository assets. If none are available, ask the user for a licensed source before finalizing typography; continue the other design decisions and state what remains pending. Unverified faces do not go in the proposal. (5) State the loading strategy with the name.
 
 **Overused as display** (never the display voice, on any surface; the body/UI exception below is the only one; the detector flags several as `overused-font`): Inter, Roboto, Arial, Helvetica, Open Sans, Lato, Montserrat, Poppins, Space Grotesk, Space Mono, Fraunces, Playfair Display, Cormorant, Lora, Crimson, Newsreader, Syne, IBM Plex Sans, IBM Plex Serif, DM Sans, DM Serif, Outfit, Plus Jakarta Sans, Instrument Sans, Geist.
 

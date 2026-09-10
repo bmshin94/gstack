@@ -686,7 +686,7 @@ sections. Read a section in full before doing its step; do not work from memory.
 
 ## Phase 1: Product Context
 
-Ask the user a single question that covers everything you need to know. Pre-fill what you can infer from the codebase.
+Gather and confirm the product context in Q1, then ask the memorable-thing question below. Pre-fill what you can infer from the codebase.
 
 **AskUserQuestion Q1 — include ALL of these:**
 1. Confirm what the product is, who it's for, what space/industry
@@ -694,16 +694,12 @@ Ask the user a single question that covers everything you need to know. Pre-fill
 3. "Want me to research what top products in your space are doing for design, or should I work from my design knowledge?"
 4. **Explicitly say:** "At any point you can just drop into chat and we'll talk through anything — this isn't a rigid form, it's a conversation."
 
-If the README or office-hours output gives you enough context, pre-fill and confirm: *"From what I can see, this is [X] for [Y] in the [Z] space. Sound right? And would you like me to research what's out there in this space, or should I work from what I know?"*
+Pre-fill context from README or office-hours output, then confirm it and the research preference in Q1.
 
 **Memorable-thing forcing question.** Before moving on, ask the user: *"What's the one
 thing you want someone to remember after they see this product for the first time?"*
 
-One sentence answer. Could be a feeling ("this is serious software for serious work"),
-a visual ("the blue that's almost black"), a claim ("faster than anything else"), or
-a posture ("for builders, not managers"). Write it down. Every subsequent design
-decision should serve this memorable thing. Design that tries to be memorable for
-everything is memorable for nothing.
+Record the one-sentence answer: a feeling, visual, claim, or posture. Every subsequent design decision must serve it.
 
 ### Taste profile (if this user has prior sessions)
 
@@ -747,11 +743,7 @@ happens at read time, not write time, so the file only grows on change.
 the legacy approved.json aggregate — `~/.claude/skills/gstack/bin/gstack-taste-update`
 will migrate it to schema v1 on the next write.
 
-If a taste profile exists for this project, factor it into your Phase 3 proposal.
-The profile reflects what the user has actually approved in prior sessions — treat
-it as a demonstrated preference, not a constraint. You may still deliberately
-depart from it if the product direction demands something different; when you do,
-say so explicitly and connect the departure to the memorable-thing answer above.
+Factor an existing taste profile into Phase 3 as demonstrated preference, not a constraint. Explain any product-driven departure and connect it to the memorable-thing answer.
 
 ---
 
@@ -822,99 +814,32 @@ Then `cp "<ASIDE_DIR>/design-research-<site>.jpg" /tmp/` and Read it.
 
 If Aside is not `READY` but the Browser fallback resolved `$B`, run the same pass with `$B goto <url>`, `$B screenshot <path>`, `$B snapshot -i` (translation table above); the AskUserQuestion URL confirmation still applies.
 
-For each site, analyze: fonts actually used, color palette, layout approach, spacing density, aesthetic direction. The screenshot gives you the feel; the snapshot tree gives you structural data.
+For each site, analyze fonts, palette, layout, spacing density, and aesthetic direction using its screenshot and structural snapshot.
 
 If a site shows a sign-in wall or a bot check, skip it and note why — never ask the user to sign in to a competitor's site for research.
 
-If Aside is not available and the host has no WebSearch tool, Step 1 skips; Step 2 skips only when neither Aside nor `$B` is available. When both skip, say once: "Search unavailable — proceeding with in-distribution knowledge only." Then rely on your built-in design knowledge — this is fine.
+Without Aside or WebSearch, skip Step 1; skip Step 2 only if Aside and `$B` are both absent. If both skip, say once: "Search unavailable — proceeding with in-distribution knowledge only."
 
 **Step 3: Synthesize findings**
 
 **Three-layer synthesis:**
-- **Layer 1 (tried and true):** What design patterns does every product in this category share? These are table stakes — users expect them.
-- **Layer 2 (new and popular):** What are the search results and current design discourse saying? What's trending? What new patterns are emerging?
-- **Layer 3 (first principles):** Given what we know about THIS product's users and positioning — is there a reason the conventional design approach is wrong? Where should we deliberately break from the category norms?
+- **Layer 1 (tried and true):** Identify category patterns users expect.
+- **Layer 2 (new and popular):** Identify trends and emerging patterns in search results and current design discourse.
+- **Layer 3 (first principles):** Test category conventions against THIS product's users and positioning; identify justified departures.
 
 **Eureka check:** If Layer 3 reasoning reveals a genuine design insight — a reason the category's visual language fails THIS product — name it: "EUREKA: Every [category] product does X because they assume [assumption]. But this product's users [evidence] — so we should do Y instead." Log the eureka moment (see preamble).
 
-Summarize conversationally:
-> "I looked at what's out there. Here's the landscape: they converge on [patterns]. Most of them feel [observation — e.g., interchangeable, polished but generic, etc.]. The opportunity to stand out is [gap]. Here's where I'd play it safe and where I'd take a risk..."
+Summarize conversationally: shared patterns, how competitors feel, the differentiation gap, and where you recommend safety versus risk.
 
 **Graceful degradation:**
 - Aside available → web search + screenshots + snapshots (richest research)
 - Aside absent, WebSearch + `$B` available → search results + headless screenshots + snapshots
 - WebSearch only → search results (still good)
-- Neither → agent's built-in design knowledge (always works)
+- Neither → built-in design knowledge for the direction; typography still follows the verification/fallback procedure in Phase 3
 
 If the user said no research, skip entirely and proceed to Phase 3 using your built-in design knowledge.
 
 ---
-
-## Design Outside Voices (parallel)
-
-Use AskUserQuestion:
-> "Want outside design voices? Codex evaluates against OpenAI's design hard rules + litmus checks; Claude subagent does an independent design direction proposal."
->
-> A) Yes — run outside design voices
-> B) No — proceed without
-
-If user chooses B, skip this step and continue.
-
-**Check Codex availability:**
-```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-```
-
-**If Codex is available**, launch both voices simultaneously:
-
-1. **Codex design voice** (via Bash):
-```bash
-TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-codex exec "Given this product context, propose a complete design direction:
-- Visual thesis: one sentence describing mood, material, and energy
-- Typography: specific font names (not defaults — no Inter/Roboto/Arial/system) + hex colors
-- Color system: CSS variables for background, surface, primary text, muted text, accent
-- Layout: composition-first, not component-first. First viewport as poster, not document
-- Differentiation: 2 deliberate departures from category norms
-- Anti-slop: none of purple gradient palette, the 3-column feature grid, centered everything, decorative blobs and dividers, nested cards, kicker above heading, icon tile above every heading, dark-mode glow
-
-Be opinionated. Be specific. Do not hedge. This is YOUR design direction — own it." -C "$_REPO_ROOT" -s read-only -c "model=\"${GSTACK_CODEX_MODEL:-gpt-6-astra}\"" -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR_DESIGN"
-```
-Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
-```bash
-cat "$TMPERR_DESIGN" && rm -f "$TMPERR_DESIGN"
-```
-
-2. **Claude design subagent** (via Agent tool, `run_in_background: false` — subagents default to background since Claude Code v2.1.198):
-Dispatch a subagent with this prompt:
-"Given this product context, propose a design direction that would SURPRISE. What would the cool indie studio do that the enterprise UI team wouldn't?
-- Propose an aesthetic direction, typography stack (specific font names), color palette (hex values)
-- 2 deliberate departures from category norms
-- What emotional reaction should the user have in the first 3 seconds?
-
-Be bold. Be specific. No hedging."
-
-**Error handling (all non-blocking):**
-- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run `codex login` to authenticate."
-- **Timeout:** "Codex timed out after 5 minutes."
-- **Empty response:** "Codex returned no response."
-- On any Codex error: proceed with Claude subagent output only, tagged `[single-model]`.
-- If Claude subagent also fails: "Outside voices unavailable — continuing with primary review."
-
-Present Codex output under a `CODEX SAYS (design direction):` header.
-Present subagent output under a `CLAUDE SUBAGENT (design direction):` header.
-
-**Synthesis:** Claude main references both Codex and subagent proposals in the Phase 3 proposal. Present:
-- Areas of agreement between all three voices (Claude main + Codex + subagent)
-- Genuine divergences as creative alternatives for the user to choose from
-- "Codex and I agree on X. Codex suggested Y where I'm proposing Z — here's why..."
-
-**Log the result:**
-```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
-```
-Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".
 
 > **STOP.** Before building the complete design-system proposal, drill-downs, the design preview, and writing DESIGN.md (Phases 3-6, after product context and research), Read `~/.claude/skills/gstack/design-consultation/sections/proposal-and-preview.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.

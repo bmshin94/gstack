@@ -1891,14 +1891,52 @@ describe('DESIGN_OUTSIDE_VOICES resolver', () => {
   });
 
   test('design-consultation contains outside voices section', () => {
-    const content = fs.readFileSync(path.join(ROOT, 'design-consultation', 'SKILL.md'), 'utf-8');
+    const content = readSkillUnion('design-consultation');
     expect(content).toContain('Design Outside Voices');
     expect(content).toContain('design direction');
   });
 
+  test('consultation dispatch shares a verified brief path without executing product text', () => {
+    const content = readSkillUnion('design-consultation');
+    const command = [...content.matchAll(/```bash\n([\s\S]*?)```/g)]
+      .map(match => match[1]).find(block => block.includes('codex exec'))!;
+    const guardedCommand = `trap 'rm -f -- "\${TMPERR_DESIGN:-}"' EXIT\n${command}`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'design-brief-contract-'));
+    try {
+      const brief = path.join(dir, 'product.md');
+      const capture = path.join(dir, 'argv.json');
+      const marker = path.join(dir, 'must-not-execute');
+      const product = `A product with $(touch ${marker}), \`touch ${marker}\`, and "quotes".\nUsers: builders.\n`;
+      fs.writeFileSync(brief, product);
+      fs.writeFileSync(path.join(dir, 'codex'), `#!${process.execPath}\nrequire('fs').writeFileSync(process.env.CAPTURE, JSON.stringify(process.argv.slice(2)));\n`, { mode: 0o700 });
+      const env = { ...process.env, PATH: dir + path.delimiter + process.env.PATH, CAPTURE: capture, _DESIGN_BRIEF: brief };
+      const result = spawnSync('bash', ['-c', guardedCommand], { cwd: ROOT, env, encoding: 'utf8', timeout: 5_000 });
+      expect(result.status).toBe(0);
+      const args = JSON.parse(fs.readFileSync(capture, 'utf8'));
+      expect(args[0]).toBe('exec');
+      expect(args[1]).toContain(`Read the complete product brief at "${brief}"`);
+      expect(args[1]).not.toContain(product);
+      expect(args).toContain('read-only');
+      expect(fs.readFileSync(brief, 'utf8')).toBe(product);
+      expect(fs.existsSync(marker)).toBe(false);
+      fs.unlinkSync(capture);
+      const missing = spawnSync('bash', ['-c', guardedCommand], { cwd: ROOT, env: { ...env, _DESIGN_BRIEF: path.join(dir, 'absent') }, encoding: 'utf8', timeout: 5_000 });
+      expect(missing.status).not.toBe(0);
+      expect(missing.stderr).toContain('missing product brief');
+      expect(fs.existsSync(capture)).toBe(false);
+      expect(content).toContain('same brief; neither inherits this conversation');
+      expect(content).toContain('await both actual results before the Phase 3 synthesis');
+      expect(content).toContain('If it is unavailable, run the Agent alone');
+      expect(content).toContain('Read the complete product brief at [the absolute DESIGN_BRIEF path printed above]');
+      expect(content).toContain('before finalizing typography');
+      expect(content).toContain('a face may serve multiple roles');
+      expect(content).not.toContain('a single question that covers everything');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   test('branches correctly per skillName — different prompts', () => {
     const planContent = readSkillUnion('plan-design-review');
-    const consultContent = fs.readFileSync(path.join(ROOT, 'design-consultation', 'SKILL.md'), 'utf-8');
+    const consultContent = readSkillUnion('design-consultation');
     // plan-design-review uses analytical prompt (high reasoning)
     expect(planContent).toContain('model_reasoning_effort="high"');
     // design-consultation uses creative prompt (medium reasoning)

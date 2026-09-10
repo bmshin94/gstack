@@ -759,7 +759,7 @@ Be specific. Reference file:line for every finding.`;
 
 For each finding: what's wrong, severity (critical/high/medium), and the file:line.`;
   } else if (isDesignConsultation) {
-    codexPrompt = `Given this product context, propose a complete design direction:
+    codexPrompt = `Propose a complete design direction:
 - Visual thesis: one sentence describing mood, material, and energy
 - Typography: specific font names (not defaults — no Inter/Roboto/Arial/system) + hex colors
 - Color system: CSS variables for background, surface, primary text, muted text, accent
@@ -769,7 +769,9 @@ For each finding: what's wrong, severity (critical/high/medium), and the file:li
 
 Be opinionated. Be specific. Do not hedge. This is YOUR design direction — own it.`;
 
-    subagentPrompt = `Given this product context, propose a design direction that would SURPRISE. What would the cool indie studio do that the enterprise UI team wouldn't?
+    subagentPrompt = `Read the complete product brief at [the absolute DESIGN_BRIEF path printed above].
+
+Propose a design direction that would SURPRISE. What would the cool indie studio do that the enterprise UI team wouldn't?
 - Propose an aesthetic direction, typography stack (specific font names), color palette (hex values)
 - 2 deliberate departures from category norms
 - What emotional reaction should the user have in the first 3 seconds?
@@ -832,20 +834,27 @@ Merge findings into the triage with \`[codex]\` / \`[subagent]\` / \`[cross-mode
   const escapedCodexPrompt = codexPrompt.replace(/`/g, '\\`').replace(/\$/g, '\\$');
 
   return `## Design Outside Voices (parallel)
-${optInSection}
+${optInSection}${isDesignConsultation ? `
+
+**Before Phase 3:** Create a private shared brief:
+\`\`\`bash
+_DESIGN_BRIEF=$(mktemp /tmp/gstack-design-brief-XXXXXXXX) || exit 1
+printf 'DESIGN_BRIEF=%s\\n' "$_DESIGN_BRIEF"
+\`\`\`
+Write the confirmed product, users, project type, memorable-thing answer, constraints, and research findings (or skipped/unavailable) to the printed path. Both voices read the same brief; neither inherits this conversation. Rebind \`$_DESIGN_BRIEF\` to that path in each Bash call; use it in the Agent prompt. Never paste brief contents into shell source.` : ''}
 
 **Check Codex availability:**
 \`\`\`bash
 command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 \`\`\`
 
-**If Codex is available**, launch both voices simultaneously:
+${isDesignConsultation ? '**Dispatch:** If Codex is available, send Bash and foreground Agent calls together; await both actual results before the Phase 3 synthesis. If it is unavailable, run the Agent alone. Keep proposals independent.' : '**If Codex is available**, launch both voices simultaneously:'}
 
 1. **Codex design voice** (via Bash):
 \`\`\`bash
-TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
+${isDesignConsultation ? 'test -s "$_DESIGN_BRIEF" || { echo "ERROR: missing product brief" >&2; exit 1; }\n' : ''}TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-codex exec "${escapedCodexPrompt}" -C "$_REPO_ROOT" -s read-only ${CODEX_MODEL_CONFIG_FLAG} -c 'model_reasoning_effort="${reasoningEffort}"' ${CODEX_WEB_SEARCH_FLAG} < /dev/null 2>"$TMPERR_DESIGN"
+codex exec "${isDesignConsultation ? 'Read the complete product brief at \\\"$_DESIGN_BRIEF\\\" before proposing.\n\n' : ''}${escapedCodexPrompt}" -C "$_REPO_ROOT" -s read-only ${CODEX_MODEL_CONFIG_FLAG} -c 'model_reasoning_effort="${reasoningEffort}"' ${CODEX_WEB_SEARCH_FLAG} < /dev/null 2>"$TMPERR_DESIGN"
 \`\`\`
 Use a 5-minute timeout (\`timeout: 300000\`). After the command completes, read stderr:
 \`\`\`bash
@@ -863,15 +872,15 @@ Dispatch a subagent with this prompt:
 - On any Codex error: proceed with Claude subagent output only, tagged \`[single-model]\`.
 - If Claude subagent also fails: "Outside voices unavailable — continuing with primary review."
 
-Present Codex output under a \`CODEX SAYS (design ${isPlanDesignReview ? 'critique' : isDesignReview ? 'source audit' : 'direction'}):\` header.
+${isDesignConsultation ? 'Present only completed, available voice outputs; label a sole voice `[single-model]`.\n' : ''}Present Codex output under a \`CODEX SAYS (design ${isPlanDesignReview ? 'critique' : isDesignReview ? 'source audit' : 'direction'}):\` header.
 Present subagent output under a \`CLAUDE SUBAGENT (design ${isPlanDesignReview ? 'completeness' : isDesignReview ? 'consistency' : 'direction'}):\` header.
-${synthesisSection}
+${synthesisSection}${isDesignConsultation ? '\nAfter both voices finish (including failure), remove the private brief with `rm -f -- "$_DESIGN_BRIEF"`.' : ''}
 
 **Log the result:**
 \`\`\`bash
 ${ctx.paths.binDir}/gstack-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 \`\`\`
-Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".`;
+Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".${isDesignConsultation ? ' For proposals: clean = usable directions, no unresolved risks; issues_found = unresolved risk or unavailable voice. SOURCE names actual responders.' : ''}`;
 }
 
 // ─── Design detector (impeccable engine the user installed; gstack never installs it) ───

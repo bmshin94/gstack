@@ -124,7 +124,7 @@ If `DESIGN_NOT_AVAILABLE`: Phase 5 falls back to the HTML preview page (still go
 
 ## Phase 1: Product Context
 
-Ask the user a single question that covers everything you need to know. Pre-fill what you can infer from the codebase.
+Gather and confirm the product context in Q1, then ask the memorable-thing question below. Pre-fill what you can infer from the codebase.
 
 **AskUserQuestion Q1 — include ALL of these:**
 1. Confirm what the product is, who it's for, what space/industry
@@ -132,26 +132,18 @@ Ask the user a single question that covers everything you need to know. Pre-fill
 3. "Want me to research what top products in your space are doing for design, or should I work from my design knowledge?"
 4. **Explicitly say:** "At any point you can just drop into chat and we'll talk through anything — this isn't a rigid form, it's a conversation."
 
-If the README or office-hours output gives you enough context, pre-fill and confirm: *"From what I can see, this is [X] for [Y] in the [Z] space. Sound right? And would you like me to research what's out there in this space, or should I work from what I know?"*
+Pre-fill context from README or office-hours output, then confirm it and the research preference in Q1.
 
 **Memorable-thing forcing question.** Before moving on, ask the user: *"What's the one
 thing you want someone to remember after they see this product for the first time?"*
 
-One sentence answer. Could be a feeling ("this is serious software for serious work"),
-a visual ("the blue that's almost black"), a claim ("faster than anything else"), or
-a posture ("for builders, not managers"). Write it down. Every subsequent design
-decision should serve this memorable thing. Design that tries to be memorable for
-everything is memorable for nothing.
+Record the one-sentence answer: a feeling, visual, claim, or posture. Every subsequent design decision must serve it.
 
 ### Taste profile (if this user has prior sessions)
 
 {{TASTE_PROFILE}}
 
-If a taste profile exists for this project, factor it into your Phase 3 proposal.
-The profile reflects what the user has actually approved in prior sessions — treat
-it as a demonstrated preference, not a constraint. You may still deliberately
-depart from it if the product direction demands something different; when you do,
-say so explicitly and connect the departure to the memorable-thing answer above.
+Factor an existing taste profile into Phase 3 as demonstrated preference, not a constraint. Explain any product-driven departure and connect it to the memorable-thing answer.
 
 ---
 
@@ -195,35 +187,32 @@ Then `cp "<ASIDE_DIR>/design-research-<site>.jpg" /tmp/` and Read it.
 
 If Aside is not `READY` but the Browser fallback resolved `$B`, run the same pass with `$B goto <url>`, `$B screenshot <path>`, `$B snapshot -i` (translation table above); the AskUserQuestion URL confirmation still applies.
 
-For each site, analyze: fonts actually used, color palette, layout approach, spacing density, aesthetic direction. The screenshot gives you the feel; the snapshot tree gives you structural data.
+For each site, analyze fonts, palette, layout, spacing density, and aesthetic direction using its screenshot and structural snapshot.
 
 If a site shows a sign-in wall or a bot check, skip it and note why — never ask the user to sign in to a competitor's site for research.
 
-If Aside is not available and the host has no WebSearch tool, Step 1 skips; Step 2 skips only when neither Aside nor `$B` is available. When both skip, say once: "Search unavailable — proceeding with in-distribution knowledge only." Then rely on your built-in design knowledge — this is fine.
+Without Aside or WebSearch, skip Step 1; skip Step 2 only if Aside and `$B` are both absent. If both skip, say once: "Search unavailable — proceeding with in-distribution knowledge only."
 
 **Step 3: Synthesize findings**
 
 **Three-layer synthesis:**
-- **Layer 1 (tried and true):** What design patterns does every product in this category share? These are table stakes — users expect them.
-- **Layer 2 (new and popular):** What are the search results and current design discourse saying? What's trending? What new patterns are emerging?
-- **Layer 3 (first principles):** Given what we know about THIS product's users and positioning — is there a reason the conventional design approach is wrong? Where should we deliberately break from the category norms?
+- **Layer 1 (tried and true):** Identify category patterns users expect.
+- **Layer 2 (new and popular):** Identify trends and emerging patterns in search results and current design discourse.
+- **Layer 3 (first principles):** Test category conventions against THIS product's users and positioning; identify justified departures.
 
 **Eureka check:** If Layer 3 reasoning reveals a genuine design insight — a reason the category's visual language fails THIS product — name it: "EUREKA: Every [category] product does X because they assume [assumption]. But this product's users [evidence] — so we should do Y instead." Log the eureka moment (see preamble).
 
-Summarize conversationally:
-> "I looked at what's out there. Here's the landscape: they converge on [patterns]. Most of them feel [observation — e.g., interchangeable, polished but generic, etc.]. The opportunity to stand out is [gap]. Here's where I'd play it safe and where I'd take a risk..."
+Summarize conversationally: shared patterns, how competitors feel, the differentiation gap, and where you recommend safety versus risk.
 
 **Graceful degradation:**
 - Aside available → web search + screenshots + snapshots (richest research)
 - Aside absent, WebSearch + `$B` available → search results + headless screenshots + snapshots
 - WebSearch only → search results (still good)
-- Neither → agent's built-in design knowledge (always works)
+- Neither → built-in design knowledge for the direction; typography still follows the verification/fallback procedure in Phase 3
 
 If the user said no research, skip entirely and proceed to Phase 3 using your built-in design knowledge.
 
 ---
-
-{{DESIGN_OUTSIDE_VOICES}}
 
 {{SECTION:proposal-and-preview}}
 {{LEARNINGS_LOG}}
