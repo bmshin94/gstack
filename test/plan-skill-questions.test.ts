@@ -464,6 +464,54 @@ test('nested file binding refuses clipped, conflicting, quoted or ambiguous head
   ]) expect(() => nativePermissionKey(owner, invalid)).toThrow('cannot be bound');
 });
 
+// A current terminal viewport can start at the title, with its leading rule
+// scrolled away; the full rule below its subtitle still bounds the same card.
+// Native display padding is not part of the owned filesystem path.
+function renderedPermissionCard(variant: string, subtitle = 'plan.md') {
+  let frame = nestedFileDialog('edit', subtitle);
+  if (variant !== 'padding') frame = frame.slice(frame.indexOf('\n') + 1);
+  if (variant !== 'clipped-rule') frame = frame.replace('\n ' + subtitle + '\n', '\n ' + subtitle + '   \n');
+  return frame;
+}
+
+test.each(['clipped-rule', 'padding', 'both'])('current permission card supports native %s with one exact owned grant', variant => {
+  const s = earlyFileCompletion(); s.complete(); s.emit('PermissionRequest', s.nextInput);
+  const frame = renderedPermissionCard(variant), native = s.read();
+  expect(currentFilePermissionTarget(frame)).toEqual({ operation: 'edit', filePath: 'plan.md' });
+  expect(reserveNativePermissionGrant(native, frame, s.granted, s.requests)).toBe(true);
+  expect(reserveNativePermissionGrant(native, frame, s.granted, s.requests)).toBe(false);
+  expect(s.granted.size).toBe(2);
+});
+
+test.each(['clipped-rule', 'padding', 'both'])('native %s rendering keeps exact path spaces and rejects another owned filename', variant => {
+  const relative = 'notes/approved  plan.md', filePath = path.join(config, relative);
+  const frame = renderedPermissionCard(variant, relative);
+  const owner = { id: 'edit', name: 'Edit', cwd: config, input: { file_path: filePath } };
+  expect(nativePermissionKey(owner, frame)).toBe('Edit:' + filePath);
+  for (const wrong of ['notes/approved plan.md', relative + ' ', 'other/approved  plan.md']) {
+    expect(() => nativePermissionKey({ ...owner, input: { file_path: path.join(config, wrong) } }, frame)).toThrow('cannot be bound');
+  }
+});
+
+test.each(['quoted-prelude', 'blank-prelude', 'missing-bottom-rule', 'broken-bottom-rule', 'wrapped-subtitle', 'tab-padding',
+  'unicode-padding', 'leading-padding', 'duplicate-header', 'intervening-menu', 'wider-than-rule', 'wrong-operation'])
+('current permission card still refuses %s', variant => {
+  let frame = renderedPermissionCard('both', 'notes/plan.md');
+  if (variant === 'quoted-prelude') frame = 'Example:\n' + frame;
+  if (variant === 'blank-prelude') frame = '\n' + frame;
+  if (variant === 'missing-bottom-rule') frame = frame.replace('╌'.repeat(120), '');
+  if (variant === 'broken-bottom-rule') frame = frame.replace('╌'.repeat(120), '╌'.repeat(119) + 'x');
+  if (variant === 'wrapped-subtitle') frame = frame.replace('notes/plan.md', 'notes/\nplan.md');
+  if (variant === 'tab-padding') frame = frame.replace('plan.md   \n', 'plan.md\t\n');
+  if (variant === 'unicode-padding') frame = frame.replace('plan.md   \n', 'plan.md\u00a0\n');
+  if (variant === 'leading-padding') frame = frame.replace('\n notes/plan.md', '\n  notes/plan.md');
+  if (variant === 'duplicate-header') frame = frame.replace('  1 Plan content', ' Edit file\n notes/plan.md\n  1 Plan content');
+  if (variant === 'intervening-menu') frame = frame.replace('  1 Plan content', ' ❯ 1. Prior choice\n  1 Plan content');
+  if (variant === 'wider-than-rule') frame = frame.replace('╌'.repeat(120), '╌'.repeat(10));
+  if (variant === 'wrong-operation') frame = frame.replace(' Edit file', ' Create file');
+  expect(currentFilePermissionTarget(frame)).toBeNull();
+});
+
 test('modern native Edit wording binds its exact owned relative or absolute path', () => {
   // Claude 2.1.257 Io(Edit) + Cwo: "Do you want to make this edit to <fileName>?"
   const filePath = path.join(config, 'plan.md');
@@ -1137,6 +1185,66 @@ test.each(['Write', 'Edit'] as const)('owned PostToolUse completes %s before tra
   expect(reserveNativePermissionGrant(s.read(), s.nextDialog, s.granted, s.requests)).toBe(false);
 });
 
+
+// A report may be created, overwritten after findings, then overwritten again
+// after a later section. These are real owned hook events, not inferred grants.
+async function repeatedWriteSequence(variant = 'fresh') {
+  const s = earlyFileCompletion('Write'); s.complete();
+  s.emit('PermissionRequest', s.nextInput);
+  expect(reserveNativePermissionGrant(s.read(), s.nextDialog, s.granted, s.requests)).toBe(true);
+  const second = s.read().permissionRequests.find(item => item.result === 'pending')!;
+  const response = { ...s.response, type: 'update', content: s.nextInput.content,
+    originalFile: s.firstInput.content };
+  if (variant === 'failed-ack') s.emit('PostToolUseFailure', s.nextInput, { tool_use_id: 'unflushed-file-2', error: 'write failed' });
+  else if (variant !== 'no-ack') s.emit('PostToolUse', s.nextInput, { tool_use_id: 'unflushed-file-2', tool_response: response });
+  await Bun.sleep(5);
+  const thirdInput = variant === 'identical-input' ? s.nextInput
+    : variant === 'extra-field-only' ? { ...s.nextInput, incidental: true }
+    : { ...s.nextInput, content: s.nextInput.content + '\n\n## GSTACK REVIEW REPORT\nCEO review complete.' };
+  s.emit('PermissionRequest', thirdInput);
+  return { ...s, second, thirdInput };
+}
+
+test('owned repeated Write overwrite follows only its prior successful ACK and grants once', async () => {
+  const s = await repeatedWriteSequence();
+  const native = s.read(), prior = native.permissionRequests.find(item => item.requestId === s.second.requestId)!;
+  const current = native.permissionRequests.find(item => item.result === 'pending')!;
+  expect(prior).toMatchObject({ result: 'completed', nativeToolId: 'unflushed-file-2', completionEvidence: 'PostToolUse' });
+  expect(current.requestId).not.toBe(prior.requestId);
+  expect(current.capturedAtMs).toBeGreaterThan(prior.nativeResultAtMs!);
+  expect(current.input).toEqual(s.thirdInput);
+  expect(fs.readFileSync(file, 'utf8')).not.toContain('unflushed-file-2');
+  expect(reserveNativePermissionGrant(native, s.nextDialog, s.granted, s.requests)).toBe(true);
+  expect(reserveNativePermissionGrant(native, s.nextDialog, s.granted, s.requests)).toBe(false);
+  expect(s.granted.size).toBe(3);
+  expect(s.requests.get(`Write:${path.join(config, 'plan.md')}`)?.requestId).toBe(current.requestId);
+});
+
+test.each(['no-ack', 'failed-ack', 'identical-input', 'extra-field-only', 'before-ack', 'equal-ack', 'missing-native-id',
+  'wrong-cwd', 'wrong-path', 'wrong-tool', 'wrong-frame', 'replayed-request', 'multiple-writers'])
+('owned repeated Write overwrite preserves refusal for %s', async variant => {
+  const s = await repeatedWriteSequence(variant);
+  const before = [...s.granted], requestsBefore = [...s.requests];
+  const attempt = () => {
+    const native = s.read(), current = native.permissionRequests.find(item => item.result === 'pending' && item.requestId !== s.second.requestId)!;
+    const prior = native.permissionRequests.find(item => item.requestId === s.second.requestId)!;
+    if (variant === 'before-ack') current.capturedAtMs = prior.nativeResultAtMs! - 1;
+    if (variant === 'equal-ack') current.capturedAtMs = prior.nativeResultAtMs!;
+    if (variant === 'missing-native-id') delete prior.nativeToolId;
+    if (variant === 'wrong-cwd') current.cwd = path.dirname(config);
+    if (variant === 'wrong-path') current.input.file_path = path.join(config, 'sibling.md');
+    if (variant === 'wrong-tool') current.name = 'Edit';
+    if (variant === 'replayed-request') current.requestId = s.second.requestId;
+    if (variant === 'multiple-writers') native.permissionRequests.push({ ...current, requestId: 'other-writer' });
+    const dialog = variant === 'wrong-frame' ? s.nextDialog.replace('overwrite', 'create') : s.nextDialog;
+    if (variant === 'replayed-request') expect(reserveNativePermissionGrant(native, dialog, s.granted, s.requests)).toBe(false);
+    else expect(() => reserveNativePermissionGrant(native, dialog, s.granted, s.requests)).toThrow();
+  };
+  // Duplicate input or a failed native hook is rejected before reservation.
+  if (variant === 'identical-input' || variant === 'failed-ack') expect(attempt).toThrow();
+  else attempt();
+  expect([...s.granted]).toEqual(before); expect([...s.requests]).toEqual(requestsBefore);
+});
 
 test.each(['missing', 'foreign-session', 'subagent', 'failure', 'malformed-response', 'wrong-response-path', 'changed-input', 'duplicate-request', 'duplicate-completion-id', 'late-completion'])
 ('owned PostToolUse cannot retire an unproven request (%s)', variant => {

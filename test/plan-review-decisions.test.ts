@@ -42,20 +42,90 @@ function row(fp: AskUserQuestionFingerprint, target: string | null, kind: 'findi
     optionActions: kind === 'scope' ? ['include', 'defer', 'cut', 'hold'].map((action, i) => ({ optionIndex: i + 1, action: action as 'include' | 'defer' | 'cut' | 'hold' })) : [] };
 }
 
+function suppliedCalls(prompt: string): Array<{ toolUseId: string; questions: NativeQuestion[]; selectedOptions: number[] }> {
+  const marker = /BEGIN_UNTRUSTED_([a-f0-9]{32})\n/.exec(prompt)!;
+  return JSON.parse(prompt.slice(marker.index + marker[0].length, prompt.lastIndexOf(`\nEND_UNTRUSTED_${marker[1]}`))).calls;
+}
+function responseForPrompt(input: PlanReviewDecisionInput, judgment: PlanReviewDecisionJudgment, prompt: string): PlanReviewDecisionJudgment {
+  const nativeIds = [...new Set(input.fingerprints.map(fp => fp.toolUseId!))];
+  const calls = suppliedCalls(prompt);
+  return { questions: judgment.questions.map(r => ({ ...clone(r), toolUseId: calls[nativeIds.indexOf(r.toolUseId)]!.toolUseId })) };
+}
+const logged = (type: string) => log.mock.calls.map(args => JSON.parse(args[0])).filter(row => row.type === type);
+
 test('uses full ACK-backed briefs across phases, with no qid or sentence grammar requirement', async () => {
   const { input, judgment } = fixture();
   const original = clone(input);
   let calls = 0;
+  let returned: PlanReviewDecisionJudgment;
   const result = await evaluatePlanReviewDecisions(input, async (prompt, model, opts) => {
     calls++;
     expect(model).toBeUndefined(); expect(opts?.signal).toBeInstanceOf(AbortSignal);
     expect(prompt).toContain(input.fingerprints[0]!.questions![0]!.question.replaceAll('\n', '\\n'));
     expect(prompt).not.toContain('Deliberately uninformative diagnostic snippet');
-    return judgment;
+    returned = responseForPrompt(input, judgment, prompt);
+    return returned;
   });
   expect(calls).toBe(1); expect(result.count).toBe(5); expect(result.targetCallCount).toBe(5);
   expect(result.coveredTargetIds).toEqual(input.targets.map(t => t.id)); expect(input).toEqual(original);
-  expect(JSON.parse(log.mock.calls[0]![0])).toEqual({ type: 'plan-review-decisions-raw-judgment', validated: false, judgment });
+  expect(result.judgment).toEqual(judgment);
+  expect(logged('plan-review-decisions-raw-judgment')).toEqual([{ type: 'plan-review-decisions-raw-judgment', validated: false, judgment: returned! }]);
+});
+
+test('judge uses short request-local IDs and returns native IDs without mutating either snapshot or raw response', async () => {
+  const { input, judgment } = fixture();
+  const nativeIds = ['c2', 'c1', 'toolu_01AwAEWS8vjsLa17AiZthhWD', 'opaque-' + 'x'.repeat(200), 'native-last'];
+  input.fingerprints.forEach((fp, i) => { fp.toolUseId = nativeIds[i]; judgment.questions[i]!.toolUseId = nativeIds[i]!; });
+  const original = clone(input);
+  for (const fp of input.fingerprints) Object.freeze(fp);
+  Object.freeze(input.fingerprints); Object.freeze(input);
+  let raw!: PlanReviewDecisionJudgment, rawBefore!: PlanReviewDecisionJudgment;
+  const result = await evaluatePlanReviewDecisions(input, async (prompt, model, opts) => {
+    const calls = suppliedCalls(prompt);
+    expect(calls.map(call => call.toolUseId)).toEqual(['c1', 'c2', 'c3', 'c4', 'c5']);
+    expect(calls.map(call => call.questions)).toEqual(input.fingerprints.map(fp => fp.questions));
+    expect(calls.map(call => call.selectedOptions)).toEqual(input.fingerprints.map(fp => fp.selectedOptions));
+    expect(prompt).not.toContain(nativeIds[2]!); expect(prompt).not.toContain(nativeIds[3]!);
+    expect(model).toBeUndefined(); expect(opts?.max_tokens).toBe(16_384);
+    raw = responseForPrompt(input, judgment, prompt); rawBefore = clone(raw); return raw;
+  });
+  expect(result.judgment).toEqual(judgment); expect(result.count).toBe(5);
+  expect(result.targetCallCount).toBe(5); expect(result.coveredTargetIds).toEqual(input.targets.map(t => t.id));
+  expect(input).toEqual(original); expect(raw).toEqual(rawBefore);
+  expect(logged('plan-review-decisions-call-ids')).toEqual([{ type: 'plan-review-decisions-call-ids',
+    mapping: nativeIds.map((nativeToolUseId, i) => ({ nativeToolUseId, toolUseId: `c${i + 1}` })) }]);
+});
+
+test.each(['c0', 'c01', 'c6', 'C1', ' c1', 'c1 ', 'native-0'])('request-local inventory rejects exact unknown ID %j', async id => {
+  const { input, judgment } = fixture();
+  await expect(evaluatePlanReviewDecisions(input, async prompt => {
+    const raw = responseForPrompt(input, judgment, prompt); raw.questions[0]!.toolUseId = id; return raw;
+  })).rejects.toThrow('phantom or duplicate native question row');
+});
+
+test('request-local inventory preserves identical-call deduplication and every independently answered scope tab', async () => {
+  const { input, judgment } = fixture('scope');
+  const moved = input.fingerprints.pop()!;
+  input.fingerprints[3]!.questions!.push(moved.questions![0]!); input.fingerprints[3]!.selectedOptions!.push(3);
+  judgment.questions[4]!.toolUseId = input.fingerprints[3]!.toolUseId!; judgment.questions[4]!.questionIndex = 2;
+  input.fingerprints.push(clone(input.fingerprints[0]!));
+  const result = await evaluatePlanReviewDecisions(input, async prompt => {
+    expect(suppliedCalls(prompt)).toHaveLength(4);
+    return responseForPrompt(input, judgment, prompt);
+  });
+  expect(result.judgment).toEqual(judgment); expect(result.count).toBe(4);
+  expect(result.targetCallCount).toBe(4); expect(result.coveredTargetIds).toHaveLength(5);
+});
+
+test.each(['missing coverage', 'below floor', 'above ceiling'])('request-local IDs cannot hide %s', async mode => {
+  const { input, judgment } = fixture();
+  if (mode === 'below floor') input.floor = 6;
+  if (mode === 'above ceiling') input.ceiling = 4;
+  await expect(evaluatePlanReviewDecisions(input, async prompt => {
+    const raw = responseForPrompt(input, judgment, prompt);
+    if (mode === 'missing coverage') raw.questions[4]!.targetIds = [];
+    return raw;
+  })).rejects.toThrow(mode === 'missing coverage' ? 'missing target decisions' : mode);
 });
 
 test('deduplicates identical native IDs, while repeated and unseeded substantive calls count toward the ceiling', () => {
@@ -137,7 +207,7 @@ test('findings reject multiple independent tabs in one native invocation and pac
   expect(() => validatePlanReviewDecisionResponse(single.input, single.judgment)).toThrow('bundled independent decisions');
 });
 
-test.each([
+const responseMutations = [
   ['extra top key', (j: any) => { j.passed = true; }, 'invalid judgment object'],
   ['missing row', (j: any) => { j.questions.pop(); }, 'missing native question rows'],
   ['duplicate row', (j: any) => { j.questions.push(clone(j.questions[0])); }, 'duplicate native question row'],
@@ -156,9 +226,18 @@ test.each([
   ['extra quote key', (j: any) => { j.questions[0].evidence[0].trusted = true; }, 'invalid evidence shape'],
   ['empty quote', (j: any) => { j.questions[0].evidence[0].quote = ' '; }, 'invalid evidence shape'],
   ['overlong reason', (j: any) => { j.questions[0].reason = 'x'.repeat(1001); }, 'invalid judgment row'],
-] as const)('rejects %s without changing the count contract', (_name, mutate, message) => {
+] as const;
+
+test.each(responseMutations)('rejects %s without changing the count contract', (_name, mutate, message) => {
   const { input, judgment } = fixture(); mutate(judgment);
   expect(() => validatePlanReviewDecisionResponse(input, judgment)).toThrow(message);
+});
+
+test.each(responseMutations)('request-local IDs retain rejection for %s', async (_name, mutate, message) => {
+  const { input, judgment } = fixture();
+  await expect(evaluatePlanReviewDecisions(input, async prompt => {
+    const local = responseForPrompt(input, judgment, prompt); mutate(local); return local;
+  })).rejects.toThrow(message);
 });
 
 test('evidence binds exact option index and label, description or preview field', () => {
@@ -224,18 +303,26 @@ test('rejects malformed model returns and thrown judge errors instead of manufac
 
 test('validates the original evidence snapshot when input changes during judging', async () => {
   const { input, judgment } = fixture();
-  await expect(evaluatePlanReviewDecisions(input, async () => {
+  await expect(evaluatePlanReviewDecisions(input, async prompt => {
     input.fingerprints[0]!.questions![0]!.question = 'Changed after judge dispatch';
     judgment.questions[0]!.evidence[0]!.quote = 'Changed after judge dispatch';
-    return judgment;
+    return responseForPrompt(input, judgment, prompt);
   })).rejects.toThrow('exact native field');
-  expect(JSON.parse(log.mock.calls[0]![0]).validated).toBe(false);
+  expect(logged('plan-review-decisions-raw-judgment')[0].validated).toBe(false);
 });
 
 test('exhausted deadline prevents dispatch', async () => {
   const { input, judgment } = fixture(); input.deadlineAt = Date.now() - 1; let calls = 0;
   await expect(evaluatePlanReviewDecisions(input, async () => { calls++; return judgment; })).rejects.toThrow('deadline exhausted'); expect(calls).toBe(0);
 });
+
+test('mapping diagnostics consume the same deadline before provider dispatch', async () => {
+  const { input, judgment } = fixture(); input.deadlineAt = Date.now() + 30;
+  log.mockImplementationOnce(() => { while (Date.now() <= input.deadlineAt) { /* blocked diagnostic sink */ } });
+  let calls = 0;
+  await expect(evaluatePlanReviewDecisions(input, async () => { calls++; return judgment; })).rejects.toThrow('deadline exhausted');
+  expect(calls).toBe(0);
+}, 1000);
 
 test('deadline aborts and races a noncooperative judge; late success cannot pass', async () => {
   const { input, judgment } = fixture(); input.deadlineAt = Date.now() + 40;
@@ -244,8 +331,10 @@ test('deadline aborts and races a noncooperative judge; late success cannot pass
     signal = opts!.signal; return new Promise(done => { resolve = done; });
   });
   await expect(pending).rejects.toThrow('deadline exhausted'); expect(signal!.aborted).toBe(true);
-  expect(log).not.toHaveBeenCalled();
+  expect(logged('plan-review-decisions-raw-judgment')).toHaveLength(0);
+  const before = clone(log.mock.calls);
   resolve(judgment); await Promise.resolve();
+  expect(log.mock.calls).toEqual(before);
 }, 1000);
 
 test.each(['unchanged', 'extended'])('synchronous late work rejects with an %s input deadline', async mode => {

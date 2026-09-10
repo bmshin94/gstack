@@ -72,7 +72,8 @@ async function main() {
   const ceilingCase = scenario.startsWith('ceiling-');
   const multiQuestionCase = scenario === 'multi-question' || scenario.startsWith('question-picker-multi');
   const terminalDiagnosticCase = scenario.startsWith('terminal-diagnostic-');
-  const longPermissionCase = scenario.startsWith('permission-long-frame');
+  const permissionRepaintCase = scenario.startsWith('permission-repaint-');
+  const longPermissionCase = scenario.startsWith('permission-long-frame') || permissionRepaintCase;
   const editPermissionCase = scenario.startsWith('permission-edit-');
   const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
@@ -105,6 +106,8 @@ async function main() {
   const unsolicitedWrites: string[] = [];
   const prematureAnswers: string[] = [];
   const permissionWrites: string[] = [];
+  const permissionGrantIds: string[] = [];
+  const permissionAckIds: string[] = [];
   const fileNativeBeforeGrant: boolean[] = [];
   let longPermissionFrame = '';
   let publishDuringScreen: (() => void) | null = null;
@@ -124,6 +127,7 @@ async function main() {
     if (scenario === 'exit-confirmation-early-owner-arrival-race' && raceInjected) postExitOwnerRaceScreens++;
     const frame = await originalScreenSnapshot.call(this);
     if (longPermissionCase && frame.text.includes(' Create file')) longPermissionFrame = frame.text;
+    if (scenario === 'permission-repaint-deadline' && frame.text.includes('pl n.md') && ++viewportSnapshots === 2) clock = caseBudgetMs;
     if (scenario === 'viewport-flush-deadline' && frame.rows === 40 && frame.text.includes('Clipped native prompt') && ++viewportSnapshots === 2) clock = caseBudgetMs;
     const publish = publishDuringScreen;
     publishDuringScreen = null;
@@ -174,7 +178,7 @@ async function main() {
       let finalPermissionPending = false;
       let finalWriteCount = 0;
       const finalReport = [...Array.from({ length: 516 }, (_, i) => `Report line ${i + 1}`), '## GSTACK REVIEW REPORT', 'VERDICT: APPROVED'].join('\n');
-      const longPermissionPath = path.join(project, 'gstack-home/projects/gstack-e2e-plan-ceo-paired-fixture/ceo-plans/2026-09-09-payment-test-coverage.md');
+      const longPermissionPath = permissionRepaintCase ? path.join(project, 'plan.md') : path.join(project, 'gstack-home/projects/gstack-e2e-plan-ceo-paired-fixture/ceo-plans/2026-09-09-payment-test-coverage.md');
       // The retained V5 shape: complete 240-column header, preview and compound
       // option 2. Its full native path must survive classification and binding.
       const longPermissionDialog = () => '\x1b[2J\x1b[H' + '─'.repeat(240) + '\n Create file\n '
@@ -183,6 +187,9 @@ async function main() {
         + '\n Do you want to create ' + path.basename(longPermissionPath) + '?\n ❯ 1. Yes\n'
         + '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and always allow access to\n      '
         + path.dirname(longPermissionPath) + ' for this session (shift+tab)\n   3. No\n\n Esc to cancel · Tab to amend';
+      const permissionRepaintDialog = () => longPermissionDialog().replace('; Yes, and always allow access to\n      ' + path.dirname(longPermissionPath) + ' for this session', '');
+      const corruptedPermissionDialog = () => permissionRepaintDialog().replace('\n ' + path.relative(project, longPermissionPath) + '\n',
+        '\n ' + path.relative(project, longPermissionPath).replace('plan.md', 'pl n.md') + '\n');
       const fileDialog = (operation: string) => `\x1b[2J\x1b[HDo you want to ${operation} plan.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel`;
       const recordFilePermission = (input: Record<string, unknown>, name = 'Write') => {
         const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
@@ -332,7 +339,7 @@ async function main() {
         if (editPermissionCase) { requestFinalEdit(); return; }
         finalPermissionPending = true;
         permissionOperation = 'overwrite';
-        permissionInput = { file_path: path.join(project, scenario === 'permission-final-mismatch' ? 'different.md' : 'plan.md'), content: finalReport + (finalWriteCount ? '\nAnother overwrite' : '') };
+        permissionInput = { file_path: path.join(project, scenario === 'permission-final-mismatch' ? 'different.md' : 'plan.md'), content: finalReport + (finalWriteCount && scenario !== 'permission-final-repeat-identical' ? '\nAnother overwrite' : '') };
         permissionId = `tool-${++sequence}`;
         if (scenario === 'permission-final-native') append({ type: 'assistant', cwd: options.cwd,
           message: { id: permissionId, role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: permissionId, name: 'Write', input: permissionInput }] } });
@@ -399,8 +406,19 @@ async function main() {
       return {
         exited: new Promise<number>(resolve => { end = resolve; }),
         terminal: {
-          ...(viewportCase ? { resize(cols: number, rows: number) {
+          ...(viewportCase || permissionRepaintCase ? { resize(cols: number, rows: number) {
             resizes.push([cols, rows]);
+            if (permissionRepaintCase) {
+              if (scenario === 'permission-repaint-failure') throw new Error('controlled permission resize failure');
+              if (scenario === 'permission-repaint-no-output') return;
+              if (rows === 40) { emit('\x1b[2J\x1b[H' + latestPaint); return; }
+              if (scenario === 'permission-repaint-owner-change') {
+                append({ type: 'assistant', cwd: options.cwd, message: { role: 'assistant', stop_reason: 'tool_use',
+                  content: [{ type: 'tool_use', id: permissionId, name: 'Write', input: { ...permissionInput, content: 'Different owner input' } }] } });
+              }
+              emit(scenario === 'permission-repaint-still-conflicting' ? corruptedPermissionDialog() : permissionRepaintDialog());
+              return;
+            }
             if (scenario === 'viewport-resize-failure') throw new Error('controlled resize failure');
             if (scenario === 'viewport-no-output' || rows === 40 && scenario === 'viewport-ready-no-restore-output') return;
             const paint = rows === 40 ? latestPaint : scenario === 'viewport-cap' ? clipped : complete;
@@ -466,7 +484,7 @@ async function main() {
               permissionId = tool('Write', permissionInput);
               recordFilePermission(permissionInput);
               if (scenario.endsWith('ambiguous')) tool('Write', { file_path: path.join(project, 'other.md'), content: 'Other' });
-              if (!scenario.endsWith('stale')) emit(longPermissionDialog());
+              if (!scenario.endsWith('stale')) emit(permissionRepaintCase ? corruptedPermissionDialog() : longPermissionDialog());
               return;
             }
             if (filePermissionCase) {
@@ -579,6 +597,7 @@ async function main() {
             if (permissionId) {
               if (data !== '1\r') throw new Error('Permission must select only the current request');
               if (longPermissionCase) {
+                if (scenario === 'permission-repaint-no-ack') { permissionWrites.push('create'); permissionId = null; emit('WORK_IN_PROGRESS\n'); return; }
                 append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Write complete' }] } });
                 permissionWrites.push('create'); permissionId = null;
                 ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
@@ -618,6 +637,7 @@ async function main() {
                   }
                   return;
                 }
+                permissionGrantIds.push(permissionId);
                 if (finalPermissionPending && scenario !== 'permission-final-native'
                   || !finalPermissionPending && scenario === 'permission-final-first-arrival-race') {
                   append({ type: 'assistant', cwd: options.cwd, message: { id: permissionId, role: 'assistant', stop_reason: 'tool_use',
@@ -627,13 +647,14 @@ async function main() {
                   && !(finalPermissionPending && scenario === 'permission-final-no-final-ack')) {
                   append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId,
                     ...(permissionId === initialPermissionId && scenario === 'permission-final-error-prior-ack' ? { is_error: true } : {}), content: 'Write complete' }] } });
+                  permissionAckIds.push(permissionId);
                 }
                 fs.writeFileSync(path.join(project, 'plan.md'), permissionInput!.content as string);
                 permissionWrites.push(permissionOperation);
                 permissionId = null;
                 if (finalPermissionPending) {
                   finalWriteCount++;
-                  if (scenario === 'permission-final-repeat-overwrite' && finalWriteCount === 1) requestFinalWrite();
+                  if (['permission-final-repeat-overwrite', 'permission-final-repeat-identical'].includes(scenario) && finalWriteCount === 1) requestFinalWrite();
                   else finish();
                 } else {
                   ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
@@ -675,6 +696,7 @@ async function main() {
               return;
             }
             acknowledge();
+            if (permissionRepaintCase) { finish(); return; }
             if (scenario === 'viewport-ready-no-restore-output') { tool('ExitPlanMode', {}); emit('\nReady to execute?\n'); return; }
             if (answer === 1) {
               if (multiQuestionCase) {
@@ -756,7 +778,7 @@ async function main() {
     const diagnosticDirectory = path.join(evalDir, 'plan-counting');
     const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
     const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
-    console.log(JSON.stringify({ observation, error, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

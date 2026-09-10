@@ -184,10 +184,19 @@ export function validatePlanReviewDecisionResponse(input: PlanReviewDecisionInpu
   return result;
 }
 
-export async function evaluatePlanReviewDecisions(input: PlanReviewDecisionInput, judge: PlanReviewJudge = callJudge<unknown>) {
+export async function evaluatePlanReviewDecisions(input: PlanReviewDecisionInput, judge: PlanReviewJudge = callJudge<unknown>,
+  options: { callIds?: 'local' | 'native' } = {}) {
   // Bind evidence and the absolute deadline before an asynchronous judge can run.
   const snapshot = structuredClone(input);
-  const prompt = buildPlanReviewDecisionPrompt(snapshot);
+  const { calls } = prepare(snapshot); // Validate native identity/size before shortening IDs.
+  const mapping = [...calls.keys()].map((nativeToolUseId, index) => ({ nativeToolUseId,
+    toolUseId: options.callIds === 'native' ? nativeToolUseId : `c${index + 1}` }));
+  const localIds = new Map(mapping.map(row => [row.nativeToolUseId, row.toolUseId]));
+  const nativeIds = new Map(mapping.map(row => [row.toolUseId, row.nativeToolUseId]));
+  const judgeInput = { ...snapshot, fingerprints: snapshot.fingerprints.map(fp => ({
+    ...fp, toolUseId: localIds.get(fp.toolUseId!)!,
+  })) };
+  const prompt = buildPlanReviewDecisionPrompt(judgeInput);
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
@@ -203,11 +212,21 @@ export async function evaluatePlanReviewDecisions(input: PlanReviewDecisionInput
       // A full 18-question review needed 10,991 output tokens, including
       // 5,235 thinking tokens. Keep the case deadline and local validators;
       // allow the classifier to finish its complete JSON inventory.
+      console.log(JSON.stringify({ type: 'plan-review-decisions-call-ids', mapping }));
+      remaining(snapshot);
       return judge(prompt, undefined, { signal: controller.signal, max_tokens: 16_384 });
     })]);
     remaining(snapshot);
     console.log(JSON.stringify({ type: 'plan-review-decisions-raw-judgment', validated: false, judgment: raw }));
-    return validatePlanReviewDecisionResponse(snapshot, raw);
+    // Native snapshot → request-local IDs → exact validation → native result.
+    // Unknown/duplicate/missing local IDs fail the unchanged validator; never
+    // infer an identity from a matching quote or mutate the raw judge response.
+    const result = validatePlanReviewDecisionResponse(judgeInput, raw);
+    const judgment = { questions: result.judgment.questions.map(row => ({
+      ...row, toolUseId: nativeIds.get(row.toolUseId)!,
+    })) };
+    remaining(snapshot);
+    return { ...result, judgment };
   } catch (error) {
     controller.abort(error);
     throw error;

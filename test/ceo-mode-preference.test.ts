@@ -97,6 +97,77 @@ test('rendered links retain current-input, preview, and message ownership guards
 });
 
 
+// Native AUTO retry 458bab3a rendered the complete prelude's GFM table as
+// a box table. Every cell and the surrounding current brief still own the input.
+const plainNativeTable = '| ID | Name |\n|----|------|\n| E1 | Alpha |\n| E2 | Beta |';
+const plainScreenTable = [
+  '┌────┬───────┐', '│ ID │ Name  │', '├────┼───────┤',
+  '│ E1 │ Alpha │', '├────┼───────┤', '│ E2 │ Beta  │', '└────┴───────┘',
+].join('\n');
+const plainTableBrief = 'Audit complete.\n\n' + plainNativeTable + '\n\nScope stays fixed.\n'
+  + screenBrief.slice(screenBrief.indexOf('\n'));
+const plainTableScreen = plainTableBrief.replace(plainNativeTable, plainScreenTable);
+
+test('plain table rendering corroborates all cells within the complete current introduction', () => {
+  const owned = transcript(assistant(plainTableBrief));
+  expect(inspectCeoModePreference(owned, plainTableScreen, plainTableScreen, plainTableScreen))
+    .toMatchObject({ kind: 'unrelated', questionId: 'plan-ceo-review-approach', answer: 'A' });
+  expect(inspectCeoModePreference(owned, plainTableBrief).kind).toBe('unrelated');
+  const native = plainTableBrief.replace('Audit complete.', linkedIntro);
+  const screen = plainTableScreen.replace('Audit complete.', linkedScreenIntro);
+  expect(inspectCeoModePreference(transcript(assistant(native)), screen).kind).toBe('unrelated');
+});
+
+test.each([
+  ['changed cell', plainTableScreen.replace('Alpha', 'Omega')],
+  ['changed header', plainTableScreen.replace('Name', 'Type')],
+  ['reordered rows', plainTableScreen.replace('Alpha', 'TEMP!').replace('Beta ', 'Alpha').replace('TEMP!', 'Beta ')],
+  ['missing row', plainTableScreen.replace('│ E1 │ Alpha │\n├────┼───────┤\n', '')],
+  ['extra row', plainTableScreen.replace('└────┴───────┘', '├────┼───────┤\n│ E3 │ Gamma │\n└────┴───────┘')],
+  ['changed separator', plainTableScreen.replace('├────┼───────┤', '├────┼──────┤')],
+  ['wrapped cell', plainTableScreen.replace('│ E1 │ Alpha │', '│ E1 │ Alp   │\n│    │ ha    │')],
+  ['duplicate table', plainTableScreen.replace(plainScreenTable, plainScreenTable + '\n' + plainScreenTable)],
+  ['missing prelude', plainTableScreen.slice(plainTableScreen.indexOf('## D1'))],
+  ['changed prelude', plainTableScreen.replace('Scope stays fixed.', 'Scope may expand.')],
+])('plain table projection refuses incomplete or conflicting current rendering: %s', (_, screen) => {
+  expect(inspectCeoModePreference(transcript(assistant(plainTableBrief)), screen).kind).toBe('working');
+});
+
+test.each([
+  plainNativeTable.replace('----', ':---'),
+  plainNativeTable.replace('Alpha', '**Alpha**'),
+  plainNativeTable.replace('Alpha', '`Alpha`'),
+  plainNativeTable.replace('Alpha', '[Alpha](https://example.test)'),
+  plainNativeTable.replace('Alpha', 'Alph&#97;'),
+  '```\n' + plainNativeTable + '\n```',
+  plainNativeTable.replace('| E2 | Beta |', '| E2 |'),
+])('plain table projection declines unobserved markup and incomplete native rows: %s', table => {
+  expect(inspectCeoModePreference(transcript(assistant(plainTableBrief.replace(plainNativeTable, table))), plainTableScreen).kind)
+    .toBe('working');
+});
+
+test('plain table rendering retains current-input, ownership, preview and negative guards', () => {
+  const owned = transcript(assistant(plainTableBrief));
+  expect(inspectCeoModePreference(owned, plainTableScreen, plainTableScreen, '').kind).toBe('working');
+  expect(inspectCeoModePreference({ ...owned, pendingBytes: 1 }, plainTableScreen).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(plainTableBrief, 'tool_use')), plainTableScreen).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(plainTableBrief), assistant('Working...', 'tool_use', 'next')), plainTableScreen).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(plainTableBrief, 'end_turn', 'old'), assistant(plainTableBrief)), plainTableScreen).kind).toBe('working');
+  for (const preview of [plainTableBrief, plainTableScreen]) {
+    const tool = { type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'tool_use',
+      content: [{ type: 'tool_use', name: 'Write', input: { content: preview } }] } };
+    expect(inspectCeoModePreference(transcript(tool, assistant(plainTableBrief)), plainTableScreen).kind).toBe('working');
+  }
+  for (const replacement of ['(not recommended)', '(recommended, but not now)']) {
+    const native = plainTableBrief.replace('(recommended)', replacement);
+    expect(inspectCeoModePreference(transcript(assistant(native)), plainTableScreen.replace('(recommended)', replacement)).kind).toBe('working');
+  }
+  const deferred = plainTableBrief + '\nDo not answer this question yet.';
+  expect(inspectCeoModePreference(transcript(assistant(deferred)), plainTableScreen + '\nDo not answer this question yet.').kind).toBe('working');
+  const changed = plainTableScreen.replace('Reply with **A**, **B**, or **C**.', 'Reply with **A**, **B**, or **D**.');
+  expect(inspectCeoModePreference(owned, changed).kind).toBe('working');
+});
+
 // Closed architectural context precedes the actual owned D1. The code body
 // remains part of its introduction; only the renderer's delimiters disappear.
 const contextBody = '  CURRENT STATE -> THIS PLAN -> IDEAL\n  Settings UI   -> CSV button -> Portable settings';
@@ -807,6 +878,42 @@ test.each([false, true])('an explicit negative recommendation does not compete w
     .replace('B) Replace', 'B) Replace (recommended)');
   expect(inspectCeoModePreference(transcript(assistant(text)), structural ? adjacentVisible : text))
     .toMatchObject({ kind: 'unrelated', questionId: 'plan-ceo-review-cache-policy', answer: 'B' });
+});
+
+// Native AUTO D1 combined its recommendation with numeric day/min effort.
+// Qualifiers, quotes, duplicate markers and stale ownership still fail closed.
+test.each([
+  { marker: '(recommended, human ~1 day / CC ~15 min)', answer: 'B' },
+  { marker: '(recommended: yes, human 2 days / CC 20 mins)', answer: 'B' },
+  { marker: '(recommended, but not now)' },
+  { marker: '(recommended, human ~1 day / CC ~15 min, but not now)' },
+  { marker: '(not recommended, human ~1 day / CC ~15 min)' },
+  { marker: '(recommended: no, human ~1 day / CC ~15 min)' },
+  { marker: '(recommended: maybe, human ~1 day / CC ~15 min)' },
+  { marker: '(recommended, human 1-2 days / CC 15 min)' },
+  { marker: '(recommended, human half day / CC 15 min)' },
+  { marker: '(recommended, human 1 hour / CC 15 min)' },
+  { marker: '(recommended, human 1 day / CC 15 min extra)' },
+  { marker: '"(recommended, human ~1 day / CC ~15 min)"' },
+  { marker: '`(recommended, human ~1 day / CC ~15 min)`' },
+  { marker: '(formerly (recommended, human ~1 day / CC ~15 min))' },
+  { marker: '(recommended, human ~1 day / CC ~15 min) (recommended)' },
+])('numeric effort timing metadata stays polarity-bound: $marker', ({ marker, answer }) => {
+  const text = adjacentBrief.replace('A) Reuse (recommended)', 'A) Reuse')
+    .replace('B) Replace', `B) Replace ${marker}`);
+  const owned = transcript(assistant(text));
+  const signal = inspectCeoModePreference(owned, text, text, text);
+  if (answer) {
+    expect(signal).toMatchObject({ kind: 'unrelated', answer });
+    expect(inspectCeoModePreference(owned, text, text, '').kind).toBe('working');
+    expect(inspectCeoModePreference({ ...owned, pendingBytes: 1 }, text).kind).toBe('working');
+    expect(inspectCeoModePreference(transcript(assistant(text, 'tool_use')), text).kind).toBe('working');
+    expect(inspectCeoModePreference(transcript(assistant(text + '\nDo not answer this question yet.')), text).kind).toBe('working');
+    expect(inspectCeoModePreference(transcript(assistant(text, 'end_turn', 'old'), assistant(text, 'end_turn', 'new')), text).kind).toBe('working');
+    expect(inspectCeoModePreference(owned, text.replace('Reply with **A** or **B**.', 'Reply with **A**.')).kind).toBe('working');
+    const ambiguous = text.replace('A) Reuse', 'A) Reuse (recommended)');
+    expect(inspectCeoModePreference(transcript(assistant(ambiguous)), ambiguous).kind).toBe('working');
+  } else expect(signal.kind).toBe('working');
 });
 
 test.each([

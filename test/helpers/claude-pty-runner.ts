@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { retainAutoplanFailure } from './autoplan-phase-order';
 import { readPlanSkillCompletion } from './plan-skill-completion';
-import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, type NativeQuestion, type NativePermissionGrant } from './plan-skill-questions';
+import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -2205,6 +2205,8 @@ export async function runPlanSkillCounting(opts: {
   const submitted = new Map<string, { answeredQuestions: number; selectedOptions: number[]; previewFocus?: number; submitted: boolean; counted: boolean; fp: AskUserQuestionFingerprint }>();
   let viewport: { id: string; questions: NativeQuestion[]; rows: 80 | 120 } | null = null;
   const viewportAttempts = new Map<string, number>();
+  let permissionViewport: Pick<NativeFilePermissionRequest, 'requestId' | 'name' | 'cwd' | 'input' | 'capturedAtMs'> | null = null;
+  const permissionViewportAttempts = new Set<string>();
   let viewportInputSince = 0;
   const grantedTools = new Set<string>();
   const grantedRequests = new Map<string, NativePermissionGrant>();
@@ -2364,6 +2366,21 @@ export async function runPlanSkillCounting(opts: {
         ? frame.rawEnd > Math.max(questionSince, viewportInputSince) ? frame.text : ''
         : questionWindow;
       if (expired()) break;
+      if (permissionViewport) {
+        const owner = native.permissionRequests.find(request => request.requestId === permissionViewport!.requestId);
+        if (!owner || owner.name !== permissionViewport.name || owner.cwd !== permissionViewport.cwd
+          || owner.capturedAtMs !== permissionViewport.capturedAtMs || !isDeepStrictEqual(owner.input, permissionViewport.input)) {
+          throw new Error('Expanded native file permission changed ownership or input');
+        }
+        if (owner.result === 'error') throw new Error('Expanded native file permission returned an error');
+        if (owner.result === 'completed') {
+          if (!owner.nativeToolId || !Number.isFinite(owner.nativeResultAtMs)) throw new Error('Expanded native file permission lacks its successful native ACK');
+          lastLoopStage = 'restoring-permission-viewport';
+          const restored = await session.resizeQuestionViewport!(40, deadlineAt);
+          if (restored !== null) { viewportInputSince = restored; permissionViewport = null; }
+          continue;
+        }
+      }
       if (viewport) {
         const owner = native.calls.find(call => call.id === viewport!.id);
         if (!owner || !isDeepStrictEqual(owner.questions, viewport.questions)) throw new Error('Expanded native question changed ownership or input');
@@ -2432,6 +2449,24 @@ export async function runPlanSkillCounting(opts: {
       lastObservation.permissionMenu = { numbered: isNumberedOptionListVisible(questionVisible),
         permissionTail: isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES)),
         permissionWindow: isPermissionDialogVisible(permissionVisible) };
+      // A damaged header cannot authorize a grant. Once per exact owned
+      // request, reuse the coordinated viewport resize to ask the native CLI
+      // for a fresh paint. The normal owner/frame/path guards still decide it.
+      const repaintOwner = pendingPermissionRequests.length === 1 ? pendingPermissionRequests[0] : undefined;
+      if (!call && frame && !viewport && !permissionViewport && repaintOwner && session.resizeQuestionViewport
+        && !permissionViewportAttempts.has(repaintOwner.requestId)
+        && native.permissionTools.every(tool => tool.id === repaintOwner.nativeToolId)
+        && lastObservation.permissionMenu.numbered && lastObservation.permissionMenu.permissionTail
+        && !lastObservation.permissionMenu.permissionWindow) {
+        lastLoopStage = 'repainting-permission-viewport';
+        permissionViewportAttempts.add(repaintOwner.requestId);
+        const resized = await session.resizeQuestionViewport(120, deadlineAt);
+        if (resized !== null) {
+          permissionViewport = structuredClone(repaintOwner);
+          viewportInputSince = resized;
+        }
+        continue;
+      }
       // Native permissions are separate from AUQs. Consume the rendered
       // window before writing, so old permission text cannot send again.
       if (!call && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {

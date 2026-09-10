@@ -304,11 +304,11 @@ Retain explicit user choices and preamble session-kind precedence. When `QUESTIO
 
 Use the preamble's question format/transport: RECOMMENDATION and `Note: options differ in kind, not coverage — no completeness score.`
 
-**Mode handoff before 0D:** Once selected, send one normal assistant message **before any analysis, plan edit, tool call or next question**:
-- User/session choice: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
-- Saved preference: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
+**Mode handoff before 0D:** Before analysis, edits, tools or questions, send a normal assistant message for the **mode's source**, not the approach answer:
+- Mode from `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
+- Explicit user/session mode: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
 
-Use one exact mode name, keep `(your preference)`, and separate rationale. A plan-file entry cannot replace this confirmation. Stay in that mode; ask before changing the approved approach.
+Use one exact mode name; separate rationale. Plan edits cannot replace it. Keep this mode; ask before changing the approved approach.
 
 Unresolved decisions: recommend + WHY, ask once per issue, never batch, and **STOP until answered**, including obvious fixes. Honor preference/session precedence. With none, say "No issues, moving on." Continue through 0D-prelude, 0D, 0D-POST and 0E as applicable. Review only; no code changes.
 

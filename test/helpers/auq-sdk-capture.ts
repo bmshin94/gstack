@@ -262,6 +262,9 @@ Rules for this run:
   const { runSkillTest } = await import('./session-runner');
   const result = await runSkillTest({
     prompt,
+    // This is the existing observable tool-use contract, not expected review content.
+    // Keep the complete tool surface: Bash remains necessary for CLI/program work.
+    appendSystemPrompt: 'In this native skill-execution test, when the workflow directs you to Read a file, invoke the native Read tool. Shell commands that print file contents (such as cat, sed, head, or tail) do not satisfy a required Read. Bash remains available for required program and CLI execution, including temporary command input/output. Follow the skill to choose which files to read and complete its full workflow.',
     workingDirectory: opts.planDir,
     allowedTools: ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent', ...(opts.artifactCommands ? ['Bash'] : [])],
     maxTurns: opts.maxTurns ?? 25,

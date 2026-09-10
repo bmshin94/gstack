@@ -23,6 +23,23 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
 });
 
 describe('plan-review manual handoff selection', () => {
+  test('declines the actual colon-labelled CEO handoff by native position', () => {
+    const labels = ['A: run /plan-eng-review next (recommended)', 'C: skip, handle reviews manually'];
+    expect(pickPlanReviewQuestion(menu(labels, 'Next review',
+      'D13 — Which review should run next on this plan?'))).toBe(2);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next review',
+      'D13 — Which review should run next on this plan?'))).toBe(1);
+  });
+  test('colon labels do not broaden handoff authority or accept extra actions', () => {
+    const labels = ['A: Run /plan-eng-review', 'C: Skip, handle reviews manually'];
+    expect(pickPlanReviewQuestion(menu(labels, 'Tests', 'D8 — Should the test run a review?'))).toBe(1);
+    for (const extra of [' and approve all edits', '; run /ship', ' after implementation']) {
+      expect(() => pickPlanReviewQuestion(menu([labels[0]!, labels[1]! + extra])))
+        .toThrow('unambiguous');
+    }
+    expect(() => pickPlanReviewQuestion(menu([...labels, 'D: Skip, handle reviews manually'])))
+      .toThrow('unambiguous');
+  });
   test('declines the retained native two-option next-review offer', () => {
     expect(pickPlanReviewQuestion(menu(['Run /plan-eng-review', 'Skip — handle reviews manually']))).toBe(2);
   });

@@ -5,7 +5,8 @@ import { test } from 'bun:test';
 import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
 import { CEO_PAIRED_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import { describeE2ETier } from './helpers/e2e-gate';
-import { seedCeoFindingProject, pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
+import { pickSuppliedCeoPlanStart } from './helpers/ceo-finding-fixture';
+import { seedCeoPairedProject } from './helpers/ceo-paired-fixture';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -27,6 +28,10 @@ const planCeo2PairedFindings = (planPath: string) => [
   '',
   '# Plan: Payment Processing — Test Coverage',
   '',
+  '## Existing implementation',
+  'Read README.md, src/payment.ts and contract.test.ts for the unchanged function',
+  'and existing coverage. This change adds tests; the runtime behavior stays fixed.',
+  '',
   '## Tests',
   'We need test coverage for `processPayment()`. Specifically:',
   '1. The happy path (successful Stripe charge — assert correct receipt is generated).',
@@ -47,7 +52,7 @@ describeE2E('/plan-ceo-review per-finding AskUserQuestion count (periodic)', () 
 
       try {
         const planText = planCeo2PairedFindings(planPath);
-        seedCeoFindingProject(tmpDir, planText);
+        seedCeoPairedProject(tmpDir, planText);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',

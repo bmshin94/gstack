@@ -35,6 +35,8 @@ describeCalibration(() => {
         let validationError: unknown;
         let result: ReturnType<typeof validatePlanReviewDecisionResponse> | undefined;
         try {
+          // Calibration inspects raw judgments against short, readable fixture
+          // IDs, including rejected semantics; preserve that native-ID contract.
           result = await evaluatePlanReviewDecisions(input, async (prompt, model, opts) => {
             trace.prompt = prompt;
             try {
@@ -48,7 +50,7 @@ describeCalibration(() => {
               }
               throw error;
             }
-          });
+          }, { callIds: 'native' });
         } catch (error) {
           trace.validationError = message(error);
           // A missing/failed provider response is never evidence that a

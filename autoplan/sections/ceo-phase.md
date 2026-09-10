@@ -16,10 +16,11 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   Duplicates → reject (P4). Borderline (3-5 files) → mark TASTE DECISION.
 - All 10 review sections: run fully, auto-decide each issue, log every decision.
 - Dual voices: always run BOTH Claude subagent AND Codex if available (P6).
-  Run them sequentially in foreground. First the Claude subagent (Agent tool
-  with run_in_background: false — subagents default to BACKGROUND since
-  Claude Code v2.1.198, so the flag must be explicitly false), then Codex
-  (Bash). Both must complete before building the consensus table.
+  Run them sequentially in foreground: Claude subagent, then Codex (Bash).
+  Call Agent with JSON boolean `run_in_background: false`, never string `"false"`
+  (background is the default since Claude Code v2.1.198). Async launch metadata
+  is not a review: wait for that same agent's final findings; do not launch a duplicate.
+  Both must complete before building the consensus table.
 
   **Codex CEO voice** (via Bash):
   ```bash

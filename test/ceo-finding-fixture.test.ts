@@ -210,6 +210,9 @@ test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-
   ].join('\n');
   const pairedPlan = [
     '# Plan: Payment Processing — Test Coverage', '',
+    '## Existing implementation',
+    'Read README.md, src/payment.ts and contract.test.ts for the unchanged function',
+    'and existing coverage. This change adds tests; the runtime behavior stays fixed.', '',
     '## Tests',
     'We need test coverage for `processPayment()`. Specifically:',
     '1. The happy path (successful Stripe charge — assert correct receipt is generated).',
@@ -259,6 +262,13 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(execFileSync('git', ['diff', 'origin/main...HEAD'], {
       cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
     })).toBe('');
+    if (paired) {
+      for (const file of ['README.md', 'src/payment.ts', 'contract.test.ts']) {
+        expect(execFileSync('git', ['show', 'HEAD:' + file], {
+          cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
+        })).toBe(fs.readFileSync(path.join(opts.cwd, file), 'utf8'));
+      }
+    }
     expect(opts).toEqual({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
       firstAUQPick: pickSuppliedCeoPlanStart,

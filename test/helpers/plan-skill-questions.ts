@@ -465,9 +465,14 @@ function currentFilePermissionDetails(visible: string): { operation: 'create' | 
     if (headers.length !== 1) return null;
     const index = headers[0]!;
     const title = { create: 'Create', edit: 'Edit', overwrite: 'Overwrite' }[operation];
-    const rule = before[index - 1] ?? '';
-    const subtitle = before[index + 1]?.slice(1);
-    if (before[index] !== ` ${title} file` || !/^─{10,}$/.test(rule)
+    // At the viewport's first line, only the preceding rule can be clipped.
+    // The complete rule directly below the subtitle still bounds its width.
+    const clippedTopRule = index === 0 && /^╌{10,}$/.test(before[index + 2] ?? '');
+    const rule = clippedTopRule ? before[index + 2]! : before[index - 1] ?? '';
+    // Strip ASCII display padding only. Preserve leading/interior path bytes;
+    // nativePermissionKey still compares the exact owned filesystem path.
+    const subtitle = before[index + 1]?.slice(1).replace(/ +$/, '');
+    if (before[index] !== ` ${title} file` || !clippedTopRule && !/^─{10,}$/.test(rule)
       || !before[index + 1]?.startsWith(' ') || !subtitle || subtitle !== subtitle.trim()
       || /[\r\t\u0000-\u001f…]/.test(subtitle) || subtitle.startsWith('...')
       || path.basename(subtitle) !== filePath || before.slice(index + 2).some(line => /^\s*❯\s*\d+\./.test(line))
@@ -560,15 +565,19 @@ export function reserveNativePermissionGrant(
     // The new source event can arrive after the screen barrier. Wait while
     // its same-path CREATE predecessor is still visible; never regrant it.
     if (completed && prior.operation === 'create' && operation === 'create') return false;
-    // A distinct observer after Edit1's exact successful ACK can own Edit2
-    // at this same cwd/path before Edit2's native invocation is persisted.
+    // A distinct observer after an exact successful ACK can own the next
+    // same-path Edit or changed-content overwrite before native persistence.
     // The caller still brackets the current one-time menu with source reads.
-    const nextEdit = completedRequest?.name === 'Edit' && prior.operation === 'edit' && operation === 'edit'
-      && owner.name === 'Edit' && 'requestId' in owner && owner.requestId !== completedRequest.requestId
+    const sameFileOperation = completedRequest?.name === 'Edit' && prior.operation === 'edit' && operation === 'edit'
+      || completedRequest?.name === 'Write' && prior.operation === 'overwrite' && operation === 'overwrite'
+        && typeof completedRequest.input.content === 'string' && typeof owner.input.content === 'string'
+        && owner.input.content !== completedRequest.input.content;
+    const nextFileChange = completedRequest && sameFileOperation && owner.name === completedRequest.name
+      && 'requestId' in owner && owner.requestId !== completedRequest.requestId
       && Number.isFinite(completedRequest.nativeResultAtMs) && owner.capturedAtMs > completedRequest.nativeResultAtMs!
       && owner.cwd === completedRequest.cwd && owner.input.file_path === completedRequest.input.file_path
       && !isDeepStrictEqual(owner.input, completedRequest.input);
-    if (!completed || !(prior.operation === 'create' && operation === 'overwrite') && !nextEdit) {
+    if (!completed || !(prior.operation === 'create' && operation === 'overwrite') && !nextFileChange) {
       throw new Error('Repeated native permission request cannot be distinguished from stale rendering');
     }
   }

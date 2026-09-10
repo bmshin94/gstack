@@ -946,11 +946,11 @@ Retain explicit user choices and preamble session-kind precedence. When `QUESTIO
 
 Use the preamble's question format/transport: RECOMMENDATION and `Note: options differ in kind, not coverage — no completeness score.`
 
-**Mode handoff before 0D:** Once selected, send one normal assistant message **before any analysis, plan edit, tool call or next question**:
-- User/session choice: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
-- Saved preference: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
+**Mode handoff before 0D:** Before analysis, edits, tools or questions, send a normal assistant message for the **mode's source**, not the approach answer:
+- Mode from `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
+- Explicit user/session mode: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
 
-Use one exact mode name, keep `(your preference)`, and separate rationale. A plan-file entry cannot replace this confirmation. Stay in that mode; ask before changing the approved approach.
+Use one exact mode name; separate rationale. Plan edits cannot replace it. Keep this mode; ask before changing the approved approach.
 
 Unresolved decisions: recommend + WHY, ask once per issue, never batch, and **STOP until answered**, including obvious fixes. Honor preference/session precedence. With none, say "No issues, moving on." Continue through 0D-prelude, 0D, 0D-POST and 0E as applicable. Review only; no code changes.
 
@@ -1054,11 +1054,10 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-Use the Agent tool to dispatch an independent reviewer, passing `run_in_background: false`
-(subagents default to background since Claude Code v2.1.198; this loop consumes the
-reviewer's verdict). The reviewer has fresh context
-and cannot see the brainstorming conversation — only the CEO scope document and its source plan. This ensures genuine
-adversarial independence.
+Use Agent with JSON boolean `run_in_background: false`, never string `"false"`.
+Subagents default to background since Claude Code v2.1.198. Async launch metadata
+is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
+The reviewer has fresh context: only the CEO scope document and its source plan, not the conversation.
 
 Prompt the subagent with:
 - The absolute paths of BOTH the CEO scope document just written and the current amended plan it references

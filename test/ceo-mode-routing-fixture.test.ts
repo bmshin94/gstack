@@ -4,10 +4,12 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { PtyCurrentScreen } from './helpers/pty-current-screen';
+import { currentFilePermissionTarget, reserveNativePermissionGrant } from './helpers/plan-skill-questions';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
-test.each(['success', 'next-modal', 'launch', 'navigation', 'posture', 'close'])('mode fixture delivery and cleanup: %s', scenario => {
+test.each(['success', 'next-modal', 'launch', 'navigation', 'posture', 'close'])('mode fixture delivery and cleanup: %s', async scenario => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-mode-body-'));
   const script = path.join(dir, 'body.fixture.test.ts');
   const factsPath = path.join(dir, 'facts.json');
@@ -90,7 +92,40 @@ await import(path.join(root, 'test/skill-e2e-plan-ceo-mode-routing.test.ts'));
       expect(fact.diff).toBe('');
       expect(fact.input).toContain('present the full review-mode choice and wait for my selection');
       expect(fact.input).not.toMatch(/HOLD SCOPE|SCOPE EXPANSION|rigor|bulletproof|10x|delight|dream|cathedral|opt[\s-]?in/i);
-      expect(fact.options).toMatchObject({ permissionMode: 'plan', timeoutMs: 900_000, seedSkills: true, captureScreen: true });
+      expect(fact.options).toMatchObject({ permissionMode: 'plan', timeoutMs: 900_000, seedSkills: true, captureScreen: true, cols: 240 });
+      if (scenario === 'success') {
+        // The retained native permission path is longer than the old120-column pane.
+        // Exercise actual terminal wrapping and current-owner reservation at the caller's width.
+        const filePath = '/tmp/gstack-paid-shard-PoCvJ2/tmp/gstack-hermetic-2353545-0NYCOc/gstack-home/projects/ceo-mode-routing-Seq4Vn/ceo-plans/2026-09-10-settings-csv-export.md';
+        const frame = async (target: string, cols: number) => {
+          const screen = new PtyCurrentScreen({ cols, rows: 40 });
+          try {
+            screen.feed([
+              ' Do you want to create ' + path.basename(target) + '?', ' ❯ 1. Yes',
+              '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and always allow access to',
+              '      ' + path.dirname(target) + ' for this session (shift+tab)', '   3. No', '', ' Esc to cancel · Tab to amend',
+            ].join('\r\n'));
+            return (await screen.snapshot()).text;
+          } finally { screen.close(); }
+        };
+        expect(currentFilePermissionTarget(await frame(filePath, 120))).toBeNull();
+        const visible = await frame(filePath, fact.options.cols);
+        expect(currentFilePermissionTarget(visible)).toEqual({ operation: 'create', filePath });
+        const request = { requestId: 'owned-width-request', capturedAtMs: 1, name: 'Write' as const,
+          input: { file_path: filePath }, cwd: fact.cwd, result: 'pending' as const, nativeToolId: 'owned-width-write' };
+        const native = { permissionTools: [], permissionResults: [], permissionRequestCapture: true, permissionRequests: [request] };
+        const grants = new Set<string>(), requests = new Map();
+        expect(reserveNativePermissionGrant(native, visible, grants, requests)).toBe(true);
+        expect(reserveNativePermissionGrant(native, visible, grants, requests)).toBe(false);
+        expect([...grants]).toEqual(['request:owned-width-request']);
+        expect([...requests.keys()]).toEqual(['Write:' + filePath]);
+        const wrong = { ...native, permissionRequests: [{ ...request, input: { file_path: filePath.replace('/ceo-plans/', '/other-plans/') } }] };
+        expect(() => reserveNativePermissionGrant(wrong, visible, new Set(), new Map())).toThrow('cannot be bound');
+        const ambiguous = { ...native, permissionRequests: [request, { ...request, requestId: 'another-owner' }] };
+        expect(() => reserveNativePermissionGrant(ambiguous, visible, new Set(), new Map())).toThrow('Ambiguous native permission owner');
+        const longer = filePath.replace('/ceo-plans/', '/' + 'longer-path-'.repeat(30) + '/');
+        expect(currentFilePermissionTarget(await frame(longer, fact.options.cols))).toBeNull();
+      }
       expect(fs.existsSync(fact.cwd)).toBe(false);
       expect(fact.closed).toBe(scenario !== 'launch');
       expect(fact.sends).toEqual(scenario === 'launch' ? [] : scenario === 'next-modal' ? ['/plan-ceo-review\r', '2', '\r'] : ['/plan-ceo-review\r']);

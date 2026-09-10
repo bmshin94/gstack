@@ -165,7 +165,10 @@ export async function runSkillTest(options: {
   prompt: string;
   workingDirectory: string;
   maxTurns?: number;
+  /** Permission preapprovals; this does not restrict the available tool set. */
   allowedTools?: string[];
+  /** Optional harness contract appended to the native system prompt. */
+  appendSystemPrompt?: string;
   timeout?: number;
   testName?: string;
   runId?: string;
@@ -234,6 +237,7 @@ export async function runSkillTest(options: {
     '--max-turns', String(maxTurns),
     '--allowed-tools', ...allowedTools,
   ];
+  if (options.appendSystemPrompt) args.push('--append-system-prompt', options.appendSystemPrompt);
   // Hermetic children get zero MCP servers (no --mcp-config is passed).
   // Gated on the same call-time check as the env scrub so EVALS_HERMETIC=0
   // restores operator MCP along with the operator env.

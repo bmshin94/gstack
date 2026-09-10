@@ -99,6 +99,8 @@ selecting a mode. I have not chosen a review mode for this plan.
             timeoutMs: PTY_MS,
             seedSkills: true,
             captureScreen: true,
+            // Keep the current outside-directory permission path on one physical line.
+            cols: 240,
           });
           await Bun.sleep(8000);
           const since = session.mark();

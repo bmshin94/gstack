@@ -234,7 +234,11 @@ function recommendationPolarity(label: string): 'absent' | 'positive' | 'negativ
     if (char === ')' && --depth < 0) return 'ambiguous';
   }
   if (quote || ticks || depth) return 'ambiguous';
-  const value = annotation[1].trim();
+  // Numeric day/min effort estimates do not qualify the recommendation.
+  // Keep other units, ranges, and free-form clauses ambiguous until supported.
+  const value = annotation[1].trim().replace(
+    /,\s*human\s+~?\d+\s+(?:days?|mins?)\s*\/\s*CC\s+~?\d+\s+(?:days?|mins?)$/i, '',
+  );
   if (/^recommended(?:\s*:\s*yes)?$/i.test(value)) return 'positive';
   if (/^(?:not\s+recommended|recommended\s*:\s*no)$/i.test(value)) return 'negative';
   return 'ambiguous';
@@ -324,6 +328,61 @@ function renderPlainInlineLinks(value: string): string {
       || token.href === `http://${token.text}` || token.href === `https://${token.text}`) return token.raw;
     return `${token.text} (${token.href})`;
   }).join('');
+}
+
+// Compare only plain, unwrapped ASCII tables observed in the native CLI.
+// The complete header/body inventory and box geometry must match once, in order;
+// preserve all surrounding prose for the existing full-prefix/epoch checks.
+function renderPlainPreludeTables(value: string, visible: string): string | undefined {
+  if (!value.includes('|')) return undefined;
+  const tokens = Lexer.lex(value);
+  if (tokens.map(token => token.raw).join('') !== value) return undefined;
+  const lines = visible.split('\n');
+  let sawTable = false; let previousEnd = -1; let rendered = '';
+  for (const token of tokens) {
+    if (token.type !== 'table') { rendered += token.raw; continue; }
+    const rows = [token.header, ...token.rows];
+    const rawLines = token.raw.trimEnd().split('\n');
+    if (token.header.length < 2 || !token.rows.length || token.align.some(align => align !== null)
+      || rawLines.length !== rows.length + 1
+      || rawLines.some(line => !/^\|[^\n]*\|$/.test(line))) return undefined;
+    if (rows.some(row => row.length !== token.header.length || row.some(cell =>
+      !/^[\x20-\x7e]+$/.test(cell.text) || /[\\|*#`<>&]/.test(cell.text)
+      || cell.tokens?.length !== 1 || cell.tokens[0].type !== 'text'
+      || cell.tokens[0].raw !== cell.text || cell.tokens[0].text !== cell.text))) return undefined;
+    const nativeRows = rawLines.filter((_, index) => index !== 1)
+      .map(line => line.slice(1, -1).split('|').map(cell => cell.trim()));
+    if (nativeRows.some((row, index) => row.length !== rows[index].length
+      || row.some((cell, column) => cell !== rows[index][column].text))) return undefined;
+    const matches: { start: number; end: number; text: string }[] = [];
+    for (let start = 0; start < lines.length; start++) {
+      const top = lines[start].trimEnd().match(/^( *)┌(─+(?:┬─+)+)┐$/);
+      if (!top) continue;
+      const widths = top[2].split('┬').map(part => part.length);
+      if (widths.length !== token.header.length || widths.some(width => width < 3)) continue;
+      const rule = (left: string, cross: string, right: string) =>
+        top[1] + left + widths.map(width => '─'.repeat(width)).join(cross) + right;
+      let matched = true;
+      for (let index = 0; index < rows.length; index++) {
+        const line = lines[start + 1 + index * 2]?.trimEnd();
+        if (!line?.startsWith(top[1] + '│') || !line.endsWith('│')) { matched = false; break; }
+        const cells = line.slice(top[1].length + 1, -1).split('│');
+        if (cells.length !== widths.length || cells.some((cell, column) =>
+          cell.length !== widths[column] || !cell.startsWith(' ') || !cell.endsWith(' ')
+          || cell.trim() !== rows[index][column].text)) { matched = false; break; }
+        const border = index === rows.length - 1 ? rule('└', '┴', '┘') : rule('├', '┼', '┤');
+        if (lines[start + 2 + index * 2]?.trimEnd() !== border) { matched = false; break; }
+      }
+      if (matched) {
+        const end = start + rows.length * 2;
+        matches.push({ start, end, text: lines.slice(start, end + 1).join('\n') });
+      }
+    }
+    if (matches.length !== 1 || matches[0].start <= previousEnd) return undefined;
+    previousEnd = matches[0].end; sawTable = true;
+    rendered += matches[0].text + token.raw.slice(token.raw.trimEnd().length);
+  }
+  return sawTable ? rendered : undefined;
 }
 
 // Tokenize before dropping whitespace: a bare qid ends at CR/space, while a
@@ -422,7 +481,10 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       // deferred/example brief is still not a request for current input.
       const introduction = liveBriefIntroduction(nativeText, questionVisible);
       if (introduction === undefined) continue;
-      const prefixes = [introduction, renderPlainInlineLinks(introduction)].map(renderedProse);
+      const tableIntroduction = renderPlainPreludeTables(introduction, questionVisible);
+      const prefixes = [introduction, renderPlainInlineLinks(introduction),
+        ...(tableIntroduction === undefined ? [] : [tableIntroduction, renderPlainInlineLinks(tableIntroduction)])]
+        .map(renderedProse);
       if (introduction && !prefixes.some(prefix => renderedProse(questionVisible).includes(prefix))) continue;
       if ([...nativeText.matchAll(/<gstack-qid:([a-z0-9-]+)>/g)].length !== 1) continue;
       const selectors = options.map(option => option[1]);

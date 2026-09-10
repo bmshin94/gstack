@@ -316,11 +316,10 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-Use the Agent tool to dispatch an independent reviewer, passing \`run_in_background: false\`
-(subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}; this loop consumes the
-reviewer's verdict). The reviewer has fresh context
-and cannot see the brainstorming conversation — only ${ceo ? 'the CEO scope document and its source plan' : 'the document'}. This ensures genuine
-adversarial independence.
+Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
+Subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}. Async launch metadata
+is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
+The reviewer has fresh context: only ${ceo ? 'the CEO scope document and its source plan' : 'the document'}, not the conversation.
 
 Prompt the subagent with:
 - ${ceo ? 'The absolute paths of BOTH the CEO scope document just written and the current amended plan it references' : 'The file path of the document just written'}

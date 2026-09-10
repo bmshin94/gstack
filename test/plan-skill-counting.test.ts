@@ -393,10 +393,34 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.outcome).toBe('timeout');
     expect(result.closed).toBe(true);
   }, 15_000);
+  test('one owned permission repaint requires a fresh exact frame and restores only after ACK', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-repaint-fresh');
+    expect(result.error).toBeUndefined();
+    expect(result.resizes).toEqual([[240, 120], [240, 40]]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1']);
+    expect(result.permissionWrites).toEqual(['create']);
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 0 });
+    expect(result.terminalCloseCount).toBe(1);
+    expect(result.closed).toBe(true);
+  });
+  test.each(['no-output', 'still-conflicting', 'owner-change', 'failure', 'deadline', 'no-ack'])
+  ('permission repaint preserves the %s boundary', async variant => {
+    const result = await runFakeCounting('**DONE**', 'permission-repaint-' + variant);
+    expect(result.resizes).toEqual(variant === 'deadline' ? [] : [[240, 120]]);
+    expect(result.sends).toEqual(variant === 'no-ack' ? ['/plan-ceo-review\r', '1\r'] : ['/plan-ceo-review\r']);
+    expect(result.permissionWrites).toEqual(variant === 'no-ack' ? ['create'] : []);
+    if (variant === 'owner-change') expect(result.error).toMatch(/changed input|changed ownership/);
+    else if (variant === 'failure') expect(result.error).toContain('controlled permission resize failure');
+    else { expect(result.error).toBeUndefined(); expect(result.observation.outcome).toBe('timeout'); }
+    expect(result.terminalCloseCount).toBe(1);
+    expect(result.closed).toBe(true);
+  });
   test('full current-frame permission keeps a long owned path through the real counting loop', async () => {
     const result = await runFakeCounting('**DONE**', 'permission-long-frame');
     expect(result.error).toBeUndefined();
     expect(result.longPermissionFrame.length).toBeGreaterThan(1500);
+    expect(result.longPermissionFrame).toContain('Yes, and always allow access to');
     expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1', '1', '1']);
     expect(result.permissionWrites).toEqual(['create']);
     expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
@@ -440,11 +464,30 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.outcome).toBe('completion_summary');
     expect(result.closed).toBe(true);
   }, 15_000);
-  test.each(['no-prior-ack', 'error-prior-ack', 'repeat-overwrite', 'mismatch'])('file permission refuses unsafe repeated ownership (%s)', async variant => {
+  test('a later changed-content overwrite has one owned grant and ACK before terminal completion', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-final-repeat-overwrite');
+    expect(result.error).toBeUndefined();
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1', '1', '1', '1\r', '1\r']);
+    expect(result.permissionWrites).toEqual(['create', 'overwrite', 'overwrite']);
+    expect(result.permissionGrantIds).toHaveLength(3);
+    expect(new Set(result.permissionGrantIds).size).toBe(3);
+    expect(result.permissionAckIds).toEqual(result.permissionGrantIds);
+    expect(result.writtenPlanLines).toBe(519);
+    expect(result.writtenPlanTail).toEndWith('## GSTACK REVIEW REPORT\nVERDICT: APPROVED\nAnother overwrite');
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['no-prior-ack', 'error-prior-ack', 'repeat-identical', 'mismatch'])('file permission refuses unsafe repeated ownership (%s)', async variant => {
     const result = await runFakeCounting('**DONE**', `permission-final-${variant}`);
-    expect(result.error).toMatch(/Ambiguous native permission|Repeated native permission|changed input|cannot be bound/);
-    expect(result.permissionWrites).toEqual(variant === 'repeat-overwrite' ? ['create', 'overwrite'] : ['create']);
-    expect(result.sends.filter((value: string) => value === '1\r')).toHaveLength(variant === 'repeat-overwrite' ? 2 : 1);
+    if (variant === 'repeat-identical') {
+      expect(result.error).toBe('Error: Indistinguishable repeated native file permission request');
+      expect(result.permissionGrantIds).toHaveLength(2);
+      expect(result.permissionAckIds).toEqual(result.permissionGrantIds);
+    } else expect(result.error).toMatch(/Ambiguous native permission|Repeated native permission|changed input|cannot be bound/);
+    expect(result.permissionWrites).toEqual(variant === 'repeat-identical' ? ['create', 'overwrite'] : ['create']);
+    expect(result.sends.filter((value: string) => value === '1\r')).toHaveLength(variant === 'repeat-identical' ? 2 : 1);
     expect(result.closed).toBe(true);
   }, 15_000);
   test.each(['native', 'early', 'arrival-race', 'stale-redraw'])('a later owned Edit appends the report after the prior Edit completes (%s)', async variant => {
