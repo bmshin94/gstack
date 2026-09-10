@@ -75,6 +75,47 @@ const contextLead = 'Audit done. The first decision follows.\n\n```\n' + context
 const contextBrief = contextLead + screenBrief.slice(screenBrief.indexOf('\n'));
 const contextScreen = contextBrief.replaceAll('```', '');
 const codeReplyBrief = screenBrief.replace('**A**, **B**, or **C**', '`A`, `B`, or `C`');
+const qualifiedBrief = codeReplyBrief.replace('`A`, `B`, or `C`', '`D1: A`, `D1: B`, or `D1: C`');
+
+test.each(['D1', 'D12'])('qualified reply selectors bind to the current %s heading', heading => {
+  const native = qualifiedBrief.replaceAll('D1', heading);
+  const screen = native.replaceAll('`', '').replaceAll('**', '');
+  expect(inspectCeoModePreference(transcript(assistant(native)), screen, screen, screen.replace(/\s/g, '')))
+    .toMatchObject({ kind: 'unrelated', questionId: 'plan-ceo-review-approach', answer: 'A' });
+  const bare = native.replaceAll('`', '');
+  expect(inspectCeoModePreference(transcript(assistant(bare)), screen)).toMatchObject({ kind: 'unrelated', answer: 'A' });
+});
+
+test.each([
+  qualifiedBrief.replace('D1: B', 'D2: B'),
+  qualifiedBrief.replaceAll('D1:', 'D2:'),
+  qualifiedBrief.replace('`D1: B`', '`B`'),
+  qualifiedBrief.replace('`D1: A`, `D1: B`, or `D1: C`', 'D1: A to use D2: B, or D1: C'),
+  qualifiedBrief.replace('## D1 —', '> D1 —'),
+  qualifiedBrief.replace('## D1 — Which implementation approach for the CSV export?', '`D1 — Which implementation approach for the CSV export?`'),
+  qualifiedBrief.replace('## D1 —', '## D2 —'),
+  qualifiedBrief + '\n## D1 — Another decision',
+  qualifiedBrief.replace('## D1 —', '## D01 —'),
+])('qualified replies reject mixed, wrong, quoted or ambiguous headings: %#', native => {
+  expect(inspectCeoModePreference(transcript(assistant(native)), native).kind).toBe('working');
+});
+
+test('qualified replies retain complete-owner, current-input, introduction and preview guards', () => {
+  const owner = assistant(qualifiedBrief);
+  const frame = qualifiedBrief.replaceAll('`', '');
+  for (const native of [
+    { ...transcript(owner), pendingBytes: 1 },
+    transcript(assistant(qualifiedBrief, 'tool_use')),
+    transcript(owner, assistant('Working...', 'tool_use', 'newer')),
+    transcript(owner, { type: 'user', message: { role: 'user', content: 'D1: A' } }),
+    transcript(assistant(qualifiedBrief, 'end_turn', 'older'), owner),
+    transcript({ type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'tool_use',
+      content: [{ type: 'tool_use', name: 'Write', input: { content: qualifiedBrief } }] } }, owner),
+  ]) expect(inspectCeoModePreference(native, frame).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(owner), frame, frame, 'Working...').kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(owner), frame, frame.slice(frame.indexOf('## D1')), frame).kind).toBe('working');
+});
+
 const tallLead = 'Audit done. The complete current report follows.\n'
   + Array.from({ length: 130 }, (_, index) => `Context row ${index}: the formatter keeps quoting separate from settings.`).join('\n');
 const tallBrief = tallLead + screenBrief.slice(screenBrief.indexOf('\n'));

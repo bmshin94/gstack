@@ -164,9 +164,20 @@ function proseReply(text: string, questionId: string, selectors: string[]): stri
   const instruction = reply.replace(/`?<gstack-qid:[a-z0-9-]+>`?/, '').trim();
   // Parse a selector list, optionally with "to ..." descriptions. This is a
   // structural choice grammar; no question-specific phrasing or fuzzy matching.
-  const clause = '(?:[A-D1-4]|`[A-D1-4]`)(?:\\s+to\\s+.+?)?';
-  if (!new RegExp('^Reply(?:\\s+with)?\\s+' + clause + '(?:(?:,\\s*|,?\\s+or\\s+)' + clause + '){1,3}[.!]?$').test(instruction)) return undefined;
-  const offered = [...instruction.matchAll(/\b([A-D]|[1-4])\b/g)].map(match => match[1]);
+  const selectorList = (clause: string) => {
+    return new RegExp('^Reply(?:\\s+with)?\\s+' + clause + '(?:(?:,\\s*|,?\\s+or\\s+)' + clause + '){1,3}[.!]?$');
+  };
+  let inventory = instruction;
+  if (!selectorList('(?:[A-D1-4]|`[A-D1-4]`)(?:\\s+to\\s+.+?)?').test(instruction)) {
+    const headings = physical.flatMap(line => line.match(/^ {0,3}(?:#{1,6}\s+)?(D[1-9]\d*)\s+[—–-]\s+\S/) ?? [])
+      .filter(value => /^D[1-9]\d*$/.test(value));
+    if (headings.length !== 1) return undefined;
+    // Every qualified selector must name this same current native heading.
+    const qualified = headings[0] + ':[ \\t]*[A-D1-4]';
+    if (!selectorList('(?:' + qualified + '|`' + qualified + '`)').test(instruction)) return undefined;
+    inventory = instruction.replace(new RegExp('\\b' + headings[0] + ':[ \\t]*', 'g'), '');
+  }
+  const offered = [...inventory.matchAll(/\b([A-D]|[1-4])\b/g)].map(match => match[1]);
   if (offered.length !== selectors.length || new Set(offered).size !== offered.length
     || offered.some(selector => !selectors.includes(selector))) return undefined;
   return signature;
