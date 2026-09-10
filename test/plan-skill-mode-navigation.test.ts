@@ -234,8 +234,24 @@ test.skipIf(process.platform === 'win32').each(['post-permission-request-long', 
 });
 test.skipIf(process.platform === 'win32').each(['stale', 'unowned', 'history'])('full current-frame permission retains navigation %s refusal', async variant => {
   const result = await run('post-permission-request-long-' + variant);
+  if (variant === 'history') {
+    expect(result.initialPermissionHistory).toContain('\n Overwrite file\n ');
+    const tail = result.initialPermissionHistory.slice(-1500);
+    expect(tail).not.toContain('\n Overwrite file\n ');
+    expect(tail).toContain('Do you want to overwrite ' + path.basename(result.permissionPath) + '?');
+    expect(tail).not.toContain(path.dirname(result.permissionPath));
+  }
   expect(result.error).toBeString(); expect(result.sends).toEqual([]);
   expect(result.closed).toBe(true);
+});
+test.skipIf(process.platform === 'win32')('recent permission history can bind its complete current outside directory without a historical header', async () => {
+  const result = await run('post-permission-request-long-directory-history');
+  const tail = result.initialPermissionHistory.slice(-1500);
+  expect(tail).not.toContain('\n Overwrite file\n ');
+  expect(tail).toContain(path.dirname(result.permissionPath));
+  expect(tail).toContain('Do you want to overwrite ' + path.basename(result.permissionPath) + '?');
+  expect(result.error).toBeUndefined(); expect(result.sends).toEqual(['1\r', '2', '\r']);
+  expect(result.premature).toEqual([]); expect(result.acknowledged).toBe(true); expect(result.closed).toBe(true);
 });
 test.skipIf(process.platform === 'win32')('full current-frame permission keeps the short recent-history fallback', async () => {
   const result = await run('post-permission-request-history');

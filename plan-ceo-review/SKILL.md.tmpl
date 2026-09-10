@@ -247,7 +247,7 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Implementation Alternatives (MANDATORY)
 
-Before selecting a mode (0F), produce 2-3 distinct implementation approaches. This is NOT optional — every plan must consider alternatives.
+Before 0F, present 2-3 distinct implementation approaches (mandatory).
 
 For each approach:
 ```
@@ -262,61 +262,54 @@ APPROACH A: [Name]
 APPROACH B: [Name]
   ...
 
-APPROACH C: [Name] (optional — include if a meaningfully different path exists)
+APPROACH C: [Name] (if meaningfully different)
   ...
 ```
 
 **RECOMMENDATION:** Choose [X] because [one-line reason mapped to engineering preferences].
 
 Rules:
-- Compare architectural alternatives against the same accepted requirements and declared unchanged contracts. "Minimal viable" means the smallest implementation of that baseline, not silently dropping an accepted requirement.
-- Separate independently decidable remedies from the architecture choice. If error policy, test depth, or performance work can vary without changing the architecture, present each unresolved tradeoff separately, one issue per AskUserQuestion. Include a remedy in an approach only when it is coupled to that architecture; explain why they must be chosen together and the exact scope being approved. Do not create extra questions for requirements or remedies already explicitly accepted.
+- Compare architectures against the same accepted requirements and unchanged contracts. "Minimal viable" is the smallest implementation meeting that baseline; drop no accepted requirement.
+- Ask separately about unresolved remedies (error policy, test depth, performance) that can vary independently of architecture: one issue per AskUserQuestion. Bundle a remedy with an approach only when coupled; explain that dependency and the exact scope approved. Do not re-ask explicitly accepted requirements or remedies.
 - At least 2 approaches required. 3 preferred for non-trivial plans.
 - One approach must be the "minimal viable" (fewest files, smallest diff).
 - One approach must be the "ideal architecture" (best long-term trajectory).
-- **These two approaches have equal weight.** Don't default to "minimal viable" just because it's smaller. Recommend whichever best serves the user's goal. If the right answer is a rewrite, say so.
+- **These two approaches have equal weight.** Recommend what best serves the user, even a rewrite; smaller is not automatically better.
 - If only one approach exists, explain concretely why alternatives were eliminated.
-- Do NOT proceed to mode selection (0F) without user approval of the chosen approach.
 
-Present these approach options via AskUserQuestion using the preamble's AskUserQuestion Format section: include RECOMMENDATION. Include `Completeness: N/10` on every option only when these alternatives differ in coverage of the same decision. If they differ in kind, include: `Note: options differ in kind, not coverage — no completeness score.`
+Present these approach options via AskUserQuestion using the preamble's format with RECOMMENDATION. For alternatives differing in coverage of the same decision, include `Completeness: N/10` on each. Otherwise use `Note: options differ in kind, not coverage — no completeness score.`
 
-**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis. A "clearly winning approach" is still an approach decision and still needs explicit user approval before it lands in the plan.
+**STOP.** Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis. Ask once per issue, never batch; recommend + WHY. Even a clear winner needs explicit approval before entering the plan.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### 0F. Mode Selection
-Run after 0C-bis and before 0D; labels remain stable for cross-references.
-In every mode, you are 100% in control. No scope is added without your explicit approval.
+Run after 0C-bis, before 0D. Keep the approved approach; add scope only with explicit user approval.
 
-First identify the proposed review posture from the modes and defaults below. Keep the approved 0C-bis approach fixed.
+Modes:
+1. **SCOPE EXPANSION:** Dream big. Propose ambitious improvements individually; the user opts into each.
+2. **SELECTIVE EXPANSION:** Keep baseline scope. Present each expansion neutrally for the user to cherry-pick.
+3. **HOLD SCOPE:** Maximum rigor: architecture, security, edge cases, observability, deployment. Make current scope bulletproof; surface no expansions.
+4. **SCOPE REDUCTION:** Propose a minimal version achieving the core goal, then review it.
 
-Available modes:
-1. **SCOPE EXPANSION:** The plan is good but could be great. Dream big — propose the ambitious version. Every expansion is presented individually for your approval. You opt in to each one.
-2. **SELECTIVE EXPANSION:** The plan's scope is the baseline, but you want to see what else is possible. Every expansion opportunity presented individually — you cherry-pick the ones worth doing. Neutral recommendations.
-3. **HOLD SCOPE:** The plan's scope is right. Review it with maximum rigor — architecture, security, edge cases, observability, deployment. Make it bulletproof. No expansions surfaced.
-4. **SCOPE REDUCTION:** The plan is overbuilt or wrong-headed. Propose a minimal version that achieves the core goal, then review that.
+Defaults:
+* Greenfield → SCOPE EXPANSION
+* Enhancement / iteration → SELECTIVE EXPANSION
+* Bug fix / hotfix / refactor → HOLD SCOPE
+* >15 files → suggest SCOPE REDUCTION unless the user pushes back
+* "go big" / "ambitious" / "cathedral" → SCOPE EXPANSION, no question
+* "hold scope but tempt me" / "show me options" / "cherry-pick" → SELECTIVE EXPANSION, no question
 
-Context-dependent defaults:
-* Greenfield feature → default SCOPE EXPANSION
-* Feature enhancement or iteration on existing system → default SELECTIVE EXPANSION
-* Bug fix or hotfix → default HOLD SCOPE
-* Refactor → default HOLD SCOPE
-* Plan touching >15 files → suggest SCOPE REDUCTION unless user pushes back
-* User says "go big" / "ambitious" / "cathedral" → SCOPE EXPANSION, no question
-* User says "hold scope but tempt me" / "show me options" / "cherry-pick" → SELECTIVE EXPANSION, no question
+Retain explicit user choices and preamble session-kind precedence. When `QUESTION_TUNING: true`, check `plan-ceo-review-mode` via `gstack-question-preference --check` before mode selection/presentation. `AUTO_DECIDE` authorizes the recommended posture; `ASK_NORMALLY` requires a question. These are permissions, never posture names. Other interactive selections require a question. `CONDUCTOR_SESSION: true` controls transport only.
 
-Then resolve how that posture is selected, using registered ID `plan-ceo-review-mode` and the preamble's session-kind precedence. Retain an explicit user choice. Every other interactive selection requires a question unless the preference check authorizes skipping it. When `QUESTION_TUNING: true`, run the documented `gstack-question-preference --check` before selecting or presenting the mode. `AUTO_DECIDE` authorizes the recommended posture; `ASK_NORMALLY` requires the question. The preference result is permission to skip a question, never a review posture. `CONDUCTOR_SESSION: true` determines question transport.
+Use the preamble's question format/transport: RECOMMENDATION and `Note: options differ in kind, not coverage — no completeness score.`
 
-If an answer is needed, use the preamble's question format and transport: include RECOMMENDATION and `Note: options differ in kind, not coverage — no completeness score.`
-
-**Mode handoff, before 0D:** After the answer arrives or the authorized automatic choice is made, send the user one normal assistant message before any analysis, plan edit, tool call, or next question:
-- User-selected or session-selected: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
+**Mode handoff before 0D:** Once selected, send one normal assistant message **before any analysis, plan edit, tool call or next question**:
+- User/session choice: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
 - Saved preference: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
 
-Fill `<selected posture>` with exactly one of the four named modes above. Keep `(your preference)` unchanged; put rationale in a separate sentence. This direct confirmation completes mode selection; only then continue to 0D. Persisting the choice in the plan does not complete this handoff. Stay in that mode and ask before changing the approved approach.
+Use one exact mode name, keep `(your preference)`, and separate rationale. A plan-file entry cannot replace this confirmation. Stay in that mode; ask before changing the approved approach.
 
-For unresolved decisions, use the preamble's transport, ask once per issue, do NOT batch, and **STOP until the user responds**. Recommend + WHY; even an "obvious fix" needs a decision before changing the plan. If none remain, state "No issues, moving on" and proceed. Settled preferences and spawned sessions follow the preamble's precedence.
-Then continue to 0D-prelude, 0D, 0D-POST, and 0E as applicable.
-**Reminder: Do NOT make any code changes. Review only.**
+Unresolved decisions: recommend + WHY, ask once per issue, never batch, and **STOP until answered**, including obvious fixes. Honor preference/session precedence. With none, say "No issues, moving on." Continue through 0D-prelude, 0D, 0D-POST and 0E as applicable. Review only; no code changes.
 
 ### 0D-prelude. Expansion Framing (shared by EXPANSION and SELECTIVE EXPANSION)
 
@@ -405,12 +398,10 @@ Repo: {owner/repo}
 
 Derive the feature slug from the plan being reviewed (e.g., "user-dashboard", "auth-refactor"). Use the date in YYYY-MM-DD format.
 
-The CEO artifact records scope decisions; it does not replace the full plan. Set
-"Plan under review" to the actual plan path, including accepted scope changes. If
-the plan exists only in conversation, first save that complete plan to its own
-file, distinct from this CEO artifact (never a self-reference). Pass both paths
-to the spec reviewer below so it can evaluate the full
-requirements without mistaking this scope summary for the entire specification.
+"Plan under review" must name the actual amended plan, including accepted changes.
+For a conversation-only plan, first save that complete plan to its own
+file, distinct from this CEO artifact (never a self-reference).
+Send both paths to the reviewer: this CEO scope summary cannot replace the full plan.
 
 After writing the CEO plan, run the spec review loop on it:
 

@@ -19,13 +19,15 @@
  * Reader-side fix folded from community PR #1851 by @harjothkhara.
  */
 import { describe, test, expect } from 'bun:test';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 import type { TemplateContext } from '../scripts/resolvers/types';
 import { generateContextRecovery } from '../scripts/resolvers/preamble/generate-context-recovery';
+import { ALL_HOST_CONFIGS } from '../hosts';
+import { discoverSkillFiles } from '../scripts/discover-skills';
 
 const ROOT = path.join(import.meta.dir, '..');
 
@@ -34,15 +36,64 @@ const PATH_ADJACENT = /\/\$\{?_BRANCH|\$\{_BRANCH\}\/|\$_BRANCH\//;
 // Raw $_BRANCH as a filename prefix (…-reviews.jsonl and friends).
 const FILENAME_PREFIX = /\$\{?_BRANCH\}?[A-Za-z0-9._-]*\.(?:jsonl|json|md|txt|log)/;
 
-function renderedSkillFiles(): string[] {
-  const out = execSync(
-    `find "${ROOT}" -name 'SKILL.md' -not -path '*/node_modules/*' -not -path '*/.claude/*' ; find "${ROOT}" -path '*/sections/*.md' -not -path '*/node_modules/*' -not -path '*/.claude/*'`,
-    { encoding: 'utf-8', timeout: 30_000 },
-  );
-  return out.split('\n').filter(Boolean);
+function renderedSkillFiles(root = ROOT): string[] {
+  // Repository files, including new outputs, exclude ignored workspaces/archives.
+  const files = execFileSync('git', [
+    'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',
+    'SKILL.md', '**/SKILL.md', '**/sections/*.md',
+  ], { cwd: root, encoding: 'utf-8', timeout: 30_000 })
+    .split('\0').filter(Boolean).map(file => path.join(root, file));
+  // Host outputs are deliberately gitignored; inspect only their registered roots.
+  for (const host of ALL_HOST_CONFIGS.filter(host => host.name !== 'claude')) {
+    const hostRoot = path.join(root, host.hostSubdir);
+    const skillsRoot = path.join(hostRoot, 'skills');
+    if (!fs.existsSync(skillsRoot) || fs.lstatSync(hostRoot).isSymbolicLink()
+      || fs.lstatSync(skillsRoot).isSymbolicLink()) continue;
+    files.push(...discoverSkillFiles(skillsRoot).map(file => path.join(skillsRoot, file)));
+  }
+  return [...new Set(files)];
 }
 
 describe('branch slug hygiene (#2550, #1851)', () => {
+  test('inventory covers repository outputs and host caches without ignored candidate trees', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-skill inventory-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: repo });
+      const write = (file: string) => {
+        fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+        fs.writeFileSync(path.join(repo, file), '# Skill\n');
+      };
+      const source = ['SKILL.md', 'health/SKILL.md', 'health/sections/checks.md'];
+      const hosts = ALL_HOST_CONFIGS.filter(host => host.name !== 'claude');
+      fs.writeFileSync(path.join(repo, '.gitignore'),
+        ['.context/', 'node_modules/', ...hosts.map(host => `${host.hostSubdir}/`)].join('\n'));
+      source.forEach(write);
+      execFileSync('git', ['add', '--', ...source], { cwd: repo });
+      source.push('new skill/SKILL.md');
+      write(source.at(-1)!); // New, untracked output must still be checked.
+      write('.context/candidate/SKILL.md');
+      write('.context/candidate/health/sections/checks.md');
+      write('node_modules/other/SKILL.md');
+      expect(renderedSkillFiles(repo).sort())
+        .toEqual(source.map(file => path.join(repo, file)).sort());
+      const caches = hosts.map(host => `${host.hostSubdir}/skills/gstack-health/SKILL.md`);
+      caches.forEach(write);
+      expect(renderedSkillFiles(repo).sort())
+        .toEqual([...source, ...caches].map(file => path.join(repo, file)).sort());
+      // Old find never followed host or skills directory symlinks into another tree.
+      write('.context/outside/skills/gstack-foreign/SKILL.md');
+      for (const [index, host] of hosts.slice(0, 2).entries()) {
+        const link = path.join(repo, host.hostSubdir, index ? 'skills' : '');
+        fs.rmSync(link, { recursive: true, force: true });
+        fs.symlinkSync(path.join(repo, '.context/outside', index ? 'skills' : ''), link, 'junction');
+      }
+      expect(renderedSkillFiles(repo).sort())
+        .toEqual([...source, ...caches.slice(2)].map(file => path.join(repo, file)).sort());
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   test('no generated SKILL.md or section interpolates raw $_BRANCH in a path position', () => {
     const offenders: string[] = [];
     for (const file of renderedSkillFiles()) {

@@ -324,14 +324,12 @@ adversarial independence.
 
 Prompt the subagent with:
 - ${ceo ? 'The absolute paths of BOTH the CEO scope document just written and the current amended plan it references' : 'The file path of the document just written'}
-${ceo ? `- "Read both files in full. The CEO document records scope decisions; the source
-  plan supplies the requirements and implementation context. Evaluate them together
-  on all five dimensions below. A requirement present in the source plan is not
-  missing merely because the scope summary does not repeat it. Still flag
-  contradictions between the files, unsupported accepted expansions, and required
-  behavior missing from both. Cite the relevant file and requirement for every
-  finding. If either file cannot be read, report that failure instead of grading
-  a partial input."\n` : ''}- "Read ${ceo ? 'these documents' : 'this document'} and review ${ceo ? 'them' : 'it'} on 5 dimensions. For each dimension, note PASS or
+${ceo ? `- "Read both files in full: CEO scope decisions plus source-plan requirements and
+  implementation context. Evaluate them together on all five dimensions.
+  Source-plan requirements need not be repeated in the scope summary. Flag contradictions
+  between the files, unsupported accepted expansions, and required behavior missing
+  from both. Cite file and requirement for each finding. If either file cannot be
+  read, report that failure instead of grading a partial input."\n` : ''}- "Read ${ceo ? 'these documents' : 'this document'} and review ${ceo ? 'them' : 'it'} on 5 dimensions. For each dimension, note PASS or
   list specific issues with suggested fixes. At the end, output a quality score (1-10)
   across all dimensions."
 

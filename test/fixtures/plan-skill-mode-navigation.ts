@@ -416,14 +416,17 @@ async function postModeFixture(scenario: string) {
     paint('─'.repeat(240) + '\n Overwrite file\n ' + path.relative(cwd, displayed) + '\n' + '╌'.repeat(240) + '\n'
       + Array.from({ length: 8 }, (_, i) => ` ${i + 1} ${'Plan context '.repeat(8)}`).join('\n') + '\n' + '╌'.repeat(240)
       + '\n Do you want to overwrite ' + path.basename(displayed) + '?\n ❯ 1. Yes\n'
-      + '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and always allow access to\n      '
-      + path.dirname(displayed) + ' for this session (shift+tab)\n   3. No\n\n Esc to cancel · Tab to amend');
+      + '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session'
+      // The history-only refusal must lack current directory evidence as well as the clipped header.
+      + (scenario === 'post-permission-request-long-history' ? '' : '; Yes, and always allow access to\n      ' + path.dirname(displayed) + ' for this session')
+      + ' (shift+tab)\n   3. No\n\n Esc to cancel · Tab to amend');
   }
   else if (stage === 'permission') paint(`Do you want to ${fileRequestCase ? 'overwrite' : 'create'} ${scenario.endsWith('unowned') ? 'other.md' : 'plan.md'}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`);
   else show();
   if (scenario === 'post-permission-request-arrival-race') paint('\nI will make this plan bulletproof.\n');
   if (viewportCase) paint(viewportReplay.frame);
   if (scenario === 'post-unmatched') paint('\nOther question\n❯1.Unrelated left option\n2.Unrelated right option\n');
+  const initialPermissionHistory = longPermissionCase ? buffer : undefined;
   const sends: string[] = [];
   const premature: string[] = [];
   let acknowledged = false;
@@ -545,7 +548,7 @@ async function postModeFixture(scenario: string) {
     catch (cause) { error = String(cause); originalSendErrorPreserved = cause === sendFailure; }
     finally { await session.close(); }
     const diagnostic = fs.existsSync(diagnosticPath) ? JSON.parse(fs.readFileSync(diagnosticPath, 'utf8')) : null;
-    console.log(JSON.stringify({ error, sends, longPermissionFrame, premature, acknowledged, earlyWithoutNativeInvocation, raceInjected, originalSendErrorPreserved,
+    console.log(JSON.stringify({ error, sends, longPermissionFrame, initialPermissionHistory, permissionPath, premature, acknowledged, earlyWithoutNativeInvocation, raceInjected, originalSendErrorPreserved,
       closed, diagnosticBeforeClose, resizes, focusWrites, sameFocusWrites, previewFrameReads, configRemovedBeforeArtifactRead: !fs.existsSync(config), diagnostic,
       diagnosticMode: diagnostic && (fs.statSync(diagnosticPath).mode & 0o777), elapsed: clock }));
   } finally { Bun.sleep = oldSleep; Date.now = oldNow; fs.rmSync(root, { recursive: true, force: true }); }
