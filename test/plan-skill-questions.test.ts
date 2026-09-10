@@ -368,6 +368,7 @@ test.each(['create', 'edit', 'overwrite'] as const)('extended %s menu binds the 
     expect(currentFilePermissionTarget(dialog)).toEqual({ operation, filePath: subtitle });
     expect(nativePermissionKey(owner, dialog)).toBe(`${owner.name}:${filePath}`);
     expect(nativePermissionKey(owner, dialog.replace(/\n      /g, ' '))).toBe(`${owner.name}:${filePath}`);
+    expect(nativePermissionKey(owner, dialog.slice(dialog.indexOf('╌')))).toBe(`${owner.name}:${filePath}`);
   }
 });
 
@@ -407,7 +408,7 @@ test('extended menu refuses mismatched, clipped, wrapped, relative or malformed 
     dialog.replace('always allow access to', 'always allow access everywhere including'),
     dialog.replace('3.No', '3.Yes\n4.No'),
     dialog.replace(' Do you want to create plan.md?', ' Do you want to create other.md?'),
-    dialog.slice(dialog.indexOf('╌')),
+    dialog.slice(dialog.indexOf('╌')).replace(directory, ''),
   ]) expect(() => nativePermissionKey(owner, invalid)).toThrow('cannot be bound');
   expect(() => nativePermissionKey({ ...owner, name: 'Edit' }, dialog)).toThrow('cannot be bound');
   expect(() => nativePermissionKey({ ...owner, cwd: undefined }, dialog)).toThrow('cannot be bound');
@@ -1256,4 +1257,40 @@ test.each(['changed-field', 'missing-field', 'extra-field', 'error'] as const)
   });
   expect(s.read).toThrow('conflicts with its later result');
   expect(s.granted.size).toBe(1);
+});
+
+// Native Design counting failure, Claude 2.1.263: a 105-line wireframe scrolls
+// its title/subtitle off screen. The current basename and complete directory
+// in option 2 still identify the one-time option 1 permission exactly.
+const clippedDesignFrame = "   76       <div class=\"field invalid\">\n   77         <label for=\"email\">Email</label>                                                                                                         1 file changed                                                                         ✕\n   78         <input id=\"email\" value=\"margarethe@acme\" aria-invalid=\"true\" aria-describedby=\"email-err\">\n   79         <div class=\"error\" id=\"email-err\" role=\"alert\"><span aria-hidden=\"true\">!</span><span>Enter a full email address, like name@company.c    gstack-test-plan-design.md\n      om.</span></div>\n   80       </div>                                                                                                                                     ────────────────────────────────────────────────────────────────────────────────────────\n   81     </section>                                                                                                                                   gstack-test-plan-design.md (untracked)\n   82    C       t   u                                                                                                                                 ────────────────────────────────────────────────────────────────────────────────────────\n   83    P<section id=\"notifications\" aria-labelledby=\"h-notif\">                                                                                       New file not yet staged.\n   84    L  <h2 id=\"h-notif\">Notifications</h2>                                                                                                        Run `git add :/gstack-test-plan-design.md` to see line counts.\n   85       <div class=\"field\">\n   86    F    <label for=\"digest\">Weekly digest email</label>\n   87    C    <input id=\"digest\" value=\"Every Monday, 9:00\"> \n   88    C    <div class=\"help\">Sent in your account timezone.</div>\n   89       </div>\n   90    T</secsion>\n   91  \n   92     <section id=\"api-keys\" aria-labelledby=\"h-keys\">\n   93    P  <h2 id=\"h-keys\">API keys</h2> \n   94       <div class=\"empty\">\n   95         <p>No keys yet. Keys let scripts and integrations act on your behalf.</p>\n   96         <button class=\"btn\">Create your first key</button>\n   97       </div>\n   98     </section>\n   99\n  100     <div class=\"note\">Wireframe only. Designer mockup generation was unavailable (no OpenAI key). Toast below shows the post-save success sta\n      te.</div>\n  101   </main>\n  102 </div>\n  103 <div class=\"toast\" role=\"status\">Saved. Changes are live.</div>\n  104 </body>\n  105 </html>\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n Do you want to create wireframe-desktop.html?\n ❯ 1. Yes \n   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and always allow access to\n      /home/vercel-sandbox/.gstack/projects/gstack-e2e-plan-design-16ewXN/designs/settings-page-20260910 for this session (shift+tab)\n   3. No\n\n Esc to cancel · Tab to amend";
+const clippedDesignOwner = {"id": "toolu_01VQSgtivSuKpKci3w9RXzbn", "name": "Write", "cwd": "/tmp/gstack-paid-shard-klXxAu/tmp/gstack-e2e-plan-design-16ewXN", "input": {"file_path": "/home/vercel-sandbox/.gstack/projects/gstack-e2e-plan-design-16ewXN/designs/settings-page-20260910/wireframe-desktop.html"}};
+test('clipped native create header binds its fully displayed parent and grants only once', () => {
+  const filePath = clippedDesignOwner.input.file_path;
+  expect(currentFilePermissionTarget(clippedDesignFrame)).toEqual({ operation: 'create', filePath });
+  expect(nativePermissionKey(clippedDesignOwner, clippedDesignFrame)).toBe('Write:' + filePath);
+  const native = { permissionTools: [clippedDesignOwner], permissionResults: [], permissionRequestCapture: true,
+    permissionRequests: [{ requestId: 'owned-clipped-request', capturedAtMs: 1, name: 'Write' as const,
+      input: clippedDesignOwner.input, cwd: clippedDesignOwner.cwd, result: 'pending' as const, nativeToolId: clippedDesignOwner.id }] };
+  const granted = new Set<string>(), requests = new Map<string, NativePermissionGrant>();
+  expect(reserveNativePermissionGrant(native, clippedDesignFrame, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(native, clippedDesignFrame, granted, requests)).toBe(false);
+  expect([...granted]).toEqual(['request:owned-clipped-request']);
+  expect([...requests.keys()]).toEqual(['Write:' + filePath]);
+});
+test('clipped create permission refuses another basename, parent, malformed directory, or conflicting header', () => {
+  const filePath = clippedDesignOwner.input.file_path, directory = path.dirname(filePath);
+  for (const invalid of [
+    clippedDesignFrame.replace('Do you want to create wireframe-desktop.html?', 'Do you want to create other.html?'),
+    clippedDesignFrame.replace(directory, directory + '-sibling'),
+    clippedDesignFrame.replace(directory, path.dirname(directory)),
+    clippedDesignFrame.replace(directory, directory.replace('/designs/', '/desi…/')),
+    clippedDesignFrame.replace(directory, directory.replace('/designs/', '/desi\n      gns/')),
+    clippedDesignFrame.replace(directory, 'relative/designs'),
+    clippedDesignFrame.replace(' ❯ 1. Yes', '   1. Yes').replace('   2. Yes,', ' ❯ 2. Yes,'),
+    ' Create file\n another/wireframe-desktop.html\n' + clippedDesignFrame,
+    '─'.repeat(240) + '\n Create file\n another/wireframe-desktop.html\n' + clippedDesignFrame,
+    '─'.repeat(240) + '\n Create file\n ' + filePath + '\n Create file\n ' + filePath + '\n' + clippedDesignFrame,
+  ]) expect(() => nativePermissionKey(clippedDesignOwner, invalid)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...clippedDesignOwner, input: { file_path: filePath + '.other' } }, clippedDesignFrame)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...clippedDesignOwner, name: 'Edit' }, clippedDesignFrame)).toThrow('cannot be bound');
 });

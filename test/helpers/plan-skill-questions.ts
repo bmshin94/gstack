@@ -473,6 +473,11 @@ function currentFilePermissionDetails(visible: string): { operation: 'create' | 
       || path.basename(subtitle) !== filePath || before.slice(index + 2).some(line => /^\s*❯\s*\d+\./.test(line))
       || before.slice(index, index + 2).some(line => line.length > rule.length)) return null;
     filePath = subtitle;
+  } else if (accessDirectory && path.basename(filePath) === filePath && !['.', '..'].includes(filePath)) {
+    // A long preview can scroll the title away. The current option-2 label
+    // still supplies its complete directory; combine it with this basename
+    // for identity only. The caller continues to grant one-time option 1.
+    filePath = path.join(accessDirectory, filePath);
   }
   return { operation, filePath, ...(accessDirectory ? { accessDirectory } : {}) };
 }

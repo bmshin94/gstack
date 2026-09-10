@@ -154,6 +154,7 @@ describe('buildSeedConfig', () => {
       trustedDirs: ['/repo/root'],
     }) as any;
     expect(seed.hasCompletedOnboarding).toBe(true);
+    expect(seed.diffSidebarOpen).toBe(false);
     const approved = seed.customApiKeyResponses.approved;
     expect(approved).toHaveLength(1);
     expect(approved[0]).toHaveLength(20);
@@ -193,6 +194,7 @@ describe('getHermeticDirs lifecycle', () => {
     const dirs = getHermeticDirs();
     const seed = JSON.parse(fs.readFileSync(path.join(dirs.configDir, '.claude.json'), 'utf-8'));
     expect(seed.hasCompletedOnboarding).toBe(true);
+    expect(seed.diffSidebarOpen).toBe(false);
     const root = path.resolve(__dirname, '..', '..');
     expect(seed.projects[root].hasTrustDialogAccepted).toBe(true);
   });

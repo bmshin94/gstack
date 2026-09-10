@@ -40,6 +40,35 @@ test('prose link rendering preserves the complete introduction, labels, and dest
   ]) expect(inspectCeoModePreference(transcript(assistant(linkedBrief)), screen).kind).toBe('working');
 });
 
+// Native AUTO_DECIDE attempt 71f332d0: the completed approach brief followed
+// a source link labelled "OWASP: Testing for CSV Injection". The CLI rendered
+// the plain label and destination; punctuation did not turn it into markup.
+test.each(['OWASP: Testing for CSV Injection', 'RFC 4180 (CSV)', 'CSV, quotes & commas'])(
+  'plain link labels retain punctuation when corroborating the current brief: %s', label => {
+    const native = linkedBrief.replace('RFC 4180 guide', label);
+    const screen = linkedScreen.replace('RFC 4180 guide', label);
+    const owned = transcript(assistant(native));
+    expect(inspectCeoModePreference(owned, screen, screen, screen)).toMatchObject({ kind: 'unrelated', answer: 'A' });
+    for (const wrong of [screen.replace(label, 'Different source'), screen.replace('example.test/rfc-4180', 'other.test/rfc-4180')]) {
+      expect(inspectCeoModePreference(owned, wrong).kind).toBe('working');
+    }
+    expect(inspectCeoModePreference(owned, screen, screen, '').kind).toBe('working');
+    expect(inspectCeoModePreference({ ...owned, pendingBytes: 1 }, screen).kind).toBe('working');
+  },
+);
+
+// These literal label characters are erased or rewritten by renderedProse's
+// Markdown comparison. Do not let that normalization corroborate a different
+// source label; keep such links outside this narrow CLI projection.
+test.each([
+  ['CSV #1', 'CSV 1'], ['CSV*', 'CSV'], ['CSV`', 'CSV'],
+  ['gstack-qid:source', '<gstack-qid:source>'],
+])('plain link projection rejects ambiguous literal label normalization: %s', (label, changed) => {
+  const native = linkedBrief.replace('RFC 4180 guide', label);
+  const wrong = linkedScreen.replace('RFC 4180 guide', changed);
+  expect(inspectCeoModePreference(transcript(assistant(native)), wrong, wrong, wrong).kind).toBe('working');
+});
+
 test('link rendering cannot turn code, images, escaped links, titles, or nested labels into input', () => {
   for (const source of [
     '`[RFC 4180 guide](https://example.test/rfc-4180)`',

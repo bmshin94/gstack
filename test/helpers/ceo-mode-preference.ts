@@ -307,13 +307,18 @@ function liveBriefIntroduction(text: string, visible: string): string | undefine
 }
 
 // CLI 2.1.263 renders an ordinary Markdown link as "label (URL)" without
-// hyperlink support. Preserve both fields; leave titles, escaped/nested
-// syntax, code, images, and other link kinds outside this narrow projection.
+// hyperlink support. Preserve both fields; use the parsed plain-text label so
+// punctuation is preserved while titles, escaped/nested markup, code, images,
+// and other link kinds stay outside this projection.
 function renderPlainInlineLinks(value: string): string {
   if (!value.includes('](')) return value;
   return Lexer.lexInline(value).map(token => {
     if (token.type !== 'link' || token.title
-      || !/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/.test(token.text)
+      || token.tokens?.length !== 1 || token.tokens[0].type !== 'text'
+      || token.tokens[0].raw !== token.text || token.tokens[0].text !== token.text
+      // renderedProse removes Markdown markers and rewrites qid delimiters.
+      // Preserve literal label identity by declining those ambiguous forms.
+      || /[\u0000-\u001f\u007f*#`]|gstack-qid:/i.test(token.text)
       || !/^https?:\/\/[A-Za-z0-9._~:/?#@!$&+,;=%-]+$/.test(token.href)
       || token.raw !== `[${token.text}](${token.href})`
       || token.href === `http://${token.text}` || token.href === `https://${token.text}`) return token.raw;

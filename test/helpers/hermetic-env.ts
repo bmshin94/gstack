@@ -144,12 +144,15 @@ export interface SeedConfigOpts {
  *   real ~/.claude.json)
  * - projects[dir].hasTrustDialogAccepted: pre-trusts repo-cwd PTY sessions
  *   (the pty-runner's 15s trust-watcher remains as fallback for temp cwds)
+ * - diffSidebarOpen: keeps the permission card at the full terminal width;
+ *   the CLI otherwise auto-opens its git diff sidebar at 144+ columns.
  * bypassPermissionsModeAccepted was considered and dropped: absent from a
  * real config even though --dangerously-skip-permissions is in daily use.
  */
 export function buildSeedConfig(opts: SeedConfigOpts): Record<string, unknown> {
   const seed: Record<string, unknown> = {
     hasCompletedOnboarding: true,
+    diffSidebarOpen: false,
     projects: Object.fromEntries(
       opts.trustedDirs.map((dir) => [
         dir,

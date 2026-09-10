@@ -75,6 +75,7 @@ describe('PTY temporary workspace trust', () => {
       expect(first.session.hermeticConfigDir).toBe(first.env.CLAUDE_CONFIG_DIR);
       expect(first.env.GSTACK_HOME).toBe(path.join(cwd, 'state'));
       const config = JSON.parse(fs.readFileSync(path.join(first.env.CLAUDE_CONFIG_DIR, '.claude.json'), 'utf8'));
+      expect(config.diffSidebarOpen).toBe(false);
       expect(config.customApiKeyResponses.approved).toEqual(['12345678901234567890']);
       expect(config.projects[fs.realpathSync(cwd)]).toBeUndefined();
       expect(fs.readFileSync(path.join(shared, '.claude.json'), 'utf8')).toBe(before);
@@ -100,16 +101,17 @@ describe('PTY temporary workspace trust', () => {
     await withFixture(async ({ cwd, launch }) => {
       const explicit = path.join(cwd, 'explicit');
       fs.mkdirSync(explicit);
-      fs.writeFileSync(path.join(explicit, '.claude.json'), '{}');
+      fs.writeFileSync(path.join(explicit, '.claude.json'), '{"diffSidebarOpen":true}');
       const override = await launch({ env: { CLAUDE_CONFIG_DIR: explicit } });
       expect(override.env.CLAUDE_CONFIG_DIR).toBe(explicit);
       expect(override.session.visibleText()).toBe('FIXTURE_UNTRUSTED');
-      expect(fs.readFileSync(path.join(explicit, '.claude.json'), 'utf8')).toBe('{}');
+      expect(fs.readFileSync(path.join(explicit, '.claude.json'), 'utf8')).toBe('{"diffSidebarOpen":true}');
       process.env.EVALS_HERMETIC = '0';
       const legacy = await launch({ env: { CLAUDE_CONFIG_DIR: explicit } });
       expect(legacy.env.CLAUDE_CONFIG_DIR).toBe(explicit);
       expect(legacy.session.hermeticConfigDir).toBeNull();
       expect(legacy.session.visibleText()).toBe('FIXTURE_UNTRUSTED');
+      expect(fs.readFileSync(path.join(explicit, '.claude.json'), 'utf8')).toBe('{"diffSidebarOpen":true}');
     });
   });
 
