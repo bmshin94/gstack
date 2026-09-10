@@ -112,6 +112,14 @@ async function main() {
   let raceJustInjected = false;
   let postExitOwnerRaceScreens = 0;
   const originalScreenSnapshot = PtyCurrentScreen.prototype.snapshot;
+  let fixtureRawEnd = 0;
+  let lastFixtureFrame: { text: string; rawEnd: number } | null = null;
+  if (retentionCase) PtyCurrentScreen.prototype.snapshot = async function () {
+    const rawEnd = fixtureRawEnd;
+    const frame = await originalScreenSnapshot.call(this);
+    lastFixtureFrame = { text: frame.text, rawEnd };
+    return frame;
+  };
   if (longPermissionCase || scenario.endsWith('arrival-race') || scenario === 'terminal-diagnostic-frame-race' || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
     if (scenario === 'exit-confirmation-early-owner-arrival-race' && raceInjected) postExitOwnerRaceScreens++;
     const frame = await originalScreenSnapshot.call(this);
@@ -147,7 +155,12 @@ async function main() {
       append({ type: 'user', message: { role: 'user', content: 'Review the supplied plan.' } });
       // A real PTY's ONLCR output converts these fixture newlines to CRLF.
       let latestPaint = '';
-      const emit = (value: string) => { latestPaint = value; options.terminal.data(null, Buffer.from(value.replace(/(?<!\r)\n/g, '\r\n'))); };
+      const emit = (value: string) => {
+        latestPaint = value;
+        const rendered = value.replace(/(?<!\r)\n/g, '\r\n');
+        fixtureRawEnd += rendered.length;
+        options.terminal.data(null, Buffer.from(rendered));
+      };
       const longQuestion = 'D1 — Pick a mode\n' + Array.from({ length: 45 }, (_, i) => `Context paragraph ${i}: Review the supplied design carefully.`).join('\n');
       const clipped = 'Clipped native prompt\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\nEnter to select · ↑/↓ to navigate · Esc to cancel\n';
       const complete = '☐ Review mode\n' + longQuestion.slice(0, 2000) + '…\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\nEnter to select · ↑/↓ to navigate · Esc to cancel\n';
@@ -181,7 +194,7 @@ async function main() {
       };
       const tool = (name: string, input: unknown) => {
         const id = `tool-${++sequence}`;
-        if (name === 'AskUserQuestion' && scenario.startsWith('hook-')) {
+        if (name === 'AskUserQuestion' && (scenario.startsWith('hook-') || scenario.startsWith('retention-questions'))) {
           // Native CLI can show this modal before persisting its tool_use.
           // Exercise the recorder installed by the real launcher.
           const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
@@ -495,6 +508,21 @@ async function main() {
                 { type: 'tool_use', id: 'completed-tool', name: 'Bash', input: { command: 'PRIVATE_BASH_ENV=secret' } },
               ] } });
               append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'completed-tool', content: 'PRIVATE_RESULT' }] } });
+              if (scenario.startsWith('retention-questions')) {
+                ask('D4 — Keep scope narrow?', ['Keep scope', 'Expand scope']);
+                if (scenario === 'retention-questions-conflict') {
+                  append({ type: 'assistant', cwd: options.cwd, message: { role: 'assistant', stop_reason: null,
+                    content: [{ type: 'tool_use', id: pendingId, name: 'AskUserQuestion', input: { questions: [{
+                      question: 'D4 — A different scope question', header: 'D4 — Keep scope narrow?', multiSelect: false,
+                      options: ['Keep scope', 'Expand scope'].map(label => ({ label, description: `Choose ${label}` })),
+                    }] } }] } });
+                  emit('PRIVATE_SCREEN_PREVIEW');
+                  return;
+                }
+                ask('D5 — Which review mode?', ['HOLD SCOPE', 'SCOPE EXPANSION']);
+                emit('D4 — Keep scope narrow?\n❯1.Keep scope\n2.Expand scope\nPRIVATE_SCREEN_PREVIEW');
+                return;
+              }
               if (scenario.startsWith('retention-queue-')) {
                 append({ type: 'queue-operation', operation: scenario.endsWith('operation') ? 'unrecognized' : 'enqueue',
                   content: scenario.endsWith('content') ? { text: 'PRIVATE_QUEUE' } : 'PRIVATE_QUEUE', uuid: 'queue-1' });
@@ -506,6 +534,15 @@ async function main() {
               recordFilePermission(input);
               if (scenario.startsWith('retention-timeout-')) {
                 if (scenario === 'retention-timeout-stale-frame') return;
+                if (scenario === 'retention-timeout-frame-conflict') {
+                  const rule = '─'.repeat(240);
+                  // Synthetic ambiguous full viewport: the tail has one valid
+                  // header but the full frame has two. No authority is granted.
+                  emit('\x1b[2J\x1b[H' + rule + '\n Create file\n earlier.md\n'
+                    + 'Earlier context '.repeat(120) + '\n' + rule + '\n Create file\n plan.md\n'
+                    + fileDialog('create').replace(/^\x1b\[2J\x1b\[H/, ''));
+                  return;
+                }
                 emit(scenario === 'retention-timeout-numbered' ? 'Requested permissions to create plan.md\nPRIVATE_SCREEN_PREVIEW'
                   : 'PRIVATE_SCREEN_PREVIEW\n❯1.Yes\n2.No\n');
                 return;
@@ -719,7 +756,7 @@ async function main() {
     const diagnosticDirectory = path.join(evalDir, 'plan-counting');
     const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
     const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
-    console.log(JSON.stringify({ observation, error, longPermissionFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

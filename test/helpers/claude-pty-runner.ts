@@ -2103,7 +2103,7 @@ export interface PlanSkillCountObservation {
       nativeStable: boolean | null;
       frame: { rawEnd: number; questionSince: number; viewportInputSince: number; fresh: boolean; planReady: boolean; exitConfirmation: boolean } | null;
       questionMatch: 'not-evaluated' | 'none' | 'digit' | 'preview';
-      permissionMenu: { numbered: boolean; permissionTail: boolean } | null;
+      permissionMenu: { numbered: boolean; permissionTail: boolean; permissionWindow: boolean } | null;
     } | null;
   };
 }
@@ -2216,6 +2216,7 @@ export async function runPlanSkillCounting(opts: {
   let lastObservation: PlanSkillCountObservation['diagnostics']['lastObservation'] = null;
   let lastNative: ReturnType<typeof readPlanSkillQuestions> | null = null;
   let lastDialog = '';
+  let lastDecodedFrame: { text: string; rawEnd: number; observedAtMs: number; questionSince: number; viewportInputSince: number } | null = null;
   let returnedTimeout = false;
 
   const timeoutSummary = () => `no terminal outcome within ${timeoutMs}ms (step0=${step0Count}, review=${reviewCount})`;
@@ -2347,6 +2348,8 @@ export async function runPlanSkillCounting(opts: {
       lastLoopStage = 'sampling-frame';
       const frame = await session.currentScreen?.();
       lastDialog = frame?.text ?? questionWindow;
+      lastDecodedFrame = frame ? { text: frame.text, rawEnd: frame.rawEnd,
+        observedAtMs: lastObservation.observedAtMs, questionSince, viewportInputSince } : null;
       const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
       lastNative = afterFrame;
       lastObservation.nativeStable = isDeepStrictEqual(native, afterFrame);
@@ -2422,12 +2425,13 @@ export async function runPlanSkillCounting(opts: {
       const pending = native.calls.filter(call => call.result === 'pending');
       if (pending.length > 1) throw new Error('Concurrent native AskUserQuestion calls are unsupported by the counting driver');
       const call = pending[0];
-      // Record the same selected frame/tail predicates without retaining text.
-      lastObservation.permissionMenu = { numbered: isNumberedOptionListVisible(questionVisible),
-        permissionTail: isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES)) };
       // A fresh decoded frame is already bounded to the active viewport.
       // Slicing it can sever the exact file header; only raw history needs a tail.
       const permissionVisible = frame ? questionVisible : questionVisible.slice(-TAIL_SCAN_BYTES);
+      // Diagnostic evaluation only; the permission guard below is unchanged.
+      lastObservation.permissionMenu = { numbered: isNumberedOptionListVisible(questionVisible),
+        permissionTail: isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES)),
+        permissionWindow: isPermissionDialogVisible(permissionVisible) };
       // Native permissions are separate from AUQs. Consume the rendered
       // window before writing, so old permission text cannot send again.
       if (!call && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
@@ -2528,14 +2532,14 @@ export async function runPlanSkillCounting(opts: {
     // Native failure → bounded metadata → original rejection → session cleanup.
     retainAutoplanFailure({ configDir: session.hermeticConfigDir, sessionId,
       observation: { lastLoopStage, lastObservation, step0Count, reviewCount },
-      raw: session.rawOutput, visible: session.visibleText, counting: { native: lastNative, dialog: lastDialog } });
+      raw: session.rawOutput, visible: session.visibleText, counting: { native: lastNative, dialog: lastDialog, events: session.nativeQuestionEvents, frame: lastDecodedFrame } });
     throw cause;
   } finally {
     if (returnedTimeout) {
       // A returned deadline outcome needs the same metadata before native cleanup.
       retainAutoplanFailure({ configDir: session.hermeticConfigDir, sessionId,
         observation: { outcome: 'timeout', lastLoopStage, lastObservation, step0Count, reviewCount },
-        raw: session.rawOutput, visible: session.visibleText, counting: { native: lastNative, dialog: lastDialog } });
+        raw: session.rawOutput, visible: session.visibleText, counting: { native: lastNative, dialog: lastDialog, events: session.nativeQuestionEvents, frame: lastDecodedFrame } });
     }
     await session.close();
   }

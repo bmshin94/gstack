@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { createHash } from 'node:crypto';
 import { PLAN_SKILL_COUNT_FINALIZE_MS } from './helpers/claude-pty-runner';
 
 async function runFakeCounting(completion: string, scenario: string) {
@@ -20,7 +21,84 @@ async function runFakeCounting(completion: string, scenario: string) {
   }
 }
 
+// The failure-only viewport is now retained explicitly; all other payload redaction stays enforced.
+const withoutDecodedFrame = (record: unknown) => JSON.stringify(record, (key, value) => key === 'decodedFrame' ? undefined : value);
+
 describe('real plan counting loop with an isolated fake PTY', () => {
+  test.skipIf(process.platform === 'win32').each(['binding', 'timeout-menu', 'timeout-frame-conflict'])(
+    'failure frame retention preserves the exact sampled viewport and epochs (%s)', async variant => {
+      const result = await runFakeCounting('**DONE**', `retention-${variant}`);
+      if (variant === 'binding') expect(result.error).toContain('cannot be bound');
+      else expect(result.observation.outcome).toBe('timeout');
+      expect(result.sends).toEqual(['/plan-ceo-review\r']);
+      expect(result.retainedBeforeClose).toBe(true);
+      expect(result.closed && result.nativeRemoved).toBe(true);
+      const frame = result.diagnostic.counting.decodedFrame;
+      expect(frame).toMatchObject({ source: 'last-sampled-current-screen', rawEnd: result.lastFixtureFrame.rawEnd,
+        text: result.lastFixtureFrame.text, codeUnits: result.lastFixtureFrame.text.length, truncated: false,
+        sha256: createHash('sha256').update(result.lastFixtureFrame.text).digest('hex') });
+      const sampled = JSON.parse(result.diagnostic.observation.text).lastObservation;
+      expect(frame.observedAtMs).toBe(sampled.observedAtMs);
+      expect(frame.questionSince).toBe(sampled.frame.questionSince);
+      expect(frame.viewportInputSince).toBe(sampled.frame.viewportInputSince);
+      expect(result.diagnostic.rawTail.text).toBeUndefined();
+      expect(result.diagnostic.visibleTail.text).toBeUndefined();
+      expect(JSON.stringify(result.diagnostic)).not.toMatch(/PRIVATE_(THINKING|SIGNATURE|BASH_ENV|RESULT|WRITE_CONTENT)/);
+      if (variant === 'timeout-frame-conflict') expect(sampled.permissionMenu).toEqual({ numbered: true, permissionTail: true, permissionWindow: false });
+    }, 15_000);
+
+  test('failure frame retention does not invent a frame for a boot timeout', async () => {
+    const result = await runFakeCounting('**DONE**', 'retention-timeout-boot');
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.diagnostic.counting.decodedFrame).toBeNull();
+    expect(result.lastFixtureFrame).toBeNull();
+    expect(result.sends).toEqual([]);
+    expect(result.retainedBeforeClose && result.closed).toBe(true);
+  }, 15_000);
+
+  test.skipIf(process.platform === 'win32')('concurrent hook-only questions retain their exact owned inputs before cleanup without an answer', async () => {
+    const result = await runFakeCounting('**DONE**', 'retention-questions');
+    expect(result.error).toContain('Concurrent native AskUserQuestion calls are unsupported');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.observation).toBeUndefined();
+    expect(result.closed).toBe(true);
+    expect(result.nativeRemoved).toBe(true);
+    expect(result.retainedBeforeClose).toBe(true);
+    const evidence = result.diagnostic.counting.questionEvidence;
+    expect(evidence.count).toBe(2);
+    expect(evidence.observed.slice().sort((a: any, b: any) => a.id.text.localeCompare(b.id.text)).map((call: any) => [call.id.text, call.observedResult, call.resultAtRetention])).toEqual([
+      ['tool-1', 'pending', 'absent'], ['tool-2', 'pending', 'absent'],
+    ]);
+    expect(evidence.hookEvents.map((event: any) => JSON.parse(event.inputJson.text).questions[0].question).sort()).toEqual([
+      'D4 — Keep scope narrow?', 'D5 — Which review mode?',
+    ]);
+    expect(evidence.observed.map((call: any) => JSON.parse(call.questionsJson.text)[0].question).sort()).toEqual([
+      'D4 — Keep scope narrow?', 'D5 — Which review mode?',
+    ]);
+    expect(evidence.nativeBlocks.rows).toEqual([]);
+    expect(evidence.hookReadError).toBeNull();
+    expect(withoutDecodedFrame(result.diagnostic)).not.toContain('PRIVATE_');
+  }, 15_000);
+  test.skipIf(process.platform === 'win32')('reader input conflict retains the new hook/native question pair before the last observation updates', async () => {
+    const result = await runFakeCounting('**DONE**', 'retention-questions-conflict');
+    expect(result.error).toContain('Native AskUserQuestion changed input for an existing tool ID');
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.observation).toBeUndefined();
+    expect(result.retainedBeforeClose).toBe(true);
+    expect(result.nativeRemoved).toBe(true);
+    expect(result.closed).toBe(true);
+    const evidence = result.diagnostic.counting.questionEvidence;
+    expect(evidence.count).toBe(0);
+    expect(evidence.observed).toEqual([]);
+    expect(evidence.candidateCount).toBe(1);
+    expect(evidence.hookEvents[0].id.text).toBe('tool-1');
+    expect(JSON.parse(evidence.hookEvents[0].inputJson.text).questions[0].question).toBe('D4 — Keep scope narrow?');
+    expect(evidence.nativeBlocks.rows).toHaveLength(1);
+    expect(evidence.nativeBlocks.rows[0].stopReason).toBeNull();
+    expect(JSON.parse(evidence.nativeBlocks.rows[0].blockJson.text)).toMatchObject({ id: 'tool-1',
+      input: { questions: [{ question: 'D4 — A different scope question' }] } });
+    expect(withoutDecodedFrame(result.diagnostic)).not.toContain('PRIVATE_');
+  }, 15_000);
   test.each(['ambiguous', 'binding', 'queue-operation', 'queue-content'])('early %s failure retains only owned diagnostic metadata before cleanup', async variant => {
     const result = await runFakeCounting('**DONE**', `retention-${variant}`);
     expect(result.error).toContain(variant === 'ambiguous' ? 'Ambiguous native permission owner' : variant === 'binding' ? 'cannot be bound' : 'Unsupported queue operation');
@@ -31,7 +109,7 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.retainedBeforeClose).toBe(true);
     expect(result.diagnosticFiles).toHaveLength(1);
     const diagnostic = result.diagnostic;
-    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_');
+    expect(withoutDecodedFrame(diagnostic)).not.toContain('PRIVATE_');
     expect(diagnostic.calls[0]).toMatchObject({ result: 'completed', input: { type: 'object', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) } });
     expect(diagnostic.rawTail.text).toBeUndefined();
     expect(diagnostic.visibleTail.text).toBeUndefined();
@@ -75,16 +153,16 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.retainedBeforeClose).toBe(true);
     expect(result.diagnosticFiles).toHaveLength(1);
     const diagnostic = result.diagnostic;
-    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_');
+    expect(withoutDecodedFrame(diagnostic)).not.toContain('PRIVATE_');
     expect(diagnostic.rawTail.text).toBeUndefined();
     expect(diagnostic.visibleTail.text).toBeUndefined();
     expect(diagnostic.counting.dialog.text).toBeUndefined();
     expect(diagnostic.counting.dialog.sha256).toMatch(/^[a-f0-9]{64}$/);
     const retained = JSON.parse(diagnostic.observation.text);
     expect(retained).toMatchObject({ outcome: 'timeout', lastLoopStage: 'no-pending-question', step0Count: 0, reviewCount: 0 });
-    expect(retained.lastObservation.permissionMenu).toEqual({ numbered, permissionTail });
+    expect(retained.lastObservation.permissionMenu).toEqual({ numbered, permissionTail, permissionWindow: permissionTail });
     expect(retained.lastObservation.frame.fresh).toBe(fresh);
-    expect(result.observation.diagnostics.lastObservation.permissionMenu).toEqual({ numbered, permissionTail });
+    expect(result.observation.diagnostics.lastObservation.permissionMenu).toEqual({ numbered, permissionTail, permissionWindow: permissionTail });
     expect(diagnostic.counting.permissionRequests).toHaveLength(1);
     expect(diagnostic.counting.permissionRequests[0]).toMatchObject({ name: 'Write', result: 'pending', nativeToolId: 'tool-1' });
   }, 15_000);
@@ -103,7 +181,7 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     const result = await runFakeCounting('**DONE**', 'retention-timeout-write-failure');
     expect(result.error).toBeUndefined();
     expect(result.observation).toMatchObject({ outcome: 'timeout', elapsedMs: result.helperTimeoutMs, step0Count: 0, reviewCount: 0 });
-    expect(result.observation.diagnostics.lastObservation.permissionMenu).toEqual({ numbered: true, permissionTail: false });
+    expect(result.observation.diagnostics.lastObservation.permissionMenu).toEqual({ numbered: true, permissionTail: false, permissionWindow: false });
     expect(result.sends).toEqual(['/plan-ceo-review\r']);
     expect(result.diagnosticFiles).toEqual([]);
     expect(result.closed).toBe(true);
@@ -219,7 +297,7 @@ describe('real plan counting loop with an isolated fake PTY', () => {
       expect(last.nativeStable).toBe(variant !== 'frame-race');
     }
     if (variant === 'frame-race') expect(diagnostic.lastLoopStage).toBe('native-frame-changed');
-    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_');
+    expect(withoutDecodedFrame(diagnostic)).not.toContain('PRIVATE_');
     expect(result.closed).toBe(true);
   }, 15_000);
   test('terminal diagnostics retain bounded IDs and names without native inputs', async () => {
@@ -233,7 +311,7 @@ describe('real plan counting loop with an isolated fake PTY', () => {
       expect(item.name.length).toBe(64);
       expect(Object.keys(item).sort()).toEqual(['id', 'name']);
     }
-    expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_');
+    expect(withoutDecodedFrame(diagnostic)).not.toContain('PRIVATE_');
     expect(result.sends).toEqual(['/plan-ceo-review\r']);
   }, 15_000);
   test('terminal diagnostics distinguish the existing full-plan terminal from a stale decoded frame', async () => {

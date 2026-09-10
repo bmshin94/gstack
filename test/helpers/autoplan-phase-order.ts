@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { currentFilePermissionTarget, reserveNativePermissionGrant, type readPlanSkillQuestions, type NativePermissionGrant } from './plan-skill-questions';
+import { readQuestionEvents, type QuestionEventSource, type QuestionEventCall } from './plan-skill-question-events';
 
 /** The chain may grant file edits in its fixture and native plan directory.
  * The shared reservation still requires the exact owned request and menu;
@@ -52,8 +53,9 @@ export interface AutoplanTranscriptObservation {
 export function retainAutoplanFailure(opts: {
   configDir: string | null; sessionId: string; observation: unknown;
   raw: () => string; visible: () => string; evalDir?: string;
-  /** Counting errors retain schemas/ownership only: never tool contents or screen previews. */
-  counting?: { native: ReturnType<typeof readPlanSkillQuestions> | null; dialog: string };
+  /** Owned question evidence and the last decoded viewport are bounded; raw history stays hashed. */
+  counting?: { native: ReturnType<typeof readPlanSkillQuestions> | null; dialog: string; events?: QuestionEventSource | null;
+    frame?: { text: string; rawEnd: number; observedAtMs: number; questionSince: number; viewportInputSince: number } | null };
 }): string | null {
   try {
     const raw = opts.raw();
@@ -88,9 +90,45 @@ export function retainAutoplanFailure(opts: {
     const pending = calls.filter(call => !results.has(call.id));
     const queue = native.rows.map((row, index) => ({ row, index })).filter(({ row }) => row.type === 'queue-operation');
     const state = opts.counting?.native;
+    // The failing reader may not have updated state. Preserve current native
+    // AUQs and revalidated hook inputs as well as the earlier pending snapshot.
+    // These later diagnostic reads never supply an answer or change the error.
+    const observedPending = state?.calls.filter(call => call.result === 'pending') ?? [];
+    let hookQuestions: QuestionEventCall[] = [];
+    let hookReadError: ReturnType<typeof clip> | null = null;
+    if (opts.counting?.events) {
+      try { hookQuestions = readQuestionEvents(opts.counting.events, { configDir: opts.configDir,
+        sessionId: opts.sessionId, transcriptFile: native.file }); }
+      catch (error) { hookReadError = clip(String(error), 1024); }
+    }
+    const nativeQuestions = calls.filter(call => call.name === 'AskUserQuestion');
+    const candidateIds = [...new Set([...observedPending.slice(-16).map(call => call.id),
+      ...nativeQuestions.slice().reverse().map(call => call.id), ...hookQuestions.map(call => call.id),
+      ...observedPending.map(call => call.id)])];
+    const questionIds = new Set(candidateIds.slice(0, 16));
+    const questionBlocks: unknown[] = [];
+    if (opts.counting) for (const [rowIndex, row] of native.rows.entries()) {
+      const message = row.message;
+      if (!Array.isArray(message?.content)) continue;
+      for (const block of message.content) {
+        const invocation = row.type === 'assistant' && message.role === 'assistant'
+          && block?.type === 'tool_use' && block.name === 'AskUserQuestion' && questionIds.has(block.id);
+        const result = row.type === 'user' && message.role === 'user'
+          && block?.type === 'tool_result' && questionIds.has(block.tool_use_id);
+        if (!invocation && !result) continue;
+        questionBlocks.push({ rowIndex, type: row.type, stopReason: message.stop_reason ?? null,
+          timestamp: typeof row.timestamp === 'string' ? clip(row.timestamp, 256) : null,
+          cwd: typeof row.cwd === 'string' ? clip(row.cwd, 4096) : null,
+          blockJson: clip(JSON.stringify(block), 65_536),
+          ...(result && row.toolUseResult !== undefined ? { toolUseResultJson: clip(JSON.stringify(row.toolUseResult), 65_536) } : {}) });
+      }
+    }
     const fileTarget = opts.counting ? currentFilePermissionTarget(opts.counting.dialog) : null;
     const counting = opts.counting ? {
       dialog: { ...signature(opts.counting.dialog), currentFileTarget: fileTarget ? { ...fileTarget, filePath: fileTarget.filePath.slice(0, 4096) } : null },
+      decodedFrame: opts.counting.frame ? { source: 'last-sampled-current-screen', ...clip(opts.counting.frame.text, 65_536),
+        rawEnd: opts.counting.frame.rawEnd, observedAtMs: opts.counting.frame.observedAtMs,
+        questionSince: opts.counting.frame.questionSince, viewportInputSince: opts.counting.frame.viewportInputSince } : null,
       nativeObserved: state !== null, permissionRequestCapture: state?.permissionRequestCapture ?? null,
       permissionToolCount: state?.permissionTools.length ?? null,
       permissionTools: state?.permissionTools.slice(-16).map(tool => ({ id: clip(tool.id, 256), name: clip(tool.name, 256),
@@ -99,6 +137,19 @@ export function retainAutoplanFailure(opts: {
       permissionRequests: state?.permissionRequests.slice(-16).map(request => ({ requestId: clip(request.requestId, 256),
         nativeToolId: request.nativeToolId?.slice(0, 256) ?? null, name: request.name, result: request.result,
         capturedAtMs: request.capturedAtMs, cwd: clip(request.cwd, 4096), input: safeInput(request.name, request.input) })) ?? [],
+      questionEvidence: {
+        count: observedPending.length, omitted: Math.max(0, observedPending.length - 16),
+        candidateCount: candidateIds.length, candidatesOmitted: Math.max(0, candidateIds.length - 16),
+        chronology: 'Earlier counting snapshot; later owned transcript and hook reads are not atomic. Pending IDs have priority, then latest native AUQs, then remaining hooks. Hook order is not execution order.',
+        observed: observedPending.filter(call => questionIds.has(call.id)).map(call => ({ id: clip(call.id, 256),
+          observedResult: call.result, questionsJson: clip(JSON.stringify(call.questions), 65_536),
+          resultAtRetention: results.has(call.id) ? results.get(call.id) ? 'error' : 'completed'
+            : nativeQuestions.some(nativeCall => nativeCall.id === call.id) ? 'pending' : 'absent' })),
+        hookEvents: hookQuestions.filter(event => questionIds.has(event.id)).map(event => ({ id: clip(event.id, 256),
+          toolName: event.toolName, cwd: clip(event.cwd, 4096), inputJson: clip(JSON.stringify(event.input), 65_536) })),
+        hookReadError,
+        nativeBlocks: { count: questionBlocks.length, omitted: Math.max(0, questionBlocks.length - 32), rows: questionBlocks.slice(-32) },
+      },
       queueOperations: { count: queue.length, omitted: Math.max(0, queue.length - 16), rows: queue.slice(-16).map(({ row, index }) => ({
         rowIndex: index, operation: typeof row.operation === 'string' ? clip(row.operation, 64) : signature(row.operation),
         content: signature(row.content), uuid: typeof row.uuid === 'string' ? clip(row.uuid, 256) : null,
@@ -119,7 +170,7 @@ export function retainAutoplanFailure(opts: {
       rawTail: { ...(counting ? signature(raw.slice(-65_536)) : clip(raw.slice(-65_536), 65_536)), omittedPrefixCodeUnits: Math.max(0, raw.length - 65_536) }, rawCodeUnits: raw.length,
       visibleTail: { ...(counting ? signature(visible.slice(-65_536)) : clip(visible.slice(-65_536), 65_536)), omittedPrefixCodeUnits: Math.max(0, visible.length - 65_536) }, visibleCodeUnits: visible.length,
       ...(counting ? { counting } : {}),
-      limits: counting ? 'Diagnostic only. Queue content, native inputs and screen text are hashed, never retained. Ownership metadata does not establish permission or completion.' : 'Diagnostic only. Pending tools are not proof of a permission prompt or a failed command. Native thinking, signatures and tool results are omitted; clipped command inputs remain incomplete evidence.',
+      limits: counting ? 'Diagnostic only. Selected owned AUQ inputs/results and the last sampled decoded viewport are retained with explicit clipping. The viewport keeps its own observation/input epochs; it is not resampled at retention or proof of current ownership. Other native inputs, queue content and raw/flattened history stay hashed. Native thinking and unrelated/foreign results are omitted. Later evidence cannot change the observation, grant input or establish completion.' : 'Diagnostic only. Pending tools are not proof of a permission prompt or a failed command. Native thinking, signatures and tool results are omitted; clipped command inputs remain incomplete evidence.',
     };
     const evalDir = opts.evalDir ?? process.env.GSTACK_EVAL_DIR;
     if (!evalDir) throw new Error('GSTACK_EVAL_DIR is not configured');

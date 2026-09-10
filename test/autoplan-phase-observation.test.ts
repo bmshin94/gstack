@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, reserveAutoplanFilePermission, retainAutoplanFailure, validateAutoplanPhaseOrder } from './helpers/autoplan-phase-order';
 import { stripAnsi } from './helpers/claude-pty-runner';
 import type { readPlanSkillQuestions, NativePermissionGrant } from './helpers/plan-skill-questions';
@@ -263,6 +264,110 @@ describe('autoplan announcements from the owned main transcript', () => {
   test('diagnostic observation failure cannot replace the test outcome', () => {
     expect(retainAutoplanFailure({ configDir, sessionId, observation: { outcome: 'timeout' },
       raw: () => { throw new Error('terminal capture failed'); }, visible: () => '' })).toBeNull();
+  });
+
+  const pendingQuestion = (id = 'pending-question', question = 'D4 — Choose one remedy') => ({ id, result: 'pending' as const,
+    questions: [{ header: 'Remedy', question, multiSelect: false,
+      options: [{ label: 'Fix it', description: 'Apply the remedy' }, { label: 'Defer', description: 'Keep current behavior' }] }],
+  });
+  const retainQuestions = (calls = [pendingQuestion()], raw = () => 'PRIVATE_SCREEN') => {
+    const saved = retainAutoplanFailure({ configDir, sessionId, evalDir: path.join(configDir, 'retained'),
+      observation: { observedBeforeRetention: true }, raw, visible: () => 'PRIVATE_SCREEN',
+      counting: { native: { calls, ready: false, pendingExitPlanModeIds: [], pendingBytes: 0, permissionTools: [],
+        permissionResults: [], permissionRequestCapture: true, permissionRequests: [] }, dialog: 'PRIVATE_SCREEN' } });
+    expect(saved).not.toBeNull();
+    expect(fs.statSync(saved!).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.dirname(saved!)).mode & 0o777).toBe(0o700);
+    return JSON.parse(fs.readFileSync(saved!, 'utf8'));
+  };
+
+  test.each([false, true])('failure frame retention keeps sampled text separate from later history (long=%s)', long => {
+    write(row([{ type: 'thinking', thinking: 'PRIVATE_THINKING', signature: 'PRIVATE_SIGNATURE' }]));
+    const text = long ? '😀'.repeat(35_000) : 'Current permission viewport\n❯ 1. Yes\n  2. No';
+    const frame = { text, rawEnd: 1234, observedAtMs: 22, questionSince: 100, viewportInputSince: 110 };
+    const saved = retainAutoplanFailure({ configDir, sessionId, evalDir: path.join(configDir, 'retained'),
+      observation: { observedAtMs: 99 }, raw: () => 'PRIVATE_LATER_RAW_HISTORY', visible: () => 'PRIVATE_LATER_VISIBLE_HISTORY',
+      counting: { native: null, dialog: text, frame } });
+    expect(saved).not.toBeNull();
+    const record = JSON.parse(fs.readFileSync(saved!, 'utf8'));
+    expect(record.counting.decodedFrame).toEqual({ source: 'last-sampled-current-screen', ...frame,
+      text: text.slice(0, 65_536), codeUnits: text.length, truncated: long,
+      sha256: createHash('sha256').update(text).digest('hex') });
+    expect(JSON.stringify(record)).not.toContain('PRIVATE_');
+    expect(fs.statSync(saved!).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.dirname(saved!)).mode & 0o777).toBe(0o700);
+  });
+
+  test('failure frame retention keeps fallback history hashed when no decoded sample exists', () => {
+    write(row([]));
+    const record = retainQuestions([]);
+    expect(record.counting.decodedFrame).toBeNull();
+    expect(JSON.stringify(record)).not.toContain('PRIVATE_SCREEN');
+  });
+
+  test('pending-question retention includes unfinished invocation structure while excluding foreign and unrelated payloads', () => {
+    const call = pendingQuestion();
+    const input = { questions: call.questions };
+    const block = { type: 'tool_use', id: call.id, name: 'AskUserQuestion', input };
+    write(row([block], { timestamp: '2026-09-10T00:00:01Z', cwd: '/owned', message: { role: 'assistant', stop_reason: null, content: [block] } })
+      + row([{ type: 'thinking', thinking: 'PRIVATE_THINKING' }, { type: 'tool_use', id: 'other', name: 'Bash', input: { command: 'PRIVATE_COMMAND' } }])
+      + row([], { sessionId: otherSession, type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: 'PRIVATE_FOREIGN_RESULT' }] } })
+      + row([], { isSidechain: true, type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: 'PRIVATE_SIDECHAIN_RESULT' }] } })
+      + row([], { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'other', content: 'PRIVATE_UNRELATED_RESULT' }] } }));
+    const record = retainQuestions();
+    const evidence = record.counting.questionEvidence;
+    expect(evidence.observed[0]).toMatchObject({ observedResult: 'pending', resultAtRetention: 'pending' });
+    expect(JSON.parse(evidence.observed[0].questionsJson.text)).toEqual(call.questions);
+    expect(evidence.nativeBlocks.rows).toHaveLength(1);
+    expect(evidence.nativeBlocks.rows[0]).toMatchObject({ rowIndex: 0, stopReason: null, timestamp: { text: '2026-09-10T00:00:01Z' }, cwd: { text: '/owned' } });
+    expect(JSON.parse(evidence.nativeBlocks.rows[0].blockJson.text)).toEqual(block);
+    expect(JSON.stringify(record)).not.toContain('PRIVATE_');
+  });
+
+  test.each([false, true])('pending-question retention distinguishes a late matching native result (error=%s)', isError => {
+    const call = pendingQuestion();
+    const block = { type: 'tool_use', id: call.id, name: 'AskUserQuestion', input: { questions: call.questions } };
+    const file = write(row([block], { message: { role: 'assistant', stop_reason: 'tool_use', content: [block] } }));
+    const result = { type: 'tool_result', tool_use_id: call.id, is_error: isError, content: isError ? 'Question failed' : 'Answer: Fix it' };
+    const record = retainQuestions([call], () => {
+      fs.appendFileSync(file, row([], { timestamp: '2026-09-10T00:00:02Z', type: 'user', toolUseResult: { answers: { 'D4 — Choose one remedy': 'Fix it' } },
+        message: { role: 'user', content: [result] } }));
+      return 'PRIVATE_SCREEN';
+    });
+    const evidence = record.counting.questionEvidence;
+    expect(evidence.observed[0]).toMatchObject({ observedResult: 'pending', resultAtRetention: isError ? 'error' : 'completed' });
+    expect(call.result).toBe('pending');
+    expect(evidence.nativeBlocks.rows).toHaveLength(2);
+    expect(JSON.parse(evidence.nativeBlocks.rows[1].blockJson.text)).toEqual(result);
+    expect(JSON.parse(evidence.nativeBlocks.rows[1].toolUseResultJson.text)).toEqual({ answers: { 'D4 — Choose one remedy': 'Fix it' } });
+    expect(evidence.nativeBlocks.rows[1].timestamp.text).toBe('2026-09-10T00:00:02Z');
+  });
+
+  test('pending-question retention marks per-payload truncation and preserves the native partial-byte boundary', () => {
+    const call = pendingQuestion('large-question', 'é'.repeat(70_000));
+    const block = { type: 'tool_use', id: call.id, name: 'AskUserQuestion', input: { questions: call.questions } };
+    write(row([block]) + '{"unfinished":');
+    const record = retainQuestions([call]);
+    expect(record.pendingBytes).toBeGreaterThan(0);
+    const evidence = record.counting.questionEvidence;
+    expect(evidence.observed[0].questionsJson).toMatchObject({ truncated: true, codeUnits: JSON.stringify(call.questions).length });
+    expect(evidence.observed[0].questionsJson.text.length).toBe(65_536);
+    expect(evidence.nativeBlocks.rows[0].blockJson.truncated).toBe(true);
+    expect(evidence.nativeBlocks.rows[0].blockJson.text.length).toBe(65_536);
+  });
+
+  test('pending-question retention bounds the selected IDs and native blocks without leaking omitted payloads', () => {
+    const calls = Array.from({ length: 20 }, (_, i) => pendingQuestion(`question-${i}`, i < 4 ? 'PRIVATE_OMITTED' : `Question ${i}`));
+    const blocks = calls.map(call => ({ type: 'tool_use', id: call.id, name: 'AskUserQuestion', input: { questions: call.questions } }));
+    write(row(blocks) + row(blocks) + row(blocks));
+    const evidence = retainQuestions(calls).counting.questionEvidence;
+    expect(evidence.count).toBe(20);
+    expect(evidence.omitted).toBe(4);
+    expect(evidence.observed).toHaveLength(16);
+    expect(evidence.nativeBlocks.count).toBe(48);
+    expect(evidence.nativeBlocks.omitted).toBe(16);
+    expect(evidence.nativeBlocks.rows).toHaveLength(32);
+    expect(JSON.stringify(evidence)).not.toContain('PRIVATE_OMITTED');
   });
 });
 
