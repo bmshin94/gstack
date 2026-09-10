@@ -58,7 +58,7 @@ describe('branch slug hygiene (#2550, #1851)', () => {
   test('inventory covers repository outputs and host caches without ignored candidate trees', () => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-skill inventory-'));
     try {
-      execFileSync('git', ['init', '-q'], { cwd: repo });
+      execFileSync('git', ['init', '-q'], { cwd: repo, timeout: 30_000 });
       const write = (file: string) => {
         fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
         fs.writeFileSync(path.join(repo, file), '# Skill\n');
@@ -68,7 +68,7 @@ describe('branch slug hygiene (#2550, #1851)', () => {
       fs.writeFileSync(path.join(repo, '.gitignore'),
         ['.context/', 'node_modules/', ...hosts.map(host => `${host.hostSubdir}/`)].join('\n'));
       source.forEach(write);
-      execFileSync('git', ['add', '--', ...source], { cwd: repo });
+      execFileSync('git', ['add', '--', ...source], { cwd: repo, timeout: 30_000 });
       source.push('new skill/SKILL.md');
       write(source.at(-1)!); // New, untracked output must still be checked.
       write('.context/candidate/SKILL.md');

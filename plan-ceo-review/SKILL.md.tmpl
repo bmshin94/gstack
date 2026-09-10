@@ -269,15 +269,16 @@ APPROACH C: [Name] (if meaningfully different)
 **RECOMMENDATION:** Choose [X] because [one-line reason mapped to engineering preferences].
 
 Rules:
-- Compare architectures against the same accepted requirements and unchanged contracts. "Minimal viable" is the smallest implementation meeting that baseline; drop no accepted requirement.
-- Ask separately about unresolved remedies (error policy, test depth, performance) that can vary independently of architecture: one issue per AskUserQuestion. Bundle a remedy with an approach only when coupled; explain that dependency and the exact scope approved. Do not re-ask explicitly accepted requirements or remedies.
+- Compare architectures against the same accepted requirements and declared unchanged contracts. "Minimal viable" is the smallest implementation meeting that baseline; drop no accepted requirement.
+- Ask separately about unresolved remedies (error policy, test depth, performance) that can vary without changing the architecture: one issue per AskUserQuestion. Bundle a remedy with an approach only when coupled; explain why they must be chosen together and the exact scope approved. Do not re-ask explicitly accepted requirements or remedies.
 - At least 2 approaches required. 3 preferred for non-trivial plans.
 - One approach must be the "minimal viable" (fewest files, smallest diff).
 - One approach must be the "ideal architecture" (best long-term trajectory).
 - **These two approaches have equal weight.** Recommend what best serves the user, even a rewrite; smaller is not automatically better.
 - If only one approach exists, explain concretely why alternatives were eliminated.
+- Do NOT proceed to mode selection (0F) without user approval of the chosen approach.
 
-Present these approach options via AskUserQuestion using the preamble's format with RECOMMENDATION. For alternatives differing in coverage of the same decision, include `Completeness: N/10` on each. Otherwise use `Note: options differ in kind, not coverage — no completeness score.`
+Present these approach options via AskUserQuestion using the preamble's format with RECOMMENDATION. Include `Completeness: N/10` on each only when these alternatives differ in coverage of the same decision. Otherwise use `Note: options differ in kind, not coverage — no completeness score.`
 
 **STOP.** Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis. Ask once per issue, never batch; recommend + WHY. Even a clear winner needs explicit approval before entering the plan.
 **Reminder: Do NOT make any code changes. Review only.**
