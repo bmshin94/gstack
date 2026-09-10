@@ -59,6 +59,8 @@ describe('PTY temporary workspace trust', () => {
     await withFixture(async ({ cwd, launch }) => {
       const shared = hermeticSkillsConfigDir();
       const before = fs.readFileSync(path.join(shared, '.claude.json'), 'utf8');
+      const permissionsBefore = fs.readFileSync(path.join(shared, 'settings.json'), 'utf8');
+      expect(JSON.parse(permissionsBefore).permissions.allow).toHaveLength(4);
       const alias = path.join(cwd, 'alias');
       const workspace = path.join(cwd, 'workspace');
       fs.mkdirSync(workspace);
@@ -73,6 +75,11 @@ describe('PTY temporary workspace trust', () => {
       expect(first.env.CLAUDE_CONFIG_DIR).not.toBe(shared);
       expect(first.env.CLAUDE_CONFIG_DIR.endsWith(`${path.sep}.claude`)).toBe(true);
       expect(first.session.hermeticConfigDir).toBe(first.env.CLAUDE_CONFIG_DIR);
+      for (const launch of [first, second, sameWorkspace]) {
+        expect(fs.readFileSync(path.join(launch.env.CLAUDE_CONFIG_DIR, 'settings.json'), 'utf8')).toBe(permissionsBefore);
+        expect(fs.lstatSync(path.join(launch.env.CLAUDE_CONFIG_DIR, 'settings.json')).isFile()).toBe(true);
+      }
+      expect(fs.readFileSync(path.join(shared, 'settings.json'), 'utf8')).toBe(permissionsBefore);
       expect(first.env.GSTACK_HOME).toBe(path.join(cwd, 'state'));
       const config = JSON.parse(fs.readFileSync(path.join(first.env.CLAUDE_CONFIG_DIR, '.claude.json'), 'utf8'));
       expect(config.diffSidebarOpen).toBe(false);
@@ -94,6 +101,7 @@ describe('PTY temporary workspace trust', () => {
       const { session, env } = await launch({ seedSkills: false });
       expect(session.visibleText()).toBe('FIXTURE_READY');
       expect(fs.existsSync(path.join(env.CLAUDE_CONFIG_DIR, 'skills'))).toBe(false);
+      expect(fs.existsSync(path.join(env.CLAUDE_CONFIG_DIR, 'settings.json'))).toBe(false);
     });
   });
 
@@ -102,6 +110,8 @@ describe('PTY temporary workspace trust', () => {
       const explicit = path.join(cwd, 'explicit');
       fs.mkdirSync(explicit);
       fs.writeFileSync(path.join(explicit, '.claude.json'), '{"diffSidebarOpen":true}');
+      const explicitSettings = '{"permissions":{"deny":["Read"]}}';
+      fs.writeFileSync(path.join(explicit, 'settings.json'), explicitSettings);
       const override = await launch({ env: { CLAUDE_CONFIG_DIR: explicit } });
       expect(override.env.CLAUDE_CONFIG_DIR).toBe(explicit);
       expect(override.session.visibleText()).toBe('FIXTURE_UNTRUSTED');
@@ -110,6 +120,7 @@ describe('PTY temporary workspace trust', () => {
       const legacy = await launch({ env: { CLAUDE_CONFIG_DIR: explicit } });
       expect(legacy.env.CLAUDE_CONFIG_DIR).toBe(explicit);
       expect(legacy.session.hermeticConfigDir).toBeNull();
+      expect(fs.readFileSync(path.join(explicit, 'settings.json'), 'utf8')).toBe(explicitSettings);
       expect(legacy.session.visibleText()).toBe('FIXTURE_UNTRUSTED');
       expect(fs.readFileSync(path.join(explicit, '.claude.json'), 'utf8')).toBe('{"diffSidebarOpen":true}');
     });
@@ -132,3 +143,36 @@ describe('PTY temporary workspace trust', () => {
     });
   });
 });
+
+
+test.skipIf(process.platform === 'win32')('a live PTY child receives only the scoped companion settings alongside native hooks', async () => {
+  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pty-companion-')));
+  const binary = path.join(cwd, 'fake-cli.ts');
+  fs.writeFileSync(binary, `#!${process.execPath}\nimport fs from 'node:fs'; import path from 'node:path';
+const config = process.env.CLAUDE_CONFIG_DIR;
+console.log('COMPANION_SETTINGS ' + JSON.stringify({ settings: JSON.parse(fs.readFileSync(path.join(config, 'settings.json'), 'utf8')), args: process.argv.slice(2) }));
+setTimeout(() => process.exit(0), 3000);
+`, { mode: 0o700 });
+  const priorBinary = process.env.BROWSE_TERMINAL_BINARY, priorHermetic = process.env.EVALS_HERMETIC;
+  process.env.BROWSE_TERMINAL_BINARY = binary; process.env.EVALS_HERMETIC = '1';
+  let session: Awaited<ReturnType<typeof launchClaudePty>> | undefined;
+  try {
+    session = await launchClaudePty({ cwd, seedSkills: true, model: 'fixture', timeoutMs: 5000,
+      captureQuestionsForSession: 'bbbbbbbb-1111-2222-3333-cccccccccccc' });
+    await session.waitFor(/COMPANION_SETTINGS /, 5000);
+    const printed = JSON.parse(session.visibleText().match(/COMPANION_SETTINGS (.+)/)![1]);
+    const expected = JSON.parse(fs.readFileSync(path.join(hermeticSkillsConfigDir(), 'settings.json'), 'utf8'));
+    expect(printed.settings).toEqual(expected);
+    expect(printed.settings.permissions.allow).toHaveLength(4);
+    expect(printed.args.slice(0, 4)).toEqual(['--model', 'fixture', '--permission-mode', 'plan']);
+    expect(printed.args).not.toContain('--add-dir');
+    expect(printed.args).not.toContain('--allowedTools');
+    const hookPath = printed.args[printed.args.indexOf('--settings') + 1];
+    expect(Object.keys(JSON.parse(fs.readFileSync(hookPath, 'utf8')))).toEqual(['hooks']);
+  } finally {
+    await session?.close();
+    if (priorBinary === undefined) delete process.env.BROWSE_TERMINAL_BINARY; else process.env.BROWSE_TERMINAL_BINARY = priorBinary;
+    if (priorHermetic === undefined) delete process.env.EVALS_HERMETIC; else process.env.EVALS_HERMETIC = priorHermetic;
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}, 10000);

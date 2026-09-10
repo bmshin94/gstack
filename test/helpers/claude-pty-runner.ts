@@ -22,6 +22,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { submitPlanSeed, PlanSeedTimeout } from './plan-seed-submission';
 import { isDeepStrictEqual } from 'node:util';
 import { retainAutoplanFailure } from './autoplan-phase-order';
 import { readPlanSkillCompletion } from './plan-skill-completion';
@@ -476,7 +477,7 @@ export function logPtySnapshot(visible: string, ctx: { testName: string; elapsed
  */
 export function judgePtyState(
   visible: string,
-  ctx?: { testName?: string },
+  ctx?: { testName?: string; timeoutMs?: number },
 ): PtyStateVerdict {
   // Normalize: strip trailing whitespace lines + take last 4KB. Hash the
   // normalized form so spinner-frame-only diffs (which all look "working")
@@ -522,7 +523,7 @@ ${tail}
       {
         input: prompt,
         stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 30_000,
+        timeout: Math.min(30_000, ctx?.timeoutMs ?? 30_000),
         encoding: 'utf-8',
       },
     );
@@ -1426,6 +1427,7 @@ export async function launchClaudePty(
       }), null, 2));
       if (opts.seedSkills) {
         fs.symlinkSync(path.join(childEnv.CLAUDE_CONFIG_DIR!, 'skills'), path.join(configDir, 'skills'), 'dir');
+        fs.copyFileSync(path.join(childEnv.CLAUDE_CONFIG_DIR!, 'settings.json'), path.join(configDir, 'settings.json'));
       }
       childEnv.CLAUDE_CONFIG_DIR = configDir;
     } catch (error) {
@@ -1868,7 +1870,10 @@ export async function runPlanSkillObservation(opts: {
   trackTokens?: string[];
 }): Promise<PlanSkillObservation> {
   const startedAt = Date.now();
+  const budgetMs = opts.timeoutMs ?? 180_000;
+  const deadlineAt = startedAt + budgetMs;
   const session = await launchClaudePty({
+    captureScreen: !!opts.initialPlanContent,
     permissionMode: opts.inPlanMode === false ? null : 'plan',
     cwd: opts.cwd,
     timeoutMs: (opts.timeoutMs ?? 180_000) + 30_000,
@@ -1879,27 +1884,36 @@ export async function runPlanSkillObservation(opts: {
   });
 
   try {
-    // Boot grace + trust-dialog auto-handle.
-    await Bun.sleep(8000);
+    // Boot and seed preflight consume the same case budget as the review.
+    await Bun.sleep(Math.min(8000, Math.max(0, deadlineAt - Date.now())));
     if (opts.initialPlanContent) {
-      // Pre-pump the draft as a user message so the skill's Step 0 has
-      // concrete content to scope-challenge. The trailing `\r` submits
-      // the message; embedded `\n` are preserved as line breaks within
-      // the message (claude-code uses Enter to send, Shift+Enter for
-      // newlines, but raw `\r` from a PTY just submits whatever's in
-      // the input buffer).
       const seed = `Please review the following draft plan when I run the skill below:\n\n${opts.initialPlanContent}`;
-      session.send(`${seed}\r`);
-      // Wait for the seed message to render before sending the skill
-      // command. Without this gap the two messages can fuse and the
-      // skill name becomes part of the user prompt instead of a slash
-      // command.
-      await Bun.sleep(3000);
+      try {
+        await submitPlanSeed(session, seed, {
+          cwd: opts.cwd ?? process.cwd(), launchedAt: startedAt, deadlineAt,
+          isQuestionOrPermission: text => isProseAUQVisible(text) || isNumberedOptionListVisible(text) || isPermissionDialogVisible(text),
+        });
+      } catch (error) {
+        if (!(error instanceof PlanSeedTimeout)) throw error;
+        return { outcome: 'timeout',
+          summary: `Plan seed submission failed: ${error instanceof Error ? error.message : String(error)}`,
+          evidence: session.visibleText().slice(-2000), elapsedMs: Date.now() - startedAt,
+          proseAUQEverObserved: false, waitingEverObserved: false,
+          scopeGateQuestionObserved: false, scopeGateAutoSelectObserved: false,
+          ...(opts.trackTokens?.length ? { tokensObserved: Object.fromEntries(opts.trackTokens.map(t => [t, false])) } : {}),
+        };
+      }
     }
+    if (Date.now() >= deadlineAt) return {
+      outcome: 'timeout', summary: 'Boot or seed preflight exhausted the existing case budget',
+      evidence: session.visibleText().slice(-2000), elapsedMs: Date.now() - startedAt,
+      proseAUQEverObserved: false, waitingEverObserved: false,
+      scopeGateQuestionObserved: false, scopeGateAutoSelectObserved: false,
+      ...(opts.trackTokens?.length ? { tokensObserved: Object.fromEntries(opts.trackTokens.map(t => [t, false])) } : {}),
+    };
     const since = session.mark();
     session.send(`/${opts.skillName}\r`);
 
-    const budgetMs = opts.timeoutMs ?? 180_000;
     const start = Date.now();
     let lastJudgeAt = 0;
     let lastJudgeVerdict: PtyStateVerdict | null = null;
@@ -1927,8 +1941,9 @@ export async function runPlanSkillObservation(opts: {
     });
     const JUDGE_AFTER_MS = 60_000;
     const JUDGE_INTERVAL_MS = 30_000;
-    while (Date.now() - start < budgetMs) {
-      await Bun.sleep(2000);
+    while (Date.now() < deadlineAt) {
+      await Bun.sleep(Math.min(2000, Math.max(0, deadlineAt - Date.now())));
+      if (Date.now() >= deadlineAt) break;
       const visible = session.visibleSince(since);
 
       if (session.exited()) {
@@ -1992,6 +2007,7 @@ export async function runPlanSkillObservation(opts: {
         // existing, not on the outcome.
         const planFile = extractPlanFilePath(visible);
         if (planFile) obs.planFile = planFile;
+        if (Date.now() >= deadlineAt) break;
         return obs;
       }
 
@@ -2004,7 +2020,9 @@ export async function runPlanSkillObservation(opts: {
       if (elapsed > JUDGE_AFTER_MS && Date.now() - lastJudgeAt > JUDGE_INTERVAL_MS) {
         lastJudgeAt = Date.now();
         logPtySnapshot(visible, { testName: opts.skillName, elapsedMs: elapsed, tag: 'judge-tick' });
-        lastJudgeVerdict = judgePtyState(visible, { testName: opts.skillName });
+        if (Date.now() >= deadlineAt) break;
+        lastJudgeVerdict = judgePtyState(visible, { testName: opts.skillName, timeoutMs: Math.max(1, deadlineAt - Date.now()) });
+        if (Date.now() >= deadlineAt) break;
         if (lastJudgeVerdict.state === 'waiting') {
           waitingEverObserved = true;
           return {
@@ -2457,7 +2475,7 @@ export async function runPlanSkillCounting(opts: {
         && !permissionViewportAttempts.has(repaintOwner.requestId)
         && native.permissionTools.every(tool => tool.id === repaintOwner.nativeToolId)
         && lastObservation.permissionMenu.numbered && lastObservation.permissionMenu.permissionTail
-        && !lastObservation.permissionMenu.permissionWindow) {
+        && (!lastObservation.permissionMenu.permissionWindow || currentFilePermissionTarget(permissionVisible) === null)) {
         lastLoopStage = 'repainting-permission-viewport';
         permissionViewportAttempts.add(repaintOwner.requestId);
         const resized = await session.resizeQuestionViewport(120, deadlineAt);

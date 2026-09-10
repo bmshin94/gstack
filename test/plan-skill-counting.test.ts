@@ -393,14 +393,23 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.outcome).toBe('timeout');
     expect(result.closed).toBe(true);
   }, 15_000);
-  test('one owned permission repaint requires a fresh exact frame and restores only after ACK', async () => {
-    const result = await runFakeCounting('**DONE**', 'permission-repaint-fresh');
+  test.each(['fresh', 'controls'])('one owned permission repaint requires a fresh exact frame and restores only after ACK (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', 'permission-repaint-' + variant);
     expect(result.error).toBeUndefined();
     expect(result.resizes).toEqual([[240, 120], [240, 40]]);
     expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1']);
     expect(result.permissionWrites).toEqual(['create']);
     expect(result.unsolicitedWrites).toEqual([]);
     expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 0 });
+    expect(result.terminalCloseCount).toBe(1);
+    expect(result.closed).toBe(true);
+  });
+  test.each(['malformed', 'mismatch'])('malformed permission controls remain refused after one repaint (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', 'permission-repaint-controls-' + variant);
+    expect(result.resizes).toEqual([[240, 120]]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.error).toContain('cannot be bound');
     expect(result.terminalCloseCount).toBe(1);
     expect(result.closed).toBe(true);
   });

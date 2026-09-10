@@ -39,6 +39,24 @@ function questionInputWithDefaults(input: any): any {
       ? { ...question, multiSelect: false } : question) };
 }
 
+/** CLI 2.1.263 strips undeclared keys from nested AUQ objects before PreToolUse.
+ * Keep the top level exact, including metadata/answers/annotations. Preserve
+ * declared form-question fields too: a form cannot masquerade as a choice.
+ * This projection is usable only when an owned execution hook corroborates it.
+ */
+function questionSchemaProjection(input: any): any {
+  if (!input || typeof input !== 'object' || !Array.isArray(input.questions)) return input;
+  const pick = (value: any, keys: readonly string[]) => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).filter(([key]) => keys.includes(key))) : value;
+  return { ...input, questions: input.questions.map((value: any) => {
+    const question = pick(value, ['question', 'header', 'options', 'multiSelect',
+      'kind', 'description', 'placeholder', 'min', 'max', 'step', 'defaultValue', 'unit']);
+    return question && typeof question === 'object' && Array.isArray(question.options)
+      ? { ...question, options: question.options.map((option: any) => pick(option, ['label', 'description', 'preview'])) }
+      : question;
+  }) };
+}
+
 /** Bounded schema diagnostics only; never include question or option content. */
 function questionInputShape(input: any): string {
   const type = (value: unknown) => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
@@ -86,14 +104,23 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const earlyExits = new Map<string, { input: Record<string, unknown>; cwd: string }>();
   const permissionTools = new Map<string, NativePermissionTool>();
   const inputs = new Map<string, unknown>();
+  const executionQuestionInputs = new Map<string, unknown>();
+  const comparisonQuestionInput = (id: string, input: any) => {
+    const defaulted = questionInputWithDefaults(input);
+    const executed = executionQuestionInputs.get(id);
+    // A transcript alone never licenses dropping unknown fields. The complete
+    // declared projection must match this launch's exact owned hook input.
+    return executed !== undefined && isDeepStrictEqual(questionSchemaProjection(defaulted), executed)
+      ? executed : defaulted;
+  };
   const permissionInputs = new Map<string, NativePermissionTool>();
   const unfinishedFileInputs: NativePermissionTool[] = [];
   const requestEvents = events ? readPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
   const earlyCompletions = new Map<string, FileCompletionEventCall>();
-  const addQuestion = (id: unknown, input: any) => {
+  const addQuestion = (id: unknown, input: any, fromExecution = false) => {
     if (typeof id !== 'string' || !id) throw new Error('Native AskUserQuestion is missing its tool ID');
     if (permissionInputs.has(id)) throw new Error('Native tool changed input or name for an existing tool ID');
-    input = questionInputWithDefaults(input);
+    input = fromExecution ? questionInputWithDefaults(input) : comparisonQuestionInput(id, input);
     const questions = input?.questions;
     if (!Array.isArray(questions) || questions.length < 1 || questions.length > 4 || questions.some(q =>
       typeof q?.question !== 'string' || !q.question.trim() || typeof q.header !== 'string' || !q.header.trim()
@@ -118,7 +145,8 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   };
   if (events) {
     for (const event of readQuestionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
-      addQuestion(event.id, event.input);
+      addQuestion(event.id, event.input, true);
+      executionQuestionInputs.set(event.id, questionInputWithDefaults(event.input));
     }
     for (const event of readExitPlanModeEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
       if (inputs.has(event.id)) throw new Error('Native ExitPlanMode changed input or name for an existing tool ID');
@@ -179,7 +207,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       // An unfinished assistant record cannot introduce a call, but it can
       // invalidate conflicting early evidence before any input is sent.
       if (row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use' && inputs.has(block.id)
-        && (block.name !== 'AskUserQuestion' || !isDeepStrictEqual(inputs.get(block.id), questionInputWithDefaults(block.input)))) {
+        && (block.name !== 'AskUserQuestion' || !isDeepStrictEqual(inputs.get(block.id), comparisonQuestionInput(block.id, block.input)))) {
         throw new Error('Native AskUserQuestion changed input for an existing tool ID');
       }
       if (row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use' && permissionInputs.has(block.id)) {

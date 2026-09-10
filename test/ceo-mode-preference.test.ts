@@ -1258,3 +1258,87 @@ test.each([false, true])('a previous input-window preview cannot answer a new ow
     expect(observation.outcome).toBe(showCurrent ? 'auto_decided' : 'timeout');
   } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });
+
+
+const repeatCategory = 'plan-ceo-review-expansion-proposal';
+const firstProposal = 'D2 — Add a provenance row?\nReply with A or B. <gstack-qid:' + repeatCategory + '>\nA) Add provenance (recommended)\nB) Skip';
+const nextProposal = 'Recorded the first decision.\n\nD3 — Redact secret values?\nReply with A or B. <gstack-qid:' + repeatCategory + '>\nA) Redact secrets (recommended)\nB) Skip';
+
+test('reused category requires acknowledged unchanged history and the entire distinct current brief', () => {
+  const previous = assistant(firstProposal, 'end_turn', 'first');
+  const current = assistant(nextProposal, 'end_turn', 'second');
+  const owned = transcript(previous, current);
+  const acknowledgements = new Map([['first', firstProposal]]);
+  const inspect = (rows = owned, frame = nextProposal, input = frame, acks = acknowledgements) =>
+    inspectCeoModePreference(rows, frame, frame, input, acks);
+  expect(inspect()).toMatchObject({ kind: 'unrelated', id: 'second', questionId: repeatCategory, answer: 'A' });
+  expect(inspect(owned, nextProposal, nextProposal.replace('Redact secrets', '\x1b[?25lRedact\x1b[?25h secrets')))
+    .toMatchObject({ kind: 'unrelated', id: 'second' });
+  for (const acks of [new Map(), new Map([['unrelated', firstProposal]]), new Map([['first', firstProposal + ' changed']])]) {
+    expect(inspect(owned, nextProposal, nextProposal, acks).kind).toBe('working');
+  }
+  for (const frame of [firstProposal, nextProposal.replace('Redact secrets', 'Export secrets'),
+    nextProposal.slice(nextProposal.indexOf('Reply')), nextProposal + '\n' + nextProposal]) {
+    expect(inspect(owned, frame, nextProposal).kind).toBe('working');
+    expect(inspect(owned, nextProposal, frame).kind).toBe('working');
+  }
+  for (const control of ['\x1b[2J', '\x1b[1D', '\x1b[?1049h']) {
+    expect(inspect(owned, nextProposal, nextProposal.replace('Redact secrets', control + 'Redact secrets')).kind).toBe('working');
+  }
+  for (const rows of [
+    { ...owned, pendingBytes: 1 }, transcript(previous, assistant(nextProposal, 'tool_use', 'second')),
+    transcript(previous, current, assistant('Working...', 'tool_use', 'later')),
+    transcript(previous, assistant(firstProposal, 'end_turn', 'second')),
+    transcript(assistant(firstProposal + ' changed', 'end_turn', 'first'), current),
+    transcript(previous, assistant(firstProposal, 'end_turn', 'unacknowledged'), current),
+  ]) expect(inspect(rows).kind).toBe('working');
+  const preview = { type: 'assistant', message: { role: 'assistant', id: 'preview', stop_reason: 'tool_use',
+    content: [{ type: 'tool_use', name: 'Write', input: { content: nextProposal } }] } };
+  expect(inspect(transcript(previous, preview, current)).kind).toBe('working');
+  for (const label of ['(not recommended)', '(recommended, but not now)']) {
+    const text = nextProposal.replace('(recommended)', label);
+    expect(inspect(transcript(previous, assistant(text, 'end_turn', 'second')), text).kind).toBe('working');
+  }
+});
+
+test.each(['exact ACK', 'missing ACK', 'wrong ACK', 'foreign ACK', 'missing confirmation'])(
+  'driver reuses a question category only after its previous exact submitted reply: %s', async scenario => {
+    const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-repeat-category-free-'));
+    let file = '', sessionId = '', visible = '', typed = '', time = 0, entered = 0, closed = false;
+    const writes: string[] = [];
+    const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ sessionId, ...row }) + '\n');
+    const render = (text: string, id: string) => { append(assistant(text, 'end_turn', id)); visible += '\n' + text; };
+    const session = {
+      hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
+      currentScreen: async () => ({ text: visible, rawEnd: visible.length }),
+      exited: () => false, close: async () => { closed = true; },
+      send(text: string) {
+        if (text.startsWith('/')) { render(firstProposal, 'first'); return; }
+        writes.push(text); typed = text; visible += '\n❯ ' + text;
+      },
+      sendKey(key: string) {
+        expect(key).toBe('Enter'); entered++;
+        if (scenario !== 'missing ACK') append({ type: 'user',
+          ...(scenario === 'foreign ACK' ? { sessionId: '00000000-0000-4000-8000-000000000001' } : {}),
+          message: { role: 'user', content: scenario === 'wrong ACK' ? 'Different reply' : typed } });
+        if (entered === 1) render(nextProposal, 'second');
+        else if (scenario !== 'missing confirmation') render(automatic, 'done');
+      },
+    } as unknown as ClaudePtySession;
+    try {
+      const result = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
+        now: () => time, pause: async ms => { time += ms; },
+        launch: async opts => {
+          sessionId = opts.extraArgs![1]; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+          fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
+        },
+      });
+      const acknowledged = scenario === 'exact ACK' || scenario === 'missing confirmation';
+      expect(closed).toBe(true);
+      expect(result.outcome).toBe(scenario === 'exact ACK' ? 'auto_decided' : 'timeout');
+      expect(result.answered).toEqual(acknowledged ? ['first', 'second'] : []);
+      expect(writes).toEqual(Array(acknowledged ? 2 : 1).fill(`For ${repeatCategory}, I choose option A. Continue the review.`));
+      expect(entered).toBe(acknowledged ? 2 : 1);
+    } finally { fs.rmSync(config, { recursive: true, force: true }); }
+  },
+);

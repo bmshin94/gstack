@@ -69,7 +69,7 @@ export function pickPlanReviewQuestion(question: NativeQuestion): number {
   // A bare Skip declines only an offered, recognized follow-up in this handoff.
   const offersFollowUp = labels.some(run);
   const manual = (label: string) => /^Skip\s*[,—–-]\s*(?:I(?:['’]ll| will)\s+)?handle (?:reviews|next steps) manually$/i.test(label)
-    || (offersFollowUp && /^Skip$/i.test(label));
+    || (offersFollowUp && (/^Skip$/i.test(label) || /^Skip\s*[,—–-]\s*handle manually$/i.test(label)));
   const future = (label: string) => /^Ready to implement(?:\s*[—–-]\s*run \/ship when done)?$/i.test(label)
     || /^Ready to implement, run \/devex-review after shipping$/i.test(label);
   if (!labels.some(label => run(label) || manual(label) || future(label))) return 1;

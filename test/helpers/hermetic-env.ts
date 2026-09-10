@@ -37,7 +37,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { promotedEnv } from '../../lib/conductor-env-shim';
 import { isProcessAlive } from '../../lib/error-handling';
-import { refreshHermeticSkillRuntime } from './hermetic-skill-runtime';
+import { refreshHermeticSkillRuntime, questionCompanionReadSettings } from './hermetic-skill-runtime';
+import { atomicWriteSync } from '../../lib/fs-atomic';
 
 /** Exact env names a hermetic child keeps. Everything not listed (or matched
  * by a prefix rule below) is dropped. */
@@ -311,6 +312,8 @@ export function hermeticSkillsConfigDir(): string {
         }), null, 2),
       );
     }
+    atomicWriteSync(path.join(configDir, 'settings.json'),
+      JSON.stringify(questionCompanionReadSettings(repoRoot(), path.join(privateDir, 'runtime')), null, 2), { mode: 0o600 });
     cachedSkillsConfigDir = configDir;
     return configDir;
   } catch (error) {

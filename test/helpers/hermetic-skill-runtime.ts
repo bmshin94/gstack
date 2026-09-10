@@ -121,3 +121,30 @@ export function refreshHermeticSkillRuntime(sourceRoot: string, privateDir: stri
   }
   return configDir;
 }
+
+
+/** Only the two on-demand question-format companions need outside-cwd Read.
+ * Keep both lexical and real paths: the CLI checks every symlink resolution.
+ */
+export function questionCompanionReadSettings(sourceRoot: string, runtimeRoot: string): { permissions: { allow: string[] } } {
+  const source = fs.realpathSync(sourceRoot);
+  const files = new Set<string>();
+  for (const name of ['askuserquestion-split.md', 'askuserquestion-cjk.md']) {
+    const expected = path.join(source, 'docs', name);
+    const lexical = path.resolve(runtimeRoot, 'docs', name);
+    if (!fs.lstatSync(expected).isFile() || fs.realpathSync(lexical) !== expected) {
+      throw new Error('Question companion must resolve to its exact source document');
+    }
+    files.add(lexical); files.add(expected);
+  }
+  const allow = [...files].map(file => {
+    const absolute = file.split(path.sep).join('/');
+    // These exact file rules do not need glob syntax. The pinned CLI has two
+    // pattern parsers; reject unsupported syntax instead of widening a grant.
+    if (/[\x00-\x1f\x7f\\*?\[\]{}()|+^$]/.test(absolute)) {
+      throw new Error('Question companion path contains unsupported permission-pattern syntax');
+    }
+    return `Read(${absolute.startsWith('/') ? '/' : ''}${absolute})`;
+  });
+  return { permissions: { allow } };
+}

@@ -29,6 +29,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/helpers/eng-finding-fixture.ts', ['plan-eng-finding-count']],
     ['test/eng-finding-fixture.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-existing-auth/legacy-auth.ts', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-existing-auth/package.json', ['plan-eng-finding-count']],
     ['test/codex-carve-fixture.test.ts', ['carve-section-loading']],
     ['test/design-html-section-completion.test.ts', ['carve-section-loading']],
     ['test/fixtures/design-html-section-complete.md', ['carve-section-loading']],
@@ -75,7 +76,7 @@ test('shared native input dependencies select every PTY consumer without changin
   expect(expected).toHaveLength(22);
   expect(expected.filter(id => E2E_TIERS[id] === 'gate')).toHaveLength(7);
   expect(expected.filter(id => E2E_TIERS[id] === 'periodic')).toHaveLength(15);
-  for (const file of ['test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
+  for (const file of ['test/pty-workspace-trust.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
     'test/helpers/plan-skill-questions.ts', 'test/plan-skill-questions.test.ts',
     'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts',
     'test/helpers/plan-skill-question-hook-scope.ts', 'test/plan-skill-question-hook-scope.test.ts']) {
@@ -83,4 +84,15 @@ test('shared native input dependencies select every PTY consumer without changin
     expect(result.reason).toBe('diff');
     expect(result.selected.sort()).toEqual(expected);
   }
+});
+
+
+test('seed submission dependencies select every seeded caller with its existing tier', () => {
+  const expected = ['conductor-prose', 'plan-design-review-plan-mode', 'plan-eng-review-plan-mode', 'plan-mode-no-op'];
+  for (const file of ['test/helpers/plan-seed-submission.ts', 'test/plan-seed-submission.test.ts']) {
+    const result = selectTests([file], E2E_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    expect(result.selected.sort()).toEqual(expected);
+  }
+  expect(expected.map(id => E2E_TIERS[id])).toEqual(['periodic', 'periodic', 'periodic', 'gate']);
 });

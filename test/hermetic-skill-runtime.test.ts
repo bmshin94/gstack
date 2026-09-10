@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { getHermeticDirs, hermeticSkillsConfigDir } from './helpers/hermetic-env';
-import { refreshHermeticSkillRuntime } from './helpers/hermetic-skill-runtime';
+import { refreshHermeticSkillRuntime, questionCompanionReadSettings } from './helpers/hermetic-skill-runtime';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const read = (file: string) => fs.readFileSync(file, 'utf8');
@@ -241,5 +241,47 @@ describe('hermetic skill runtime', () => {
       expect(JSON.parse(result)).toEqual({ sameError: true, removed: true, retrySeeded: true });
       expect(fs.readdirSync(privateDir)).toEqual([]); // process-exit cleanup owns the completed tree
     });
+  });
+});
+
+
+for (const suffix of ['', ' space é', '[*?](literal)']) test(`question companion Read rules keep literal path boundaries (${suffix})`, () => {
+  fixture((initial, privateDir) => {
+    const source = initial + suffix;
+    if (suffix) fs.renameSync(initial, source);
+    for (const name of ['askuserquestion-split.md', 'askuserquestion-cjk.md']) write(path.join(source, 'docs', name), name);
+    refreshHermeticSkillRuntime(source, privateDir);
+    if (suffix.includes('[')) {
+      expect(() => questionCompanionReadSettings(source, path.join(privateDir, 'runtime'))).toThrow('unsupported permission-pattern syntax');
+      return;
+    }
+    const settings = questionCompanionReadSettings(source, path.join(privateDir, 'runtime'));
+    expect(Object.keys(settings)).toEqual(['permissions']);
+    expect(Object.keys(settings.permissions)).toEqual(['allow']);
+    expect(settings.permissions.allow).toHaveLength(4);
+    for (const rule of settings.permissions.allow) {
+      expect(rule.startsWith('Read(//')).toBe(true);
+      expect(rule.endsWith('.md)')).toBe(true);
+      expect(rule).not.toContain('/**');
+    }
+    const sourceRules = settings.permissions.allow.filter(rule => rule.includes('/source'));
+    expect(sourceRules).toHaveLength(2);
+    expect(sourceRules).toEqual(['askuserquestion-split.md', 'askuserquestion-cjk.md'].map(name => `Read(/${source}/docs/${name})`));
+    expect(settings.permissions.allow.filter(rule => rule.includes('/private/runtime/')))
+      .toEqual(['askuserquestion-split.md', 'askuserquestion-cjk.md'].map(name => `Read(/${privateDir}/runtime/docs/${name})`));
+  });
+});
+
+test('question companion allowances refuse substituted or missing source documents', () => {
+  fixture((source, privateDir, home) => {
+    for (const name of ['askuserquestion-split.md', 'askuserquestion-cjk.md']) write(path.join(source, 'docs', name), name);
+    refreshHermeticSkillRuntime(source, privateDir);
+    const runtime = path.join(privateDir, 'runtime');
+    fs.unlinkSync(path.join(runtime, 'docs')); fs.symlinkSync(home, path.join(runtime, 'docs'), 'dir');
+    for (const name of ['askuserquestion-split.md', 'askuserquestion-cjk.md']) write(path.join(home, name), name);
+    expect(() => questionCompanionReadSettings(source, runtime)).toThrow('exact source document');
+    refreshHermeticSkillRuntime(source, privateDir);
+    fs.unlinkSync(path.join(source, 'docs', 'askuserquestion-cjk.md'));
+    expect(() => questionCompanionReadSettings(source, runtime)).toThrow('ENOENT');
   });
 });

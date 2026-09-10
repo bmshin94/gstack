@@ -401,7 +401,8 @@ export type ModePreferenceSignal =
  * A decoded question viewport still needs its reply in the current raw input
  * window; newly arriving bytes do not make retained viewport text current.
  */
-export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visible: string, questionVisible = visible, inputVisible = questionVisible): ModePreferenceSignal {
+export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visible: string, questionVisible = visible, inputVisible = questionVisible,
+  acknowledgedMessages: ReadonlyMap<string, string> = new Map()): ModePreferenceSignal {
   if (transcript.pendingBytes) return { kind: 'working' };
   const messages = new Map<string, { text: string[]; complete: boolean }>();
   let latestAssistantId: string | null = null;
@@ -490,10 +491,23 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       const selectors = options.map(option => option[1]);
       if (selectors.length < 2 || selectors.length > 4 || new Set(selectors).size !== selectors.length
         || selectors.some(selector => !/^[A-D1-4]$/.test(selector))) continue;
-      // Reused IDs across native messages cannot identify which prompt an old
-      // rendering belongs to. Fail closed, even if the selectors are identical.
-      if ([...messages].some(([otherId, other]) => otherId !== id
-        && other.text.join('\n').includes(`<gstack-qid:${questionIds[0]}>`))) continue;
+      // Registry IDs identify a question category, so separate proposals may
+      // reuse one. The driver supplies only messages with exact owned reply ACKs.
+      // Reuse needs the distinct full current brief, never its shared directive.
+      const previous = [...messages].filter(([otherId, other]) => otherId !== id
+        && other.text.join('\n').includes(`<gstack-qid:${questionIds[0]}>`));
+      if (previous.length) {
+        const fullBriefs = [...new Set([nativeText, renderPlainInlineLinks(nativeText)].map(renderedProse))];
+        if (previous.some(([otherId, other]) => acknowledgedMessages.get(otherId) !== other.text.join('\n') || !other.complete
+          || [other.text.join('\n'), renderPlainInlineLinks(other.text.join('\n'))]
+            .some(value => fullBriefs.includes(renderedProse(value))))) continue;
+        // Cursor show/hide toggles have no text effect. Keep cursor motion,
+        // erasure and every other unhandled control sequence in the comparison.
+        const currentInput = renderedProse(inputVisible.replace(/\x1b\[\?25[hl]/g, ''));
+        const currentFrame = renderedProse(questionVisible);
+        if (!fullBriefs.some(brief => brief && currentFrame.split(brief).length === 2
+          && currentInput.split(brief).length === 2)) continue;
+      }
       const reply = proseReply(nativeText, questionIds[0], selectors);
       if (introduction && !reply) continue;
       const signature = renderedProse(reply ?? text);
@@ -543,10 +557,11 @@ export async function runCeoModePreferenceObservation(opts: {
   const deadline = startedAt + opts.timeoutMs;
   const sessionId = randomUUID();
   const answered = new Set<string>();
+  const acknowledgedMessages = new Map<string, string>();
   let lastScreen: { text: string; rawEnd: number } | null = null;
   let lastScreenInputMark = 0;
   let pendingReply: {
-    id: string; questionId: string; answer: string; text: string;
+    id: string; questionId: string; answer: string; text: string; nativeText: string;
     nativeRowCount: number; nativePrefixSha256: string; nextInputSince: number;
     textWriteAttempted: boolean; enterWriteAttempted: boolean; invalidated: string | null;
   } | null = null;
@@ -634,6 +649,7 @@ export async function runCeoModePreferenceObservation(opts: {
               break;
             }
             answered.add(pendingReply.id);
+            acknowledgedMessages.set(pendingReply.id, pendingReply.nativeText);
             // Preserve a next question that rendered before this ack poll.
             inputSince = pendingReply.nextInputSince;
             pendingReply = null;
@@ -643,7 +659,7 @@ export async function runCeoModePreferenceObservation(opts: {
       }
       // The mode oracle keeps its whole-review history. Only answering an
       // unrelated question depends on the current decoded viewport.
-      const signal = inspectCeoModePreference(transcript, visible, frame.text, session.visibleSince(inputSince));
+      const signal = inspectCeoModePreference(transcript, visible, frame.text, session.visibleSince(inputSince), acknowledgedMessages);
       lastSignal = signal;
       if (now() >= deadline) break;
       if (signal.kind === 'asked' || signal.kind === 'auto_decided' && !pendingReply) return result(signal.kind, signal.evidence);
@@ -666,6 +682,10 @@ export async function runCeoModePreferenceObservation(opts: {
         pendingReply = {
           id: signal.id, questionId: signal.questionId, answer: signal.answer,
           text: `For ${signal.questionId}, I choose option ${signal.answer}. Continue the review.`,
+          nativeText: [...new Set(transcript.rows.filter(row => row.type === 'assistant'
+            && row.message?.role === 'assistant' && row.message.id === signal.id && Array.isArray(row.message.content))
+            .flatMap(row => row.message.content).filter(block => block?.type === 'text' && typeof block.text === 'string')
+            .map(block => block.text))].join('\n'),
           nativeRowCount: transcript.rows.length, nativePrefixSha256: nativePrefixHash(transcript.rows),
           nextInputSince: session.mark(), textWriteAttempted: false, enterWriteAttempted: false, invalidated: null,
         };

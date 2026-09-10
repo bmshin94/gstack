@@ -1402,3 +1402,52 @@ test('clipped create permission refuses another basename, parent, malformed dire
   expect(() => nativePermissionKey({ ...clippedDesignOwner, input: { file_path: filePath + '.other' } }, clippedDesignFrame)).toThrow('cannot be bound');
   expect(() => nativePermissionKey({ ...clippedDesignOwner, name: 'Edit' }, clippedDesignFrame)).toThrow('cannot be bound');
 });
+
+
+// The execution hook contains CLI-validated nested objects; the raw transcript
+// can retain undeclared model keys that never reach the permission component.
+for (const stopReason of [null, 'tool_use']) {
+  test(`owned question execution strips only corroborated nested schema extras (${stopReason})`, () => {
+    const native = call('schema-extra', [JSON.parse(JSON.stringify(question))]);
+    native.message.stop_reason = stopReason as any;
+    (native.message.content[0].input.questions[0] as any).multiSelar = false;
+    (native.message.content[0].input.questions[0].options[0] as any).undeclaredPreview = 'not displayed';
+    write(native);
+    const early = earlyQuestions(); early.emit('schema-extra');
+    const pending = readPlanSkillQuestions(config, sessionId, early.source);
+    expect(pending.calls).toEqual([{ id: 'schema-extra', questions: [question], result: 'pending' }]);
+    fs.appendFileSync(file, JSON.stringify(nativeWriteResult('schema-extra')) + '\n');
+    expect(readPlanSkillQuestions(config, sessionId, early.source).calls).toEqual([
+      { id: 'schema-extra', questions: [question], result: 'answered' },
+    ]);
+    expect(pending.permissionRequests).toEqual([]); expect(pending.permissionTools).toEqual([]);
+  });
+}
+
+test('a raw duplicate question cannot erase nested changes without an owned execution hook', () => {
+  const modified = call('raw-extra', [JSON.parse(JSON.stringify(question))]);
+  (modified.message.content[0].input.questions[0] as any).multiSelar = false;
+  write(call('raw-extra', [JSON.parse(JSON.stringify(question))]), modified);
+  expect(() => readPlanSkillQuestions(config, sessionId)).toThrow('changed input');
+});
+
+test.each(['question', 'header', 'multiSelect', 'label', 'description', 'preview', 'kind', 'metadata', 'top-extra'])
+('owned nested schema equivalence preserves changed %s refusal', field => {
+  const native = call('schema-conflict', [JSON.parse(JSON.stringify(question))]);
+  const input: any = native.message.content[0].input;
+  input.questions[0].multiSelar = false;
+  if (field === 'question' || field === 'header') input.questions[0][field] = 'different';
+  else if (field === 'multiSelect') input.questions[0].multiSelect = 'false';
+  else if (field === 'label' || field === 'description') input.questions[0].options[0][field] = 'different';
+  else if (field === 'preview') input.questions[0].options[0].preview = null;
+  else if (field === 'kind') input.questions[0].kind = 'text';
+  else input[field] = { changed: true };
+  write(native); const early = earlyQuestions(); early.emit('schema-conflict');
+  expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('changed input');
+});
+
+test('changed execution hooks cannot use the transcript-only schema projection', () => {
+  write(); const early = earlyQuestions(); early.emit('hook-conflict');
+  early.emit('hook-conflict', { questions: [{ ...question, multiSelar: false }] });
+  expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('Native question event capture failed');
+});

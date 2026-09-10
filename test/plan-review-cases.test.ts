@@ -23,6 +23,28 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
 });
 
 describe('plan-review manual handoff selection', () => {
+  test('selects the retained DX manual handoff over its separate implementation suggestion', () => {
+    const labels = ['Run /plan-eng-review next (Recommended)', 'Ready to implement', 'Skip, handle manually'];
+    expect(pickPlanReviewQuestion(menu(labels, 'Next steps', 'D30 — Next steps: which review runs next?'))).toBe(3);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next steps', 'D30 — Next steps: which review runs next?'))).toBe(1);
+  });
+  test('accepts the retained paired-review short manual handoff by native position', () => {
+    const labels = ['A: Run /plan-eng-review next (recommended)', 'B: Skip, handle manually'];
+    expect(pickPlanReviewQuestion(menu(labels, 'Next review', 'D10 — Which review runs next?'))).toBe(2);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next review', 'D10 — Which review runs next?'))).toBe(1);
+  });
+  test('short manual handoff requires a recognized offer and excludes extra actions', () => {
+    const run = 'Run /plan-eng-review';
+    const skip = 'Skip, handle manually';
+    expect(pickPlanReviewQuestion(menu(['Keep existing behavior', skip]))).toBe(1);
+    expect(pickPlanReviewQuestion(menu([run, skip], 'Tests', 'D8 — Should the test run a review?'))).toBe(1);
+    for (const extra of [' and approve all edits', '; run /ship', ' after implementation']) {
+      expect(() => pickPlanReviewQuestion(menu([run, skip + extra]))).toThrow('unambiguous');
+    }
+    for (const extra of [skip, 'Skip', 'Ship immediately']) {
+      expect(() => pickPlanReviewQuestion(menu([run, skip, extra]))).toThrow('unambiguous');
+    }
+  });
   test('declines the actual colon-labelled CEO handoff by native position', () => {
     const labels = ['A: run /plan-eng-review next (recommended)', 'C: skip, handle reviews manually'];
     expect(pickPlanReviewQuestion(menu(labels, 'Next review',

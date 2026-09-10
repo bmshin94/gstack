@@ -188,7 +188,9 @@ async function main() {
         + '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session; Yes, and always allow access to\n      '
         + path.dirname(longPermissionPath) + ' for this session (shift+tab)\n   3. No\n\n Esc to cancel · Tab to amend';
       const permissionRepaintDialog = () => longPermissionDialog().replace('; Yes, and always allow access to\n      ' + path.dirname(longPermissionPath) + ' for this session', '');
-      const corruptedPermissionDialog = () => permissionRepaintDialog().replace('\n ' + path.relative(project, longPermissionPath) + '\n',
+      const corruptedPermissionDialog = () => scenario.startsWith('permission-repaint-controls')
+        ? longPermissionDialog().replace('3. No', '3. Nohift+tab)')
+        : permissionRepaintDialog().replace('\n ' + path.relative(project, longPermissionPath) + '\n',
         '\n ' + path.relative(project, longPermissionPath).replace('plan.md', 'pl n.md') + '\n');
       const fileDialog = (operation: string) => `\x1b[2J\x1b[HDo you want to ${operation} plan.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel`;
       const recordFilePermission = (input: Record<string, unknown>, name = 'Write') => {
@@ -416,7 +418,8 @@ async function main() {
                 append({ type: 'assistant', cwd: options.cwd, message: { role: 'assistant', stop_reason: 'tool_use',
                   content: [{ type: 'tool_use', id: permissionId, name: 'Write', input: { ...permissionInput, content: 'Different owner input' } }] } });
               }
-              emit(scenario === 'permission-repaint-still-conflicting' ? corruptedPermissionDialog() : permissionRepaintDialog());
+              emit(scenario === 'permission-repaint-still-conflicting' || scenario === 'permission-repaint-controls-malformed'
+                ? corruptedPermissionDialog() : permissionRepaintDialog());
               return;
             }
             if (scenario === 'viewport-resize-failure') throw new Error('controlled resize failure');
