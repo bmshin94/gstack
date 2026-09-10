@@ -89,7 +89,8 @@ async function driveModeQuestions(
         schemaVersion: 1, sessionId: opts.sessionId, configDir: configDir && tail(configDir), targetMode, budgetMs,
         error: error.slice(0, 1024), errorCodeUnits: error.length, errorTruncated: error.length > 1024,
         since, questionSince, capturedAt: new Date().toISOString(),
-        ...(postMode ? { phase: 'posture', modeToolUseId: identity(postMode.toolUseId), downstream: tail(downstreamSnapshot) } : {}),
+        ...(postMode ? { phase: 'posture', modeToolUseId: identity(postMode.toolUseId), downstream: tail(downstreamSnapshot),
+          postureNative: observe('owned post-mode text', () => capturePostModeText(configDir, opts.sessionId, postMode.toolUseId), null) } : {}),
         selected: selected && { ...selected, id: identity(selected.id) }, priorAnswered,
         answered: [...answered].slice(-64).map(([id, state]) => ({ id: identity(id), ...state })),
         answeredCount: answered.size,
@@ -120,7 +121,7 @@ async function driveModeQuestions(
           rawCodeUnitsBefore: lastSend.rawCodeUnitsBefore, rawCodeUnitsAfter: lastSend.rawCodeUnitsAfter,
           visibleBefore: tail(lastSend.visibleBefore), rawBefore: tail(raw.slice(0, lastSend.inputMark)) },
         observationErrors,
-        limits: 'Diagnostic only. A normally returned send proves neither delivery nor acknowledgement. Text/IDs and arrays have explicit clipping metadata. Marks count raw UTF-16 code units. No thinking or native transcript rows are copied.',
+        limits: 'Diagnostic only. A normally returned send proves neither delivery nor acknowledgement. Text/IDs and arrays have explicit clipping metadata. Marks count raw UTF-16 code units. Posture failures retain only bounded matching mode results and subsequent normal assistant text; no thinking, other tool payloads or full native rows are copied.',
       };
       const evalDir = process.env.GSTACK_EVAL_DIR;
       if (!evalDir) throw new Error('GSTACK_EVAL_DIR is not configured');
@@ -326,4 +327,38 @@ export function readNativeModePosture(configDir: string | null, sessionId: strin
     }
   }
   return null;
+}
+
+
+/** Failure-only projection; never used to decide posture, ownership or input. */
+function capturePostModeText(configDir: string | null, sessionId: string, toolUseId: string) {
+  const transcript = readOwnedClaudeTranscript(configDir, sessionId);
+  const clip = (text: string, limit: number) => ({ text: text.slice(0, limit), codeUnits: text.length, truncated: text.length > limit });
+  const records: Array<{ kind: string; rowIndex: number; blockIndex: number;
+    timestamp: ReturnType<typeof clip> | null; stopReason: ReturnType<typeof clip> | null;
+    content: ReturnType<typeof clip> }> = [];
+  let seenResult = false, modeResultCount = 0, assistantTextCount = 0, retainedCodeUnits = 0;
+  for (const [rowIndex, row] of transcript.rows.entries()) {
+    const message = row.message;
+    if (!Array.isArray(message?.content)) continue;
+    for (const [blockIndex, block] of message.content.entries()) {
+      let kind: string, text: string, limit: number;
+      if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result' && block.tool_use_id === toolUseId) {
+        seenResult = true; modeResultCount++;
+        kind = 'mode_result'; text = JSON.stringify(block); limit = 4096;
+      } else if (seenResult && row.type === 'assistant' && message.role === 'assistant' && block?.type === 'text' && typeof block.text === 'string') {
+        assistantTextCount++; kind = 'assistant_text'; text = block.text; limit = 16_384;
+      } else continue;
+      if (records.length >= 32) continue;
+      const content = clip(text, Math.min(limit, 65_536 - retainedCodeUnits));
+      retainedCodeUnits += content.text.length;
+      records.push({ kind, rowIndex, blockIndex,
+        timestamp: typeof row.timestamp === 'string' ? clip(row.timestamp, 256) : null,
+        stopReason: typeof message.stop_reason === 'string' ? clip(message.stop_reason, 256) : null, content });
+    }
+  }
+  return { file: transcript.file ? clip(transcript.file, 1024) : null,
+    completedLines: transcript.completedLines, pendingBytes: transcript.pendingBytes,
+    modeResultCount, assistantTextCount, records,
+    recordsOmitted: modeResultCount + assistantTextCount - records.length, retainedCodeUnits };
 }

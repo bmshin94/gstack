@@ -322,9 +322,24 @@ async function postModeFixture(scenario: string) {
     ? [approach, question('Filename', 'Choose CSV filename', ['settings.csv', 'export.csv'])] : scenario === 'post-repeat-mode' ? [{ ...mode, header: 'Confirm Mode', question: 'D3 — Confirm the review mode for the chosen approach?' }] : scenario === 'post-identical-mode' ? [mode] : scenario === 'post-multi-tab'
     ? [approach, question('Filename', 'Choose CSV filename', ['settings.csv', 'export.csv'])] : [approach] };
   if (fileRequestCase) append({ type: 'user', message: { role: 'user', content: 'Review the supplied plan.' } });
+  const textDiagnostic = scenario.startsWith('post-diagnostic-text');
+  if (textDiagnostic) append({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'BEFORE_MODE_TEXT' }] } });
   if (!navigation) {
     tool('mode', { questions: [mode] });
     if (scenario !== 'post-no-mode-ack') ack('mode');
+  }
+  if (textDiagnostic) {
+    append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [
+      { type: 'thinking', thinking: 'EXCLUDED_THINKING' },
+      { type: 'redacted_thinking', data: 'EXCLUDED_REDACTED_THINKING' },
+      { type: 'tool_use', id: 'other-tool', name: 'Bash', input: { command: 'EXCLUDED_TOOL_INPUT' } },
+      { type: 'text', text: 'Normal assistant message after mode reply.' },
+    ] } });
+    append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'other-tool', content: 'EXCLUDED_OTHER_RESULT' }] } });
+    for (const extra of [{ sessionId: '00000000-0000-4000-8000-000000000002' }, { isSidechain: true }, { parent_tool_use_id: 'child' }]) {
+      append({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'EXCLUDED_FOREIGN_TEXT' }] }, ...extra });
+    }
+    if (scenario.endsWith('-limits')) for (let i = 0; i < 40; i++) append({ type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: String(i).padStart(2, '0') + '界'.repeat(20_000) }] } });
   }
   let events;
   let earlyWithoutNativeInvocation = false;
@@ -511,7 +526,7 @@ async function postModeFixture(scenario: string) {
         stage = 'done';
         const text = scenario === 'post-wrong-posture' ? 'Dream big with scope expansion.' : 'I will make this plan bulletproof.';
         if (scenario !== 'post-missing-posture') append({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } });
-        paint(scenario === 'post-not-rendered' ? '\nReview continues\n' : '\n' + text + '\n');
+        paint(scenario === 'post-not-rendered' || textDiagnostic ? '\nReview continues\n' : '\n' + text + '\n');
       } else premature.push(data);
     },
     close: async () => { decoder?.dispose(); closed = true; diagnosticBeforeClose = fs.existsSync(diagnosticPath); fs.rmSync(config, { recursive: true, force: true }); },

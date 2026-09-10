@@ -378,3 +378,43 @@ test.each([
   expect(result.acknowledged).toBe(false);
   expect(result.closed).toBe(true);
 }, 15_000);
+
+
+test('post-mode failure retains exact owned reply and assistant text before cleanup', async () => {
+  const result = await run('post-diagnostic-text');
+  expect(result.error).toContain('no posture match');
+  expect(result.sends).toEqual(['2', '\r']);
+  expect(result.closed).toBe(true); expect(result.diagnosticBeforeClose).toBe(true);
+  expect(result.configRemovedBeforeArtifactRead).toBe(true);
+  const evidence = result.diagnostic.postureNative;
+  expect(evidence.modeResultCount).toBe(1); expect(evidence.assistantTextCount).toBe(2);
+  expect(evidence.records.map(record => record.kind)).toEqual(['mode_result', 'assistant_text', 'assistant_text']);
+  expect(JSON.parse(evidence.records[0].content.text)).toEqual({ type: 'tool_result', tool_use_id: 'mode', is_error: false, content: 'Answer accepted' });
+  expect(evidence.records[1].content.text).toBe('Normal assistant message after mode reply.');
+  expect(evidence.records[1].timestamp.text).toBe('1970-01-01T00:00:00.000Z');
+  expect(evidence.records[1].stopReason.text).toBe('tool_use');
+  expect(evidence.records[1].blockIndex).toBe(3);
+  expect(evidence.records[2].content.text).toBe('I will make this plan bulletproof.');
+  expect(evidence.records[2].stopReason).toBeNull();
+  expect(evidence.records[2].rowIndex).toBeGreaterThan(evidence.records[1].rowIndex);
+  expect(evidence.recordsOmitted).toBe(0); expect(evidence.pendingBytes).toBe(0);
+  expect(JSON.stringify(evidence)).not.toMatch(/EXCLUDED_|BEFORE_MODE_TEXT/);
+  expect(result.elapsed).toBe(30_000);
+});
+
+test('post-mode text retention bounds records and UTF-16 content without changing timeout', async () => {
+  const result = await run('post-diagnostic-text-limits');
+  expect(result.error).toContain('no posture match');
+  const evidence = result.diagnostic.postureNative;
+  expect(evidence.modeResultCount).toBe(1); expect(evidence.assistantTextCount).toBe(42);
+  expect(evidence.records).toHaveLength(32); expect(evidence.recordsOmitted).toBe(11);
+  expect(evidence.records.reduce((sum, record) => sum + record.content.text.length, 0)).toBe(65_536);
+  expect(evidence.records[2].content.codeUnits).toBe(20_002);
+  expect(evidence.records[2].content.text.length).toBe(16_384);
+  expect(evidence.records[2].content.truncated).toBe(true);
+  expect(evidence.records.at(-1).content.text).toBe('');
+  expect(evidence.records.at(-1).content.truncated).toBe(true);
+  expect(JSON.stringify(evidence)).not.toMatch(/EXCLUDED_|BEFORE_MODE_TEXT/);
+  expect(Buffer.byteLength(JSON.stringify(result.diagnostic))).toBeLessThan(300_000);
+  expect(result.elapsed).toBe(30_000); expect(result.closed).toBe(true);
+});
