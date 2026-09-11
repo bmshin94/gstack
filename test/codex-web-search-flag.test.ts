@@ -11,7 +11,7 @@
  * (resolver, template, helper) or any rendered SKILL.md / section / golden.
  */
 import { describe, test, expect } from 'bun:test';
-import { execFileSync, execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CODEX_MODEL_CONFIG_FLAG, CODEX_REVIEW_MODEL_CONFIG_FLAG, CODEX_WEB_SEARCH_FLAG } from '../scripts/resolvers/constants';
@@ -20,18 +20,21 @@ const ROOT = path.join(import.meta.dir, '..');
 const DEPRECATED = '--enable web_search_cached';
 
 function grepRepo(pattern: string, includes: string[]): string[] {
-  const includeArgs = includes.map((i) => `--include='${i}'`).join(' ');
-  const out = execSync(
-    `grep -rln ${includeArgs} -e '${pattern}' "${ROOT}" || true`,
-    { encoding: 'utf-8', timeout: 30_000 },
-  );
+  let out: string;
+  try {
+    out = execFileSync('grep', [
+      '-rlnF', ...includes.map((include) => `--include=${include}`),
+      // Prune caches before traversal; keep canonical hidden host output.
+      ...['node_modules', '.context', '.git', '.claude'].map((dir) => `--exclude-dir=${dir}`),
+      '-e', pattern, ROOT,
+    ], { encoding: 'utf-8', timeout: 30_000 });
+  } catch (error) {
+    if ((error as { status?: number }).status === 1) return []; // No matches.
+    throw error;
+  }
   return out
     .split('\n')
     .filter(Boolean)
-    .filter((f) => !f.includes('node_modules'))
-    // The workspace-local .claude/ install is not generated output and can
-    // carry dangling symlinks from unrelated sessions.
-    .filter((f) => !f.includes('/.claude/'))
     .filter((f) => !f.endsWith('test/codex-web-search-flag.test.ts'));
 }
 
