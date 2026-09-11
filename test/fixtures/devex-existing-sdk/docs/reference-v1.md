@@ -1,9 +1,10 @@
 # Existing SDK reference, version 1
 
 These are explicitly authored contracts for the revised synthetic fixture.
-The SDK, package, and release-check implementation are absent. Examples describe
-its assumed existing interface; they have not been executed in this repository.
-This reference supplies the baseline documentation, not launch remedies.
+The SDK, package, and release-check implementation are absent. SDK invocation
+examples describe its assumed interface; those calls have not been executed against
+the SDK here. Fixture checks execute the local application files and explicit
+contract doubles. This reference supplies baseline documentation, not launch remedies.
 
 ## API and pytest
 
@@ -46,7 +47,9 @@ requests. Their request timeouts and finite retries remain bounded by it.
 The cost ceiling covers only requests through that managed provider client.
 It cannot interrupt arbitrary application code or cap requests made by a separate
 client inside `target`; configure that client's timeout, retries, and spending
-limit before substituting the callable. These boundaries apply locally and in CI.
+limit before substituting the callable. The [worked application client](getting-started.md#bounded-application-calls)
+materializes all three bounds with a local transport and explains its verified
+per-attempt cost assumption. These boundaries apply locally and in CI.
 
 Before work the CLI reports case count, deadline, and cost ceiling (or "none set")
 on stderr. The library does so on a TTY by default; `reporter` overrides that
@@ -56,7 +59,30 @@ persisted in a shared cache. No settings define an onboarding-time target.
 ## CLI
 
 The existing noninteractive invocation uses the application's importable target
-and metric plus its cases file:
+and metric plus a JSON list of cases. The following complete files are explicit
+synthetic baseline examples; the SDK/CLI is absent, so fixture checks validate the
+files, import paths and arguments with an assumed-contract double, not the real CLI.
+This documents the shown JSON-list form only, not any other possible SDK format.
+
+Save as `app.py`:
+
+```python
+def target(inputs):
+    return {"ready": inputs["enabled"]}
+
+def metric(actual, expected):
+    return float(isinstance(actual, dict) and actual == expected)
+```
+
+Save as `cases.json`:
+
+```json
+[
+  {"inputs": {"enabled": true}, "expected": {"ready": true}}
+]
+```
+
+Run with the assumed SDK from the directory containing both files:
 
 ```bash
 eval-sdk run --target app:target --cases cases.json --metric app:metric --deadline-seconds 20 --max-cost-usd 0.25 --no-input

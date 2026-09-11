@@ -12,6 +12,7 @@ including these examples, with no skip. It is not needed by the evaluator itself
 
 ```python
 from eval_sdk import evaluate
+import json
 
 def target(inputs):
     return {"ready": inputs["enabled"]}
@@ -24,11 +25,19 @@ def exact_match(actual, expected):
 
 cases = [{"inputs": {"enabled": True}, "expected": {"ready": True}}]
 result = evaluate(target, cases, exact_match)
-print(result)
+print(json.dumps([{"score": case.score, "actual": case.actual, "expected": case.expected}
+                  for case in result.cases], sort_keys=True))
 ```
 
-Output contract: one case, score 1.0. Existing offline release checks exercise the
-same example and keep the README copy synchronized. No duration assertion exists.
+Shown application output (JSON from the documented structured fields, not SDK repr):
+
+```text
+[{"actual": {"ready": true}, "expected": {"ready": true}, "score": 1.0}]
+```
+
+Fixture checks reproduce this text with an explicit assumed-contract double and
+keep the README copy synchronized. They do not run the absent SDK or measure
+onboarding duration.
 
 ## Caller-owned metric for free text
 
@@ -38,6 +47,7 @@ their own metric and acceptance rule. It is not a production quality threshold.
 
 ```python
 from eval_sdk import evaluate
+import json
 
 def text_metric(actual, expected):
     return float(" ".join(actual.split()) == " ".join(expected.split()))
@@ -49,10 +59,18 @@ cases = [
     {"inputs": {"reply": "The lamp is green."}, "expected": "The lamp is green."},
 ]
 result = evaluate(prose_target, cases, text_metric)
-print(result)
+print(json.dumps([{"score": case.score, "actual": case.actual, "expected": case.expected}
+                  for case in result.cases], sort_keys=True))
 ```
 
-The public example returns one normal matching result with score 1.0. Separately,
+Shown free-text application output (the same explicit field projection):
+
+```text
+[{"actual": "The lamp is green.", "expected": "The lamp is green.", "score": 1.0}]
+```
+
+The public example returns one normal matching result with score 1.0. Fixture
+checks reproduce this text with the contract double, not the absent SDK. Separately,
 the existing product's offline checks exercise this complete callable/metric path
 with matching and mismatching prose and verify scores 1.0 and 0.0 plus the latter
 case's expected/actual failure summary.
@@ -60,6 +78,98 @@ Structured result fields retain full values; displayed summaries may truncate.
 This reference check already exists in the revised synthetic baseline. It adds
 no launch gate, evaluator default, telemetry or designed onboarding delight beat.
 No executable SDK or assertion of its execution is supplied in this fixture.
+
+## Bounded application calls
+
+This is a complete **application-owned** example, separate from the SDK. The
+local transport below is free and makes no network requests. To substitute a
+paid transport, first establish a **verified upper bound** on its charge per
+invocation; this example reserves two cents per attempt. A provider without such
+a bound cannot use that reservation as a spending guarantee.
+
+Save as `fixture_transport.py`:
+
+```python
+import json
+import sys
+
+inputs = json.load(sys.stdin)
+print(json.dumps({"ready": inputs["enabled"]}))
+```
+
+Save as `bounded_client.py`:
+
+```python
+import json
+import math
+import subprocess
+import threading
+
+class BoundedClient:
+    def __init__(self, command, *, timeout_seconds, max_attempts,
+                 total_cents, attempt_cents):
+        if (not math.isfinite(timeout_seconds) or timeout_seconds <= 0
+                or any(type(n) is not int for n in (max_attempts, total_cents, attempt_cents))
+                or max_attempts < 1 or total_cents < 0 or attempt_cents < 1):
+            raise ValueError("Use a positive timeout, finite attempts and integer-cent bounds")
+        self.command = list(command)
+        self.timeout_seconds, self.max_attempts = timeout_seconds, max_attempts
+        self.total_cents, self.attempt_cents = total_cents, attempt_cents
+        self.reserved_cents = 0
+        self.lock = threading.Lock()
+
+    def __call__(self, inputs):
+        for attempt in range(self.max_attempts):
+            with self.lock:
+                if self.reserved_cents + self.attempt_cents > self.total_cents:
+                    raise RuntimeError("Application spending limit reached before request")
+                self.reserved_cents += self.attempt_cents
+            try:
+                response = subprocess.run(self.command, input=json.dumps(inputs),
+                    text=True, capture_output=True, check=True, timeout=self.timeout_seconds)
+                return json.loads(response.stdout)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+                if isinstance(error, subprocess.CalledProcessError) and error.returncode != 75:
+                    raise  # Only the application's explicit temporary-failure status retries.
+                if attempt + 1 == self.max_attempts:
+                    raise RuntimeError("Application attempt limit reached") from error
+```
+
+Each transport process gets a per-attempt timeout and at most two attempts below.
+`subprocess.run` kills and waits for a timed-out direct child. This local transport
+starts no descendant processes. Killing it **does not prove that a remote provider cancelled**
+a request: its reservation is **not refunded**, even on timeout or failure. The
+shared counter refuses an attempt before the six-cent total would be exceeded;
+concurrent calls in this process share that counter. Separate application processes
+would need a shared external spending limit.
+
+Use the application client in the callable (save these files together):
+
+```python
+import sys
+from eval_sdk import evaluate
+from bounded_client import BoundedClient
+
+client = BoundedClient([sys.executable, "fixture_transport.py"],
+    timeout_seconds=2, max_attempts=2, total_cents=6, attempt_cents=2)
+
+def target(inputs):
+    return client(inputs)
+
+def metric(actual, expected):
+    return float(isinstance(actual, dict) and actual == expected)
+
+cases = [{"inputs": {"enabled": True}, "expected": {"ready": True}}]
+result = evaluate(target, cases, metric, deadline_seconds=20, max_cost_usd=0.25)
+```
+
+The client's timeout, attempts and reservation govern its own transport. The
+`evaluate` keywords still govern only SDK-managed scheduling/provider requests;
+they neither interrupt this application client nor add to its six-cent allowance.
+The local client/files run in fixture checks, including timeouts, retries and
+refusal before overspending. The `evaluate` call is checked with an explicit
+contract double because the SDK is absent. This is reference safety code, not a
+new metric default, launch gate, first-run benchmark or onboarding delight step.
 
 ## Handling errors
 

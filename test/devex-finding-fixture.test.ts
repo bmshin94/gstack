@@ -268,5 +268,187 @@ test('materialized DX references have working local links without inventing comp
   expect(errorHeadings).toContain(errorLink![2]!);
 
   expect(reference).toContain('cannot interrupt arbitrary application code or cap requests made by a separate');
-  expect(reference).toContain('Examples describe\nits assumed existing interface; they have not been executed');
+  expect(reference).toContain('those calls have not been executed against\nthe SDK here');
+  expect(reference).toContain('Fixture checks execute the local application files and explicit\ncontract doubles');
+});
+
+// Materialize the documented files in a temp directory. These controls test
+// application examples against an explicit contract stub, never the absent SDK.
+const dxDocs = () => Object.fromEntries(['README.md', 'docs/getting-started.md', 'docs/reference-v1.md']
+  .map(file => [file, fs.readFileSync(path.join(ROOT, 'test/fixtures/devex-existing-sdk', file), 'utf8')]));
+function dxBlock(body: string, after: string, language: string): string {
+  const offset = body.indexOf(after);
+  expect(offset, `missing documented example: ${after}`).toBeGreaterThanOrEqual(0);
+  const match = new RegExp('```' + language + '\\n([\\s\\S]*?)\\n```').exec(body.slice(offset));
+  expect(match, `missing ${language} block after ${after}`).not.toBeNull();
+  return match![1]!;
+}
+function runDxDocumentationControl(code: string, payload: unknown) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'devex-doc-control-'));
+  try {
+    const script = path.join(directory, 'control.py');
+    fs.writeFileSync(script, code);
+    // Like bin/gstack-config, support both Python command names. Windows
+    // installs normally expose python.exe; avoid preferring its python3 Store alias.
+    const python = (process.platform === 'win32' ? ['python', 'python3'] : ['python3', 'python'])
+      .map(command => Bun.which(command)).find((command): command is string => command !== null);
+    if (!python) throw new Error('Python 3 is required for the DX documentation controls');
+    const child = Bun.spawnSync([python, script], { cwd: directory, timeout: 10_000,
+      stdin: Buffer.from(JSON.stringify(payload)), stdout: 'pipe', stderr: 'pipe' });
+    expect(child.signalCode ?? null, child.stderr.toString()).toBeNull();
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    return child.stdout.toString();
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+}
+
+test('materialized DX success blocks print the documented structured fields without assuming SDK repr', () => {
+  const docs = dxDocs();
+  const first = dxBlock(docs['README.md']!, '## Quick start', 'python');
+  expect(first).toBe(dxBlock(docs['docs/getting-started.md']!, '## Neutral first evaluation', 'python'));
+  const examples = [
+    { code: first, expected: dxBlock(docs['README.md']!, 'Shown application output', 'text') },
+    { code: dxBlock(docs['docs/getting-started.md']!, '## Neutral first evaluation', 'python'),
+      expected: dxBlock(docs['docs/getting-started.md']!, 'Shown application output', 'text') },
+    { code: dxBlock(docs['docs/getting-started.md']!, '## Caller-owned metric for free text', 'python'),
+      expected: dxBlock(docs['docs/getting-started.md']!, 'Shown free-text application output', 'text') },
+  ];
+  for (const { code } of examples) { expect(code).not.toContain('print(result)'); expect(code).toContain('result.cases'); }
+  const output = runDxDocumentationControl(String.raw`
+import contextlib, io, json, sys, types
+examples = json.load(sys.stdin)
+# Deliberate assumed-contract double: not an implementation of eval-sdk.
+def evaluate(target, cases, metric):
+    result = []
+    for case in cases:
+        actual = target(case['inputs'])
+        result.append(types.SimpleNamespace(actual=actual, expected=case['expected'], score=metric(actual, case['expected'])))
+    return types.SimpleNamespace(cases=result)
+stub = types.ModuleType('eval_sdk'); stub.evaluate = evaluate; sys.modules['eval_sdk'] = stub
+for example in examples:
+    output = io.StringIO(); namespace = {}
+    with contextlib.redirect_stdout(output): exec(example['code'], namespace)
+    assert output.getvalue().strip() == example['expected']
+    assert json.loads(output.getvalue())[0]['score'] == 1.0
+# Preserve the caller-owned metric's mismatching-prose behavior separately.
+assert namespace['text_metric']('red', 'green') == 0.0
+print('three documented outputs match the contract stub; no SDK executed')
+`, examples);
+  expect(output).toContain('three documented outputs match the contract stub; no SDK executed');
+});
+
+test('materialized DX application client bounds actual local process timeouts, retries and reservations', () => {
+  const guide = dxDocs()['docs/getting-started.md']!;
+  const client = dxBlock(guide, 'Save as `bounded_client.py`', 'python');
+  const transport = dxBlock(guide, 'Save as `fixture_transport.py`', 'python');
+  const usage = dxBlock(guide, 'Use the application client in the callable', 'python');
+  expect(guide).toContain('verified upper bound');
+  expect(guide).toContain('not refunded');
+  expect(guide).toContain('does not prove that a remote provider cancelled');
+  const output = runDxDocumentationControl(String.raw`
+import json, pathlib, subprocess, sys, time, types
+payload = json.load(sys.stdin)
+pathlib.Path('bounded_client.py').write_text(payload['client'])
+pathlib.Path('fixture_transport.py').write_text(payload['transport'])
+from bounded_client import BoundedClient
+# Observe the real handles; subprocess.run still owns timeout/kill/wait.
+original_popen = subprocess.Popen
+children = []
+def capture_popen(*args, **kwargs):
+    child = original_popen(*args, **kwargs)
+    children.append(child)
+    return child
+subprocess.Popen = capture_popen
+command = [sys.executable, 'fixture_transport.py']
+client = BoundedClient(command, timeout_seconds=1, max_attempts=2, total_cents=4, attempt_cents=2)
+assert client({'enabled': True}) == {'ready': True}
+assert client.reserved_cents == 2
+assert client({'enabled': False}) == {'ready': False}
+assert client.reserved_cents == 4
+try: client({'enabled': True}); raise AssertionError('budget exceeded')
+except RuntimeError as e: assert 'spending limit' in str(e)
+assert client.reserved_cents == 4
+# Calls sharing this application client also share one reservation ceiling.
+from concurrent.futures import ThreadPoolExecutor
+client = BoundedClient(command, timeout_seconds=1, max_attempts=2, total_cents=4, attempt_cents=2)
+def concurrent_call(_):
+    try: return client({'enabled': True})
+    except RuntimeError as e:
+        assert 'spending limit' in str(e); return None
+with ThreadPoolExecutor(max_workers=4) as pool: outputs = list(pool.map(concurrent_call, range(4)))
+assert outputs.count({'ready': True}) == 2 and outputs.count(None) == 2
+assert client.reserved_cents == 4
+# Real child failure/retry and real child timeout: no network or SDK involved.
+pathlib.Path('controlled_transport.py').write_text('''import sys, time
+mode = sys.argv[1]
+with open('attempts', 'a') as f: f.write('attempt\\n')
+if mode == 'stall': time.sleep(30)
+if mode == 'fail': sys.exit(75)
+''')
+for mode in ('fail', 'stall'):
+    first_child = len(children)
+    pathlib.Path('attempts').unlink(missing_ok=True)
+    client = BoundedClient([sys.executable, 'controlled_transport.py', mode], timeout_seconds=0.2,
+                           max_attempts=2, total_cents=6, attempt_cents=2)
+    started = time.monotonic()
+    try: client({'enabled': True}); raise AssertionError('failed transport succeeded')
+    except (RuntimeError, subprocess.TimeoutExpired): pass
+    assert time.monotonic() - started < 3
+    attempts = pathlib.Path('attempts').read_text().splitlines()
+    owned_children = children[first_child:]
+    assert len(attempts) == len(owned_children) == 2 and client.reserved_cents == 4
+    for child in owned_children:
+        assert child.poll() is not None, 'transport process leaked'
+        assert child.wait(timeout=0) == child.returncode
+        assert child.returncode != 0
+        if mode == 'fail': assert child.returncode == 75
+# Insufficient reservation prevents even the retry from starting.
+pathlib.Path('attempts').unlink()
+client = BoundedClient([sys.executable, 'controlled_transport.py', 'fail'], timeout_seconds=1,
+                       max_attempts=2, total_cents=2, attempt_cents=2)
+try: client({'enabled': True}); raise AssertionError('budget exceeded')
+except RuntimeError as e: assert 'spending limit' in str(e)
+assert len(pathlib.Path('attempts').read_text().splitlines()) == 1
+assert client.reserved_cents == 2
+# The full shown usage sends independent limits to the SDK contract double.
+seen = []
+def evaluate(target, cases, metric, **options):
+    seen.append(options)
+    assert target(cases[0]['inputs']) == cases[0]['expected']
+    return types.SimpleNamespace(cases=[])
+stub = types.ModuleType('eval_sdk'); stub.evaluate = evaluate; sys.modules['eval_sdk'] = stub
+exec(payload['usage'], {})
+assert seen == [{'deadline_seconds': 20, 'max_cost_usd': 0.25}]
+print('local timeout/retry/reservation bounds verified; no SDK/provider call')
+`, { client, transport, usage });
+  expect(output).toContain('local timeout/retry/reservation bounds verified; no SDK/provider call');
+});
+
+test('materialized DX CLI cases and import targets match the exact shown invocation in an offline contract double', () => {
+  const reference = dxDocs()['docs/reference-v1.md']!;
+  const cli = reference.slice(reference.indexOf('## CLI'), reference.indexOf('## Errors'));
+  const payload = { app: dxBlock(cli, 'Save as `app.py`', 'python'), cases: dxBlock(cli, 'Save as `cases.json`', 'json'),
+    command: dxBlock(cli, 'Run with the assumed SDK', 'bash') };
+  expect(JSON.parse(payload.cases)).toEqual([{ inputs: { enabled: true }, expected: { ready: true } }]);
+  const output = runDxDocumentationControl(String.raw`
+import argparse, importlib, json, pathlib, shlex, sys
+payload = json.load(sys.stdin)
+pathlib.Path('app.py').write_text(payload['app']); pathlib.Path('cases.json').write_text(payload['cases'])
+# Parse the documented command as an explicit contract double, not the absent CLI.
+args = shlex.split(payload['command']); assert args[:2] == ['eval-sdk', 'run']
+parser = argparse.ArgumentParser()
+for flag in ('target', 'cases', 'metric', 'deadline-seconds', 'max-cost-usd'): parser.add_argument('--' + flag, required=True)
+parser.add_argument('--no-input', action='store_true')
+options = parser.parse_args(args[2:])
+assert options.no_input and options.deadline_seconds == '20' and options.max_cost_usd == '0.25'
+def resolve(value):
+    module, name = value.split(':'); return getattr(importlib.import_module(module), name)
+target, metric = resolve(options.target), resolve(options.metric)
+cases = json.loads(pathlib.Path(options.cases).read_text())
+assert isinstance(cases, list) and len(cases) == 1
+for case in cases:
+    assert set(case) == {'inputs', 'expected'}
+    assert metric(target(case['inputs']), case['expected']) == 1.0
+print('shown cases file, CLI arguments and import targets agree; no SDK executed')
+`, payload);
+  expect(output).toContain('shown cases file, CLI arguments and import targets agree; no SDK executed');
 });

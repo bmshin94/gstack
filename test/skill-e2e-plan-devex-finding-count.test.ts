@@ -44,6 +44,14 @@ configuration boundaries. These are new explicit synthetic baseline facts, not
 claims about earlier runs. In particular, arbitrary application requests need
 their own bounds; SDK-managed provider limits cannot intercept them. All five
 launch gaps in the supplied plan remain unresolved; the added reference is not their remedy.
+The materialized success snippets now print deterministic JSON from documented
+case fields and show the exact output, without assuming the SDK's repr. The guide
+also supplies complete local application-client/transport files with per-attempt
+timeouts, finite retries and upfront integer-cent reservations; a paid substitute
+requires a verified per-attempt charge bound, and timeout reservations are not refunded.
+The CLI reference supplies its exact app.py targets and JSON-list cases.json.
+Fixture checks execute those application examples and explicit SDK-contract doubles
+offline. These are authored baseline additions; no SDK execution is claimed.
 
 - The Python package is eval-sdk, imported as eval_sdk, with the eval-sdk CLI.
   The README already states its purpose (evaluate an application's outputs against
