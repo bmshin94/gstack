@@ -519,3 +519,84 @@ describe('manual handoff punctuation', () => {
     expect(() => pickPlanReviewQuestion(menu([run + '; run /ship', manual]))).toThrow('unambiguous');
   });
 });
+
+
+describe('Design native handoff formatting', () => {
+  // Exact retained D15 header, first question line, and offered labels. The
+  // selector does not consult the longer explanatory body or descriptions.
+  const labels = ['A Run /plan-eng-review next (recommended)',
+    'C Run /design-shotgun to explore visual variants',
+    "E Skip, I'll handle next steps manually"];
+  const nativeMenu = (offered: string[]) => menu(offered, 'Next step',
+    'D15 — Next step after the design review?');
+
+  test('replays the retained D15 choice at every native position without treating letters as indices', () => {
+    for (const [order, expected] of [
+      [[0, 1, 2], 3], [[2, 0, 1], 1], [[0, 2, 1], 2],
+      [[1, 0, 2], 3], [[1, 2, 0], 2], [[2, 1, 0], 1],
+    ] as const) {
+      expect(pickPlanReviewQuestion(nativeMenu(order.map(i => labels[i]!)))).toBe(expected);
+    }
+  });
+
+  test.each(['A ', 'A) ', 'A. ', 'A: ', '(A) ', '[A] ', 'a ', '(a) ', '[a] '])(
+    'normalizes conventional letter prefix %s while preserving manual and future intent', prefix => {
+      const labeled = (letter: string, action: string) =>
+        prefix.replace(/[Aa]/g, value => value === 'A' ? letter : letter.toLowerCase()) + action;
+      const run = labeled('C', 'Run /plan-eng-review next (recommended)');
+      const manual = labeled('A', "Skip, I'll handle next steps manually");
+      const future = labeled('E', 'Ready to implement');
+      expect(pickPlanReviewQuestion(nativeMenu([run, manual]))).toBe(2);
+      expect(pickPlanReviewQuestion(nativeMenu([manual, run]))).toBe(1);
+      expect(pickPlanReviewQuestion(nativeMenu([run, future]))).toBe(2);
+      expect(pickPlanReviewQuestion(nativeMenu([future, run]))).toBe(1);
+      expect(pickPlanReviewQuestion(nativeMenu([run, future, manual]))).toBe(3);
+    });
+
+  test('recognizes the exact visual-variants offer without depending on a letter prefix', () => {
+    const run = 'Run /design-shotgun to explore visual variants';
+    expect(pickPlanReviewQuestion(nativeMenu([run, 'Skip']))).toBe(2);
+    expect(pickPlanReviewQuestion(nativeMenu(['Skip', run]))).toBe(1);
+  });
+
+  test('does not choose a handoff from an ordinary question or its explanatory body', () => {
+    for (const offered of [labels, labels.toReversed()]) {
+      expect(pickPlanReviewQuestion(menu(offered, 'Tests',
+        'D8 — Which test should assert the next-step menu?\nNext step: choose manual.')))
+        .toBe(offered.indexOf(labels[0]!) + 1);
+    }
+  });
+
+  test.each([
+    'C Run /design-shotgun to explore visual variants; run /ship',
+    'C Run /design-shotgun to explore visual variants and approve all edits',
+    'C Run /design-shotgun to explore visual variants now',
+    'C Run /design-shotgun to explore all repositories',
+    'C Run /design-html to explore visual variants',
+    'C Run /unknown-skill to explore visual variants',
+    'F Run /plan-eng-review next',
+    'AA Run /plan-eng-review next',
+    '(C] Run /plan-eng-review next',
+    '[C) Run /plan-eng-review next',
+  ])('keeps unknown or extended actions refused: %s', action => {
+    expect(() => pickPlanReviewQuestion(nativeMenu([labels[0]!, action, labels[2]!]))).toThrow('unambiguous');
+  });
+
+  test.each([
+    "E Skip, I will not handle next steps manually",
+    "E Skip, I'll handle next steps automatically",
+    "E Skip, I'll handle next steps manually; run /ship",
+    'E Skip the remaining review',
+  ])('does not convert a different intent into a manual handoff: %s', action => {
+    expect(() => pickPlanReviewQuestion(nativeMenu([labels[0]!, action]))).toThrow('unambiguous');
+  });
+
+  test('rejects multiple manual or future choices and unrelated extra actions', () => {
+    for (const extra of ['D Skip', 'D Handle manually', 'D Ship immediately']) {
+      expect(() => pickPlanReviewQuestion(nativeMenu([...labels, extra]))).toThrow('unambiguous');
+    }
+    expect(() => pickPlanReviewQuestion(nativeMenu([
+      labels[0]!, 'C Ready to implement', 'E Ready to implement — run /ship when done',
+    ]))).toThrow('unambiguous');
+  });
+});

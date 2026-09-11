@@ -68,9 +68,9 @@ export function pickPlanReviewQuestion(question: NativeQuestion): number {
   };
   if (!nextReview) return recommended();
   const labels = question.options.map(option => option.label.trim()
-    .replace(/^[A-E][).:]\s+/, '').replace(/\s*\(recommended\)\s*$/i, '').trim());
+    .replace(/^(?:[A-E][).:]?|\([A-E]\)|\[[A-E]\])\s+/i, '').replace(/\s*\(recommended\)\s*$/i, '').trim());
   const run = (label: string) => /^(?:Run )?\/plan-(?:ceo|eng|design|devex)-review(?: (?:next|first))?(?:\s*\((?:required gate|only if UI scope detected(?: and no design review exists)?|only if fundamental product gaps found|only if significant product change and no CEO review exists)\))?$/i.test(label)
-    || /^(?:Run )?\/design-shotgun(?: after adding an OpenAI key|\s*[—–-]\s*explore visual design variants for issues found)?$/i.test(label)
+    || /^(?:Run )?\/design-shotgun(?: to explore visual variants| after adding an OpenAI key|\s*[—–-]\s*explore visual design variants for issues found)?$/i.test(label)
     || /^(?:Run )?\/design-html(?:\s*[—–-]\s*generate Pretext-native HTML from approved mockups)?$/i.test(label);
   // A bare Skip declines only an offered, recognized follow-up in this handoff.
   const offersFollowUp = labels.some(run);
