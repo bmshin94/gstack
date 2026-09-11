@@ -313,6 +313,7 @@ mock.module('child_process', () => ({
     return current.child;
   },
   spawnSync: () => { throw new Error('Unexpected synchronous subprocess'); },
+  execFileSync: () => { throw new Error('Unexpected synchronous subprocess'); },
 }));
 mock.module(${JSON.stringify(path.resolve(import.meta.dir, '../scripts/test-strict-output.ts'))}, () => ({
   killProcessGroup(child, signal) {
