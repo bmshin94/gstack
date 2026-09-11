@@ -103,7 +103,10 @@ describe('workflow judge excerpts', () => {
     const design = readWorkflowExcerpt('plan-design-review/SKILL.md', '## Review Sections', '## CRITICAL RULE');
     expect(design).toContain('wait for approval, then edit the plan and re-rate');
     const pass4 = design.slice(design.indexOf('### Pass 4:'), design.indexOf('### Pass 5:'));
-    expect(pass4.indexOf('### Design Hard Rules')).toBeLessThan(pass4.indexOf('FIX TO 10:'));
+    expect(pass4.match(/^### /gm)).toHaveLength(1);
+    expect(pass4).toMatch(/^#### Design Hard Rules$/m);
+    expect(pass4.indexOf('**Pass 4 evaluation:**')).toBeLessThan(pass4.indexOf('\n#### Design Hard Rules'));
+    expect(pass4.indexOf('#### Design Hard Rules')).toBeLessThan(pass4.indexOf('FIX TO 10:'));
     expect(pass4).toContain('caps this pass below 8');
   });
 

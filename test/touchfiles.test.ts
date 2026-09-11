@@ -126,6 +126,9 @@ describe('selectTests', () => {
       'ship/SKILL.md', '# Ship:', '## Important Rules', '## Test Framework Bootstrap'],
     ['ship/sections/test-coverage.md', 'ship/SKILL.md workflow',
       'ship/SKILL.md', '# Ship:', '## Important Rules', '### REGRESSION RULE (mandatory)'],
+    ['plan-design-review/sections/review-sections.md', 'plan-design-review/SKILL.md passes',
+      'plan-design-review/SKILL.md', '## Review Sections', '## CRITICAL RULE',
+      '## Review Sections (7 passes, after scope is agreed)'],
   ])('expanded judge content remains selected by its section alone: %s', (file, judge, skill, start, end, marker) => {
     const body = fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/^<!--[^\n]*-->\n/gm, '').trim();
     const paragraph = body.split(`${marker}\n\n`)[1]?.split('\n\n')[0];
@@ -135,6 +138,13 @@ describe('selectTests', () => {
       expect(selectTests([changed], LLM_JUDGE_TOUCHFILES).selected).toEqual([judge]);
     }
   });
+
+  test.each(['scripts/resolvers/design.ts', 'scripts/resolvers/review.ts'])(
+    'Design rendering source selects its workflow judge: %s', (file) => {
+      const result = selectTests([file], LLM_JUDGE_TOUCHFILES);
+      expect(result.reason).toBe('diff');
+      expect(result.selected).toContain('plan-design-review/SKILL.md passes');
+    });
 
   test('the shared recording lifecycle selects every bounded attempt', () => {
     const result = selectTests(['test/helpers/office-hours-attempt.ts'], E2E_TOUCHFILES);

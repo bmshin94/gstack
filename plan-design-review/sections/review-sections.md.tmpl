@@ -8,7 +8,11 @@
 
 Evaluate every pass using the plan and referenced existing contracts. An explicitly excluded artifact is not a missing requirement: assess the same dimension with permitted evidence. Reopen that exclusion only for a concrete design gap, and ask before changing it.
 
-**Pass protocol (1-6):** Record the initial 0-10 score. Every `FIX TO 10` below is a proposal: ask about each issue, wait for approval, then edit the plan and re-rate that pass with the reason for the score change. A declined fix remains documented and lowers the final score. Never edit first and ask afterward. Pass 7 is the unscored decision register, not a seventh rating. A faithful restatement of an existing or already approved contract, such as a wireframe of the unchanged layout, is review evidence rather than a new design choice. Record it directly; ask if producing it would introduce or change a design decision.
+**Pass protocol (1-6):** Record the initial 0-10 score. Every `FIX TO 10` below is a proposal: ask about each issue, wait for approval, then edit the plan and re-rate that pass with the reason for the score change. Never edit first and ask afterward.
+
+A declined fix remains documented: the unresolved gap keeps the rating below 10. Carry each pass's before/after scores and remaining gaps into the Completion Summary below. Reassess overall design completeness using the same judgment as Step 0A; do not treat litmus answers or Pass 7's decision counts as numeric ratings. Pass 7 is the unscored decision register, not a seventh rating.
+
+A faithful restatement of an existing or already approved contract, such as a wireframe of the unchanged layout, is review evidence rather than a new design choice. Record it directly; ask if producing it would introduce or change a design decision. Finish with the Required Outputs and terminal Plan File Review Report below, including any unanswered decisions.
 
 ### Pass 1: Information Architecture
 Rate 0-10: Does the plan define what the user sees first, second, third?
@@ -41,9 +45,9 @@ Apply time-horizon design: 5-sec visceral, 5-min behavioral, 5-year reflective.
 
 ### Pass 4: AI Slop Risk
 
-{{DESIGN_HARD_RULES}}
-
 **Pass 4 evaluation:** Rate 0-10: Does the plan describe specific, intentional UI, or generic patterns? Record each hard-rejection hit and litmus YES/NO with evidence. An unresolved hard rejection caps this pass below 8 (not design-complete); it does not automatically set the score to 0. Litmus answers support findings, not a separate numeric score.
+
+{{DESIGN_HARD_RULES}}
 
 FIX TO 10: Rewrite vague UI descriptions with specific alternatives:
 - "Cards with icons" → what differentiates these from every SaaS template?

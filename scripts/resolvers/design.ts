@@ -1015,6 +1015,7 @@ export function generateDesignSlopBullets(_ctx: TemplateContext): string {
 // three-looks calibration are derived from pbakaus/impeccable reference/craft-floor.md
 // + new-work.md (Apache-2.0), rewritten in gstack's voice. See NOTICE.md.
 export function generateDesignHardRules(ctx: TemplateContext): string {
+  const isPlanReview = ctx.skillName === 'plan-design-review';
   const slopItems = AI_SLOP_BLACKLIST.map((item, i) => `${i + 1}. ${item}`).join('\n');
   const rejectionItems = OPENAI_HARD_REJECTIONS.map((item, i) => `${i + 1}. ${item}`).join('\n');
   const litmusItems = OPENAI_LITMUS_CHECKS.map((item, i) => `${i + 1}. ${item}`).join('\n');
@@ -1041,9 +1042,9 @@ Judgment tells with no detector rule: ${judgmentTells.map(e => e.name.toLowerCas
   // design-review's Methodology categories 5 and 7 already carry the first two.
   const reflexBlock = (ctx.skillName === 'design-review' ? reflexes.slice(2) : reflexes).join('\n');
 
-  return `### Design Hard Rules
+  return `${isPlanReview ? '####' : '###'} Design Hard Rules
 
-**Classifier: name the mode before you judge a pixel.** The mode is what the visitor's win looks like on THIS surface, not what the product is. A dev tool's landing page is Persuade. A fashion house's docs are Read.
+${isPlanReview ? 'Review these as UI requirements in the plan, approved mockups, and referenced existing contracts. Inspect pixels or computed values when a rendered surface is available; otherwise assess what the plan specifies and identify concrete gaps.\n\n' : ''}**Classifier: name the mode before you ${isPlanReview ? 'apply the rules' : 'judge a pixel'}.** The mode is what the visitor's win looks like on THIS surface, not what the product is. A dev tool's landing page is Persuade. A fashion house's docs are Read.
 - **PERSUADE** (MARKETING/LANDING PAGE: hero-driven, brand-forward, pricing, campaigns) → they decide and act. Design IS the product. Apply Landing Page Rules.
 - **OPERATE** (APP UI: dashboards, admin, settings, editors, tools) → they finish a task. Scanability and native expectations beat expression; the brand lives in the details. Apply App UI Rules.
 - **READ** (docs, articles, guides, changelogs) → they understand something. Structure for comprehension, then make staying worth it. Apply Read Rules.
@@ -1053,14 +1054,14 @@ Judgment tells with no detector rule: ${judgmentTells.map(e => e.name.toLowerCas
 **Hard rejection criteria** (instant-fail patterns — flag if ANY apply):
 ${rejectionItems}
 
-**Litmus checks** (answer YES/NO for each — used for cross-model consensus scoring):
+**Litmus checks** (${isPlanReview ? 'answer YES/NO for each with evidence; compare with the outside-voice litmus scorecard when available. These support findings, not an additional numeric score' : 'answer YES/NO for each — used for cross-model consensus scoring'}):
 ${litmusItems}
 
 **Landing page rules** (apply when classifier = PERSUADE / MARKETING/LANDING):
 - First viewport reads as one composition, not a dashboard
 - Brand-first hierarchy: brand > headline > body > CTA
 - Typography: expressive, purposeful — no default stacks (Inter, Roboto, Arial, system)
-- No flat single-color backgrounds by default: texture from the brand or a real asset, never a halo, spotlight, stripe, or grid-paper gradient (the catalog names each)
+- No flat single-color backgrounds by default: texture from the brand or a real asset, never a halo, spotlight, stripe, or grid-paper gradient (${isPlanReview ? 'see the AI Slop blacklist and detector rule ids below' : 'the catalog names each'})
 - Hero: full-bleed, edge-to-edge, no inset/tiled/rounded variants
 - Hero budget: brand, one headline, one supporting sentence, one CTA group, one image
 - No cards in hero. Cards only when card IS the interaction
@@ -1091,7 +1092,7 @@ ${litmusItems}
 
 **Universal rules** (apply to ALL types):
 - Define CSS variables for color system
-- No default font stacks as the display voice (Inter, Roboto, Arial, system); body/UI use on an Operate or Read surface follows the role-scoped list (${FONTS_BODY_UI_OK.join(', ')} pass when the proposal says so)
+- No default font stacks as the display voice (Inter, Roboto, Arial, system); ${isPlanReview ? `${FONTS_BODY_UI_OK.join(', ')} are allowed for body/UI on an Operate or Read surface when the proposal explicitly assigns that role` : `body/UI use on an Operate or Read surface follows the role-scoped list (${FONTS_BODY_UI_OK.join(', ')} pass when the proposal says so)`}
 - One job per section
 - "If deleting 30% of the copy improves it, keep deleting"
 - Cards earn their existence — no decorative card grids

@@ -49,18 +49,18 @@ test('CEO Step 0 constructs and splits pending rows before drafting any menu on 
     for (const file of [`${SKELETON}.tmpl`, ...carriers.map(carrier => path.join(outputRoot, carrier.relativePath))]) {
       const source = fs.readFileSync(file, 'utf8');
       const approach = source.split('### 0C-bis.')[1]?.split('### 0F. Mode Selection')[0] ?? '';
-      const positions = ['**Construct rows.**', '**Split before drafting.**',
-        '**Compare 2-3 approaches for one row**', 'For new or reopened choices, use',
+      const positions = ['**1. Reuse existing approvals.**', '**2. Separate pending changes.**',
+        'Before drafting A/B/C', '**3. Compare options for one row.**', '**4. Ask and record the answer.**',
         'Ask about one row per call'].map(stage => approach.indexOf(stage));
       expect(positions.every(position => position >= 0), file).toBe(true);
       expect(positions, file).toEqual([...positions].sort((a, b) => a - b));
       expect(source).toContain('| ID and owner section | Requirement and evidence | Proposed change | Status | Exact approval and scope |');
-      expect(source.indexOf('| ID and owner section |')).toBeLessThan(source.indexOf('**Construct rows.**'));
-      expect(approach).toContain('Use the ledger above');
-      expect(approach).toContain('Leave other changes pending');
-      expect(approach).toContain('Try accepting one proposed change while rejecting another');
-      expect(approach).toContain('split into separate rows before A/B/C');
-      expect(approach).toContain('Apply this check to every offered option');
+      expect(source.indexOf('| ID and owner section |')).toBeLessThan(source.indexOf('**2. Separate pending changes.**'));
+      expect(approach).toContain('Give each changed commitment or value its own ledger row');
+      expect(approach).toContain('Leave other changes fixed or pending');
+      expect(approach).toContain('try accepting one change while rejecting another');
+      expect(approach).toContain('Before drafting A/B/C');
+      expect(approach).toContain('check every offered option this way');
       expect(approach).toContain('record its exact answer and approved scope before the next row');
       expect(source.indexOf('### 0C-bis.')).toBeLessThan(source.indexOf('### 0F. Mode Selection'));
     }
@@ -75,13 +75,13 @@ test('CEO Step 0 defines the decision record, execution order, and mode approval
   expect(step0).toContain('Section labels are stable references; follow this execution order');
   expect(step0).toContain('| 1 | Challenge the plan and present your findings to the user. | 0A–0C |');
   expect(step0).toContain('| ID and owner section | Requirement and evidence | Proposed change | Status | Exact approval and scope |');
-  expect(step0).toContain('Use this same table through outside review');
+  expect(step0).toContain('Continue this table through the Spec Review Loop below and the later Outside Voice review');
   expect(step0).toContain('current behavior, conventions and existing test coverage');
   expect(step0).toContain('A limit of two deliverables stays two deliverables even if reuse halves the work');
   expect(step0).toContain('For every required behavior, state how each option verifies it and how much it covers');
-  expect(step0).toContain('A shared test suite does not turn distinct behaviors into one decision');
-  expect(step0).toContain('Present the 0A–0C findings before comparing approaches');
-  expect(step0).toContain('do not treat that presentation as approval');
+  expect(step0).toContain('Shared files, steps, helpers or test suites do not join independent decisions');
+  expect(step0).toContain('Present the 0A–0C findings to the user');
+  expect(step0).toContain('Presenting findings does not approve changes');
   expect(step0).toContain('The preamble\'s session rules govern whether and how to ask');
   expect(step0).toContain('An explicit user mode choice outranks every default below');
   expect(step0).toContain('For plans touching >15 files, recommend SCOPE REDUCTION even for greenfield work');
@@ -99,8 +99,8 @@ test('CEO Step 0 defines the decision record, execution order, and mode approval
   expect(source).toContain('For both expansion modes, present each proposal as its own AskUserQuestion');
   expect(source).toContain('Accepted items govern all remaining review sections');
   expect(source).toContain('Put rejected items in "NOT in scope."');
-  expect(source).toContain('For every approved deferral, add the item and its context to TODOS.md');
-  expect(source).toContain('Give the user links to both files');
+  expect(source).toContain('Add each approved item and its context to TODOS.md');
+  expect(source).toContain('give the user links to both files');
 });
 
 // Boundary checks stay on source templates: generated carriers remain the
@@ -114,18 +114,18 @@ describe('CEO review decision boundaries contract', () => {
 
   test('every approach comparison preserves approvals and separates independent changes', () => {
     expect(alternatives).toContain('Every option must preserve accepted requirements, unchanged contracts');
-    expect(alternatives).toContain('Resolve pending decisions one row at a time');
-    expect(alternatives).toContain('Each row changes one commitment or value');
-    expect(alternatives).toContain('not everything in a shared issue or helper');
+    expect(alternatives).toContain('Give each changed commitment or value its own ledger row');
+    expect(alternatives).toContain('Give each changed commitment or value its own ledger row');
+    expect(alternatives).toContain('An issue or helper may contain several decisions');
     expect(alternatives).toContain('Every option must preserve accepted requirements, unchanged contracts, and approved behavior, tests and fixes');
-    expect(alternatives).toContain('Leave other changes pending');
-    expect(alternatives).toContain('For every required behavior, state how each option verifies it and how much it covers. A shared test suite does not turn distinct behaviors into one decision');
+    expect(alternatives).toContain('Leave other changes fixed or pending');
+    expect(alternatives).toContain('For every required behavior, state how each option verifies it and how much it covers');
     expect(alternatives).not.toContain('for architecture choices');
-    expect(alternatives).toContain('split into separate rows before A/B/C');
-    expect(alternatives).toContain('Combine only inseparable choices; explain why and state their exact scope');
-    expect(alternatives).toContain('An approach approval covers only its stated scope');
+    expect(alternatives).toContain('Before drafting A/B/C');
+    expect(alternatives).toContain('Combine only changes that must stand together; explain why and state their exact scope');
+    expect(alternatives).toContain('Its approval covers only that scope; resolve the remaining choices below');
     expect(alternatives).toContain('Keep code and tests for one behavior together');
-    expect(alternatives).toContain('Sharing files, steps or helpers does not make independent changes inseparable');
+    expect(alternatives).toContain('Shared files, steps, helpers or test suites do not join independent decisions');
     expect(skeleton).toContain('cite the instruction or answer authorizing each resolved choice');
     expect(alternatives).toContain('"minimal viable"');
     expect(alternatives).toContain('"ideal architecture"');
@@ -134,12 +134,12 @@ describe('CEO review decision boundaries contract', () => {
 
   test('settled approach authority resolves the gate while new choices still require approval', () => {
     const approach = alternatives.split('### 0F. Mode Selection')[0]!;
-    const reuse = approach.split('Resolve pending decisions')[0]!;
+    const reuse = approach.split('**2. Separate pending changes.**')[0]!;
     const gate = approach.split('**STOP:**')[1] ?? '';
-    expect(reuse).toContain('Before 0F, honor');
-    expect(reuse).toContain('applicable instructions or an accepted approach decision');
-    expect(reuse).toContain('Cite its authority');
-    expect(reuse).toContain('resolve 0C-bis without asking again');
+    expect(reuse).toContain('Record any approach already chosen');
+    expect(reuse).toContain('an applicable instruction or earlier answer');
+    expect(reuse).toContain('with its source and exact scope');
+    expect(reuse).toContain('Do not ask again about that choice');
     const reopenRule = 'Reopen a contract or decision only for a concrete contradiction or changed assumption';
     expect(skeleton).toContain(reopenRule);
     expect(skeleton.indexOf(reopenRule)).toBeLessThan(skeleton.indexOf('### 0C-bis.'));
@@ -147,15 +147,15 @@ describe('CEO review decision boundaries contract', () => {
     expect(gate).toContain('A recommendation is not approval');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
     expect(approach).toContain('Ask about one row per call');
-    expect(gate).toContain('For later unresolved choices, use the same one-row approval process, even for obvious fixes');
-    expect(gate).toContain('honor preference/session precedence');
+    expect(gate).toContain('Use the same process for later unresolved choices, even obvious fixes');
+    expect(gate).toContain('Follow the preamble\'s preference/session rules');
     expect(gate).toContain('Report settled findings without re-asking');
     expect(gate).toContain('Say "No issues, moving on." only when no findings remain');
   });
 
   test('coverage scoring is conditional and legitimate early decisions retain their exact approval', () => {
     expect(alternatives).toContain('only for differing coverage of this decision');
-    expect(alternatives.indexOf('Each row changes one commitment or value')).toBeLessThan(alternatives.indexOf('Completeness: N/10'));
+    expect(alternatives.indexOf('Give each changed commitment or value its own ledger row')).toBeLessThan(alternatives.indexOf('Completeness: N/10'));
     expect(alternatives).toContain('Give each option a `Completeness: N/10` score');
     expect(alternatives).toContain('10 = all in-scope edge cases, 7 = happy path, 3 = shortcut');
     expect(alternatives).toContain('Note: options differ in kind, not coverage — no completeness score.');
@@ -252,8 +252,8 @@ describe('CEO review decision continuity contract', () => {
     expect(existingCode).toContain('A limit of two deliverables stays two deliverables even if reuse halves the work');
     expect(skeleton.indexOf('Preserve what each limit')).toBeLessThan(skeleton.indexOf('### 0C-bis.'));
     const temporal = skeleton.split('### 0E.')[1]?.split('{{SECTION:review-sections}}')[0] ?? '';
-    expect(temporal).toContain('Prioritization: settle scope/feasibility blockers');
-    expect(temporal).toContain('keep other design choices pending unless the user approves implementation-design review');
+    expect(temporal).toContain('For scope prioritization, resolve scope and feasibility blockers now');
+    expect(temporal).toContain('Keep other design choices pending unless the user requested implementation planning; ask before expanding the review to that depth');
     expect(template).toContain('each required diagram, map, and output describes the candidate boundaries');
     expect(template).toContain('Preserve non-blocking implementation choices as pending with an owner and required verification');
     expect(template).toContain('resolve or reopen any that change the scope decision or expose a material blocker');
@@ -278,16 +278,18 @@ describe('CEO review decision continuity contract', () => {
     expect(template).toContain('New or reopened decisions still require explicit approval');
   });
 
-  test('Design and DX reuse the Eng gate while the default clause stays unchanged on every host', () => {
+  test('Design preserves decision gating while DX and fallback retain their existing output on every host', () => {
     // SHA-256 of the e801b515 default resolver output; detects collateral changes.
     const original = '82e55bcd35a16a20d243978707c786f25e24ac5d6a197d9fedb2cb0bb223abb7';
     for (const host of ALL_HOST_CONFIGS) {
       const fallback = generateAntiShortcutClause({ skillName: 'review', host: host.name } as TemplateContext);
       expect(createHash('sha256').update(fallback).digest('hex'), `review/${host.name}`).toBe(original);
       const eng = generateAntiShortcutClause({ skillName: 'plan-eng-review', host: host.name } as TemplateContext);
-      for (const skillName of ['plan-design-review', 'plan-devex-review']) {
-        expect(generateAntiShortcutClause({ skillName, host: host.name } as TemplateContext), `${skillName}/${host.name}`).toBe(eng);
-      }
+      expect(generateAntiShortcutClause({ skillName: 'plan-devex-review', host: host.name } as TemplateContext), `plan-devex-review/${host.name}`).toBe(eng);
+      const design = generateAntiShortcutClause({ skillName: 'plan-design-review', host: host.name } as TemplateContext);
+      expect(design).toMatch(/Ask once per independent decision, wait for the actual answer, then apply only its accepted scope/);
+      expect(design).toContain('Necessary code, tests and docs for an exact previously selected contract do not reopen it');
+      expect(design).toContain('does not approve independent remedies or optional verification depth');
     }
   });
 });
@@ -330,10 +332,10 @@ describe('plan-ceo-review carve — static ordering', () => {
     expect(skeleton).toContain('Present each proposed cut as its own AskUserQuestion');
     expect(skeleton).toContain('complete all 11 sections, required outputs and terminal review report');
     expect(skeleton).toContain('For plans touching >15 files, recommend SCOPE REDUCTION even for greenfield work');
-    expect(skeleton).toContain('The >8-file check challenges complexity within the chosen mode');
+    expect(skeleton).toContain('The >8-file complexity check below applies to HOLD SCOPE and SELECTIVE EXPANSION');
     const persist = skeleton.split('### 0D-POST. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)')[1]?.split('### 0E.')[0] ?? '';
     expect(persist).toContain('Run the Spec Review Loop below');
-    expect(persist).toContain('Continue to 0E after it completes or if unavailable');
+    expect(persist).toContain('After the loop completes or reports unavailable');
   });
 
   test('the heavy review body (Sections 1-11) is NOT in the skeleton', () => {

@@ -217,7 +217,14 @@ must be the file's terminal heading.`;
 
 export function generateAntiShortcutClause(_ctx: TemplateContext): string {
   if (_ctx.skillName === 'plan-ceo-review') return `**Anti-shortcut clause:** Analyze → resolve → apply for each section before advancing. The plan file records the interactive review; it cannot replace it. Do not prewrite the remaining sections or their implementation tasks and then walk through a fixed question list. Proposed findings are not accepted plan changes: mark them pending until their actual decisions are made. Ask once per unresolved or reopened issue, wait for the answer, and apply only the exact accepted choice and scope to the working plan. An earlier approach selection does not authorize unrelated choices. Keep established contracts, accepted decisions, and their evidence available to later sections; new material risks or changed remedies still need approval. Cross-referencing settled decisions never replaces the full review and terminal report. Follow the working review decisions below; never invent a question merely because a new section starts.`;
-  if (_ctx.skillName === 'plan-eng-review' || _ctx.skillName === 'plan-devex-review' || _ctx.skillName === 'plan-design-review') return `**Anti-shortcut clause:** Evaluate every section and outside voice finding through the decision gate below. The plan records the interactive review; writing findings into it never substitutes for approval. Ask once per new or reopened independent decision, wait for the actual answer, and apply only its accepted scope. Necessary code, tests and docs for an exact previously selected contract do not reopen it: cite that selected answer and scope, retain the finding and proof, and disclose the follow-through. Correct factual descriptions against source evidence without authorizing behavior changes. A broad approach or recommendation does not approve independent remedies or optional verification depth. Concrete new risks or changed assumptions may reopen a decision and must be presented. Never skip sections or the terminal report, or invent a question merely because a finding came from another section or reviewer.`;
+  if (_ctx.skillName === 'plan-design-review') return `**Anti-shortcut clause:** Review every section and outside voice finding. The plan records the review; writing a finding into it is not approval. For each finding:
+
+- **New or reopened choice:** Ask once per independent decision, wait for the actual answer, then apply only its accepted scope. Present concrete new risks or changed assumptions that reopen an earlier choice.
+- **Work already approved:** Necessary code, tests and docs for an exact previously selected contract do not reopen it. Cite the selected answer and scope, retain the finding and proof, and disclose the follow-through. A broad approach or recommendation does not approve independent remedies or optional verification depth.
+- **Factual correction:** Correct descriptions against source evidence without authorizing behavior changes.
+
+Never skip sections or the terminal report. Do not invent a question merely because a finding came from another section or reviewer.`;
+  if (_ctx.skillName === 'plan-eng-review' || _ctx.skillName === 'plan-devex-review') return `**Anti-shortcut clause:** Evaluate every section and outside voice finding through the decision gate below. The plan records the interactive review; writing findings into it never substitutes for approval. Ask once per new or reopened independent decision, wait for the actual answer, and apply only its accepted scope. Necessary code, tests and docs for an exact previously selected contract do not reopen it: cite that selected answer and scope, retain the finding and proof, and disclose the follow-through. Correct factual descriptions against source evidence without authorizing behavior changes. A broad approach or recommendation does not approve independent remedies or optional verification depth. Concrete new risks or changed assumptions may reopen a decision and must be presented. Never skip sections or the terminal report, or invent a question merely because a finding came from another section or reviewer.`;
   return `**Anti-shortcut clause:** The plan file is the OUTPUT of the interactive review, not a substitute for it. Writing every finding into one plan write and calling ExitPlanMode without firing AskUserQuestion is the precise failure mode of the May 2026 transcript bug — the model explored, found issues, and dumped them into a deliverable rather than walking the user through them. If you have ANY non-trivial finding in any review section, the path from finding to ExitPlanMode goes THROUGH AskUserQuestion. Zero findings in every section is the only path to ExitPlanMode that bypasses AskUserQuestion. If you find yourself wanting to write a plan with findings before asking, stop and call AskUserQuestion now — that's the bug, recognize it.`;
 }
 
@@ -328,10 +335,12 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
+${ceo ? `Use Agent with JSON boolean \`run_in_background: false\`, never the string \`"false"\`;
+agents default to background. Wait for its final review, not launch metadata, and
+do not launch a duplicate. The reviewer receives only the two files, not the conversation.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
 Subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}. Async launch metadata
 is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
-The reviewer has fresh context: only ${ceo ? 'the CEO scope document and its source plan' : 'the document'}, not the conversation.
+The reviewer has fresh context: only the document, not the conversation.`}
 
 Prompt the subagent with:
 - ${ceo ? 'The absolute paths of BOTH the CEO scope document just written and the current amended plan it references' : 'The file path of the document just written'}
@@ -358,25 +367,29 @@ ${ceo ? '- For each dimension, return PASS or numbered issues with descriptions 
 **Step 2: Fix and re-dispatch**
 
 If the reviewer returns issues:
-1. ${ceo ? 'Fix each issue in its owning file (use Edit tool): requirements and behavior in the source plan, scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the scope summary.' : 'Fix each issue in the document on disk (use Edit tool)'}
+1. ${ceo ? 'Use the 0C-bis approval/session rules for new or reopened choices; exact approved changes may proceed. Use scoped Edit for behavior and requirements in the source plan and scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the summary.' : 'Fix each issue in the document on disk (use Edit tool)'}
 2. Re-dispatch the reviewer subagent with ${ceo ? 'BOTH updated file paths and the same two-document instructions' : 'the updated document'}
 3. Maximum 3 iterations total
 
-**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
+${ceo ? `**Convergence guard:** If consecutive reviews return the same issues, stop the loop:
+the fix did not resolve them or the reviewer disagrees. Record them as "Reviewer Concerns"
+in the CEO document in Step 3.` : `**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
 (the fix didn't resolve them or the reviewer disagrees with the fix), stop the loop
 and persist those issues as "Reviewer Concerns" in the document rather than looping
-further.
+further.`}
 
-If the subagent fails, times out, or is unavailable — skip the review loop entirely.
+${ceo ? `If the reviewer fails, times out or is unavailable, stop the loop and tell the user:
+"Spec review unavailable — presenting unreviewed doc." The files are saved; review
+is a quality bonus, not a gate.` : `If the subagent fails, times out, or is unavailable — skip the review loop entirely.
 Tell the user: "Spec review unavailable — presenting unreviewed doc." The document is
-already written to disk; the review is a quality bonus, not a gate.
+already written to disk; the review is a quality bonus, not a gate.`}
 
 **Step 3: Report and persist metrics**
 
 ${ceo ? `After PASS, max iterations or convergence, tell the user: "Your doc survived N rounds
 of adversarial review. M issues caught and fixed. Quality score: X/10."
 Show the full reviewer output on request. List every unresolved issue under
-"## Reviewer Concerns" in the document for downstream skills. Then append metrics:` : `After the loop completes (PASS, max iterations, or convergence guard):
+"## Reviewer Concerns" in the CEO document, citing each issue's owning file for downstream skills. Then append metrics:` : `After the loop completes (PASS, max iterations, or convergence guard):
 
 1. Tell the user the result — summary by default:
    "Your doc survived N rounds of adversarial review. M issues caught and fixed.

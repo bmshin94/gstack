@@ -130,6 +130,11 @@ When fixing failures or preparing `/ship`, follow this order:
    for another agent run. Check behavior and acknowledgments; match exact prose
    only when that prose is the contract. Do not lower thresholds, increase model
    budgets, skip cases, or rejudge a failure to manufacture a pass.
+   For workflow clarity failures, read the complete evaluated excerpt and its
+   referenced source. Resolve all demonstrated ambiguities together: order,
+   definitions, ownership and approval. Consolidate dense instructions into
+   executable steps instead of appending more clauses. Review the resulting
+   workflow as a whole; prose snapshots alone do not prove it is clear.
 5. Run required cheap CI checks, including credential scanning, before paid work.
    Also run adjacent cheap checks: generated-content freshness, prompt-size/parity
    limits, source assertions, fixture checks, and dependency selection as

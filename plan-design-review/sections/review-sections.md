@@ -4,7 +4,13 @@
 
 **Anti-skip rule:** Never condense, abbreviate, or skip any review pass (1-7) regardless of plan type (strategy, spec, code, infra). Every pass in this skill exists for a reason. "This is a strategy doc so design passes don't apply" is always wrong — design gaps are where implementation breaks down. If a pass genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
-**Anti-shortcut clause:** Evaluate every section and outside voice finding through the decision gate below. The plan records the interactive review; writing findings into it never substitutes for approval. Ask once per new or reopened independent decision, wait for the actual answer, and apply only its accepted scope. Necessary code, tests and docs for an exact previously selected contract do not reopen it: cite that selected answer and scope, retain the finding and proof, and disclose the follow-through. Correct factual descriptions against source evidence without authorizing behavior changes. A broad approach or recommendation does not approve independent remedies or optional verification depth. Concrete new risks or changed assumptions may reopen a decision and must be presented. Never skip sections or the terminal report, or invent a question merely because a finding came from another section or reviewer.
+**Anti-shortcut clause:** Review every section and outside voice finding. The plan records the review; writing a finding into it is not approval. For each finding:
+
+- **New or reopened choice:** Ask once per independent decision, wait for the actual answer, then apply only its accepted scope. Present concrete new risks or changed assumptions that reopen an earlier choice.
+- **Work already approved:** Necessary code, tests and docs for an exact previously selected contract do not reopen it. Cite the selected answer and scope, retain the finding and proof, and disclose the follow-through. A broad approach or recommendation does not approve independent remedies or optional verification depth.
+- **Factual correction:** Correct descriptions against source evidence without authorizing behavior changes.
+
+Never skip sections or the terminal report. Do not invent a question merely because a finding came from another section or reviewer.
 
 ## Prior Learnings
 
@@ -46,7 +52,11 @@ smarter on their codebase over time.
 
 Evaluate every pass using the plan and referenced existing contracts. An explicitly excluded artifact is not a missing requirement: assess the same dimension with permitted evidence. Reopen that exclusion only for a concrete design gap, and ask before changing it.
 
-**Pass protocol (1-6):** Record the initial 0-10 score. Every `FIX TO 10` below is a proposal: ask about each issue, wait for approval, then edit the plan and re-rate that pass with the reason for the score change. A declined fix remains documented and lowers the final score. Never edit first and ask afterward. Pass 7 is the unscored decision register, not a seventh rating. A faithful restatement of an existing or already approved contract, such as a wireframe of the unchanged layout, is review evidence rather than a new design choice. Record it directly; ask if producing it would introduce or change a design decision.
+**Pass protocol (1-6):** Record the initial 0-10 score. Every `FIX TO 10` below is a proposal: ask about each issue, wait for approval, then edit the plan and re-rate that pass with the reason for the score change. Never edit first and ask afterward.
+
+A declined fix remains documented: the unresolved gap keeps the rating below 10. Carry each pass's before/after scores and remaining gaps into the Completion Summary below. Reassess overall design completeness using the same judgment as Step 0A; do not treat litmus answers or Pass 7's decision counts as numeric ratings. Pass 7 is the unscored decision register, not a seventh rating.
+
+A faithful restatement of an existing or already approved contract, such as a wireframe of the unchanged layout, is review evidence rather than a new design choice. Record it directly; ask if producing it would introduce or change a design decision. Finish with the Required Outputs and terminal Plan File Review Report below, including any unanswered decisions.
 
 ### Pass 1: Information Architecture
 Rate 0-10: Does the plan define what the user sees first, second, third?
@@ -79,9 +89,13 @@ Apply time-horizon design: 5-sec visceral, 5-min behavioral, 5-year reflective.
 
 ### Pass 4: AI Slop Risk
 
-### Design Hard Rules
+**Pass 4 evaluation:** Rate 0-10: Does the plan describe specific, intentional UI, or generic patterns? Record each hard-rejection hit and litmus YES/NO with evidence. An unresolved hard rejection caps this pass below 8 (not design-complete); it does not automatically set the score to 0. Litmus answers support findings, not a separate numeric score.
 
-**Classifier: name the mode before you judge a pixel.** The mode is what the visitor's win looks like on THIS surface, not what the product is. A dev tool's landing page is Persuade. A fashion house's docs are Read.
+#### Design Hard Rules
+
+Review these as UI requirements in the plan, approved mockups, and referenced existing contracts. Inspect pixels or computed values when a rendered surface is available; otherwise assess what the plan specifies and identify concrete gaps.
+
+**Classifier: name the mode before you apply the rules.** The mode is what the visitor's win looks like on THIS surface, not what the product is. A dev tool's landing page is Persuade. A fashion house's docs are Read.
 - **PERSUADE** (MARKETING/LANDING PAGE: hero-driven, brand-forward, pricing, campaigns) → they decide and act. Design IS the product. Apply Landing Page Rules.
 - **OPERATE** (APP UI: dashboards, admin, settings, editors, tools) → they finish a task. Scanability and native expectations beat expression; the brand lives in the details. Apply App UI Rules.
 - **READ** (docs, articles, guides, changelogs) → they understand something. Structure for comprehension, then make staying worth it. Apply Read Rules.
@@ -97,7 +111,7 @@ Apply time-horizon design: 5-sec visceral, 5-min behavioral, 5-year reflective.
 6. Carousel with no narrative purpose
 7. App UI made of stacked cards instead of layout
 
-**Litmus checks** (answer YES/NO for each — used for cross-model consensus scoring):
+**Litmus checks** (answer YES/NO for each with evidence; compare with the outside-voice litmus scorecard when available. These support findings, not an additional numeric score):
 1. Brand/product unmistakable in first screen?
 2. One strong visual anchor present?
 3. Page understandable by scanning headlines only?
@@ -110,7 +124,7 @@ Apply time-horizon design: 5-sec visceral, 5-min behavioral, 5-year reflective.
 - First viewport reads as one composition, not a dashboard
 - Brand-first hierarchy: brand > headline > body > CTA
 - Typography: expressive, purposeful — no default stacks (Inter, Roboto, Arial, system)
-- No flat single-color backgrounds by default: texture from the brand or a real asset, never a halo, spotlight, stripe, or grid-paper gradient (the catalog names each)
+- No flat single-color backgrounds by default: texture from the brand or a real asset, never a halo, spotlight, stripe, or grid-paper gradient (see the AI Slop blacklist and detector rule ids below)
 - Hero: full-bleed, edge-to-edge, no inset/tiled/rounded variants
 - Hero budget: brand, one headline, one supporting sentence, one CTA group, one image
 - No cards in hero. Cards only when card IS the interaction
@@ -141,7 +155,7 @@ Apply time-horizon design: 5-sec visceral, 5-min behavioral, 5-year reflective.
 
 **Universal rules** (apply to ALL types):
 - Define CSS variables for color system
-- No default font stacks as the display voice (Inter, Roboto, Arial, system); body/UI use on an Operate or Read surface follows the role-scoped list (DM Sans, Instrument Sans, IBM Plex Sans pass when the proposal says so)
+- No default font stacks as the display voice (Inter, Roboto, Arial, system); DM Sans, Instrument Sans, IBM Plex Sans are allowed for body/UI on an Operate or Read surface when the proposal explicitly assigns that role
 - One job per section
 - "If deleting 30% of the copy improves it, keep deleting"
 - Cards earn their existence — no decorative card grids
@@ -177,8 +191,6 @@ Detector rule ids for the rest of the catalog (a `[rule-id]` in a finding is one
 Judgment tells with no detector rule: gradient cta button, stock-photo hero, cards as the default component, generic testimonial section, left-text right-image hero, generic cta labels, hero metric template, identical card grids, glassmorphism, hand-drawn svg illustration, modal by default, monospace as costume, content stand-ins, mode picked by category, unthemed browser surfaces, missing states.
 
 Source: [OpenAI "Designing Delightful Frontends with GPT-5.4"](https://developers.openai.com/blog/designing-delightful-frontends-with-gpt-5-4) (Mar 2026) + gstack design methodology.
-
-**Pass 4 evaluation:** Rate 0-10: Does the plan describe specific, intentional UI, or generic patterns? Record each hard-rejection hit and litmus YES/NO with evidence. An unresolved hard rejection caps this pass below 8 (not design-complete); it does not automatically set the score to 0. Litmus answers support findings, not a separate numeric score.
 
 FIX TO 10: Rewrite vague UI descriptions with specific alternatives:
 - "Cards with icons" → what differentiates these from every SaaS template?

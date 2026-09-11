@@ -878,7 +878,7 @@ Keep a decision ledger from input reading onward:
 | ID and owner section | Requirement and evidence | Proposed change | Status | Exact approval and scope |
 |---|---|---|---|---|
 
-Record current behavior, conventions and existing test coverage as requirements with evidence. Mark rows unresolved, approved, reopened, deferred or declined; cite the instruction or answer authorizing each resolved choice. Use this same table through outside review. Reopen a contract or decision only for a concrete contradiction or changed assumption, never speculation or reviewer agreement. Retain actual code risks.
+Record current behavior, conventions and existing test coverage with their evidence. Mark rows unresolved, approved, reopened, deferred or declined; cite the instruction or answer authorizing each resolved choice. Continue this table through the Spec Review Loop below and the later Outside Voice review. Reopen a contract or decision only for a concrete contradiction or changed assumption, never speculation or reviewer agreement. Retain actual code risks.
 
 ### 0A. Premise Challenge
 1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
@@ -900,32 +900,39 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Alternatives (MANDATORY)
 
-Present the 0A–0C findings before comparing approaches; do not treat that presentation as approval. Before 0F, honor applicable instructions or an accepted approach decision. Cite its authority and resolve 0C-bis without asking again.
+Present the 0A–0C findings to the user. Presenting findings does not approve changes.
 
-Resolve pending decisions one row at a time:
+**1. Reuse existing approvals.**
+Record any approach already chosen by an applicable instruction or earlier answer, with its source and exact scope. Do not ask again about that choice. Its approval covers only that scope; resolve the remaining choices below.
 
-1. **Construct rows.** Use the ledger above. Each row changes one commitment or value, not everything in a shared issue or helper. For every required behavior, state how each option verifies it and how much it covers. A shared test suite does not turn distinct behaviors into one decision. An approach approval covers only its stated scope.
-2. **Split before drafting.** Try accepting one proposed change while rejecting another. If viable, split into separate rows before A/B/C. Apply this check to every offered option. Combine only inseparable choices; explain why and state their exact scope. Keep code and tests for one behavior together. Sharing files, steps or helpers does not make independent changes inseparable. Every option must preserve accepted requirements, unchanged contracts, and approved behavior, tests and fixes. Leave other changes pending.
-3. **Compare 2-3 approaches for one row** (prefer 3 for non-trivial plans; justify only one). Give each A/B/C option a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, and reused code/patterns. For implementation: "minimal viable" (fewest files/smallest diff) and "ideal architecture" (best long-term trajectory). Weigh equally; a rewrite may beat the smallest diff.
+**2. Separate pending changes.**
+Give each changed commitment or value its own ledger row. An issue or helper may contain several decisions. Leave other changes fixed or pending.
 
-**RECOMMENDATION:** [X] because [engineering preference].
+Before drafting A/B/C, try accepting one change while rejecting another. If possible, give them separate rows; check every offered option this way. Shared files, steps, helpers or test suites do not join independent decisions. Keep code and tests for one behavior together. Combine only changes that must stand together; explain why and state their exact scope.
 
-For new or reopened choices, use AskUserQuestion, the preamble format and RECOMMENDATION. Give each option a `Completeness: N/10` score only for differing coverage of this decision: 10 = all in-scope edge cases, 7 = happy path, 3 = shortcut. Otherwise write: `Note: options differ in kind, not coverage — no completeness score.`
+**3. Compare options for one row.**
+Compare 2-3 approaches; prefer 3 for non-trivial plans and justify offering only one.
+- Give each A/B/C option a name, a 1-2 sentence summary, S/M/L/XL relative effort, low/medium/high risk, 2-3 pros/cons, and reused code or patterns.
+- For implementation, compare "minimal viable" (fewest files/smallest diff) with "ideal architecture" (best long-term trajectory). Weigh both equally; a rewrite may be better.
+- For every required behavior, state how each option verifies it and how much it covers.
+
+Every option must preserve accepted requirements, unchanged contracts, and approved behavior, tests and fixes.
+
+**4. Ask and record the answer.**
+For new or reopened choices, use AskUserQuestion and the preamble format. Include **RECOMMENDATION:** [X] because [engineering preference]. Give each option a `Completeness: N/10` score only for differing coverage of this decision: 10 = all in-scope edge cases, 7 = happy path, 3 = shortcut. Otherwise write: `Note: options differ in kind, not coverage — no completeness score.`
 
 **STOP:** Before 0F, get user approval for each new or reopened choice, even if only one option is viable. A recommendation is not approval. Ask about one row per call; record its exact answer and approved scope before the next row. Do not edit code.
 
-For later unresolved choices, use the same one-row approval process, even for obvious fixes; honor preference/session precedence. Report settled findings without re-asking. Say "No issues, moving on." only when no findings remain.
+Use the same process for later unresolved choices, even obvious fixes. Follow the preamble's preference/session rules. Report settled findings without re-asking. Say "No issues, moving on." only when no findings remain.
 
 ### 0F. Mode Selection
-Select the mode after approach approval and before mode-specific analysis.
-
 The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport, not permission to choose.
 
 1. An explicit user mode choice outranks every default below. "Go big", "ambitious" or "cathedral" selects SCOPE EXPANSION; "hold scope but tempt me", "show me options" or "cherry-pick" selects SELECTIVE EXPANSION. Do not ask again.
 2. Otherwise recommend SCOPE EXPANSION for greenfield work, SELECTIVE EXPANSION for enhancements/iterations, or HOLD SCOPE for bug fixes/hotfixes/refactors. For plans touching >15 files, recommend SCOPE REDUCTION even for greenfield work, unless the user pushes back.
 3. For an unresolved selection, if `QUESTION_TUNING: true`, check `plan-ceo-review-mode` via `gstack-question-preference --check` before choosing or asking. `AUTO_DECIDE` permits the recommended mode; `ASK_NORMALLY` requires a mode question. If `QUESTION_TUNING: false`, skip the lookup and ask normally. Preamble session rules still take precedence.
 
-Selecting a mode never approves a scope change. The >8-file check challenges complexity within the chosen mode. Mode questions use the preamble format, RECOMMENDATION and the kind-difference note above.
+Selecting a mode never approves a scope change. The >8-file complexity check below applies to HOLD SCOPE and SELECTIVE EXPANSION. Mode questions use the preamble format, RECOMMENDATION and the kind-difference note above.
 
 **Mode handoff before 0D:** Announce the exact selected mode name, then its rationale and approved approach, in normal chat before analysis, edits, tools or questions:
 - `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected mode> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
@@ -982,7 +989,7 @@ For both expansion modes, present each proposal as its own AskUserQuestion: **A)
 
 Present each proposed cut as its own AskUserQuestion: **A)** Defer this item to TODOS.md **B)** Keep it in scope. Review only the agreed reduced scope.
 
-For every approved deferral, add the item and its context to TODOS.md.
+Use 0C-bis for each deferral, including in HOLD SCOPE; reuse its existing menu answer. Add each approved item and its context to TODOS.md.
 
 ### 0D-POST. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
 
@@ -1033,9 +1040,9 @@ Repo: {owner/repo}
 
 Derive the feature slug from the reviewed plan; use a YYYY-MM-DD date.
 
-"Plan under review" must name the actual amended plan, including accepted changes. Save complete conversation-only plans in a separate file first, never self-reference this CEO artifact. Give the user links to both files; this scope summary cannot replace the full plan.
+"Plan under review" must point to the complete amended plan, including accepted changes. If the plan exists only in chat, save it to its own file before writing the CEO summary. The summary cannot replace or point to itself as the full plan.
 
-Run the Spec Review Loop below. Continue to 0E after it completes or if unavailable.
+Run the Spec Review Loop below.
 
 ## Spec Review Loop
 
@@ -1043,10 +1050,9 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-Use Agent with JSON boolean `run_in_background: false`, never string `"false"`.
-Subagents default to background since Claude Code v2.1.198. Async launch metadata
-is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
-The reviewer has fresh context: only the CEO scope document and its source plan, not the conversation.
+Use Agent with JSON boolean `run_in_background: false`, never the string `"false"`;
+agents default to background. Wait for its final review, not launch metadata, and
+do not launch a duplicate. The reviewer receives only the two files, not the conversation.
 
 Prompt the subagent with:
 - The absolute paths of BOTH the CEO scope document just written and the current amended plan it references
@@ -1071,33 +1077,34 @@ The subagent should return:
 **Step 2: Fix and re-dispatch**
 
 If the reviewer returns issues:
-1. Fix each issue in its owning file (use Edit tool): requirements and behavior in the source plan, scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the scope summary.
+1. Use the 0C-bis approval/session rules for new or reopened choices; exact approved changes may proceed. Use scoped Edit for behavior and requirements in the source plan and scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the summary.
 2. Re-dispatch the reviewer subagent with BOTH updated file paths and the same two-document instructions
 3. Maximum 3 iterations total
 
-**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
-(the fix didn't resolve them or the reviewer disagrees with the fix), stop the loop
-and persist those issues as "Reviewer Concerns" in the document rather than looping
-further.
+**Convergence guard:** If consecutive reviews return the same issues, stop the loop:
+the fix did not resolve them or the reviewer disagrees. Record them as "Reviewer Concerns"
+in the CEO document in Step 3.
 
-If the subagent fails, times out, or is unavailable — skip the review loop entirely.
-Tell the user: "Spec review unavailable — presenting unreviewed doc." The document is
-already written to disk; the review is a quality bonus, not a gate.
+If the reviewer fails, times out or is unavailable, stop the loop and tell the user:
+"Spec review unavailable — presenting unreviewed doc." The files are saved; review
+is a quality bonus, not a gate.
 
 **Step 3: Report and persist metrics**
 
 After PASS, max iterations or convergence, tell the user: "Your doc survived N rounds
 of adversarial review. M issues caught and fixed. Quality score: X/10."
 Show the full reviewer output on request. List every unresolved issue under
-"## Reviewer Concerns" in the document for downstream skills. Then append metrics:
+"## Reviewer Concerns" in the CEO document, citing each issue's owning file for downstream skills. Then append metrics:
 ```bash
 mkdir -p ~/.gstack/analytics
 echo '{"skill":"plan-ceo-review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.gstack/analytics/spec-review.jsonl 2>/dev/null || true
 ```
 Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.
 
+After the loop completes or reports unavailable, give the user links to both files. Continue to 0E.
+
 ### 0E. Temporal Interrogation (EXPANSION, SELECTIVE EXPANSION, and HOLD modes)
-Prioritization: settle scope/feasibility blockers; keep other design choices pending unless the user approves implementation-design review.
+For scope prioritization, resolve scope and feasibility blockers now. Keep other design choices pending unless the user requested implementation planning; ask before expanding the review to that depth.
 ```
   HOUR 1 (foundations):     What does the implementer need to know?
   HOUR 2-3 (core logic):   What ambiguities will they hit?

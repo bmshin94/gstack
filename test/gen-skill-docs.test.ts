@@ -1453,18 +1453,23 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     expect(ceo).toContain('Could an engineer implement this without asking questions? Ambiguous language?');
     expect(ceo).not.toContain('design and coaching document');
     expect(ceo).not.toContain('gstack-office-hours-review');
-    expect(ceo.slice(ceo.indexOf('**Step 2:'), ceo.indexOf('If the subagent fails,')).trim()).toBe(`**Step 2: Fix and re-dispatch**
-
-If the reviewer returns issues:
-1. Fix each issue in its owning file (use Edit tool): requirements and behavior in the source plan, scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the scope summary.
-2. Re-dispatch the reviewer subagent with BOTH updated file paths and the same two-document instructions
-3. Maximum 3 iterations total
-
-**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
-(the fix didn't resolve them or the reviewer disagrees with the fix), stop the loop
-and persist those issues as "Reviewer Concerns" in the document rather than looping
-further.`);
+    const fixes = ceo.slice(ceo.indexOf('**Step 2:'), ceo.indexOf('**Step 3:'));
+    const stages = ['0C-bis approval/session rules for new or reopened choices', 'Use scoped Edit',
+      'Re-dispatch the reviewer subagent with BOTH updated file paths'].map(text => fixes.indexOf(text));
+    expect(stages.every(index => index >= 0)).toBe(true);
+    expect(stages).toEqual([...stages].sort((a, b) => a - b));
+    expect(fixes).toContain('exact approved changes may proceed');
+    expect(fixes).toContain('behavior and requirements in the source plan and scope decisions in the CEO document');
+    expect(fixes).toContain('Keep both consistent; do not copy the full plan into the summary');
+    expect(fixes).toContain('same two-document instructions');
+    expect(fixes).toContain('Maximum 3 iterations total');
+    expect(fixes).toContain('If consecutive reviews return the same issues, stop the loop');
+    expect(fixes).toContain('the fix did not resolve them or the reviewer disagrees');
+    expect(fixes).toContain('in the CEO document in Step 3');
+    expect(fixes).toContain('If the reviewer fails, times out or is unavailable, stop the loop');
+    expect(fixes).toContain('quality bonus, not a gate');
     expect(ceo).toContain('Spec review unavailable — presenting unreviewed doc.');
+    expect(ceo.split('**Step 3:')[1]).toContain('After PASS, max iterations or convergence');
     expect(ceo).toContain('M issues caught and fixed');
     expect(ceo).toContain('Quality score: X/10');
     expect(ceo).toContain('spec-review.jsonl');
@@ -1481,8 +1486,25 @@ further.`);
     }
     const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
     expect(template).toContain('## Plan under review\n{absolute path to the current amended plan}');
-    expect(template).toContain('Save complete conversation-only plans in a separate file first');
-    expect(template).toContain('never self-reference this CEO artifact');
+    expect(template).toContain('If the plan exists only in chat, save it to its own file before writing the CEO summary');
+    expect(template).toContain('The summary cannot replace or point to itself as the full plan');
+  });
+
+  test('CEO shares both files after spec review and owns unresolved concerns in its scope document', () => {
+    const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
+    const persist = template.split('### 0D-POST.')[1]?.split('### 0E.')[0] ?? '';
+    const review = persist.indexOf('{{SPEC_REVIEW_LOOP}}');
+    const sharing = persist.indexOf('give the user links to both files');
+    expect(review).toBeGreaterThanOrEqual(0);
+    expect(sharing).toBeGreaterThan(review);
+    const output = render('plan-ceo-review');
+    const convergence = output.split('**Convergence guard:**')[1]?.split('If the reviewer fails')[0] ?? '';
+    const report = output.split('**Step 3:')[1] ?? '';
+    for (const instruction of [convergence, report]) {
+      expect(instruction).toContain('CEO document');
+      expect(instruction).toContain('Reviewer Concerns');
+    }
+    expect(report).toContain('owning file');
   });
 
   test('CEO reviewer receives one complete prompt without duplicate scoring instructions', () => {
@@ -3978,9 +4000,9 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions.every(position => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
-    expect(approach).toContain('Before 0F, honor');
-    expect(approach).toContain('applicable instructions or an accepted approach decision');
-    expect(approach).toContain('Cite its authority and resolve 0C-bis without asking again');
+    expect(approach).toContain('Record any approach already chosen');
+    expect(approach).toContain('an applicable instruction or earlier answer');
+    expect(approach).toContain('with its source and exact scope. Do not ask again about that choice');
     const reopenRule = 'Reopen a contract or decision only for a concrete contradiction or changed assumption';
     expect(content).toContain(reopenRule);
     expect(content.indexOf(reopenRule)).toBeLessThan(approachIdx);

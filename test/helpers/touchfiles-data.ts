@@ -868,7 +868,7 @@ export const LLM_JUDGE_TOUCHFILES: Record<string, string[]> = {
   'plan-eng-review/SKILL.md sections':    ['plan-eng-review/SKILL.md', 'plan-eng-review/SKILL.md.tmpl', 'test/skill-llm-eval.test.ts', 'test/helpers/workflow-excerpt.ts', 'scripts/resolvers/testing.ts', 'plan-eng-review/sections/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/review.ts', 'test/plan-review-cases.test.ts'],
 
   // /spec authored-spec quality (paid LLM-judge — periodic-tier).
-  'plan-design-review/SKILL.md passes':   ['plan-design-review/SKILL.md', 'plan-design-review/SKILL.md.tmpl', 'test/skill-llm-eval.test.ts', 'test/helpers/workflow-excerpt.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts'],
+  'plan-design-review/SKILL.md passes':   ['plan-design-review/SKILL.md', 'plan-design-review/SKILL.md.tmpl', 'plan-design-review/sections/**', 'test/skill-llm-eval.test.ts', 'test/helpers/workflow-excerpt.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/design.ts', 'scripts/resolvers/review.ts'],
 
   // Design skills
   'design-review/SKILL.md fix loop':      ['design-review/SKILL.md', 'design-review/SKILL.md.tmpl', 'test/skill-llm-eval.test.ts', 'test/helpers/workflow-excerpt.ts'],
