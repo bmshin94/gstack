@@ -31,7 +31,7 @@ import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { buildSeedConfig, getHermeticDirs, hermeticChildEnv, hermeticSkillsConfigDir, isHermeticEnabled } from './hermetic-env';
+import { buildSeedConfig, getHermeticDirs, hermeticChildEnv, hermeticSkillsConfigDir, hermeticCeoPlanReadArgs, isHermeticEnabled } from './hermetic-env';
 import { PtyCurrentScreen, type PtyScreenSnapshot } from './pty-current-screen';
 import { setupQuestionEventSource, type QuestionEventSource } from './plan-skill-question-events';
 
@@ -108,6 +108,8 @@ export interface ClaudePtyOptions {
   /** Retain native question invocations before the CLI persists its transcript.
    * Owns --session-id and a private record-only hook; hermetic launches only. */
   captureQuestionsForSession?: string;
+  /** Read-only access to this split fixture's generated CEO review artifacts. */
+  readCeoPlanArtifacts?: boolean;
 }
 
 export interface ClaudePtySession {
@@ -1442,6 +1444,13 @@ export async function launchClaudePty(
     // cleanup because callers inspect returned plan paths after closing.
   }
 
+  if (opts.readCeoPlanArtifacts) {
+    if (!hermetic || !opts.seedSkills || opts.env?.CLAUDE_CONFIG_DIR || opts.env?.GSTACK_HOME || opts.env?.GSTACK_PROJECT_SLUG) {
+      throw new Error('CEO artifact Read requires the unmodified hermetic launch context');
+    }
+    args.push(...hermeticCeoPlanReadArgs(cwd, childEnv));
+  }
+
   // Launch-bound native invocation → current screen match → input → owned
   // transcript tool_result. Capturing a hook event never supplies an answer.
   let nativeQuestionEvents: QuestionEventSource | undefined;
@@ -2213,6 +2222,8 @@ export async function runPlanSkillCounting(opts: {
   questionPick?: (question: NativeQuestion, isFirst: boolean) => number;
   /** Working directory. Default process.cwd() (repo cwd holds skill registry). */
   cwd?: string;
+  /** Opt-in only for the split fixture's generated spec-review inputs. */
+  readCeoPlanArtifacts?: boolean;
   /** Remaining case work budget, measured from helper entry including boot. Default 25 min. */
   timeoutMs?: number;
   /** Extra env merged into the spawned `claude` process. */
@@ -2296,6 +2307,7 @@ export async function runPlanSkillCounting(opts: {
     // header visible so permission binding never relies on a clipped path.
     cols: 240,
     cwd: opts.cwd,
+    readCeoPlanArtifacts: opts.readCeoPlanArtifacts,
     timeoutMs: Math.max(1, deadlineAt - Date.now()),
     env: opts.env,
     model: opts.model,

@@ -40,6 +40,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/plan-design-floor-fixture.test.ts', ['plan-design-finding-floor']],
     ['test/devex-finding-fixture.test.ts', ['plan-devex-finding-count']],
     ['test/design-finding-fixture.test.ts', ['plan-design-finding-count']],
+    ['test/helpers/hermetic-env.test.ts', ['plan-ceo-split-overflow']],
     ['test/helpers/ceo-split-question-policy.ts', ['plan-ceo-split-overflow']],
     ['test/ceo-split-question-policy.test.ts', ['plan-ceo-split-overflow']],
     ['test/skill-e2e-plan-ceo-paired-control.test.ts', ['plan-ceo-finding-count']],

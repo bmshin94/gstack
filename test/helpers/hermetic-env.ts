@@ -35,6 +35,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFileSync } from 'node:child_process';
 import { promotedEnv } from '../../lib/conductor-env-shim';
 import { isProcessAlive } from '../../lib/error-handling';
 import { refreshHermeticSkillRuntime, questionCompanionReadSettings } from './hermetic-skill-runtime';
@@ -267,6 +268,47 @@ export function getHermeticDirs(): HermeticDirs {
 
   cachedDirs = { configDir, gstackHome, runRoot };
   return cachedDirs;
+}
+
+
+/** Only split's own generated CEO review documents need child-agent Read.
+ * The opt-in never grants another fixture, an operator home, or other tools. */
+export function hermeticCeoPlanReadArgs(cwd: string, childEnv: Record<string, string>): string[] {
+  if (!isHermeticEnabled()) throw new Error('CEO artifact Read requires hermetic mode');
+  const dirs = getHermeticDirs();
+  const fixture = path.resolve(cwd);
+  const slug = path.basename(fixture);
+  if (childEnv.GSTACK_HOME !== dirs.gstackHome || childEnv.GSTACK_PROJECT_SLUG
+    || !/^gstack-e2e-plan-ceo-split-overflow-[A-Za-z0-9]+$/.test(slug)
+    || !fs.lstatSync(fixture).isDirectory()
+    || fs.realpathSync(path.dirname(fixture)) !== fs.realpathSync(os.tmpdir())) {
+    throw new Error('CEO artifact Read requires this private split fixture and hermetic home');
+  }
+  for (const directory of [dirs.runRoot, dirs.gstackHome, path.join(fixture, '.git')]) {
+    if (!fs.lstatSync(directory).isDirectory()) throw new Error('CEO artifact Read refuses substituted directories');
+  }
+  // Use the same native slug resolver before granting anything; never allow
+  // an ancestor project or a foreign remote to redirect this fixture's scope.
+  const resolved = execFileSync('bash', [path.join(repoRoot(), 'bin', 'gstack-slug')], {
+    cwd: fixture, env: childEnv, encoding: 'utf8', timeout: 10_000,
+  }).match(/^SLUG=([^\r\n]+)$/m)?.[1];
+  if (resolved !== slug) throw new Error('CEO artifact Read requires the exact fixture project slug');
+  const project = path.join(dirs.gstackHome, 'projects', slug);
+  const scope = path.join(project, 'ceo-plans');
+  for (const directory of [path.dirname(project), project, scope]) {
+    const existing = fs.lstatSync(directory, { throwIfNoEntry: false });
+    if (existing && !existing.isDirectory()) throw new Error('CEO artifact Read refuses substituted directories');
+    if (!existing) fs.mkdirSync(directory, { mode: 0o700 });
+  }
+  const scopes = new Set([scope, fs.realpathSync(scope)]);
+  const rules = [...scopes].map(directory => {
+    const absolute = directory.split(path.sep).join('/');
+    if (/[\x00-\x1f\x7f\\*?\[\]{}()|+^$,]/.test(absolute)) {
+      throw new Error('CEO artifact path contains unsupported permission-pattern syntax');
+    }
+    return `Read(${absolute.startsWith('/') ? '/' : ''}${absolute}/*.md)`;
+  });
+  return ['--allowedTools', ...rules];
 }
 
 let cachedSkillsConfigDir: string | null = null;

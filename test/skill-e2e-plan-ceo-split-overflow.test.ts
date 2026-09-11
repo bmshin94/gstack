@@ -54,6 +54,7 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
           reviewCountCeiling: null, // classify findings after actual workflow completion
           questionPick: pickCeoSplitQuestion,
           cwd: tmpDir,
+          readCeoPlanArtifacts: true,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt), // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });

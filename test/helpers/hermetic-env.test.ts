@@ -13,6 +13,9 @@ import { describe, test, expect, afterAll } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFileSync } from 'node:child_process';
+import { seedCeoFindingProject } from './ceo-finding-fixture';
+import { launchClaudePty, runPlanSkillCounting, type ClaudePtyOptions } from './claude-pty-runner';
 import {
   buildHermeticEnv,
   buildSeedConfig,
@@ -20,6 +23,7 @@ import {
   getHermeticDirs,
   gcStaleHermeticDirs,
   hermeticChildEnv,
+  hermeticCeoPlanReadArgs,
 } from './hermetic-env';
 
 const CONTAMINATED: NodeJS.ProcessEnv = {
@@ -268,4 +272,185 @@ describe('hermeticChildEnv composition', () => {
 
 afterAll(() => {
   // The singleton's own exit hook handles runRoot; nothing else to clean.
+});
+
+
+describe('split CEO artifact Read scope', () => {
+  function fixture(check: (cwd: string, env: Record<string, string>) => void): void {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-ceo-split-overflow-'));
+    try {
+      seedCeoFindingProject(cwd, 'Review the supplied scope.');
+      check(cwd, hermeticChildEnv());
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  }
+
+  test('grants only this fixture\'s generated markdown Read rules', () => {
+    fixture((cwd, env) => {
+      const scope = path.join(getHermeticDirs().gstackHome, 'projects', path.basename(cwd), 'ceo-plans');
+      const args = hermeticCeoPlanReadArgs(cwd, env);
+      expect(args).toEqual(['--allowedTools', ...new Set([scope, fs.realpathSync(scope)].map(directory =>
+        `Read(${directory.startsWith('/') ? '/' : ''}${directory.split(path.sep).join('/')}/*.md)`))]);
+      expect(args.join(' ')).not.toContain('/**');
+      expect(args.join(' ')).not.toMatch(/Write\(|Edit\(|Bash\(|--add-dir/);
+      expect(hermeticCeoPlanReadArgs(cwd, env)).toEqual(args);
+    });
+  });
+
+  test('refuses operator/foreign homes and a project-slug override', () => {
+    fixture((cwd, env) => {
+      for (const home of [path.join(os.homedir(), '.gstack'), path.dirname(env.GSTACK_HOME!), env.GSTACK_HOME! + '-other']) {
+        expect(() => hermeticCeoPlanReadArgs(cwd, { ...env, GSTACK_HOME: home })).toThrow('private split fixture');
+      }
+      expect(() => hermeticCeoPlanReadArgs(cwd, { ...env, GSTACK_PROJECT_SLUG: 'another-fixture' })).toThrow('private split fixture');
+    });
+  });
+
+  test('refuses a remote-derived foreign project slug', () => {
+    fixture((cwd, env) => {
+      execFileSync('git', ['remote', 'add', 'origin', 'https://example.invalid/foreign/repo.git'], { cwd, timeout: 10_000 });
+      expect(() => hermeticCeoPlanReadArgs(cwd, env)).toThrow('exact fixture project slug');
+      expect(fs.existsSync(path.join(env.GSTACK_HOME!, 'projects', 'foreign-repo'))).toBe(false);
+    });
+  });
+
+  test('refuses another fixture kind and nested or symlinked working directories', () => {
+    fixture((cwd, env) => {
+      const other = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-ceo-finding-'));
+      const nested = path.join(cwd, path.basename(cwd));
+      const link = cwd + 'link';
+      try {
+        fs.mkdirSync(nested); fs.symlinkSync(cwd, link, 'dir');
+        for (const target of [other, nested, link]) expect(() => hermeticCeoPlanReadArgs(target, env)).toThrow();
+      } finally { fs.rmSync(other, { recursive: true, force: true }); fs.unlinkSync(link); }
+    });
+  });
+
+  test('refuses a substituted scope or project without reading its target', () => {
+    fixture((cwd, env) => {
+      const project = path.join(env.GSTACK_HOME!, 'projects', path.basename(cwd));
+      const foreign = fs.mkdtempSync(path.join(os.tmpdir(), 'foreign-ceo-documents-'));
+      fs.writeFileSync(path.join(foreign, 'sentinel.md'), 'foreign evidence');
+      try {
+        fs.mkdirSync(path.dirname(project), { recursive: true });
+        fs.symlinkSync(foreign, project, 'dir');
+        expect(() => hermeticCeoPlanReadArgs(cwd, env)).toThrow('substituted directories');
+        fs.unlinkSync(project); fs.mkdirSync(project);
+        fs.symlinkSync(foreign, path.join(project, 'ceo-plans'), 'dir');
+        expect(() => hermeticCeoPlanReadArgs(cwd, env)).toThrow('substituted directories');
+        expect(fs.readdirSync(foreign)).toEqual(['sentinel.md']);
+        expect(fs.readFileSync(path.join(foreign, 'sentinel.md'), 'utf8')).toBe('foreign evidence');
+      } finally { fs.rmSync(project, { recursive: true, force: true }); fs.rmSync(foreign, { recursive: true, force: true }); }
+    });
+  });
+
+  test('refuses non-hermetic launches', () => {
+    fixture((cwd, env) => {
+      const before = process.env.EVALS_HERMETIC;
+      try {
+        process.env.EVALS_HERMETIC = '0';
+        expect(() => hermeticCeoPlanReadArgs(cwd, env)).toThrow('requires hermetic mode');
+      } finally {
+        if (before === undefined) delete process.env.EVALS_HERMETIC;
+        else process.env.EVALS_HERMETIC = before;
+      }
+    });
+  });
+});
+
+
+describe('split artifact Read launch wiring', () => {
+  async function fixture(check: (cwd: string, observed: {
+    commands: string[][]; settings: any[]; captures: any[]; closes: number;
+  }) => Promise<void>): Promise<void> {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-ceo-split-overflow-'));
+    const observed = { commands: [] as string[][], settings: [] as any[], captures: [] as any[], closes: 0 };
+    const spawn = Bun.spawn, sleep = Bun.sleep;
+    const binary = process.env.BROWSE_TERMINAL_BINARY, hermetic = process.env.EVALS_HERMETIC;
+    const evalDir = process.env.GSTACK_EVAL_DIR;
+    try {
+      seedCeoFindingProject(cwd, 'Review the supplied scope.');
+      process.env.BROWSE_TERMINAL_BINARY = process.execPath;
+      process.env.EVALS_HERMETIC = '1';
+      process.env.GSTACK_EVAL_DIR = path.join(cwd, 'evals');
+      // Same fake-spawn boundary as fixtures/plan-skill-counting.ts: run the
+      // real seeder, argument builder and capture binder without a CLI turn.
+      Bun.spawn = ((command: string[], options: any) => {
+        observed.commands.push([...command]);
+        observed.settings.push(JSON.parse(fs.readFileSync(path.join(options.env.CLAUDE_CONFIG_DIR, 'settings.json'), 'utf8')));
+        const settings = command[command.indexOf('--settings') + 1]!;
+        observed.captures.push({
+          settings: JSON.parse(fs.readFileSync(settings, 'utf8')),
+          binding: JSON.parse(fs.readFileSync(path.join(path.dirname(settings), 'binding.json'), 'utf8')),
+          configDir: options.env.CLAUDE_CONFIG_DIR,
+        });
+        let exit!: (code: number) => void;
+        return { pid: 99999999, exited: new Promise<number>(resolve => { exit = resolve; }),
+          kill: () => exit(0), terminal: { write() {}, close: () => observed.closes++ } };
+      }) as typeof Bun.spawn;
+      Bun.sleep = (async () => {}) as typeof Bun.sleep;
+      await check(cwd, observed);
+    } finally {
+      Bun.spawn = spawn; Bun.sleep = sleep;
+      if (binary === undefined) delete process.env.BROWSE_TERMINAL_BINARY; else process.env.BROWSE_TERMINAL_BINARY = binary;
+      if (hermetic === undefined) delete process.env.EVALS_HERMETIC; else process.env.EVALS_HERMETIC = hermetic;
+      if (evalDir === undefined) delete process.env.GSTACK_EVAL_DIR; else process.env.GSTACK_EVAL_DIR = evalDir;
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+
+  for (const enabled of [false, true]) test(`real launch keeps capture and companion settings, split opt-in=${enabled}`, async () => {
+    await fixture(async (cwd, observed) => {
+      if (enabled) {
+        // Setup consumes this tiny work budget, so no skill input is sent.
+        // Exercise the actual counting-to-launcher option forwarding.
+        const result = await runPlanSkillCounting({ skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review',
+          followUpPrompt: '', isLastStep0AUQ: () => false, reviewCountCeiling: null,
+          cwd, timeoutMs: 1, model: 'fixture', readCeoPlanArtifacts: true });
+        expect(result.outcome).toBe('timeout');
+      } else {
+        const session = await launchClaudePty({ cwd, seedSkills: true, model: 'fixture', timeoutMs: 1000,
+          captureQuestionsForSession: crypto.randomUUID() });
+        await session.close();
+      }
+      expect(observed.commands).toHaveLength(1);
+      const command = observed.commands[0]!;
+      const allow = command.indexOf('--allowedTools');
+      if (enabled) {
+        expect(allow).toBeGreaterThan(0);
+        const rules = command.slice(allow + 1, command.indexOf('--session-id'));
+        const scope = path.join(getHermeticDirs().gstackHome, 'projects', path.basename(cwd), 'ceo-plans');
+        expect(rules).toEqual([...new Set([scope, fs.realpathSync(scope)].map(directory =>
+          `Read(${directory.startsWith('/') ? '/' : ''}${directory.split(path.sep).join('/')}/*.md)`))]);
+      } else expect(allow).toBe(-1);
+      expect(command).not.toContain('--add-dir');
+      expect(command).toContain('--strict-mcp-config');
+      expect(observed.settings[0].useAutoModeDuringPlan).toBe(false);
+      const companions: string[] = observed.settings[0].permissions.allow;
+      expect(companions).toHaveLength(4);
+      expect(companions.every(rule => /^Read\(.+\/docs\/askuserquestion-(?:split|cjk)\.md\)$/.test(rule))).toBe(true);
+      const capture = observed.captures[0];
+      expect(capture.binding.sessionId).toBe(command[command.indexOf('--session-id') + 1]);
+      expect(capture.binding.configDir).toBe(capture.configDir);
+      expect(capture.binding.cwd).toBe(fs.realpathSync(cwd));
+      expect(Object.keys(capture.settings)).toEqual(['hooks']);
+      expect(capture.settings.hooks).toHaveProperty('PreToolUse');
+      expect(capture.settings.hooks).toHaveProperty('PermissionRequest');
+      expect(capture.settings.hooks).toHaveProperty('PostToolUse');
+      expect(observed.closes).toBe(1);
+    });
+  });
+
+  for (const override of ['config', 'home', 'slug', 'non-hermetic']) test(`rejects ${override} before CLI spawn`, async () => {
+    await fixture(async (cwd, observed) => {
+      const opts: ClaudePtyOptions = { cwd, seedSkills: true, readCeoPlanArtifacts: true,
+        captureQuestionsForSession: crypto.randomUUID(), model: 'fixture', timeoutMs: 1000 };
+      if (override === 'config') opts.env = { CLAUDE_CONFIG_DIR: getHermeticDirs().configDir };
+      if (override === 'home') opts.env = { GSTACK_HOME: path.join(cwd, 'foreign-home') };
+      if (override === 'slug') opts.env = { GSTACK_PROJECT_SLUG: 'foreign-project' };
+      if (override === 'non-hermetic') process.env.EVALS_HERMETIC = '0';
+      await expect(launchClaudePty(opts)).rejects.toThrow('unmodified hermetic launch context');
+      expect(observed.commands).toHaveLength(0);
+      expect(observed.closes).toBe(0);
+    });
+  });
 });
