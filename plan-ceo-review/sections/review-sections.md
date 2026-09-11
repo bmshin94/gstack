@@ -16,7 +16,7 @@ Continue the ledger from input reading and Step 0 in the plan: issue ID, owner s
 
 **Resolve.** Give the same underlying issue one complete choice in its natural owner section. For example, a missing test plan and its contradictory reliance on existing tests belong together in Test Review; earlier sections can cross-reference that pending issue. Do not defer a newly discovered critical risk to reach its owner section: resolve it now and carry the decision forward. Topic names alone never establish equivalence: compare the specific failure, proposed action, and accepted scope. Distinct choices remain separate: email recovery does not settle request instrumentation; correcting test wording does not choose test depth. A materially different remedy, scope, or risk needs its own explicit decision, even on the same topic. State what changed and cite the earlier decision when reopening. An obvious recommendation is still a decision when it has not been accepted.
 
-Before presenting options, try accepting one proposed change while rejecting another. If that combination is viable, split the decisions. Reusing a component does not approve independent behavior choices it offers; name those choices and leave them pending. Put only this decision's commitments in its options. Existing machinery is evidence for a recommendation, not consent to additional fixes. Trace each later plan amendment to the exact choice actually presented and accepted.
+Before presenting options, try accepting one proposed change while rejecting another. If that combination is viable, split the decisions. Apply this test to every offered option, not just the recommendation. An option with an independent add-on bundles another decision, even if it is not selected. Keep the add-on pending outside this menu and decide it separately if warranted; do not invent one to fill a third option. Reusing a component does not approve independent behavior choices it offers; name those choices and leave them pending. Put only this decision's commitments in its options. Existing machinery is evidence for a recommendation, not consent to additional fixes. Trace each later plan amendment to the exact choice actually presented and accepted.
 
 **Apply.** Use this plan-write procedure before advancing to the next section. If no plan file exists, first create it from the provided input and explicitly accepted Step 0 decisions.
 1. If the current section has an unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**. Before the answer, you may record only the pending issue, evidence, and alternatives in the ledger. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
@@ -150,6 +150,8 @@ Evaluate:
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 6: Test Review
+Preserve requested or approved coverage without re-asking. Fixed runtime contracts and a settled approach do not approve additional verification scope or depth. For each material verification change, identify the distinct regression existing tests miss and resolve that change before prescribing it in any plan draft.
+
 Make a complete diagram of every new thing this plan introduces:
 ```
   NEW UX FLOWS:
@@ -172,7 +174,7 @@ Make a complete diagram of every new thing this plan introduces:
 ```
 For each item in the diagram:
 * What type of test covers it? (Unit / Integration / System / E2E)
-* Does a test for it exist in the plan? If not, write the test spec header.
+* Does a test for it exist in the plan? If not, draft its header within requested or approved coverage; keep new verification proposals pending until their decision.
 * What is the happy path test?
 * What is the failure path test? (Be specific — which failure?)
 * What is the edge case test? (nil, empty, boundary values, concurrent access)
