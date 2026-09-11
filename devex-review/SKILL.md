@@ -1044,10 +1044,10 @@ Use a single delete-then-append flow:
    regardless of where the section currently lives — mid-file deletion is
    intentional, not a special case. If the Edit fails (e.g., concurrent edit
    changed the content), re-read the plan file and retry once.
-3. After the delete (or skipped, if no section existed), append the new
-   \`## GSTACK REVIEW REPORT\` section at the END of the file. Use the Edit
-   tool to match the file's current last paragraph and add the section after it,
-   or use Write to re-emit the whole file with the section at the end.
+3. If a report was deleted, Read the updated file. Append the new
+   \`## GSTACK REVIEW REPORT\` at EOF. Use Edit to match the suffix
+   confirmed by the latest Read, or Write the full file with the report last.
+   "Unresolved Decisions" is not an EOF anchor when other sections follow it.
 4. Verify with the Read tool that \`## GSTACK REVIEW REPORT\` is the last
    \`## \` heading in the file before continuing. If it isn't, repeat steps
    2-3 once.
