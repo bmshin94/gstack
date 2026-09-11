@@ -136,7 +136,7 @@ export interface ClaudePtySession {
   /** Owned question sessions only. Coordinates decoder and PTY geometry;
    * returns the post-flush/pre-resize mark, or null without resizing when
    * the deadline or a changing decoder barrier prevents the transaction. */
-  resizeQuestionViewport?(rows: 40 | 80 | 120, deadlineAt: number): Promise<number | null>;
+  resizeQuestionViewport?(rows: 40 | 80 | 120 | 240 | 480, deadlineAt: number): Promise<number | null>;
   /**
    * Wait for any of the supplied patterns to appear in visibleText. Resolves
    * with the first match. Throws on timeout (with last 2KB of visible text).
@@ -1636,8 +1636,8 @@ export async function launchClaudePty(
     visibleText: () => stripAnsi(buffer),
     mark,
     visibleSince,
-    ...(screen && nativeQuestionEvents && [120, 240].includes(cols) && rows === 40 && typeof proc.terminal?.resize === 'function' ? { resizeQuestionViewport: async (nextRows: 40 | 80 | 120, deadlineAt: number) => {
-      if (![40, 80, 120].includes(nextRows) || !Number.isFinite(deadlineAt)) throw new Error('Unsupported question viewport request');
+    ...(screen && nativeQuestionEvents && [120, 240].includes(cols) && [40, 120].includes(rows) && typeof proc.terminal?.resize === 'function' ? { resizeQuestionViewport: async (nextRows: 40 | 80 | 120 | 240 | 480, deadlineAt: number) => {
+      if (![40, 80, 120, 240, 480].includes(nextRows) || !Number.isFinite(deadlineAt)) throw new Error('Unsupported question viewport request');
       if (screenError) throw screenError;
       if (exited || Date.now() >= deadlineAt) return null;
       const flushed = await screen!.snapshot();

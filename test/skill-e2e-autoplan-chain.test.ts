@@ -24,7 +24,7 @@
  */
 
 import { test } from 'bun:test';
-import { corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, reserveAutoplanFilePermission, retainAutoplanFailure, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
+import { AutoplanFilePermissionViewport, corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, reserveAutoplanFilePermission, retainAutoplanFailure, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
 import { PTY_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
@@ -101,6 +101,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
           const granted = new Set<string>();
           const requests = new Map<string, NativePermissionGrant>();
           let lastPermissionInputMark = -1;
+          const permissionViewport = new AutoplanFilePermissionViewport({ session, deadlineAt: start + budgetMs, granted });
           while (Date.now() - start < budgetMs) {
             await Bun.sleep(5000);
             if (session.exited()) {
@@ -124,12 +125,29 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
             const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
             lastPermissionCheck = { mark: session.mark(), nativeStable: isDeepStrictEqual(native, afterFrame), lastInputMark: lastPermissionInputMark };
             if (frame.rawEnd !== lastPermissionCheck.mark || !lastPermissionCheck.nativeStable) continue;
+            if (permissionViewport.active) {
+              const wait = await permissionViewport.advance(native, frame);
+              lastPermissionInputMark = Math.max(lastPermissionInputMark, permissionViewport.inputMark);
+              if (wait) continue;
+              // Recovery awaited a viewport transaction; refresh the same
+              // owner/output bracket before the original reservation below.
+              if (frame.rawEnd !== session.mark() || !isDeepStrictEqual(native,
+                readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents))) continue;
+            }
             const recentTail = frame.text;
             if (frame.rawEnd > lastPermissionInputMark && isNumberedOptionListVisible(recentTail) && isPermissionDialogVisible(recentTail)) {
               if (Date.now() - start >= budgetMs) break;
-              if (reserveAutoplanFilePermission(native, recentTail, {
-                cwd: tempDir, planDir: path.join(fs.realpathSync(session.hermeticConfigDir!), 'plans'), granted, requests,
-              })) {
+              let reserved: boolean;
+              try {
+                reserved = reserveAutoplanFilePermission(native, recentTail, {
+                  cwd: tempDir, planDir: path.join(fs.realpathSync(session.hermeticConfigDir!), 'plans'), granted, requests,
+                });
+              } catch (error) {
+                if (!await permissionViewport.recover(error, native, frame)) throw error;
+                lastPermissionInputMark = Math.max(lastPermissionInputMark, permissionViewport.inputMark);
+                continue;
+              }
+              if (reserved) {
                 lastPermissionInputMark = session.mark();
                 session.send('1\r');
                 await Bun.sleep(2000);

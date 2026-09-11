@@ -170,7 +170,8 @@ test('resizing the decoded viewport requires a completed barrier and creates no 
   expect(() => projection.resize(120, 80)).toThrow('disposed');
 });
 
-test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => ['normal', 'already-exited', 'body-error'].map(scenario => [cols, scenario] as const)))('owned local PTY resize redraws at decoder geometry and session.close releases the parent (%i columns, %s)', async (cols, scenario) => {
+test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => [...['normal', 'already-exited', 'body-error'].map(scenario => [cols, scenario, 40] as const), [cols, 'normal', 120] as const]))('owned local PTY resize redraws at decoder geometry and session.close releases the parent (%i columns, %s, %i initial rows)', async (cols, scenario, initialRows) => {
+  const expandedRows = initialRows === 120 ? 480 : 80;
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'native-viewport-free-')));
   const native = path.join(tmp, 'native.ts');
   const wrapper = path.join(tmp, 'native-wrapper');
@@ -179,17 +180,17 @@ test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => ['norm
   fs.copyFileSync(path.join(import.meta.dir, 'fixtures', 'native-viewport.ts'), native);
   fs.writeFileSync(wrapper, '#!/bin/sh\nexec ' + quote(process.execPath) + ' ' + quote(native) + ' ' + quote(scenario) + '\n', { mode: 0o700 });
   fs.writeFileSync(probe, `import { launchClaudePty } from ${JSON.stringify(path.join(import.meta.dir, 'helpers', 'claude-pty-runner.ts'))};
-    const session=await launchClaudePty({cwd:${JSON.stringify(tmp)},cols:${cols},captureScreen:true,captureQuestionsForSession:crypto.randomUUID(),timeoutMs:5000});
+    const session=await launchClaudePty({cwd:${JSON.stringify(tmp)},cols:${cols},rows:${initialRows},captureScreen:true,captureQuestionsForSession:crypto.randomUUID(),timeoutMs:5000});
     let evidence,observedError=null;
     try {
-      await session.waitFor('NATIVE:${cols}x40',{timeoutMs:2000});
+      await session.waitFor('NATIVE:${cols}x${initialRows}',{timeoutMs:2000});
       const before=await session.currentScreen();
-      const mark=await session.resizeQuestionViewport(80,Date.now()+2000);
-      await session.waitFor('NATIVE:${cols}x80',{since:mark,timeoutMs:2000});
+      const mark=await session.resizeQuestionViewport(${expandedRows},Date.now()+2000);
+      await session.waitFor('NATIVE:${cols}x${expandedRows}',{since:mark,timeoutMs:2000});
       const expanded=await session.currentScreen();
       const noResize=await session.resizeQuestionViewport(120,Date.now()-1);
-      const restoredMark=await session.resizeQuestionViewport(40,Date.now()+2000);
-      await session.waitFor('NATIVE:${cols}x40',{since:restoredMark,timeoutMs:2000});
+      const restoredMark=await session.resizeQuestionViewport(${initialRows},Date.now()+2000);
+      await session.waitFor('NATIVE:${cols}x${initialRows}',{since:restoredMark,timeoutMs:2000});
       const restored=await session.currentScreen();
       evidence={before:before.text,mark,expanded:expanded.text,expandedMark:expanded.rawEnd,noResize,restored:restored.text};
       if (${JSON.stringify(scenario)}==='already-exited') { const end=Date.now()+2000;while(!session.exited()&&Date.now()<end)await Bun.sleep(20);if(!session.exited())throw new Error('Native child failed to exit'); }
@@ -205,12 +206,12 @@ test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => ['norm
     expect(timedOut, stderr).toBe(false);
     expect(exit, stderr).toBe(0);
     const result = JSON.parse(stdout.trim());
-    expect(result.before).toContain(`NATIVE:${cols}x40`);
-    expect(result.expanded.startsWith(`NATIVE:${cols}x80`)).toBe(true);
-    expect(result.expanded.split('\n')[77]).toBe('LOW:80');
+    expect(result.before).toContain(`NATIVE:${cols}x${initialRows}`);
+    expect(result.expanded.startsWith(`NATIVE:${cols}x${expandedRows}`)).toBe(true);
+    expect(result.expanded.split('\n')[expandedRows - 3]).toBe(`LOW:${expandedRows}`);
     expect(result.expandedMark).toBeGreaterThan(result.mark);
     expect(result.noResize).toBeNull();
-    expect(result.restored).toContain(`NATIVE:${cols}x40`);
+    expect(result.restored).toContain(`NATIVE:${cols}x${initialRows}`);
     expect(result.exited).toBe(true);
     expect(result.observedError).toBe(scenario === 'body-error' ? 'Error: controlled body failure' : null);
   } finally {

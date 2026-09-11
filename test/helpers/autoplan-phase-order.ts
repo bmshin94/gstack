@@ -2,7 +2,9 @@ import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { currentFilePermissionTarget, reserveNativePermissionGrant, type readPlanSkillQuestions, type NativePermissionGrant } from './plan-skill-questions';
+import { isDeepStrictEqual } from 'node:util';
+import { currentFilePermissionTarget, nativePermissionKey, reserveNativePermissionGrant, type readPlanSkillQuestions, type NativeFilePermissionRequest, type NativePermissionGrant } from './plan-skill-questions';
+import type { ClaudePtySession } from './claude-pty-runner';
 import { readQuestionEvents, readQuestionCompletionEvents, readBashEvents, readBashCompletionEvents, readBashPermissionRequestEvents, type QuestionEventSource,
   type QuestionEventCall, type QuestionCompletionEventCall, type BashEventCall, type BashCompletionEventCall, type BashPermissionRequestEventCall } from './plan-skill-question-events';
 
@@ -31,6 +33,84 @@ export function reserveAutoplanFilePermission(
     }
   }
   return reserveNativePermissionGrant(native, visible, opts.granted, opts.requests);
+}
+
+/** Recover only a clipped file identity; the existing reservation remains the
+ * grant authority. The two fresh paints are finite, not a promise that every
+ * possible diff fits. A resize is never a decision or native completion. */
+export class AutoplanFilePermissionViewport {
+  private owner: NativeFilePermissionRequest | null = null;
+  private paints = 0;
+  inputMark = -1;
+  get active(): boolean { return this.owner !== null; }
+
+  constructor(private readonly opts: {
+    session: Pick<ClaudePtySession, 'resizeQuestionViewport' | 'mark'>;
+    deadlineAt: number;
+    granted: Set<string>;
+  }) {}
+
+  /** Called only after the caller's unchanged native/current-screen bracket.
+   * true means wait for another sample, never type a permission choice. */
+  async advance(native: ReturnType<typeof readPlanSkillQuestions>, frame: { text: string; rawEnd: number }): Promise<boolean> {
+    if (!this.owner) return false;
+    const owner = native.permissionRequests.find(request => request.requestId === this.owner!.requestId);
+    if (!owner || owner.name !== this.owner.name || owner.cwd !== this.owner.cwd
+      || owner.capturedAtMs !== this.owner.capturedAtMs || !isDeepStrictEqual(owner.input, this.owner.input)
+      || this.owner.nativeToolId != null && owner.nativeToolId !== this.owner.nativeToolId) {
+      throw new Error('Autoplan expanded file permission changed ownership or input');
+    }
+    // A hook can precede transcript persistence. Once linked, retain that ID.
+    if (this.owner.nativeToolId == null && owner.nativeToolId != null) this.owner.nativeToolId = owner.nativeToolId;
+    if (owner.result === 'error') throw new Error('Autoplan expanded file permission returned an error');
+    if (owner.result === 'completed') {
+      if (!owner.nativeToolId || !Number.isFinite(owner.nativeResultAtMs)) throw new Error('Autoplan expanded file permission lacks its successful native ACK');
+      const restored = await this.opts.session.resizeQuestionViewport!(120, this.opts.deadlineAt);
+      if (restored !== null) { this.inputMark = restored; this.owner = null; }
+      return true;
+    }
+    if (native.permissionRequests.filter(request => request.result === 'pending').length !== 1
+      || native.permissionTools.some(tool => tool.id !== owner.nativeToolId)) {
+      throw new Error('Ambiguous native permission owner during Autoplan viewport recovery');
+    }
+    if (native.pendingBytes || frame.rawEnd !== this.opts.session.mark() || frame.rawEnd <= this.inputMark
+      || this.opts.granted.has(`request:${owner.requestId}`)) return true;
+    try { nativePermissionKey(owner, frame.text); return false; }
+    catch (error) {
+      if (!this.clipped(owner, frame.text) || this.paints === 2) throw error;
+      return this.repaint();
+    }
+  }
+
+  /** The caller first runs all existing fixture/symlink/owner/grant checks.
+   * Only their exact path-binding failure can request a larger fresh paint. */
+  async recover(error: unknown, native: ReturnType<typeof readPlanSkillQuestions>, frame: { text: string; rawEnd: number }): Promise<boolean> {
+    if (!(error instanceof Error) || error.message !== 'Visible permission cannot be bound to its pending native command or file path'
+      || this.owner || !this.opts.session.resizeQuestionViewport || frame.rawEnd !== this.opts.session.mark()
+      || native.pendingBytes || native.ready || native.calls.some(call => call.result === 'pending')) return false;
+    const pending = native.permissionRequests.filter(request => request.result === 'pending');
+    const owner = pending[0];
+    if (!native.permissionRequestCapture || pending.length !== 1 || !owner
+      || native.permissionTools.some(tool => tool.id !== owner.nativeToolId)
+      || this.opts.granted.has(`request:${owner.requestId}`) || !this.clipped(owner, frame.text)) return false;
+    this.owner = structuredClone(owner);
+    this.paints = 0;
+    return this.repaint();
+  }
+
+  private clipped(owner: NativeFilePermissionRequest, visible: string): boolean {
+    const target = currentFilePermissionTarget(visible), file = owner.input.file_path;
+    return owner.name === 'Edit' && typeof file === 'string' && path.isAbsolute(file) && target !== null
+      && target.operation === 'edit'
+      && path.basename(target.filePath) === target.filePath && path.basename(file) === target.filePath
+      && !/^ (?:Create|Edit|Overwrite) file$/m.test(visible);
+  }
+
+  private async repaint(): Promise<boolean> {
+    const mark = await this.opts.session.resizeQuestionViewport!(this.paints === 0 ? 240 : 480, this.opts.deadlineAt);
+    if (mark !== null) { this.inputMark = mark; this.paints++; }
+    return true;
+  }
 }
 
 /** The PTY renders Markdown without stars and may position spaces via ANSI.
