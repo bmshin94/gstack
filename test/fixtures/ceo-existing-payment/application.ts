@@ -22,9 +22,9 @@ export function createWebhookApplication(dependencies: ApplicationDependencies) 
         // no projection/mail work, not an acknowledgement or Stripe retry promise.
         outcome = await dispatcher.dispatch(eventType, request) ?? { status: 503, kind: 'unregistered-event' };
       } catch (caught) { error = caught; outcome = { status: 503, kind: 'failed' }; }
-      try { metrics.increment('webhook_requests_total', { outcome: outcome.kind }); } catch {}
+      try { metrics.increment('webhook_requests_total', { outcome: outcome.kind, eventType }); } catch {}
       if (outcome.status !== 200) {
-        try { logger.warn('Webhook request failed', { accountId: request.accountId, eventId: request.eventId,
+        try { logger.warn('Webhook request failed', { accountId: request.accountId, eventId: request.eventId, eventType,
           outcome: outcome.kind, ...(error === undefined ? {} : {
             errorName: error instanceof Error ? error.name : 'UnknownError',
           }) }); } catch {}

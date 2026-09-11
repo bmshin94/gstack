@@ -1,10 +1,10 @@
 import type { Order, User } from './platform';
 
 export interface ApplicationLogger {
-  warn(message: string, fields: { accountId: string; eventId?: string; outcome: string; errorName?: string }): void;
+  warn(message: string, fields: { accountId: string; eventId?: string; eventType?: string; outcome: string; errorName?: string }): void;
 }
 export interface ApplicationMetrics {
-  increment(name: 'webhook_requests_total' | 'confirmation_mail_total', labels: { outcome: string }): void;
+  increment(name: 'webhook_requests_total' | 'confirmation_mail_total', labels: { outcome: string; eventType?: string }): void;
 }
 export type Telemetry = { logger: ApplicationLogger; metrics: ApplicationMetrics };
 export class MailTimeoutError extends Error {}

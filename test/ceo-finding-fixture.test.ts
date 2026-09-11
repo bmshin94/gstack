@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import { applyPaidProjection, WebhookDispatcher, type PaymentRequest, type User } from './fixtures/ceo-existing-payment/platform';
+import { applyPaidProjection, createBoundUserLookup, readOrdersInBatch, WebhookDispatcher, type PaymentRequest, type User } from './fixtures/ceo-existing-payment/platform';
 import { createWebhookApplication } from './fixtures/ceo-existing-payment/application';
 import { MailDeliveryError, MailTimeoutError, observedConfirmationClient, type Telemetry } from './fixtures/ceo-existing-payment/application-services';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -25,8 +25,7 @@ function paymentBoundaryDb(): Database {
 }
 const paymentRequest = (): PaymentRequest => ({ accountId: 'acct', eventId: 'evt', customerId: 'customer',
   orderIds: ['b', 'a'], params: { userId: 'user' } });
-const boundLookup = (db: Database, request: PaymentRequest) => (id: string) =>
-  db.query<User, string[]>('SELECT * FROM users WHERE account_id = ? AND id = ?').get(request.accountId, id) ?? undefined;
+const boundLookup = (db: Database, request: PaymentRequest) => createBoundUserLookup(db, request.accountId);
 
 function recordedTelemetry() {
   const warnings: unknown[] = [], increments: unknown[] = [];
@@ -53,7 +52,7 @@ test('application composition exposes current services without changing invoice 
     expect(db.query('SELECT COUNT(*) AS n FROM payment_audit').get()).toEqual({ n: 1 });
     expect(sends).toBe(0);
     expect(telemetry.increments).toEqual(['unknown-user', 'committed', 'duplicate'].map(outcome => ({
-      name: 'webhook_requests_total', labels: { outcome },
+      name: 'webhook_requests_total', labels: { outcome, eventType: 'invoice.paid' },
     })));
     expect(telemetry.warnings).toEqual([]);
   } finally { db.close(); }
@@ -75,12 +74,16 @@ test('request adaptation retains authorization and rollback outcomes with scoped
     expect(await app.receive('invoice.paid', paymentRequest())).toEqual({ status: 503, kind: 'failed' });
     expect(sends).toBe(0);
     expect(telemetry.increments).toHaveLength(3);
+    expect(telemetry.increments).toEqual(['forbidden', 'failed', 'failed'].map(outcome => ({
+      name: 'webhook_requests_total', labels: { outcome, eventType: 'invoice.paid' },
+    })));
     expect(telemetry.warnings).toHaveLength(3);
     for (const warning of telemetry.warnings as Array<{ fields: Record<string, unknown> }>) {
       expect(warning.fields.accountId).toBe('acct');
       expect(warning.fields.eventId).toBe('evt');
+      expect(warning.fields.eventType).toBe('invoice.paid');
       expect(Object.keys(warning.fields).sort()).toEqual(warning.fields.errorName
-        ? ['accountId', 'errorName', 'eventId', 'outcome'] : ['accountId', 'eventId', 'outcome']);
+        ? ['accountId', 'errorName', 'eventId', 'eventType', 'outcome'] : ['accountId', 'eventId', 'eventType', 'outcome']);
     }
   } finally { db.close(); }
 });
@@ -97,12 +100,43 @@ test('the new unregistered-event assumption does no handler work and does not ch
     expect(db.query('SELECT COUNT(*) AS n FROM payment_audit').get()).toEqual({ n: 0 });
     expect(db.query('SELECT payment_status FROM users WHERE id = ?').get('user')).toEqual({ payment_status: 'unpaid' });
     expect(sends).toBe(0);
-    expect(telemetry.increments).toEqual([{ name: 'webhook_requests_total', labels: { outcome: 'unregistered-event' } }]);
+    expect(telemetry.increments).toEqual([{ name: 'webhook_requests_total', labels: { outcome: 'unregistered-event', eventType: 'payment_intent.succeeded' } }]);
     expect(telemetry.warnings).toEqual([{ message: 'Webhook request failed', fields: {
-      accountId: 'acct', eventId: 'evt', outcome: 'unregistered-event',
+      accountId: 'acct', eventId: 'evt', eventType: 'payment_intent.succeeded', outcome: 'unregistered-event',
     } }]);
   } finally { db.close(); }
 });
+
+test.each(['committed', 'forbidden', 'failed', 'unregistered-event'] as const)(
+  'request event-type telemetry preserves %s even when both sinks throw', async kind => {
+    const db = paymentBoundaryDb(), recorded = recordedTelemetry();
+    let sends = 0;
+    const telemetry: Telemetry = {
+      logger: { warn: (message, fields) => {
+        recorded.logger.warn(message, fields); throw new Error('logger offline');
+      } },
+      metrics: { increment: (name, labels) => {
+        recorded.metrics.increment(name, labels); throw new Error('metrics offline');
+      } },
+    };
+    const app = createWebhookApplication({ db, ...telemetry, confirmationClient: { send: async () => { sends++; } } });
+    const eventType = kind === 'unregistered-event' ? 'payment_intent.succeeded' : 'invoice.paid';
+    try {
+      if (kind === 'failed') db.exec('DROP TABLE orders');
+      const request = kind === 'forbidden' ? { ...paymentRequest(), customerId: 'foreign' } : paymentRequest();
+      expect(await app.receive(eventType, request)).toEqual({
+        status: kind === 'committed' ? 200 : kind === 'forbidden' ? 403 : 503, kind,
+      });
+      expect(recorded.increments).toEqual([{ name: 'webhook_requests_total', labels: { outcome: kind, eventType } }]);
+      expect(recorded.warnings).toHaveLength(kind === 'committed' ? 0 : 1);
+      for (const warning of recorded.warnings as Array<{ fields: Record<string, unknown> }>) {
+        expect(warning.fields).toMatchObject({ accountId: 'acct', eventId: 'evt', eventType, outcome: kind });
+      }
+      expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: kind === 'committed' ? 1 : 0 });
+      expect(sends).toBe(0);
+    } finally { db.close(); }
+  },
+);
 
 test.each(['sent', 'timeout', 'rejected', 'failed'] as const)('client telemetry observes %s before a caller catch without retrying', async outcome => {
   const db = paymentBoundaryDb(), telemetry = recordedTelemetry();
@@ -150,7 +184,7 @@ test('the shared facade does not sanitize the proposed raw lookup into a safe lo
   const request = { ...paymentRequest(), orderIds: [], params: { userId: "missing' OR id='other' --" } };
   const notified: string[] = [];
   try {
-    const callbacks = { readOrders: () => [], afterCommit: async (user: User) => { notified.push(user.id); } };
+    const callbacks = { readOrders: readOrdersInBatch, afterCommit: async (user: User) => { notified.push(user.id); } };
     expect(await applyPaidProjection(db, request, { ...callbacks, lookupUser: boundLookup(db, request) }))
       .toEqual({ status: 200, kind: 'unknown-user' });
     expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 0 });
@@ -191,7 +225,7 @@ test('registering a handler leaves per-order versus batch reading as a separate 
         lookupUser: boundLookup(db, request),
         readOrders: (ids, reader) => strategy === 'one'
           ? ids.map(id => { calls.one++; return reader.one(id)!; })
-          : (calls.list++, reader.list(ids)),
+          : (calls.list++, readOrdersInBatch(ids, reader)),
         afterCommit: async (_user, orders) => { calls.ordered = orders.map(order => order.id); },
       }));
       expect(await dispatcher.dispatch('probe', request)).toEqual({ status: 200, kind: 'committed' });
@@ -273,15 +307,22 @@ describe('CEO finding fixture establishes scope before launch', () => {
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
-  test.each(['plan-eng-review', 'plan-design-review', 'plan-devex-review'] as const)('%s receives its own committed target and routing', skill => {
+  test.each(['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'plan-devex-review'] as const)('%s receives its own committed target and role-scoped routing', skill => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'review-fixture-'));
     try {
       const plan = '# Review this specific plan\nKeep every finding.\n';
       seedPlanReviewProject(root, plan, skill);
       expect(fs.readFileSync(path.join(root, 'review-input.md'), 'utf8')).toBe(plan);
       const guide = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
-      expect(guide).toContain(`/${skill}`);
-      expect(guide).not.toContain('/plan-ceo-review');
+      // The Design outside critic inherited this file and recursively invoked
+      // the interactive skill. Keep primary routing while preserving its own task.
+      expect(guide).toContain(`For the primary review request, review the supplied plan with /${skill}.`);
+      expect(guide.match(/\/plan-(?:ceo|eng|design|devex)-review/g)).toEqual([`/${skill}`]);
+      expect(guide).toContain('Delegated independent critics follow their assigned read-only critique');
+      expect(guide).toContain('return findings to the parent');
+      expect(guide).toContain('Start an interactive skill only when the delegated task explicitly requests that workflow');
+      expect(guide).not.toContain(`- Review the supplied plan with /${skill}.`);
+      expect(execFileSync('git', ['show', 'HEAD:CLAUDE.md'], { cwd: root, encoding: 'utf8', timeout: 30_000 })).toBe(guide);
       expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: root, encoding: 'utf8', timeout: 30_000 })).toBe(plan);
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
@@ -353,6 +394,8 @@ test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-
     "reads, and the atomic user-status/receipt/audit transaction. The callback interface",
     "leaves user lookup and order access strategy to the handler. Dispatcher registration",
     "only invokes that handler and supplies none of those choices automatically.",
+    "The invoice handler uses independently reusable createBoundUserLookup and",
+    "readOrdersInBatch callbacks from platform.ts; neither is a default for new handlers.",
     "",
     "Events have at most 100 distinct order IDs. The existing confirmation renderer",
     "uses the returned set sorted by ID; an empty set is valid. Missing orders or",
@@ -371,6 +414,7 @@ test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-
     "",
     "application.ts materializes the existing request adapter and composition API:",
     "its services expose db, mail, logger and metrics alongside the current dispatcher.",
+    "Request metrics and failure logs already include the supplied eventType.",
     "NEW synthetic assumptions in this revision: an unregistered event returns 503",
     "without projection/mail work (no external retry guarantee); the bounded mail",
     "client records each send outcome before any handler catch and rethrows the same",

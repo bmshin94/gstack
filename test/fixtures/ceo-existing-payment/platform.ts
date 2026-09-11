@@ -17,6 +17,14 @@ export type DataSteps = {
 };
 export class MissingOrder extends Error {}
 
+// Independently reusable callbacks already used by the invoice handler. Neither
+// the dispatcher nor the facade selects these policies for another handler.
+export function createBoundUserLookup(db: Database, accountId: string): DataSteps['lookupUser'] {
+  return userId => db.query<User, string[]>('SELECT * FROM users WHERE account_id = ? AND id = ?')
+    .get(accountId, userId) ?? undefined;
+}
+export const readOrdersInBatch: DataSteps['readOrders'] = (ids, reader) => reader.list(ids);
+
 // Existing shared boundary; neither registration nor dispatch chooses DataSteps.
 // All reads and projection writes are synchronous inside one SQLite transaction.
 export async function applyPaidProjection(db: Database, request: PaymentRequest, steps: DataSteps): Promise<Outcome> {

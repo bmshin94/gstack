@@ -18,16 +18,22 @@ facade. A notification failure cannot undo the database commit.
 
 `src/existing-invoice-handler.ts` registers only the current `invoice.paid` path. That
 path updates the local projection and audit without sending notification mail.
+It uses `createBoundUserLookup` and `readOrdersInBatch` from `src/platform.ts`.
+These callbacks are independently reusable; choosing one does not choose the other,
+and neither dispatcher registration nor the facade selects them for a handler.
 `src/application.ts` materializes the application composition API and request
 adaptation described by this fixture: handlers can access `services.db`, `mail`,
 `logger` and `metrics`, and register with this application's existing dispatcher.
 It accepts already-admitted requests without changing userId. It passes committed,
 duplicate, unknown-user and forbidden outcomes through; exceptions produce scoped
-logs/metrics and a 503. The signature verifier, provider I/O, database statement
+logs/metrics and a 503. Every request metric and failure log includes the supplied
+event type, so existing telemetry distinguishes registered and unregistered routes.
+The signature verifier, provider I/O, database statement
 deadline and production telemetry sinks remain external dependencies.
 
-This revision introduces two **NEW synthetic baseline contracts**, not facts
-established by an earlier review run:
+The shared callbacks and request event-type telemetry above are **NEW executable
+synthetic baseline contracts**, not approvals of their use in the proposed handler.
+The following synthetic baseline contracts also remain in place:
 - An unregistered event returns a visible 503 without projection or mail work.
   This does not specify external Stripe retry behavior or preapprove registration.
 - `src/application-services.ts` observes the already-bounded confirmation client

@@ -81,7 +81,9 @@ export function seedPlanReviewProject(projectDir: string, plan: string, skill: '
     'choosing review scope. Follow its instruction for the output plan path.',
     'This repository contains the review input; its branch diff is not the plan.', '',
     '## Skill routing', '',
-    `- Review the supplied plan with /${skill}.`, '',
+    `- For the primary review request, review the supplied plan with /${skill}.`,
+    '- Delegated independent critics follow their assigned read-only critique and',
+    '  return findings to the parent. Start an interactive skill only when the delegated task explicitly requests that workflow.', '',
   ].join('\n'), { flag: 'wx' });
   const git = (args: string[]) => execFileSync('git', args, { cwd: projectDir, stdio: 'pipe', timeout: 10_000 });
   git(['init', '-b', 'main']);
