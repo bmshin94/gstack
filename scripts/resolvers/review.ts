@@ -74,22 +74,28 @@ Display:
 - If all reviews grade CURRENT (wtree match or HEAD match), do not display any staleness notes`;
 }
 
-export function generatePlanFileReviewReport(_ctx: TemplateContext): string {
+export function generatePlanFileReviewReport(ctx: TemplateContext): string {
+  const beforeLog = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'plan-devex-review'].includes(ctx.skillName);
   return `## Plan File Review Report
 
-After displaying the Review Readiness Dashboard in conversation output, also update the
-**plan file** itself so review status is visible to anyone reading the plan.
+${beforeLog ? 'Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.' : `After displaying the Review Readiness Dashboard in conversation output, also update the
+**plan file** itself so review status is visible to anyone reading the plan.`}
 
 ### Detect the plan file
 
-1. Check if there is an active plan file in this conversation (the host provides plan file
+${beforeLog ? 'Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. If no file is in scope, skip this section; ordinary no-file review logging still applies.' : `1. Check if there is an active plan file in this conversation (the host provides plan file
    paths in system messages — look for plan file references in the conversation context).
-2. If not found, skip this section silently — not every review runs in plan mode.
+2. If not found, skip this section silently — not every review runs in plan mode.`}
 
 ### Generate the report
 
-Read the review log output you already have from the Review Readiness Dashboard step above.
-Parse each JSONL entry. Each skill logs different fields:
+${beforeLog ? `Run \`~/.claude/skills/gstack/bin/gstack-review-read\` for prior review entries.
+Use the current Completion Summary or DX Scorecard for this review's status and findings;
+apply the Review Log field rules below and add exactly one to its prior run count.
+Do not pre-log this run to populate the report.
+Use prior entries for other reviews, retaining their status, attribution and freshness.
+Each skill logs different fields:` : `Read the review log output you already have from the Review Readiness Dashboard step above.
+Parse each JSONL entry. Each skill logs different fields:`}
 
 - **plan-ceo-review**: \\\`status\\\`, \\\`unresolved\\\`, \\\`critical_gaps\\\`, \\\`mode\\\`, \\\`scope_proposed\\\`, \\\`scope_accepted\\\`, \\\`scope_deferred\\\`, \\\`commit\\\`
   → Findings: "{scope_proposed} proposals, {scope_accepted} accepted, {scope_deferred} deferred"
@@ -105,9 +111,9 @@ Parse each JSONL entry. Each skill logs different fields:
 - **codex-review**: \\\`status\\\`, \\\`gate\\\`, \\\`findings\\\`, \\\`findings_fixed\\\`
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 
-All fields needed for the Findings column are now present in the JSONL entries.
+${beforeLog ? 'The current row and its later log must describe the same saved review.' : `All fields needed for the Findings column are now present in the JSONL entries.
 For the review you just completed, you may use richer details from your own Completion
-Summary. For prior reviews, use the JSONL fields directly — they contain all required data.
+Summary. For prior reviews, use the JSONL fields directly — they contain all required data.`}
 
 Produce this markdown table:
 
@@ -143,15 +149,17 @@ DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
 
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
+${beforeLog ? '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.' : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
 file you are allowed to edit in plan mode. The plan file review report is part of the
-plan's living status.
+plan's living status.`}
 
 The report must always be the LAST section of the plan file — never mid-file.
 Use a single delete-then-append flow:
 
-1. Read the plan file (Read tool) to see its full current content. Search the read
-   output for a \\\`## GSTACK REVIEW REPORT\\\` heading anywhere in the file.
+${beforeLog ? `1. Read the existing plan/report, if present. Preserve its content and apply only
+   accepted changes; include the full review output. Locate any existing
+   \`## GSTACK REVIEW REPORT\` section.` : `1. Read the plan file (Read tool) to see its full current content. Search the read
+   output for a \\\`## GSTACK REVIEW REPORT\\\` heading anywhere in the file.`}
 2. If found, use the Edit tool to DELETE the entire existing section. Match from
    \\\`## GSTACK REVIEW REPORT\\\` through either the next \\\`## \\\` heading or end of
    file, whichever comes first. Replace with the empty string. This applies
@@ -160,11 +168,14 @@ Use a single delete-then-append flow:
    changed the content), re-read the plan file and retry once.
 3. If a report was deleted, Read the updated file. Append the new
    \\\`## GSTACK REVIEW REPORT\\\` at EOF. Use Edit to match the suffix
-   confirmed by the latest Read, or Write the full file with the report last.
+   confirmed by the latest Read, or Write the full file with the report last.${beforeLog ? ' Append whether or not a prior report existed.' : ''}
    "Unresolved Decisions" is not an EOF anchor when other sections follow it.
-4. Verify with the Read tool that \\\`## GSTACK REVIEW REPORT\\\` is the last
+${beforeLog ? `4. **Read-back gate:** Read the saved file. Verify the accepted changes, full review
+   output, current review row, verdict and final unresolved-decisions status, with
+   \`## GSTACK REVIEW REPORT\` as the last section. If writing or verification fails,
+   report the error and stop before Review Log or decision logging.` : `4. Verify with the Read tool that \\\`## GSTACK REVIEW REPORT\\\` is the last
    \\\`## \\\` heading in the file before continuing. If it isn't, repeat steps
-   2-3 once.
+   2-3 once.`}
 
 Do NOT replace the section in place. The "replace mid-file" path is what allowed
 prior versions to leave the report mid-file when an older report already lived

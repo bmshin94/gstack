@@ -7,10 +7,13 @@
 **Anti-shortcut clause:** Evaluate every section and outside voice finding through the decision gate below. The plan records the interactive review; writing findings into it never substitutes for approval. Ask once per new or reopened independent decision, wait for the actual answer, and apply only its accepted scope. Necessary code, tests and docs for an exact previously selected contract do not reopen it: cite that selected answer and scope, retain the finding and proof, and disclose the follow-through. Correct factual descriptions against source evidence without authorizing behavior changes. A broad approach or recommendation does not approve independent remedies or optional verification depth. Concrete new risks or changed assumptions may reopen a decision and must be presented. Never skip sections or the terminal report, or invent a question merely because a finding came from another section or reviewer.
 
 **Review continuity:** Evaluate all eight passes against the current plan and its
-declared baseline. Keep one working list of evidence, exact approved decisions,
-unresolved gaps and required verification. A missing detail in a summary is an
-unknown, not proof the existing product lacks it. Reopen a contract or decision
-only by identifying concrete contradictory evidence or a changed assumption.
+declared baseline. Continue the same working list from Step 0, retaining unresolved
+gaps and required verification. For a later or outside proposal, compare its evidence with the prior decision and options already considered.
+A disclosed tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it;
+identify a concrete contradiction or changed assumption before reopening.
+Unverified loss of existing coverage remains a risk to verify, not proof that a new release policy is needed.
+If a necessary remedy crosses an explicit scope boundary, name that boundary and
+obtain scope approval before choosing or applying the remedy.
 
 In DX POLISH, improve the accepted journey using existing capabilities. A checklist
 or Hall of Fame example is a lens, not a requirement to add its features. Identify
@@ -683,10 +686,107 @@ this run (an empty file means "ran, no findings" — distinct from "didn't run")
 ### Unresolved Decisions
 If any AskUserQuestion goes unanswered, note here. Never silently default.
 
+## Plan File Review Report
+
+Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.
+
+### Detect the plan file
+
+Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. If no file is in scope, skip this section; ordinary no-file review logging still applies.
+
+### Generate the report
+
+Run `~/.claude/skills/gstack/bin/gstack-review-read` for prior review entries.
+Use the current Completion Summary or DX Scorecard for this review's status and findings;
+apply the Review Log field rules below and add exactly one to its prior run count.
+Do not pre-log this run to populate the report.
+Use prior entries for other reviews, retaining their status, attribution and freshness.
+Each skill logs different fields:
+
+- **plan-ceo-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`mode\`, \`scope_proposed\`, \`scope_accepted\`, \`scope_deferred\`, \`commit\`
+  → Findings: "{scope_proposed} proposals, {scope_accepted} accepted, {scope_deferred} deferred"
+  → If scope fields are 0 or missing (HOLD/REDUCTION mode): "mode: {mode}, {critical_gaps} critical gaps"
+- **plan-eng-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`issues_found\`, \`mode\`, \`commit\`
+  → Findings: "{issues_found} issues, {critical_gaps} critical gaps"
+- **plan-design-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`unresolved\`, \`decisions_made\`, \`commit\`
+  → Findings: "score: {initial_score}/10 → {overall_score}/10, {decisions_made} decisions"
+- **plan-devex-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`product_type\`, \`tthw_current\`, \`tthw_target\`, \`mode\`, \`persona\`, \`competitive_tier\`, \`unresolved\`, \`commit\`
+  → Findings: "score: {initial_score}/10 → {overall_score}/10, TTHW: {tthw_current} → {tthw_target}"
+- **devex-review**: \`status\`, \`overall_score\`, \`product_type\`, \`tthw_measured\`, \`dimensions_tested\`, \`dimensions_inferred\`, \`boomerang\`, \`commit\`
+  → Findings: "score: {overall_score}/10, TTHW: {tthw_measured}, {dimensions_tested} tested/{dimensions_inferred} inferred"
+- **codex-review**: \`status\`, \`gate\`, \`findings\`, \`findings_fixed\`
+  → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
+
+The current row and its later log must describe the same saved review.
+
+Produce this markdown table:
+
+\`\`\`markdown
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | \`/plan-ceo-review\` | Scope & strategy | {runs} | {status} | {findings} |
+| Codex Review | \`/codex review\` | Independent 2nd opinion | {runs} | {status} | {findings} |
+| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | {runs} | {status} | {findings} |
+| Design Review | \`/plan-design-review\` | UI/UX gaps | {runs} | {status} | {findings} |
+| DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
+\`\`\`
+
+Below the table, add these lines. **CODEX** and **CROSS-MODEL** are optional (omit when
+empty); **VERDICT** is always present:
+
+- **CODEX:** (only if codex-review ran) — one-line summary of codex fixes
+- **CROSS-MODEL:** (only if both Claude and Codex reviews exist) — overlap analysis
+- **VERDICT:** list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
+  If Eng Review is not CLEAR and not skipped globally, append "eng review required".
+
+**Unresolved-decisions status (MANDATORY — never omitted; the report's final non-whitespace
+line).** After VERDICT, end the report (content under the \`## GSTACK REVIEW REPORT\`
+heading — a bold label, never a new \`## \` heading; exempt from the "omit when empty"
+rule) with exactly one: the exact unbolded line \`NO UNRESOLVED DECISIONS\` (a bolded one
+does NOT count), OR a \`**UNRESOLVED DECISIONS:**\` header + one bullet per open item
+(last bullet = final line; add \`+ N unresolved from prior reviews\` only when N > 0).
+This avoids double-counting: list THIS review's open items from context; for prior reviews
+sum \`unresolved\` over the latest fresh row per skill (dashboard 7-day window) after you
+DROP the current skill's row; emit the sentinel only when both are zero.
+
+### Write to the plan file
+
+**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.
+
+The report must always be the LAST section of the plan file — never mid-file.
+Use a single delete-then-append flow:
+
+1. Read the existing plan/report, if present. Preserve its content and apply only
+   accepted changes; include the full review output. Locate any existing
+   `## GSTACK REVIEW REPORT` section.
+2. If found, use the Edit tool to DELETE the entire existing section. Match from
+   \`## GSTACK REVIEW REPORT\` through either the next \`## \` heading or end of
+   file, whichever comes first. Replace with the empty string. This applies
+   regardless of where the section currently lives — mid-file deletion is
+   intentional, not a special case. If the Edit fails (e.g., concurrent edit
+   changed the content), re-read the plan file and retry once.
+3. If a report was deleted, Read the updated file. Append the new
+   \`## GSTACK REVIEW REPORT\` at EOF. Use Edit to match the suffix
+   confirmed by the latest Read, or Write the full file with the report last. Append whether or not a prior report existed.
+   "Unresolved Decisions" is not an EOF anchor when other sections follow it.
+4. **Read-back gate:** Read the saved file. Verify the accepted changes, full review
+   output, current review row, verdict and final unresolved-decisions status, with
+   `## GSTACK REVIEW REPORT` as the last section. If writing or verification fails,
+   report the error and stop before Review Log or decision logging.
+
+Do NOT replace the section in place. The "replace mid-file" path is what allowed
+prior versions to leave the report mid-file when an older report already lived
+there — the user then sees a plan whose review report is not at the bottom and
+(correctly) rejects it.
+
 ## Review Log
 
-Persist after the DX Scorecard — the dashboard, the GSTACK REVIEW REPORT, and the EXIT
-PLAN MODE GATE's "review log was called" check depend on it. **PLAN MODE EXCEPTION — ALWAYS RUN** (writes to `~/.gstack/`, not project files):
+When a plan/report file is in scope, persist only after its successful write and Read-back
+above. On failure, report the error and stop; do not log completion or an accepted decision.
+**PLAN MODE EXCEPTION — ALWAYS RUN after verification:** these commands write review
+metadata to `~/.gstack/`; the following dashboard reads the saved result.
 
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-devex-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"PRODUCT_TYPE","tthw_current":"TTHW_CURRENT","tthw_target":"TTHW_TARGET","mode":"MODE","persona":"PERSONA","competitive_tier":"COMPETITIVE_TIER","unresolved":N,"commit":"COMMIT"}'
@@ -745,102 +845,6 @@ Display:
 - Fallback (no \`wtree\` on the entry, or wtree mismatch): parse the \`---HEAD---\` section to get the current HEAD commit hash. For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. If that command FAILS (the stored commit was rebased away), grade UNKNOWN and treat as stale — do not error. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
 - For entries without a \`commit\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
 - If all reviews grade CURRENT (wtree match or HEAD match), do not display any staleness notes
-
-## Plan File Review Report
-
-After displaying the Review Readiness Dashboard in conversation output, also update the
-**plan file** itself so review status is visible to anyone reading the plan.
-
-### Detect the plan file
-
-1. Check if there is an active plan file in this conversation (the host provides plan file
-   paths in system messages — look for plan file references in the conversation context).
-2. If not found, skip this section silently — not every review runs in plan mode.
-
-### Generate the report
-
-Read the review log output you already have from the Review Readiness Dashboard step above.
-Parse each JSONL entry. Each skill logs different fields:
-
-- **plan-ceo-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`mode\`, \`scope_proposed\`, \`scope_accepted\`, \`scope_deferred\`, \`commit\`
-  → Findings: "{scope_proposed} proposals, {scope_accepted} accepted, {scope_deferred} deferred"
-  → If scope fields are 0 or missing (HOLD/REDUCTION mode): "mode: {mode}, {critical_gaps} critical gaps"
-- **plan-eng-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`issues_found\`, \`mode\`, \`commit\`
-  → Findings: "{issues_found} issues, {critical_gaps} critical gaps"
-- **plan-design-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`unresolved\`, \`decisions_made\`, \`commit\`
-  → Findings: "score: {initial_score}/10 → {overall_score}/10, {decisions_made} decisions"
-- **plan-devex-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`product_type\`, \`tthw_current\`, \`tthw_target\`, \`mode\`, \`persona\`, \`competitive_tier\`, \`unresolved\`, \`commit\`
-  → Findings: "score: {initial_score}/10 → {overall_score}/10, TTHW: {tthw_current} → {tthw_target}"
-- **devex-review**: \`status\`, \`overall_score\`, \`product_type\`, \`tthw_measured\`, \`dimensions_tested\`, \`dimensions_inferred\`, \`boomerang\`, \`commit\`
-  → Findings: "score: {overall_score}/10, TTHW: {tthw_measured}, {dimensions_tested} tested/{dimensions_inferred} inferred"
-- **codex-review**: \`status\`, \`gate\`, \`findings\`, \`findings_fixed\`
-  → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
-
-All fields needed for the Findings column are now present in the JSONL entries.
-For the review you just completed, you may use richer details from your own Completion
-Summary. For prior reviews, use the JSONL fields directly — they contain all required data.
-
-Produce this markdown table:
-
-\`\`\`markdown
-## GSTACK REVIEW REPORT
-
-| Review | Trigger | Why | Runs | Status | Findings |
-|--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | {runs} | {status} | {findings} |
-| Codex Review | \`/codex review\` | Independent 2nd opinion | {runs} | {status} | {findings} |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | {runs} | {status} | {findings} |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | {runs} | {status} | {findings} |
-| DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
-\`\`\`
-
-Below the table, add these lines. **CODEX** and **CROSS-MODEL** are optional (omit when
-empty); **VERDICT** is always present:
-
-- **CODEX:** (only if codex-review ran) — one-line summary of codex fixes
-- **CROSS-MODEL:** (only if both Claude and Codex reviews exist) — overlap analysis
-- **VERDICT:** list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
-  If Eng Review is not CLEAR and not skipped globally, append "eng review required".
-
-**Unresolved-decisions status (MANDATORY — never omitted; the report's final non-whitespace
-line).** After VERDICT, end the report (content under the \`## GSTACK REVIEW REPORT\`
-heading — a bold label, never a new \`## \` heading; exempt from the "omit when empty"
-rule) with exactly one: the exact unbolded line \`NO UNRESOLVED DECISIONS\` (a bolded one
-does NOT count), OR a \`**UNRESOLVED DECISIONS:**\` header + one bullet per open item
-(last bullet = final line; add \`+ N unresolved from prior reviews\` only when N > 0).
-This avoids double-counting: list THIS review's open items from context; for prior reviews
-sum \`unresolved\` over the latest fresh row per skill (dashboard 7-day window) after you
-DROP the current skill's row; emit the sentinel only when both are zero.
-
-### Write to the plan file
-
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
-file you are allowed to edit in plan mode. The plan file review report is part of the
-plan's living status.
-
-The report must always be the LAST section of the plan file — never mid-file.
-Use a single delete-then-append flow:
-
-1. Read the plan file (Read tool) to see its full current content. Search the read
-   output for a \`## GSTACK REVIEW REPORT\` heading anywhere in the file.
-2. If found, use the Edit tool to DELETE the entire existing section. Match from
-   \`## GSTACK REVIEW REPORT\` through either the next \`## \` heading or end of
-   file, whichever comes first. Replace with the empty string. This applies
-   regardless of where the section currently lives — mid-file deletion is
-   intentional, not a special case. If the Edit fails (e.g., concurrent edit
-   changed the content), re-read the plan file and retry once.
-3. If a report was deleted, Read the updated file. Append the new
-   \`## GSTACK REVIEW REPORT\` at EOF. Use Edit to match the suffix
-   confirmed by the latest Read, or Write the full file with the report last.
-   "Unresolved Decisions" is not an EOF anchor when other sections follow it.
-4. Verify with the Read tool that \`## GSTACK REVIEW REPORT\` is the last
-   \`## \` heading in the file before continuing. If it isn't, repeat steps
-   2-3 once.
-
-Do NOT replace the section in place. The "replace mid-file" path is what allowed
-prior versions to leave the report mid-file when an older report already lived
-there — the user then sees a plan whose review report is not at the bottom and
-(correctly) rejects it.
 
 ## Capture Learnings
 

@@ -5,10 +5,13 @@
 {{ANTI_SHORTCUT_CLAUSE}}
 
 **Review continuity:** Evaluate all eight passes against the current plan and its
-declared baseline. Keep one working list of evidence, exact approved decisions,
-unresolved gaps and required verification. A missing detail in a summary is an
-unknown, not proof the existing product lacks it. Reopen a contract or decision
-only by identifying concrete contradictory evidence or a changed assumption.
+declared baseline. Continue the same working list from Step 0, retaining unresolved
+gaps and required verification. For a later or outside proposal, compare its evidence with the prior decision and options already considered.
+A disclosed tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it;
+identify a concrete contradiction or changed assumption before reopening.
+Unverified loss of existing coverage remains a risk to verify, not proof that a new release policy is needed.
+If a necessary remedy crosses an explicit scope boundary, name that boundary and
+obtain scope approval before choosing or applying the remedy.
 
 In DX POLISH, improve the accepted journey using existing capabilities. A checklist
 or Hall of Fame example is a lens, not a requirement to add its features. Identify
@@ -360,10 +363,14 @@ DX IMPLEMENTATION CHECKLIST
 ### Unresolved Decisions
 If any AskUserQuestion goes unanswered, note here. Never silently default.
 
+{{PLAN_FILE_REVIEW_REPORT}}
+
 ## Review Log
 
-Persist after the DX Scorecard — the dashboard, the GSTACK REVIEW REPORT, and the EXIT
-PLAN MODE GATE's "review log was called" check depend on it. **PLAN MODE EXCEPTION — ALWAYS RUN** (writes to `~/.gstack/`, not project files):
+When a plan/report file is in scope, persist only after its successful write and Read-back
+above. On failure, report the error and stop; do not log completion or an accepted decision.
+**PLAN MODE EXCEPTION — ALWAYS RUN after verification:** these commands write review
+metadata to `~/.gstack/`; the following dashboard reads the saved result.
 
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-devex-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"PRODUCT_TYPE","tthw_current":"TTHW_CURRENT","tthw_target":"TTHW_TARGET","mode":"MODE","persona":"PERSONA","competitive_tier":"COMPETITIVE_TIER","unresolved":N,"commit":"COMMIT"}'
@@ -372,8 +379,6 @@ PLAN MODE GATE's "review log was called" check depend on it. **PLAN MODE EXCEPTI
 TIMESTAMP = current ISO 8601 datetime; STATUS = "clean" if score 8+ AND 0 unresolved, else "issues_open"; other fields from the DX Scorecard + Step 0; COMMIT = `git rev-parse --short HEAD`.
 
 {{REVIEW_DASHBOARD}}
-
-{{PLAN_FILE_REVIEW_REPORT}}
 
 {{LEARNINGS_LOG}}
 

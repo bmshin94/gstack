@@ -23,6 +23,15 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       expect(beforeAudit).toContain('One issue = one AskUserQuestion call.');
       expect(beforeAudit).toContain('including Step 0');
       expect(beforeAudit).toContain('separate tabs in one call still bundle those decisions');
+      const workingList = beforeAudit.indexOf('Keep one working list from input reading through outside voice');
+      const draftOptions = beforeAudit.indexOf('Before drafting options, name one changed commitment or value in that list');
+      expect(workingList).toBeGreaterThan(0);
+      expect(draftOptions).toBeGreaterThan(workingList);
+      expect(beforeAudit).toContain('For every option, try accepting one change while rejecting another');
+      expect(beforeAudit).toContain('if viable, split them before asking');
+      expect(beforeAudit).toContain('A code example and an optional checklist are separate choices');
+      expect(beforeAudit).toContain('as are a timer and its release-gate policy');
+      expect(beforeAudit).toContain('Hold other decisions fixed or pending across options');
       const mode = content.slice(content.indexOf('### 0E. Mode Selection'), content.indexOf('Context-dependent defaults:'));
       expect(mode).toContain('Use the mode the user explicitly requested for this review.');
       expect(mode).toContain('skip the mode question and continue to 0F. Otherwise, ask below.');
@@ -34,6 +43,16 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       expect(allContent).toContain('a warm snippet timer is neither a fresh-start check nor a human benchmark');
       expect(allContent).toContain('Keep estimates labeled until measured');
       expect(allContent).toContain('A target tier does not itself approve telemetry, an automated');
+      expect(allContent).toContain('only when proposing them, with ownership and frequency explicit');
+      expect(allContent).toContain('Continue the same working list from Step 0');
+      expect(allContent).toContain('compare its evidence with the prior decision and options already considered');
+      expect(allContent).toContain('A disclosed tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it');
+      expect(allContent).toContain('identify a concrete contradiction or changed assumption before reopening');
+      expect(allContent).toContain('Unverified loss of existing coverage remains a risk to verify');
+      expect(allContent).toContain('not proof that a new release policy is needed');
+      expect(allContent).toContain('If a necessary remedy crosses an explicit scope boundary, name that boundary');
+      expect(allContent).toContain('obtain scope approval before choosing or applying the remedy');
+      expect(allContent).toContain('Implementation details and proof of one chosen behavior\nstay together; independent policies each need their own decision');
 
     }
   } finally { fs.rmSync(outputRoot, { recursive: true, force: true }); }

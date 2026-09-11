@@ -1,13 +1,83 @@
 import { describe, expect, test } from 'bun:test';
 import { pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
-import { readFileSync } from 'node:fs';
-import { generateAntiShortcutClause, generateCodexPlanReview } from '../scripts/resolvers/review';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { runGeneration } from '../scripts/gen-skill-docs';
+import { generateAntiShortcutClause, generateCodexPlanReview, generatePlanFileReviewReport } from '../scripts/resolvers/review';
 import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';
 
 const menu = (labels: string[], header = 'Next review', question = "D12 — What's next?"): NativeQuestion => ({
   header, question, multiSelect: false, options: labels.map(label => ({ label, description: 'Offered choice' })),
+});
+
+// Generated instruction ordering only; native completion remains a paid check.
+describe('plan report persistence precedes completion logging', () => {
+  const plans = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'plan-devex-review'];
+  for (const skill of plans) {
+    test(`${skill}: save/readback gate precedes its log and dashboard`, () => {
+      const template = readFileSync(`${skill}/sections/review-sections.md.tmpl`, 'utf8');
+      const report = template.indexOf('{{PLAN_FILE_REVIEW_REPORT}}');
+      const log = template.indexOf('## Review Log');
+      const dashboard = template.indexOf('{{REVIEW_DASHBOARD}}');
+      expect(report).toBeGreaterThan(0);
+      expect(report).toBeLessThan(log);
+      expect(log).toBeLessThan(dashboard);
+      expect(template.match(/\{\{PLAN_FILE_REVIEW_REPORT\}\}/g)).toHaveLength(1);
+      expect(template.slice(log, dashboard)).toContain('successful write and Read-back');
+      expect(template.slice(log, dashboard)).toContain('report the error and stop');
+    });
+  }
+  for (const host of ALL_HOST_CONFIGS) {
+    test(`${host.name}: current report does not depend on a premature completion record`, () => {
+      for (const skillName of plans) {
+        const report = generatePlanFileReviewReport({ skillName, host: host.name, paths: HOST_PATHS[host.name]! } as TemplateContext);
+        // PLAN.md may be the review input while REPORT.md is the requested output.
+        const target = report.slice(report.indexOf('### Detect the plan file'), report.indexOf('### Generate the report'));
+        expect(target).toContain('Use an explicitly requested output/report file first.');
+        expect(target).toContain('Otherwise use the reviewed plan named by the user, then the host active plan.');
+        expect(target).toContain('If no file is in scope, skip this section');
+        expect(report).toContain('prior review entries');
+        expect(report).toContain('current Completion Summary or DX Scorecard');
+        expect(report).toContain('add exactly one to its prior run count');
+        expect(report).toContain('Do not pre-log this run');
+        expect(report).toContain('full review output');
+        expect(report).toContain('whether or not a prior report existed');
+        expect(report).toContain('stop before Review Log or decision logging');
+        expect(report.indexOf('Read-back gate')).toBeGreaterThan(report.indexOf('### Write to the plan file'));
+        expect(report).not.toContain('After displaying the Review Readiness Dashboard');
+        expect(report).not.toContain('review log output you already have');
+      }
+      for (const skillName of ['codex', 'devex-review']) {
+        const report = generatePlanFileReviewReport({ skillName, host: host.name, paths: HOST_PATHS[host.name]! } as TemplateContext);
+        expect(report).toContain('After displaying the Review Readiness Dashboard');
+        expect(report).not.toContain('Do not pre-log this run');
+      }
+    });
+  }
+  test('every generated plan-review carrier keeps write/readback before log before dashboard', async () => {
+    const outputRoot = mkdtempSync(join(tmpdir(), 'review-persistence-order-'));
+    try {
+      const generated = await runGeneration({ host: 'all', outputRoot, contentLinkRoot: null, log: () => {} });
+      expect(generated.exitCode, JSON.stringify(generated.diagnostics)).toBe(0);
+      const carriers = generated.artifacts.filter(artifact => artifact.host === 'claude'
+        ? artifact.kind === 'section' && plans.some(skill => artifact.relativePath === `${skill}/sections/review-sections.md`)
+        : artifact.kind === 'skill' && plans.some(skill => artifact.relativePath.endsWith(`/gstack-${skill}/SKILL.md`)));
+      expect(carriers).toHaveLength(plans.length * ALL_HOST_CONFIGS.length);
+      for (const carrier of carriers) {
+        const content = readFileSync(join(outputRoot, carrier.relativePath), 'utf8');
+        const report = content.indexOf('\n## Plan File Review Report\n');
+        const readback = content.indexOf('**Read-back gate:**', report);
+        const log = content.indexOf('\n## Review Log\n');
+        const dashboard = content.indexOf('\n## Review Readiness Dashboard\n');
+        expect({ carrier: carrier.relativePath, ordered: 0 < report && report < readback && readback < log && log < dashboard }).toMatchObject({ ordered: true });
+        expect(content.slice(report, readback)).toContain('current Completion Summary or DX Scorecard');
+        expect(content.slice(readback, log)).toContain('stop before Review Log or decision logging');
+      }
+    } finally { rmSync(outputRoot, { recursive: true, force: true }); }
+  }, 30_000);
 });
 
 test('Eng independent-remedy rule is loaded before Step 0 and retains outside-voice consent', () => {
@@ -658,4 +728,18 @@ describe('Design native handoff formatting', () => {
       labels[0]!, 'C Ready to implement', 'E Ready to implement — run /ship when done',
     ]))).toThrow('unambiguous');
   });
+});
+
+// The native review invented controls from a section name, then reopened an
+// accepted treatment. This guards the instructions, not model compliance.
+test('Design decision register grounds new items before offering design choices', () => {
+  const template = readFileSync('plan-design-review/sections/review-sections.md.tmpl', 'utf8');
+  const register = template.split('### Pass 7: Unresolved Design Decisions')[1]!.split('### Post-Pass:')[0]!;
+  const grounding = register.indexOf('cite an actual in-scope element');
+  expect(grounding).toBeGreaterThan(0);
+  expect(grounding).toBeLessThan(register.indexOf('Each decision = one AskUserQuestion'));
+  expect(register).toContain('Page/section names and outside-review suggestions do not establish that a control exists');
+  expect(register).toContain('if its existence is unknown, keep the item conditional');
+  expect(register).toContain('Do not invent controls or reopen accepted treatments for a hypothetical element');
+  expect(register).toContain('Surface real missing decisions and concrete conflicts');
 });

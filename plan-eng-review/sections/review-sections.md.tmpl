@@ -153,7 +153,7 @@ Format: `Lane A: step1 → step2 (sequential, shared models/)` / `Lane B: step3 
 {{TASKS_SECTION_EMIT:eng-review}}
 
 ### Completion summary
-At the end of the review, fill in and display this summary so the user can see all findings at a glance:
+Prepare this for the saved review; announce completion after the Read-back gate below:
 - Step 0: Scope Challenge — ___ (scope accepted as-is / scope reduced per recommendation)
 - Architecture Review: ___ issues found
 - Code Quality Review: ___ issues found
@@ -176,15 +176,14 @@ Check the git log for this branch. If there are prior commits suggesting a previ
 * One sentence max per option. Pick in under 5 seconds.
 * After each review section, pause and ask for feedback before moving on.
 
+{{PLAN_FILE_REVIEW_REPORT}}
+
 ## Review Log
 
-After producing the Completion Summary above, persist the review result.
-
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.gstack/` (user config directory, not project files). The skill preamble
-already writes to `~/.gstack/sessions/` and `~/.gstack/analytics/` — this is
-the same pattern. The review dashboard depends on this data. Skipping this
-command breaks the review readiness dashboard in /ship.
+When a plan/report file is in scope, persist only after its successful write and Read-back
+above. On failure, report the error and stop; do not log completion or an accepted decision.
+**PLAN MODE EXCEPTION — ALWAYS RUN after verification:** these commands write review
+metadata to `~/.gstack/`; the following dashboard reads the saved result.
 
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-eng-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"MODE","commit":"COMMIT"}'
@@ -203,8 +202,6 @@ Substitute values from the Completion Summary:
 - **COMMIT**: output of `git rev-parse --short HEAD`
 
 {{REVIEW_DASHBOARD}}
-
-{{PLAN_FILE_REVIEW_REPORT}}
 
 {{LEARNINGS_LOG}}
 

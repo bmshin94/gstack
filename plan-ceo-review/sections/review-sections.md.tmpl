@@ -357,6 +357,7 @@ List every ASCII diagram in files this plan touches. Still accurate?
 {{TASKS_SECTION_EMIT:ceo-review}}
 
 ### Completion Summary
+Prepare this for the saved review; announce completion after the Read-back gate below.
 ```
   +====================================================================+
   |            MEGA PLAN REVIEW — COMPLETION SUMMARY                   |
@@ -395,6 +396,8 @@ List every ASCII diagram in files this plan touches. Still accurate?
 ### Unresolved Decisions
 If any AskUserQuestion goes unanswered, note it here. Never silently default.
 
+{{PLAN_FILE_REVIEW_REPORT}}
+
 ## Handoff Note Cleanup
 
 After producing the Completion Summary, clean up any handoff notes for this branch —
@@ -408,13 +411,10 @@ rm -f ~/.gstack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 
 ## Review Log
 
-After producing the Completion Summary above, persist the review result.
-
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.gstack/` (user config directory, not project files). The skill preamble
-already writes to `~/.gstack/sessions/` and `~/.gstack/analytics/` — this is
-the same pattern. The review dashboard depends on this data. Skipping this
-command breaks the review readiness dashboard in /ship.
+When a plan/report file is in scope, persist only after its successful write and Read-back
+above. On failure, report the error and stop; do not log completion or an accepted decision.
+**PLAN MODE EXCEPTION — ALWAYS RUN after verification:** these commands write review
+metadata to `~/.gstack/`; the following dashboard reads the saved result.
 
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
@@ -435,8 +435,6 @@ Before running this command, substitute the placeholder values from the Completi
 - **COMMIT**: output of `git rev-parse --short HEAD`
 
 {{REVIEW_DASHBOARD}}
-
-{{PLAN_FILE_REVIEW_REPORT}}
 
 ## Next Steps — Review Chaining
 

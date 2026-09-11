@@ -28,10 +28,41 @@ import { validateCeoReviewCompletion } from './helpers/auq-sdk-capture';
 import { generateAntiShortcutClause } from '../scripts/resolvers/review';
 import type { TemplateContext } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';
+import { runGeneration } from '../scripts/gen-skill-docs';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const SKELETON = path.join(ROOT, 'plan-ceo-review', 'SKILL.md');
 const SECTION = path.join(ROOT, 'plan-ceo-review', 'sections', 'review-sections.md');
+
+// The paid paired-control formed a whole-suite L1 before asking about it in
+// Step 0. Guard row construction and splitting before option synthesis on each
+// host; this is an instruction-order check, not proof of native compliance.
+test('CEO Step 0 constructs and splits pending rows before drafting any menu on every host', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-pending-rows-'));
+  try {
+    const generated = await runGeneration({ host: 'all', outputRoot, contentLinkRoot: null, log: () => {} });
+    expect(generated.exitCode, JSON.stringify(generated.diagnostics)).toBe(0);
+    const carriers = generated.artifacts.filter(artifact => artifact.kind === 'skill'
+      && (artifact.relativePath === 'plan-ceo-review/SKILL.md'
+        || artifact.relativePath.endsWith('/gstack-plan-ceo-review/SKILL.md')));
+    expect(carriers).toHaveLength(ALL_HOST_CONFIGS.length);
+    for (const file of [`${SKELETON}.tmpl`, ...carriers.map(carrier => path.join(outputRoot, carrier.relativePath))]) {
+      const source = fs.readFileSync(file, 'utf8');
+      const approach = source.split('### 0C-bis.')[1]?.split('### 0F. Mode Selection')[0] ?? '';
+      const positions = ['**Construct rows.**', '**Split before drafting.**',
+        '**Compare 2-3 approaches for one row**', 'For new or reopened choices, use',
+        'Ask about one row per call'].map(stage => approach.indexOf(stage));
+      expect(positions.every(position => position >= 0), file).toBe(true);
+      expect(positions, file).toEqual([...positions].sort((a, b) => a - b));
+      expect(approach).toContain('reference | commitment/contract | current value + approval | proposed value | others fixed/pending');
+      expect(approach).toContain('Try accepting one proposed change while rejecting another');
+      expect(approach).toContain('split into separate rows before A/B/C');
+      expect(approach).toContain('Apply this check to every offered option');
+      expect(approach).toContain('record its exact answer and approved scope before the next row');
+      expect(source.indexOf('### 0C-bis.')).toBeLessThan(source.indexOf('### 0F. Mode Selection'));
+    }
+  } finally { fs.rmSync(outputRoot, { recursive: true, force: true }); }
+}, 30_000);
 
 // Boundary checks stay on source templates: generated carriers remain the
 // integration owner's responsibility, and these do not prove model behavior.
@@ -43,43 +74,50 @@ describe('CEO review decision boundaries contract', () => {
   const apply = section.split('**Apply.**')[1]?.split('### Section 1:')[0] ?? '';
 
   test('every approach comparison preserves approvals and separates independent changes', () => {
-    expect(alternatives).toContain('Every option preserves accepted requirements, unchanged contracts');
-    expect(alternatives).toContain('List pending decisions; resolve one at a time');
-    expect(alternatives).toContain('One changed commitment/value per decision');
-    expect(alternatives).toContain('not a broad issue/helper');
-    expect(alternatives).toContain('Every option preserves accepted requirements, unchanged contracts and approved behavior/tests/fixes');
-    expect(alternatives).toContain('other changes stay pending');
-    expect(alternatives).toContain('Compare verification method/depth per contract, even within one suite');
+    expect(alternatives).toContain('Every option must preserve accepted requirements, unchanged contracts');
+    expect(alternatives).toContain('Resolve pending decisions one row at a time');
+    expect(alternatives).toContain('Each row changes one commitment or value');
+    expect(alternatives).toContain('an issue or helper name is only a reference');
+    expect(alternatives).toContain('Every option must preserve accepted requirements, unchanged contracts, and approved behavior, tests and fixes');
+    expect(alternatives).toContain('Leave other changes pending');
+    expect(alternatives).toContain('For each behavior contract, compare the method and depth of verification, even within one test suite');
     expect(alternatives).not.toContain('for architecture choices');
-    expect(alternatives).toContain('Ask each pending fix separately');
-    expect(alternatives).toContain('Combine only inseparable choices, explaining why and exact scope');
-    expect(alternatives).toContain('approach approval covers only stated scope');
-    expect(alternatives).toContain('Code/tests for one behavior stay together');
-    expect(alternatives).toContain('shared files/steps do not suffice');
-    expect(alternatives).toContain('Reusing a helper does not approve all its behavior changes');
+    expect(alternatives).toContain('split into separate rows before A/B/C');
+    expect(alternatives).toContain('Combine only inseparable choices; explain why and state their exact scope');
+    expect(alternatives).toContain('an approach approval covers only its stated scope');
+    expect(alternatives).toContain('Keep code and tests for one behavior together');
+    expect(alternatives).toContain('Sharing files, steps or helpers does not make independent changes inseparable');
+    expect(alternatives).toContain('Carry forward actual approvals');
     expect(alternatives).toContain('"minimal viable"');
     expect(alternatives).toContain('"ideal architecture"');
-    expect(alternatives).toContain('Before 0F, get user approval for each new/reopened choice');
+    expect(alternatives).toContain('Before 0F, get user approval for each new or reopened choice');
   });
 
   test('settled approach authority resolves the gate while new choices still require approval', () => {
     const approach = alternatives.split('### 0F. Mode Selection')[0]!;
-    const reuse = approach.split('List pending decisions')[0]!;
+    const reuse = approach.split('Resolve pending decisions')[0]!;
     const gate = approach.split('**STOP:**')[1] ?? '';
     expect(reuse).toContain('Before 0F, honor');
     expect(reuse).toContain('applicable instructions or an accepted approach decision');
-    expect(reuse).toContain('cite its authority');
-    expect(reuse).toContain('resolve 0C-bis without re-asking');
-    expect(reuse).toContain('Reopen only for concrete contradiction or changed assumptions');
-    expect(gate).toContain('Before 0F, get user approval for each new/reopened choice, even one viable option');
+    expect(reuse).toContain('Cite its authority');
+    expect(reuse).toContain('resolve 0C-bis without asking again');
+    const reopenRule = 'Reopen a contract or decision only for a concrete contradiction or changed assumption';
+    expect(skeleton).toContain(reopenRule);
+    expect(skeleton.indexOf(reopenRule)).toBeLessThan(skeleton.indexOf('### 0C-bis.'));
+    expect(gate).toContain('Before 0F, get user approval for each new or reopened choice, even if only one option is viable');
     expect(gate).toContain('A recommendation is not approval');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
-    expect(approach).toContain('Ask each pending fix separately');
+    expect(approach).toContain('Ask about one row per call');
+    expect(gate).toContain('For later unresolved choices, use the same one-row approval process, even for obvious fixes');
+    expect(gate).toContain('honor preference/session precedence');
+    expect(gate).toContain('Report settled findings without re-asking');
+    expect(gate).toContain('Say "No issues, moving on." only when no findings remain');
   });
 
   test('coverage scoring is conditional and legitimate early decisions retain their exact approval', () => {
     expect(alternatives).toContain('only for differing coverage of this decision');
-    expect(alternatives.indexOf('One changed commitment/value per decision')).toBeLessThan(alternatives.indexOf('Completeness: N/10'));
+    expect(alternatives.indexOf('Each row changes one commitment or value')).toBeLessThan(alternatives.indexOf('Completeness: N/10'));
+    expect(alternatives).toContain('Give each option a `Completeness: N/10` score');
     expect(alternatives).toContain('10 = all in-scope edge cases, 7 = happy path, 3 = shortcut');
     expect(alternatives).toContain('Note: options differ in kind, not coverage — no completeness score.');
     expect(alternatives).not.toContain('These approaches differ in coverage (minimal viable vs ideal architecture)');
@@ -161,17 +199,19 @@ describe('CEO review decision continuity contract', () => {
 
   test('the ledger carries exact approvals and declared contracts without claiming implementation', () => {
     const skeleton = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
-    const start = skeleton.indexOf('Ledger (input reading → Step 0 → outside voice)');
+    const start = skeleton.indexOf('Keep a ledger from input reading through Step 0 and outside review');
     expect(start).toBeGreaterThan(skeleton.indexOf('## Step 0:'));
     expect(start).toBeLessThan(skeleton.indexOf('### 0C-bis.'));
     const earlyLedger = skeleton.slice(start, skeleton.indexOf('### 0A.'));
-    expect(earlyLedger).toContain('behavior/conventions, existing test coverage, exact approved/pending scopes');
-    expect(earlyLedger).toContain('Reopen contracts/decisions only for concrete contradiction or changed assumptions');
-    expect(earlyLedger).toContain('never speculation/reviewer agreement');
+    expect(earlyLedger).toContain('behavior, conventions, existing test coverage, and exact approved or pending scope');
+    expect(earlyLedger).toContain('Reopen a contract or decision only for a concrete contradiction or changed assumption');
+    expect(earlyLedger).toContain('never speculation or reviewer agreement');
     expect(earlyLedger).toContain('Retain actual code risks');
-    expect(earlyLedger).toContain('Preserve limits\' units and dependencies');
-    expect(earlyLedger).toContain('Changes through reuse or effort savings need evidence and approval');
-    expect(earlyLedger).toContain('faster work never raises a deliverable cap');
+    const existingCode = skeleton.split('### 0B.')[1]?.split('### 0C.')[0] ?? '';
+    expect(existingCode).toContain('Keep each limit in its original unit and retain its dependencies');
+    expect(existingCode).toContain('Changing a limit through reuse or effort savings requires evidence and approval');
+    expect(existingCode).toContain('Finishing faster does not increase the allowed number of deliverables');
+    expect(skeleton.indexOf('Keep each limit')).toBeLessThan(skeleton.indexOf('### 0C-bis.'));
     const temporal = skeleton.split('### 0E.')[1]?.split('{{SECTION:review-sections}}')[0] ?? '';
     expect(temporal).toContain('Prioritization: settle scope/feasibility blockers');
     expect(temporal).toContain('keep other design choices pending unless the user approves implementation-design review');
@@ -244,7 +284,7 @@ describe('plan-ceo-review carve — static ordering', () => {
     expect(approach).toBeGreaterThan(-1);
     expect(mode).toBeGreaterThan(approach);
     expect(analysis).toBeGreaterThan(mode);
-    expect(skeleton).toContain('select mode in 0F → follow its route below. Mode determines 0D\'s analysis');
+    expect(skeleton).toContain('select mode in 0F → follow its route below');
     expect(skeleton).toContain('| SCOPE EXPANSION / SELECTIVE EXPANSION | 0D-prelude → 0D → 0D-POST (including its spec review loop) → 0E |');
     expect(skeleton).toContain('| HOLD SCOPE | 0D → 0E |');
     expect(skeleton).toContain('| SCOPE REDUCTION | 0D |');
@@ -252,8 +292,9 @@ describe('plan-ceo-review carve — static ordering', () => {
     expect(skeleton).toContain('complete all 11 sections, required outputs and terminal review report');
     expect(skeleton).toContain('>15 files suggests reduction, never approves cuts');
     expect(skeleton).toContain('The >8-file check challenges complexity within the chosen mode');
-    expect(skeleton).toContain('0D-POST\'s Spec Review Loop: expansion modes only');
-    expect(skeleton).toContain('continue to 0E after completion/unavailability');
+    const persist = skeleton.split('### 0D-POST. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)')[1]?.split('### 0E.')[0] ?? '';
+    expect(persist).toContain('Run the Spec Review Loop below');
+    expect(persist).toContain('Continue to 0E after it completes or if unavailable');
   });
 
   test('the heavy review body (Sections 1-11) is NOT in the skeleton', () => {
