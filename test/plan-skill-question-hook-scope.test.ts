@@ -139,7 +139,7 @@ const child = String.raw`
     case 'forged-descriptor': refuses(() => check({})); break;
     case 'fifo': { const result = require('node:child_process').spawnSync('mkfifo', [settings], {timeout: 1000}); assert.equal(result.status, 0); refuses(() => setup({configDir,cwd})); break; }
     default: {
-      const match = /^file-tool-(PreToolUse|PermissionRequest|PostToolUse|PostToolUseFailure)-(Write|Edit|ExitPlanMode|AskUserQuestion|Bash)-(settings|frontmatter|managed|drift)$/.exec(scenario);
+      const match = /^file-tool-(PreToolUse|PermissionRequest|PostToolUse|PostToolUseFailure)-(Write|Edit|ExitPlanMode|AskUserQuestion|Bash|WebFetch)-(settings|frontmatter|managed|drift)$/.exec(scenario);
       if (!match) throw new Error('unknown scenario');
       const [, event, tool, location] = match;
       const scope = location === 'drift' ? passes() : null;
@@ -149,7 +149,7 @@ const child = String.raw`
         const file = location === 'managed' ? path.join(managedFixture, 'managed-settings.json') : settings;
         json(file, {hooks: {[event]: hooks(tool).hooks.PreToolUse}});
       }
-      if ((event === 'PreToolUse' && (tool === 'Write' || tool === 'Edit' || tool === 'Bash') || event === 'PostToolUse' && tool === 'ExitPlanMode') && location !== 'drift') passes();
+      if ((event === 'PreToolUse' && (tool === 'Write' || tool === 'Edit' || tool === 'Bash' || tool === 'WebFetch') || event === 'PostToolUse' && tool === 'ExitPlanMode') && location !== 'drift') passes();
       else refuses(() => scope ? check(scope) : setup({configDir,cwd}));
       break;
     }
@@ -179,7 +179,8 @@ for (const event of ['PreToolUse', 'PermissionRequest', 'PostToolUse']) {
 }
 for (const location of ['settings', 'frontmatter', 'managed', 'drift']) scenarios.push(`file-tool-PostToolUse-AskUserQuestion-${location}`);
 for (const event of ['PreToolUse', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure'])
-  for (const location of ['settings', 'frontmatter', 'managed', 'drift']) scenarios.push(`file-tool-${event}-Bash-${location}`);
+  for (const tool of ['Bash', 'WebFetch'])
+    for (const location of ['settings', 'frontmatter', 'managed', 'drift']) scenarios.push(`file-tool-${event}-${tool}-${location}`);
 if (process.platform !== 'win32') scenarios.push('fifo');
 
 for (const scenario of scenarios) test(`controlled question hook scope: ${scenario}`, () => {

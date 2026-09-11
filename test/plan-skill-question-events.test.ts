@@ -51,7 +51,7 @@ test('silent native hook publishes the pending invocation before its assistant J
   expect(f.settings.hooks.PreToolUse).toHaveLength(1);
   expect(f.settings.hooks.PreToolUse[0].matcher).toBe('^(AskUserQuestion|ExitPlanMode|Bash)$');
   expect(f.settings.hooks.PermissionRequest).toHaveLength(1);
-  expect(f.settings.hooks.PermissionRequest[0]).toEqual({ matcher: '^(Write|Edit|Bash)$',
+  expect(f.settings.hooks.PermissionRequest[0]).toEqual({ matcher: '^(Write|Edit|Bash|WebFetch)$',
     hooks: [{ type: 'command', command: f.command, timeout: 5 }] });
   expect(f.settings.hooks.PostToolUse[0]).toEqual({ matcher: '^(Write|Edit|AskUserQuestion|Bash)$',
     hooks: [{ type: 'command', command: f.command, timeout: 5 }] });

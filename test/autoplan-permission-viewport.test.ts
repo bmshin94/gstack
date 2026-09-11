@@ -68,10 +68,24 @@ test('a taller-than120 owned Edit needs two fresh native paints, grants once, an
   expect([...granted]).toEqual(['request:owned-edit']); expect([...requests.keys()]).toEqual(['Edit:' + file]);
 });
 
-test('a card still clipped at the finite cap fails with the original identity error and no grant', async () => {
+test('a 600-line owned Edit recovers its complete path only after the third fresh paint', async () => {
   lines = 600; paint(); await tick(); await tick();
+  expect((await sample()).text).not.toContain(' Edit file');
+  expect(sends).toEqual([]); expect(granted.size).toBe(0);
+  await tick(); expect(resizes).toEqual([240, 480, 960]);
+  expect((await sample()).text).toContain(' Edit file\n .claude/plans/review.md');
+  await tick(); await tick();
+  expect(sends).toEqual(['1\r']);
+  expect([...granted]).toEqual(['request:owned-edit']);
+  expect([...requests.entries()]).toEqual([['Edit:' + file, { requestId: 'owned-edit', operation: 'edit' }]]);
+  Object.assign(native.permissionRequests[0]!, { result: 'completed', nativeToolId: 'large-edit', nativeResultAtMs: 2 });
+  await tick(); expect(resizes).toEqual([240, 480, 960, 120]); expect(viewport.active).toBe(false);
+});
+
+test('a card still clipped at the finite cap fails with the original identity error and no grant', async () => {
+  lines = 1000; paint(); await tick(); await tick(); await tick();
   await expect(tick()).rejects.toThrow('Visible permission cannot be bound');
-  expect(resizes).toEqual([240, 480]); expect(sends).toEqual([]); expect(granted.size).toBe(0);
+  expect(resizes).toEqual([240, 480, 960]); expect(sends).toEqual([]); expect(granted.size).toBe(0);
 });
 
 test('wrapped physical diff rows recover within the cap without treating logical lines as viewport height', async () => {

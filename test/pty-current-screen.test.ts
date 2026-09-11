@@ -170,8 +170,11 @@ test('resizing the decoded viewport requires a completed barrier and creates no 
   expect(() => projection.resize(120, 80)).toThrow('disposed');
 });
 
-test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => [...['normal', 'already-exited', 'body-error'].map(scenario => [cols, scenario, 40] as const), [cols, 'normal', 120] as const]))('owned local PTY resize redraws at decoder geometry and session.close releases the parent (%i columns, %s, %i initial rows)', async (cols, scenario, initialRows) => {
-  const expandedRows = initialRows === 120 ? 480 : 80;
+test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => [
+  ...['normal', 'already-exited', 'body-error'].map(scenario => [cols, scenario, 40, 80] as const),
+  [cols, 'normal', 120, 480] as const,
+  ...['normal', 'already-exited', 'body-error'].map(scenario => [cols, scenario, 120, 960] as const),
+]))('owned local PTY resize redraws at decoder geometry and session.close releases the parent (%i columns, %s, %i initial rows, %i expanded rows)', async (cols, scenario, initialRows, expandedRows) => {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'native-viewport-free-')));
   const native = path.join(tmp, 'native.ts');
   const wrapper = path.join(tmp, 'native-wrapper');

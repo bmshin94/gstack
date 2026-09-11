@@ -26,7 +26,7 @@ import { submitPlanSeed, PlanSeedTimeout } from './plan-seed-submission';
 import { isDeepStrictEqual } from 'node:util';
 import { retainAutoplanFailure } from './autoplan-phase-order';
 import { readPlanSkillCompletion } from './plan-skill-completion';
-import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, currentBashPermissionCard, matchesClippedBashPermission, hasCurrentBashPermissionHeading, type NativePermissionTool, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
+import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, currentBashPermissionCard, currentWebFetchPermissionCard, hasCurrentWebFetchPermissionHeading, matchesClippedBashPermission, hasCurrentBashPermissionHeading, type NativePermissionTool, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -136,7 +136,7 @@ export interface ClaudePtySession {
   /** Owned question sessions only. Coordinates decoder and PTY geometry;
    * returns the post-flush/pre-resize mark, or null without resizing when
    * the deadline or a changing decoder barrier prevents the transaction. */
-  resizeQuestionViewport?(rows: 40 | 80 | 120 | 240 | 480, deadlineAt: number): Promise<number | null>;
+  resizeQuestionViewport?(rows: 40 | 80 | 120 | 240 | 480 | 960, deadlineAt: number): Promise<number | null>;
   /**
    * Wait for any of the supplied patterns to appear in visibleText. Resolves
    * with the first match. Throws on timeout (with last 2KB of visible text).
@@ -346,6 +346,7 @@ export const TAIL_SCAN_BYTES = 1500;
  * remain unconditional.
  */
 export function isPermissionDialogVisible(visible: string): boolean {
+  if (hasCurrentWebFetchPermissionHeading(visible)) return currentWebFetchPermissionCard(visible) !== null;
   if (hasCurrentBashPermissionHeading(visible)) return currentBashPermissionCard(visible) !== null;
   if (currentFilePermissionTarget(visible)) return true;
   // Standalone signatures — high specificity, never appear in skill questions.
@@ -1636,8 +1637,8 @@ export async function launchClaudePty(
     visibleText: () => stripAnsi(buffer),
     mark,
     visibleSince,
-    ...(screen && nativeQuestionEvents && [120, 240].includes(cols) && [40, 120].includes(rows) && typeof proc.terminal?.resize === 'function' ? { resizeQuestionViewport: async (nextRows: 40 | 80 | 120 | 240 | 480, deadlineAt: number) => {
-      if (![40, 80, 120, 240, 480].includes(nextRows) || !Number.isFinite(deadlineAt)) throw new Error('Unsupported question viewport request');
+    ...(screen && nativeQuestionEvents && [120, 240].includes(cols) && [40, 120].includes(rows) && typeof proc.terminal?.resize === 'function' ? { resizeQuestionViewport: async (nextRows: 40 | 80 | 120 | 240 | 480 | 960, deadlineAt: number) => {
+      if (![40, 80, 120, 240, 480, 960].includes(nextRows) || !Number.isFinite(deadlineAt)) throw new Error('Unsupported question viewport request');
       if (screenError) throw screenError;
       if (exited || Date.now() >= deadlineAt) return null;
       const flushed = await screen!.snapshot();
@@ -2571,9 +2572,11 @@ export async function runPlanSkillCounting(opts: {
       // ahead of a queued AUQ. No file hook or second native tool may compete.
       const currentBashRequest = pendingPermissionRequests.length === 0 && native.permissionTools.length === 1
         && native.permissionTools[0]!.name === 'Bash' && currentBashPermissionCard(permissionVisible) !== null;
+      const currentFetchRequest = pendingPermissionRequests.length === 0 && native.permissionTools.length === 1
+        && native.permissionTools[0]!.name === 'WebFetch' && currentWebFetchPermissionCard(permissionVisible) !== null;
       // Consume the rendered window before writing, so old permission text
       // cannot send again. Other permissions retain the no-pending-AUQ rule.
-      if ((!call || currentFileRequest || currentBashRequest) && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
+      if ((!call || currentFileRequest || currentBashRequest || currentFetchRequest) && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
         lastLoopStage = 'permission-grant';
         if (expired()) break;
         if (!reserveNativePermissionGrant(native, permissionVisible, grantedTools, grantedRequests)) continue;
@@ -2582,9 +2585,9 @@ export async function runPlanSkillCounting(opts: {
         continue;
       }
 
-      // A sent Bash grant is not its execution result. Even if the queued
+      // A sent Bash/Fetch grant is not its execution result. Even if the queued
       // question paints first, require the matching native result before it.
-      if (native.permissionTools.some(tool => tool.name === 'Bash' && grantedTools.has(tool.id))) {
+      if (native.permissionTools.some(tool => ['Bash', 'WebFetch'].includes(tool.name) && grantedTools.has(tool.id))) {
         lastLoopStage = 'awaiting-permission-result';
         continue;
       }

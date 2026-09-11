@@ -72,6 +72,9 @@ export interface PermissionRequestEventCall {
 export interface BashPermissionRequestEventCall extends Omit<PermissionRequestEventCall, 'toolName'> {
   toolName: 'Bash';
 }
+export interface WebFetchPermissionRequestEventCall extends Omit<PermissionRequestEventCall, 'toolName'> {
+  toolName: 'WebFetch';
+}
 export interface FileCompletionEventCall {
   id: string;
   capturedAtMs: number;
@@ -86,12 +89,21 @@ type EventRecord = Binding & {
 } & ({ hookEventName: 'PreToolUse'; toolName: 'AskUserQuestion' | 'ExitPlanMode'; id: string }
   | { hookEventName: 'PreToolUse'; toolName: 'Bash'; id: string; capturedAtMs: number }
   | { hookEventName: 'PostToolUse' | 'PostToolUseFailure'; toolName: 'Bash'; id: string; capturedAtMs: number; response: Record<string, unknown> }
-  | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit' | 'Bash'; requestId: string; capturedAtMs: number }
+  | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit' | 'Bash' | 'WebFetch'; requestId: string; capturedAtMs: number }
   | { hookEventName: 'PostToolUse'; toolName: 'Write' | 'Edit' | 'AskUserQuestion'; id: string; capturedAtMs: number; response: Record<string, unknown> });
 const eventId = (event: EventRecord): string => event.hookEventName === 'PermissionRequest' ? event.requestId
   : (event.hookEventName === 'PostToolUse' || event.hookEventName === 'PostToolUseFailure')
     && (event.toolName === 'AskUserQuestion' || event.toolName === 'Bash')
     ? `${event.hookEventName}:${event.toolName}:${event.id}` : event.id;
+
+export function webFetchInput(input: Record<string, unknown>): input is { url: string; prompt: string } {
+  if (typeof input.url !== 'string' || typeof input.prompt !== 'string' || !input.prompt.trim()
+    || Object.keys(input).some(key => key !== 'url' && key !== 'prompt')) return false;
+  try {
+    const url = new URL(input.url);
+    return /^https?:$/.test(url.protocol) && !!url.hostname && !url.username && !url.password;
+  } catch { return false; }
+}
 
 function bashInput(input: Record<string, unknown>): boolean {
   return typeof input.command === 'string' && !!input.command.trim()
@@ -259,7 +271,7 @@ export function setupQuestionEventSource(opts: {
     const command = [process.execPath, import.meta.path, '--record-question-event', bindingPath, binding.nonce].map(quote).join(' ');
     const settingsBytes = JSON.stringify({ hooks: {
       PreToolUse: [{ matcher: '^(AskUserQuestion|ExitPlanMode|Bash)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
-      PermissionRequest: [{ matcher: '^(Write|Edit|Bash)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PermissionRequest: [{ matcher: '^(Write|Edit|Bash|WebFetch)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
       PostToolUse: [{ matcher: '^(Write|Edit|AskUserQuestion|Bash)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
       PostToolUseFailure: [{ matcher: '^Bash$', hooks: [{ type: 'command', command, timeout: 5 }] }],
     } }) + '\n';
@@ -309,7 +321,8 @@ function eventFromInput(value: unknown, binding: Binding): EventRecord | null {
       || value.hook_event_name === 'PostToolUse' && !Object.hasOwn(value, 'error') && value.is_error !== true)
       && bashResponse(value.hook_event_name, response)) return { ...base, hookEventName: value.hook_event_name, response };
   }
-  if (value.hook_event_name === 'PermissionRequest' && (value.tool_name === 'Write' || value.tool_name === 'Edit' || value.tool_name === 'Bash' && bashInput(value.tool_input))) {
+  if (value.hook_event_name === 'PermissionRequest' && (value.tool_name === 'Write' || value.tool_name === 'Edit' || value.tool_name === 'Bash' && bashInput(value.tool_input)
+    || value.tool_name === 'WebFetch' && webFetchInput(value.tool_input))) {
     // Each hook emission is a distinct request observation. The payload cannot
     // provide this identity, and it must never masquerade as a native tool ID.
     return { ...binding, hookEventName: 'PermissionRequest', toolName: value.tool_name,
@@ -378,7 +391,7 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
 
 function readCapturedEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
-}): (QuestionEventCall | QuestionCompletionEventCall | BashEventCall | BashCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | BashPermissionRequestEventCall | FileCompletionEventCall)[] {
+}): (QuestionEventCall | QuestionCompletionEventCall | BashEventCall | BashCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | BashPermissionRequestEventCall | WebFetchPermissionRequestEventCall | FileCompletionEventCall)[] {
   if (expected.configDir === null || canonicalDirectory(expected.configDir) !== source.configDir
     || expected.sessionId !== source.sessionId) throw new Error('Question event source belongs to another session');
   const scope = hookScopes.get(source);
@@ -403,7 +416,7 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
   if (expected.transcriptFile === null) return [];
   const transcriptFile = expectedTranscript(expected.transcriptFile, expected.configDir, binding);
   let total = 0;
-  const calls: (QuestionEventCall | QuestionCompletionEventCall | BashEventCall | BashCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | BashPermissionRequestEventCall | FileCompletionEventCall)[] = [];
+  const calls: (QuestionEventCall | QuestionCompletionEventCall | BashEventCall | BashCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | BashPermissionRequestEventCall | WebFetchPermissionRequestEventCall | FileCompletionEventCall)[] = [];
   const observed = observedEvents.get(source);
   if (!observed) throw new Error('Question event source was not created by this launcher');
   if ([...observed.keys()].some(file => !files.includes(file))) throw new Error('Previously observed native question event disappeared');
@@ -425,7 +438,8 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
     const bashCompletion = event.toolName === 'Bash' && typeof event.id === 'string'
       && !!event.id.trim() && event.id.length <= 256 && timed && bashInput(event.input)
       && bashResponse(event.hookEventName, event.response);
-    const permission = event.hookEventName === 'PermissionRequest' && (event.toolName === 'Write' || event.toolName === 'Edit' || event.toolName === 'Bash' && bashInput(event.input))
+    const permission = event.hookEventName === 'PermissionRequest' && (event.toolName === 'Write' || event.toolName === 'Edit' || event.toolName === 'Bash' && bashInput(event.input)
+      || event.toolName === 'WebFetch' && webFetchInput(event.input))
       && typeof event.requestId === 'string' && UUID.test(event.requestId) && timed;
     const completion = event.hookEventName === 'PostToolUse' && typeof event.id === 'string'
       && !!event.id.trim() && event.id.length <= 256 && timed && fileResponse(event.toolName, event.input, event.response);
@@ -449,7 +463,7 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
     else if (completion) calls.push({ id: event.id as string, capturedAtMs: event.capturedAtMs as number,
       toolName: event.toolName as 'Write' | 'Edit', input: event.input, response: event.response as Record<string, unknown>, cwd: event.cwd });
     else calls.push({ requestId: event.requestId as string, capturedAtMs: event.capturedAtMs as number,
-      toolName: event.toolName as 'Write' | 'Edit' | 'Bash', input: event.input, cwd: event.cwd });
+      toolName: event.toolName as 'Write' | 'Edit' | 'Bash' | 'WebFetch', input: event.input, cwd: event.cwd });
   }
   return calls;
 }
@@ -494,7 +508,7 @@ export function readExitPlanModeEvents(source: QuestionEventSource, expected: {
 export function readPermissionRequestEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
 }): PermissionRequestEventCall[] {
-  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => 'requestId' in call && call.toolName !== 'Bash');
+  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => 'requestId' in call && (call.toolName === 'Write' || call.toolName === 'Edit'));
 }
 
 /** Post-PreToolUse Bash permission input; observer UUID supplies no native ID. */
@@ -502,6 +516,15 @@ export function readBashPermissionRequestEvents(source: QuestionEventSource, exp
   configDir: string | null; sessionId: string; transcriptFile: string | null;
 }): BashPermissionRequestEventCall[] {
   return readCapturedEvents(source, expected).filter((call): call is BashPermissionRequestEventCall => 'requestId' in call && call.toolName === 'Bash');
+}
+
+
+/** Effective Fetch input only; native transcript identity and result remain required. */
+export function readWebFetchPermissionRequestEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): WebFetchPermissionRequestEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is WebFetchPermissionRequestEventCall =>
+    'requestId' in call && call.toolName === 'WebFetch');
 }
 
 /** Successful native execution, not a grant or an AUQ/ExitPlanMode result. */

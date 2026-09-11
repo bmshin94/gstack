@@ -36,7 +36,7 @@ export function reserveAutoplanFilePermission(
 }
 
 /** Recover only a clipped file identity; the existing reservation remains the
- * grant authority. The two fresh paints are finite, not a promise that every
+ * grant authority. The three fresh paints are finite, not a promise that every
  * possible diff fits. A resize is never a decision or native completion. */
 export class AutoplanFilePermissionViewport {
   private owner: NativeFilePermissionRequest | null = null;
@@ -79,7 +79,7 @@ export class AutoplanFilePermissionViewport {
       || this.opts.granted.has(`request:${owner.requestId}`)) return true;
     try { nativePermissionKey(owner, frame.text); return false; }
     catch (error) {
-      if (!this.clipped(owner, frame.text) || this.paints === 2) throw error;
+      if (!this.clipped(owner, frame.text) || this.paints === 3) throw error;
       return this.repaint();
     }
   }
@@ -112,7 +112,7 @@ export class AutoplanFilePermissionViewport {
   }
 
   private async repaint(): Promise<boolean> {
-    const mark = await this.opts.session.resizeQuestionViewport!(this.paints === 0 ? 240 : 480, this.opts.deadlineAt);
+    const mark = await this.opts.session.resizeQuestionViewport!(this.paints === 0 ? 240 : this.paints === 1 ? 480 : 960, this.opts.deadlineAt);
     if (mark !== null) { this.inputMark = mark; this.paints++; }
     return true;
   }

@@ -59,6 +59,10 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/paired-payment/README.md', ['plan-ceo-finding-count']],
     ...['README.md', 'platform.ts', 'existing-invoice-handler.ts', 'schema.sql', 'contract.test.ts.fixture'].map((file): [string, string[]] =>
       [`test/fixtures/ceo-existing-payment/${file}`, ['plan-ceo-finding-count']]),
+    ...['test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts'].map((file): [string, string[]] => [file,
+      ['plan-ceo-finding-count', 'plan-eng-finding-count', 'plan-design-finding-count',
+        'plan-devex-finding-count', 'plan-eng-multi-finding-batching', 'plan-ceo-split-overflow'],
+    ]),
     ['test/helpers/plan-mode-evidence.ts', ['plan-design-review-plan-mode', 'plan-eng-review-plan-mode']],
     ['test/plan-mode-evidence.test.ts', ['plan-design-review-plan-mode', 'plan-eng-review-plan-mode']],
     ...['test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts'].map((file): [string, string[]] => [file,

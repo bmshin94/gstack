@@ -1209,3 +1209,48 @@ test('owned Bash repaint recovers a clipped top rule before one grant and restor
   expect(result.terminalCloseCount).toBe(1);
   expect(result.closed).toBe(true);
 });
+
+
+describe('owned captured Fetch permission in the real counting driver', () => {
+  test.skipIf(process.platform === 'win32').each(['complete', 'error-ack'])(
+    'one-time Fetch advances the queued question only after its native result (%s)', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-fetch-${variant}`);
+      expect(result.error).toBeUndefined();
+      expect(result.observation.outcome).toBe('completion_summary');
+      expect(result.permissionGrantIds).toHaveLength(1);
+      expect(result.permissionAckIds).toEqual(result.permissionGrantIds);
+      expect(result.fetchQuestionAckIds).toHaveLength(1);
+      expect(result.prematureAnswers).toEqual([]);
+      expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1']);
+      expect(result.closed).toBe(true);
+      expect(result.caseElapsedMs).toBeLessThan(result.caseBudgetMs);
+    }, 15_000);
+
+  test.skipIf(process.platform === 'win32').each(['no-ack', 'foreign-ack', 'late-ack'])(
+    'Fetch grant without a timely matching result cannot answer a queued AUQ (%s)', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-fetch-${variant}`);
+      expect(result.error).toBeUndefined();
+      expect(result.observation.outcome).toBe('timeout');
+      expect(result.permissionGrantIds).toHaveLength(1);
+      expect(result.permissionAckIds).toHaveLength(variant === 'late-ack' ? 1 : 0);
+      expect(result.fetchQuestionAckIds).toEqual([]);
+      expect(result.prematureAnswers).toEqual([]);
+      expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+      expect(result.caseElapsedMs).toBe(result.caseBudgetMs);
+      expect(result.closed).toBe(true);
+    }, 15_000);
+
+  test.skipIf(process.platform === 'win32').each(['no-hook', 'duplicate', 'multiple-owner', 'url-mismatch',
+    'prompt-mismatch', 'domain-mismatch', 'clipped', 'wrong-focus', 'stale', 'owner-arrival-race', 'input-arrival-race', 'deadline'])(
+    'Fetch malformed, ambiguous, stale or late evidence sends no input (%s)', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-fetch-${variant}`);
+      expect(result.permissionGrantIds).toEqual([]);
+      expect(result.fetchQuestionAckIds).toEqual([]);
+      expect(result.prematureAnswers).toEqual([]);
+      expect(result.sends).toEqual(['/plan-ceo-review\r']);
+      if (result.error) expect(result.error).toMatch(/permission|changed input/i);
+      else expect(result.observation.outcome).toBe('timeout');
+      if (variant === 'deadline') expect(result.caseElapsedMs).toBe(result.caseBudgetMs);
+      expect(result.closed).toBe(true);
+    }, 15_000);
+});

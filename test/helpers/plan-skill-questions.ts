@@ -1,7 +1,7 @@
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { readQuestionEvents, readQuestionCompletionEvents, readBashEvents, readBashCompletionEvents, readBashPermissionRequestEvents, readExitPlanModeEvents, readPermissionRequestEvents, readFileCompletionEvents,
+import { readQuestionEvents, readQuestionCompletionEvents, readBashEvents, readBashCompletionEvents, readBashPermissionRequestEvents, readWebFetchPermissionRequestEvents, webFetchInput, readExitPlanModeEvents, readPermissionRequestEvents, readFileCompletionEvents,
   type FileCompletionEventCall, type QuestionCompletionEventCall, type BashEventCall, type BashCompletionEventCall, type QuestionEventSource } from './plan-skill-question-events';
 
 export interface NativeQuestion {
@@ -21,6 +21,8 @@ export interface NativePermissionTool {
   id: string; name: string; input: Record<string, unknown>; cwd?: string;
   /** Early Bash input cannot grant until its post-PreToolUse request matches. */
   bashPermissionRequestId?: string | null;
+  /** Complete native Fetch input still needs its exact effective permission request. */
+  webFetchPermissionRequestId?: string | null;
 }
 export interface NativeFilePermissionRequest {
   requestId: string;
@@ -140,6 +142,8 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const observedToolInputs = new Map<string, NativePermissionTool>();
   const requestEvents = events ? readPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
   const bashRequestEvents = events ? readBashPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
+  const fetchRequestEvents = events ? readWebFetchPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
+  const fetchInvocationTimes = new Map<string, number>();
   const earlyCompletions = new Map<string, FileCompletionEventCall>();
   const questionCompletions = new Map<string, QuestionCompletionEventCall>();
   const bashInvocations = new Map<string, BashEventCall>();
@@ -166,8 +170,8 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       || previous.cwd !== undefined && tool.cwd !== undefined && previous.cwd !== tool.cwd)) {
       throw new Error('Native tool changed input, name or cwd for an existing tool ID');
     }
-    const bound = { ...previous, ...tool, ...(previous?.cwd !== undefined ? { cwd: previous.cwd } : {}) };
-    if (['Write', 'Edit', 'Bash'].includes(tool.name)) permissionInputs.set(tool.id, bound);
+    const bound = { ...(tool.name === 'WebFetch' ? { webFetchPermissionRequestId: null } : {}), ...previous, ...tool, ...(previous?.cwd !== undefined ? { cwd: previous.cwd } : {}) };
+    if (['Write', 'Edit', 'Bash', 'WebFetch'].includes(tool.name)) permissionInputs.set(tool.id, bound);
     permissionTools.set(tool.id, bound);
   };
   if (events) {
@@ -224,7 +228,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       // denotes one immutable operation, including before stop_reason arrives.
       if (row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use' && typeof block.id === 'string') {
         const previous = observedToolInputs.get(block.id);
-        if (previous && (['Write', 'Edit'].includes(previous.name) || ['Write', 'Edit'].includes(block.name))
+        if (previous && (['Write', 'Edit', 'WebFetch'].includes(previous.name) || ['Write', 'Edit', 'WebFetch'].includes(block.name))
           && (previous.name !== block.name || !isDeepStrictEqual(previous.input, block.input ?? {})
             || previous.cwd !== undefined && typeof row.cwd === 'string' && previous.cwd !== row.cwd)) {
           throw new Error('Native file permission changed input, name or cwd for an existing tool ID');
@@ -300,6 +304,9 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
           ...(typeof row.cwd === 'string' ? { cwd: row.cwd } : {}) });
       }
       if (row.type !== 'assistant' || message.role !== 'assistant' || message.stop_reason !== 'tool_use' || block?.type !== 'tool_use') continue;
+      if (block.name === 'WebFetch' && !fetchInvocationTimes.has(block.id)) {
+        fetchInvocationTimes.set(block.id, typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : Number.NaN);
+      }
       if (block.name === 'ExitPlanMode' && typeof block.id === 'string') ready.add(block.id);
       else if (block.name !== 'AskUserQuestion' && typeof block.id === 'string') addPermission({
         id: block.id, name: block.name, input: block.input ?? {},
@@ -341,6 +348,16 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
     const owner = permissionTools.get(matches[0]!.id)!;
     if (owner.bashPermissionRequestId !== null) throw new Error('Duplicate native Bash permission request');
     owner.bashPermissionRequestId = request.requestId;
+  }
+  for (const request of fetchRequestEvents) {
+    const matches = [...permissionTools.values()].filter(tool => tool.name === 'WebFetch' && tool.cwd === request.cwd
+      && isDeepStrictEqual(tool.input, request.input) && fetchInvocationTimes.get(tool.id)! < request.capturedAtMs
+      && (!resultTimes.has(tool.id) || resultTimes.get(tool.id)! > request.capturedAtMs));
+    if (matches.length > 1) throw new Error('Ambiguous native WebFetch permission request');
+    if (!matches.length) continue; // Orphan, changed, unfinished or already resolved input cannot grant.
+    const owner = matches[0]!;
+    if (owner.webFetchPermissionRequestId !== null) throw new Error('Duplicate native WebFetch permission request');
+    owner.webFetchPermissionRequestId = request.requestId;
   }
   const permissionRequests: NativeFilePermissionRequest[] = [];
   if (events) {
@@ -645,6 +662,40 @@ export function hasCurrentBashPermissionHeading(visible: string): boolean {
   return /^ Bash command(?:[ (]|$)/.test(lines[top + 1] ?? '');
 }
 
+export function hasCurrentWebFetchPermissionHeading(visible: string): boolean {
+  const lines = visible.split('\n');
+  const top = lines.findLastIndex(line => /^─{10,} *$/.test(line));
+  return /^ Fetch(?: |$)/.test(lines[top + 1] ?? '');
+}
+
+/** Complete native Fetch card: one-time Yes, exact domain and unmodified payload. */
+export function currentWebFetchPermissionCard(visible: string): { columns: number; domain: string; payload: string[] } | null {
+  const lines = visible.split('\n').map(line => line.replace(/ +$/, ''));
+  while (lines.at(-1) === '') lines.pop();
+  const top = lines.findLastIndex(line => /^─{10,}$/.test(line));
+  if (top < 0 || lines[top + 1] !== ' Fetch' || lines[top + 2] !== '') return null;
+  const columns = lines[top]!.length;
+  if (columns < 40 || lines.slice(top + 1).some(line => line.length > columns || /[\r\t\x00-\x1f]/.test(line))) return null;
+  let fence = '';
+  for (const line of lines.slice(0, top)) {
+    const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!marker) continue;
+    if (!fence) fence = marker[1]!;
+    else if (marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = '';
+  }
+  if (fence) return null;
+  const detail = lines.length - 6;
+  const domain = /^   Claude wants to fetch content from ([a-z0-9.-]+)$/.exec(lines[detail] ?? '')?.[1];
+  if (!domain || detail < top + 5 || lines[detail + 1] !== ''
+    || lines[detail + 2] !== ' Do you want to allow Claude to fetch this content?'
+    || lines[detail + 3] !== ' ❯ 1. Yes'
+    || lines[detail + 4] !== `   2. Yes, and don't ask again for ${domain}`
+    || lines[detail + 5] !== '   3. No, and tell Claude what to do differently (esc)') return null;
+  const payload = lines.slice(top + 3, detail);
+  if (!payload.every(line => line.startsWith('   │ '))) return null;
+  return { columns, domain, payload };
+}
+
 /** Pinned CLI 2.1.263 gs/$At/jAt controls. The current card must be complete:
  * the first choice is a one-time Yes, and neither a history example nor a
  * clipped command can supply authority. Payload identity is checked below. */
@@ -732,6 +783,16 @@ export function matchesClippedBashPermission(tool: NativePermissionTool, visible
 }
 
 export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermissionRequest, visible: string): string {
+  if (tool.name === 'WebFetch' || hasCurrentWebFetchPermissionHeading(visible)) {
+    const card = currentWebFetchPermissionCard(visible);
+    const input = tool.input;
+    const payload = card && tool.name === 'WebFetch' && webFetchInput(input)
+      ? nativeBashPayload(`url: ${input.url}\nprompt: ${input.prompt}`, card.columns) : null;
+    if (!card || !payload || !isDeepStrictEqual(payload, card.payload) || new URL(input.url as string).hostname !== card.domain) {
+      throw new Error('Visible permission cannot be bound to its pending native command or file path');
+    }
+    return 'WebFetch:' + JSON.stringify([input.url, input.prompt]);
+  }
   const value = tool.name === 'Bash' ? tool.input.command
     : ['Read', 'Write', 'Edit'].includes(tool.name) ? tool.input.file_path : null;
   if (typeof value !== 'string' || !value.trim()) throw new Error('Unsupported native permission command or file path');
@@ -809,7 +870,8 @@ export function reserveNativePermissionGrant(
     owner = matches[0]!;
   }
   if (native.permissionRequestCapture && !('requestId' in owner) && ['Write', 'Edit'].includes(owner.name)) return false;
-  if (!('requestId' in owner) && owner.bashPermissionRequestId === null) return false;
+  if (!('requestId' in owner) && (owner.bashPermissionRequestId === null
+    || owner.name === 'WebFetch' && !owner.webFetchPermissionRequestId)) return false;
   const key = 'requestId' in owner ? `request:${owner.requestId}` : owner.id;
   if (granted.has(key)) return false;
   const request = nativePermissionKey(owner, visible);
