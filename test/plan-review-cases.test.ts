@@ -23,23 +23,26 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(skeleton).toContain('For new or reopened decisions, explain tradeoffs');
     expect(skeleton).toContain('Ask separately about each independently selectable remedy still pending');
     expect(skeleton).not.toContain('For every issue or recommendation');
-    const scope = skeleton.slice(skeleton.indexOf('### Step 0: Scope Challenge'), skeleton.indexOf('**STOP.** Until the user resolves'));
+    const scope = skeleton.slice(skeleton.indexOf('### Step 0: Scope Challenge'), skeleton.indexOf('**STOP.** Before user/prior approval'));
     expect(scope).toContain('8+ files or 2+ new classes/services');
     expect(scope).toContain('STOP before section work');
-    expect(scope).toContain("Use the preamble's question flow in this order");
-    expect(scope).toContain('If the smaller design requires removing a feature, ask about that cut separately first');
-    expect(scope).toContain('Every option must include, drop or defer the same features, following earlier approvals');
-    expect(scope).toContain('Preserve established contracts in both designs');
-    expect(scope).toContain('Keep approved security, error-handling, test and performance fixes unchanged; unresolved fixes stay undecided');
-    expect(scope).toContain('That answer does not approve, drop or postpone any independent fix');
-    expect(scope).toContain('ask about each fix separately before making that change');
+    expect(scope).toContain('Follow preamble question rules');
+    expect(scope).toContain('ask about each needed feature cut separately first');
+    expect(scope).toContain('Compare smaller/original structures with identical include/drop/defer feature dispositions (approved or pending)');
+    expect(scope).toContain('Preserve contracts');
+    expect(scope).toContain('approved security/error/test/performance fixes; pending fixes stay pending');
+    expect(scope).toContain('its answer never approves/drops/defers another fix');
+    expect(scope).toContain('Ask each fix separately before changing it');
     expect(scope).not.toContain('proceed as-is');
     const inventory = sections.indexOf('**Decision gate (all sections and outside voice):**');
     expect(inventory).toBeGreaterThan(0);
     expect(inventory).toBeLessThan(sections.indexOf('### 1. Architecture review'));
     const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
     expect(boundary).toContain('Name the behavior policy, implementation choice or optional verification depth the answer will decide');
-    expect(boundary).toContain("List the problems that could be fixed independently. For each, record exactly what was approved and what is still undecided");
+    expect(boundary).toContain('Name one changed commitment per row: current value, proposed value, and other commitments fixed or pending');
+    expect(boundary).toContain('A problem heading is not the unit of approval');
+    expect(boundary).toContain('an exhausted-job destination, optional alerting and replay support are three choices');
+    expect(boundary).toContain('For each, record exactly what was approved and what is still undecided');
     expect(boundary).toContain('In every offered option, keep all other approved choices fixed and all unresolved choices undecided');
     expect(boundary).toContain('Keep a chosen behavior and the code, tests and docs needed to establish it together');
     expect(boundary).toContain('Score completeness only within this one decision');
@@ -112,10 +115,10 @@ describe('Eng approved-work decision gate', () => {
 });
 
 // These checks cover generated instructions, not native model compliance.
-describe('outside-voice pending-change queue', () => {
+describe('outside-voice commitment queue', () => {
   const skills = ['plan-ceo-review', 'plan-eng-review', 'plan-devex-review'];
   for (const host of ALL_HOST_CONFIGS) {
-    test(`${host.name}: maps changes before asking, answering and applying one row`, () => {
+    test(`${host.name}: separates changed commitments and preserves scope revision choices`, () => {
       for (const skillName of skills) {
         const tmplPath = `${skillName}/sections/review-sections.md.tmpl`;
         expect(readFileSync(tmplPath, 'utf8')).toContain('{{CODEX_PLAN_REVIEW}}');
@@ -130,9 +133,9 @@ describe('outside-voice pending-change queue', () => {
         expect(end).toBeGreaterThan(start);
         const queue = generated.slice(start, end);
         const stages = [
-          '**1. Map findings to pending changes.**',
-          '**2. Draft from one pending row.**',
-          "Use AskUserQuestion for that row's change.",
+          '**1. Queue one changed commitment per row.**',
+          '**2. Draft from one row.**',
+          'Use AskUserQuestion.',
           '**3. Obtain the answer.**',
           '**4. Apply the answered row.**',
           'then use a scoped Edit for those amendments before taking the next row.',
@@ -140,23 +143,28 @@ describe('outside-voice pending-change queue', () => {
         expect(stages.every(position => position >= 0)).toBe(true);
         expect(stages).toEqual([...stages].sort((a, b) => a - b));
         const text = queue.replace(/\s+/g, ' ');
-        expect(text).toContain('finding | issue/decision reference | current disposition + approval reference | proposed change');
-        expect(text).toContain('against existing working decisions or issue references; reuse their ledger where present');
-        expect(text).toContain('A reviewer bullet affecting separate issues produces separate rows');
-        expect(text).toContain('Exact confirmations and source-proven factual corrections update evidence without authorizing behavior changes');
-        expect(text).toContain('New proposed changes still queue when reviewers agree');
-        expect(text).toContain('Outside-voice proposal [issue/decision reference]: [proposed change]');
-        expect(text).toContain('Current disposition: [approved choice + reference, or unresolved]');
-        expect(text).not.toContain('The review chose [X]');
-        expect(text).not.toContain('Cross-model disagreement on [topic]');
-        expect(text).toContain("Hold every other row's approved value or pending disposition constant across options");
+        expect(text).toContain('reference | commitment | current value + approval reference | proposed value');
+        expect(text).toContain('its reference is not the unit of approval');
+        expect(text).toContain('an exhausted-job destination, an optional alert and a replay facility are separate commitments');
+        expect(text).toContain('Code, tests and docs establishing that same chosen behavior stay together');
+        expect(text).toContain('Hold every other commitment fixed or pending in EVERY option');
+        expect(text).toContain('If an option changes another commitment, split it first');
+        expect(text).toContain('Defer this proposed change only');
+        expect(text).toContain('does not defer its entire candidate or approve a new schedule gate');
+        expect(text).toContain('**Whole-candidate scope:** use A) Include; B) Defer; C) Cut; D) Hold');
+        expect(text).toContain('Revising two candidates takes two rows, never a swap package');
+        expect(text).toContain('Hold stops for discussion; it is not a final disposition');
+        expect(text).toContain('preserve prior answers and report any blocking conflict unresolved');
+        expect(text).toContain("validate the assembled set's capacity and dependencies");
+        expect(text).toContain("a conflict returns to a named candidate's Include/Defer/Cut/Hold row");
+        expect(text).toContain('Revalidate before confirming the set');
         expect(text).toContain('Record its answer reference and exact accepted scope');
         expect(text).toContain("one answer does not clear the finding's remaining changes");
-        expect(text).toContain('reopening requires concrete contradictory evidence or a changed assumption');
-        expect(text).toContain('Retain unresolved risks and verification');
+        expect(text).toContain('Reopening requires concrete contradictory evidence or a changed assumption');
+        expect(text).toContain('Retain unresolved risks and proof');
         expect(text).toContain('preserve its authorized auto-decision and User Challenge rules, audit trail and final gate');
         expect(text).toContain("User Challenges stay pending for /autoplan's final gate");
-        expect(queue.match(/^- [A-D]\)/gm)).toEqual(['- A)', '- B)', '- C)', '- D)']);
+        expect(text).not.toContain('Cross-model disagreement on [topic]');
       }
     });
   }

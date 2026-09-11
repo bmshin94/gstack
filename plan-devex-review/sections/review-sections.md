@@ -425,34 +425,38 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-**1. Map findings to pending changes.** Before drafting questions, queue independently
-selectable additions, changes, removals or deferrals against existing working decisions
-or issue references; reuse their ledger where present:
+**1. Queue one changed commitment per row.** Reuse the working ledger. An issue,
+candidate or reviewer bullet may contain several independently selectable changes;
+its reference is not the unit of approval:
 
-finding | issue/decision reference | current disposition + approval reference | proposed change | changed evidence/assumption | other rows unchanged or pending
+reference | commitment | current value + approval reference | proposed value | changed evidence/assumption | other commitments fixed or pending
 
-A reviewer bullet affecting separate issues produces separate rows. Exact confirmations
-and source-proven factual corrections update evidence without authorizing behavior
-changes. New proposed changes still queue when reviewers agree. Preserve unchanged
-contracts; reopening requires concrete contradictory evidence or a changed assumption.
-Retain unresolved risks and verification.
+For example, an exhausted-job destination, an optional alert and a replay facility
+are separate commitments. Once dead-lettering is approved, keep it fixed while
+deciding the alert or replay facility. Code, tests and docs establishing that same
+chosen behavior stay together. Exact confirmations and source-proven corrections
+update evidence without authorizing behavior changes. Reopening requires concrete
+contradictory evidence or a changed assumption. Retain unresolved risks and proof.
 
-**2. Draft from one pending row.** Cite its issue/decision reference. State the current
-disposition and outside proposal, describing any disagreement neutrally:
+**2. Draft from one row.** Cite the reference, current approved value (or unresolved
+status), proposed value and new evidence. Hold every other commitment fixed or
+pending in EVERY option. If an option changes another commitment, split it first.
+Use AskUserQuestion. Recommend + WHY; compare completeness only within this
+commitment's coverage.
 
-> "Outside-voice proposal [issue/decision reference]: [proposed change].
-> Current disposition: [approved choice + reference, or unresolved].
-> Outside evidence/recommendation: [Y]. [What changed; what context may be missing.]"
-
-Use AskUserQuestion for that row's change. Hold every other row's approved value or
-pending disposition constant across options. Keep tests establishing the same chosen
-behavior with it. Recommend + WHY; compare completeness only within this change's
-coverage, otherwise state that options differ in kind.
-
-- A) Apply this change
-- B) Keep this row's current disposition
-- C) Investigate this change before choosing
-- D) Defer this change to TODOS.md
+- **Policy or implementation:** A) Apply this change; B) Keep this commitment's
+  current value; C) Investigate before choosing; D) Defer this proposed change only.
+  Deferring a stack change, for example, does not defer its entire candidate or
+  approve a new schedule gate. Those require their own rows.
+- **Whole-candidate scope:** use A) Include; B) Defer; C) Cut; D) Hold, naming the
+  candidate and its current approved disposition. Revising two candidates takes
+  two rows, never a swap package. Hold stops for discussion; it is not a final
+  disposition; preserve prior answers and report any blocking conflict unresolved.
+  After individual answers, validate the assembled set's
+  capacity and dependencies. For these revisions, a conflict returns to a named
+  candidate's Include/Defer/Cut/Hold row; never silently trim or replace another
+  candidate. Revalidate before confirming the set. Scope actions differ in kind,
+  so omit completeness scores.
 
 **3. Obtain the answer.** Wait for the user; model agreement is evidence, not consent.
 In /autoplan, preserve its authorized auto-decision and User Challenge rules, audit

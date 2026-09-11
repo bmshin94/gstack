@@ -208,8 +208,12 @@ describe('outside-voice dispatch contract', () => {
     expect(fallback).toContain('cancellation is unconfirmed');
     expect(fallback).toContain('Skip Cross-model tension and Persist the result; continue directly to outputs.');
     expect(fallback).toContain('Do not record a clean review when no reviewer completed within the accepted wait.');
-    expect(rendered).toContain('Do NOT auto-incorporate outside voice recommendations into the plan.');
-    expect(rendered).toContain('MUST NOT apply the change without\nexplicit user approval.');
+    expect(rendered).toContain('Wait for the user; model agreement is evidence, not consent.');
+    expect(rendered).toContain('Record its answer reference and exact accepted scope');
+    const answer = rendered.indexOf('**3. Obtain the answer.**');
+    const apply = rendered.indexOf('**4. Apply the answered row.**');
+    expect(answer).toBeGreaterThan(0);
+    expect(apply).toBeGreaterThan(answer);
     expect(rendered).toContain(`-s read-only ${CODEX_MODEL_CONFIG_FLAG} -c 'model_reasoning_effort="high"'`);
   });
 

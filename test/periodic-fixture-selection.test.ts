@@ -48,6 +48,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/helpers/hermetic-env.test.ts', ['plan-ceo-split-overflow']],
     ['test/helpers/ceo-split-question-policy.ts', ['plan-ceo-split-overflow']],
     ['test/ceo-split-question-policy.test.ts', ['plan-ceo-split-overflow']],
+    ['docs/askuserquestion-split.md', ['plan-ceo-split-overflow', 'plan-decision-classification', 'plan-devex-peer-comparison-classification']],
+    ['test/resolver-ask-user-format.test.ts', ['plan-ceo-split-overflow']],
     ['test/skill-e2e-plan-ceo-paired-control.test.ts', ['plan-ceo-finding-count']],
     ['test/section-capture-native-tools.test.ts', ['ship-section-loading', 'plan-ceo-section-loading', 'office-hours-section-loading', 'carve-section-loading']],
     ['test/helpers/ceo-paired-fixture.ts', ['plan-ceo-finding-count']],

@@ -864,11 +864,11 @@ sections. Read a section in full before doing its step; do not work from memory.
 
 ## Step 0: Nuclear Scope Challenge + Mode Selection
 
-**Order:** Challenge the plan in 0A–0C, resolve approach choices in 0C-bis, then select the mode in 0F. Mode selection comes before 0D because it determines which analysis to run. Follow the route below the mode handoff.
+**Order:** Challenge 0A–0C → approve approaches in 0C-bis → select mode in 0F → follow its route below. Mode determines 0D's analysis.
 
-Keep a working decision ledger from input reading through Step 0 and outside voice: stated behavior and conventions, existing test coverage, and each decision's exact approved or pending scope. Reopen a declared contract or settled decision only when concrete evidence contradicts it or an assumption changes. Speculation or agreement between reviewers is insufficient; retain actual code risks.
+Ledger (input reading → Step 0 → outside voice): behavior/conventions, existing test coverage, exact approved/pending scopes. Reopen contracts/decisions only for concrete contradiction or changed assumptions, never speculation/reviewer agreement. Retain actual code risks.
 
-Keep limits in their stated units and preserve dependencies. Changing either through reuse or effort savings needs evidence and approval. A limit on deliverables still limits deliverables, even when they take less time to build.
+Preserve limits' units and dependencies. Changes through reuse or effort savings need evidence and approval; faster work never raises a deliverable cap.
 
 ### 0A. Premise Challenge
 1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
@@ -888,30 +888,26 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Alternatives (MANDATORY)
 
-Evaluate approaches before 0F. If applicable instructions or an accepted decision settle the approach, cite that authority and mark 0C-bis resolved without re-asking. Reopen it only for a concrete contradiction or changed assumptions.
+Before 0F, honor applicable instructions or an accepted approach decision: cite its authority and resolve 0C-bis without re-asking. Reopen only for concrete contradiction or changed assumptions.
 
-List the pending decisions, then work through one at a time:
+List pending decisions; resolve one at a time:
 
-1. **Define the choice.** Preserve accepted requirements and unchanged contracts. For every approach comparison, identify one decision first. Keep previously approved behavior, tests, and fixes in every option. Each option commits only to this decision; all other unapproved changes remain pending. For verification work, compare test method and depth for one contract at a time; putting tests in one suite does not combine those decisions.
-2. **Separate independent changes.** Ask about each pending fix separately. Combine changes only when they cannot be chosen independently; explain why and state their exact combined scope. Direct implementation and tests proving the same behavior belong together. Sharing a file or step does not make changes inseparable. Reuse approved decisions without asking again. Selecting an approach does not approve fixes outside its stated scope.
-3. **Compare approaches.** Offer 2-3 (prefer 3 for non-trivial plans; justify only one). Each A/B/C option needs a name, 1-2 sentence summary, effort S/M/L/XL, risk low/medium/high, 2-3 pros/cons, and reused code/patterns. For implementation, include "minimal viable" (fewest files/smallest diff) and "ideal architecture" (best long-term trajectory). Weigh alternatives equally; a rewrite may serve the user better than the smallest diff.
+1. **One changed commitment/value per decision**, not a broad issue/helper. Every option preserves accepted requirements, unchanged contracts and approved behavior/tests/fixes; other changes stay pending. Compare verification method/depth per contract, even within one suite.
+2. **Separate fixes.** Ask each pending fix separately; approach approval covers only stated scope. Combine only inseparable choices, explaining why and exact scope. Code/tests for one behavior stay together; shared files/steps do not suffice. Reusing a helper does not approve all its behavior changes. Reuse approvals.
+3. **Compare 2-3 approaches** (prefer 3 for non-trivial plans; justify only one). Each A/B/C: name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reused code/patterns. For implementation: "minimal viable" (fewest files/smallest diff) and "ideal architecture" (best long-term trajectory). Weigh equally; a rewrite may beat the smallest diff.
 
 **RECOMMENDATION:** [X] because [engineering preference].
 
-For new or reopened choices, use AskUserQuestion with the preamble's format and RECOMMENDATION. Use `Completeness: N/10` only when options differ in how much of this decision's scope they cover: 10 = all in-scope edge cases, 7 = happy path, 3 = shortcut. Otherwise write `Note: options differ in kind, not coverage — no completeness score.`
+For new/reopened choices, use AskUserQuestion, preamble format and RECOMMENDATION. Score `Completeness: N/10` only for differing coverage of this decision: 10 = all in-scope edge cases, 7 = happy path, 3 = shortcut. Otherwise: `Note: options differ in kind, not coverage — no completeness score.`
 
-**STOP:** Get user approval for each new or reopened choice before 0F, even with only one viable option. A recommendation is not approval. One issue per call. Review only; do NOT change code.
+**STOP:** Before 0F, get user approval for each new/reopened choice, even one viable option. A recommendation is not approval. One issue per call; review only, no code edits.
 
 ### 0F. Mode Selection
-Run after 0C-bis, before 0D. Keep the approved approach; add scope only with explicit user approval.
+After 0C-bis, before 0D. Keep the approved approach; add scope only with explicit user approval.
 
-Modes:
-1. **SCOPE EXPANSION:** Dream big. Propose ambitious improvements individually; the user opts into each.
-2. **SELECTIVE EXPANSION:** Keep baseline scope. Present each expansion neutrally for the user to cherry-pick.
-3. **HOLD SCOPE:** Maximum rigor: architecture, security, edge cases, observability, deployment. Make current scope bulletproof; surface no expansions.
-4. **SCOPE REDUCTION:** Propose a minimal version achieving the core goal, then review it.
+Use Philosophy's full mode definitions: **SCOPE EXPANSION**, **SELECTIVE EXPANSION**, **HOLD SCOPE**, **SCOPE REDUCTION**.
 
-Defaults guide the mode recommendation. The >15-file rule calls for a reduction suggestion; it does not authorize a scope cut. The >8-file check in 0D evaluates complexity within the selected mode.
+Defaults recommend modes; >15 files suggests reduction, never approves cuts. The >8-file check challenges complexity within the chosen mode.
 
 * Greenfield → SCOPE EXPANSION
 * Enhancement / iteration → SELECTIVE EXPANSION
@@ -920,19 +916,19 @@ Defaults guide the mode recommendation. The >15-file rule calls for a reduction 
 * "go big" / "ambitious" / "cathedral" → SCOPE EXPANSION, no question
 * "hold scope but tempt me" / "show me options" / "cherry-pick" → SELECTIVE EXPANSION, no question
 
-Retain explicit user choices and preamble session-kind precedence. When `QUESTION_TUNING: true`, check `plan-ceo-review-mode` via `gstack-question-preference --check` before mode selection/presentation. `AUTO_DECIDE` authorizes the recommended posture; `ASK_NORMALLY` requires a question. These are permissions, never posture names. Other interactive selections require a question. `CONDUCTOR_SESSION: true` controls transport only.
+Keep explicit user choices and preamble session-kind precedence. If `QUESTION_TUNING: true`, check `plan-ceo-review-mode` via `gstack-question-preference --check` before selection/presentation. `AUTO_DECIDE` permits the recommended posture; `ASK_NORMALLY` requires a question. These are permissions, not modes. Other interactive selections need a question; `CONDUCTOR_SESSION: true` controls transport only.
 
-Use the preamble's question format/transport: RECOMMENDATION and `Note: options differ in kind, not coverage — no completeness score.`
+Mode questions use preamble format/transport, RECOMMENDATION and the kind-difference note above.
 
-**Mode handoff before 0D:** Once preference/session or the mode answer selects a mode, say in normal chat before analysis, edits, tools or questions:
-- Mode from `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
-- User/session choice, including a mode-question answer: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
+**Mode handoff before 0D:** Announce the preference/session/user-selected mode in normal chat before analysis, edits, tools or questions:
+- `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
+- Other selections: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
 
-Use an exact mode name, then any rationale. **Send this in your own chat**, not tool/UI summaries, shell output or plan edits. Keep the mode and approved approach; ask before changing either.
+Announce the exact mode name (then rationale) in your chat, never tools/UI/shell/plan edits. Ask before changing mode or approved approach.
 
-Unresolved decisions: recommend + WHY, ask once per issue, never batch, and **STOP until answered**, including obvious fixes. Honor preference/session precedence. With none, say "No issues, moving on." Review only; no code changes.
+Unresolved, even obvious fixes: recommend + WHY, one question per issue, no batches; **STOP until answered**. Honor preference/session precedence. Otherwise: "No issues, moving on." Review only.
 
-After the handoff, follow the route for the selected mode:
+After handoff, follow this mode route:
 
 | Mode | Remaining Step 0 work |
 |------|----------------------|
@@ -940,7 +936,7 @@ After the handoff, follow the route for the selected mode:
 | HOLD SCOPE | 0D → 0E |
 | SCOPE REDUCTION | 0D |
 
-Then read Review Sections and complete all 11 sections, required outputs, and the terminal review report.
+Then read Review Sections; complete all 11 sections, required outputs and terminal review report.
 
 ### 0D-prelude. Expansion Framing (shared by EXPANSION and SELECTIVE EXPANSION)
 
@@ -978,7 +974,7 @@ Both are outcome-framed. Only one makes the user feel the cathedral. Lead with t
 1. Ruthless cut: What is the absolute minimum that ships value to a user? Everything else is deferred. No exceptions.
 2. What can be a follow-up PR? Separate "must ship together" from "nice to ship together."
 
-Resolve each proposed cut with the user, then go directly to Review Sections to review the agreed reduced scope.
+Resolve each proposed cut with the user; review the agreed reduced scope in Review Sections.
 
 ### 0D-POST. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
 
@@ -1031,12 +1027,9 @@ Repo: {owner/repo}
 
 Derive the feature slug from the reviewed plan; use a YYYY-MM-DD date.
 
-"Plan under review" must name the actual amended plan, including accepted changes.
-For a conversation-only plan, first save that complete plan to its own
-file, distinct from this CEO artifact (never a self-reference).
-Send both paths to the reviewer: this CEO scope summary cannot replace the full plan.
+"Plan under review" must name the actual amended plan, including accepted changes. Save complete conversation-only plans in a separate file first, never self-reference this CEO artifact. Send both paths; this scope summary cannot replace the full plan.
 
-The following Spec Review Loop belongs to 0D-POST and runs only for the two expansion modes. After it finishes (or is unavailable), continue to 0E:
+0D-POST's Spec Review Loop: expansion modes only; continue to 0E after completion/unavailability:
 
 ## Spec Review Loop
 
@@ -1108,7 +1101,7 @@ echo '{"skill":"plan-ceo-review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterat
 Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.
 
 ### 0E. Temporal Interrogation (EXPANSION, SELECTIVE EXPANSION, and HOLD modes)
-For a prioritization review, decide scope and resolve feasibility blockers now. Leave other design choices pending unless the user approves expanding the review into implementation design.
+Prioritization: settle scope/feasibility blockers; keep other design choices pending unless the user approves implementation-design review.
 ```
   HOUR 1 (foundations):     What does the implementer need to know?
   HOUR 2-3 (core logic):   What ambiguities will they hit?
@@ -1117,7 +1110,7 @@ For a prioritization review, decide scope and resolve feasibility blockers now. 
 ```
 These are human-team hours: with CC + gstack, 6 hours becomes ~30-60 minutes (10-20x faster), with identical decisions. Always present both effort scales.
 
-Surface decisions that must be settled now as separate questions for the user NOW, one issue per AskUserQuestion. Do not defer a critical risk to a later review section. An explicit Step 0 answer remains valid: carry its exact accepted choice and scope into the working review ledger. Do not ask again merely to move a decision into a review section; new material tradeoffs or changed assumptions still require their own approval.
+Ask urgent decisions separately, one issue per AskUserQuestion; never defer critical risks. Carry each Step 0 answer's exact choice/scope in the ledger across sections. Re-ask only for new material tradeoffs or changed assumptions; get approval before changing the choice.
 
 > **STOP.** Before running the 11-section deep review, required outputs, and review report (only after Step 0 scope and mode are agreed), Read `~/.claude/skills/gstack/plan-ceo-review/sections/review-sections.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.

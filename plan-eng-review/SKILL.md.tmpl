@@ -157,13 +157,13 @@ Before reviewing, answer:
    - How will users download or install it (GitHub Releases, package manager, container registry)?
    If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
 
-If complexity reaches 8+ files or 2+ new classes/services, STOP before section work. Use the preamble's question flow in this order:
+At 8+ files or 2+ new classes/services, STOP before section work. Follow preamble question rules:
 
-1. Name what's overbuilt. If the smaller design requires removing a feature, ask about that cut separately first.
-2. Compare a smaller component structure with the original structure. Every option must include, drop or defer the same features, following earlier approvals. Leave unresolved feature choices undecided. Preserve established contracts in both designs. Keep approved security, error-handling, test and performance fixes unchanged; unresolved fixes stay undecided.
-3. Ask the user to choose the component design. That answer does not approve, drop or postpone any independent fix; ask about each fix separately before making that change.
+1. Name overbuilding; ask about each needed feature cut separately first.
+2. Compare smaller/original structures with identical include/drop/defer feature dispositions (approved or pending). Preserve contracts and approved security/error/test/performance fixes; pending fixes stay pending.
+3. Ask which structure to use; its answer never approves/drops/defers another fix. Ask each fix separately before changing it.
 
-**STOP.** Until the user resolves this choice, an earlier approval covers it, or an authorized auto-decision resolves it, do not enter Section 1 or call ExitPlanMode. Keep Step 0 findings, revised approaches and proposed fixes out of all plan files until then, including new files and findings appendices. You may copy the user's original plan unchanged, without adding review content.
+**STOP.** Before user/prior approval or an authorized auto-decision: no Section 1, ExitPlanMode, or Step 0 findings/revised approaches/proposed fixes in any plan file (new files/appendices included). Only unchanged copies of the user's original plan, without review content, are allowed.
 
 If the complexity check does not trigger, present your Step 0 findings and enter Review Sections: run Prior Learnings and Confidence Calibration, then Section 1.
 

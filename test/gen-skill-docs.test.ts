@@ -1481,8 +1481,8 @@ further.`);
     }
     const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
     expect(template).toContain('## Plan under review\n{absolute path to the current amended plan}');
-    expect(template).toContain('first save that complete plan to its own\nfile');
-    expect(template).toContain('distinct from this CEO artifact (never a self-reference)');
+    expect(template).toContain('Save complete conversation-only plans in a separate file first');
+    expect(template).toContain('never self-reference this CEO artifact');
   });
 
   test('contains all 5 review dimensions', () => {
@@ -3957,7 +3957,7 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
   test('0C-bis authority and fresh-approval paths precede mode selection', () => {
     const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
     const approachIdx = content.indexOf('### 0C-bis.');
-    const presentIdx = content.indexOf('For new or reopened choices, use AskUserQuestion');
+    const presentIdx = content.indexOf('For new/reopened choices, use AskUserQuestion');
     const stopIdx = content.indexOf('**STOP:**', presentIdx);
     const modeIdx = content.indexOf('### 0F. Mode Selection');
     const preludeIdx = content.indexOf('### 0D-prelude');
@@ -3965,14 +3965,14 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions.every(position => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
-    expect(approach).toContain('Evaluate approaches before 0F');
-    expect(approach).toContain('applicable instructions or an accepted decision');
-    expect(approach).toContain('cite that authority and mark 0C-bis resolved without re-asking');
-    expect(approach).toContain('Reopen it only for a concrete contradiction or changed assumptions');
+    expect(approach).toContain('Before 0F, honor');
+    expect(approach).toContain('applicable instructions or an accepted approach decision');
+    expect(approach).toContain('cite its authority and resolve 0C-bis without re-asking');
+    expect(approach).toContain('Reopen only for concrete contradiction or changed assumptions');
     const gate = content.slice(stopIdx, modeIdx);
-    expect(gate).toContain('Get user approval for each new or reopened choice before 0F, even with only one viable option');
+    expect(gate).toContain('Before 0F, get user approval for each new/reopened choice, even one viable option');
     expect(gate).toContain('A recommendation is not approval');
-    expect(approach).toContain('Ask about each pending fix separately');
+    expect(approach).toContain('Ask each pending fix separately');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
   });
 });

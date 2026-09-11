@@ -111,7 +111,7 @@ higher confidence.
 **Decision gate (all sections and outside voice):** Before drafting options:
 
 1. **Record the evidence.** Keep every finding and its evidence. Correct factual descriptions when source evidence shows they are wrong, and disclose the correction. This does not authorize a behavior change.
-2. **Separate the choices.** List the problems that could be fixed independently. For each, record exactly what was approved and what is still undecided. Sharing a helper, a reviewer item or a cheap patch does not make separate policies one choice.
+2. **Separate the choices.** Name one changed commitment per row: current value, proposed value, and other commitments fixed or pending. A problem heading is not the unit of approval. For example, an exhausted-job destination, optional alerting and replay support are three choices; decide the destination while leaving alerts and replay pending. For each, record exactly what was approved and what is still undecided. Sharing a helper, a reviewer item or a cheap patch does not make separate policies one choice.
 3. **Use exact prior approvals.** Cite the actual selected option, its question/answer reference and the exact approved scope. For that approved behavior, add its required implementation work, tests and docs to the plan without asking again, even after the Tests section. A broad approach, recommendation or cross-model agreement is not approval. If the prior answer does not cover the proposed work, leave it undecided.
 4. **Ask about one new or reopened choice.** Name the behavior policy, implementation choice or optional verification depth the answer will decide. Ask separately about scope changes and concrete new risks that invalidate a prior choice. In every offered option, keep all other approved choices fixed and all unresolved choices undecided. Preserve established contracts; ask separately before changing one. Never make an option smaller by dropping settled behavior. Score completeness only within this one decision; a "full" option cannot approve several policies.
 
@@ -502,34 +502,38 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-**1. Map findings to pending changes.** Before drafting questions, queue independently
-selectable additions, changes, removals or deferrals against existing working decisions
-or issue references; reuse their ledger where present:
+**1. Queue one changed commitment per row.** Reuse the working ledger. An issue,
+candidate or reviewer bullet may contain several independently selectable changes;
+its reference is not the unit of approval:
 
-finding | issue/decision reference | current disposition + approval reference | proposed change | changed evidence/assumption | other rows unchanged or pending
+reference | commitment | current value + approval reference | proposed value | changed evidence/assumption | other commitments fixed or pending
 
-A reviewer bullet affecting separate issues produces separate rows. Exact confirmations
-and source-proven factual corrections update evidence without authorizing behavior
-changes. New proposed changes still queue when reviewers agree. Preserve unchanged
-contracts; reopening requires concrete contradictory evidence or a changed assumption.
-Retain unresolved risks and verification.
+For example, an exhausted-job destination, an optional alert and a replay facility
+are separate commitments. Once dead-lettering is approved, keep it fixed while
+deciding the alert or replay facility. Code, tests and docs establishing that same
+chosen behavior stay together. Exact confirmations and source-proven corrections
+update evidence without authorizing behavior changes. Reopening requires concrete
+contradictory evidence or a changed assumption. Retain unresolved risks and proof.
 
-**2. Draft from one pending row.** Cite its issue/decision reference. State the current
-disposition and outside proposal, describing any disagreement neutrally:
+**2. Draft from one row.** Cite the reference, current approved value (or unresolved
+status), proposed value and new evidence. Hold every other commitment fixed or
+pending in EVERY option. If an option changes another commitment, split it first.
+Use AskUserQuestion. Recommend + WHY; compare completeness only within this
+commitment's coverage.
 
-> "Outside-voice proposal [issue/decision reference]: [proposed change].
-> Current disposition: [approved choice + reference, or unresolved].
-> Outside evidence/recommendation: [Y]. [What changed; what context may be missing.]"
-
-Use AskUserQuestion for that row's change. Hold every other row's approved value or
-pending disposition constant across options. Keep tests establishing the same chosen
-behavior with it. Recommend + WHY; compare completeness only within this change's
-coverage, otherwise state that options differ in kind.
-
-- A) Apply this change
-- B) Keep this row's current disposition
-- C) Investigate this change before choosing
-- D) Defer this change to TODOS.md
+- **Policy or implementation:** A) Apply this change; B) Keep this commitment's
+  current value; C) Investigate before choosing; D) Defer this proposed change only.
+  Deferring a stack change, for example, does not defer its entire candidate or
+  approve a new schedule gate. Those require their own rows.
+- **Whole-candidate scope:** use A) Include; B) Defer; C) Cut; D) Hold, naming the
+  candidate and its current approved disposition. Revising two candidates takes
+  two rows, never a swap package. Hold stops for discussion; it is not a final
+  disposition; preserve prior answers and report any blocking conflict unresolved.
+  After individual answers, validate the assembled set's
+  capacity and dependencies. For these revisions, a conflict returns to a named
+  candidate's Include/Defer/Cut/Hold row; never silently trim or replace another
+  candidate. Revalidate before confirming the set. Scope actions differ in kind,
+  so omit completeness scores.
 
 **3. Obtain the answer.** Wait for the user; model agreement is evidence, not consent.
 In /autoplan, preserve its authorized auto-decision and User Challenge rules, audit
