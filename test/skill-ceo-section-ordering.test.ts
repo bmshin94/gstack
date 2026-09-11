@@ -43,10 +43,12 @@ describe('CEO review decision boundaries contract', () => {
   const apply = section.split('**Apply.**')[1]?.split('### Section 1:')[0] ?? '';
 
   test('architecture alternatives hold accepted requirements constant and separate independent remedies', () => {
-    expect(alternatives).toContain('same accepted requirements and declared unchanged contracts');
-    expect(alternatives).toContain('can vary without changing the architecture');
-    expect(alternatives).toContain('one issue per AskUserQuestion');
-    expect(alternatives).toContain('explain why they must be chosen together');
+    expect(alternatives).toContain('Preserve accepted requirements and unchanged contracts');
+    expect(alternatives).toContain('keep independent error, security, test and performance choices constant or pending in every approach');
+    expect(alternatives).toContain('Ask each pending remedy separately');
+    expect(alternatives).toContain('Combine only inseparable choices; explain the constraint and exact scope approved');
+    expect(alternatives).toContain('Approving an architecture approves no pending remedy');
+    expect(alternatives).toContain('Sharing a file or step is not coupling');
     expect(alternatives).toContain('"minimal viable"');
     expect(alternatives).toContain('"ideal architecture"');
     expect(alternatives).toContain('Do NOT proceed to mode selection (0F) without user approval');

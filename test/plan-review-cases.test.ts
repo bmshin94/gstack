@@ -18,6 +18,14 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(skeleton.slice(rule, rule + 350).replace(/\s+/g, ' ')).toContain('Keep implementation details and tests directly establishing one chosen contract together');
     expect((skeleton + sections).split(definition)).toHaveLength(2);
     expect(skeleton).toContain('Fewer components does not approve a pending remedy; ask about each separately before applying it.');
+    const inventory = sections.indexOf('**Before drafting options (every section and outside voice):**');
+    expect(inventory).toBeGreaterThan(0);
+    expect(inventory).toBeLessThan(sections.indexOf('### 1. Architecture review'));
+    const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
+    expect(boundary).toContain('behavioral policy, implementation choice, or verification-depth decision');
+    expect(boundary).toContain('keep their approved values fixed or leave them explicitly pending across all options');
+    expect(boundary).toContain('Keep code and tests establishing the same chosen behavior together');
+    expect(boundary).toContain('Only then score completeness within that decision');
     expect(sections).toContain('Outside voice findings are INFORMATIONAL until the user explicitly approves each one');
     expect(sections).toContain('Do NOT incorporate outside voice recommendations into the plan without presenting each');
   }
