@@ -68,14 +68,10 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 
 **Required execution checklist (CEO):**
 
-Step 0 (0A-0F) — run each sub-step and produce:
-- 0A: Premise challenge with specific premises named and evaluated
-- 0B: Existing code leverage map (sub-problems → existing code)
-- 0C: Dream state diagram (CURRENT → THIS PLAN → 12-MONTH IDEAL)
-- 0C-bis: Implementation alternatives table (2-3 approaches with effort/risk/pros/cons)
-- 0D: Mode-specific analysis with scope decisions logged
-- 0E: Temporal interrogation (HOUR 1 → HOUR 6+)
-- 0F: Mode selection confirmation
+Execute Step 0 in the order required by the loaded CEO skill, applying the overrides
+above. Follow its SELECTIVE EXPANSION route, including the CEO scope document and
+Spec Review Loop in 0D-POST before 0E and Review Sections. Preserve every Step 0
+analysis and output.
 
 Step 0.5 (Dual Voices): Run Claude subagent (foreground Agent tool) first, then
 Codex (Bash). Present Codex output under CODEX SAYS (CEO — strategy challenge)

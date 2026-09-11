@@ -20,6 +20,8 @@ An earlier uncertain outcome stays unknown even if the retry fails with a differ
 error. This means the charge is unconfirmed, never proof that no charge happened; the
 existing caller reconciles that key instead of starting a fresh payment. Decline,
 invalid-request and authentication errors are not retried.
+If the injected wait rejects, no second transport call starts: `PaymentFailure`
+preserves that wait error as its cause and the earlier unknown charge outcome.
 
 A receipt here is the returned scalar value (charge ID, amount in minor units,
 currency). No separate receipt builder, storage or email can fail after the
@@ -28,8 +30,10 @@ data, credentials, logging, webhooks or request admission; those remain in the
 unchanged calling application and transport. No API or SDK migration is proposed.
 
 Existing tests cover invalid input, nonretryable errors (including cause identity),
-and recovery after a first 502. Recovery checks retry ownership, a frozen request
+and recovery after a first 502 or timeout. Recovery checks retry ownership, a frozen request
 and receipt despite caller mutation, and that the second transport call cannot
-start until the injected 100 ms wait resolves. These are existing tested contracts.
+start until the injected 100 ms wait resolves. Mixed retryable-then-nonretryable
+failures preserve the unknown outcome and final cause. A rejecting wait is wrapped
+without another transport call. These are existing tested contracts.
 The function and these existing contracts are available for inspection; report
 any actual additional defect rather than assuming undocumented payment features.

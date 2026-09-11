@@ -108,14 +108,24 @@ confirms it IS a real issue, that is a calibration event. Your initial confidenc
 too low. Log the corrected pattern as a learning so future reviews catch it with
 higher confidence.
 
-**Decision gate (all sections and outside voice):** Before drafting options:
+**Decision gate (all sections and outside voice):** Repeat this process before each menu, including outside voice.
 
-1. **Record the evidence.** Keep every finding and its evidence. Correct factual descriptions when source evidence shows they are wrong, and disclose the correction. This does not authorize a behavior change.
-2. **Separate the choices.** Name one changed commitment per row: current value, proposed value, and other commitments fixed or pending. A problem heading is not the unit of approval. For example, an exhausted-job destination, optional alerting and replay support are three choices; decide the destination while leaving alerts and replay pending. For each, record exactly what was approved and what is still undecided. Sharing a helper, a reviewer item or a cheap patch does not make separate policies one choice.
-3. **Use exact prior approvals.** Cite the actual selected option, its question/answer reference and the exact approved scope. For that approved behavior, add its required implementation work, tests and docs to the plan without asking again, even after the Tests section. A broad approach, recommendation or cross-model agreement is not approval. If the prior answer does not cover the proposed work, leave it undecided.
-4. **Ask about one new or reopened choice.** Name the behavior policy, implementation choice or optional verification depth the answer will decide. Ask separately about scope changes and concrete new risks that invalidate a prior choice. In every offered option, keep all other approved choices fixed and all unresolved choices undecided. Preserve established contracts; ask separately before changing one. Never make an option smaller by dropping settled behavior. Score completeness only within this one decision; a "full" option cannot approve several policies.
+**1. Establish current contracts.** Keep every finding and its evidence. Enumerate the affected behaviors and bounds. Cite the actual selected option, its question/answer reference and the exact approved scope. Unknown values stay unknown. Correct factual descriptions when source evidence shows they are wrong, and disclose the correction. This does not authorize a behavior change.
 
-Keep a chosen behavior and the code, tests and docs needed to establish it together. For example, decide a retry helper's attempt limit, jitter and behavior after retries are exhausted separately. Crash tests proving that same chosen behavior belong with its implementation; unrelated tests or optional verification depth need their own choice. Never hide a risk or omit required proof.
+For that approved behavior, add its required implementation work, tests and docs to the plan without asking again, even after the Tests section. A broad approach, recommendation or cross-model agreement is not approval. If the prior answer does not cover the proposed work, leave it undecided.
+
+**2. Separate proposed changes.** Use the working ledger below. Record current and proposed values, including each bound's meaning and unit, and its verification method and depth. For each, record exactly what was approved and what is still undecided. A problem heading is not the unit of approval.
+
+| Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status |
+|-----|-------------------|--------------------------------|---------------------------------|-----------------------------|--------|
+
+Give each independently selectable value change its own row. Sharing a helper, a reviewer item or a cheap patch does not make separate policies one choice. Keep a chosen behavior and the code, tests and docs needed to establish it together. Tests proving that same chosen behavior belong with its implementation; unrelated tests or optional verification depth need their own choice. Never hide a risk or omit required proof.
+
+**3. Save the provisional ledger.** When edits are authorized, use Write or Edit to save these rows in the explicitly requested output plan, otherwise the reviewed plan, before drafting options or calling AskUserQuestion. Preserve existing content and approvals. Record proposed changes as pending; do not apply their remedies or prescribe them as accepted implementation or tests. If writing fails, report the error and stop before asking; an attempted write is not a saved ledger. If no plan file is in scope or the user requires read-only work, present the table instead. Follow the preamble's user, preference and session rules.
+
+**4. Compare options for one row.** Compare EVERY option against the recorded current values. If accepting it could change two independently selectable values, return to Step 2 and save or present the separate rows before asking. In every offered option, keep all other approved choices fixed and all unresolved choices undecided. Preserve established contracts; ask separately before changing one. Never make an option smaller by dropping settled behavior. Score completeness only within this one decision; a "full" option cannot approve several policies.
+
+**5. Ask and record the answer.** Each AskUserQuestion invocation contains exactly one question for one recorded row; never pack independent rows into its questions array. Name the behavior policy, implementation choice or optional verification depth the answer will decide. Ask separately about scope changes and concrete new risks that invalidate a prior choice. Wait for the answer, then record its exact accepted scope in the same ledger and apply only that scope. Outside voice uses its scoped Edit rule before the next row; decision logging does not replace the working plan. Preserve other rows' dispositions.
 
 ### 1. Architecture review
 Evaluate:
@@ -130,7 +140,7 @@ Evaluate:
 
 For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
-**STOP for each pending decision.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+**STOP for each pending decision.** Do NOT proceed to the next review section, apply the proposed fix to the plan, or call ExitPlanMode until the user responds. Provisional ledger notes are allowed; applying an unapproved remedy is not. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
 
 ### 2. Code quality review
 Evaluate:
@@ -143,7 +153,7 @@ Evaluate:
 
 For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
-**STOP for each pending decision.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+**STOP for each pending decision.** Do NOT proceed to the next review section, apply the proposed fix to the plan, or call ExitPlanMode until the user responds. Provisional ledger notes are allowed; applying an unapproved remedy is not. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
 
 ### 3. Test review
 
@@ -327,7 +337,7 @@ For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in C
 
 For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
-**STOP for each pending decision.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+**STOP for each pending decision.** Do NOT proceed to the next review section, apply the proposed fix to the plan, or call ExitPlanMode until the user responds. Provisional ledger notes are allowed; applying an unapproved remedy is not. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
 
 ### 4. Performance review
 Evaluate:
@@ -338,7 +348,7 @@ Evaluate:
 
 For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
-**STOP for each pending decision.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+**STOP for each pending decision.** Do NOT proceed to the next review section, apply the proposed fix to the plan, or call ExitPlanMode until the user responds. Provisional ledger notes are allowed; applying an unapproved remedy is not. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
 
 ## Outside Voice — Independent Plan Challenge (default-on)
 

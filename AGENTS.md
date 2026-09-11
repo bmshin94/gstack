@@ -125,6 +125,8 @@ When fixing failures or preparing `/ship`, follow this order:
 3. Diagnose before changing code. Distinguish a product defect, an invalid test
    expectation, a detector/fixture defect, and a launch/environment failure.
    Preserve the original failure. Do not call it pre-existing without evidence.
+   Verify pinned runtime tool schemas and defaults before treating omitted fields
+   as model noncompliance.
 4. Reproduce with the smallest relevant test. For agent tests, reuse captured
    public events in free regressions, including negative controls, before paying
    for another agent run. Check behavior and acknowledgments; match exact prose

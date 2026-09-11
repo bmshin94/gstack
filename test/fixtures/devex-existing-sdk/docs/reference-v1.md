@@ -116,11 +116,40 @@ Missing required case input: identify the case index and missing `inputs` or
 The application metric returned a non-number: change it to return a numeric
 score. The application still chooses its own acceptable score.
 
+The following E002 and E003 blocks are newly authored synthetic output contracts,
+not captured output from the absent SDK or its release checks. They make the
+existing code/cause/next-step/reference contract concrete without changing it.
+
+```text
+SDK_E002: case 0 metric returned a non-number
+Cause: MetricTypeError at cases[0].score (received str)
+Next: return a numeric score from the application's metric and retry.
+Reference: docs/reference-v1.md#sdk-e002
+```
+
 ### SDK E003
 
 A configured deadline or managed-provider cost limit was reached: inspect the
 reported bound and cause, then reduce the cases or explicitly change that bound.
 Unmanaged application requests have the separate limits described above.
+
+Deadline example:
+
+```text
+SDK_E003: evaluation deadline reached before case 2
+Cause: DeadlineExceeded at deadline_seconds=20
+Next: reduce the cases or explicitly choose a longer evaluation deadline.
+Reference: docs/reference-v1.md#sdk-e003
+```
+
+Managed-provider cost example:
+
+```text
+SDK_E003: managed-provider cost ceiling reached before case 2
+Cause: ManagedProviderCostLimit at max_cost_usd=0.25
+Next: reduce managed-provider work or explicitly choose a higher managed-provider limit.
+Reference: docs/reference-v1.md#sdk-e003
+```
 
 ## Upgrades
 

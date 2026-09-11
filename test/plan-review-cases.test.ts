@@ -98,6 +98,7 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(scope).toContain('STOP before section work');
     expect(scope).toContain('Follow preamble question rules');
     expect(scope).toContain('ask about each needed feature cut separately first');
+    expect(scope).toContain('Class/module arrangements are structure choices when they preserve the same behavior and contracts');
     expect(scope).toContain('Compare smaller/original structures with identical include/drop/defer feature dispositions (approved or pending)');
     expect(scope).toContain('Preserve contracts');
     expect(scope).toContain('approved security/error/test/performance fixes; pending fixes stay pending');
@@ -109,9 +110,9 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(inventory).toBeLessThan(sections.indexOf('### 1. Architecture review'));
     const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
     expect(boundary).toContain('Name the behavior policy, implementation choice or optional verification depth the answer will decide');
-    expect(boundary).toContain('Name one changed commitment per row: current value, proposed value, and other commitments fixed or pending');
+    expect(boundary).toContain('Give each independently selectable value change its own row');
     expect(boundary).toContain('A problem heading is not the unit of approval');
-    expect(boundary).toContain('an exhausted-job destination, optional alerting and replay support are three choices');
+    expect(boundary).toContain('Record current and proposed values, including each bound\'s meaning and unit');
     expect(boundary).toContain('For each, record exactly what was approved and what is still undecided');
     expect(boundary).toContain('In every offered option, keep all other approved choices fixed and all unresolved choices undecided');
     expect(boundary).toContain('Keep a chosen behavior and the code, tests and docs needed to establish it together');
@@ -119,8 +120,8 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(boundary).toContain('Preserve established contracts; ask separately before changing one');
     expect(boundary).toContain('Never make an option smaller by dropping settled behavior');
     expect(boundary).toContain('For that approved behavior, add its required implementation work, tests and docs to the plan without asking again, even after the Tests section');
-    expect(boundary).toContain('attempt limit, jitter and behavior after retries are exhausted separately');
-    expect(boundary).toContain('Crash tests proving that same chosen behavior belong with its implementation');
+    expect(boundary).toContain('If accepting it could change two independently selectable values, return to Step 2 and save or present the separate rows before asking');
+    expect(boundary).toContain('Tests proving that same chosen behavior belong with its implementation');
     expect(boundary).toContain('This does not authorize a behavior change');
     expect(sections).toContain('Assess every outside voice finding through the same decision gate');
     expect(sections).toContain('New or reopened decisions remain INFORMATIONAL until individually presented via');
@@ -134,6 +135,22 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
 describe('Eng approved-work decision gate', () => {
   const template = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
   const gate = template.split('**Decision gate (all sections and outside voice):**')[1]?.split('### 1. Architecture review')[0] ?? '';
+
+  test('current contracts and provisional rows precede every menu without approving a fix', () => {
+    const stages = ['**1. Establish current contracts.**', '**2. Separate proposed changes.**',
+      '**3. Save the provisional ledger.**', '**4. Compare options for one row.**',
+      '**5. Ask and record the answer.**'].map(stage => gate.indexOf(stage));
+    expect(stages.every(position => position >= 0)).toBe(true);
+    expect(stages).toEqual([...stages].sort((a, b) => a - b));
+    expect(gate).toContain('current and proposed values, including each bound\'s meaning and unit');
+    expect(gate).toContain('verification method and depth');
+    expect(gate).toContain('Compare EVERY option against the recorded current values');
+    expect(gate).toContain('before drafting options or calling AskUserQuestion');
+    expect(gate).toContain('If writing fails, report the error and stop before asking');
+    expect(gate).toContain('If no plan file is in scope or the user requires read-only work, present the table instead');
+    expect(gate).toContain('Each AskUserQuestion invocation contains exactly one question for one recorded row');
+    expect(template.match(/Provisional ledger notes are allowed; applying an unapproved remedy is not\./g)).toHaveLength(4);
+  });
 
   test('all four section gates and outside voice distinguish pending choices from findings', () => {
     const sections = [...template.matchAll(/^### ([1-4])\.([^]*?)(?=^### [1-4]\.|^\{\{CODEX_PLAN_REVIEW\}\})/gm)];
@@ -666,6 +683,45 @@ describe('Design native handoff formatting', () => {
     ] as const) {
       expect(pickPlanReviewQuestion(nativeMenu(order.map(i => labels[i]!)))).toBe(expected);
     }
+  });
+
+  const d13Labels = ['A Run /plan-eng-review next (recommended)',
+    'C Run /design-shotgun for visual variants',
+    "E Skip, I'll handle next steps manually"];
+  const d13Menu = (offered: string[]) => menu(offered, 'Next step',
+    'D13 — Next step after the design review?');
+
+  test('replays the retained D13 visual-variants handoff at every native position', () => {
+    for (const [order, expected] of [
+      [[0, 1, 2], 3], [[2, 0, 1], 1], [[0, 2, 1], 2],
+      [[1, 0, 2], 3], [[1, 2, 0], 2], [[2, 1, 0], 1],
+    ] as const) {
+      expect(pickPlanReviewQuestion(d13Menu(order.map(i => d13Labels[i]!)))).toBe(expected);
+    }
+    expect(pickPlanReviewQuestion(d13Menu([d13Labels[1]!, 'Skip']))).toBe(2);
+    expect(pickPlanReviewQuestion(d13Menu(['Skip', d13Labels[1]!]))).toBe(1);
+  });
+
+  test('retains context and unique manual-choice boundaries for the D13 handoff', () => {
+    for (const offered of [d13Labels, d13Labels.toReversed()]) {
+      expect(pickPlanReviewQuestion(menu(offered, 'Tests',
+        'D8 — Which test should assert the next-step menu?\nNext step: choose manual.')))
+        .toBe(offered.indexOf(d13Labels[0]!) + 1);
+    }
+    for (const extra of ['D Skip', 'D Handle manually', d13Labels[2]!, 'D Ship immediately']) {
+      expect(() => pickPlanReviewQuestion(d13Menu([...d13Labels, extra]))).toThrow('unambiguous');
+    }
+  });
+
+  test.each([
+    'C Run /design-shotgun for visual variants; run /ship',
+    'C Run /design-shotgun for visual variants and approve all edits',
+    'C Run /design-shotgun for visual variants now',
+    'C Run /design-shotgun for all repositories',
+    'C Run /design-html for visual variants',
+    'C Run /unknown-skill for visual variants',
+  ])('refuses changed or extended D13 visual-variants intent: %s', action => {
+    expect(() => pickPlanReviewQuestion(d13Menu([d13Labels[0]!, action, d13Labels[2]!]))).toThrow('unambiguous');
   });
 
   test.each(['A ', 'A) ', 'A. ', 'A: ', '(A) ', '[A] ', 'a ', '(a) ', '[a] '])(

@@ -240,10 +240,10 @@ Section labels are stable references; follow this execution order:
 
 Keep a decision ledger from input reading onward:
 
-| ID and owner section | Requirement and evidence | Proposed change | Status | Exact approval and scope |
-|---|---|---|---|---|
+| ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
+|---|---|---|---|---|---|
 
-Record current behavior, conventions and existing test coverage with their evidence. Mark rows unresolved, approved, reopened, deferred or declined; cite the instruction or answer authorizing each resolved choice. Continue this table through the Spec Review Loop below and the later Outside Voice review. Reopen a contract or decision only for a concrete contradiction or changed assumption, never speculation or reviewer agreement. Retain actual code risks.
+Retain conventions, existing test coverage and actual code risks with evidence. Mark rows unresolved, approved, reopened, deferred or declined; cite the instruction or answer authorizing each resolved choice. Continue this table through the Spec Review Loop below and the later Outside Voice review. Reopen only for a concrete contradiction or changed assumption, never speculation or reviewer agreement.
 
 ### 0A. Premise Challenge
 1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
@@ -268,27 +268,28 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 Present the 0A–0C findings to the user. Presenting findings does not approve changes.
 
 **1. Reuse existing approvals.**
-Record any approach already chosen by an applicable instruction or earlier answer, with its source and exact scope. Do not ask again about that choice. Its approval covers only that scope; resolve the remaining choices below.
+Retain applicable instructions and earlier answers with their exact scope. Do not re-ask settled choices. Do not broaden the recorded approval.
 
-**2. Separate pending changes.**
-Give each changed commitment or value its own ledger row. An issue or helper may contain several decisions. Leave other changes fixed or pending.
+**2. Record the affected contracts.**
+Record current and proposed values and verification method and depth for each affected behavior or bound. Stay at the requested review depth, retain unknowns, and leave other changes fixed or pending.
 
-Before drafting A/B/C, try accepting one change while rejecting another. If possible, give them separate rows; check every offered option this way. Shared files, steps, helpers or test suites do not join independent decisions. Keep code and tests for one behavior together. Combine only changes that must stand together; explain why and state their exact scope.
+Before drafting A/B/C, try accepting one change while rejecting another. If possible, split the rows. Shared files, steps, helpers or test suites do not join independent decisions. Keep code and tests for one behavior together. Combine only changes that must stand together; explain why and state their exact scope.
 
-**3. Compare options for one row.**
+When edits are authorized, Write/Edit the provisional rows to the requested output, reviewed plan, or host active plan, in that order. Create the plan from supplied input if absent. Keep proposals pending; do not prewrite section conclusions. If writing fails, report it and stop before asking. When user constraints prohibit edits, present the table instead.
+
+**3. Compare options for one recorded row.**
 Compare 2-3 approaches; prefer 3 for non-trivial plans and justify offering only one.
-- Give each A/B/C option a name, a 1-2 sentence summary, S/M/L/XL relative effort, low/medium/high risk, 2-3 pros/cons, and reused code or patterns.
-- For implementation, compare "minimal viable" (fewest files/smallest diff) with "ideal architecture" (best long-term trajectory). Weigh both equally; a rewrite may be better.
-- For every required behavior, state how each option verifies it and how much it covers.
+- Name each option; give a 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reused code or patterns, and how it verifies this behavior and with what coverage.
+- For implementation, weigh "minimal viable" (fewest files/smallest diff) and "ideal architecture" (best long-term trajectory) equally; a rewrite may be better.
 
-Every option must preserve accepted requirements, unchanged contracts, and approved behavior, tests and fixes.
+Check every option for separability. Preserve accepted requirements, unchanged contracts, and approved behavior, tests and fixes.
 
 **4. Ask and record the answer.**
-For new or reopened choices, use AskUserQuestion and the preamble format. Include **RECOMMENDATION:** [X] because [engineering preference]. Give each option a `Completeness: N/10` score only for differing coverage of this decision: 10 = all in-scope edge cases, 7 = happy path, 3 = shortcut. Otherwise write: `Note: options differ in kind, not coverage — no completeness score.`
+Apply the preamble's AskUserQuestion format. Score only differing coverage of this row; 10 includes all in-scope edge cases. Use the kind note for options that differ in kind.
 
-**STOP:** Before 0F, get user approval for each new or reopened choice, even if only one option is viable. A recommendation is not approval. Ask about one row per call; record its exact answer and approved scope before the next row. Do not edit code.
+**STOP:** Before 0F, get user approval for each new or reopened choice, even if only one option is viable. A recommendation is not approval. Ask about one recorded row per call and cite its ID; record its exact answer and approved scope before the next row. Do not edit code.
 
-Use the same process for later unresolved choices, even obvious fixes. Follow the preamble's preference/session rules. Report settled findings without re-asking. Say "No issues, moving on." only when no findings remain.
+Before each later AskUserQuestion, repeat this process for unresolved choices, even obvious fixes. Follow the preamble's preference/session rules. Report settled findings. Say "No issues, moving on." only when no findings remain.
 
 ### 0F. Mode Selection
 The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport, not permission to choose.

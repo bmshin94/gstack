@@ -564,20 +564,20 @@ API/CLI ergonomics > Everything else.
 Never skip Step 0, the persona interrogation, or the empathy narrative. These are
 the highest-leverage outputs.
 
-**One issue = one AskUserQuestion call.** This applies to every phase, including Step 0.
-Ask each independent substantive decision in its own call and wait for its answer;
-separate tabs in one call still bundle those decisions.
-Hold other decisions fixed or pending across options.
+### Decision gate
 
-Keep one working list from input reading through outside voice: evidence, declared
-contracts and constraints, existing coverage, exact approvals, and pending changes.
-Silence in a summary or unavailable source does not establish missing product behavior.
-Reopen only with concrete contradiction or changed assumptions; keep real risks and
-unknowns visible without inventing missing behavior.
+Keep one list for every phase, including Step 0 and outside voice:
+source/evidence | current value | proposed value | exact approval + scope | other values fixed/pending.
 
-Before drafting options, name one changed commitment or value in that list.
-For every option, try accepting one change while rejecting another; if viable, split them before asking.
-A code example and an optional checklist are separate choices, as are a timer and its release-gate policy.
+1. **Ground the evidence.** Distinguish observed output, docs and predictions.
+   Quote runtime text only from captured output or implementation. Retain unknowns and required verification.
+2. **Classify the finding.** Carry exact approvals and factual corrections forward.
+   New choices need approval; reopen only for concrete contradiction or changed assumptions.
+3. **Check the scope.** Honor actual guarantees. Risk is not proof a new policy is needed.
+   Obtain approval before crossing scope boundaries.
+4. **Draft and answer one decision.** One independent choice per AskUserQuestion call, never separate tabs.
+   Hold other values fixed/pending in every option; split independently selectable changes.
+   Wait for the answer; apply only its scope. If none remain, disclose findings and continue.
 
 ## PRE-REVIEW SYSTEM AUDIT (before Step 0)
 

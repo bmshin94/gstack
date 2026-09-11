@@ -35,6 +35,10 @@ export async function processPayment(payment: Payment, io: PaymentIO): Promise<R
       outcomeUnknown ||= retryable;
       if (!retryable || attempt === 1) throw new PaymentFailure(request.key, outcomeUnknown, error);
     }
-    await io.sleep(100);
+    try {
+      await io.sleep(100);
+    } catch (cause) {
+      throw new PaymentFailure(request.key, outcomeUnknown, cause);
+    }
   }
 }

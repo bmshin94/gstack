@@ -27,7 +27,7 @@ test.each(['declined', 'invalid', 'auth'] as const)('%s is never retried', async
   expect(calls).toBe(1);
 });
 
-test('recovery after one 502 preserves the request, delay and retry ownership', async () => {
+test.each(['502', 'timeout'] as const)('recovery after one %s preserves the request, delay and retry ownership', async code => {
   const input = { ...payment }; const requests: Readonly<Payment>[] = []; const waits: number[] = [];
   let releaseWait!: () => void;
   const waiting = new Promise<void>(resolve => { releaseWait = resolve; });
@@ -36,7 +36,7 @@ test('recovery after one 502 preserves the request, delay and retry ownership', 
   const result = processPayment(input, {
     chargeOnce: async request => {
       requests.push(request);
-      if (requests.length === 1) { input.key = 'changed'; input.amount = 9999; throw new ProviderError('502'); }
+      if (requests.length === 1) { input.key = 'changed'; input.amount = 9999; throw new ProviderError(code); }
       return { id: 'charge-42' };
     },
     sleep: async ms => { waits.push(ms); announceWait(); await waiting; },
@@ -50,5 +50,38 @@ test('recovery after one 502 preserves the request, delay and retry ownership', 
   expect(requests).toEqual([payment, payment]);
   expect(requests[0]).toBe(requests[1]);
   expect(Object.isFrozen(requests[0])).toBe(true);
+  expect(waits).toEqual([100]);
+});
+
+test.each([
+  ['502', 'declined'], ['502', 'invalid'], ['502', 'auth'],
+  ['timeout', 'declined'], ['timeout', 'invalid'], ['timeout', 'auth'],
+] as const)('uncertain %s followed by %s stays unknown', async (first, second) => {
+  const causes = [new ProviderError(first), new ProviderError(second)];
+  const requests: Readonly<Payment>[] = []; const waits: number[] = [];
+  const result = processPayment(payment, {
+    chargeOnce: async request => { requests.push(request); throw causes[requests.length - 1]; },
+    sleep: async ms => { waits.push(ms); },
+  });
+  const failure = await result.then(() => { throw new Error('expected rejection'); }, error => error);
+  expect(failure).toBeInstanceOf(PaymentFailure);
+  expect(failure).toMatchObject({ key: payment.key, outcomeUnknown: true });
+  expect(failure.cause).toBe(causes[1]);
+  expect(requests).toEqual([payment, payment]);
+  expect(requests[0]).toBe(requests[1]);
+  expect(waits).toEqual([100]);
+});
+
+test.each(['502', 'timeout'] as const)('rejected backoff after %s preserves the uncertain failure and stops retrying', async code => {
+  const cause = new Error('wait failed'); const waits: number[] = []; let calls = 0;
+  const result = processPayment(payment, {
+    chargeOnce: async () => { calls++; throw new ProviderError(code); },
+    sleep: async ms => { waits.push(ms); throw cause; },
+  });
+  const failure = await result.then(() => { throw new Error('expected rejection'); }, error => error);
+  expect(failure).toBeInstanceOf(PaymentFailure);
+  expect(failure).toMatchObject({ key: payment.key, outcomeUnknown: true });
+  expect(failure.cause).toBe(cause);
+  expect(calls).toBe(1);
   expect(waits).toEqual([100]);
 });

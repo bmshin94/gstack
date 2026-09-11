@@ -31,7 +31,7 @@ const planDesign5Findings = (planPath: string) => [
   '## Existing page and accepted boundaries',
   'This is an incremental redesign of the existing settings form. Preserve its',
   'documented behavior and layout in DESIGN.md; these contracts are unchanged.',
-  'The proposal below changes action emphasis, section rhythm, error treatment,',
+  'The proposal below changes action emphasis, section rhythm, error colors,',
   'form-label hierarchy, and the visual feedback during an in-flight Save.',
   'The chosen treatments remain open for review. Other changes need new evidence',
   'of a conflict with the existing page, rather than an omission from this proposal.',
@@ -62,6 +62,8 @@ const planDesign5Findings = (planPath: string) => [
 // contracts answer the unrelated questions observed in the native review;
 // none chooses a remedy for the five defects in the proposed change.
 // These are synthetic fixture contracts, not claims about production code.
+// Error presentation, helper type and pending-input behavior below are newly
+// authored baseline facts, not recovered facts or the native review's choices.
 const existingSettingsDesign = `# Existing settings page design
 
 ## Purpose and information architecture
@@ -81,10 +83,19 @@ the redesign chooses action emphasis, not a new disabled-state design.
 During an in-flight Save, duplicate submission is blocked; Reset and Export are
 disabled, Cancel remains available, fields keep their values, focus stays on Save,
 and cancellation does not discard the draft. These action states are unchanged.
+The existing inputs are read-only while Save is pending, without dimming or
+clearing their values; they become editable again when that pending state ends.
+The redesign preserves this existing interaction.
 The visual feedback during this delay is the unresolved part of the proposal.
 Success shows the existing saved-status line and announces it through the polite
 live region. Failure preserves every draft value and offers retry beside the
 error message. Partial saves are not supported: the API updates the form atomically.
+Field-validation messages already sit directly below their inputs as plain text,
+without a tinted container or an added error border. The save-failure message
+uses the existing tinted panel between the page introduction and the header
+actions, with retry in that panel. It appears after failure, persists through
+edits, and clears when the next Save attempt begins. These locations, surfaces
+and lifetimes stay fixed; the unresolved error colors do not redesign them.
 Cancel restores the saved values after a discard confirmation when the draft is
 dirty. Navigating away uses the same existing discard guard. Reset opens a dialog
 naming all three sections, then loads page-wide defaults into the draft; Save is
@@ -93,9 +104,12 @@ through the existing flow and reports download failures inline. No new keyboard
 shortcut, action behavior, or per-section reset is part of this redesign.
 
 ## Existing visual system
-The app uses its locally bundled Source Sans 3 face. Body and input text are 16px,
+The app uses its locally bundled Source Sans 3 face. Body, helper and input text are 16px,
 page headings 24px, and section headings 20px. Form-label tiers are under review;
 the current inconsistent 14px, 16px, and 18px usage remains a defect to resolve.
+Helper text is regular weight; field-validation text is 14px regular and the
+save-failure panel text is 16px regular. Those existing roles stay unchanged;
+the typography proposal concerns form labels only.
 The app's primary accent is #0F6E6E on white. Neutral text is #1F2937 on white,
 with a visible two-pixel focus outline and two-pixel offset on all Button variants,
 including filled buttons. The existing outline and offset are unchanged. Section gaps currently vary as described

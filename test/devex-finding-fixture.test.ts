@@ -20,18 +20,8 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       const audit = content.indexOf('## PRE-REVIEW SYSTEM AUDIT');
       expect(audit).toBeGreaterThan(0);
       const beforeAudit = content.slice(0, audit);
-      expect(beforeAudit).toContain('One issue = one AskUserQuestion call.');
-      expect(beforeAudit).toContain('including Step 0');
-      expect(beforeAudit).toContain('separate tabs in one call still bundle those decisions');
-      const workingList = beforeAudit.indexOf('Keep one working list from input reading through outside voice');
-      const draftOptions = beforeAudit.indexOf('Before drafting options, name one changed commitment or value in that list');
-      expect(workingList).toBeGreaterThan(0);
-      expect(draftOptions).toBeGreaterThan(workingList);
-      expect(beforeAudit).toContain('For every option, try accepting one change while rejecting another');
-      expect(beforeAudit).toContain('if viable, split them before asking');
-      expect(beforeAudit).toContain('A code example and an optional checklist are separate choices');
-      expect(beforeAudit).toContain('as are a timer and its release-gate policy');
-      expect(beforeAudit).toContain('Hold other decisions fixed or pending across options');
+      expect(beforeAudit).toContain('including Step 0 and outside voice');
+      expect(beforeAudit).toContain('One independent choice per AskUserQuestion call, never separate tabs');
       const mode = content.slice(content.indexOf('### 0E. Mode Selection'), content.indexOf('Context-dependent defaults:'));
       expect(mode).toContain('Use the mode the user explicitly requested for this review.');
       expect(mode).toContain('skip the mode question and continue to 0F. Otherwise, ask below.');
@@ -39,6 +29,20 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
         && item.host === artifact.host && item.relativePath.startsWith('plan-devex-review/'))
         .map(item => fs.readFileSync(path.join(outputRoot, item.relativePath), 'utf8')).join('\n');
       const allContent = content + '\n' + sectionText;
+      expect(allContent).toContain('if viable, split them before asking');
+      expect(allContent).toContain('A code example and an optional checklist are separate choices');
+      expect(allContent).toContain('as are a timer and its release-gate policy');
+      const gate = beforeAudit.indexOf('### Decision gate');
+      const ground = beforeAudit.indexOf('1. **Ground the evidence.**', gate);
+      const classify = beforeAudit.indexOf('2. **Classify the finding.**', gate);
+      const scope = beforeAudit.indexOf('3. **Check the scope.**', gate);
+      const options = beforeAudit.indexOf('4. **Draft and answer one decision.**', gate);
+      expect([gate, ground, classify, scope, options].every((offset, i, offsets) =>
+        offset >= 0 && (i === 0 || offset > offsets[i - 1]!))).toBe(true);
+      const localRule = allContent.slice(allContent.indexOf('## CRITICAL RULE — How to ask questions'),
+        allContent.indexOf('## Required Outputs', allContent.indexOf('## CRITICAL RULE — How to ask questions')));
+      expect(localRule).toContain('Run the Decision gate before drafting options.');
+      expect(localRule).not.toContain('use AskUserQuestion for each gap');
       expect(allContent).toContain('Record observed human onboarding separately from automated execution');
       expect(allContent).toContain('a warm snippet timer is neither a fresh-start check nor a human benchmark');
       expect(allContent).toContain('Keep estimates labeled until measured');
@@ -270,6 +274,31 @@ test('materialized DX references have working local links without inventing comp
   expect(reference).toContain('cannot interrupt arbitrary application code or cap requests made by a separate');
   expect(reference).toContain('those calls have not been executed against\nthe SDK here');
   expect(reference).toContain('Fixture checks execute the local application files and explicit\ncontract doubles');
+});
+
+test('materialized DX error examples identify their cause, bound and reachable code reference', () => {
+  const reference = fs.readFileSync(path.join(ROOT, 'test/fixtures/devex-existing-sdk/docs/reference-v1.md'), 'utf8');
+  const expected = [
+    { heading: '### SDK E002', count: 1, causes: ['MetricTypeError'], values: ['cases[0]'] },
+    { heading: '### SDK E003', count: 2, causes: ['DeadlineExceeded', 'ManagedProviderCostLimit'],
+      values: ['deadline_seconds=20', 'max_cost_usd=0.25'] },
+  ];
+  for (const spec of expected) {
+    const start = reference.indexOf(spec.heading);
+    const next = reference.indexOf('\n##', start + spec.heading.length);
+    const section = reference.slice(start, next < 0 ? undefined : next);
+    const blocks = [...section.matchAll(/```text\n([\s\S]*?)\n```/g)].map(match => match[1]!);
+    expect(blocks, spec.heading).toHaveLength(spec.count);
+    for (const [index, block] of blocks.entries()) {
+      const code = spec.heading.replace('### SDK ', 'SDK_');
+      expect(block.split('\n')[0]).toStartWith(code + ':');
+      expect(block).toContain('Cause: ' + spec.causes[index]);
+      expect(block).toContain(spec.values[index]!);
+      expect(block).toMatch(/^Next: .+/m);
+      const anchor = spec.heading.replace('### ', '').toLowerCase().replace(/ /g, '-');
+      expect(block).toContain('Reference: docs/reference-v1.md#' + anchor);
+    }
+  }
 });
 
 // Materialize the documented files in a temp directory. These controls test

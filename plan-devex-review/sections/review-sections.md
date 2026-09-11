@@ -8,12 +8,26 @@
 
 **Review continuity:** Evaluate all eight passes against the current plan and its
 declared baseline. Continue the same working list from Step 0, retaining unresolved
-gaps and required verification. For a later or outside proposal, compare its evidence with the prior decision and options already considered.
-A disclosed tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it;
-identify a concrete contradiction or changed assumption before reopening.
-Unverified loss of existing coverage remains a risk to verify, not proof that a new release policy is needed.
-If a necessary remedy crosses an explicit scope boundary, name that boundary and
-obtain scope approval before choosing or applying the remedy.
+gaps and required verification. Run the Decision gate before drafting options in
+any pass or responding to outside findings; a new pass does not reset approvals.
+
+- **Evidence:** A description of what a reporter includes does not establish its
+  exact words. Confirmation of an empathy narrative is not runtime observation.
+  Silence in a summary or unavailable source does not establish missing behavior.
+- **Prior approval:** For a later or outside proposal, compare its evidence with the prior decision and options already considered.
+  A disclosed tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it;
+  identify a concrete contradiction or changed assumption before reopening.
+  Exact approved follow-through and source-proven factual corrections need no new
+  approval; they do not authorize changed behavior or optional verification depth.
+  New independent remedies remain pending decisions, even when earlier work is approved.
+- **Scope:** Unverified loss of existing coverage remains a risk to verify,
+  not proof that a new release policy is needed. Establish what the existing
+  contract actually guarantees before claiming that a remedy or delay is required.
+  If a necessary remedy crosses an explicit scope boundary, name that boundary and
+  obtain scope approval before choosing or applying the remedy.
+- **Options:** Name one changed commitment or value. For every option, try accepting
+  one change while rejecting another; if viable, split them before asking.
+  A code example and an optional checklist are separate choices, as are a timer and its release-gate policy.
 
 In DX POLISH, improve the accepted journey using existing capabilities. A checklist
 or Hall of Fame example is a lens, not a requirement to add its features. Identify
@@ -492,7 +506,7 @@ in the context of who is using it and what they're competing against.
 Follow the AskUserQuestion format from the Preamble above. Additional rules for
 DX reviews:
 
-* **One issue = one AskUserQuestion call.** Never combine multiple issues.
+* **One new or reopened decision = one AskUserQuestion call.** Run the Decision gate before drafting options. Never combine independent decisions, including in separate question tabs.
 * **Ground every question in evidence.** Reference the persona, competitive benchmark,
   empathy narrative, or friction trace. Never ask a question in the abstract.
 * **Frame pain from the persona's perspective.** Not "developers would be frustrated"
@@ -502,10 +516,10 @@ DX reviews:
 * **Map to DX First Principles above.** One sentence connecting your recommendation
   to a specific principle (e.g., "This violates 'zero friction at T0' because
   [persona] needs 3 extra config steps before their first API call").
-* **Zero findings:** if a section has zero findings, state "No issues, moving on"
-  and proceed. Otherwise, use AskUserQuestion for each gap — a gap with an
-  "obvious fix" is still a gap and still needs user approval before any change
-  lands in the plan.
+* **No pending decisions:** report the section's findings, evidence and dispositions,
+  then proceed. If it has no findings, state "No issues, moving on." Otherwise,
+  ask only for new or justified reopened decisions identified by the Decision gate.
+  An unapproved remedy still needs approval even when its fix is obvious.
 * Assume the user hasn't looked at this window in 20 minutes. Re-ground every question.
 
 ## Required Outputs
