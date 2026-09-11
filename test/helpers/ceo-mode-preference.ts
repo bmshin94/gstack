@@ -119,7 +119,9 @@ function automaticModeEvidence(text: string): string | undefined {
       // Match original physical sentences, then require every character to
       // survive the quotation/code mask at the same position.
       let cursor = 0;
-      for (const sentence of lines[index].split(/(?<=[.!?])\s+/)) {
+      // Closing emphasis after punctuation belongs to the preceding sentence.
+      // Keep offsets in the original text for the quotation/code mask below.
+      for (const sentence of lines[index].split(/(?<=[.!?])(?:\*\*)?\s+/)) {
         const start = lines[index].indexOf(sentence, cursor); cursor = start + sentence.length;
         if (line.slice(start, cursor) !== sentence) continue;
         // Single quotes can also contain possessive apostrophes. A plausible

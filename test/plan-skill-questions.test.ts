@@ -461,6 +461,50 @@ const nativeBashDialog = (command: string, description: string) =>
   '─'.repeat(120) + '\n Bash command\n\n   ' + command + '\n   ' + description
   + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
 
+test('native Bash reason can contain a literal numeric-range token without supplying authority', () => {
+  const input = { command: 'printf ready', description: 'Print the owned marker' };
+  const tool = { id: 'numeric-reason', name: 'Bash', input };
+  // Exact native reason retained from CLI 2.1.263. Its embedded > is text,
+  // distinct from a new terminal prompt, quoted card or numbered option.
+  const reason = ' Contains zsh <N-M> numeric-range glob';
+  const frame = nativeBashDialog(input.command, input.description)
+    .replace('\n Do you want to proceed?', '\n' + reason + '\n\n Do you want to proceed?');
+  expect(isPermissionDialogVisible(frame)).toBe(true);
+  expect(nativePermissionKey(tool, frame)).toBe('Bash:' + input.command);
+  expect(() => nativePermissionKey(tool, frame.replace('   printf ready', '   printf other'))).toThrow('cannot be bound');
+  for (const changed of [' > Quoted permission', ' ❯ New prompt', '   1. Yes']) {
+    expect(isPermissionDialogVisible(frame.replace(reason, changed))).toBe(false);
+  }
+});
+
+test('native Bash card accepts a wrapped standing-permission label without granting it', () => {
+  // CLI 2.1.263 places a long prefix wholly below this label. The selected
+  // first option is still the one-time Yes, bound to the command above.
+  const input = { command: 'printf %s ready > probe.txt', description: 'Write the owned marker' };
+  write({ type: 'assistant', sessionId, cwd: config, message: { role: 'assistant', stop_reason: 'tool_use',
+    content: [{ type: 'tool_use', id: 'bash-wrapped', name: 'Bash', input }] } });
+  const visible = nativeBashDialog(input.command, input.description).replace('   2. No',
+    '   2. Yes, and don’t ask again for:\n      printf %s ready > probe.txt\n   3. No');
+  const native = readPlanSkillQuestions(config, sessionId);
+  expect(isPermissionDialogVisible(visible)).toBe(true);
+  expect(nativePermissionKey(native.permissionTools[0]!, visible)).toBe('Bash:' + input.command);
+  const granted = new Set<string>();
+  const requests = new Map<string, NativePermissionGrant>();
+  expect(reserveNativePermissionGrant(native, visible, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(native, visible, granted, requests)).toBe(false);
+  expect([...granted]).toEqual(['bash-wrapped']);
+  // An empty standing permission, missing cancellation, incorrect focus, and
+  // a command present only in the alternate option remain insufficient.
+  for (const changed of [
+    visible.replace('\n      printf %s ready > probe.txt', ''),
+    visible.replace('\n      printf %s ready > probe.txt', '\n     printf %s ready > probe.txt'),
+    visible.replace('   3. No\n', ''),
+    visible.replace(' ❯ 1. Yes', '   1. Yes').replace('   2. Yes', ' ❯ 2. Yes'),
+  ]) expect(isPermissionDialogVisible(changed)).toBe(false);
+  expect(() => nativePermissionKey(native.permissionTools[0]!,
+    visible.replace('   ' + input.command, '   false'))).toThrow('cannot be bound');
+});
+
 test('native Bash card binds the complete command and grants only its owned invocation', () => {
   const input = { command: 'printf %s ready > probe.txt', description: 'Write the owned marker' };
   write({ type: 'assistant', sessionId, cwd: config, message: { role: 'assistant', stop_reason: 'tool_use',
@@ -862,7 +906,7 @@ test('modern native Edit wording does not regrant an indistinguishable completed
 // The retained cfa50758 PermissionRequest appended GSTACK REVIEW REPORT by
 // replacing an existing final paragraph with that paragraph plus the report.
 // Reproduce that Edit shape with synthetic content and a launcher-owned hook.
-async function scopedEditSequence(variant = 'native') {
+async function scopedEditSequence(variant = 'native', unfinishedPrior = false) {
   const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
   const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PermissionRequest[0].hooks[0].command;
   const emit = (input: unknown) => {
@@ -889,8 +933,9 @@ async function scopedEditSequence(variant = 'native') {
   const read = () => readPlanSkillQuestions(config, sessionId, variant === 'no-observer' ? undefined : source);
   expect(reserveNativePermissionGrant(read(), dialog, granted, requests)).toBe(true);
   expect(reserveNativePermissionGrant(read(), dialog, granted, requests)).toBe(false);
-  const resultAtMs = firstEvent.capturedAtMs + (variant === 'before-result' ? 60_000 : 1);
-  const rows: unknown[] = [variant === 'unfinished-prior' ? nativeWrite('scoped-edit-1', firstInput, config, 'Edit', null) : first];
+  const resultAtMs = firstEvent.capturedAtMs + (variant === 'before-result' ? 60_000
+    : variant === 'prior-before-request' ? -1 : variant === 'prior-equal-request' ? 0 : 1);
+  const rows: unknown[] = [unfinishedPrior || variant === 'unfinished-prior' ? nativeWrite('scoped-edit-1', firstInput, config, 'Edit', null) : first];
   if (variant !== 'no-ack') rows.push(nativeWriteResult('scoped-edit-1', new Date(resultAtMs).toISOString(), variant === 'error'));
   if (variant !== 'early') rows.push(nativeWrite(variant === 'changed-id' ? 'scoped-edit-1' : 'scoped-edit-2', nextInput,
     variant === 'wrong-cwd' ? path.dirname(config) : config, 'Edit'));
@@ -908,7 +953,7 @@ async function scopedEditSequence(variant = 'native') {
   return { read, dialog, granted, requests, firstEvent, nextEvent, resultAtMs, nextInput };
 }
 
-test.each(['native', 'early', 'multiple-owner', 'parallel-read', 'parallel-tool-search'])('fresh scoped Edit can append the terminal report after a completed Edit (%s)', async variant => {
+test.each(['native', 'early', 'multiple-owner', 'parallel-read', 'parallel-tool-search', 'unfinished-prior'])('fresh scoped Edit can append the terminal report after a completed Edit (%s)', async variant => {
   const sequence = await scopedEditSequence(variant);
   const native = sequence.read();
   const prior = native.permissionRequests.find(item => item.requestId === sequence.firstEvent.requestId)!;
@@ -946,12 +991,32 @@ test.each(['no-file-owner', 'wrong-file', 'two-file-owners', 'no-observer'])
   expect([...sequence.requests]).toEqual(requestsBefore);
 });
 
-test.each(['no-ack', 'error', 'before-result', 'equal-result', 'unfinished-prior', 'same-input', 'changed-id', 'wrong-path', 'wrong-cwd', 'same-path-owner', 'no-observer'])
+test.each(['no-ack', 'error', 'before-result', 'equal-result', 'same-input', 'changed-id', 'wrong-path', 'wrong-cwd', 'same-path-owner', 'no-observer'])
 ('fresh scoped Edit preserves refusal for %s', async variant => {
   const sequence = await scopedEditSequence(variant);
   expect(() => reserveNativePermissionGrant(sequence.read(), sequence.dialog, sequence.granted, sequence.requests))
     .toThrow(/Repeated native permission|Indistinguishable|changed input|cannot be bound|Ambiguous native permission/);
   expect(sequence.granted.size).toBe(1);
+});
+
+test.each(['no-ack', 'error', 'prior-before-request', 'prior-equal-request', 'before-result', 'equal-result',
+  'same-input', 'changed-id', 'wrong-cwd', 'same-path-owner'])
+('unfinished Edit retirement preserves refusal for %s', async variant => {
+  const sequence = await scopedEditSequence(variant, true);
+  const granted = [...sequence.granted], requests = [...sequence.requests];
+  expect(() => reserveNativePermissionGrant(sequence.read(), sequence.dialog, sequence.granted, sequence.requests)).toThrow();
+  expect([...sequence.granted]).toEqual(granted);
+  expect([...sequence.requests]).toEqual(requests);
+});
+
+test('unfinished pending Edit has no native grant authority without an owned request', () => {
+  const input = { file_path: path.join(config, 'plan.md'), old_string: 'Draft', new_string: 'Approved' };
+  write(nativeWrite('unfinished-pending', input, config, 'Edit', null));
+  const native = readPlanSkillQuestions(config, sessionId);
+  const granted = new Set<string>(), requests = new Map<string, NativePermissionGrant>();
+  expect(native.permissionTools).toEqual([]);
+  expect(reserveNativePermissionGrant(native, createDialog('plan.md').replace('create', 'make this edit to'), granted, requests)).toBe(false);
+  expect(granted.size).toBe(0); expect(requests.size).toBe(0);
 });
 
 test.each(['same-path', 'mixed-operation', 'granted-shadow', 'no-observer', 'legacy-file', 'legacy-bash', 'malformed', 'unsupported', 'no-match'])
@@ -1918,4 +1983,39 @@ test('clipped Bash suffix only requests repaint and never supplies grant authori
     visible + '\n❯ A new prompt', '```\n' + visible]) expect(matchesClippedBashPermission(tool, changed, 240)).toBe(false);
   expect(matchesClippedBashPermission({ ...tool, bashPermissionRequestId: null }, visible, 240)).toBe(false);
   expect(matchesClippedBashPermission({ ...tool, name: 'Read' }, visible, 240)).toBe(false);
+});
+
+test('pinned Bash soft continuations elide one separator but preserve hard-line indentation', () => {
+  // Eg wraps each original physical line separately and elides exactly one
+  // leading ASCII space on a nonempty soft continuation. These expected rows
+  // are literal renderer output, not generated by the matcher under test.
+  const head = 'x'.repeat(112);
+  const detail = 'd'.repeat(112);
+  const input = { command: head + '  tail\n  hard-indent', description: detail + '  description-tail' };
+  const tool = { id: 'soft-boundary', name: 'Bash', input };
+  const frame = '─'.repeat(120) + '\n Bash command\n\n'
+    + '   │ ' + head + '\n   │  tail\n   │   hard-indent\n'
+    + '   │ ' + detail + '\n   │  description-tail'
+    + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+  expect(nativePermissionKey(tool, frame)).toBe('Bash:' + input.command);
+  for (const changed of [frame.replace('   │  tail', '   │ tail'),
+    frame.replace('   │   hard-indent', '   │  hard-indent'),
+    frame.replace('   │  description-tail', '   │ description-tail')]) {
+    expect(() => nativePermissionKey(tool, changed)).toThrow('cannot be bound');
+  }
+  expect(() => nativePermissionKey({ ...tool, input: { ...input, command: input.command.replace('\n  hard', '\n hard') } }, frame)).toThrow('cannot be bound');
+});
+
+test('pinned Bash header-only clipping requests a repaint while the full payload cannot grant', () => {
+  const input = { command: 'printf first\nprintf second', description: 'Write owned status' };
+  const tool = { id: 'header-clipped', name: 'Bash', cwd: '/owned', input };
+  const visible = '   │ printf first\n   │ printf second\n   Write owned status'
+    + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+  expect(matchesClippedBashPermission(tool, visible, 240)).toBe(true);
+  expect(() => nativePermissionKey(tool, visible)).toThrow('cannot be bound');
+  for (const changed of ['   │ printf foreign\n' + visible, visible.replace('printf first', 'printf other'),
+    visible.replace(' Esc to cancel · Tab to amend', ' Esc to cancel'), visible + '\n❯ New prompt']) {
+    expect(matchesClippedBashPermission(tool, changed, 240)).toBe(false);
+  }
+  expect(matchesClippedBashPermission({ ...tool, bashPermissionRequestId: null }, visible, 240)).toBe(false);
 });

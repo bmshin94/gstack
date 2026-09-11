@@ -402,6 +402,18 @@ test('a real standard annotation is accepted at sentence level', () => {
   const text = 'Auto-decided review mode → HOLD SCOPE (your preference). Change with /plan-tune.';
   expect(inspectCeoModePreference(transcript(assistant(text)), text).kind).toBe('auto_decided');
 });
+test.each(['**Step 0F, mode.** ', '**Step 0F, mode.**\n', 'Context. **Step 0F, mode.** '])
+('a rendered mode decision after bold sentence punctuation is recognized: %s', prefix => {
+  const annotation = 'Auto-decided review mode → HOLD SCOPE (your preference).';
+  const text = prefix + annotation + ' Change with /plan-tune.';
+  expect(inspectCeoModePreference(transcript(assistant(text)), text.replaceAll('**', '')))
+    .toEqual({ kind: 'auto_decided', evidence: annotation });
+  expect(inspectCeoModePreference(transcript(assistant(text)), 'Working...').kind).toBe('working');
+  for (const protectedText of ['Example annotation:\n' + text, '> ' + text,
+    '```text\n' + text + '\n```', '"' + text + '"']) {
+    expect(inspectCeoModePreference(transcript(assistant(protectedText)), protectedText).kind).toBe('working');
+  }
+});
 test('mode annotation punctuation and explicit question attribution preserve the decision meaning', () => {
   expect(inspectCeoModePreference(transcript(assistant(scopedAutomatic, 'tool_use')), scopedAutomatic).kind).toBe('auto_decided');
 });

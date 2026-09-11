@@ -1141,3 +1141,19 @@ test('owned clipped Bash repaint retries a decoder barrier race without consumin
   expect(result.observation.outcome).toBe('completion_summary');
   expect(result.closed).toBe(true);
 });
+
+test('owned clipped Bash repaint recovers a header-only loss with a soft continuation before one grant', async () => {
+  const result = await runFakeCounting('**DONE**', 'native-bash-repaint-header-only');
+  expect(result.error).toBeUndefined();
+  expect(result.longPermissionFrame.split('\n')).toHaveLength(40);
+  expect(result.longPermissionFrame).toStartWith('   │ ' + 'x'.repeat(232) + '\n   │ tail');
+  expect(result.longPermissionFrame).not.toContain(' Bash command');
+  expect(result.resizes).toEqual([[240, 120], [240, 40]]);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+  expect(result.permissionGrantIds).toHaveLength(1);
+  expect(result.permissionGrantIds).toEqual(result.permissionAckIds);
+  expect(result.prematureAnswers).toEqual([]);
+  expect(result.observation.outcome).toBe('completion_summary');
+  expect(result.terminalCloseCount).toBe(1);
+  expect(result.closed).toBe(true);
+});

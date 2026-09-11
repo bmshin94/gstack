@@ -266,7 +266,8 @@ Rules for this run:
 - Resolve installed-root paths for section and companion Markdown files under ${opts.planDir}, where this fixture's skill package is copied.
 - This skill's body has been carved into on-demand sections/. When the skill gives a STOP-Read directive (for example "Read \`.../sections/<file>\` and execute it in full"), you MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers. Do not work from memory.
 - Do NOT run git, gh, commit, push, or any other mutating command${opts.artifactCommands ? ' except the local artifact commands explicitly authorized below' : ''}.${opts.artifactCommands ? `\n- ${opts.artifactCommands}` : ''}
-- When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.`;
+- When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.
+- After completing the full workflow and writing the complete report, finish with only a brief acknowledgement naming the report path and verdict; do not repeat the report in your final response. This changes only final-response delivery, not required workflow steps or report content.`;
 
   const { runSkillTest } = await import('./session-runner');
   const result = await runSkillTest({

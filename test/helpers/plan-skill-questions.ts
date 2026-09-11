@@ -296,6 +296,12 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       addQuestion(block.id, block.input);
     }
   }
+  // A native result resolves its invocation even before stop_reason is flushed.
+  // Validate completed file inputs for request retirement only; unfinished
+  // pending inputs still cannot introduce a native grant owner.
+  for (const tool of unfinishedFileInputs) {
+    if (results.has(tool.id)) addPermission(tool);
+  }
   for (const call of calls.values()) {
     const completion = questionCompletions.get(call.id);
     if (completion) {
@@ -645,8 +651,9 @@ export function currentBashPermissionCard(visible: string): { columns: number; p
   const end = lines.findIndex((line, index) => index >= start && line === '');
   if (end < start + 2 || lines.slice(start, end).some(line => !line.startsWith('   '))) return null;
   const prompt = lines.findLastIndex(line => line === ' Do you want to proceed?');
-  // Optional native decision reasons sit outside the command/description box.
-  if (prompt <= end || lines.slice(end + 1, prompt).some(line => /[❯>]|^\s*\d+\./.test(line))) return null;
+  // Optional native reasons can contain literal shell tokens such as <N-M>.
+  // Reject prompt/quotation prefixes and option rows, not embedded punctuation.
+  if (prompt <= end || lines.slice(end + 1, prompt).some(line => /❯|^\s*(?:>|\d+\.)/.test(line))) return null;
   if (lines[prompt + 1] !== ' ❯ 1. Yes') return null;
   let number = 2;
   for (let index = prompt + 2; index < footer - 1; index++, number++) {
@@ -655,7 +662,11 @@ export function currentBashPermissionCard(visible: string): { columns: number; p
     if (option[2] === 'No') {
       return index === footer - 2 ? { columns, payload: lines.slice(start, end) } : null;
     }
-    if (!/^Yes, and don’t ask again for: \S/.test(option[2]!)
+    // The CLI puts a long standing-permission prefix entirely on continuation
+    // rows. Its label alone is incomplete; the selected Yes stays one-time.
+    const wrappedPrefix = option[2] === 'Yes, and don’t ask again for:'
+      && /^      \S/.test(lines[index + 1] ?? '');
+    if (!wrappedPrefix && !/^Yes, and don’t ask again for: \S/.test(option[2]!)
       && !/^Yes, and switch to auto mode(?: · .+)?$/.test(option[2]!)) return null;
     while (/^      \S/.test(lines[index + 1] ?? '')) index++;
   }
@@ -669,8 +680,11 @@ function nativeBashPayload(value: string, columns: number): string[] | null {
   if (value.length > 200_000 || /[^\x20-\x7e\n…]/.test(value) || typeof Bun.wrapAnsi !== 'function') return null;
   const gutter = value.includes('\n') || value.length > 80;
   const prefix = gutter ? '   │ ' : '   ';
-  return Bun.wrapAnsi(value, columns - (gutter ? 8 : 6), { hard: true, trim: false })
-    .split('\n').map(line => (prefix + line).replace(/ +$/, ''));
+  // Pinned Eg preserves hard-line indentation, but elides one separator on
+  // soft continuations. Each admitted row character has positive display width.
+  return value.split('\n').flatMap(line => Bun.wrapAnsi(line, columns - (gutter ? 8 : 6), { hard: true, trim: false })
+    .split('\n').map((row, index) => index > 0 && row.startsWith(' ') && row.length > 1 ? row.slice(1) : row))
+    .map(line => (prefix + line).replace(/ +$/, ''));
 }
 
 /** A clipped payload suffix can request one repaint, never grant permission.
@@ -688,7 +702,7 @@ export function matchesClippedBashPermission(tool: NativePermissionTool, visible
   while (lines.at(-1) === '') lines.pop();
   const end = lines.indexOf('');
   const payload = [...command, ...detail];
-  if (!lines[0]?.startsWith('   │ ') || end < 1 || end >= payload.length
+  if (!lines[0]?.startsWith('   │ ') || end < 1 || end > payload.length
     || !isDeepStrictEqual(lines.slice(0, end), payload.slice(-end))) return false;
   return currentBashPermissionCard(['─'.repeat(columns), ' Bash command', '', ...payload, ...lines.slice(end)].join('\n')) !== null;
 }
