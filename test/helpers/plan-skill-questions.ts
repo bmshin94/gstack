@@ -520,10 +520,84 @@ export function currentFilePermissionTarget(visible: string): { operation: 'crea
   return current ? { operation: current.operation, filePath: current.filePath } : null;
 }
 
+/** The last native card rule selects the active header; prior tool cards
+ * cannot authorize or veto the current one. A clipped top rule at row zero
+ * can identify Bash for refusal, but cannot make its card complete. */
+export function hasCurrentBashPermissionHeading(visible: string): boolean {
+  const lines = visible.split('\n');
+  const top = lines.findLastIndex(line => /^─{10,} *$/.test(line));
+  return /^ Bash command(?:[ (]|$)/.test(lines[top + 1] ?? '');
+}
+
+/** Pinned CLI 2.1.263 gs/$At/jAt controls. The current card must be complete:
+ * the first choice is a one-time Yes, and neither a history example nor a
+ * clipped command can supply authority. Payload identity is checked below. */
+export function currentBashPermissionCard(visible: string): { columns: number; payload: string[] } | null {
+  const lines = visible.split('\n').map(line => line.replace(/ +$/, ''));
+  while (lines.at(-1) === '') lines.pop();
+  const footer = lines.length - 1;
+  if (lines[footer] !== ' Esc to cancel · Tab to amend' || lines[footer - 1] !== '') return null;
+  const top = lines.findLastIndex(line => /^─{10,}$/.test(line));
+  if (top < 0 || !/^ Bash command(?: \(unsandboxed\))?$/.test(lines[top + 1] ?? '')) return null;
+  const columns = lines[top]!.length;
+  if (columns < 40 || lines.slice(top + 1).some(line => line.length > columns || /[\r\t\x00-\x1f]/.test(line))) return null;
+  let fence = '';
+  for (const line of lines.slice(0, top)) {
+    const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!marker) continue;
+    if (!fence) fence = marker[1]!;
+    else if (marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = '';
+  }
+  if (fence) return null;
+  let start = top + 2;
+  if (lines[start] === ' Tip: auto mode handles these prompts for you — choose "switch to auto mode" below') start++;
+  if (lines[start++] !== '') return null;
+  const end = lines.findIndex((line, index) => index >= start && line === '');
+  if (end < start + 2 || lines.slice(start, end).some(line => !line.startsWith('   '))) return null;
+  const prompt = lines.findLastIndex(line => line === ' Do you want to proceed?');
+  // Optional native decision reasons sit outside the command/description box.
+  if (prompt <= end || lines.slice(end + 1, prompt).some(line => /[❯>]|^\s*\d+\./.test(line))) return null;
+  if (lines[prompt + 1] !== ' ❯ 1. Yes') return null;
+  let number = 2;
+  for (let index = prompt + 2; index < footer - 1; index++, number++) {
+    const option = /^   ([2-4])\. (.+)$/.exec(lines[index]!);
+    if (!option || Number(option[1]) !== number) return null;
+    if (option[2] === 'No') {
+      return index === footer - 2 ? { columns, payload: lines.slice(start, end) } : null;
+    }
+    if (!/^Yes, and don’t ask again for: \S/.test(option[2]!)
+      && !/^Yes, and switch to auto mode(?: · .+)?$/.test(option[2]!)) return null;
+    while (/^      \S/.test(lines[index + 1] ?? '')) index++;
+  }
+  return null;
+}
+
+/** Match the renderer's projection, never whitespace-normalize the command.
+ * ASCII takes the pinned CLI's direct Bun.wrapAnsi path. Sanitized/control or
+ * complex Unicode payloads have no proven identical projection here. */
+function nativeBashPayload(value: string, columns: number): string[] | null {
+  if (value.length > 200_000 || /[^\x20-\x7e\n]/.test(value) || typeof Bun.wrapAnsi !== 'function') return null;
+  const gutter = value.includes('\n') || value.length > 80;
+  const prefix = gutter ? '   │ ' : '   ';
+  return Bun.wrapAnsi(value, columns - (gutter ? 8 : 6), { hard: true, trim: false })
+    .split('\n').map(line => (prefix + line).replace(/ +$/, ''));
+}
+
 export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermissionRequest, visible: string): string {
   const value = tool.name === 'Bash' ? tool.input.command
     : ['Read', 'Write', 'Edit'].includes(tool.name) ? tool.input.file_path : null;
   if (typeof value !== 'string' || !value.trim()) throw new Error('Unsupported native permission command or file path');
+  const bash = currentBashPermissionCard(visible);
+  // A damaged modern card must not fall through to the legacy sentence regex.
+  if (hasCurrentBashPermissionHeading(visible)) {
+    const description = tool.input.description === undefined || tool.input.description === '' ? 'Run shell command' : tool.input.description;
+    const commandRows = bash && tool.name === 'Bash' ? nativeBashPayload(value, bash.columns) : null;
+    const descriptionRows = bash && typeof description === 'string' && description.length <= 2_000 ? nativeBashPayload(description, bash.columns) : null;
+    if (!bash || !commandRows || !descriptionRows || !isDeepStrictEqual(bash.payload, [...commandRows, ...descriptionRows])) {
+      throw new Error('Visible permission cannot be bound to its pending native command or file path');
+    }
+    return 'Bash:' + value;
+  }
   const current = currentFilePermissionDetails(visible);
   if (current) {
     const expectedTool = current.operation === 'edit' ? 'Edit' : 'Write';

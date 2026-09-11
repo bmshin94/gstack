@@ -26,7 +26,7 @@ import { submitPlanSeed, PlanSeedTimeout } from './plan-seed-submission';
 import { isDeepStrictEqual } from 'node:util';
 import { retainAutoplanFailure } from './autoplan-phase-order';
 import { readPlanSkillCompletion } from './plan-skill-completion';
-import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
+import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, currentBashPermissionCard, hasCurrentBashPermissionHeading, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -344,6 +344,7 @@ export const TAIL_SCAN_BYTES = 1500;
  * remain unconditional.
  */
 export function isPermissionDialogVisible(visible: string): boolean {
+  if (hasCurrentBashPermissionHeading(visible)) return currentBashPermissionCard(visible) !== null;
   if (currentFilePermissionTarget(visible)) return true;
   // Standalone signatures — high specificity, never appear in skill questions.
   if (/requested\s+permissions?\s+to/i.test(visible)) return true;
@@ -2499,9 +2500,13 @@ export async function runPlanSkillCounting(opts: {
       // modal. Advance only its current hook-backed file controls; the grant
       // still requires the exact owner/path and cannot answer the queued AUQ.
       const currentFileRequest = pendingPermissionRequests.length === 1 && currentFilePermissionTarget(permissionVisible) !== null;
+      // A complete owned Bash invocation can likewise hold the current modal
+      // ahead of a queued AUQ. No file hook or second native tool may compete.
+      const currentBashRequest = pendingPermissionRequests.length === 0 && native.permissionTools.length === 1
+        && native.permissionTools[0]!.name === 'Bash' && currentBashPermissionCard(permissionVisible) !== null;
       // Consume the rendered window before writing, so old permission text
       // cannot send again. Other permissions retain the no-pending-AUQ rule.
-      if ((!call || currentFileRequest) && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
+      if ((!call || currentFileRequest || currentBashRequest) && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
         lastLoopStage = 'permission-grant';
         if (expired()) break;
         if (!reserveNativePermissionGrant(native, permissionVisible, grantedTools, grantedRequests)) continue;
@@ -2511,6 +2516,12 @@ export async function runPlanSkillCounting(opts: {
         continue;
       }
 
+      // A sent Bash grant is not its execution result. Even if the queued
+      // question paints first, require the matching native result before it.
+      if (native.permissionTools.some(tool => tool.name === 'Bash' && grantedTools.has(tool.id))) {
+        lastLoopStage = 'awaiting-permission-result';
+        continue;
+      }
       if (!call) { lastLoopStage = 'no-pending-question'; continue; }
       let state = submitted.get(call.id);
       if (state?.answeredQuestions === call.questions.length) {

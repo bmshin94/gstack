@@ -683,6 +683,65 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.reviewCount).toBe(2);
     expect(result.observation.outcome).toBe('completion_summary');
   }, 15_000);
+  test('native Bash card sends one current grant and completes only after its exact native result', async () => {
+    const result = await runFakeCounting('**DONE**', 'native-bash-valid');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+    expect(result.permissionGrantIds).toEqual(['tool-1']);
+    expect(result.permissionAckIds).toEqual(['tool-1']);
+    expect(result.observation.outcome).toBe('completion_summary');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('native Bash card cannot complete from a sent grant without its native acknowledgment', async () => {
+    const result = await runFakeCounting('**DONE**', 'native-bash-no-ack');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+    expect(result.permissionGrantIds).toEqual(['tool-1']);
+    expect(result.permissionAckIds).toEqual([]);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['stale', 'history', 'clipped', 'wrong-focus', 'command-mismatch', 'ambiguous'])(
+    'native Bash card preserves refusal for %s', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-bash-${variant}`);
+      expect(result.sends).toEqual(['/plan-ceo-review\r']);
+      expect(result.permissionGrantIds).toEqual([]);
+      expect(result.permissionAckIds).toEqual([]);
+      expect(result.closed).toBe(true);
+      if (variant === 'ambiguous') expect(result.error).toContain('Ambiguous native permission owner');
+      else if (variant === 'command-mismatch' || variant === 'clipped') expect(result.error).toContain('cannot be bound');
+      else expect(result.observation.outcome).toBe('timeout');
+    }, 15_000);
+  test('queued AUQ follows its current singleton Bash grant and separate native acknowledgment', async () => {
+    const result = await runFakeCounting('**DONE**', 'native-bash-queued-question');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1']);
+    expect(result.permissionGrantIds).toEqual(['tool-1']);
+    expect(result.permissionAckIds).toEqual(['tool-1']);
+    expect(result.bashQuestionAckIds).toEqual(['tool-2']);
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1 });
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('queued AUQ cannot advance from a Bash grant before its native result', async () => {
+    const result = await runFakeCounting('**DONE**', 'native-bash-queued-no-ack');
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+    expect(result.permissionGrantIds).toEqual(['tool-1']);
+    expect(result.permissionAckIds).toEqual([]);
+    expect(result.bashQuestionAckIds).toEqual([]);
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['file', 'ambiguous', 'unknown', 'malformed', 'mismatch', 'stale'])(
+    'queued AUQ cannot authorize a Bash card with %s ownership evidence', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-bash-queued-${variant}`);
+      expect(result.sends).toEqual(['/plan-ceo-review\r']);
+      expect(result.permissionGrantIds).toEqual([]);
+      expect(result.permissionAckIds).toEqual([]);
+      expect(result.bashQuestionAckIds).toEqual([]);
+      expect(result.closed).toBe(true);
+      if (variant === 'mismatch') expect(result.error).toContain('cannot be bound');
+      else if (variant === 'malformed') expect(result.error).toContain('Unsupported native permission');
+      else expect(result.observation.outcome).toBe('timeout');
+    }, 15_000);
   test('a stale grant cannot become permission for a new sole pending owner', async () => {
     const result = await runFakeCounting('**DONE**', 'permission-owner-change');
     expect(result.error).toContain('cannot be bound');

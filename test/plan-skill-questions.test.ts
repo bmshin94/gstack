@@ -345,6 +345,86 @@ test('permission binding rejects command prefixes and matching paths in another 
   expect(() => nativePermissionKey({ id: 'read', name: 'Read', input: { file_path: '/project/README.md' } }, 'Bash command cat /project/README.md requires permission')).toThrow('cannot be bound');
 });
 
+// Pinned CLI 2.1.263 $At/gs/jAt: the command and description are separate
+// rows, followed by the one-time Yes and optional standing permission rows.
+// Unlike the old fixture, the native card has no "requires permission" text.
+const nativeBashDialog = (command: string, description: string) =>
+  '─'.repeat(120) + '\n Bash command\n\n   ' + command + '\n   ' + description
+  + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+
+test('native Bash card binds the complete command and grants only its owned invocation', () => {
+  const input = { command: 'printf %s ready > probe.txt', description: 'Write the owned marker' };
+  write({ type: 'assistant', sessionId, cwd: config, message: { role: 'assistant', stop_reason: 'tool_use',
+    content: [{ type: 'tool_use', id: 'bash-current', name: 'Bash', input }] } });
+  const visible = nativeBashDialog(input.command, input.description);
+  const native = readPlanSkillQuestions(config, sessionId);
+  expect(isPermissionDialogVisible(visible)).toBe(true);
+  expect(nativePermissionKey(native.permissionTools[0]!, visible)).toBe('Bash:' + input.command);
+  const granted = new Set<string>();
+  const requests = new Map<string, NativePermissionGrant>();
+  expect(reserveNativePermissionGrant(native, visible, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(native, visible, granted, requests)).toBe(false);
+  expect([...granted]).toEqual(['bash-current']);
+});
+
+// Exact ordinary 120x40 frame and owned Bash input from the parent-owned
+// no-grant CLI2.1.263 probe. Default-mode rendering proves geometry only.
+const retainedNativeBashFrame = "\n\n● Writing four lines of synthetic fixture text to synthetic-output.txt\n  ⎿  $ printf '%s\\n' '0-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-fr\n     ame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-s\n     ynthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthet…\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n Bash command\n Tip: auto mode handles these prompts for you — choose \"switch to auto mode\" below\n\n   │ printf '%s\\n' '0-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-f\n   │ rame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-da\n   │ ta-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synt\n   │ hetic-frame-data-synthetic-frame-data-synthetic-frame-data-' >\n   │ '/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace/synthetic-output.txt'\n   │ printf '%s\\n' '1-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-f\n   │ rame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-da\n   │ ta-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synt\n   │ hetic-frame-data-synthetic-frame-data-synthetic-frame-data-' >>\n   │ '/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace/synthetic-output.txt'\n   │ printf '%s\\n' '2-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-f\n   │ rame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-da\n   │ ta-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synt\n   │ hetic-frame-data-synthetic-frame-data-synthetic-frame-data-' >>\n   │ '/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace/synthetic-output.txt'\n   │ printf '%s\\n' '3-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-f\n   │ rame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-da\n   │ ta-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synt\n   │ hetic-frame-data-synthetic-frame-data-synthetic-frame-data-' >>\n   │ '/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace/synthetic-output.txt'\n   Write four lines of synthetic fixture text to synthetic-output.txt\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. Yes, and don’t ask again for: printf *                                                          \n   3. Yes, and switch to auto mode · auto mode handles these prompts for you\n   4. No\n\n Esc to cancel · Tab to amend";
+const retainedNativeBashTool = {"id": "toolu_01Gh2jM599F7fYNNV7TKf82Q", "name": "Bash", "input": {"command": "printf '%s\\n' '0-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-' > '/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace/synthetic-output.txt'\nprintf '%s\\n' '1-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-' >> '/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace/synthetic-output.txt'\nprintf '%s\\n' '2-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-' >> '/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace/synthetic-output.txt'\nprintf '%s\\n' '3-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-synthetic-frame-data-' >> '/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace/synthetic-output.txt'", "description": "Write four lines of synthetic fixture text to synthetic-output.txt"}, "cwd": "/tmp/gstack-bash-render-probe-v3-11jt8g7b/workspace"};
+
+test('retained native Bash soft-wrap projection binds all four logical command lines', () => {
+  expect(isPermissionDialogVisible(retainedNativeBashFrame)).toBe(true);
+  expect(nativePermissionKey(retainedNativeBashTool, retainedNativeBashFrame)).toBe('Bash:' + retainedNativeBashTool.input.command);
+  const different = { ...retainedNativeBashTool, input: { ...retainedNativeBashTool.input,
+    command: retainedNativeBashTool.input.command.replace('\n', ' ') } };
+  expect(() => nativePermissionKey(different, retainedNativeBashFrame)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey(retainedNativeBashTool,
+    retainedNativeBashFrame.replace('   │ printf', '   │ rm -rf'))).toThrow('cannot be bound');
+  expect(() => nativePermissionKey(retainedNativeBashTool,
+    retainedNativeBashFrame.replace('   │ rame-data-', '   │ rame-…data-'))).toThrow('cannot be bound');
+});
+
+test('native Bash command bytes and description remain separate authority', () => {
+  const tool = { id: 'bash', name: 'Bash', input: { command: 'printf "a  b"', description: 'Write two spaces' } };
+  const frame = nativeBashDialog(tool.input.command, tool.input.description);
+  expect(nativePermissionKey(tool, frame)).toBe('Bash:printf "a  b"');
+  expect(() => nativePermissionKey({ ...tool, input: { ...tool.input, command: 'printf "a b"' } }, frame)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey(tool, nativeBashDialog('false', tool.input.command))).toThrow('cannot be bound');
+  expect(() => nativePermissionKey(tool, nativeBashDialog('false', 'Bash command printf "a  b" requires permission'))).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...tool, input: { command: 'printf\t"a  b"', description: tool.input.description } }, frame)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...tool, input: { command: 'printf café', description: 'Print text' } }, nativeBashDialog('printf café', 'Print text'))).toThrow('cannot be bound');
+  expect(nativePermissionKey({ id: 'bash', name: 'Bash', input: { command: 'true' } }, nativeBashDialog('true', 'Run shell command'))).toBe('Bash:true');
+});
+
+test('native Bash command and description have independent gutters at the actual card width', () => {
+  const command = 'printf "' + 'x'.repeat(110) + '"';
+  const description = 'd'.repeat(81);
+  const frame = nativeBashDialog(command, description).replace('─'.repeat(120), '─'.repeat(240))
+    .replace('   ' + command, '   │ ' + command).replace('   ' + description, '   │ ' + description);
+  const tool = { id: 'wide', name: 'Bash', input: { command, description } };
+  expect(isPermissionDialogVisible(frame)).toBe(true);
+  expect(nativePermissionKey(tool, frame)).toBe('Bash:' + command);
+  expect(() => nativePermissionKey(tool, frame.replace('─'.repeat(240), '─'.repeat(120)))).toThrow('cannot be bound');
+  expect(() => nativePermissionKey(tool, frame.replace('   │ ' + description, '   ' + description))).toThrow('cannot be bound');
+  const multiline = { id: 'description-lines', name: 'Bash', input: { command: 'true', description: 'First line\nSecond line' } };
+  const multilineFrame = nativeBashDialog('true', 'First line').replace('   First line', '   │ First line\n   │ Second line');
+  expect(nativePermissionKey(multiline, multilineFrame)).toBe('Bash:true');
+});
+
+test.each([
+  ['quoted', (frame: string) => '```\n' + frame],
+  ['history', (frame: string) => frame + '\n❯ current typed draft'],
+  ['missing top rule', (frame: string) => frame.slice(frame.indexOf('\n') + 1)],
+  ['repeated title', (frame: string) => frame.replace(' Bash command\n', ' Bash command\n Bash command\n')],
+  ['wrong focus', (frame: string) => frame.replace(' ❯ 1. Yes', '   1. Yes').replace('   2. No', ' ❯ 2. No')],
+  ['persistent first choice', (frame: string) => frame.replace(' ❯ 1. Yes', ' ❯ 1. Yes, and allow all commands')],
+  ['missing footer', (frame: string) => frame.slice(0, frame.lastIndexOf(' Esc to cancel'))],
+] as const)('native Bash card refuses %s without legacy fallback', (_name, change) => {
+  const frame = change(nativeBashDialog('true', 'Run shell command'));
+  expect(isPermissionDialogVisible(frame)).toBe(false);
+  expect(() => nativePermissionKey({ id: 'bash', name: 'Bash', input: { command: 'true' } }, frame)).toThrow('cannot be bound');
+});
+
 const createDialog = (target: string) => `Do you want to create ${target}?\n❯1.Yes\n2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend`;
 
 // Pinned Claude 2.1.263: Mo uses basename in its question, Se uses the
@@ -353,6 +433,28 @@ const nestedFileDialog = (operation: 'create' | 'edit' | 'overwrite', subtitle: 
   '─'.repeat(120) + '\n ' + ({ create: 'Create', edit: 'Edit', overwrite: 'Overwrite' }[operation]) + ' file\n ' + subtitle +
   '\n' + '╌'.repeat(120) + '\n  1 Plan content\n' + '╌'.repeat(120) + '\n ' +
   createDialog(basename).replace('create', operation === 'edit' ? 'make this edit to' : operation);
+
+test('old Bash history cannot block an independently bound current file card', () => {
+  const filePath = path.join(config, 'plan.md');
+  const frame = retainedNativeBashFrame + '\n' + nestedFileDialog('create', 'plan.md');
+  const owner = { id: 'file-after-bash', name: 'Write', cwd: config, input: { file_path: filePath } };
+  expect(isPermissionDialogVisible(frame)).toBe(true);
+  expect(currentFilePermissionTarget(frame)).toEqual({ operation: 'create', filePath: 'plan.md' });
+  expect(nativePermissionKey(owner, frame)).toBe('Write:' + filePath);
+  expect(() => nativePermissionKey(retainedNativeBashTool, frame)).toThrow('cannot be bound');
+});
+
+test('old file controls cannot authorize a malformed or differently focused current Bash card', () => {
+  const filePath = path.join(config, 'plan.md');
+  const fileOwner = { id: 'old-file', name: 'Write', cwd: config, input: { file_path: filePath } };
+  for (const bash of [nativeBashDialog('true', 'Run shell command').replace(' ❯ 1. Yes', '   1. Yes').replace('   2. No', ' ❯ 2. No'),
+    nativeBashDialog('true', 'Run shell command').replace('   2. No', '   2. N')]) {
+    const frame = nestedFileDialog('create', 'plan.md') + '\n' + bash;
+    expect(isPermissionDialogVisible(frame)).toBe(false);
+    expect(() => nativePermissionKey(fileOwner, frame)).toThrow('cannot be bound');
+    expect(() => nativePermissionKey({ id: 'current-bash', name: 'Bash', input: { command: 'true' } }, frame)).toThrow('cannot be bound');
+  }
+});
 
 // Exact option-2 wrapping from the owned Claude 2.1.263 fake-Write capture.
 // It advertises a directory grant; the driver still reserves only option 1.
