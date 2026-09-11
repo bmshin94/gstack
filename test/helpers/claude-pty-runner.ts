@@ -2425,6 +2425,11 @@ export async function runPlanSkillCounting(opts: {
       // after its matching successful result, including every tab in the call.
       for (const call of native.calls) {
         const state = submitted.get(call.id);
+        if (call.answerLabels && !state) throw new Error(`Native AskUserQuestion ${call.id} completed without a submitted response`);
+        if (call.answerLabels && !isDeepStrictEqual(call.answerLabels,
+          call.questions.map((q, i) => q.options[state!.selectedOptions[i]! - 1]?.label))) {
+          throw new Error(`Native AskUserQuestion ${call.id} completion differs from the submitted selections`);
+        }
         if (!state || state.counted || call.result === 'pending') continue;
         if (call.result === 'error') throw new Error(`Native AskUserQuestion ${call.id} returned an error`);
         if (state.answeredQuestions !== call.questions.length) throw new Error(`Native AskUserQuestion ${call.id} completed before all questions were answered`);

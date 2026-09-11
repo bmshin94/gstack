@@ -29,6 +29,115 @@ function earlyQuestions() {
   } };
 }
 
+function completedQuestionHook() {
+  write({ type: 'user', sessionId, message: { role: 'user', content: 'Review' } });
+  const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
+  const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PreToolUse[0].hooks[0].command;
+  const input = { questions: [structuredClone(question)] };
+  const response = { questions: input.questions, answers: { [question.question]: question.options[0]!.label } };
+  const emit = (event: string, id: string, toolInput: unknown, extra: Record<string, unknown> = {}) => {
+    const result = Bun.spawnSync(['bash', '-c', command], { timeout: 5000, stdin: Buffer.from(JSON.stringify({
+      hook_event_name: event, session_id: sessionId, transcript_path: file, cwd: config,
+      tool_name: 'AskUserQuestion', tool_use_id: id, tool_input: toolInput, ...extra,
+    })), stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode).toBe(0); expect(result.stdout.length).toBe(0); expect(result.stderr.length).toBe(0);
+  };
+  const pre = () => emit('PreToolUse', 'question-1', input);
+  const post = (output: unknown = response, extra: Record<string, unknown> = {}) =>
+    emit('PostToolUse', 'question-1', { ...input, answers: response.answers }, { tool_response: output, ...extra });
+  const read = () => readPlanSkillQuestions(config, sessionId, source);
+  return { source, input, response, emit, pre, post, read };
+}
+
+test('AUQ completion retires only the exact answered call during transcript persistence lag', () => {
+  const s = completedQuestionHook(); s.pre(); s.post();
+  const second = { ...question, question: 'D2 — Preserve the independent delivery policy?' };
+  s.emit('PreToolUse', 'question-2', { questions: [second] });
+  const result = s.read();
+  expect(result.calls.find(c => c.id === 'question-1')).toMatchObject({ result: 'answered', answerLabels: [question.options[0]!.label] });
+  expect(result.calls.filter(c => c.result === 'pending').map(c => c.id)).toEqual(['question-2']);
+  expect(result.permissionTools).toEqual([]); expect(result.permissionRequests).toEqual([]); expect(result.ready).toBe(false);
+  expect(fs.readFileSync(file, 'utf8')).not.toContain('question-1');
+  write(call('question-1'), { type: 'user', sessionId, toolUseResult: s.response,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'question-1',
+      content: `Your questions have been answered: "${question.question}"="${question.options[0]!.label}". You can now continue with these answers in mind.` }] } });
+  expect(s.read().calls.filter(c => c.id === 'question-1')).toHaveLength(1);
+  expect(s.read().calls.find(c => c.id === 'question-1')?.result).toBe('answered');
+});
+
+test.each(['question', 'header', 'option-label', 'option-description', 'metadata'] as const)
+('AUQ completion rejects changed execution input (%s)', field => {
+  const s = completedQuestionHook(); s.pre();
+  const changed: any = structuredClone(s.input);
+  if (field === 'metadata') changed.metadata = { source: 'different' };
+  else if (field === 'question' || field === 'header') changed.questions[0][field] += ' changed';
+  else changed.questions[0].options[0][field === 'option-label' ? 'label' : 'description'] += ' changed';
+  const answers = { [changed.questions[0].question]: changed.questions[0].options[0].label };
+  s.emit('PostToolUse', 'question-1', { ...changed, answers }, { tool_response: { questions: changed.questions, answers } });
+  expect(() => s.read()).toThrow('Native AskUserQuestion completion changed input');
+});
+
+test.each(['missing-answer', 'unoffered-answer', 'notes', 'freeform', 'follow-up', 'idle', 'wrong-result-question', 'failed'] as const)
+('AUQ completion cannot turn an incomplete, amended or cancelled response into an ACK (%s)', variant => {
+  const s = completedQuestionHook(); s.pre();
+  const output: any = structuredClone(s.response);
+  if (variant === 'missing-answer') output.answers = {};
+  if (variant === 'unoffered-answer') output.answers[question.question] = 'A different action';
+  if (variant === 'notes') output.annotations = { [question.question]: { notes: 'Do not proceed' } };
+  if (variant === 'freeform') output.response = 'Cancel this review';
+  if (variant === 'follow-up') output.followUp = true;
+  if (variant === 'idle') output.afkTimeoutMs = 1;
+  if (variant === 'wrong-result-question') output.questions[0].header = 'Different';
+  s.post(output, variant === 'failed' ? { hook_event_name: 'PostToolUseFailure', error: 'cancelled' } : {});
+  expect(() => s.read()).toThrow('Native question event capture failed');
+});
+
+test.each(['foreign', 'sidechain', 'orphan'] as const)('AUQ completion needs its owned invocation (%s)', variant => {
+  const s = completedQuestionHook();
+  if (variant !== 'orphan') s.pre();
+  s.post(s.response, variant === 'foreign' ? { session_id: '00000000-0000-4000-8000-000000000099' }
+    : variant === 'sidechain' ? { agent_id: 'other-agent' } : {});
+  expect(s.read().calls.some(c => c.result === 'answered')).toBe(false);
+});
+
+test.each(['error', 'answer', 'cancelled-text', 'cancelled-text-no-raw'] as const)('AUQ completion rejects contradictory later native results (%s)', variant => {
+  const s = completedQuestionHook(); s.pre(); s.post();
+  expect(s.read().calls[0]?.result).toBe('answered');
+  const raw = variant === 'answer' ? { ...s.response, answers: { [question.question]: question.options[1]!.label } } : s.response;
+  write(call('question-1'), { type: 'user', sessionId, ...(variant !== 'cancelled-text-no-raw' ? { toolUseResult: raw } : {}),
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'question-1', is_error: variant === 'error',
+      content: variant.startsWith('cancelled') ? 'The user did not answer the questions.'
+        : `Your questions have been answered: "${question.question}"="${question.options[0]!.label}". You can now continue with these answers in mind.` }] } });
+  expect(() => s.read()).toThrow('Native AskUserQuestion completion conflicts with its later result');
+});
+
+test('AUQ completion repeats retain one immutable event and coalesce exact text without raw metadata', () => {
+  const s = completedQuestionHook(); s.pre(); s.post();
+  const first = s.read();
+  s.post();
+  expect(s.read()).toEqual(first);
+  expect(fs.readdirSync(path.join(s.source.directory, 'events'))).toHaveLength(2);
+  write(call('question-1'), { type: 'user', sessionId, message: { role: 'user', content: [{ type: 'tool_result',
+    tool_use_id: 'question-1', content: `Your questions have been answered: "${question.question}"="${question.options[0]!.label}". You can now continue with these answers in mind.` }] } });
+  expect(s.read().calls).toEqual(first.calls);
+});
+
+test.each(['duplicate-label', 'duplicate-question', 'multi-select', 'array-answer', 'wrong-cwd', 'input-annotation', 'reserved-notes-sentinel'] as const)
+('AUQ completion refuses ambiguous or mismatched acknowledgment (%s)', variant => {
+  const s = completedQuestionHook();
+  const input: any = structuredClone(s.input);
+  if (variant === 'duplicate-label') input.questions[0].options[1].label = input.questions[0].options[0].label;
+  if (variant === 'duplicate-question') input.questions.push(structuredClone(input.questions[0]));
+  if (variant === 'multi-select') input.questions[0].multiSelect = true;
+  if (variant === 'reserved-notes-sentinel') input.questions[0].options[0].label = '(notes only)';
+  const answers = { [question.question]: variant === 'array-answer' ? [question.options[0]!.label] : input.questions[0].options[0].label };
+  s.emit('PreToolUse', 'question-1', input);
+  s.emit('PostToolUse', 'question-1', { ...input, answers,
+    ...(variant === 'input-annotation' ? { annotations: { [question.question]: { notes: 'Cancel' } } } : {}) },
+    { tool_response: { questions: input.questions, answers }, ...(variant === 'wrong-cwd' ? { cwd: path.dirname(config) } : {}) });
+  expect(() => s.read()).toThrow('Native question event capture failed');
+});
+
 function filePermissionRequest(input = { file_path: path.join(config, 'plan.md'), content: 'Final report' }) {
   const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
   const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PermissionRequest[0].hooks[0].command;

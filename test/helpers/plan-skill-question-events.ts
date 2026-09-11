@@ -36,6 +36,14 @@ export interface QuestionEventCall {
   input: Record<string, unknown>;
   cwd: string;
 }
+export interface QuestionCompletionEventCall {
+  id: string;
+  capturedAtMs: number;
+  toolName: 'AskUserQuestion';
+  input: Record<string, unknown>;
+  response: Record<string, unknown>;
+  cwd: string;
+}
 export interface ExitPlanModeEventCall {
   id: string;
   toolName: 'ExitPlanMode';
@@ -63,8 +71,10 @@ type EventRecord = Binding & {
   input: Record<string, unknown>;
 } & ({ hookEventName: 'PreToolUse'; toolName: 'AskUserQuestion' | 'ExitPlanMode'; id: string }
   | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit'; requestId: string; capturedAtMs: number }
-  | { hookEventName: 'PostToolUse'; toolName: 'Write' | 'Edit'; id: string; capturedAtMs: number; response: Record<string, unknown> });
-const eventId = (event: EventRecord): string => event.hookEventName === 'PermissionRequest' ? event.requestId : event.id;
+  | { hookEventName: 'PostToolUse'; toolName: 'Write' | 'Edit' | 'AskUserQuestion'; id: string; capturedAtMs: number; response: Record<string, unknown> });
+const eventId = (event: EventRecord): string => event.hookEventName === 'PermissionRequest' ? event.requestId
+  : event.hookEventName === 'PostToolUse' && event.toolName === 'AskUserQuestion'
+    ? `PostToolUse:AskUserQuestion:${event.id}` : event.id;
 
 // Native successful Write/Edit output schemas, not a tool-result text guess.
 // Preserve the whole response; the CLI can normalize edit text internally.
@@ -79,6 +89,43 @@ function fileResponse(tool: unknown, input: Record<string, unknown>, response: u
     && (input.replace_all === undefined || typeof input.replace_all === 'boolean')
     && typeof response.oldString === 'string' && typeof response.newString === 'string'
     && typeof response.userModified === 'boolean' && typeof response.replaceAll === 'boolean';
+}
+
+// Pinned CLI AUQ data, not rendered prose. Only complete offered single-choice
+// answers qualify: idle, follow-up, freeform and annotated changes do not.
+function questionResponse(input: Record<string, unknown>, response: unknown): response is Record<string, unknown> {
+  if (!object(response) || Object.keys(response).some(key => !['questions', 'answers', 'annotations'].includes(key))
+    || !Array.isArray(input.questions) || !Array.isArray(response.questions)
+    || canonical(input.questions) !== canonical(response.questions) || !object(response.answers)) return false;
+  const questions = input.questions;
+  if (questions.length < 1 || questions.length > 4 || questions.some(q => !object(q)
+    || typeof q.question !== 'string' || !q.question.trim() || typeof q.header !== 'string' || !q.header.trim()
+    || !(q.multiSelect === undefined || q.multiSelect === false) || q.kind !== undefined && q.kind !== 'choice'
+    || !Array.isArray(q.options) || q.options.length < 2 || q.options.length > 4
+    || q.options.some(o => !object(o) || typeof o.label !== 'string' || !o.label.trim() || typeof o.description !== 'string'))) return false;
+  const names = questions.map(q => q.question as string);
+  if (new Set(names).size !== names.length || Object.keys(response.answers).length !== names.length
+    || names.some(name => !Object.hasOwn(response.answers as object, name))) return false;
+  for (const q of questions) {
+    const options = q.options as Record<string, unknown>[];
+    if ((response.answers as Record<string, unknown>)[q.question as string] === '(notes only)'
+      || new Set(options.map(o => o.label)).size !== options.length
+      || !options.some(o => o.label === (response.answers as Record<string, unknown>)[q.question as string])) return false;
+  }
+  if (input.answers !== undefined && canonical(input.answers) !== canonical(response.answers)) return false;
+  if (input.annotations !== undefined && canonical(input.annotations) !== canonical(response.annotations)) return false;
+  if (input.response || input.afkTimeoutMs || input.followUp) return false;
+  if (response.annotations !== undefined) {
+    if (!object(response.annotations) || Object.keys(response.annotations).some(name => !names.includes(name))) return false;
+    for (const [name, annotation] of Object.entries(response.annotations)) {
+      const q = questions.find(q => q.question === name)!;
+      const option = (q.options as Record<string, unknown>[]).find(o => o.label === (response.answers as Record<string, unknown>)[name])!;
+      if (!object(annotation) || Object.keys(annotation).some(key => !['preview', 'notes'].includes(key))
+        || annotation.notes !== undefined && annotation.notes !== ''
+        || annotation.preview !== undefined && annotation.preview !== option.preview) return false;
+    }
+  }
+  return true;
 }
 
 function canonicalDirectory(directory: string): string {
@@ -167,7 +214,7 @@ export function setupQuestionEventSource(opts: {
     const settingsBytes = JSON.stringify({ hooks: {
       PreToolUse: [{ matcher: '^(AskUserQuestion|ExitPlanMode)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
       PermissionRequest: [{ matcher: '^(Write|Edit)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
-      PostToolUse: [{ matcher: '^(Write|Edit)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PostToolUse: [{ matcher: '^(Write|Edit|AskUserQuestion)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
     } }) + '\n';
     fs.writeFileSync(settingsPath, settingsBytes, { flag: 'wx', mode: 0o600 });
     const source = Object.freeze({ ...binding, directory,
@@ -197,8 +244,8 @@ function eventFromInput(value: unknown, binding: Binding): EventRecord | null {
   if (value.session_id !== binding.sessionId || Object.hasOwn(value, 'agent_id')) return null;
   if (value.cwd !== binding.cwd || !transcriptPathAllowed(value.transcript_path, binding)
     || !object(value.tool_input)) throw new Error('Native question hook ownership or input mismatch');
-  // Full tool-input validation belongs to the shared native reader, once for
-  // both transcript and event inputs. Nothing here grants permission or ACKs.
+  // Invocation validation belongs to the shared reader. Completion data below
+  // is schema-checked here, then matched to the exact invocation by that reader.
   if (value.hook_event_name === 'PreToolUse' && (value.tool_name === 'AskUserQuestion' || value.tool_name === 'ExitPlanMode')
     && typeof value.tool_use_id === 'string' && value.tool_use_id.trim() && value.tool_use_id.length <= 256) {
     return { ...binding, hookEventName: 'PreToolUse', toolName: value.tool_name,
@@ -209,6 +256,13 @@ function eventFromInput(value: unknown, binding: Binding): EventRecord | null {
     // provide this identity, and it must never masquerade as a native tool ID.
     return { ...binding, hookEventName: 'PermissionRequest', toolName: value.tool_name,
       transcriptFile: value.transcript_path, requestId: randomUUID(), capturedAtMs: Date.now(), input: value.tool_input };
+  }
+  if (value.hook_event_name === 'PostToolUse' && value.tool_name === 'AskUserQuestion'
+    && typeof value.tool_use_id === 'string' && value.tool_use_id.trim() && value.tool_use_id.length <= 256
+    && !Object.hasOwn(value, 'error') && value.is_error !== true && questionResponse(value.tool_input, value.tool_response)) {
+    return { ...binding, hookEventName: 'PostToolUse', toolName: 'AskUserQuestion',
+      transcriptFile: value.transcript_path, id: value.tool_use_id, capturedAtMs: Date.now(),
+      input: value.tool_input, response: value.tool_response };
   }
   if (value.hook_event_name === 'PostToolUse' && (value.tool_name === 'Write' || value.tool_name === 'Edit')
     && typeof value.tool_use_id === 'string' && value.tool_use_id.trim() && value.tool_use_id.length <= 256
@@ -248,7 +302,11 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
     const name = sha(eventId(event)) + '.json';
     if (!atomicPublish(directory, name, body)) {
       const existing = parseJsonBytes(readRegular(path.join(directory, name), MAX_EVENT_BYTES));
-      if (canonical(existing) !== canonical(event)) throw new Error('Conflicting native question event for an existing tool ID');
+      // Repeated identical completion delivery retains the first immutable
+      // observation time; it cannot create a second answer or change payload.
+      const repeated = event.hookEventName === 'PostToolUse' && event.toolName === 'AskUserQuestion'
+        && object(existing) ? { ...event, capturedAtMs: existing.capturedAtMs } : event;
+      if (canonical(existing) !== canonical(repeated)) throw new Error('Conflicting native question event for an existing tool ID');
     }
   } catch (error) {
     // Observer failures never deny the tool or inject model/UI text. The
@@ -262,7 +320,7 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
 
 function readCapturedEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
-}): (QuestionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | FileCompletionEventCall)[] {
+}): (QuestionEventCall | QuestionCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | FileCompletionEventCall)[] {
   if (expected.configDir === null || canonicalDirectory(expected.configDir) !== source.configDir
     || expected.sessionId !== source.sessionId) throw new Error('Question event source belongs to another session');
   const scope = hookScopes.get(source);
@@ -287,7 +345,7 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
   if (expected.transcriptFile === null) return [];
   const transcriptFile = expectedTranscript(expected.transcriptFile, expected.configDir, binding);
   let total = 0;
-  const calls: (QuestionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | FileCompletionEventCall)[] = [];
+  const calls: (QuestionEventCall | QuestionCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | FileCompletionEventCall)[] = [];
   const observed = observedEvents.get(source);
   if (!observed) throw new Error('Question event source was not created by this launcher');
   if ([...observed.keys()].some(file => !files.includes(file))) throw new Error('Previously observed native question event disappeared');
@@ -308,13 +366,18 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
       && typeof event.requestId === 'string' && UUID.test(event.requestId) && timed;
     const completion = event.hookEventName === 'PostToolUse' && typeof event.id === 'string'
       && !!event.id.trim() && event.id.length <= 256 && timed && fileResponse(event.toolName, event.input, event.response);
+    const questionCompletion = event.hookEventName === 'PostToolUse' && event.toolName === 'AskUserQuestion'
+      && typeof event.id === 'string' && !!event.id.trim() && event.id.length <= 256 && timed
+      && questionResponse(event.input, event.response);
     const identityKey = permission ? 'requestId' : 'id';
-    if ((!native && !permission && !completion) || file !== sha(event[identityKey] as string) + '.json'
-      || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', identityKey, 'input', ...(permission || completion ? ['capturedAtMs'] : []), ...(completion ? ['response'] : [])].includes(key))) throw new Error('Native question event identity or input changed');
+    if ((!native && !permission && !completion && !questionCompletion) || file !== sha(eventId(event as EventRecord)) + '.json'
+      || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', identityKey, 'input', ...(permission || completion || questionCompletion ? ['capturedAtMs'] : []), ...(completion || questionCompletion ? ['response'] : [])].includes(key))) throw new Error('Native question event identity or input changed');
     const hash = sha(bytes);
     if (observed.has(file) && observed.get(file) !== hash) throw new Error('Previously observed native question event changed');
     observed.set(file, hash);
     if (native) calls.push({ id: event.id as string, toolName: event.toolName as 'AskUserQuestion' | 'ExitPlanMode', input: event.input, cwd: event.cwd });
+    else if (questionCompletion) calls.push({ id: event.id as string, capturedAtMs: event.capturedAtMs as number,
+      toolName: 'AskUserQuestion', input: event.input, response: event.response as Record<string, unknown>, cwd: event.cwd });
     else if (completion) calls.push({ id: event.id as string, capturedAtMs: event.capturedAtMs as number,
       toolName: event.toolName as 'Write' | 'Edit', input: event.input, response: event.response as Record<string, unknown>, cwd: event.cwd });
     else calls.push({ requestId: event.requestId as string, capturedAtMs: event.capturedAtMs as number,
@@ -327,7 +390,15 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
 export function readQuestionEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
 }): QuestionEventCall[] {
-  return readCapturedEvents(source, expected).filter((call): call is QuestionEventCall => call.toolName === 'AskUserQuestion');
+  return readCapturedEvents(source, expected).filter((call): call is QuestionEventCall => call.toolName === 'AskUserQuestion' && !('response' in call));
+}
+
+/** Successful native offered-choice response; must still match its exact pre-hook input. */
+export function readQuestionCompletionEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): QuestionCompletionEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is QuestionCompletionEventCall =>
+    call.toolName === 'AskUserQuestion' && 'response' in call);
 }
 
 /** Pending native ExitPlanMode only: no approval, result or AUQ authority. */
@@ -348,7 +419,7 @@ export function readPermissionRequestEvents(source: QuestionEventSource, expecte
 export function readFileCompletionEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
 }): FileCompletionEventCall[] {
-  return readCapturedEvents(source, expected).filter((call): call is FileCompletionEventCall => 'response' in call);
+  return readCapturedEvents(source, expected).filter((call): call is FileCompletionEventCall => 'response' in call && call.toolName !== 'AskUserQuestion');
 }
 
 if (import.meta.main && process.argv.length === 5 && process.argv[2] === '--record-question-event') {

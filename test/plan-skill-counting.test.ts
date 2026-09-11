@@ -376,6 +376,63 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.outcome).toBe('completion_summary');
     expect(result.closed).toBe(true);
   }, 15_000);
+  test('sequential AUQ completion hooks advance the real counter while transcript persistence lags', async () => {
+    const result = await runFakeCounting('**DONE**', 'hook-ack-lag');
+    expect(result.error).toBeUndefined();
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
+    expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[1], [1], [1]]);
+    expect(result.hookCompletionIds).toEqual(['tool-2', 'tool-3', 'tool-4']);
+    expect(result.persistedQuestionResults).toBe(0);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['wrong-answer', 'cancel'])('AUQ completion cannot advance on %s and still closes the real counter', async variant => {
+    const result = await runFakeCounting('**DONE**', `hook-ack-lag-${variant}`);
+    expect(result.error).toContain(variant === 'wrong-answer' ? 'completion differs from the submitted selections' : 'Native question event capture failed');
+    expect(result.observation).toBeUndefined();
+    expect(result.hookCompletionIds).toEqual(['tool-2']);
+    expect(result.persistedQuestionResults).toBe(0);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1']);
+    expect(result.closed).toBe(true);
+    expect(result.retainedBeforeClose && result.nativeRemoved).toBe(true);
+    if (variant === 'wrong-answer') {
+      const evidence = result.diagnostic.counting.questionEvidence;
+      const completed = evidence.hookCompletionEvents;
+      expect(completed).toHaveLength(1);
+      expect(completed[0]).toMatchObject({ id: { text: 'tool-2' }, toolName: 'AskUserQuestion', capturedAtMs: expect.any(Number) });
+      expect(JSON.parse(completed[0].inputJson.text).questions[0].question).toBe('D1 — Pick a mode');
+      expect(JSON.parse(completed[0].responseJson.text).answers).toEqual({ 'D1 — Pick a mode': 'SCOPE EXPANSION' });
+      expect(evidence.nativeBlocks.rows).toEqual([]);
+    }
+  }, 15_000);
+  test('AUQ completion without a submitted response cannot skip the question', async () => {
+    const result = await runFakeCounting('**DONE**', 'hook-ack-lag-unsolicited');
+    expect(result.error).toContain('completed without a submitted response');
+    expect(result.observation).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.hookCompletionIds).toEqual(['tool-2']);
+    expect(result.persistedQuestionResults).toBe(0);
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['same-answer', 'wrong-answer'])('late AUQ completion revalidates already counted selections (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `hook-ack-lag-late-${variant}`);
+    expect(result.lateCompletionPickedQuestion).toBe('Finding 1 — Success test');
+    expect(result.persistedQuestionResults).toBe(1);
+    expect(result.closed).toBe(true);
+    if (variant === 'wrong-answer') {
+      expect(result.error).toContain('completion differs from the submitted selections');
+      expect(result.observation).toBeUndefined();
+      expect(JSON.parse(result.diagnostic.observation.text).step0Count).toBe(1);
+      expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1']);
+    } else {
+      expect(result.error).toBeUndefined();
+      expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
+      expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[1], [1], [1]]);
+      expect(result.hookCompletionIds).toEqual(['tool-2', 'tool-3', 'tool-4']);
+      expect(result.sends).toEqual(['/plan-ceo-review\r', '1', '1', '1']);
+    }
+  }, 15_000);
   test('omitted multiSelect defaults preserve acknowledged counting and completion', async () => {
     const result = await runFakeCounting('**DONE**', 'hook-omitted-default');
     expect(result.error).toBeUndefined();

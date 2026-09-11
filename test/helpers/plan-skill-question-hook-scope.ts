@@ -64,7 +64,7 @@ function inventory(opts: Options): string {
           if (!object(entry) || typeof entry.matcher !== 'string'
             || !/^[A-Za-z][A-Za-z0-9_]*$/.test(entry.matcher)
             || (event === 'PreToolUse' ? ['askuserquestion', 'exitplanmode']
-              : event === 'PostToolUse' ? ['write', 'edit'] : ['askuserquestion', 'exitplanmode', 'write', 'edit'])
+              : event === 'PostToolUse' ? ['write', 'edit', 'askuserquestion'] : ['askuserquestion', 'exitplanmode', 'write', 'edit'])
               .some(tool => tool.includes(entry.matcher.toLowerCase()))
             || !Array.isArray(entry.hooks)) fail(`competing or unsupported ${event} matcher`);
         }

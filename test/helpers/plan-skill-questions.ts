@@ -1,8 +1,8 @@
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { readQuestionEvents, readExitPlanModeEvents, readPermissionRequestEvents, readFileCompletionEvents,
-  type FileCompletionEventCall, type QuestionEventSource } from './plan-skill-question-events';
+import { readQuestionEvents, readQuestionCompletionEvents, readExitPlanModeEvents, readPermissionRequestEvents, readFileCompletionEvents,
+  type FileCompletionEventCall, type QuestionCompletionEventCall, type QuestionEventSource } from './plan-skill-question-events';
 
 export interface NativeQuestion {
   question: string;
@@ -14,6 +14,8 @@ export interface NativeQuestionCall {
   id: string;
   questions: NativeQuestion[];
   result: 'pending' | 'answered' | 'error';
+  /** Exact offered labels from a validated native PostToolUse response. */
+  answerLabels?: string[];
 }
 export interface NativePermissionTool { id: string; name: string; input: Record<string, unknown>; cwd?: string }
 export interface NativeFilePermissionRequest {
@@ -37,6 +39,22 @@ function questionInputWithDefaults(input: any): any {
   return { ...input, questions: input.questions.map((question: any) =>
     question && typeof question === 'object' && !Array.isArray(question) && !Object.hasOwn(question, 'multiSelect')
       ? { ...question, multiSelect: false } : question) };
+}
+
+function questionBeforeAnswer(input: any): any {
+  // CLI permission handling injects these response fields before tool.call.
+  // All request fields, including metadata and every question/option, stay exact.
+  const { answers, annotations, response, afkTimeoutMs, followUp, ...request } = input;
+  return questionInputWithDefaults(request);
+}
+
+function questionCompletionText(response: Record<string, any>): string {
+  // Pinned native formatter for the admitted complete offered-choice subset.
+  const answers = response.questions.map((q: any) => {
+    const preview = response.annotations?.[q.question]?.preview;
+    return `"${q.question}"="${response.answers[q.question]}"${preview ? ` selected preview:\n${preview}` : ''}`;
+  }).join(', ');
+  return `Your questions have been answered: ${answers}. You can now continue with these answers in mind.`;
 }
 
 /** CLI 2.1.263 strips undeclared keys from nested AUQ objects before PreToolUse.
@@ -81,8 +99,8 @@ function questionInputShape(input: any): string {
 }
 
 /** The launch's native PreToolUse event can precede transcript persistence.
- * Both sources must agree; AUQ input still needs an owned transcript result.
- * File permission retirement may use its exact owned successful PostToolUse.
+ * Both sources must agree. Exact owned successful PostToolUse data can retire
+ * an answered AUQ or file request before the native transcript persists it.
  * PTY scrollback and tool previews supply neither invocation nor acknowledgement.
  */
 export function readPlanSkillQuestions(configDir: string | null, sessionId: string, events?: QuestionEventSource): {
@@ -117,6 +135,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const unfinishedFileInputs: NativePermissionTool[] = [];
   const requestEvents = events ? readPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
   const earlyCompletions = new Map<string, FileCompletionEventCall>();
+  const questionCompletions = new Map<string, QuestionCompletionEventCall>();
   const addQuestion = (id: unknown, input: any, fromExecution = false) => {
     if (typeof id !== 'string' || !id) throw new Error('Native AskUserQuestion is missing its tool ID');
     if (permissionInputs.has(id)) throw new Error('Native tool changed input or name for an existing tool ID');
@@ -148,6 +167,15 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       addQuestion(event.id, event.input, true);
       executionQuestionInputs.set(event.id, questionInputWithDefaults(event.input));
     }
+    for (const event of readQuestionCompletionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+      const invoked = executionQuestionInputs.get(event.id);
+      // A post-hook alone cannot introduce a question or authorize its answer.
+      if (invoked === undefined) continue;
+      if (!isDeepStrictEqual(questionBeforeAnswer(event.input), questionBeforeAnswer(invoked))) {
+        throw new Error('Native AskUserQuestion completion changed input');
+      }
+      questionCompletions.set(event.id, event);
+    }
     for (const event of readExitPlanModeEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
       if (inputs.has(event.id)) throw new Error('Native ExitPlanMode changed input or name for an existing tool ID');
       earlyExits.set(event.id, { input: event.input, cwd: event.cwd });
@@ -172,6 +200,12 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
     if (!Array.isArray(message?.content)) continue;
     for (const block of message.content) {
       if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+        const questionCompletion = questionCompletions.get(block.tool_use_id);
+        if (questionCompletion && (block.is_error === true
+          || row.toolUseResult !== undefined && !isDeepStrictEqual(row.toolUseResult, questionCompletion.response)
+          || block.content !== questionCompletionText(questionCompletion.response))) {
+          throw new Error('Native AskUserQuestion completion conflicts with its later result');
+        }
         const completion = earlyCompletions.get(block.tool_use_id);
         if (completion) {
           // tool_response is raw native data, not rendered tool_result text.
@@ -230,7 +264,11 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
     }
   }
   for (const call of calls.values()) {
-    if (results.has(call.id)) call.result = results.get(call.id) ? 'error' : 'answered';
+    const completion = questionCompletions.get(call.id);
+    if (completion) {
+      call.result = 'answered';
+      call.answerLabels = call.questions.map(q => (completion.response.answers as Record<string, string>)[q.question]!);
+    } else if (results.has(call.id)) call.result = results.get(call.id) ? 'error' : 'answered';
   }
   for (const completion of earlyCompletions.values()) {
     results.set(completion.id, false);

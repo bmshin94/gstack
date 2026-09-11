@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { currentFilePermissionTarget, reserveNativePermissionGrant, type readPlanSkillQuestions, type NativePermissionGrant } from './plan-skill-questions';
-import { readQuestionEvents, type QuestionEventSource, type QuestionEventCall } from './plan-skill-question-events';
+import { readQuestionEvents, readQuestionCompletionEvents, type QuestionEventSource,
+  type QuestionEventCall, type QuestionCompletionEventCall } from './plan-skill-question-events';
 
 /** The chain may grant file edits in its fixture and native plan directory.
  * The shared reservation still requires the exact owned request and menu;
@@ -95,14 +96,18 @@ export function retainAutoplanFailure(opts: {
     // These later diagnostic reads never supply an answer or change the error.
     const observedPending = state?.calls.filter(call => call.result === 'pending') ?? [];
     let hookQuestions: QuestionEventCall[] = [];
+    let hookCompletions: QuestionCompletionEventCall[] = [];
     let hookReadError: ReturnType<typeof clip> | null = null;
     if (opts.counting?.events) {
       try { hookQuestions = readQuestionEvents(opts.counting.events, { configDir: opts.configDir,
-        sessionId: opts.sessionId, transcriptFile: native.file }); }
+        sessionId: opts.sessionId, transcriptFile: native.file });
+        hookCompletions = readQuestionCompletionEvents(opts.counting.events, { configDir: opts.configDir,
+          sessionId: opts.sessionId, transcriptFile: native.file }); }
       catch (error) { hookReadError = clip(String(error), 1024); }
     }
     const nativeQuestions = calls.filter(call => call.name === 'AskUserQuestion');
     const candidateIds = [...new Set([...observedPending.slice(-16).map(call => call.id),
+      ...hookCompletions.slice().sort((a, b) => b.capturedAtMs - a.capturedAtMs).map(event => event.id),
       ...nativeQuestions.slice().reverse().map(call => call.id), ...hookQuestions.map(call => call.id),
       ...observedPending.map(call => call.id)])];
     const questionIds = new Set(candidateIds.slice(0, 16));
@@ -140,13 +145,16 @@ export function retainAutoplanFailure(opts: {
       questionEvidence: {
         count: observedPending.length, omitted: Math.max(0, observedPending.length - 16),
         candidateCount: candidateIds.length, candidatesOmitted: Math.max(0, candidateIds.length - 16),
-        chronology: 'Earlier counting snapshot; later owned transcript and hook reads are not atomic. Pending IDs have priority, then latest native AUQs, then remaining hooks. Hook order is not execution order.',
+        chronology: 'Earlier counting snapshot; later owned transcript and hook reads are not atomic. Pending IDs have priority, then latest completion observations, latest native AUQs, and remaining hooks. Completion observations do not grant diagnostic answer credit; hook order is not execution order.',
         observed: observedPending.filter(call => questionIds.has(call.id)).map(call => ({ id: clip(call.id, 256),
           observedResult: call.result, questionsJson: clip(JSON.stringify(call.questions), 65_536),
           resultAtRetention: results.has(call.id) ? results.get(call.id) ? 'error' : 'completed'
             : nativeQuestions.some(nativeCall => nativeCall.id === call.id) ? 'pending' : 'absent' })),
         hookEvents: hookQuestions.filter(event => questionIds.has(event.id)).map(event => ({ id: clip(event.id, 256),
           toolName: event.toolName, cwd: clip(event.cwd, 4096), inputJson: clip(JSON.stringify(event.input), 65_536) })),
+        hookCompletionEvents: hookCompletions.filter(event => questionIds.has(event.id)).map(event => ({ id: clip(event.id, 256),
+          toolName: event.toolName, capturedAtMs: event.capturedAtMs, cwd: clip(event.cwd, 4096),
+          inputJson: clip(JSON.stringify(event.input), 65_536), responseJson: clip(JSON.stringify(event.response), 65_536) })),
         hookReadError,
         nativeBlocks: { count: questionBlocks.length, omitted: Math.max(0, questionBlocks.length - 32), rows: questionBlocks.slice(-32) },
       },

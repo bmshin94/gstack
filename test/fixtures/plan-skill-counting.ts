@@ -67,6 +67,10 @@ const RETAINED_PARENTHESIZED_MODE_INPUT = {
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
+  const hookAckLag = scenario.startsWith('hook-ack-lag');
+  const lateHookCompletion = scenario.startsWith('hook-ack-lag-late-');
+  let publishLateQuestionCompletion: (() => void) | null = null;
+  let lateCompletionPickedQuestion: string | null = null;
   const retentionCase = scenario.startsWith('retention-');
   const injectedError = new Error('PRIVATE_CALLBACK_ERROR');
   const ceilingCase = scenario.startsWith('ceiling-');
@@ -89,7 +93,7 @@ async function main() {
   const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
   const evalDir = path.join(project, 'evals');
-  if (retentionCase) process.env.GSTACK_EVAL_DIR = evalDir;
+  if (retentionCase || hookAckLag) process.env.GSTACK_EVAL_DIR = evalDir;
   let nativeFile = '';
   let retainedBeforeClose = false;
   const sends: string[] = [];
@@ -112,6 +116,8 @@ async function main() {
   const permissionGrantIds: string[] = [];
   const permissionAckIds: string[] = [];
   const bashQuestionAckIds: string[] = [];
+  const hookCompletionIds: string[] = [];
+  let persistedQuestionResults = 0;
   const fileNativeBeforeGrant: boolean[] = [];
   let longPermissionFrame = '';
   let publishDuringScreen: (() => void) | null = null;
@@ -175,6 +181,7 @@ async function main() {
       const finding = (number: number) => `\nFinding ${number} — ${number === 1 ? 'Success' : 'Failure'} test\n\n❯ 1. ${reusedOptions ? 'Add test' : number === 1 ? 'Add receipt assertion' : 'Add retry assertion'}\n  2. ${reusedOptions ? 'Skip test' : number === 1 ? 'Skip receipt test' : 'Skip retry test'}\n`;
       let sequence = 0;
       let pendingId: string | null = null;
+      const hookQuestionInputs = new Map<string, any>();
       let permissionId: string | null = null;
       let permissionInput: Record<string, unknown> | null = null;
       let permissionOperation: 'create' | 'overwrite' = 'create';
@@ -213,6 +220,7 @@ async function main() {
       const tool = (name: string, input: unknown) => {
         const id = `tool-${++sequence}`;
         if (name === 'AskUserQuestion' && (scenario.startsWith('hook-') || scenario.startsWith('retention-questions'))) {
+          hookQuestionInputs.set(id, input);
           // Native CLI can show this modal before persisting its tool_use.
           // Exercise the recorder installed by the real launcher.
           const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
@@ -317,9 +325,41 @@ async function main() {
       };
       const ask = (question: string, labels: string[]) => {
         pendingId = tool('AskUserQuestion', { questions: [{ question, header: question, multiSelect: scenario === 'multi-select', options: labels.map(label => ({ label, description: `Choose ${label}` })) }] });
+        if (scenario === 'hook-ack-lag-unsolicited') acknowledge();
       };
       const acknowledge = () => {
-        append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: pendingId, content: 'Answer accepted' }] } });
+        if (hookAckLag) {
+          const input = hookQuestionInputs.get(pendingId!);
+          const chosen = scenario.endsWith('wrong-answer') && (!lateHookCompletion || answer === 1)
+            ? 2 : scenario.endsWith('unsolicited') ? 1 : Number(sends.at(-1));
+          const answers = scenario.endsWith('cancel') ? {} : Object.fromEntries(input.questions.map((q: any) =>
+            [q.question, q.options[chosen - 1].label]));
+          const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
+          const id = pendingId!;
+          const response = { questions: input.questions, answers };
+          const publish = () => {
+            const recorded = Bun.spawnSync(['bash', '-c', settings.hooks.PostToolUse[0].hooks[0].command], {
+              timeout: 5000, stdin: Buffer.from(JSON.stringify({ hook_event_name: 'PostToolUse', session_id: sessionId,
+                transcript_path: file, cwd: options.cwd, tool_name: 'AskUserQuestion', tool_use_id: id,
+                tool_input: { ...input, answers }, tool_response: response })),
+              stdout: 'pipe', stderr: 'pipe',
+            });
+            if (recorded.exitCode !== 0 || recorded.stdout.length || recorded.stderr.length) throw new Error('Question completion recorder failed');
+            hookCompletionIds.push(id);
+          };
+          if (lateHookCompletion && answer === 1) {
+            const selected = input.questions.map((q: any) => `"${q.question}"="${answers[q.question]}"`).join(', ');
+            append({ type: 'user', toolUseResult: response, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id,
+              content: `Your questions have been answered: ${selected}. You can now continue with these answers in mind.` }] } });
+            persistedQuestionResults++;
+            // The second question picker runs only after the first result has
+            // been counted; publish its hook there, not during the same read.
+            publishLateQuestionCompletion = publish;
+          } else publish();
+        } else {
+          append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: pendingId, content: 'Answer accepted' }] } });
+          persistedQuestionResults++;
+        }
         pendingId = null;
       };
       const finish = () => {
@@ -791,7 +831,7 @@ async function main() {
           }
         } },
         kill() {
-          if (retentionCase) {
+          if (retentionCase || hookAckLag) {
             retainedBeforeClose = fs.existsSync(path.join(evalDir, 'plan-counting', `${sessionId}.json`));
             fs.rmSync(file, { force: true });
           }
@@ -820,15 +860,19 @@ async function main() {
       cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling, timeoutMs: helperTimeoutMs,
       defaultPick: previewCase ? scenario === 'preview-menu-focused' ? 1 : 2 : ['permission-current-create-pick-two', 'permission-final-queued-question-pick-two'].includes(scenario) ? 2 : undefined,
       firstAUQPick: scenario === 'first-route' || scenario === 'question-picker-first' ? () => 2 : undefined,
-      questionPick: retentionCase || ceilingCase || scenario.includes('picker') ? (question, isFirst) => {
+      questionPick: retentionCase || ceilingCase || lateHookCompletion || scenario.includes('picker') ? (question, isFirst) => {
         if (scenario === 'retention-original-error') throw injectedError;
+        if (!isFirst && publishLateQuestionCompletion) {
+          lateCompletionPickedQuestion = question.question;
+          publishLateQuestionCompletion(); publishLateQuestionCompletion = null;
+        }
         pickerCalls.push({ question, isFirst });
         if (previewCase) return 2;
         if (question.question === 'How should we continue after this review?' || multiQuestionCase && question.question.includes('Failure')) return 2;
         return 1;
       } : undefined,
     }); } catch (cause) {
-      if (!nativeBashCase && !longPermissionCase && !retentionCase && !viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
+      if (!hookAckLag && !nativeBashCase && !longPermissionCase && !retentionCase && !viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
       error = String(cause);
       sameError = cause === injectedError;
     }
@@ -836,7 +880,7 @@ async function main() {
     const diagnosticDirectory = path.join(evalDir, 'plan-counting');
     const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
     const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
-    console.log(JSON.stringify({ observation, error, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {
