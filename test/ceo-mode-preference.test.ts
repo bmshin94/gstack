@@ -340,7 +340,7 @@ test.each(['redraw', 'stale-frame', 'native-during-frame', 'output-during-frame'
     try {
       const observation = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
         now: () => time, pause: async ms => { time += ms; }, launch: async opts => {
-          launchOptions = opts; sessionId = opts.extraArgs![1];
+          launchOptions = opts; sessionId = opts.captureQuestionsForSession!;
           screen = new PtyCurrentScreen({ cols: 120, rows: opts.rows });
           file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
           fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
@@ -609,7 +609,7 @@ test.each(['automatic', 'saved-automatic', 'target', 'timeout', 'expired-boot', 
     const observation = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: scenario === 'expired-boot' ? 1000 : 30_000 }, {
       now: () => time,
       launch: async opts => {
-        sessionId = opts.extraArgs![1];
+        sessionId = opts.captureQuestionsForSession!;
         file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
         fs.mkdirSync(path.dirname(file), { recursive: true });
         return session;
@@ -694,7 +694,7 @@ test.each([
     const promise = runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000, evidenceRoot }, {
       now: () => time,
       launch: async opts => {
-        sessionId = opts.extraArgs![1]; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+        sessionId = opts.captureQuestionsForSession!; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
         fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
       },
       pause: async ms => {
@@ -788,7 +788,7 @@ test.each(['letter list', 'tuning footer', 'letter list and footer', 'unknown fo
   try {
     const result = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
       now: () => time, pause: async ms => { time += ms; }, launch: async opts => {
-        sessionId = opts.extraArgs![1]; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+        sessionId = opts.captureQuestionsForSession!; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
         fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
       },
     });
@@ -1349,7 +1349,7 @@ test.each([false, true])('a previous input-window preview cannot answer a new ow
     const observation = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
       now: () => time,
       launch: async opts => {
-        sessionId = opts.extraArgs![1];
+        sessionId = opts.captureQuestionsForSession!;
         file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
         fs.mkdirSync(path.dirname(file), { recursive: true });
         return session;
@@ -1444,7 +1444,7 @@ test.each(['exact ACK', 'missing ACK', 'wrong ACK', 'foreign ACK', 'missing conf
       const result = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
         now: () => time, pause: async ms => { time += ms; },
         launch: async opts => {
-          sessionId = opts.extraArgs![1]; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+          sessionId = opts.captureQuestionsForSession!; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
           fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
         },
       });
@@ -1457,3 +1457,83 @@ test.each(['exact ACK', 'missing ACK', 'wrong ACK', 'foreign ACK', 'missing conf
     } finally { fs.rmSync(config, { recursive: true, force: true }); }
   },
 );
+
+test.each(['success', 'background', 'failed-command', 'interrupted', 'no-result', 'mismatched-result',
+  'absent', 'foreign', 'missing-request', 'changed-effective-input', 'changed-command', 'stale-frame',
+  'changed-hook-during-frame', 'multiple-owner', 'queued-question', 'no-mode-annotation'] as const)
+('mode driver binds current Bash permission and keeps mode evidence separate: %s', async scenario => {
+  const { setupQuestionEventSource } = await import('./helpers/plan-skill-question-events');
+  const config = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-bash-permission-')));
+  const writes: string[] = []; let time = 0; let visible = ''; let file = ''; let sessionId = ''; let closed = false;
+  let settings: any; let hookChanged = false; let launchOptions: any;
+  const input = { command: 'printf %s logged', description: 'Log the selected review decision' };
+  const response = { stdout: 'logged', stderr: '', interrupted: false };
+  const card = () => '─'.repeat(120) + '\n Bash command\n\n   '
+    + (scenario === 'changed-command' ? 'printf %s changed' : input.command) + '\n   ' + input.description
+    + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+  const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ sessionId, ...row }) + '\n');
+  const emit = (event: string, toolInput: unknown = input, extra: Record<string, unknown> = {}) => {
+    const child = Bun.spawnSync(['bash', '-c', settings.hooks[event][0].hooks[0].command], {
+      timeout: 5000, stdin: Buffer.from(JSON.stringify({ hook_event_name: event, session_id: sessionId,
+        transcript_path: file, cwd: config, tool_name: 'Bash', tool_use_id: 'mode-bash-1', tool_input: toolInput, ...extra })),
+      stdout: 'pipe', stderr: 'pipe',
+    });
+    expect(child.exitCode).toBe(0); expect(child.stdout.length).toBe(0); expect(child.stderr.length).toBe(0);
+  };
+  const session = {
+    hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
+    rawOutput: () => visible, visibleText: () => visible, pid: () => 1, exitCode: () => null,
+    exited: () => false, close: async () => { closed = true; },
+    currentScreen: async () => {
+      if (scenario === 'changed-hook-during-frame' && !hookChanged) {
+        hookChanged = true; emit('PreToolUse', { ...input, command: 'printf %s other' }, { tool_use_id: 'another-bash' });
+      }
+      return { text: visible, rawEnd: visible.length - (scenario === 'stale-frame' ? 1 : 0) };
+    },
+    send(text: string) {
+      writes.push(text);
+      if (text.startsWith('/')) {
+        if (scenario !== 'absent') emit('PreToolUse', input,
+          scenario === 'foreign' ? { session_id: '00000000-0000-4000-8000-000000000099' } : {});
+        if (scenario !== 'missing-request') emit('PermissionRequest', scenario === 'changed-effective-input'
+          ? { ...input, dangerouslyDisableSandbox: true } : input);
+        if (scenario === 'multiple-owner') emit('PreToolUse', { ...input, command: 'printf %s another' }, { tool_use_id: 'another-bash' });
+        if (scenario === 'queued-question') emit('PreToolUse', { questions: [{ question: 'Which approach?', header: 'Approach', multiSelect: false,
+          options: [{ label: 'A', description: 'First' }, { label: 'B', description: 'Second' }] }] }, { tool_name: 'AskUserQuestion', tool_use_id: 'queued-question' });
+        visible += card(); return;
+      }
+      expect(text).toBe('1\r');
+      if (scenario === 'failed-command') emit('PostToolUseFailure', input, { error: 'Command failed with exit code 1', is_interrupt: false });
+      else if (scenario !== 'no-result') emit('PostToolUse', scenario === 'mismatched-result' ? { ...input, command: 'changed' } : input,
+        { tool_response: { ...response, ...(scenario === 'background' ? { backgroundTaskId: 'task-one' } : {}),
+          ...(scenario === 'interrupted' ? { interrupted: true } : {}) } });
+      const textAfter = scenario === 'no-mode-annotation' ? 'Continuing the review.' : automatic;
+      append(assistant(textAfter, 'end_turn', 'after-bash')); visible += '\n' + textAfter;
+    },
+    sendKey() { throw new Error('A Bash grant cannot submit a prose answer'); },
+  } as unknown as ClaudePtySession;
+  let observation: any; let error: unknown;
+  try {
+    try { observation = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
+      now: () => time, pause: async ms => { time += ms; }, launch: async opts => {
+        launchOptions = opts; sessionId = opts.captureQuestionsForSession ?? opts.extraArgs![1];
+        file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl'); fs.mkdirSync(path.dirname(file), { recursive: true });
+        append({ type: 'user', message: { role: 'user', content: 'Review the saved plan' } });
+        const captured = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
+        session.nativeQuestionEvents = captured.source; settings = JSON.parse(fs.readFileSync(captured.settingsPath, 'utf8'));
+        return session;
+      },
+    }); } catch (caught) { error = caught; }
+    const granted = ['success', 'background', 'failed-command', 'interrupted', 'no-result', 'mismatched-result', 'no-mode-annotation'].includes(scenario);
+    expect(writes).toEqual(granted ? ['/plan-ceo-review\r', '1\r'] : ['/plan-ceo-review\r']);
+    expect(closed).toBe(true);
+    if (scenario === 'mismatched-result' || scenario === 'changed-command') expect(String(error)).toMatch(/changed input|cannot be bound/);
+    else {
+      expect(error).toBeUndefined();
+      expect(observation.outcome).toBe(['success', 'background', 'failed-command', 'interrupted'].includes(scenario) ? 'auto_decided' : 'timeout');
+      expect(observation.answered).toEqual([]);
+    }
+    expect(launchOptions.captureQuestionsForSession).toBe(sessionId);
+    expect(launchOptions.extraArgs).toEqual(['--disallowedTools', 'AskUserQuestion']);
+  } finally { fs.rmSync(config, { recursive: true, force: true }); }
+}, 10_000);

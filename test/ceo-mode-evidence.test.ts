@@ -72,7 +72,7 @@ test.each(['success', 'timeout', 'runner-error', 'launch-error', 'cleanup-error'
       const attempt = runCeoModePreferenceObservation({ cwd: root, env: {}, timeoutMs: 12_000, evidenceRoot }, {
         now: () => time, pause: async ms => { time += ms; },
         launch: async opts => {
-          sessionId = opts.extraArgs![1];
+          sessionId = opts.captureQuestionsForSession!;
           if (scenario === 'launch-error') throw new Error('launch exploded');
           return session;
         },

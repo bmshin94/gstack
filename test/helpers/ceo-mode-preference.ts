@@ -6,8 +6,9 @@ import {
   launchClaudePty, MODE_RE, parseNumberedOptions, type ClaudePtySession,
 } from './claude-pty-runner';
 import { readOwnedClaudeTranscript, type OwnedClaudeTranscript } from './owned-claude-transcript';
-import { matchesNativeQuestion, readPlanSkillQuestions } from './plan-skill-questions';
+import { matchesNativeQuestion, readPlanSkillQuestions, currentBashPermissionCard, reserveNativePermissionGrant, type NativePermissionGrant } from './plan-skill-questions';
 import { retainCeoModeEvidence } from './ceo-mode-evidence';
+import { readBashEvents, readBashCompletionEvents, readBashPermissionRequestEvents } from './plan-skill-question-events';
 
 export const CEO_MODE_QUESTION_ID = 'plan-ceo-review-mode';
 const compact = (text: string) => text.replace(/[\s*#]/g, '').toLowerCase();
@@ -608,6 +609,9 @@ export async function runCeoModePreferenceObservation(opts: {
   const sessionId = randomUUID();
   const answered = new Set<string>();
   const acknowledgedMessages = new Map<string, string>();
+  const grantedBash = new Set<string>();
+  const grantedRequests = new Map<string, NativePermissionGrant>();
+  let pendingBashId: string | null = null;
   let lastScreen: { text: string; rawEnd: number } | null = null;
   let lastScreenInputMark = 0;
   let pendingReply: {
@@ -634,7 +638,8 @@ export async function runCeoModePreferenceObservation(opts: {
     session = await (deps.launch ?? launchClaudePty)({
       permissionMode: 'plan', seedSkills: true, cwd: opts.cwd, env: opts.env,
       captureScreen: true, rows: 240, // Keep the complete report, diagrams and choices in view.
-      extraArgs: ['--session-id', sessionId, '--disallowedTools', 'AskUserQuestion'], timeoutMs: opts.timeoutMs,
+      captureQuestionsForSession: sessionId,
+      extraArgs: ['--disallowedTools', 'AskUserQuestion'], timeoutMs: opts.timeoutMs,
     });
     since = session.mark(); inputSince = since;
     await sleep(8000);
@@ -648,6 +653,8 @@ export async function runCeoModePreferenceObservation(opts: {
       const visible = session.visibleSince(since);
       if (session.exited()) return result('exited', visible);
       const transcript = readOwnedClaudeTranscript(session.hermeticConfigDir, sessionId);
+      const nativeBeforeFrame = session.nativeQuestionEvents
+        ? readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents) : undefined;
       if (now() >= deadline) break;
       // Owned source → decoded frame → same source/output epoch → scoped input.
       if (!session.currentScreen) throw new Error('Mode preference screen capture unavailable');
@@ -655,10 +662,14 @@ export async function runCeoModePreferenceObservation(opts: {
       lastScreen = frame;
       const afterFrame = readOwnedClaudeTranscript(session.hermeticConfigDir, sessionId);
       if (now() >= deadline) break;
-      if (frame.rawEnd !== session.mark() || !isDeepStrictEqual(transcript, afterFrame)) continue;
+      if (frame.rawEnd !== session.mark() || !isDeepStrictEqual(transcript, afterFrame)
+        || nativeBeforeFrame !== undefined && !isDeepStrictEqual(nativeBeforeFrame,
+          readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents))) continue;
       const currentInput = () => now() < deadline && !session!.exited()
         && frame.rawEnd > lastScreenInputMark && frame.rawEnd === session!.mark()
-        && isDeepStrictEqual(transcript, readOwnedClaudeTranscript(session!.hermeticConfigDir, sessionId));
+        && isDeepStrictEqual(transcript, readOwnedClaudeTranscript(session!.hermeticConfigDir, sessionId))
+        && (nativeBeforeFrame === undefined || isDeepStrictEqual(nativeBeforeFrame,
+          readPlanSkillQuestions(session!.hermeticConfigDir, sessionId, session!.nativeQuestionEvents)));
       if (pendingReply && !pendingReply.invalidated && !transcript.pendingBytes) {
         // A write is only an attempt. Bind the acknowledgement to this exact
         // owned prefix; reset/truncation or an intervening owner cannot ack it.
@@ -707,6 +718,12 @@ export async function runCeoModePreferenceObservation(opts: {
           }
         }
       }
+      if (pendingBashId) {
+        // A digit or disappearing card cannot acknowledge execution. A native
+        // failed tool may resolve and be handled by the agent; retain its status.
+        if (!nativeBeforeFrame?.permissionResults.some(result => result.id === pendingBashId)) continue;
+        pendingBashId = null;
+      }
       // The mode oracle keeps its whole-review history. Only answering an
       // unrelated question depends on the current decoded viewport.
       const signal = inspectCeoModePreference(transcript, visible, frame.text, session.visibleSince(inputSince), acknowledgedMessages);
@@ -727,6 +744,18 @@ export async function runCeoModePreferenceObservation(opts: {
         }
         continue;
       }
+      if (nativeBeforeFrame && !nativeBeforeFrame.pendingBytes && !nativeBeforeFrame.ready
+        && !nativeBeforeFrame.calls.some(call => call.result === 'pending')
+        && !nativeBeforeFrame.permissionRequests.some(request => request.result === 'pending')
+        && nativeBeforeFrame.permissionTools.length === 1 && nativeBeforeFrame.permissionTools[0].name === 'Bash'
+        && currentBashPermissionCard(frame.text)) {
+        if (!currentInput()) continue;
+        if (!reserveNativePermissionGrant(nativeBeforeFrame, frame.text, grantedBash, grantedRequests)) continue;
+        pendingBashId = nativeBeforeFrame.permissionTools[0].id;
+        lastScreenInputMark = session.mark(); inputSince = lastScreenInputMark;
+        session.send('1\r');
+        continue;
+      }
       if (signal.kind === 'unrelated' && !answered.has(signal.id)) {
         if (!currentInput()) continue;
         pendingReply = {
@@ -745,7 +774,7 @@ export async function runCeoModePreferenceObservation(opts: {
         session.send(pendingReply.text);
         continue;
       }
-      const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId);
+      const native = nativeBeforeFrame ?? readPlanSkillQuestions(session.hermeticConfigDir, sessionId);
       if (now() >= deadline) break;
       if (native.pendingBytes) continue;
       const pending = native.calls.filter(call => call.result === 'pending');
@@ -787,6 +816,22 @@ export async function runCeoModePreferenceObservation(opts: {
       capture('inputVisible', () => session!.visibleSince(inputSince));
       snapshot.currentScreen = lastScreen;
       capture('transcript', () => readOwnedClaudeTranscript(session!.hermeticConfigDir, sessionId));
+      if (session.nativeQuestionEvents) capture('bashHooks', () => {
+        const source = session!.nativeQuestionEvents!;
+        const transcript = readOwnedClaudeTranscript(session!.hermeticConfigDir, sessionId);
+        const expected = { configDir: session!.hermeticConfigDir, sessionId, transcriptFile: transcript.file };
+        const invocations = readBashEvents(source, expected);
+        const resolutions = readBashCompletionEvents(source, expected);
+        const ids = new Set([...(pendingBashId ? [pendingBashId] : []),
+          ...resolutions.slice().sort((a, b) => b.capturedAtMs - a.capturedAtMs).map(event => event.id),
+          ...invocations.slice().sort((a, b) => b.capturedAtMs - a.capturedAtMs).map(event => event.id)].slice(0, 16));
+        const selected = invocations.filter(event => ids.has(event.id));
+        return { limit: 16, invocationCount: invocations.length, resolutionCount: resolutions.length,
+          invocations: selected, resolutions: resolutions.filter(event => ids.has(event.id)),
+          permissionRequests: readBashPermissionRequestEvents(source, expected).filter(request => selected.some(event =>
+            event.cwd === request.cwd && isDeepStrictEqual(event.input, request.input))).slice(-16),
+          chronology: 'Later diagnostic reads only; no input or outcome credit. Background resolution is not command completion.' };
+      });
       capture('process', () => ({ pid: session!.pid(), exited: session!.exited(), exitCode: session!.exitCode() }));
     }
     try { await session?.close(); } catch (error) { errors.push(error); }
@@ -797,7 +842,7 @@ export async function runCeoModePreferenceObservation(opts: {
           startedAt, finishedAt: now(), timeoutMs: opts.timeoutMs,
           outcome: failure || errors.length ? 'harness_error' : observation?.outcome,
           failure: failure ? describe(failure) : null, finalizationErrors: errors.map(describe),
-          observation, lastSignal, answered: [...answered], pendingReply, snapshot,
+          observation, lastSignal, answered: [...answered], pendingReply, pendingBashId, grantedBash: [...grantedBash], snapshot,
         }, { ...process.env, ...opts.env });
         console.log(`CEO mode evidence: ${file}`);
       } catch (error) { errors.push(error); }
