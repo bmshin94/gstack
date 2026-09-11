@@ -157,9 +157,13 @@ Before reviewing, answer:
    - How will users download or install it (GitHub Releases, package manager, container registry)?
    If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
 
-If complexity reaches 8+ files or 2+ new classes/services, STOP before section work. Via the preamble's question flow, name what's overbuilt. Resolve any independent capability cut needed by the smaller design in its own question first. Then compare minimal and retained component organization with capability dispositions identical in every option (approved or still pending). Both preserve established contracts; security, error, test and performance remedies stay constant or pending. Scope approval never accepts, cuts or defers independent remedies; ask about each separately before applying it.
+If complexity reaches 8+ files or 2+ new classes/services, STOP before section work. Use the preamble's question flow in this order:
 
-**STOP.** Until the decision is resolved by the user (including prior approval) or an authorized auto-decision, do not enter Section 1, call ExitPlanMode, or put Step 0 findings, revised approaches or proposed remedies in plan files, including new files and findings appendices. A seed may be copied unchanged, without review content.
+1. Name what's overbuilt. If the smaller design requires removing a feature, ask about that cut separately first.
+2. Compare a smaller component structure with the original structure. Every option must include, drop or defer the same features, following earlier approvals. Leave unresolved feature choices undecided. Preserve established contracts in both designs. Keep approved security, error-handling, test and performance fixes unchanged; unresolved fixes stay undecided.
+3. Ask the user to choose the component design. That answer does not approve, drop or postpone any independent fix; ask about each fix separately before making that change.
+
+**STOP.** Until the user resolves this choice, an earlier approval covers it, or an authorized auto-decision resolves it, do not enter Section 1 or call ExitPlanMode. Keep Step 0 findings, revised approaches and proposed fixes out of all plan files until then, including new files and findings appendices. You may copy the user's original plan unchanged, without adding review content.
 
 If the complexity check does not trigger, present your Step 0 findings and enter Review Sections: run Prior Learnings and Confidence Calibration, then Section 1.
 

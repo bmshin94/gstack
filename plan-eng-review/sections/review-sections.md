@@ -108,36 +108,14 @@ confirms it IS a real issue, that is a calibration event. Your initial confidenc
 too low. Log the corrected pattern as a learning so future reviews catch it with
 higher confidence.
 
-**Before drafting options (every section and outside voice):** First list the
-independently repairable conditions in this finding and each condition's exact
-approved scope or pending disposition. Select one pending condition, then name the
-behavioral policy, implementation choice, or verification-depth decision its answer
-authorizes. Keep every other disposition fixed at its approved value or explicitly
-pending across all options. Split distinct policies even if one helper, reviewer
-item or cheap patch groups them. Keep code and tests establishing the same chosen
-behavior together. Only then score completeness within that decision; "full"
-cannot approve several policies.
+**Decision gate (all sections and outside voice):** Before drafting options:
 
-Preserve established contracts in every alternative; changing one requires its
-own explicit decision first. Never make a thinner option by dropping settled
-behavior. Include tests and documentation directly required to establish a newly
-chosen behavior, even after the Tests section; separate unrelated verification
-or policy choices. For example, a retry helper's attempt limit, jitter and
-exhausted-job disposition remain separate choices; crash tests proving that same
-chosen behavior are not another policy. Correct factual descriptions against
-established evidence and disclose the correction. Factual corrections do not
-authorize behavior changes.
+1. **Record the evidence.** Keep every finding and its evidence. Correct factual descriptions when source evidence shows they are wrong, and disclose the correction. This does not authorize a behavior change.
+2. **Separate the choices.** List the problems that could be fixed independently. For each, record exactly what was approved and what is still undecided. Sharing a helper, a reviewer item or a cheap patch does not make separate policies one choice.
+3. **Use exact prior approvals.** Cite the actual selected option, its question/answer reference and the exact approved scope. For that approved behavior, add its required implementation work, tests and docs to the plan without asking again, even after the Tests section. A broad approach, recommendation or cross-model agreement is not approval. If the prior answer does not cover the proposed work, leave it undecided.
+4. **Ask about one new or reopened choice.** Name the behavior policy, implementation choice or optional verification depth the answer will decide. Ask separately about scope changes and concrete new risks that invalidate a prior choice. In every offered option, keep all other approved choices fixed and all unresolved choices undecided. Preserve established contracts; ask separately before changing one. Never make an option smaller by dropping settled behavior. Score completeness only within this one decision; a "full" option cannot approve several policies.
 
-**Decision gate (all sections and outside voice):** Record every finding and its
-evidence. Correct factual descriptions against source evidence and disclose the
-correction; this grants no new behavior. For routine implementation, tests or docs
-directly required by an already chosen contract, cite the actual selected option,
-question/answer reference and exact approved scope, then apply that follow-through
-without reopening it. A broad approach, recommendation or cross-model agreement
-is not approval. Ask separately for new or reopened decisions: independently
-selectable behavior, optional verification depth, changed scope, or concrete new
-risks that invalidate the prior choice. If the prior answer does not establish
-the proposed work, it remains pending. Never suppress the risk or required proof.
+Keep a chosen behavior and the code, tests and docs needed to establish it together. For example, decide a retry helper's attempt limit, jitter and behavior after retries are exhausted separately. Crash tests proving that same chosen behavior belong with its implementation; unrelated tests or optional verification depth need their own choice. Never hide a risk or omit required proof.
 
 ### 1. Architecture review
 Evaluate:
@@ -524,47 +502,46 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-After presenting the outside voice findings, note any points where the outside voice
-disagrees with the review findings from earlier sections. Flag these as:
+**1. Map findings to pending changes.** Before drafting questions, queue independently
+selectable additions, changes, removals or deferrals against existing working decisions
+or issue references; reuse their ledger where present:
 
-```
-CROSS-MODEL TENSION:
-  [Topic]: Review said X. Outside voice says Y. [Present both perspectives neutrally.
-  State what context you might be missing that would change the answer.]
-```
+finding | issue/decision reference | current disposition + approval reference | proposed change | changed evidence/assumption | other rows unchanged or pending
 
-**User Sovereignty:** Do NOT auto-incorporate outside voice recommendations into the plan.
-Before drafting options, split each tension point into independently selectable
-actions, including adding, changing, dropping or deferring work. One reviewer bullet
-or shared topic can contain several decisions. Ask one per call; hold every other
-action fixed at its approved value or explicitly pending in all options. Adding one
-remedy cannot also approve another remedy's TODO. Tests establishing the same chosen
-behavior stay together. Compare completeness only within that one decision.
+A reviewer bullet affecting separate issues produces separate rows. Exact confirmations
+and source-proven factual corrections update evidence without authorizing behavior
+changes. New proposed changes still queue when reviewers agree. Preserve unchanged
+contracts; reopening requires concrete contradictory evidence or a changed assumption.
+Retain unresolved risks and verification.
 
-The user decides. Cross-model agreement is evidence, not permission. Preserve declared
-contracts and exact earlier approvals; reopening requires concrete contradictory
-evidence or a changed assumption. State what changed. You MUST NOT apply the change without
-explicit user approval.
+**2. Draft from one pending row.** Cite its issue/decision reference. State the current
+disposition and outside proposal, describing any disagreement neutrally:
 
-For each unresolved independent decision, use AskUserQuestion:
+> "Outside-voice proposal [issue/decision reference]: [proposed change].
+> Current disposition: [approved choice + reference, or unresolved].
+> Outside evidence/recommendation: [Y]. [What changed; what context may be missing.]"
 
-> "Cross-model disagreement on [topic]. The review found [X] but the outside voice
-> argues [Y]. [One sentence on what context you might be missing.]"
->
-> RECOMMENDATION: Choose [A or B] because [one-line reason explaining which argument
-> is more compelling and why]. Score completeness only if options vary coverage of
-> this decision; otherwise state that they differ in kind.
+Use AskUserQuestion for that row's change. Hold every other row's approved value or
+pending disposition constant across options. Keep tests establishing the same chosen
+behavior with it. Recommend + WHY; compare completeness only within this change's
+coverage, otherwise state that options differ in kind.
 
-Options:
-- A) Apply this one change
-- B) Keep this decision's current disposition
-- C) Investigate this decision before choosing
-- D) Defer this one change to TODOS.md
+- A) Apply this change
+- B) Keep this row's current disposition
+- C) Investigate this change before choosing
+- D) Defer this change to TODOS.md
 
-Wait for the user's response. Do NOT default to accepting because you agree with the
-outside voice. If the user chooses B, the current approach stands — do not re-argue.
+**3. Obtain the answer.** Wait for the user; model agreement is evidence, not consent.
+In /autoplan, preserve its authorized auto-decision and User Challenge rules, audit
+trail and final gate.
 
-If no tension points exist, note: "No cross-model tension — both reviewers agree."
+**4. Apply the answered row.** Record its answer reference and exact accepted scope,
+then use a scoped Edit for those amendments before taking the next row. Keep means
+its current disposition stands. Record investigation or deferral explicitly without
+authorizing implementation; User Challenges stay pending for /autoplan's final gate.
+Retain other rows and risks; one answer does not clear the finding's remaining changes.
+
+After processing the queue, report findings, dispositions and remaining disagreements.
 
 **Persist the result:**
 ```bash

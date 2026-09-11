@@ -854,47 +854,46 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-After presenting the outside voice findings, note any points where the outside voice
-disagrees with the review findings from earlier sections. Flag these as:
+**1. Map findings to pending changes.** Before drafting questions, queue independently
+selectable additions, changes, removals or deferrals against existing working decisions
+or issue references; reuse their ledger where present:
 
-\`\`\`
-CROSS-MODEL TENSION:
-  [Topic]: Review said X. Outside voice says Y. [Present both perspectives neutrally.
-  State what context you might be missing that would change the answer.]
-\`\`\`
+finding | issue/decision reference | current disposition + approval reference | proposed change | changed evidence/assumption | other rows unchanged or pending
 
-**User Sovereignty:** Do NOT auto-incorporate outside voice recommendations into the plan.
-Before drafting options, split each tension point into independently selectable
-actions, including adding, changing, dropping or deferring work. One reviewer bullet
-or shared topic can contain several decisions. Ask one per call; hold every other
-action fixed at its approved value or explicitly pending in all options. Adding one
-remedy cannot also approve another remedy's TODO. Tests establishing the same chosen
-behavior stay together. Compare completeness only within that one decision.
+A reviewer bullet affecting separate issues produces separate rows. Exact confirmations
+and source-proven factual corrections update evidence without authorizing behavior
+changes. New proposed changes still queue when reviewers agree. Preserve unchanged
+contracts; reopening requires concrete contradictory evidence or a changed assumption.
+Retain unresolved risks and verification.
 
-The user decides. Cross-model agreement is evidence, not permission. Preserve declared
-contracts and exact earlier approvals; reopening requires concrete contradictory
-evidence or a changed assumption. State what changed. You MUST NOT apply the change without
-explicit user approval.
+**2. Draft from one pending row.** Cite its issue/decision reference. State the current
+disposition and outside proposal, describing any disagreement neutrally:
 
-For each unresolved independent decision, use AskUserQuestion:
+> "Outside-voice proposal [issue/decision reference]: [proposed change].
+> Current disposition: [approved choice + reference, or unresolved].
+> Outside evidence/recommendation: [Y]. [What changed; what context may be missing.]"
 
-> "Cross-model disagreement on [topic]. The review found [X] but the outside voice
-> argues [Y]. [One sentence on what context you might be missing.]"
->
-> RECOMMENDATION: Choose [A or B] because [one-line reason explaining which argument
-> is more compelling and why]. Score completeness only if options vary coverage of
-> this decision; otherwise state that they differ in kind.
+Use AskUserQuestion for that row's change. Hold every other row's approved value or
+pending disposition constant across options. Keep tests establishing the same chosen
+behavior with it. Recommend + WHY; compare completeness only within this change's
+coverage, otherwise state that options differ in kind.
 
-Options:
-- A) Apply this one change
-- B) Keep this decision's current disposition
-- C) Investigate this decision before choosing
-- D) Defer this one change to TODOS.md
+- A) Apply this change
+- B) Keep this row's current disposition
+- C) Investigate this change before choosing
+- D) Defer this change to TODOS.md
 
-Wait for the user's response. Do NOT default to accepting because you agree with the
-outside voice. If the user chooses B, the current approach stands — do not re-argue.
+**3. Obtain the answer.** Wait for the user; model agreement is evidence, not consent.
+In /autoplan, preserve its authorized auto-decision and User Challenge rules, audit
+trail and final gate.
 
-If no tension points exist, note: "No cross-model tension — both reviewers agree."
+**4. Apply the answered row.** Record its answer reference and exact accepted scope,
+then use a scoped Edit for those amendments before taking the next row. Keep means
+its current disposition stands. Record investigation or deferral explicitly without
+authorizing implementation; User Challenges stay pending for /autoplan's final gate.
+Retain other rows and risks; one answer does not clear the finding's remaining changes.
+
+After processing the queue, report findings, dispositions and remaining disagreements.
 
 **Persist the result:**
 \`\`\`bash
