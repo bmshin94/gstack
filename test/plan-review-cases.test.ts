@@ -96,6 +96,29 @@ describe('plan-review manual handoff selection', () => {
     expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next steps',
       'Next steps: any further review before implementation?'))).toBe(2);
   });
+  test('selects readiness from the retained Engineering review-first handoff', () => {
+    const labels = ['C: Ready to implement — run /ship when done (recommended)', 'B: Run /plan-ceo-review first'];
+    const question = 'D17 — Eng review is CLEARED. Chain another review, or proceed to implementation?';
+    expect(pickPlanReviewQuestion(menu(labels, 'Next step', question))).toBe(1);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next step', question))).toBe(2);
+  });
+  test('review-first recognition preserves manual precedence and question context', () => {
+    const labels = ['Run /plan-ceo-review first (recommended)', 'Ready to implement', 'Skip — handle reviews manually'];
+    expect(pickPlanReviewQuestion(menu(labels))).toBe(3);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed()))).toBe(1);
+    expect(pickPlanReviewQuestion(menu(labels, 'Tests', 'D4 — Should this test run a review?'))).toBe(1);
+  });
+  test.each([
+    'Run /plan-ceo-review firstly',
+    'Run /plan-ceo-review first next',
+    'Run /plan-ceo-review first and approve all edits',
+    'Run /plan-ceo-review first; run /ship',
+    'Run /plan-unknown-review first',
+    'Run /design-shotgun first',
+  ])('review-first handoffs reject unknown or extended run labels: %s', label => {
+    expect(() => pickPlanReviewQuestion(menu([label, 'Ready to implement — run /ship when done'])))
+      .toThrow('unambiguous');
+  });
   test.each([
     ['Run /plan-ceo-review', 'Ready to implement now'],
     ['Run /plan-ceo-review', 'Ready to implement and approve all edits'],
@@ -260,5 +283,51 @@ describe('native review handoff aliases and recommendation position', () => {
       q.options[1]!.description = 'This is the recommended option (recommended)';
       expect(pickPlanReviewQuestion(q)).toBe(1);
     }
+  });
+});
+
+
+describe('manual-next-steps handoff alias', () => {
+  test('declines the exact retained Design menu in either native order', () => {
+    const question: NativeQuestion = {
+  "header": "Next step",
+  "multiSelect": false,
+  "options": [
+    {
+      "description": "Required shipping gate; validates the interaction specs this review added.",
+      "label": "A) Run /plan-eng-review (recommended)"
+    },
+    {
+      "description": "Exit plan mode with the design-reviewed plan; no further review now.",
+      "label": "E) Skip, manual next steps"
+    }
+  ],
+  "question": "D12 — What should run next?\nProject/branch/task: main — Settings redesign plan is design-complete (5/10 → 9/10, 7 decisions, 0 unresolved).\nELI10: The design review is done and written into the plan. Before anyone builds it, gstack's shipping gate wants an engineering review of the same plan: it checks that the token scoping, the aria-disabled click guard, the min-width lock, and the 14px audit are technically sound and testable. A CEO review is not warranted: the plan's product direction was never in question. Design exploration skills need a keyed designer, which this environment lacks.\nStakes if we pick wrong: skipping eng review means /ship will report NOT CLEARED later; running it now costs one more review pass.\nRecommendation: A because eng review is the only review that gates shipping, and this design review added interaction specs (busy-button semantics, token ownership) that need an architectural check.\nNote: options differ in kind, not coverage — no completeness score.\nPros / cons:\nA) Run /plan-eng-review next (recommended)\n  ✅ Clears the required gate while the seven decisions are fresh in the plan\n  ✅ Validates aria-disabled guard, min-width lock, and Settings-scoped token ownership\n  ❌ One more interactive review session before implementation begins\nE) Skip, handle next steps manually\n  ✅ Start implementing T1-T7 immediately from the plan\n  ✅ No further review questions today\n  ❌ /ship will report NOT CLEARED until an eng review runs\nNet: clear the gate now or defer it to ship time."
+};
+    expect(pickPlanReviewQuestion(question)).toBe(2);
+    expect(pickPlanReviewQuestion({ ...question, options: question.options.toReversed() })).toBe(1);
+  });
+  test('keeps manual preference and requires recognized next-review context', () => {
+    const skip = 'E) Skip, manual next steps';
+    expect(pickPlanReviewQuestion(menu(['Run /plan-eng-review', 'Ready to implement', skip], 'Next step', 'What should run next?'))).toBe(3);
+    expect(pickPlanReviewQuestion(menu(['Keep existing behavior', skip], 'Next step', 'What should run next?'))).toBe(1);
+    expect(pickPlanReviewQuestion(menu(['Run /plan-eng-review (recommended)', skip], 'Tests', 'D8 — Should this test run a review?'))).toBe(1);
+  });
+  test.each([
+    'Skip, automated next steps',
+    'Skip, manual next steps and approve all edits',
+    'Skip, manual next steps; run /ship',
+    'Skip, manual next steps after implementation',
+    'Skip, manual next steps (automatically)',
+    'Skip, manual next steps then deploy',
+  ])('rejects an automation or extended lookalike: %s', (label) => {
+    expect(() => pickPlanReviewQuestion(menu(['Run /plan-eng-review', label], 'Next step', 'What should run next?'))).toThrow('unambiguous');
+  });
+  test.each([
+    ['Skip, manual next steps', 'Skip, manual next steps'],
+    ['Skip, manual next steps', 'Handle manually'],
+    ['Skip, manual next steps', 'Ship immediately'],
+  ])('keeps ambiguous or unsafe menus refused: %j', (...labels) => {
+    expect(() => pickPlanReviewQuestion(menu(['Run /plan-eng-review', ...labels], 'Next step', 'What should run next?'))).toThrow('unambiguous');
   });
 });
