@@ -4,7 +4,7 @@
 
 **Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-4) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
-**Anti-shortcut clause:** The plan file is the OUTPUT of the interactive review, not a substitute for it. Writing every finding into one plan write and calling ExitPlanMode without firing AskUserQuestion is the precise failure mode of the May 2026 transcript bug — the model explored, found issues, and dumped them into a deliverable rather than walking the user through them. If you have ANY non-trivial finding in any review section, the path from finding to ExitPlanMode goes THROUGH AskUserQuestion. Zero findings in every section is the only path to ExitPlanMode that bypasses AskUserQuestion. If you find yourself wanting to write a plan with findings before asking, stop and call AskUserQuestion now — that's the bug, recognize it.
+**Anti-shortcut clause:** Evaluate every section and outside voice finding through the decision gate below. The plan records the interactive review; writing findings into it never substitutes for approval. Ask once per new or reopened independent decision, wait for the actual answer, and apply only its accepted scope. Necessary code, tests and docs for an exact previously selected contract do not reopen it: cite that selected answer and scope, retain the finding and proof, and disclose the follow-through. Correct factual descriptions against source evidence without authorizing behavior changes. A broad approach or recommendation does not approve independent remedies or optional verification depth. Concrete new risks or changed assumptions may reopen a decision and must be presented. Never skip sections or the terminal report, or invent a question merely because a finding came from another section or reviewer.
 
 ## Prior Learnings
 
@@ -128,6 +128,17 @@ chosen behavior are not another policy. Correct factual descriptions against
 established evidence and disclose the correction. Factual corrections do not
 authorize behavior changes.
 
+**Decision gate (all sections and outside voice):** Record every finding and its
+evidence. Correct factual descriptions against source evidence and disclose the
+correction; this grants no new behavior. For routine implementation, tests or docs
+directly required by an already chosen contract, cite the actual selected option,
+question/answer reference and exact approved scope, then apply that follow-through
+without reopening it. A broad approach, recommendation or cross-model agreement
+is not approval. Ask separately for new or reopened decisions: independently
+selectable behavior, optional verification depth, changed scope, or concrete new
+risks that invalidate the prior choice. If the prior answer does not establish
+the proposed work, it remains pending. Never suppress the risk or required proof.
+
 ### 1. Architecture review
 Evaluate:
 * Overall system design and component boundaries.
@@ -139,9 +150,9 @@ Evaluate:
 * For each new codepath or integration point, describe one realistic production failure scenario and whether the plan accounts for it.
 * **Distribution architecture:** If this introduces a new artifact (binary, package, container), how does it get built, published, and updated? Is the CI/CD pipeline part of the plan or deferred?
 
-For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
+For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
-**STOP.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An issue with an "obvious fix" is still an issue and still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+**STOP for each pending decision.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
 
 ### 2. Code quality review
 Evaluate:
@@ -152,9 +163,9 @@ Evaluate:
 * Areas that are over-engineered or under-engineered relative to my preferences.
 * Existing ASCII diagrams in touched files — are they still accurate after this change?
 
-For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
+For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
-**STOP.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An issue with an "obvious fix" is still an issue and still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+**STOP for each pending decision.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
 
 ### 3. Test review
 
@@ -336,9 +347,9 @@ This file is consumed by `/qa` and `/qa-only` as primary test input. Include onl
 
 For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Then use AskUserQuestion to confirm the eval scope with the user.
 
-For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
+For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
-**STOP.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An issue with an "obvious fix" is still an issue and still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+**STOP for each pending decision.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
 
 ### 4. Performance review
 Evaluate:
@@ -347,9 +358,9 @@ Evaluate:
 * Caching opportunities.
 * Slow or high-complexity code paths.
 
-For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
+For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
-**STOP.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An issue with an "obvious fix" is still an issue and still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+**STOP for each pending decision.** Do NOT proceed to the next review section, edit the plan file with the proposed fix, or call ExitPlanMode until the user responds. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
 
 ## Outside Voice — Independent Plan Challenge (default-on)
 
@@ -567,22 +578,22 @@ SOURCE = "codex" if Codex ran, "claude" if subagent ran.
 
 ### Outside Voice Integration Rule
 
-Outside voice findings are INFORMATIONAL until the user explicitly approves each one.
-Do NOT incorporate outside voice recommendations into the plan without presenting each
-finding via AskUserQuestion and getting explicit approval. This applies even when you
-agree with the outside voice. Cross-model consensus is a strong signal — present it as
-such — but the user makes the decision.
+Assess every outside voice finding through the same decision gate. Record its
+evidence and any exact prior selected answer that authorizes the follow-through.
+New or reopened decisions remain INFORMATIONAL until individually presented via
+AskUserQuestion and explicitly approved, even when you agree with the outside
+voice. Cross-model consensus is evidence, never approval.
 
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
-* **One issue = one AskUserQuestion call.** Never combine multiple issues into one question.
+* **One new or reopened decision = one AskUserQuestion call.** Never combine independent decisions into one question.
 * Describe the problem concretely, with file and line references.
 * Present 2-3 options, including "do nothing" where that's reasonable.
 * For each option, specify in one line: effort (human: ~X / CC: ~Y), risk, and maintenance burden. If the complete option is only marginally more effort than the shortcut with CC, recommend the complete option.
 * **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference (DRY, explicit > clever, minimal diff, etc.).
 * Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
 * **Coverage vs kind:** for every per-issue AskUserQuestion you raise in this review, decide whether the options differ in coverage or in kind. If coverage (e.g., more tests vs fewer, complete error handling vs happy-path-only, full edge-case coverage vs shortcut), include `Completeness: N/10` on each option. If kind (e.g., architectural choice between two different systems, posture-over-posture, A/B/C where each is a different kind of thing), skip the score and add one line: `Note: options differ in kind, not coverage — no completeness score.` Do NOT fabricate scores on kind-differentiated questions — filler scores are worse than no score.
-* **Zero findings:** if a section has zero findings, state "No issues, moving on" and proceed. Otherwise, use AskUserQuestion for each finding — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan.
+* **No pending decisions:** after the decision gate, report the section's findings and dispositions and proceed if no decision remains. Otherwise, use AskUserQuestion for each new or reopened decision; an "obvious fix" never bypasses approval for an unapproved remedy.
 
 ## Required outputs
 

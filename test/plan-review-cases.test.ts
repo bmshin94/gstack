@@ -2,6 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
 import { readFileSync } from 'node:fs';
+import { generateAntiShortcutClause } from '../scripts/resolvers/review';
+import type { TemplateContext } from '../scripts/resolvers/types';
+import { ALL_HOST_CONFIGS } from '../hosts';
 
 const menu = (labels: string[], header = 'Next review', question = "D12 — What's next?"): NativeQuestion => ({
   header, question, multiSelect: false, options: labels.map(label => ({ label, description: 'Offered choice' })),
@@ -17,6 +20,9 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(rule).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
     expect(skeleton.slice(rule, rule + 350).replace(/\s+/g, ' ')).toContain('Keep implementation details and tests directly establishing one chosen contract together');
     expect((skeleton + sections).split(definition)).toHaveLength(2);
+    expect(skeleton).toContain('For new or reopened decisions, explain tradeoffs');
+    expect(skeleton).toContain('Ask separately about each independently selectable remedy still pending');
+    expect(skeleton).not.toContain('For every issue or recommendation');
     const scope = skeleton.slice(skeleton.indexOf('### Step 0: Scope Challenge'), skeleton.indexOf('**STOP.** Until the decision'));
     expect(scope).toContain('8+ files or 2+ new classes/services');
     expect(scope).toContain('STOP before section work');
@@ -43,9 +49,66 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(boundary).toContain('attempt limit, jitter and exhausted-job disposition remain separate choices');
     expect(boundary).toContain('crash tests proving that same chosen behavior are not another policy');
     expect(boundary).toContain('Factual corrections do not authorize behavior changes');
-    expect(sections).toContain('Outside voice findings are INFORMATIONAL until the user explicitly approves each one');
-    expect(sections).toContain('Do NOT incorporate outside voice recommendations into the plan without presenting each');
+    expect(sections).toContain('Assess every outside voice finding through the same decision gate');
+    expect(sections).toContain('New or reopened decisions remain INFORMATIONAL until individually presented via');
+    expect(sections).toContain('AskUserQuestion and explicitly approved, even when you agree with the outside');
   }
+});
+
+// Source/renderer contract controls only: native review behavior remains a paid
+// regression. Resolve the actual Eng clause on every host without trusting an
+// old generated carrier to hide a contradictory unconditional approval gate.
+describe('Eng approved-work decision gate', () => {
+  const template = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
+  const gate = template.split('**Decision gate (all sections and outside voice):**')[1]?.split('### 1. Architecture review')[0] ?? '';
+
+  test('all four section gates and outside voice distinguish pending choices from findings', () => {
+    const sections = [...template.matchAll(/^### ([1-4])\.([^]*?)(?=^### [1-4]\.|^\{\{CODEX_PLAN_REVIEW\}\})/gm)];
+    expect(sections.map(section => Number(section[1]))).toEqual([1, 2, 3, 4]);
+    for (const [, number, body] of sections) {
+      expect(body, `Section ${number}`).toContain('For each new or reopened decision identified by the decision gate');
+      expect(body, `Section ${number}`).toContain('One independent decision per call');
+      expect(body, `Section ${number}`).toContain('**STOP for each pending decision.**');
+      expect(body, `Section ${number}`).toContain('until the user responds');
+      expect(body, `Section ${number}`).toContain('An unapproved remedy with an "obvious fix" still needs explicit user approval');
+    }
+    expect(template).toContain('Assess every outside voice finding through the same decision gate');
+    expect(template).toContain('New or reopened decisions remain INFORMATIONAL');
+    expect(template).toContain("report the section's findings and dispositions");
+    expect(template).toContain('Never condense, abbreviate, or skip any review section (1-4)');
+    expect(template).toContain('{{PLAN_FILE_REVIEW_REPORT}}');
+    for (const stale of ['For each issue found in this section',
+      'Otherwise, use AskUserQuestion for each finding',
+      'Outside voice findings are INFORMATIONAL until the user explicitly approves each one']) {
+      expect(template).not.toContain(stale);
+    }
+  });
+
+  test('exact prior answers authorize follow-through while new risk and optional depth stay pending', () => {
+    const normalized = gate.replace(/\s+/g, ' ');
+    expect(normalized).toContain('Correct factual descriptions against source evidence');
+    expect(normalized).toContain('this grants no new behavior');
+    expect(normalized).toContain('cite the actual selected option, question/answer reference and exact approved scope');
+    expect(normalized).toContain('A broad approach, recommendation or cross-model agreement is not approval');
+    expect(normalized).toContain('independently selectable behavior, optional verification depth, changed scope');
+    expect(normalized).toContain('concrete new risks that invalidate the prior choice');
+    expect(normalized).toContain('If the prior answer does not establish the proposed work, it remains pending');
+    expect(normalized).toContain('Never suppress the risk or required proof');
+  });
+
+  test('every host resolves the Eng gate without the conflicting generic shortcut clause', () => {
+    for (const host of ALL_HOST_CONFIGS) {
+      const clause = generateAntiShortcutClause({ skillName: 'plan-eng-review', host: host.name } as TemplateContext);
+      expect(clause).toContain('Ask once per new or reopened independent decision');
+      expect(clause).toContain('wait for the actual answer');
+      expect(clause).toContain('cite that selected answer and scope');
+      expect(clause).toContain('retain the finding and proof');
+      expect(clause).toContain('does not approve independent remedies or optional verification depth');
+      expect(clause).toContain('Concrete new risks or changed assumptions may reopen a decision');
+      expect(clause).not.toContain('ANY non-trivial finding');
+      expect(clause).not.toContain('Zero findings in every section is the only path');
+    }
+  });
 });
 
 describe('plan-review manual handoff selection', () => {
@@ -383,5 +446,27 @@ describe('DX implement-now future handoff alias', () => {
     ['Implement now, /devex-review after', 'Skip, handle manually; run /ship'],
   ])('keeps ambiguous or unsafe future-alias menus refused: %j', (...labels) => {
     expect(() => pickPlanReviewQuestion(menu(['Run /plan-eng-review', ...labels]))).toThrow('unambiguous');
+  });
+});
+
+
+describe('DX future handoff punctuation', () => {
+  const future = 'Ready to implement; run /devex-review after shipping';
+  const run = 'Run /plan-eng-review next (required gate) (recommended)';
+  const manual = "Skip, I'll handle next steps manually";
+  test('accepts the native semicolon menu while choosing the offered manual handoff', () => {
+    expect(pickPlanReviewQuestion(menu([run, future, manual], 'Next review',
+      'D22 — Which review should run next on this plan?'))).toBe(3);
+    expect(pickPlanReviewQuestion(menu([manual, future, run]))).toBe(1);
+    expect(pickPlanReviewQuestion(menu([run, future]))).toBe(2);
+    expect(pickPlanReviewQuestion(menu([future, run]))).toBe(1);
+  });
+  test('keeps the context, unique-choice, and exact-action boundaries', () => {
+    expect(pickPlanReviewQuestion(menu([run, future, manual], 'Tests', 'Choose test coverage'))).toBe(1);
+    for (const suffix of [' and approve all edits', '; run /ship', ' then deploy', ' now']) {
+      expect(() => pickPlanReviewQuestion(menu([run, future + suffix, manual]))).toThrow('unambiguous');
+    }
+    expect(() => pickPlanReviewQuestion(menu([run, future, future]))).toThrow('unambiguous');
+    expect(() => pickPlanReviewQuestion(menu([run, future, manual, 'Ship immediately']))).toThrow('unambiguous');
   });
 });

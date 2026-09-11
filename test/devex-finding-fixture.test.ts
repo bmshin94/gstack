@@ -26,6 +26,15 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       const mode = content.slice(content.indexOf('### 0E. Mode Selection'), content.indexOf('Context-dependent defaults:'));
       expect(mode).toContain('Use the mode the user explicitly requested for this review.');
       expect(mode).toContain('skip the mode question and continue to 0F. Otherwise, ask below.');
+      const sectionText = generated.artifacts.filter(item => item.kind === 'section'
+        && item.host === artifact.host && item.relativePath.startsWith('plan-devex-review/'))
+        .map(item => fs.readFileSync(path.join(outputRoot, item.relativePath), 'utf8')).join('\n');
+      const allContent = content + '\n' + sectionText;
+      expect(allContent).toContain('Record observed human onboarding separately from automated execution');
+      expect(allContent).toContain('a warm snippet timer is neither a fresh-start check nor a human benchmark');
+      expect(allContent).toContain('Keep estimates labeled until measured');
+      expect(allContent).toContain('A target tier does not itself approve telemetry, an automated');
+
     }
   } finally { fs.rmSync(outputRoot, { recursive: true, force: true }); }
 }, 20_000);
@@ -107,7 +116,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
       'type hints and py.typed already ship',
     ]) expect(baseline).toContain(contract);
 
-    for (const file of ['README.md', 'docs/getting-started.md', 'docs/feedback.md']) {
+    for (const file of ['README.md', 'docs/getting-started.md', 'docs/feedback.md', 'docs/reference-v1.md']) {
       const body = fs.readFileSync(path.join(opts.cwd, file), 'utf8');
       expect(execFileSync('git', ['show', 'HEAD:' + file], { cwd: opts.cwd, encoding: 'utf8' })).toBe(body);
       expect(body).toBe(fs.readFileSync(path.join(${JSON.stringify(ROOT)}, 'test/fixtures/devex-existing-sdk', file), 'utf8'));
@@ -198,4 +207,40 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-devex-finding
     const artifact = output.split('\n').find(line => line.startsWith('Plan review peer comparison artifact: '));
     expect(JSON.parse(artifact!.slice('Plan review peer comparison artifact: '.length))).toEqual({ finalPlan });
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+
+test('materialized DX references have working local links without inventing completed launch work', () => {
+  const fixture = path.join(ROOT, 'test/fixtures/devex-existing-sdk');
+  const files = ['README.md', 'docs/getting-started.md', 'docs/feedback.md', 'docs/reference-v1.md'];
+  for (const file of files) {
+    const body = fs.readFileSync(path.join(fixture, file), 'utf8');
+    for (const [, target] of body.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+      const [relative, anchor] = target!.split('#');
+      const destination = path.resolve(path.dirname(path.join(fixture, file)), relative || path.basename(file));
+      expect(destination.startsWith(fixture + path.sep)).toBe(true);
+      const linked = fs.readFileSync(destination, 'utf8');
+      if (anchor) {
+        const headings = [...linked.matchAll(/^#+ (.+)$/gm)].map(match => match[1]!.toLowerCase()
+          .replace(/[^\w\s-]/g, '').replace(/\s/g, '-'));
+        expect(headings, target).toContain(anchor);
+      }
+    }
+  }
+  const readme = fs.readFileSync(path.join(fixture, 'README.md'), 'utf8');
+  expect(readme).toContain('no selected primary developer persona or peer-DX study');
+  expect(readme).toContain('No first-run duration has\nbeen measured');
+  expect(readme).toContain('There is no skip');
+  expect(readme).toContain('no interactive demo or designed aha sequence');
+  expect(readme).toContain('one ordinary passing case; it has no staged regression');
+  const reference = fs.readFileSync(path.join(fixture, 'docs/reference-v1.md'), 'utf8');
+  const guide = fs.readFileSync(path.join(fixture, 'docs/getting-started.md'), 'utf8');
+  const errorLink = /^Reference: (docs\/[^#]+)#([^\s]+)$/m.exec(guide);
+  expect(errorLink).not.toBeNull();
+  expect(fs.readFileSync(path.join(fixture, errorLink![1]!), 'utf8')).toBe(reference);
+  const errorHeadings = [...reference.matchAll(/^### (.+)$/gm)].map(match => match[1]!.toLowerCase().replace(/\s/g, '-'));
+  expect(errorHeadings).toContain(errorLink![2]!);
+
+  expect(reference).toContain('cannot interrupt arbitrary application code or cap requests made by a separate');
+  expect(reference).toContain('Examples describe\nits assumed existing interface; they have not been executed');
 });

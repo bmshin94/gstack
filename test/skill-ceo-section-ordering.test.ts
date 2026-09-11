@@ -166,6 +166,16 @@ describe('CEO review decision continuity contract', () => {
     expect(earlyLedger).toContain('concrete contradiction or changed assumptions');
     expect(earlyLedger).toContain('hypothetical violations or model agreement alone do not invalidate a contract');
     expect(earlyLedger).toContain('Keep actual code risks visible');
+    expect(earlyLedger).toContain('Preserve stated units and dependencies');
+    expect(earlyLedger).toContain('Changing them via reuse or savings needs evidence and approval');
+    expect(earlyLedger).toContain('a deliverable cap is not a time budget');
+    const temporal = skeleton.split('### 0E.')[1]?.split('{{SECTION:review-sections}}')[0] ?? '';
+    expect(temporal).toContain('settle scope and feasibility blockers now');
+    expect(temporal).toContain('leave other design choices pending unless expansion is approved');
+    expect(template).toContain('each required diagram, map, and output describes the candidate boundaries');
+    expect(template).toContain('Preserve non-blocking implementation choices as pending with an owner and required verification');
+    expect(template).toContain('resolve or reopen any that change the scope decision or expose a material blocker');
+    expect(template).toContain('distinguish a completed prioritization review from implementation readiness');
     expect(continuity).toContain('Continue the ledger from input reading and Step 0');
     expect(continuity).toContain('declared conventions and existing test coverage');
     for (const requirement of ['issue ID', 'owner section', 'evidence', 'exact accepted choice and scope',
@@ -186,10 +196,10 @@ describe('CEO review decision continuity contract', () => {
     expect(template).toContain('New or reopened decisions still require explicit approval');
   });
 
-  test('non-CEO consumers retain the exact preceding anti-shortcut contract on every host', () => {
+  test('Design and DX retain the exact preceding anti-shortcut contract on every host', () => {
     // SHA-256 of the e801b515 resolver output; detects collateral prompt changes.
     const original = '82e55bcd35a16a20d243978707c786f25e24ac5d6a197d9fedb2cb0bb223abb7';
-    for (const skillName of ['plan-eng-review', 'plan-devex-review', 'plan-design-review']) {
+    for (const skillName of ['plan-devex-review', 'plan-design-review']) {
       for (const host of ALL_HOST_CONFIGS) {
         const clause = generateAntiShortcutClause({ skillName, host: host.name } as TemplateContext);
         expect(createHash('sha256').update(clause).digest('hex'), `${skillName}/${host.name}`).toBe(original);

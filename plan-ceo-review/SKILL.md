@@ -864,7 +864,7 @@ sections. Read a section in full before doing its step; do not work from memory.
 
 ## Step 0: Nuclear Scope Challenge + Mode Selection
 
-From input reading through Step 0 and outside voice, keep a ledger of declared contracts, conventions, existing coverage and exact decisions. Reopen only with concrete contradiction or changed assumptions; hypothetical violations or model agreement alone do not invalidate a contract. Keep actual code risks visible.
+From input reading through Step 0 and outside voice, keep a ledger of declared contracts, conventions, existing coverage and exact decisions. Reopen only with concrete contradiction or changed assumptions; hypothetical violations or model agreement alone do not invalidate a contract. Keep actual code risks visible. Preserve stated units and dependencies. Changing them via reuse or savings needs evidence and approval; a deliverable cap is not a time budget.
 
 ### 0A. Premise Challenge
 1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
@@ -1093,17 +1093,14 @@ echo '{"skill":"plan-ceo-review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterat
 Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.
 
 ### 0E. Temporal Interrogation (EXPANSION, SELECTIVE EXPANSION, and HOLD modes)
-Think ahead to implementation: What decisions will need to be made during implementation that should be resolved NOW in the plan?
+For prioritization, settle scope and feasibility blockers now; leave other design choices pending unless expansion is approved.
 ```
   HOUR 1 (foundations):     What does the implementer need to know?
   HOUR 2-3 (core logic):   What ambiguities will they hit?
   HOUR 4-5 (integration):  What will surprise them?
   HOUR 6+ (polish/tests):  What will they wish they'd planned for?
 ```
-NOTE: These represent human-team implementation hours. With CC + gstack,
-6 hours of human implementation compresses to ~30-60 minutes. The decisions
-are identical — the implementation speed is 10-20x faster. Always present
-both scales when discussing effort.
+These are human-team hours: with CC + gstack, 6 hours becomes ~30-60 minutes (10-20x faster), with identical decisions. Always present both effort scales.
 
 Surface decisions that must be settled now as separate questions for the user NOW, one issue per AskUserQuestion. Do not defer a critical risk to a later review section. An explicit Step 0 answer remains valid: carry its exact accepted choice and scope into the working review ledger. Do not ask again merely to move a decision into a review section; new material tradeoffs or changed assumptions still require their own approval.
 

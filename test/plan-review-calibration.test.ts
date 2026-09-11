@@ -17,8 +17,20 @@ test('semantic helper changes also select the separate DX analysis calibration',
     'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts']) {
     const shared = ['test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts',
       'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts'].includes(file);
+    const expected = shared ? [...IDS, 'plan-devex-peer-comparison-classification'] : [...IDS];
+    // plan-review-cases.test.ts also verifies the Eng template/renderer gate.
+    // Its direct behavioral consumers extend the unchanged helper-only set.
+    if (file === 'test/plan-review-cases.test.ts') expected.push(
+      'plan-eng-review', 'plan-eng-review-artifact', 'plan-review-report',
+      'plan-eng-review-plan-mode', 'plan-mode-no-op', 'conductor-prose',
+      'carve-section-loading', 'autoplan-chain-pty', 'plan-eng-finding-floor',
+      'plan-eng-review-format-coverage', 'plan-eng-review-format-kind',
+      'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format',
+      'codex-offered-eng-review', 'codex-plan-eng-format-coverage',
+      'codex-plan-eng-format-kind', 'plan-eng-coverage-audit', 'autoplan-dual-voice',
+    );
     expect(selectTests([file], E2E_TOUCHFILES, []).selected.sort()).toEqual(
-      shared ? [...IDS, 'plan-devex-peer-comparison-classification'].sort() : IDS);
+      expected.sort());
   }
   for (const id of IDS) expect(E2E_TIERS[id]).toBe('periodic');
   expect(E2E_TOUCHFILES['plan-ceo-finding-count']).toContain('test/skill-e2e-plan-ceo-paired-control.test.ts');

@@ -59,7 +59,7 @@ export function seedCeoPaymentProject(projectDir: string, plan: string): void {
 export function seedDevexReviewProject(projectDir: string, plan: string): void {
   seedPlanReviewProject(projectDir, plan, 'plan-devex-review');
   const fixture = path.resolve(import.meta.dir, '../fixtures/devex-existing-sdk');
-  const files = ['README.md', 'docs/getting-started.md', 'docs/feedback.md'];
+  const files = ['README.md', 'docs/getting-started.md', 'docs/feedback.md', 'docs/reference-v1.md'];
   fs.mkdirSync(path.join(projectDir, 'docs'));
   for (const file of files) fs.copyFileSync(path.join(fixture, file), path.join(projectDir, file));
   const git = (args: string[]) => execFileSync('git', args, { cwd: projectDir, stdio: 'pipe', timeout: 10_000 });

@@ -43,6 +43,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/devex-existing-sdk/README.md', ['plan-devex-finding-count']],
     ['test/fixtures/devex-existing-sdk/docs/getting-started.md', ['plan-devex-finding-count']],
     ['test/fixtures/devex-existing-sdk/docs/feedback.md', ['plan-devex-finding-count']],
+    ['test/fixtures/devex-existing-sdk/docs/reference-v1.md', ['plan-devex-finding-count']],
     ['test/design-finding-fixture.test.ts', ['plan-design-finding-count']],
     ['test/helpers/hermetic-env.test.ts', ['plan-ceo-split-overflow']],
     ['test/helpers/ceo-split-question-policy.ts', ['plan-ceo-split-overflow']],
@@ -137,5 +138,37 @@ test('shared plan question source selects every generated review consumer', () =
     expect(actual.reason).toBe('diff');
     expect(expected.selected.length).toBeGreaterThan(0);
     expect(expected.selected.filter(id => !actual.selected.includes(id))).toEqual([]);
+  }
+});
+
+
+test('Eng approval-rule source and free contract controls select every declared Eng consumer', () => {
+  const expected = [
+      'plan-eng-review',
+      'plan-eng-review-artifact',
+      'plan-review-report',
+      'plan-eng-review-plan-mode',
+      'plan-mode-no-op',
+      'conductor-prose',
+      'carve-section-loading',
+      'autoplan-chain-pty',
+      'plan-eng-finding-count',
+      'plan-eng-finding-floor',
+      'plan-eng-multi-finding-batching',
+      'plan-eng-review-format-coverage',
+      'plan-eng-review-format-kind',
+      'plan-ceo-review-prosons-cadence',
+      'plan-review-prosons-format',
+      'codex-offered-eng-review',
+      'codex-plan-eng-format-coverage',
+      'codex-plan-eng-format-kind',
+      'plan-eng-coverage-audit',
+      'autoplan-dual-voice'
+  ];
+  for (const file of ['plan-eng-review/sections/review-sections.md.tmpl', 'scripts/resolvers/review.ts', 'test/plan-review-cases.test.ts']) {
+    const result = selectTests([file], E2E_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    for (const id of expected) expect(result.selected, `${file}: ${id}`).toContain(id);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toContain('plan-eng-review/SKILL.md sections');
   }
 });

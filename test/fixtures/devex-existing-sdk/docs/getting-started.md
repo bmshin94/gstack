@@ -60,3 +60,30 @@ Structured result fields retain full values; displayed summaries may truncate.
 This reference check already exists in the revised synthetic baseline. It adds
 no launch gate, evaluator default, telemetry or designed onboarding delight beat.
 No executable SDK or assertion of its execution is supplied in this fixture.
+
+## Handling errors
+
+The assumed SDK's existing release checks produce this malformed-case example:
+
+```text
+SDK_E001: case 0 is missing 'expected'
+Cause: CaseValidationError at cases[0].expected
+Next: add the expected output for this case and retry.
+Reference: docs/reference-v1.md#sdk-e001
+```
+
+This is an authored synthetic output contract, not output obtained by executing
+the SDK here. Error codes, originating causes, actionable next steps, secret
+redaction, and versioned reference anchors are existing contracts.
+
+## Next steps
+
+- Use the same callable and cases in [pytest](reference-v1.md#api-and-pytest), with
+  the application's own acceptance assertion.
+- Before substituting a provider-backed callable, configure [deadlines and cost
+  limits](reference-v1.md#configuration). Arbitrary application requests require
+  their own bounds; SDK-managed limits do not intercept them.
+- Run the [noninteractive CLI](reference-v1.md#cli) locally or in CI; the same
+  invocation and exit codes apply to both.
+- Find [error codes](reference-v1.md#errors), the [beta upgrade contract](reference-v1.md#upgrades),
+  and the existing [support path](feedback.md).

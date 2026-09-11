@@ -4,6 +4,9 @@ The assumed existing open-source SDK uses its public repository's issue template
 and pinned getting-started thread in Discussions. README already links this page.
 Use either path; ordinary CONTRIBUTING and support routes remain available.
 
+Find the installed SDK version with `python -m pip show eval-sdk` and the Python
+version with `python --version`; neither triggers the first-run check.
+
 The existing friction template and thread ask for:
 
 - the step where you got stuck and the SDK/Python versions;

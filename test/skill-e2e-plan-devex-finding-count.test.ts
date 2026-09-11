@@ -34,10 +34,16 @@ design its language, evaluator, API, or release infrastructure from scratch. The
 unchanged contracts describe the fixture's current product and remain reviewable
 if a concrete incompatibility with the launch plan is found.
 This review input summarizes those contracts. README.md and docs/getting-started.md
-(including the free-text example) and docs/feedback.md are materialized product
-documentation for this synthetic baseline. The SDK implementation and other
-references are not included; example commands describe the assumed SDK and are
+(including the free-text example), docs/feedback.md, and docs/reference-v1.md
+are materialized product documentation for this synthetic baseline. The SDK
+implementation is not included; example commands describe the assumed SDK and are
 not runnable against an implementation in this review fixture.
+The revised fixture additionally supplies a version lookup, reference navigation,
+beta-stability summary, neutral pytest assertion, error example, and documented
+configuration boundaries. These are new explicit synthetic baseline facts, not
+claims about earlier runs. In particular, arbitrary application requests need
+their own bounds; SDK-managed provider limits cannot intercept them. All five
+launch gaps in the supplied plan remain unresolved; the added reference is not their remedy.
 
 - The Python package is eval-sdk, imported as eval_sdk, with the eval-sdk CLI.
   The README already states its purpose (evaluate an application's outputs against
