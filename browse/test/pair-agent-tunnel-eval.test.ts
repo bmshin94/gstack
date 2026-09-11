@@ -52,7 +52,7 @@ function captureOutput(stream: ReadableStream<Uint8Array>) {
       tail += `\n[output capture failed: ${error instanceof Error ? error.message : String(error)}]`;
     } finally { finished = true; reader.releaseLock(); }
   })();
-  return { done, text: () => tail, cancel: () => {
+  return { done, isFinished: () => finished, text: () => tail, cancel: () => {
     if (finished) return;
     tail += '\n[output incomplete: cleanup grace expired]';
     void reader.cancel().catch(() => {});
@@ -111,19 +111,31 @@ async function waitForTunnelPort(stateFile: string, assertRunning: () => void, s
 }
 
 async function stopProcess(proc: DaemonProcess, stdout: OutputCapture, stderr: OutputCapture): Promise<void> {
+  let killError: unknown;
   if (proc.exitCode === null && proc.signalCode === null) {
-    try { proc.kill('SIGKILL'); } catch { /* already exited */ }
+    try { proc.kill('SIGKILL'); } catch (error) { killError = error; }
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const exited = proc.exited;
+  let exitSettled = false;
+  void exited.then(() => { exitSettled = true; }, () => {});
   try {
     const settled = await Promise.race([
-      Promise.all([proc.exited, stdout.done, stderr.done]).then(() => true),
+      Promise.all([exited, stdout.done, stderr.done]).then(() => true),
       new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), CLEANUP_GRACE_MS); }),
     ]);
     if (!settled) {
+      const waits = `exit=${exitSettled ? 'settled' : 'pending'}; stdout=${stdout.isFinished() ? 'finished' : 'pending'}; stderr=${stderr.isFinished() ? 'finished' : 'pending'}`;
       stdout.cancel();
       stderr.cancel();
-      throw new Error(`owned child or output did not settle within ${CLEANUP_GRACE_MS}ms cleanup grace`);
+      throw new Error([
+        `owned child or output did not settle within ${CLEANUP_GRACE_MS}ms cleanup grace`,
+        `Cleanup waits: ${waits}`,
+        `Owned daemon PID: ${proc.pid}; exit: ${proc.exitCode ?? 'none'}; signal: ${proc.signalCode ?? 'none'}`,
+        ...(killError ? [`Kill attempt failed: ${String(killError)}`] : []),
+        `stdout tail:\n${stdout.text() || '(empty)'}`,
+        `stderr tail:\n${stderr.text() || '(empty)'}`,
+      ].join('\n'));
     }
   } finally { if (timer) clearTimeout(timer); }
 }
@@ -446,8 +458,33 @@ describe('tunnel fixture startup diagnostics and ownership', () => {
     expect(failure?.message).toContain('inherited stdout stayed open');
     expect(failure?.message).toContain('output incomplete: cleanup grace expired');
     expect(failure?.message).toContain('cleanup failed:');
+    expect(failure?.message).toContain('Cleanup waits: exit=settled; stdout=pending; stderr=finished');
     expect(cancelled).toBe(true);
     expect(fs.existsSync(tempDir)).toBe(false);
     expect(Date.now() - started).toBeLessThan(5000);
+  }, 10_000);
+
+  test('cleanup distinguishes an unresolved exit waiter from already-finished output', async () => {
+    const child = Bun.spawn([process.execPath, '-e', "console.log('exit-wait stdout'); console.error('exit-wait stderr'); process.exit(17);"],
+      { stdio: ['ignore', 'pipe', 'pipe'] });
+    const stdout = captureOutput(child.stdout);
+    const stderr = captureOutput(child.stderr);
+    await Promise.all([child.exited, stdout.done, stderr.done]);
+    const heldExit = new Promise<number>(() => {});
+    // The real child is already reaped; only its exposed waiter is held.
+    const held = new Proxy(child, { get(target, property) {
+      if (property === 'exited') return heldExit;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    let failure: Error | undefined;
+    try { await stopProcess(held, stdout, stderr); }
+    catch (error) { failure = error as Error; }
+    expect(failure?.message).toContain('did not settle within 1000ms cleanup grace');
+    expect(failure?.message).toContain('Cleanup waits: exit=pending; stdout=finished; stderr=finished');
+    expect(failure?.message).toContain(`Owned daemon PID: ${child.pid}; exit: 17; signal: none`);
+    expect(failure?.message).toContain('stdout tail:\nexit-wait stdout');
+    expect(failure?.message).toContain('stderr tail:\nexit-wait stderr');
+    expect(child.exitCode).toBe(17);
   }, 10_000);
 });
