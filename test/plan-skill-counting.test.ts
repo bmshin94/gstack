@@ -1157,3 +1157,21 @@ test('owned clipped Bash repaint recovers a header-only loss with a soft continu
   expect(result.terminalCloseCount).toBe(1);
   expect(result.closed).toBe(true);
 });
+
+
+test('owned Bash repaint recovers a clipped top rule before one grant and restores only after ACK', async () => {
+  const result = await runFakeCounting('**DONE**', 'native-bash-repaint-rule-only');
+  expect(result.error).toBeUndefined();
+  expect(result.longPermissionFrame.split('\n')).toHaveLength(40);
+  expect(result.longPermissionFrame).toStartWith(' Bash command\n');
+  expect(result.longPermissionFrame).not.toContain('─'.repeat(240));
+  expect(result.longPermissionFrame).toContain('—');
+  expect(result.resizes).toEqual([[240, 120], [240, 40]]);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+  expect(result.permissionGrantIds).toHaveLength(1);
+  expect(result.permissionGrantIds).toEqual(result.permissionAckIds);
+  expect(result.prematureAnswers).toEqual([]);
+  expect(result.observation.outcome).toBe('completion_summary');
+  expect(result.terminalCloseCount).toBe(1);
+  expect(result.closed).toBe(true);
+});

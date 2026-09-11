@@ -227,6 +227,10 @@ async function main() {
         ...(scenario === 'native-bash-repaint-header-only' ? { command: [
           'x'.repeat(232) + ' tail', ...Array.from({ length: 29 }, (_, i) => `printf controlled-${i}`),
         ].join('\n'), description: 'Controlled header-only clipping' } : {}),
+        // 29 rendered command rows make 41 total: only the top rule scrolls off.
+        ...(scenario === 'native-bash-repaint-rule-only' ? { command: [
+          'x'.repeat(231) + '— tail', ...Array.from({ length: 27 }, (_, i) => `printf controlled-${i}`),
+        ].join('\n'), description: 'Controlled clipped-rule repaint' } : {}),
         ...(scenario.endsWith('cap') ? { command: retainedDesignBashInput.command + '\n' + 'printf cap\n'.repeat(150) } : {}) }
         : { command: 'printf %s ready > probe.txt', description: 'Write the owned marker' };
       // Source-shaped short native card; no legacy "requires permission" sentence.

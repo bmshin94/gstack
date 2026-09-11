@@ -137,6 +137,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   };
   const permissionInputs = new Map<string, NativePermissionTool>();
   const unfinishedFileInputs: NativePermissionTool[] = [];
+  const observedToolInputs = new Map<string, NativePermissionTool>();
   const requestEvents = events ? readPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
   const bashRequestEvents = events ? readBashPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
   const earlyCompletions = new Map<string, FileCompletionEventCall>();
@@ -219,6 +220,18 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
     const message = row.message;
     if (!Array.isArray(message?.content)) continue;
     for (const block of message.content) {
+      // Persistence can queue unfinished file calls, but one native ID still
+      // denotes one immutable operation, including before stop_reason arrives.
+      if (row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use' && typeof block.id === 'string') {
+        const previous = observedToolInputs.get(block.id);
+        if (previous && (['Write', 'Edit'].includes(previous.name) || ['Write', 'Edit'].includes(block.name))
+          && (previous.name !== block.name || !isDeepStrictEqual(previous.input, block.input ?? {})
+            || previous.cwd !== undefined && typeof row.cwd === 'string' && previous.cwd !== row.cwd)) {
+          throw new Error('Native file permission changed input, name or cwd for an existing tool ID');
+        }
+        observedToolInputs.set(block.id, { id: block.id, name: block.name, input: block.input ?? {},
+          ...(typeof row.cwd === 'string' ? { cwd: row.cwd } : previous?.cwd !== undefined ? { cwd: previous.cwd } : {}) });
+      }
       if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         const bashCompletion = bashCompletions.get(block.tool_use_id);
         if (bashCompletion) {
@@ -345,8 +358,15 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
         && resultTimes.get(native.id)! > event.capturedAtMs;
       const pendingInputs = resultAfterRequest ? []
         : [...permissionInputs.values(), ...unfinishedFileInputs].filter(tool => !results.has(tool.id));
+      const exactPendingIds = new Set(pendingInputs.filter(tool => tool.name === event.toolName
+        && tool.cwd === event.cwd && isDeepStrictEqual(tool.input, event.input)).map(tool => tool.id));
+      if (exactPendingIds.size > 1) throw new Error('Indistinguishable repeated native file permission request');
       for (const tool of pendingInputs) {
-        if (tool.input.file_path === event.input.file_path && (tool.name !== event.toolName
+        // Distinct unfinished edits can be queued for this same path. An exact
+        // current request identifies its input; queued siblings gain no grant
+        // authority, and finalized competing owners still fail closed.
+        const queuedSibling = exactPendingIds.size === 1 && !exactPendingIds.has(tool.id) && !permissionInputs.has(tool.id);
+        if (!queuedSibling && tool.input.file_path === event.input.file_path && (tool.name !== event.toolName
           || tool.cwd !== event.cwd || !isDeepStrictEqual(tool.input, event.input))) {
           throw new Error('Native file permission changed input, name or cwd');
         }
@@ -674,10 +694,10 @@ export function currentBashPermissionCard(visible: string): { columns: number; p
 }
 
 /** Match the renderer's projection, never whitespace-normalize the command.
- * ASCII and literal U+2026 take the pinned CLI's direct Bun.wrapAnsi path.
+ * ASCII and literal U+2014/U+2026 take the pinned CLI's direct Bun.wrapAnsi path.
  * Other Unicode and sanitized/control payloads remain unproven and refused. */
 function nativeBashPayload(value: string, columns: number): string[] | null {
-  if (value.length > 200_000 || /[^\x20-\x7e\n…]/.test(value) || typeof Bun.wrapAnsi !== 'function') return null;
+  if (value.length > 200_000 || /[^\x20-\x7e\n—…]/.test(value) || typeof Bun.wrapAnsi !== 'function') return null;
   const gutter = value.includes('\n') || value.length > 80;
   const prefix = gutter ? '   │ ' : '   ';
   // Pinned Eg preserves hard-line indentation, but elides one separator on
@@ -700,9 +720,13 @@ export function matchesClippedBashPermission(tool: NativePermissionTool, visible
   if (!command || !detail) return false;
   const lines = visible.split('\n').map(line => line.replace(/ +$/, ''));
   while (lines.at(-1) === '') lines.pop();
+  // The top rule can scroll off while the heading and entire payload remain.
+  // Recognize that shape only for repaint; a grant still needs the real rule.
+  const clippedRule = lines[0] === ' Bash command' && lines[1] === '';
+  if (clippedRule) lines.splice(0, 2);
   const end = lines.indexOf('');
   const payload = [...command, ...detail];
-  if (!lines[0]?.startsWith('   │ ') || end < 1 || end > payload.length
+  if (!lines[0]?.startsWith('   │ ') || end < 1 || end > payload.length || clippedRule && end !== payload.length
     || !isDeepStrictEqual(lines.slice(0, end), payload.slice(-end))) return false;
   return currentBashPermissionCard(['─'.repeat(columns), ' Bash command', '', ...payload, ...lines.slice(end)].join('\n')) !== null;
 }

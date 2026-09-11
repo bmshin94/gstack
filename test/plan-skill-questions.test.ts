@@ -2019,3 +2019,188 @@ test('pinned Bash header-only clipping requests a repaint while the full payload
   }
   expect(matchesClippedBashPermission({ ...tool, bashPermissionRequestId: null }, visible, 240)).toBe(false);
 });
+
+
+// The native CLI can persist several queued Edits with stop_reason:null while
+// its PermissionRequest hook names exactly one of their complete inputs.
+function queuedEditRequests() {
+  write();
+  const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
+  const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PermissionRequest[0].hooks[0].command;
+  const emit = (input: unknown) => {
+    const prior = new Set(readPermissionRequestEvents(source, { configDir: config, sessionId, transcriptFile: file }).map(event => event.requestId));
+    const child = Bun.spawnSync(['bash', '-c', command], { timeout: 5000,
+      stdin: Buffer.from(JSON.stringify({ hook_event_name: 'PermissionRequest', session_id: sessionId,
+        transcript_path: file, cwd: config, tool_name: 'Edit', tool_input: input })), stdout: 'pipe', stderr: 'pipe' });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    return readPermissionRequestEvents(source, { configDir: config, sessionId, transcriptFile: file }).find(event => !prior.has(event.requestId))!;
+  };
+  const first = { file_path: path.join(config, 'plan.md'), old_string: 'Task 1', new_string: 'Task 1 approved', replace_all: false };
+  const second = { ...first, old_string: 'Task 2', new_string: 'Task 2 approved' };
+  const read = () => readPlanSkillQuestions(config, sessionId, source);
+  const dialog = createDialog('plan.md').replace('create', 'make this edit to');
+  return { source, emit, first, second, read, dialog };
+}
+
+test('queued unfinished Edits keep distinct IDs and only the exact owned request can receive a grant', async () => {
+  const s = queuedEditRequests();
+  const firstRow = nativeWrite('queued-first', s.first, config, 'Edit', null);
+  const secondRow = nativeWrite('queued-second', s.second, config, 'Edit', null);
+  write(firstRow, secondRow);
+  const granted = new Set<string>(), requests = new Map<string, NativePermissionGrant>();
+  const unobserved = readPlanSkillQuestions(config, sessionId);
+  expect(unobserved.permissionTools).toEqual([]);
+  expect(reserveNativePermissionGrant(unobserved, s.dialog, granted, requests)).toBe(false);
+  const firstEvent = s.emit(s.first);
+  const first = s.read();
+  expect(first.permissionTools).toEqual([]);
+  expect(first.permissionRequests).toEqual([expect.objectContaining({ requestId: firstEvent.requestId, input: s.first, result: 'pending' })]);
+  expect(first.permissionRequests[0].nativeToolId).toBeUndefined();
+  expect(reserveNativePermissionGrant(first, s.dialog, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(first, s.dialog, granted, requests)).toBe(false);
+  expect(granted).toEqual(new Set([`request:${firstEvent.requestId}`]));
+  const resultAt = firstEvent.capturedAtMs + 1;
+  write(firstRow, secondRow, nativeWriteResult('queued-first', new Date(resultAt).toISOString()));
+  await Bun.sleep(5);
+  const secondEvent = s.emit(s.second);
+  const second = s.read();
+  expect(second.permissionRequests.find(event => event.requestId === firstEvent.requestId)).toMatchObject({ result: 'completed', nativeToolId: 'queued-first', nativeResultAtMs: resultAt });
+  expect(second.permissionTools).toEqual([]);
+  expect(secondEvent.capturedAtMs).toBeGreaterThan(resultAt);
+  expect(reserveNativePermissionGrant(second, s.dialog, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(second, s.dialog, granted, requests)).toBe(false);
+  expect(granted).toEqual(new Set([`request:${firstEvent.requestId}`, `request:${secondEvent.requestId}`]));
+});
+
+test.each(['no-exact-input', 'same-id-input', 'same-id-path', 'same-id-cwd', 'same-id-name', 'same-id-bash', 'duplicate-exact-ids', 'finalized-owner', 'second-request'])
+('queued unfinished Edit preserves refusal for %s', variant => {
+  const s = queuedEditRequests();
+  const first = nativeWrite('queued-first', s.first, config, 'Edit', null);
+  let second = nativeWrite('queued-second', s.second, config, 'Edit', null);
+  if (variant.startsWith('same-id-')) {
+    second = nativeWrite('queued-first', variant === 'same-id-path' ? { ...s.first, file_path: path.join(config, 'other.md') }
+      : variant === 'same-id-input' ? s.second : s.first, variant === 'same-id-cwd' ? path.dirname(config) : config,
+      variant === 'same-id-name' ? 'Write' : variant === 'same-id-bash' ? 'Bash' : 'Edit', null);
+  }
+  if (variant === 'duplicate-exact-ids') second = nativeWrite('queued-second', s.first, config, 'Edit', null);
+  if (variant === 'finalized-owner') second = nativeWrite('queued-second', s.second, config, 'Edit');
+  write(...(variant === 'no-exact-input' ? [second] : [first, second]));
+  s.emit(s.first);
+  if (variant === 'second-request') s.emit(s.second);
+  const granted = new Set<string>(), requests = new Map<string, NativePermissionGrant>();
+  expect(() => reserveNativePermissionGrant(s.read(), s.dialog, granted, requests)).toThrow();
+  expect(granted.size).toBe(0); expect(requests.size).toBe(0);
+});
+
+
+// Qualified V6 Design hook input (command da782e62), used ONLY as data. This
+// source-derived renderer control is not a captured V6 terminal frame, and no
+// tool command is executed. Existing Bash ownership/completion controls remain.
+const retainedDesignEmDashInput = {"command": "cd /tmp/gstack-paid-shard-eIwOQS/tmp/gstack-e2e-plan-design-qQyLqj\neval \"$(/tmp/gstack-paid-shard-eIwOQS/tmp/gstack-hermetic-1019314-1e844d/with-skills/runtime/bin/gstack-slug 2>/dev/null)\"\nTASKS_DIR=\"${HOME}/.gstack/projects/${SLUG:-unknown}\"\nmkdir -p \"$TASKS_DIR\"\nTASKS_FILE=\"$TASKS_DIR/tasks-design-review-$(date +%Y%m%d-%H%M%S).jsonl\"\nCOMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)\nBRANCH=$(git branch --show-current 2>/dev/null || echo unknown)\nRUN_ID=\"$(date -u +%Y%m%dT%H%M%SZ)-$$\"\ncommand -v jq >/dev/null || { echo \"NO_JQ\"; exit 0; }\nemit() { jq -nc --arg phase 'design-review' --arg run_id \"$RUN_ID\" --arg branch \"$BRANCH\" --arg commit \"$COMMIT\" \\\n  --arg id \"$1\" --arg priority \"$2\" --arg component \"$3\" --arg effort_human \"$4\" --arg effort_cc \"$5\" \\\n  --arg title \"$6\" --arg source_finding \"$7\" --argjson files \"$8\" \\\n  '{phase:$phase, run_id:$run_id, branch:$branch, commit:$commit, id:$id, priority:$priority, component:$component, files:$files, effort_human:$effort_human, effort_cc:$effort_cc, title:$title, source_finding:$source_finding}' >> \"$TASKS_FILE\"; }\nemit T1 P1 \"Settings header actions\" \"~1h\" \"~10min\" \"Apply filled primary variant to Save and quiet secondary to Reset, Cancel, Export\" \"Pass 1 IA — D3/1A: nothing tells the user which is the primary action\" '[\"<app>/settings-page\"]'\nemit T2 P1 \"Save in-flight state\" \"~3h\" \"~20min\" \"Spinner in Save, label Saving…, held min-width, status line text, reduced-motion static glyph\" \"Pass 2 States — D4/2A: spinner or skeleton left undecided\" '[\"<app>/settings-page\",\"<app>/Button\",\"<app>/save-status-line\"]'\nemit T3 P1 \"Settings error color roles\" \"~30min\" \"~5min\" \"Set error foreground #991B1B and message background #FEF2F2\" \"Pass 5 Design System — D7/5A: contrast approximately 3:1\" '[\"<app>/settings-tokens.css\"]'\nemit T4 P2 \"Settings section-gap role\" \"~30min\" \"~5min\" \"Set every inter-section gap and header-to-Profile gap to 32px\" \"Pass 5 Design System — D5/3A: 24/32/16px inconsistent gaps\" '[\"<app>/settings-tokens.css\",\"<app>/settings-page\"]'\nemit T5 P2 \"Settings label and helper type roles\" \"~1h\" \"~10min\" \"Labels 16px/600, helper and validation 14px/400, remove 18px\" \"Pass 5 Design System — D6/4A: 14/16/18px label sizes\" '[\"<app>/settings-tokens.css\"]'\nemit T6 P2 \"Acceptance run\" \"~1h\" \"~10min\" \"Execute responsive and accessibility acceptance table at 375px and 768px+\" \"Pass 6 Responsive & A11y — new treatments must not regress DESIGN.md\" '[]'\nemit T7 P3 \"TODOS.md\" \"~15min\" \"~2min\" \"Create TODOS.md with the three approved follow-ups\" \"TODOS.md updates — D8, D9, D10\" '[\"TODOS.md\"]'\necho \"TASKS_FILE: $TASKS_FILE ($(wc -l < \"$TASKS_FILE\") lines)\"\n/tmp/gstack-paid-shard-eIwOQS/tmp/gstack-hermetic-1019314-1e844d/with-skills/runtime/bin/gstack-review-log '{\"skill\":\"plan-design-review\",\"timestamp\":\"'\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"'\",\"status\":\"clean\",\"initial_score\":4,\"overall_score\":9,\"unresolved\":0,\"decisions_made\":5,\"commit\":\"'\"$(git rev-parse --short HEAD)\"'\"}' && echo REVIEW_LOGGED\necho \"---REVIEW_READ---\"\n/tmp/gstack-paid-shard-eIwOQS/tmp/gstack-hermetic-1019314-1e844d/with-skills/runtime/bin/gstack-review-read", "description": "Write tasks JSONL, log review, read review dashboard data"};
+const emDashCard = (input: { command: string; description: string }) => {
+  const render = (value: string) => {
+    const gutter = value.includes('\n') || value.length > 80;
+    return value.split('\n').flatMap(line => Bun.wrapAnsi(line, 240 - (gutter ? 8 : 6), { hard: true, trim: false })
+      .split('\n').map((row, index) => index > 0 && row.startsWith(' ') && row.length > 1 ? row.slice(1) : row))
+      .map(row => ((gutter ? '   │ ' : '   ') + row).replace(/ +$/, '')).join('\n');
+  };
+  return '─'.repeat(240) + '\n Bash command\n\n' + render(input.command) + '\n' + render(input.description)
+    + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+};
+
+test('native Bash em dash uses literal positive-width projection without widening Unicode', () => {
+  const input = { command: 'printf "A—B…"', description: 'Print A—B…' };
+  const tool = { id: 'em-dash', name: 'Bash', input };
+  expect(nativePermissionKey(tool, nativeBashDialog(input.command, input.description))).toBe('Bash:' + input.command);
+  for (const foreign of ['–', '\u00a0', '\u200b', '\u202e', '\u2066', '\u0301', '好', '👩‍💻', '\t', '\r', '\x1b', '\u0085']) {
+    const changed = { ...input, command: input.command.replace('—', foreign) };
+    expect(() => nativePermissionKey({ ...tool, input: changed }, nativeBashDialog(changed.command, changed.description))).toThrow('cannot be bound');
+  }
+});
+
+test('native Bash em dash preserves exact soft boundaries and hard indentation', () => {
+  const head = 'x'.repeat(111) + '—';
+  const input = { command: head + '  —tail\n  —hard', description: 'Print —…' };
+  const tool = { id: 'em-dash-wrap', name: 'Bash', input };
+  const frame = '─'.repeat(120) + '\n Bash command\n\n   │ ' + head
+    + '\n   │  —tail\n   │   —hard\n   Print —…'
+    + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+  expect(nativePermissionKey(tool, frame)).toBe('Bash:' + input.command);
+  for (const changed of [frame.replace('   │  —tail', '   │ —tail'), frame.replace('   │   —hard', '   │  —hard'),
+    frame.replace('—hard', '-hard'), frame.replace('Print —…', 'Print -…')]) {
+    expect(() => nativePermissionKey(tool, changed)).toThrow('cannot be bound');
+  }
+});
+
+test('retained Design em dash input requires the complete exact card before granting', () => {
+  const input = retainedDesignEmDashInput;
+  const tool = { id: 'retained-em-dash', name: 'Bash', input, cwd: '/owned', bashPermissionRequestId: 'owned-request' };
+  const frame = emDashCard(input);
+  expect(nativePermissionKey(tool, frame)).toBe('Bash:' + input.command);
+  const clipped = frame.split('\n').slice(5).join('\n');
+  expect(matchesClippedBashPermission(tool, clipped, 240)).toBe(true);
+  expect(() => nativePermissionKey(tool, clipped)).toThrow('cannot be bound');
+  for (const changed of [frame.replace('TODOS.md updates —', 'TODOS.md updates -'),
+    frame.replace(input.description, 'Read a different dashboard'), frame.replace(' ❯ 1. Yes', '   1. Yes'),
+    frame.replace(' Esc to cancel · Tab to amend', ' Esc to cancel'), frame + '\n❯ Another prompt']) {
+    expect(() => nativePermissionKey(tool, changed)).toThrow('cannot be bound');
+  }
+  for (const changed of [clipped.replace('TODOS.md updates —', 'TODOS.md updates -'),
+    clipped.replace(input.description, 'Different description'), clipped.replace(' ❯ 1. Yes', '   1. Yes'),
+    ' Bash command\n' + clipped, clipped + '\n❯ Another prompt']) {
+    expect(matchesClippedBashPermission(tool, changed, 240)).toBe(false);
+  }
+  expect(() => nativePermissionKey({ ...tool, input: { ...input, command: input.command.replace('T7 P3', 'T7 P2') } }, frame)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...tool, input: { ...input, description: 'Different description' } }, frame)).toThrow('cannot be bound');
+  expect(matchesClippedBashPermission({ ...tool, bashPermissionRequestId: null }, clipped, 240)).toBe(false);
+});
+
+test('retained Design em dash hook input still requires a paired request and one native completion', () => {
+  const s = bashHooks(); const input = retainedDesignEmDashInput; const frame = emDashCard(input);
+  const granted = new Set<string>(); const requests = new Map<string, NativePermissionGrant>();
+  s.emit('PreToolUse', 'em-dash-owned', input);
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(false);
+  s.emit('PermissionRequest', 'not-a-native-id', input);
+  expect(() => reserveNativePermissionGrant(s.read(), frame.split('\n').slice(5).join('\n'), granted, requests)).toThrow('cannot be bound');
+  expect(granted.size).toBe(0);
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(false);
+  expect(s.read().permissionTools.map(tool => tool.id)).toEqual(['em-dash-owned']);
+  s.emit('PostToolUse', 'em-dash-owned', input, { tool_response: { stdout: '', stderr: '', interrupted: false } });
+  expect(s.read().permissionTools).toEqual([]);
+  expect(s.read().permissionResults).toEqual([{ id: 'em-dash-owned', result: 'completed' }]);
+  expect([...granted]).toEqual(['em-dash-owned']);
+});
+
+test.each(['command', 'description'] as const)('retained Design em dash refuses changed post-Pre %s', field => {
+  const s = bashHooks(); const input = retainedDesignEmDashInput;
+  s.emit('PreToolUse', 'em-dash-owned', input);
+  s.emit('PermissionRequest', 'not-a-native-id', { ...input, [field]: input[field] + ' changed' });
+  const granted = new Set<string>();
+  expect(reserveNativePermissionGrant(s.read(), emDashCard(input), granted, new Map())).toBe(false);
+  expect(granted.size).toBe(0);
+});
+
+
+test('pinned Bash clipped top rule requires the entire exact payload and only permits repaint', () => {
+  const input = retainedDesignEmDashInput;
+  const tool = { id: 'clipped-rule', name: 'Bash', input, cwd: '/owned', bashPermissionRequestId: 'owned-request' };
+  const frame = emDashCard(input).split('\n').slice(1).join('\n');
+  const native = { permissionTools: [tool], permissionResults: [], permissionRequests: [], permissionRequestCapture: true };
+  expect(frame).toStartWith(' Bash command\n\n');
+  expect(matchesClippedBashPermission(tool, frame, 240)).toBe(true);
+  expect(() => nativePermissionKey(tool, frame)).toThrow('cannot be bound');
+  const granted = new Set<string>();
+  expect(() => reserveNativePermissionGrant(native, frame, granted, new Map())).toThrow('cannot be bound');
+  expect(granted.size).toBe(0);
+  for (const changed of [frame.replace(' Bash command', ' Bash command (unproven)'),
+    frame.replace(' Bash command\n\n', ' Bash command\n'), 'Prior context\n' + frame,
+    frame.split('\n').filter((_, i) => i !== 2).join('\n'),
+    frame.replace('TODOS.md updates —', 'TODOS.md updates -'), frame.replace(input.description, 'Other description'),
+    frame.replace(' ❯ 1. Yes', '   1. Yes'), frame + '\n❯ Another prompt']) {
+    expect(matchesClippedBashPermission(tool, changed, 240)).toBe(false);
+  }
+  expect(matchesClippedBashPermission(tool, frame, 120)).toBe(false);
+  expect(matchesClippedBashPermission({ ...tool, bashPermissionRequestId: null }, frame, 240)).toBe(false);
+  expect(matchesClippedBashPermission({ ...tool, input: { ...input, command: input.command + ' changed' } }, frame, 240)).toBe(false);
+});
