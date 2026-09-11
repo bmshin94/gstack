@@ -64,6 +64,8 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   strategic reason → TASTE DECISION. If both models agree the user's stated structure
   should change (merge, split, add, remove) → USER CHALLENGE (never auto-decided).
 
+**Carry decisions forward:** Preserve explicit source-plan and DESIGN.md requirements; route proposed changes through the existing User Challenge rules instead of reopening them as undecided defaults. Keep the original requirement while a challenge awaits the gate. Use the existing Decision Audit Trail to track each choice's current disposition: Taste recommendations are working auto-decisions still subject to the final gate; queued User Challenges are not accepted scope. Carry the same dispositions into the amended plan and CEO scope summary. An accepted expansion must work without assuming a queued change is approved. Before spec review, reconcile both files against this record, derive scope counts from the same proposal IDs, and link each deferred item to its actual TODO entry or recorded pending write. Correct summary drift without silently changing decisions or omitting genuine findings.
+
 **Required execution checklist (CEO):**
 
 Step 0 (0A-0F) — run each sub-step and produce:
