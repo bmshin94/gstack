@@ -886,7 +886,7 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 Evaluate approaches before 0F. If applicable instructions or an accepted decision settle one, cite that authority and mark 0C-bis resolved without re-asking, unless concrete contradiction or changed assumptions warrant reopening.
 
-For new/reopened choices, compare 2-3 distinct approaches (prefer 3 for non-trivial plans; justify only one). Each A/B/C: name, 1-2 sentence summary, effort S/M/L/XL, risk low/medium/high, 2-3 pros/cons, reused code/patterns.
+List independent pending choices first. For verification work, compare each contract's unresolved coverage separately; vary method/depth while other dispositions stay approved or pending. Compare 2-3 approaches to one choice (prefer 3 for non-trivial plans; justify only one). Each A/B/C: name, 1-2 sentence summary, effort S/M/L/XL, risk low/medium/high, 2-3 pros/cons, reused code/patterns.
 
 **RECOMMENDATION:** [X] because [engineering preference].
 
@@ -967,7 +967,7 @@ Both are outcome-framed. Only one makes the user feel the cathedral. Lead with t
 
 ### 0D-POST. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
 
-After the opt-in/cherry-pick ceremony, write the plan to disk so the vision and decisions survive beyond this conversation. Only run this step for EXPANSION and SELECTIVE EXPANSION modes.
+After opt-in/cherry-pick, persist the plan. Run only for EXPANSION and SELECTIVE EXPANSION.
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
@@ -979,7 +979,7 @@ echo "CEO_PLANS=$CEO_PLANS"
 
 Use the printed `CEO_PLANS` absolute path below. Before writing, offer to archive existing plans >30 days old or from merged/deleted branches. If approved, create its `archive/` subdirectory and move each stale plan there.
 
-Write to `{printed CEO_PLANS}/{date}-{feature-slug}.md` using this format:
+Use native Write/Edit (host file editor if unavailable) to create `{printed CEO_PLANS}/{date}-{feature-slug}.md` and make scoped amendments. Keep content in file-tool input; the shell above only prepares the directory. Format:
 
 ```markdown
 ---
@@ -1014,7 +1014,7 @@ Repo: {owner/repo}
 - {items with context}
 ```
 
-Derive the feature slug from the plan being reviewed (e.g., "user-dashboard", "auth-refactor"). Use the date in YYYY-MM-DD format.
+Derive the feature slug from the reviewed plan; use a YYYY-MM-DD date.
 
 "Plan under review" must name the actual amended plan, including accepted changes.
 For a conversation-only plan, first save that complete plan to its own
@@ -1112,12 +1112,10 @@ Surface decisions that must be settled now as separate questions for the user NO
 
 ## Section self-check (before you finish)
 
-You ran a carved skill. The Section index above named `sections/review-sections.md`
-as the source of truth for the 11-section deep review, the required outputs, and the
-review report. Confirm you issued a Read for it and executed every section from the
-file, not from memory. If you produced the Completion Summary or wrote the review
-report without Reading that section, STOP, Read it now, and redo the review from the
-source of truth.
+Confirm you Read `sections/review-sections.md` and executed its 11-section deep
+review, required outputs and review report from the file, not memory. If you
+produced the Completion Summary or review report without that Read, STOP, Read
+it now and redo the review from the source of truth.
 
 
 ## EXIT PLAN MODE GATE (BLOCKING)

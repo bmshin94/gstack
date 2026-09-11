@@ -80,7 +80,8 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(input.startsWith(expected + '\\n\\n')).toBe(true);
     const baseline = input.slice(expected.length + 2);
     expect(baseline.startsWith('## Existing SDK contracts (synthetic fixture assumptions)')).toBe(true);
-    expect(baseline).toContain('are not copied into this fixture.');
+    expect(baseline).toContain('are materialized product');
+    expect(baseline).toContain('not runnable against an implementation in this review fixture.');
     expect(baseline).toContain("evaluate(target, cases, metric) accepts the developer's application callable");
     expect(baseline).toContain('caller supplies the metric');
     expect(baseline).toContain('Both the CLI and library enforce the mandatory first-run CI prerequisite');
@@ -106,6 +107,13 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
       'type hints and py.typed already ship',
     ]) expect(baseline).toContain(contract);
 
+    for (const file of ['README.md', 'docs/getting-started.md', 'docs/feedback.md']) {
+      const body = fs.readFileSync(path.join(opts.cwd, file), 'utf8');
+      expect(execFileSync('git', ['show', 'HEAD:' + file], { cwd: opts.cwd, encoding: 'utf8' })).toBe(body);
+      expect(body).toBe(fs.readFileSync(path.join(${JSON.stringify(ROOT)}, 'test/fixtures/devex-existing-sdk', file), 'utf8'));
+    }
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd: opts.cwd, encoding: 'utf8' })).toBe('');
+    expect(execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd: opts.cwd, encoding: 'utf8' })).toBe('');
     expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: opts.cwd, encoding: 'utf8' })).toBe(input);
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ cwd: opts.cwd, checked: true }));
     throw new Error('controlled DX runner failure');
@@ -130,5 +138,64 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-devex-finding
     expect(fs.existsSync(observed.cwd), 'actual paid finally must remove its owned fixture').toBe(false);
     expect(child.exitCode, output).toBe(1);
     expect(output).toContain('controlled DX runner failure');
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('DX comparison registration passes and retains the exact owned final plan without another judge', () => {
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'devex-comparison-free-')));
+  const script = path.join(directory, 'registration.test.ts');
+  const facts = path.join(directory, 'facts.json');
+  const finalPlan = '# Reviewed plan\n\nExact completed comparison bytes, separate from the original review input.\n';
+  fs.writeFileSync(script, `
+import { describe, expect, mock } from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+const finalPlan = ${JSON.stringify(finalPlan)};
+const factsPath = ${JSON.stringify(facts)};
+let cwd, judgeCalls = 0;
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
+  describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
+}));
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))}, () => ({
+  PLAN_SKILL_COUNT_FINALIZE_MS: 10000,
+  devexStep0Boundary: () => false,
+  assertReviewReportAtBottom: content => { expect(content).toBe(finalPlan); return { ok: true }; },
+  runPlanSkillCounting: async opts => {
+    cwd = opts.cwd;
+    expect(path.dirname(cwd)).toBe(${JSON.stringify(directory)});
+    fs.writeFileSync(path.join(cwd, 'gstack-test-plan-devex.md'), finalPlan);
+    return { outcome: 'plan_ready', fingerprints: [], diagnostics: {}, elapsedMs: 100 };
+  },
+}));
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
+  evaluatePlanReviewDecisions: async input => {
+    judgeCalls++;
+    expect(judgeCalls).toBe(1);
+    expect(input.devexPeerComparison).toEqual({ finalPlan });
+    expect(input.plan).toBe(fs.readFileSync(path.join(cwd, 'review-input.md'), 'utf8'));
+    expect(input.plan).not.toBe(finalPlan);
+    expect(input.targets.map(target => target.id)).toEqual(['persona', 'first-run-benchmark', 'mandatory-ci', 'aha', 'peer-comparison']);
+    expect(input.kind).toBe('findings'); expect(input.floor).toBe(4); expect(input.ceiling).toBe(7);
+    expect(input.deadlineAt).toBeGreaterThan(Date.now() + 1400000);
+    expect(input.deadlineAt).toBeLessThanOrEqual(Date.now() + 1500000);
+    fs.writeFileSync(factsPath, JSON.stringify({ cwd, judgeCalls, finalPlan: input.devexPeerComparison.finalPlan }));
+    return { count: 4, coveredTargetIds: input.targets.map(target => target.id) };
+  },
+}));
+await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-devex-finding-count.test.ts'))});
+`);
+  try {
+    const child = Bun.spawnSync([process.execPath, 'test', script], {
+      cwd: ROOT, timeout: 10_000,
+      env: { PATH: process.env.PATH ?? '', HOME: directory, TMPDIR: directory, TMP: directory, TEMP: directory,
+        GIT_CONFIG_NOSYSTEM: '1', ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
+    });
+    const output = child.stdout.toString() + child.stderr.toString();
+    expect(child.signalCode ?? null, output).toBeNull(); expect(child.exitCode, output).toBe(0);
+    const observed = JSON.parse(fs.readFileSync(facts, 'utf8'));
+    expect(observed.judgeCalls).toBe(1); expect(observed.finalPlan).toBe(finalPlan);
+    expect(fs.existsSync(observed.cwd), 'actual paid finally must remove its owned fixture').toBe(false);
+    const artifact = output.split('\n').find(line => line.startsWith('Plan review peer comparison artifact: '));
+    expect(JSON.parse(artifact!.slice('Plan review peer comparison artifact: '.length))).toEqual({ finalPlan });
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

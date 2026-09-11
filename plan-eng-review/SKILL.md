@@ -668,7 +668,7 @@ If none was produced (user may have cancelled), proceed with standard review.
 
 > Reminder: the **Scope gate** at the top of this skill applies first. Do not run Step 0 until the gate has resolved a target — the user answered, the user named one, or plan mode auto-selected B — and run it against that target.
 
-Before reviewing anything, answer these questions:
+Before reviewing, answer:
 1. **What existing code already partially or fully solves each sub-problem?** Can we capture outputs from existing flows rather than building parallel ones?
 2. **What is the minimum set of changes that achieves the stated goal?** Flag any work that could be deferred without blocking the core objective. Be ruthless about scope creep.
 3. **Complexity check:** If the plan touches 8+ files or introduces 2+ new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
@@ -689,13 +689,13 @@ Before reviewing anything, answer these questions:
 
 6. **Completeness check:** Is the plan doing the complete version or a shortcut? With AI-assisted coding, the cost of completeness (100% test coverage, full edge case handling, complete error paths) is 10-100x cheaper than with a human team. If the plan proposes a shortcut that saves human-hours but only saves minutes with CC+gstack, recommend the complete version. Boil the ocean.
 
-7. **Distribution check:** If the plan introduces a new artifact type (CLI binary, library package, container image, mobile app), does it include the build/publish pipeline? Code without distribution is code nobody can use. Check:
+7. **Distribution check:** For new artifacts (CLI, library, container, mobile app), verify the build/publish pipeline:
    - Is there a CI/CD workflow for building and publishing the artifact?
    - Are target platforms defined (linux/darwin/windows, amd64/arm64)?
    - How will users download or install it (GitHub Releases, package manager, container registry)?
    If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
 
-If complexity reaches 8+ files or 2+ new classes/services, STOP before section work. Via the preamble's question flow, name what's overbuilt and compare minimal scope meeting the goal with retained component scope. Both preserve established contracts; security, error, test and performance remedies stay constant or pending. Scope approval never accepts, cuts or defers independent remedies; ask about each separately before applying it.
+If complexity reaches 8+ files or 2+ new classes/services, STOP before section work. Via the preamble's question flow, name what's overbuilt. Resolve any independent capability cut needed by the smaller design in its own question first. Then compare minimal and retained component organization with capability dispositions identical in every option (approved or still pending). Both preserve established contracts; security, error, test and performance remedies stay constant or pending. Scope approval never accepts, cuts or defers independent remedies; ask about each separately before applying it.
 
 **STOP.** Until the decision is resolved by the user (including prior approval) or an authorized auto-decision, do not enter Section 1, call ExitPlanMode, or put Step 0 findings, revised approaches or proposed remedies in plan files, including new files and findings appendices. A seed may be copied unchanged, without review content.
 

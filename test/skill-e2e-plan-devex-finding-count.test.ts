@@ -5,7 +5,7 @@
 import { test } from 'bun:test';
 import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
 import { DEVEX_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
-import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
+import { seedDevexReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -25,19 +25,26 @@ const CEILING = N + 2;
 
 // Authored fixture assumptions about the existing SDK, not production discoveries
 // or proposed remedies for the five launch gaps below.
+// This revised synthetic baseline explicitly supplies documentation/feedback facts
+// that V5 left unknown. It does not reinterpret V5 or guarantee a question count.
 const existingDevexContracts = `## Existing SDK contracts (synthetic fixture assumptions)
 
 This launch exposes an existing SDK to public beta users; it is not a proposal to
 design its language, evaluator, API, or release infrastructure from scratch. These
 unchanged contracts describe the fixture's current product and remain reviewable
 if a concrete incompatibility with the launch plan is found.
-This review input summarizes those contracts; SDK source and referenced docs
-are not copied into this fixture.
+This review input summarizes those contracts. README.md and docs/getting-started.md
+(including the free-text example) and docs/feedback.md are materialized product
+documentation for this synthetic baseline. The SDK implementation and other
+references are not included; example commands describe the assumed SDK and are
+not runnable against an implementation in this review fixture.
 
 - The Python package is eval-sdk, imported as eval_sdk, with the eval-sdk CLI.
   The README already states its purpose (evaluate an application's outputs against
   caller-supplied cases), supported Python versions, pip install command, and link
-  to a plain-text getting-started guide. No second-language port is planned.
+  to a plain-text getting-started guide. It also mirrors the guide's neutral
+  first example and output contract; the existing offline release checks keep
+  the two copies consistent. No second-language port is planned.
 - evaluate(target, cases, metric) accepts the developer's application callable;
   cases contain inputs and expected outputs, and the caller supplies the metric
   and acceptance rule. Results expose per-case scores and failures. There is no
@@ -47,7 +54,11 @@ are not copied into this fixture.
   The existing guide runs the same callable and cases as real usage, without a
   separate scaffold/configuration language or an interactive demo. It includes a
   five-line caller-owned exact-match metric for structured outputs and a custom-
-  metric shape for free text; neither is a bundled metric or an implicit default.
+  metric example for free text; neither is a bundled metric or an implicit default.
+  The latter is a complete callable/cases/evaluate example, exercised by existing
+  offline release checks with matching and mismatching prose. Those checks verify
+  its per-case scores; they do not choose a production quality threshold. The
+  neutral getting-started flow still has no designed delight or aha sequence.
 - Both the CLI and library enforce the mandatory first-run CI prerequisite
   described above. Existing API documentation does not bypass that requirement.
   Its documented purpose is maintainer compatibility/conformance checking using
@@ -77,7 +88,11 @@ are not copied into this fixture.
   type hints and py.typed already ship; release checks include strict type checking.
   No AST rewriting tool or plugin is part of this launch.
 - The SDK is already open source. CONTRIBUTING, issue templates, and a public
-  discussion forum define support and contribution paths. The beta adds no
+  discussion forum define support and contribution paths. The existing
+  getting-started friction template and pinned forum thread request the stuck
+  step, optional elapsed-time estimate, SDK version, expected/actual behavior
+  and a redacted reproducer; README links this path. These voluntary reports
+  are not an onboarding-duration benchmark or telemetry. The beta adds no
   hosted docs service, new CI provider, telemetry system, or watch-mode feature.
   Release checks exercise existing API/error/compatibility behavior, but they
   contain no onboarding-duration measurement or peer-DX benchmark.
@@ -113,7 +128,7 @@ const planDevex5Findings = (planPath: string) => [
 
 describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', () => {
   test(
-    `5-finding plan emits ${FLOOR}-${CEILING} substantive finding calls`,
+    `5-obligation plan covers four decisions and peer analysis in ${FLOOR}-${CEILING} substantive calls`,
     async () => {
       const caseStartedAt = Date.now();
       // Per-run artifact dir: a hardcoded shared /tmp path collides under
@@ -124,7 +139,7 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
 
       try {
         const planText = planDevex5Findings(planPath);
-        seedPlanReviewProject(tmpDir, planText, 'plan-devex-review');
+        seedDevexReviewProject(tmpDir, planText);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-devex-review',
           slashCommand: '/plan-devex-review',
@@ -172,8 +187,12 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
               `--- plan content (last 1KB) ---\n${planContent.slice(-1024)}`,
           );
         }
+        // Peer research is required analysis; it must not manufacture an extra
+        // approval. Retain the exact same-run plan used for quoted evidence.
+        console.log('Plan review peer comparison artifact:', JSON.stringify({ finalPlan: planContent }));
         const decisions = await evaluatePlanReviewDecisions({
           plan: planText, targets: DEVEX_FINDINGS, fingerprints: obs.fingerprints,
+          devexPeerComparison: { finalPlan: planContent },
           kind: 'findings', floor: FLOOR, ceiling: CEILING,
           deadlineAt: caseStartedAt + 1_500_000,
         });

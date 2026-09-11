@@ -35,7 +35,7 @@ export const DEVEX_FINDINGS = [
   { id: 'first-run-benchmark', description: 'Decide measurement/benchmarking of time to hello world instead of leaving first-run duration unknown.' },
   { id: 'mandatory-ci', description: 'Decide how to remove or justify the mandatory five-minute CI step before the first eval.' },
   { id: 'aha', description: 'Decide a concrete interactive demo or aha moment in the getting-started flow instead of documentation alone.' },
-  { id: 'peer-comparison', description: 'Decide a comparison against peer SDK developer experiences instead of ignoring existing solutions.' },
+  { id: 'peer-comparison', description: 'Produce grounded comparative analysis of peer SDK developer experiences and its implications for this plan instead of ignoring existing solutions.' },
 ];
 
 export const ENG_FINDINGS = [

@@ -90,21 +90,25 @@ describe('CEO review decision boundaries contract', () => {
   test('an unresolved section decision is answered before its scoped plan amendment', () => {
     const steps = [
       'If the current section has an unresolved or reopened decision, call AskUserQuestion',
-      'After the actual answer, use a scoped Edit',
+      'After the actual answer, check each new or changed commitment',
+      'Then use a scoped Edit',
       'Once the current section\'s decisions have answers, record its review conclusions',
     ].map(step => apply.indexOf(step));
     expect(steps.every(position => position >= 0)).toBe(true);
     expect(steps).toEqual([...steps].sort((a, b) => a - b));
     expect(apply).toContain('STOP until the user responds');
     expect(apply).toContain('If no plan file exists, first create it from the provided input and explicitly accepted Step 0 decisions');
-    expect(apply).toContain('Preserve existing plan content and exact earlier approvals');
+    expect(apply).toContain('against the selected option or an explicit earlier approval');
+    expect(apply).toContain('Preserve existing content and approvals, including direct implementation and verification of the accepted behavior');
     expect(apply).toContain('before advancing to the next section');
   });
 
   test('pending labels authorize only unresolved notes, not an outcome or future review conclusions', () => {
     expect(apply).toContain('only the pending issue, evidence, and alternatives in the ledger');
     expect(apply).toContain('A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome');
-    expect(apply).toContain('including an explicit deferral if that is what the user chose');
+    expect(apply).toContain('record the choice and its authorized amendments, including explicit deferrals');
+    expect(apply).toContain('Details found only in pending proposals or surrounding analysis remain pending');
+    expect(apply).toContain('Preserve unsupported premises as unknown: choosing a remedy does not verify its factual premise');
     expect(apply).toContain('Add later sections\' review conclusions and implementation tasks only after evaluating those sections');
     expect(apply).toContain('Approval settles the planning choice; it does not prove the mitigation is implemented');
     expect(apply).toContain('Retain unresolved choices and supporting findings in the ledger and final report');

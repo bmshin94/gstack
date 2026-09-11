@@ -21,7 +21,8 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(scope).toContain('8+ files or 2+ new classes/services');
     expect(scope).toContain('STOP before section work');
     expect(scope).toContain("Via the preamble's question flow");
-    expect(scope).toContain('minimal scope meeting the goal with retained component scope');
+    expect(scope).toContain('Resolve any independent capability cut needed by the smaller design in its own question first');
+    expect(scope).toContain('Then compare minimal and retained component organization with capability dispositions identical in every option');
     expect(scope).toContain('Both preserve established contracts');
     expect(scope).toContain('security, error, test and performance remedies stay constant or pending');
     expect(scope).toContain('Scope approval never accepts, cuts or defers independent remedies');
@@ -32,7 +33,8 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(inventory).toBeLessThan(sections.indexOf('### 1. Architecture review'));
     const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
     expect(boundary).toContain('behavioral policy, implementation choice, or verification-depth decision');
-    expect(boundary).toContain('keep their approved values fixed or leave them explicitly pending across all options');
+    expect(boundary).toContain("First list the independently repairable conditions in this finding and each condition's exact approved scope or pending disposition");
+    expect(boundary).toContain('Keep every other disposition fixed at its approved value or explicitly pending across all options');
     expect(boundary).toContain('Keep code and tests establishing the same chosen behavior together');
     expect(boundary).toContain('Only then score completeness within that decision');
     expect(boundary).toContain('Preserve established contracts in every alternative');

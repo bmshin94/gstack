@@ -90,7 +90,8 @@ git log --oneline -15
 git diff $(git merge-base HEAD main 2>/dev/null || echo HEAD~10) --stat 2>/dev/null
 ```
 
-Then read:
+Read the available product artifacts below; distinguish them from review-only
+repository scaffolding or placeholder files:
 - The plan file (current plan or branch diff)
 - CLAUDE.md for project conventions
 - README.md for current getting started experience
@@ -205,13 +206,13 @@ Expects:   [what they assume exists before trying]
 
 ### 0B. Empathy Narrative as Conversation Starter
 
-Write a 150-250 word first-person narrative from the persona's perspective. Walk
-through the ACTUAL getting-started path from the README/docs. Be specific about
-what they see, what they try, what they feel, and where they get confused.
+Write a first-person narrative using the persona from 0A and verified product
+content. Aim for 150-250 words, showing what they see, try and feel. Distinguish
+observations from predicted confusion.
 
-Use the persona from 0A. Reference real files and content from the pre-review audit.
-Not hypothetical. Trace the actual path: "I open the README. The first heading is
-[actual heading]. I scroll down and find [actual install command]. I run it and see..."
+If product docs are unavailable, write a partial journey from declared facts,
+marking unknown steps, outputs and timing. Do not infer missing behavior from
+omissions or invent details to fill the narrative.
 
 Then SHOW it to the user via AskUserQuestion:
 

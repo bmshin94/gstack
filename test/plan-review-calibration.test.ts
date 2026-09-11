@@ -11,11 +11,14 @@ const ROOT = path.resolve(import.meta.dir, '..');
 const IDS = ['plan-ceo-finding-count', 'plan-eng-finding-count', 'plan-design-finding-count', 'plan-devex-finding-count',
   'plan-eng-multi-finding-batching', 'plan-ceo-split-overflow', 'plan-decision-classification'].sort();
 
-test('semantic helper and calibration changes select all seven physical consumers plus calibration', () => {
+test('semantic helper changes also select the separate DX analysis calibration', () => {
   for (const file of ['test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts',
     'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts',
     'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts']) {
-    expect(selectTests([file], E2E_TOUCHFILES, []).selected.sort()).toEqual(IDS);
+    const shared = ['test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts',
+      'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts'].includes(file);
+    expect(selectTests([file], E2E_TOUCHFILES, []).selected.sort()).toEqual(
+      shared ? [...IDS, 'plan-devex-peer-comparison-classification'].sort() : IDS);
   }
   for (const id of IDS) expect(E2E_TIERS[id]).toBe('periodic');
   expect(E2E_TOUCHFILES['plan-ceo-finding-count']).toContain('test/skill-e2e-plan-ceo-paired-control.test.ts');
