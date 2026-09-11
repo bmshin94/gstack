@@ -99,15 +99,26 @@ export async function submitPlanSeed(session: SeedSession, seed: string, opts: {
     }
     throw new PlanSeedTimeout('Plan seed submission did not complete within the existing case budget');
   }
-  const composer = (text: string) => text.split('\n').filter(line => /^❯[ \u00a0]*/.test(line));
-  const emptyStartupComposer = (frame: Awaited<ReturnType<NonNullable<SeedSession['currentScreen']>>>, rows: any[]) => {
-    const line = composer(frame.text)[0], prefix = line.match(/^❯[ \u00a0]*/)![0];
+  const composer = (text: string): { line: string; row: number } | null => {
+    const lines = text.split('\n');
+    const rules = lines.flatMap((line, row) => /^─+$/.test(line) ? [row] : []);
+    if (rules.length < 2) return null;
+    const [top, bottom] = rules.slice(-2);
+    // Native input sits above the viewport's one footer row. Locate it before
+    // considering its contents; a historical box elsewhere is not an input.
+    // More than one enclosed row may be a multiline draft, so leave it untouched.
+    if (bottom !== lines.length - 2 || lines[top] !== lines[bottom] || bottom !== top + 2
+      || !/^❯[ \u00a0]*/.test(lines[top + 1])
+      || lines.slice(bottom + 1).some(line => /^❯[ \u00a0]*/.test(line))) return null;
+    return { line: lines[top + 1], row: top + 1 };
+  };
+  const emptyStartupComposer = (frame: Awaited<ReturnType<NonNullable<SeedSession['currentScreen']>>>, rows: any[], input: { line: string; row: number }) => {
+    const { line, row } = input, prefix = line.match(/^❯[ \u00a0]*/)![0];
     const value = line.slice(prefix.length).trimEnd();
     if (!value) return true;
     // Claude paints a Try suggestion only for an empty, untouched input. A
     // similarly worded real draft has normal cells and must remain blocked.
     if (rows.some(row => row.type === 'user' || row.type === 'assistant') || !/^Try "[^\r\n]+"$/.test(value)) return false;
-    const row = frame.text.split('\n').indexOf(line);
     const spans = (frame.styledText ?? []).filter(span => span.row === row);
     return spans.some(span => span.start === prefix.length && span.text.trimEnd() === value && span.dim)
       || spans.some(span => span.start === prefix.length && span.text === 'T' && span.inverse)
@@ -119,8 +130,9 @@ export async function submitPlanSeed(session: SeedSession, seed: string, opts: {
     if (!owned || owned.pendingBytes || owned.status.waitingFor) return false;
     const frame = await session.currentScreen!();
     if (opts.isQuestionOrPermission(frame.text)) return false;
-    if (frame.rawEnd !== session.mark() || composer(frame.text).length !== 1
-      || !emptyStartupComposer(frame, owned.rows)) return false;
+    const input = composer(frame.text);
+    if (frame.rawEnd !== session.mark() || !input
+      || !emptyStartupComposer(frame, owned.rows, input)) return false;
     const fresh = read();
     if (!fresh || fresh.pendingBytes || fresh.status.waitingFor || fresh.rows.length !== owned.rows.length) return false;
     before = fresh.rows.length;
@@ -132,8 +144,9 @@ export async function submitPlanSeed(session: SeedSession, seed: string, opts: {
   await until(async () => {
     if (!read()) return false;
     const frame = await session.currentScreen!();
-    return frame.rawEnd === session.mark() && composer(frame.text).length === 1
-      && composer(frame.text)[0].replace(/^❯[ \u00a0]*/, '').trimEnd() === pasted && !!read();
+    const input = composer(frame.text);
+    return frame.rawEnd === session.mark() && !!input
+      && input.line.replace(/^❯[ \u00a0]*/, '').trimEnd() === pasted && !!read();
   });
   if (Date.now() >= opts.deadlineAt) throw new PlanSeedTimeout('Plan seed submission exhausted the existing case budget');
   session.sendKey('Enter'); // Separate input event after the acknowledged paste.
@@ -161,8 +174,9 @@ export async function submitPlanSeed(session: SeedSession, seed: string, opts: {
     if (!complete || pending.size || owned.status.waitingFor) return false;
     const frame = await session.currentScreen!();
     if (opts.isQuestionOrPermission(frame.text)) throw new Error('Plan seed response requires an answer before skill invocation');
-    if (frame.rawEnd !== session.mark() || composer(frame.text).length !== 1
-      || composer(frame.text)[0].replace(/^❯[ \u00a0]*/, '').trim() !== '') return false;
+    const input = composer(frame.text);
+    if (frame.rawEnd !== session.mark() || !input
+      || input.line.replace(/^❯[ \u00a0]*/, '').trim() !== '') return false;
     const fresh = read();
     return !!fresh && !fresh.pendingBytes && fresh.rows.length === owned.rows.length && !fresh.status.waitingFor;
   });

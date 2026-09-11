@@ -10,12 +10,16 @@ import { launchClaudePty, runPlanSkillObservation, isProseAUQVisible, isNumbered
 // its own PID status and transcript. No provider or runner hooks are installed.
 const CLI = fs.readFileSync(path.join(import.meta.dir, 'fixtures', 'plan-seed-cli.ts'), 'utf8');
 
-for (const scenario of ['success', 'completed-tool', 'status-updating',
+for (const scenario of ['success', 'completed-tool', 'status-updating', 'history-empty-box',
   'startup-placeholder', 'startup-placeholder-cursor', 'startup-placeholder-unicode',
   'startup-typed-hint', 'startup-partial-dim', 'startup-prior-conversation', 'startup-missing-styles',
   'startup-waiting', 'startup-prose-question', 'startup-permission', 'startup-fresh-waiting',
   'no-ack', 'fused', 'duplicate', 'session-switch', 'foreign-cwd',
   'pending-tool', 'question', 'prose-question', 'permission', 'no-end-turn', 'partial', 'wrong-pid',
+  'typed-current', 'multiline-current', 'history-box-typed-current', 'history-box-multiline-current',
+  'missing-current-top', 'missing-current-bottom', 'mismatched-current-rules', 'unframed-current',
+  'history-no-current', 'history-missing-current-top', 'history-missing-current-bottom',
+  'stray-prompt-after-current', 'stale-response-frame',
   ...(process.platform === 'linux' ? ['wrong-start', 'wrong-domain'] : [])]) {
   test.skipIf(process.platform === 'win32')(`seed submission owns each protocol step: ${scenario}`, async () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-seed-')));
@@ -41,7 +45,7 @@ for (const scenario of ['success', 'completed-tool', 'status-updating',
           const status = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
           fs.writeFileSync(statusFile, JSON.stringify({ ...status, waitingFor: 'permission prompt' }));
         }
-        return { text: frame.text, rawEnd: mark,
+        return { text: frame.text, rawEnd: scenario === 'stale-response-frame' && sent.includes('\r') ? mark - 1 : mark,
         ...(scenario === 'startup-missing-styles' ? {} : { styledText: frame.styledText }) }; },
     };
     const seed = 'Please review when I run the skill:\n\n# Plan\nKeep $HOME and `literal` text.\n';
@@ -51,7 +55,7 @@ for (const scenario of ['success', 'completed-tool', 'status-updating',
       try { await submitPlanSeed(session, seed, { cwd: dir, launchedAt, deadlineAt,
         isQuestionOrPermission: text => isProseAUQVisible(text) || isNumberedOptionListVisible(text) || isPermissionDialogVisible(text) }); }
       catch (error) { failure = error; }
-      if (['success', 'completed-tool', 'status-updating', 'startup-placeholder', 'startup-placeholder-cursor', 'startup-placeholder-unicode'].includes(scenario)) {
+      if (['success', 'completed-tool', 'status-updating', 'history-empty-box', 'startup-placeholder', 'startup-placeholder-cursor', 'startup-placeholder-unicode'].includes(scenario)) {
         expect(failure).toBeUndefined();
         session.send('/plan-eng-review\r');
         await Bun.sleep(50);

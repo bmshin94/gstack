@@ -18,7 +18,12 @@ const event=(kind,value)=>fs.appendFileSync(events,JSON.stringify({kind,value,at
 const row=(type,content,stop)=>JSON.stringify({type,sessionId:sid,cwd,message:{role:type,content,stop_reason:stop}})+'\n';
 const text=s=>[{type:'text',text:s}];
 const append=(type,content,stop)=>fs.appendFileSync(file,row(type,content,stop));
-const frame=s=>process.stdout.write('\x1b[2J\x1b[H❯ '+s+'\r\n');
+const rule='─'.repeat(120);
+const frame=(s,history='',top=rule,bottom=rule)=>{
+ const inputRows=1+(s.match(/\r\n/g)||[]).length;
+ const topRow=(process.stdout.rows||40)-inputRows-2;
+ process.stdout.write('\x1b[2J\x1b[H'+history+'\x1b['+topRow+';1H'+top+'\r\n❯ '+s+'\r\n'+bottom+'\r\npaste again to expand');
+};
 let input='',seed='',submitted=false;
 process.stdin.setRawMode(true);process.stdin.resume();
 const hint='Try "refactor <filepath>"';
@@ -55,7 +60,19 @@ process.stdin.on('data',chunk=>{
    if(scenario==='completed-tool')append('user',[{type:'tool_result',tool_use_id:'call1',content:'Read complete'}]);
    append('assistant',text('Draft received; waiting for your skill command.'),'end_turn');event('end_turn',seed);
    if(scenario==='partial')fs.appendFileSync(file,'{"type":');
-   frame(scenario==='prose-question' ? '\r\nWhich option do you prefer?\r\nA) Full review (recommended)\r\nB) Skip review\r\n❯ ' : '');
+   // Keep the submitted message visible, as the native CLI does. An older
+   // boxed example must never supply the current input's empty state.
+   const olderBox=scenario.startsWith('history-')||scenario==='unframed-current'?rule+'\r\n❯ \r\n'+rule+'\r\n':'';
+   const history='❯ '+seed.replace(/\n/g,'\r\n')+'\r\n● Draft received; waiting for your skill command.\r\n'+olderBox;
+   if(scenario==='history-no-current'){
+    process.stdout.write('\x1b[2J\x1b[H'+history+'This was only an example.\r\n');return;
+   }
+   const current=scenario==='prose-question'?'\r\nWhich option do you prefer?\r\nA) Full review (recommended)\r\nB) Skip review\r\n❯ '
+    :scenario.endsWith('multiline-current')?'\r\n  keep this draft'
+    :scenario.endsWith('typed-current')?'keep this draft':'';
+   frame(current,history,scenario.endsWith('missing-current-top')||scenario==='unframed-current'?'':rule,
+    scenario.endsWith('missing-current-bottom')||scenario==='unframed-current'?'':scenario==='mismatched-current-rules'?rule.slice(1):rule);
+   if(scenario==='stray-prompt-after-current')process.stdout.write('\r❯ keep this later draft');
   },180);return;
  }
  if(input==='/plan-eng-review\r'){event('slash',input);input='';}
