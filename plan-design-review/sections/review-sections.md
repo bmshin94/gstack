@@ -44,6 +44,8 @@ matches a past learning, display:
 This makes the compounding visible. The user should see that gstack is getting
 smarter on their codebase over time.
 
+Evaluate every pass using the plan and referenced existing contracts. An explicitly excluded artifact is not a missing requirement: assess the same dimension with permitted evidence. Reopen that exclusion only for a concrete design gap, and ask before changing it.
+
 **Pass protocol (1-6):** Record the initial 0-10 score. Every `FIX TO 10` below is a proposal: ask about each issue, wait for approval, then edit the plan and re-rate that pass with the reason for the score change. A declined fix remains documented and lowers the final score. Never edit first and ask afterward. Pass 7 is the unscored decision register, not a seventh rating.
 
 ### Pass 1: Information Architecture

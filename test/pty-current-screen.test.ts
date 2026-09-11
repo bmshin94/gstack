@@ -4,6 +4,26 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+test('same-barrier cell styling distinguishes a startup suggestion from the identical typed text', async () => {
+  const projection = new PtyCurrentScreen();
+  try {
+    const text = '❯ Try "refactor src/設定.ts"';
+    projection.feed('\x1b[2J\x1b[H❯ \x1b[7mT\x1b[27m\x1b[2mry "refactor src/設定.ts"\x1b[22m');
+    const placeholder = projection.snapshot();
+    projection.feed('\x1b[2J\x1b[H' + text);
+    const draft = projection.snapshot();
+    const a = await placeholder, b = await draft;
+    expect(a.lines[0].text).toBe(text);
+    expect(b.lines[0].text).toBe(text);
+    expect(a.styledText).toEqual([
+      { row: 0, start: 2, text: 'T', dim: false, inverse: true },
+      { row: 0, start: 3, text: 'ry "refactor src/設定.ts"', dim: true, inverse: false },
+    ]);
+    expect(b.styledText).toEqual([]);
+    expect(a.inputOffset).toBeLessThan(b.inputOffset);
+  } finally { projection.dispose(); }
+});
+
 test('public xterm projection restores globals and reconstructs an exact current file dialog without a DOM', async () => {
   const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const self = Object.getOwnPropertyDescriptor(globalThis, 'self');

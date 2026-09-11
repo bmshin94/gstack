@@ -40,10 +40,9 @@ tradeoffs, recommend a direction, and ask for my input.
 
 **Decision granularity (including Step 0):**
 
-Treat each independently selectable remedy as its own finding even when an outside voice
-groups several under one topic. Split those remedies into separate AskUserQuestion calls;
-keep implementation details and tests that directly establish one chosen contract together.
-Scope reduction does not approve other independent remedies; ask separately.
+Ask separately about each independently selectable remedy, even when an outside voice
+groups them. Keep implementation details and tests directly establishing one chosen
+contract together. Scope reduction does not approve independent remedies.
 
 ## Scope gate (FIRST — overrides everything below). This is a hard STOP.
 
@@ -158,9 +157,9 @@ Before reviewing anything, answer these questions:
    - How will users download or install it (GitHub Releases, package manager, container registry)?
    If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
 
-If the complexity check triggers (8+ files or 2+ new classes/services), STOP before any review-section work. Call AskUserQuestion: name what's overbuilt, propose a minimal version that achieves the core goal, ask whether to reduce or proceed as-is. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
+If the complexity check triggers (8+ files or 2+ new classes/services), STOP before any review-section work. Call AskUserQuestion: name what's overbuilt, propose a minimal version that achieves the core goal, ask whether to reduce or proceed as-is. The AskUserQuestion call is a tool_use, not prose — call the tool directly. Keep independent security, error, test and performance remedies constant or pending in every scope option. Fewer components does not approve a pending remedy; ask about each separately before applying it.
 
-**STOP.** Do NOT proceed to Section 1 (Architecture review), edit the plan file with a proposed scope reduction, or call ExitPlanMode until the user responds. Naming the 80% solution in chat prose and continuing — or loading the AskUserQuestion schema via ToolSearch and then never invoking it — is the failure mode this gate exists to prevent.
+**STOP.** Do NOT enter Section 1 (Architecture review), apply the scope reduction to the plan, or call ExitPlanMode before the user responds. Prose and ToolSearch schema loading cannot replace the AskUserQuestion call.
 
 If the complexity check does not trigger, present your Step 0 findings and enter Review Sections: run Prior Learnings and Confidence Calibration, then Section 1.
 

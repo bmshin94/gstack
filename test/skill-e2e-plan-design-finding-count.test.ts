@@ -61,6 +61,7 @@ const planDesign5Findings = (planPath: string) => [
 // The count fixture is an existing page, not a blank-slate product. These
 // contracts answer the unrelated questions observed in the native review;
 // none chooses a remedy for the five defects in the proposed change.
+// These are synthetic fixture contracts, not claims about production code.
 const existingSettingsDesign = `# Existing settings page design
 
 ## Purpose and information architecture
@@ -74,6 +75,9 @@ cards, side navigation, new routes, or new section names in this change.
 Save persists the complete valid draft using the existing API. It is disabled
 until values differ from the saved state and there are no validation errors.
 The proposed visual emphasis of Save relative to the other actions is unresolved.
+The shared Button already applies the app's disabled-opacity token to every visual
+variant without changing its size or position. This disabled treatment is unchanged;
+the redesign chooses action emphasis, not a new disabled-state design.
 During an in-flight Save, duplicate submission is blocked; fields keep their
 values, focus stays on Save, and cancellation does not discard the draft.
 The visual feedback during this delay is the unresolved part of the proposal.
@@ -96,6 +100,13 @@ with a visible two-pixel focus outline. Section gaps currently vary as described
 in the proposal; the redesign must choose a coherent rhythm. The error-message
 foreground/background pair is also unresolved; other colors remain unchanged.
 No new font, brand palette, dark mode, component library, or motion system is needed.
+Color, spacing, type, and motion values already use named CSS custom properties
+on the shared Button, FormStack, and Field components. The current inconsistent
+values are legacy role assignments, not missing token infrastructure. Reuse the
+existing mechanism; choosing the five proposed visual treatments remains open.
+Within each section, the unchanged FormStack uses 16px between fields and the
+Field component uses 8px between a label and its input. Only the gaps between
+sections are inconsistent and under review; intra-section spacing is preserved.
 
 ## Responsive and accessible behavior already in place
 At 375px the form fits the viewport with 16px side padding; the header actions

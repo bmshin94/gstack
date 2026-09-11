@@ -20,21 +20,33 @@ test.each(['declined', 'invalid', 'auth'] as const)('%s is never retried', async
     chargeOnce: async () => { calls++; throw cause; },
     sleep: async () => { throw new Error('must not wait'); },
   });
-  await expect(result).rejects.toMatchObject({ key: payment.key, outcomeUnknown: false, cause });
-  await expect(result).rejects.toBeInstanceOf(PaymentFailure);
+  const failure = await result.then(() => { throw new Error('expected rejection'); }, error => error);
+  expect(failure).toBeInstanceOf(PaymentFailure);
+  expect(failure).toMatchObject({ key: payment.key, outcomeUnknown: false });
+  expect(failure.cause).toBe(cause);
   expect(calls).toBe(1);
 });
 
 test('recovery after one 502 preserves the request, delay and retry ownership', async () => {
   const input = { ...payment }; const requests: Readonly<Payment>[] = []; const waits: number[] = [];
-  await processPayment(input, {
+  let releaseWait!: () => void;
+  const waiting = new Promise<void>(resolve => { releaseWait = resolve; });
+  let announceWait!: () => void;
+  const sleepStarted = new Promise<void>(resolve => { announceWait = resolve; });
+  const result = processPayment(input, {
     chargeOnce: async request => {
       requests.push(request);
-      if (requests.length === 1) { input.key = 'changed'; throw new ProviderError('502'); }
+      if (requests.length === 1) { input.key = 'changed'; input.amount = 9999; throw new ProviderError('502'); }
       return { id: 'charge-42' };
     },
-    sleep: async ms => { waits.push(ms); },
+    sleep: async ms => { waits.push(ms); announceWait(); await waiting; },
   });
+  // Drain the microtask queue while the injected wait is still unresolved: a
+  // retry that merely calls sleep without awaiting it must not reach transport.
+  await sleepStarted;
+  expect(requests).toHaveLength(1);
+  releaseWait();
+  expect(await result).toEqual({ chargeId: 'charge-42', amount: 1200, currency: 'usd' });
   expect(requests).toEqual([payment, payment]);
   expect(requests[0]).toBe(requests[1]);
   expect(Object.isFrozen(requests[0])).toBe(true);

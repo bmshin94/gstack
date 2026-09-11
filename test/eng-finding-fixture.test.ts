@@ -23,6 +23,7 @@ test('Eng fixture commits a real legacy flow alongside the unchanged supplied de
     expect(JSON.parse(pkg).scripts.test).toBe('bun test');
     expect(input).toContain('POLICIES order, not response-arrival order');
     expect(input).toContain('prior build artifact for rollback');
+    expect(input).toContain('reserve concurrency and rate capacity for five policy calls');
     expect(input).not.toContain('reverting that\nflag restores');
     expect(git('diff', 'origin/main...HEAD')).toBe('');
     expect(git('status', '--porcelain')).toBe('');
@@ -82,5 +83,26 @@ test('existing policy-order failure and short-circuit behavior stay unchanged', 
   expect(result).toBeInstanceOf(AuthFailure);
   expect(result.code).toBe('denied');
   expect(called).toEqual(['account', 'tenant']);
+  expect(minted).toBe(false);
+});
+
+
+test.each(['synchronous throw', 'promise rejection'] as const)('legacy preserves the same provider failure contract for %s', async mode => {
+  const cause = new Error('policy client failure');
+  const called: Policy[] = [];
+  let minted = false;
+  const platform: Platform = {
+    checkPolicy: (_identity, policy) => {
+      called.push(policy);
+      if (mode === 'synchronous throw') throw cause;
+      return Promise.reject(cause);
+    },
+    issueSession: async () => { minted = true; return session; },
+  };
+  const failure = await legacyAuthFlow(identity, platform).catch(error => error);
+  expect(failure).toBeInstanceOf(AuthFailure);
+  expect(failure.code).toBe('provider_unavailable');
+  expect(failure.cause).toBe(cause);
+  expect(called).toEqual(['account']);
   expect(minted).toBe(false);
 });

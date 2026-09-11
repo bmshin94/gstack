@@ -31,6 +31,8 @@ export interface PtyScreenSnapshot {
   bufferType: 'normal' | 'alternate';
   lines: Array<{ text: string; wrapped: boolean }>;
   text: string;
+  /** Contiguous dim/inverse text cells, captured at the same write barrier. */
+  styledText: Array<{ row: number; start: number; text: string; dim: boolean; inverse: boolean }>;
 }
 
 /** Test-only current-screen projection. Never writes input to a PTY. */
@@ -99,12 +101,23 @@ export class PtyCurrentScreen {
           if (done || this.closed) return;
           try {
             const buffer = terminal.buffer.active;
+            const styledText: PtyScreenSnapshot['styledText'] = [];
             const lines = Array.from({ length: terminal.rows }, (_, row) => {
               const line = buffer.getLine(buffer.baseY + row);
+              let start = 0, previous = '';
+              for (let col = 0; col <= terminal.cols; col++) {
+                const cell = col < terminal.cols ? line?.getCell(col) : undefined;
+                const key = cell && (cell.getChars() || cell.getWidth() === 0)
+                  ? `${Number(!!cell.isDim())}${Number(!!cell.isInverse())}` : '';
+                if (key === previous) continue;
+                if (previous && previous !== '00') styledText.push({ row, start,
+                  text: line!.translateToString(false, start, col), dim: previous[0] === '1', inverse: previous[1] === '1' });
+                start = col; previous = key;
+              }
               return { text: line?.translateToString(true) ?? '', wrapped: line?.isWrapped ?? false };
             });
             finish(undefined, { inputOffset, cols: terminal.cols, rows: terminal.rows,
-              bufferType: buffer.type, lines, text: lines.map(line => line.text).join('\n') });
+              bufferType: buffer.type, lines, text: lines.map(line => line.text).join('\n'), styledText });
           } catch (cause) {
             this.close(cause instanceof Error ? cause : new Error(String(cause)));
           }

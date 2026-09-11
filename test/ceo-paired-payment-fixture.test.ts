@@ -10,10 +10,10 @@ test('paired review gets runnable existing coverage that leaves both intended ga
   try {
     seedCeoPairedProject(dir, '# Add two payment tests\n');
     const file = path.join(dir, 'src/payment.ts'); const original = fs.readFileSync(file, 'utf8');
-    // These are candidate defects the two missing tests must catch. The existing
-    // suite deliberately has neither first-success receipt nor exhausted-retry coverage.
+    // These are candidate defects the two missing tests must catch. Recovery is
+    // covered, but first-success receipts and exhausted retries remain untested.
     const variants = [original,
-      original.replace('amount: request.amount, currency:', 'amount: request.amount + 1, currency:'),
+      original.replace('amount: request.amount, currency:', 'amount: request.amount + (attempt === 0 ? 1 : 0), currency:'),
       original.replace('attempt === 1', 'attempt === 2')];
     expect(new Set(variants).size).toBe(3);
     for (const source of variants) {
@@ -23,6 +23,21 @@ test('paired review gets runnable existing coverage that leaves both intended ga
       });
       expect(result.exitCode, result.stderr.toString()).toBe(0);
       expect(result.stderr.toString()).toContain('11 pass');
+    }
+    // The fixture must enforce its advertised pre-existing contracts without
+    // closing either of the review's missing first-success/exhaustion tests.
+    for (const [source, failedTest] of [
+      [original.replace('amount: request.amount, currency:', 'amount: request.amount + 1, currency:'), 'recovery after one 502'],
+      [original.replace('await io.sleep(100);', 'void io.sleep(100);'), 'recovery after one 502'],
+      [original.replace('outcomeUnknown, error);', 'outcomeUnknown, new ProviderError((error as ProviderError).code));'), 'declined is never retried'],
+    ]) {
+      expect(source).not.toBe(original);
+      fs.writeFileSync(file, source!);
+      const result = Bun.spawnSync([process.execPath, 'test', './contract.test.ts'], {
+        cwd: dir, timeout: 5000, env: { PATH: process.env.PATH ?? '' },
+      });
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr.toString()).toContain('(fail) ' + failedTest);
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

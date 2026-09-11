@@ -4,7 +4,8 @@
 
 import { test } from 'bun:test';
 import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
-import { CEO_SCOPE_CANDIDATES, pickPlanReviewQuestion } from './helpers/plan-review-cases';
+import { CEO_SCOPE_CANDIDATES } from './helpers/plan-review-cases';
+import { pickCeoSplitQuestion } from './helpers/ceo-split-question-policy';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -51,7 +52,7 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
           firstAUQPick: pickSuppliedCeoPlanStart,
           isLastStep0AUQ: ceoStep0Boundary,
           reviewCountCeiling: null, // classify findings after actual workflow completion
-          questionPick: pickPlanReviewQuestion,
+          questionPick: pickCeoSplitQuestion,
           cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt), // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },

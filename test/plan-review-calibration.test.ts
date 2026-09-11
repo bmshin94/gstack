@@ -94,6 +94,13 @@ mock.module(path.join(root, 'test/helpers/llm-judge.ts'), () => ({ callJudge: as
     raw.questions[1].reason = 'bundled independent decisions';
     return raw;
   }
+  if (['coupled-overcount', 'test-depth-overcount', 'independent-undercount'].includes(mode) && calls === 3) {
+    const raw = response(calibration);
+    const id = mode === 'coupled-overcount' ? 'direct-contract-regression'
+      : mode === 'test-depth-overcount' ? 'same-behavior-test-depth' : 'independent-code-and-test-policy';
+    raw.questions.find(row => row.toolUseId === id).independentDecisions = mode === 'independent-undercount' ? 1 : 2;
+    return raw;
+  }
   if (mode === 'deadline') return await new Promise(resolve => { lateResolve = () => resolve(response(calibration)); });
   return response(calibration);
 } }));
@@ -127,6 +134,14 @@ test('real calibration body preserves outcome and exactly one complete attempt r
         expect(calls).toBe(3); expect(records[0].exit_reason).toBe('validation_failed');
         expect(records[0].transcript[2].response.questions[1].reason).toBe('bundled independent decisions');
       }
+      if (['coupled-overcount', 'test-depth-overcount', 'independent-undercount'].includes(mode)) {
+        expect(calls).toBe(3); expect(records[0].exit_reason).toBe('validation_failed');
+        const id = mode === 'coupled-overcount' ? 'direct-contract-regression'
+          : mode === 'test-depth-overcount' ? 'same-behavior-test-depth' : 'independent-code-and-test-policy';
+        const row = records[0].transcript[2].response.questions.find(row => row.toolUseId === id);
+        expect(row.independentDecisions).toBe(mode === 'independent-undercount' ? 1 : 2);
+        expect(records[0].transcript[2].passed).toBeUndefined();
+      }
       if (mode === 'deadline') {
         expect(records[0].exit_reason).toBe('timeout'); expect(calls).toBe(1);
         const before = JSON.stringify(records);
@@ -151,7 +166,7 @@ test('real calibration body preserves outcome and exactly one complete attempt r
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
-test.each(['success', 'provider-failure', 'malformed', 'negative-diagnostic-injection', 'deadline', 'unselected'])('calibration attempt outcome stays accurate: %s', async mode => {
+test.each(['success', 'provider-failure', 'malformed', 'negative-diagnostic-injection', 'coupled-overcount', 'test-depth-overcount', 'independent-undercount', 'deadline', 'unselected'])('calibration attempt outcome stays accurate: %s', async mode => {
   const result = await exercise(mode);
   expect(result.records).toBe(mode === 'unselected' ? 0 : 1);
 }, 15000);

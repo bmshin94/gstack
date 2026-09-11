@@ -100,15 +100,29 @@ export async function submitPlanSeed(session: SeedSession, seed: string, opts: {
     throw new PlanSeedTimeout('Plan seed submission did not complete within the existing case budget');
   }
   const composer = (text: string) => text.split('\n').filter(line => /^❯[ \u00a0]*/.test(line));
+  const emptyStartupComposer = (frame: Awaited<ReturnType<NonNullable<SeedSession['currentScreen']>>>, rows: any[]) => {
+    const line = composer(frame.text)[0], prefix = line.match(/^❯[ \u00a0]*/)![0];
+    const value = line.slice(prefix.length).trimEnd();
+    if (!value) return true;
+    // Claude paints a Try suggestion only for an empty, untouched input. A
+    // similarly worded real draft has normal cells and must remain blocked.
+    if (rows.some(row => row.type === 'user' || row.type === 'assistant') || !/^Try "[^\r\n]+"$/.test(value)) return false;
+    const row = frame.text.split('\n').indexOf(line);
+    const spans = (frame.styledText ?? []).filter(span => span.row === row);
+    return spans.some(span => span.start === prefix.length && span.text.trimEnd() === value && span.dim)
+      || spans.some(span => span.start === prefix.length && span.text === 'T' && span.inverse)
+        && spans.some(span => span.start === prefix.length + 1 && span.text.trimEnd() === value.slice(1) && span.dim);
+  };
   let before = 0;
   await until(async () => {
     const owned = read();
-    if (!owned || owned.pendingBytes) return false;
+    if (!owned || owned.pendingBytes || owned.status.waitingFor) return false;
     const frame = await session.currentScreen!();
+    if (opts.isQuestionOrPermission(frame.text)) return false;
     if (frame.rawEnd !== session.mark() || composer(frame.text).length !== 1
-      || composer(frame.text)[0].replace(/^❯[ \u00a0]*/, '').trim() !== '') return false;
+      || !emptyStartupComposer(frame, owned.rows)) return false;
     const fresh = read();
-    if (!fresh || fresh.pendingBytes || fresh.rows.length !== owned.rows.length) return false;
+    if (!fresh || fresh.pendingBytes || fresh.status.waitingFor || fresh.rows.length !== owned.rows.length) return false;
     before = fresh.rows.length;
     return true;
   });

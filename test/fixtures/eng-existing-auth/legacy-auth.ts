@@ -8,6 +8,8 @@ export interface Platform {
   // Five independent, read-only policy verdicts for the same verified identity.
   // The existing client enforces a 500ms deadline on each call and rejects on
   // transport/protocol failure. No verdict supplies input to another policy.
+  // A call may also throw before returning a Promise. Preserve the legacy
+  // AuthFailure mapping and policy-order precedence for both failure forms.
   checkPolicy(identity: Identity, policy: Policy): Promise<boolean>;
   // The existing session service owns opaque IDs, one-hour expiry, revocation,
   // and storage. Renewal is an explicit caller action, never implicit here.

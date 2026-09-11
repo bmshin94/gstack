@@ -23,6 +23,48 @@ const N = 5;
 const FLOOR = N - 1;
 const CEILING = N + 2;
 
+// Authored fixture assumptions about the existing SDK, not production discoveries
+// or proposed remedies for the five launch gaps below.
+const existingDevexContracts = `## Existing SDK contracts (synthetic fixture assumptions)
+
+This launch exposes an existing SDK to public beta users; it is not a proposal to
+design its language, evaluator, API, or release infrastructure from scratch. These
+unchanged contracts describe the fixture's current product and remain reviewable
+if a concrete incompatibility with the launch plan is found.
+This review input summarizes those contracts; SDK source and referenced docs
+are not copied into this fixture.
+
+- The Python package is eval-sdk, imported as eval_sdk, with the eval-sdk CLI.
+  The README already states its purpose (evaluate an application's outputs against
+  caller-supplied cases), supported Python versions, pip install command, and link
+  to a plain-text getting-started guide. No second-language port is planned.
+- evaluate(target, cases, metric) accepts the developer's application callable;
+  cases contain inputs and expected outputs, and the caller supplies the metric
+  and acceptance rule. Results expose per-case scores and failures. There is no
+  hard-coded quality threshold or implied built-in production acceptance policy.
+  The existing guide runs the same callable and cases as real usage, without a
+  separate scaffold/configuration language or an interactive demo.
+- Both the CLI and library enforce the mandatory first-run CI prerequisite
+  described above. Existing API documentation does not bypass that requirement.
+- Errors have stable codes, the originating cause, and an actionable next step;
+  secrets are redacted. CLI help documents noninteractive execution and exit
+  statuses. The same validated invocation runs locally and in CI.
+- Provider calls have documented request timeouts and a finite retry policy;
+  execution accepts an overall deadline. Cost ceilings remain enforced in
+  noninteractive mode. Responses and scores are not persisted in a shared cache.
+  These existing reliability controls do not establish any first-run time target.
+- In-repo API, error, configuration, and upgrade references already exist, with
+  executable examples and a documented pytest pattern. Releases preserve the
+  published API/configuration contract during beta. Breaking changes require a
+  versioned migration guide and deprecation notices; no AST rewriting tool or
+  plugin is part of this launch.
+- The SDK is already open source. CONTRIBUTING, issue templates, and a public
+  discussion forum define support and contribution paths. The beta adds no
+  hosted docs service, new CI provider, telemetry system, or watch-mode feature.
+  Release checks exercise existing API/error/compatibility behavior, but they
+  contain no onboarding-duration measurement or peer-DX benchmark.
+`;
+
 const planDevex5Findings = (planPath: string) => [
   `Please review this plan thoroughly. As you go, write your plan-mode plan to ${planPath} (use Edit/Write to that exact path).`,
   'Use DX POLISH mode for this review; examine the current plan with full rigor.',
@@ -49,7 +91,7 @@ const planDevex5Findings = (planPath: string) => [
   "The plan doesn't reference how peer SDKs (LangChain, Semantic Kernel,",
   'OpenAI) handle this DX surface. We may be reinventing worse versions',
   'of solved problems.',
-].join('\n');
+].join('\n') + '\n\n' + existingDevexContracts;
 
 describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', () => {
   test(

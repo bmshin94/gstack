@@ -12,6 +12,7 @@ const status={pid:process.pid,sessionId:sid,cwd,startedAt:Date.now(),kind:'inter
 if(scenario==='wrong-pid')status.pid++;
 if(scenario==='wrong-start')status.procStart+='0';
 if(scenario==='wrong-domain')status.pidDomain+='-different';
+if(scenario==='startup-waiting')status.waitingFor='permission prompt';
 fs.writeFileSync(statusFile,JSON.stringify(status));
 const event=(kind,value)=>fs.appendFileSync(events,JSON.stringify({kind,value,at:Date.now()})+'\n');
 const row=(type,content,stop)=>JSON.stringify({type,sessionId:sid,cwd,message:{role:type,content,stop_reason:stop}})+'\n';
@@ -19,7 +20,17 @@ const text=s=>[{type:'text',text:s}];
 const append=(type,content,stop)=>fs.appendFileSync(file,row(type,content,stop));
 const frame=s=>process.stdout.write('\x1b[2J\x1b[H❯ '+s+'\r\n');
 let input='',seed='',submitted=false;
-process.stdin.setRawMode(true);process.stdin.resume();frame('');
+process.stdin.setRawMode(true);process.stdin.resume();
+const hint='Try "refactor <filepath>"';
+if(scenario==='startup-prior-conversation')append('user',text('An earlier request'));
+if(scenario==='startup-placeholder-cursor')frame('\x1b[7mT\x1b[27m\x1b[2m'+hint.slice(1)+'\x1b[22m');
+else if(scenario==='startup-placeholder-unicode')frame('\x1b[2mTry "refactor src/設定.ts"\x1b[22m');
+else if(['startup-placeholder','startup-prior-conversation','startup-missing-styles','startup-waiting','startup-prose-question','startup-permission','startup-fresh-waiting'].includes(scenario))frame('\x1b[2m'+hint+'\x1b[22m');
+else if(scenario==='startup-typed-hint')frame(hint);
+else if(scenario==='startup-partial-dim')frame('\x1b[2mTry \x1b[22m"refactor <filepath>"');
+else frame('');
+if(scenario==='startup-prose-question')process.stdout.write('Which option do you prefer?\r\nA) Full review (recommended)\r\nB) Skip review\r\n');
+if(scenario==='startup-permission')process.stdout.write('Bash command run checks requires permission\r\n');
 process.stdin.on('data',chunk=>{
  input+=chunk.toString();
  if(input.startsWith('\x1b[200~')&&input.endsWith('\x1b[201~')){

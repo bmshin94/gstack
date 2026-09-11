@@ -30,7 +30,7 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
   } finally { fs.rmSync(outputRoot, { recursive: true, force: true }); }
 }, 20_000);
 
-test('the actual DX finding registration commits its mode and unchanged defects before launch', () => {
+test('the actual DX finding registration commits its mode, unchanged defects, and existing contracts before launch', () => {
   const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'devex-count-free-')));
   const script = path.join(directory, 'registration.test.ts');
   const facts = path.join(directory, 'facts.json');
@@ -76,8 +76,19 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
       'Use DX POLISH mode for this review; examine the current plan with full rigor.',
       '', ${JSON.stringify(originalPlan)},
     ].join('\\n');
-    expect(fs.readFileSync(path.join(opts.cwd, 'review-input.md'), 'utf8')).toBe(expected);
-    expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: opts.cwd, encoding: 'utf8' })).toBe(expected);
+    const input = fs.readFileSync(path.join(opts.cwd, 'review-input.md'), 'utf8');
+    expect(input.startsWith(expected + '\\n\\n')).toBe(true);
+    const baseline = input.slice(expected.length + 2);
+    expect(baseline.startsWith('## Existing SDK contracts (synthetic fixture assumptions)')).toBe(true);
+    expect(baseline).toContain('are not copied into this fixture.');
+    expect(baseline).toContain("evaluate(target, cases, metric) accepts the developer's application callable");
+    expect(baseline).toContain('caller supplies the metric');
+    expect(baseline).toContain('Both the CLI and library enforce the mandatory first-run CI prerequisite');
+    expect(baseline).toContain('without a\\n  separate scaffold/configuration language or an interactive demo');
+    expect(baseline).toContain('no onboarding-duration measurement or peer-DX benchmark');
+    expect(baseline).toContain('Cost ceilings remain enforced in\\n  noninteractive mode');
+    expect(baseline).toContain('Releases preserve the\\n  published API/configuration contract during beta');
+    expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: opts.cwd, encoding: 'utf8' })).toBe(input);
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ cwd: opts.cwd, checked: true }));
     throw new Error('controlled DX runner failure');
   },

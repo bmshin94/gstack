@@ -244,6 +244,30 @@ function recommendationPolarity(label: string): 'absent' | 'positive' | 'negativ
   return 'ambiguous';
 }
 
+// A bold option heading can share its line with an explanatory paragraph.
+// Only recover an unannotated alternative's plain negative description when
+// another option already has an explicit positive annotation. This cannot
+// manufacture a recommendation or enable the first-option fallback.
+function descriptiveNonrecommendation(text: string, option: RegExpMatchArray): boolean {
+  const lines = text.split('\n').filter(line => line.replace(/\*\*/g, '').trim() === option[0].trim());
+  if (lines.length !== 1) return false;
+  const line = lines[0].trim();
+  const heading = Lexer.lexInline(line)[0];
+  if (heading?.type !== 'strong' || heading.raw !== `**${heading.text}**`
+    || heading.tokens?.length !== 1 || heading.tokens[0].type !== 'text'
+    || heading.tokens[0].raw !== heading.text || heading.tokens[0].text !== heading.text
+    || (!heading.text.startsWith(option[1] + ') ') && !heading.text.startsWith(option[1] + '. '))
+    || /recommended/i.test(heading.text)) return false;
+  const description = line.slice(heading.raw.length);
+  if (!/^ +[A-Za-z]/.test(description)
+    || /\b(?:choose|select|pick|reply|answer|instead)\b|\bnot\s+not\b/i.test(description)
+    || [...description.matchAll(/recommended/gi)].length !== 1
+    || !/\bnot recommended\b/i.test(description)) return false;
+  // Reuse the annotation parser's quote/code/nesting/duplicate guards rather
+  // than treating a quoted or parenthesized qualifier as a plain description.
+  return recommendationPolarity(description.replace(/\bnot recommended\b/i, '(not recommended)')) === 'negative';
+}
+
 /** Veto statements that make this request noncurrent, wherever they occur in
  * the owned turn. Ordinary option actions and inline examples are not such
  * statements. This applies only to unrelated input, never to the mode oracle.
@@ -532,6 +556,23 @@ export function inspectCeoModePreference(transcript: OwnedClaudeTranscript, visi
       if (!compact(questionVisible).includes(compact(text))
         && (!reply || !renderedProse(questionVisible).includes(signature))) continue;
       const polarities = options.map(option => recommendationPolarity(option[2]));
+      if (polarities.includes('ambiguous') && polarities.filter(value => value === 'positive').length === 1) {
+        // Descriptions can continue on later lines. Only the already validated
+        // exact reply directive is exempt from the recovery's instruction veto.
+        const optionBlock = text.replace(/\*\*/g, '').slice(options[0].index)
+          .replace(reply?.replace(/\*\*/g, '') ?? '', '');
+        if (/\b(?:choose|select|pick|instead)\b|\b(?:answer|reply|use|proceed)\s+(?:with\s+)?(?:option\s+)?[A-D1-4]\b/i.test(optionBlock)) continue;
+        const fullBriefs = [nativeText, renderPlainInlineLinks(nativeText)].map(renderedProse);
+        const frame = renderedProse(questionVisible);
+        const input = renderedProse(inputVisible.replace(/\x1b\[\?25[hl]/g, ''));
+        // This description-dependent recovery needs the complete current brief,
+        // once in both frame and input epoch; a shared reply is insufficient.
+        if (fullBriefs.some(brief => brief && frame.split(brief).length === 2 && input.split(brief).length === 2)) {
+          for (let index = 0; index < options.length; index++) {
+            if (polarities[index] === 'ambiguous' && descriptiveNonrecommendation(text, options[index])) polarities[index] = 'negative';
+          }
+        }
+      }
       if (polarities.includes('ambiguous')) continue;
       const recommended = options.filter((_, index) => polarities[index] === 'positive');
       if (recommended.length > 1 || !recommended.length && polarities.some(value => value !== 'absent')) continue;

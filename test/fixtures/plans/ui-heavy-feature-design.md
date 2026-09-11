@@ -13,7 +13,8 @@ elements need hover and focus-visible states; marking all notifications read
 uses a confirmation modal, and actions provide toast feedback.
 
 ## Constraints
-The new `GET /api/dashboard` endpoint returns activity, notifications, and quick
-actions from the existing PostgreSQL tables, with no schema changes. The existing
-app and sign-in remain the starting point. Dark mode and personalization are
-separate work. The implementation proposal is `.claude/plans/ui-heavy-feature.md`.
+The new `GET /api/dashboard` endpoint returns activity and notifications from the
+existing PostgreSQL tables and quick actions from static configuration, with no
+schema changes. The existing app and sign-in remain the starting point. The
+implementation plan records the proposed read, mutation, and landing contracts.
+Dark mode and personalization are separate work. The implementation proposal is `.claude/plans/ui-heavy-feature.md`.

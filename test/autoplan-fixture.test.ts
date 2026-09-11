@@ -83,6 +83,21 @@ describe('autoplan project fixture preamble', () => {
       db.exec("INSERT INTO notifications VALUES ('n1', 'alice', 'Ready', 1, NULL), ('n2', 'bob', 'Ready', 2, 3)");
       expect(db.query('SELECT message, read_at FROM notifications WHERE user_id = ?').all('alice')).toEqual([{ message: 'Ready', read_at: null }]);
       expect(db.query('SELECT read_at FROM notifications WHERE user_id = ?').get('bob')).toEqual({ read_at: 3 });
+
+      // Execute the proposed statement against the exact fixture schema. This
+      // checks ownership, repeat behavior and existing read timestamps; it does
+      // not pretend the proposed HTTP handler already exists or run PostgreSQL.
+      const plan = fs.readFileSync(path.join(project, '.claude/plans/ui-heavy-feature.md'), 'utf8');
+      const sqlBlocks = [...plan.matchAll(/```sql\n([\s\S]*?)\n```/g)];
+      expect(sqlBlocks).toHaveLength(1);
+      db.exec("INSERT INTO notifications VALUES ('n3', 'bob', 'Unread', 3, NULL), ('n4', 'alice', 'Read already', 4, 5)");
+      const markRead = db.query(sqlBlocks[0][1]);
+      expect(markRead.all({ $1: 1000, $2: 'alice' })).toEqual([{ id: 'n1' }]);
+      expect(markRead.all({ $1: 2000, $2: 'alice' })).toEqual([]);
+      expect(db.query('SELECT id, read_at FROM notifications ORDER BY id').all()).toEqual([
+        { id: 'n1', read_at: 1000 }, { id: 'n2', read_at: 3 },
+        { id: 'n3', read_at: null }, { id: 'n4', read_at: 5 },
+      ]);
       expect(() => db.exec("INSERT INTO activity VALUES ('a1', 'unknown', 'Invalid owner', 1)")).toThrow();
       db.exec("INSERT INTO activity VALUES ('a1', 'alice', 'Created project', 1)");
       expect(db.query('SELECT description FROM activity WHERE user_id = ?').get('alice')).toEqual({ description: 'Created project' });
@@ -203,6 +218,8 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
     const design = fs.readFileSync(path.join(root, 'test/fixtures/plans/ui-heavy-feature-design.md'), 'utf8');
     expect(fs.readFileSync(path.join(cwd, 'DESIGN.md'), 'utf8')).toBe(design);
     expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8' })).toBe(design);
+    const proposedPlan = fs.readFileSync(path.join(root, 'test/fixtures/plans/ui-heavy-feature.md'), 'utf8');
+    expect(execFileSync('git', ['show', 'HEAD:.claude/plans/ui-heavy-feature.md'], { cwd, encoding: 'utf8' })).toBe(proposedPlan);
     const discovery = execFileSync('bash', ['-c', ${JSON.stringify('SLUG=fixture; BRANCH=main; ' + DESIGN_DOC_DISCOVERY_BLOCK)}], {
       cwd, env: { PATH: process.env.PATH, HOME: path.join(cwd, '.isolated-home') }, encoding: 'utf8', timeout: 5000,
     });

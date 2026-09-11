@@ -32,7 +32,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { buildSeedConfig, getHermeticDirs, hermeticChildEnv, hermeticSkillsConfigDir, isHermeticEnabled } from './hermetic-env';
-import { PtyCurrentScreen } from './pty-current-screen';
+import { PtyCurrentScreen, type PtyScreenSnapshot } from './pty-current-screen';
 import { setupQuestionEventSource, type QuestionEventSource } from './plan-skill-question-events';
 
 /** Strip ANSI escapes for pattern-matching against visible text. */
@@ -130,7 +130,7 @@ export interface ClaudePtySession {
   visibleSince(marker?: number): string;
   /** Active screen at a completed decode barrier; rawEnd counts raw UTF-16
    * code units and can be compared with mark(). Present only when requested. */
-  currentScreen?(): Promise<{ text: string; rawEnd: number }>;
+  currentScreen?(): Promise<{ text: string; rawEnd: number; styledText?: PtyScreenSnapshot['styledText'] }>;
   /** Owned question sessions only. Coordinates decoder and PTY geometry;
    * returns the post-flush/pre-resize mark, or null without resizing when
    * the deadline or a changing decoder barrier prevents the transaction. */
@@ -1647,7 +1647,7 @@ export async function launchClaudePty(
       if (screenError) throw screenError;
       const rawEnd = buffer.length;
       const frame = await screen.snapshot();
-      return { text: frame.text, rawEnd };
+      return { text: frame.text, rawEnd, styledText: frame.styledText };
     } } : {}),
     waitForAny,
     waitFor,

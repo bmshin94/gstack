@@ -916,6 +916,68 @@ test.each([
   } else expect(signal.kind).toBe('working');
 });
 
+// Native AUTO D1 used closed bold labels followed by inline explanations.
+// C's conditional negative description did not compete with B's explicit marker.
+const describedAlternative = [
+  'D1 — Which implementation approach?',
+  '**A) Minimal client-side export.** A small formatter and one button.',
+  '**B) Complete client-side export. (recommended)** The same read API, two pure modules, and table-driven tests.',
+  '**C) Server-side export endpoint.** A new GET route that streams CSV. Listed for completeness, not recommended unless exports must be audited or settings are too large for the client.',
+  '', 'Reply with `D1: A`, `D1: B`, or `D1: C`. `<gstack-qid:plan-ceo-review-approach>`',
+].join('\n');
+
+test('an inline negative description cannot compete with another explicitly recommended heading', () => {
+  const owned = transcript(assistant(describedAlternative));
+  expect(inspectCeoModePreference(owned, describedAlternative, describedAlternative, describedAlternative))
+    .toMatchObject({ kind: 'unrelated', answer: 'B', questionId: 'plan-ceo-review-approach' });
+  for (const value of [
+    describedAlternative.replace('**B) Complete client-side export. (recommended)**', '**B) Complete client-side export.** (recommended)'),
+    describedAlternative.replace('** A new GET', '**\nA new GET'),
+    describedAlternative + '\nSTOP. Waiting on your D1 answer before mode handoff and the deep review.',
+  ]) expect(inspectCeoModePreference(transcript(assistant(value)), value)).toMatchObject({ kind: 'unrelated', answer: 'B' });
+  expect(inspectCeoModePreference(owned, describedAlternative, describedAlternative, '').kind).toBe('working');
+  const clipped = describedAlternative.replace(' Listed for completeness, not recommended unless exports must be audited or settings are too large for the client.', '');
+  expect(inspectCeoModePreference(owned, describedAlternative, clipped, describedAlternative).kind).toBe('working');
+  expect(inspectCeoModePreference(owned, describedAlternative, describedAlternative, clipped).kind).toBe('working');
+  expect(inspectCeoModePreference(owned, describedAlternative, describedAlternative.repeat(2), describedAlternative).kind).toBe('working');
+  expect(inspectCeoModePreference({ ...owned, pendingBytes: 1 }, describedAlternative).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(describedAlternative, 'tool_use')), describedAlternative).kind).toBe('working');
+  expect(inspectCeoModePreference(transcript(assistant(describedAlternative, 'end_turn', 'old'), assistant(describedAlternative, 'end_turn', 'new')), describedAlternative).kind).toBe('working');
+  const preview = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: describedAlternative }] } };
+  expect(inspectCeoModePreference(transcript(preview, assistant(describedAlternative)), describedAlternative).kind).toBe('working');
+  const deferred = describedAlternative + '\nDo not answer this question yet.';
+  expect(inspectCeoModePreference(transcript(assistant(deferred)), deferred).kind).toBe('working');
+});
+
+test('heading recovery preserves conditional, contradictory, quoted, and ambiguous refusals', () => {
+  for (const value of [
+    describedAlternative.replace(' (recommended)', ''),
+    describedAlternative.replace('**A) Minimal client-side export.**', '**A) Minimal client-side export. (recommended)**'),
+    describedAlternative.replace('**C) Server-side export endpoint.**', '**C) Server-side export endpoint. (not recommended unless necessary)**'),
+    describedAlternative.replace('**C) Server-side export endpoint.**', 'C) Server-side export endpoint.'),
+    describedAlternative.replace('**C) Server-side export endpoint.**', '**C) Server-side export endpoint.'),
+    describedAlternative.replace('not recommended unless', 'recommended unless'),
+    describedAlternative.replace('not recommended unless', 'not not recommended unless'),
+    describedAlternative.replace('not recommended unless', '(not recommended unless necessary), unless'),
+    describedAlternative.replace('not recommended unless', '"not recommended" unless'),
+    describedAlternative.replace('not recommended unless', '`not recommended` unless'),
+    describedAlternative.replace('not recommended unless', 'not recommended (recommended) unless'),
+    describedAlternative.replace('not recommended unless', 'not recommended; choose C instead unless'),
+    describedAlternative.replace('not recommended unless', 'not recommended; do not choose B unless'),
+    describedAlternative.replace('not recommended unless', 'not recommended; select this option unless'),
+    describedAlternative.replace('The same read API,', 'Not recommended unless necessary. The same read API,'),
+    describedAlternative.replace('The same read API,', 'Do not choose B. The same read API,'),
+    describedAlternative.replace('The same read API,', 'Choose C instead. The same read API,'),
+    describedAlternative.replace('The same read API,', '\nDo not choose B.\nThe same read API,'),
+    describedAlternative + '\nChoose C instead.',
+    describedAlternative + '\nAnswer C.',
+    describedAlternative + '\nReply with option C.',
+    describedAlternative.replace('**C) Server-side export endpoint.**', 'Do not choose B.\n**C) Server-side export endpoint.**'),
+    describedAlternative.replace('** A new GET', '** (recommended: maybe) A new GET'),
+    describedAlternative.replace('** A new GET', '** (recommended) A new GET'),
+  ]) expect(inspectCeoModePreference(transcript(assistant(value)), value).kind).toBe('working');
+});
+
 test.each([
   { a: '', b: '', answer: 'A' },
   { a: '(not recommended)', b: '(recommended)', answer: 'B' },

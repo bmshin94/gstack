@@ -22,9 +22,12 @@ charge. Input validation runs before transport. The module never handles card
 data, credentials, logging, webhooks or request admission; those remain in the
 unchanged calling application and transport. No API or SDK migration is proposed.
 
-Existing tests cover invalid input, nonretryable errors and recovery after a
-first 502, including retry ownership, the stable request and the clock delay.
-They do not assert the receipt value, exercise first-attempt success, or exhaust
-the retry on 502/timeout. Those are the two independent gaps in the review plan.
+Existing tests cover invalid input, nonretryable errors (including cause identity),
+and recovery after a first 502. Recovery checks retry ownership, a frozen request
+and receipt despite caller mutation, and that the second transport call cannot
+start until the injected 100 ms wait resolves. These are existing tested contracts.
+They do not exercise first-attempt success or exhaust the retry on 502/timeout.
+Those are the two independent gaps in the review plan: first-attempt receipt
+correctness and clean failure after the sole retry is exhausted.
 The function and these existing contracts are available for inspection; report
 any actual additional defect rather than assuming undocumented payment features.

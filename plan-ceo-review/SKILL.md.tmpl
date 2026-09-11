@@ -269,11 +269,11 @@ APPROACH C: [Name] (if meaningfully different)
 **RECOMMENDATION:** Choose [X] because [one-line reason mapped to engineering preferences].
 
 Rules:
-- Compare architectures against the same accepted requirements and declared unchanged contracts. "Minimal viable" is the smallest implementation meeting that baseline; drop no accepted requirement.
-- Ask separately about unresolved remedies (error policy, test depth, performance) that can vary without changing the architecture: one issue per AskUserQuestion. Bundle a remedy with an approach only when coupled; explain why they must be chosen together and the exact scope approved. Do not re-ask explicitly accepted requirements or remedies.
-- At least 2 approaches required. 3 preferred for non-trivial plans.
-- One approach must be the "minimal viable" (fewest files, smallest diff).
-- One approach must be the "ideal architecture" (best long-term trajectory).
+- Preserve accepted requirements and unchanged contracts. **Separate architecture from remedies:** vary component ownership/control flow; keep independent error, security, test and performance choices constant or pending in every approach. Approving an architecture approves no pending remedy; unsafe/untested versus safe/tested is not an architecture comparison.
+- Ask each pending remedy separately. Combine only inseparable choices; explain the constraint and exact scope approved. Sharing a file or step is not coupling. Do not re-ask approved requirements or remedies.
+- At least 2 approaches; prefer 3 for non-trivial plans.
+- Include "minimal viable" (fewest files, smallest diff).
+- Include "ideal architecture" (best long-term trajectory).
 - **These two approaches have equal weight.** Recommend what best serves the user, even a rewrite; smaller is not automatically better.
 - If only one approach exists, explain concretely why alternatives were eliminated.
 - Do NOT proceed to mode selection (0F) without user approval of the chosen approach.
@@ -304,11 +304,11 @@ Retain explicit user choices and preamble session-kind precedence. When `QUESTIO
 
 Use the preamble's question format/transport: RECOMMENDATION and `Note: options differ in kind, not coverage — no completeness score.`
 
-**Mode handoff before 0D:** Before analysis, edits, tools or questions, send a normal assistant message for the **mode's source**, not the approach answer:
+**Mode handoff before 0D:** Once preference/session or the mode answer selects a mode, say in normal chat before analysis, edits, tools or questions:
 - Mode from `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected posture> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
-- Explicit user/session mode: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
+- User/session choice, including a mode-question answer: `Mode: <selected posture>; approach: <approved 0C-bis approach>.`
 
-Use one exact mode name; separate rationale. **Say that line in your own chat before any tool**, not tool/UI summaries, shell output, or plan edits. Keep this mode; ask before changing the approved approach.
+Use an exact mode name, then any rationale. **Send this in your own chat**, not tool/UI summaries, shell output or plan edits. Keep the mode and approved approach; ask before changing either.
 
 Unresolved decisions: recommend + WHY, ask once per issue, never batch, and **STOP until answered**, including obvious fixes. Honor preference/session precedence. With none, say "No issues, moving on." Continue through 0D-prelude, 0D, 0D-POST and 0E as applicable. Review only; no code changes.
 

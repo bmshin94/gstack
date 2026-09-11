@@ -83,6 +83,39 @@ const bundle = call('bundled-remedies', brief('D2 — Approve both independent f
     { label: 'Retain both current behaviors', description: 'Keep BOTH raw SQL interpolation AND unhandled inline mail failure together.' },
   ]));
 
+
+// Additional current-plan choices exercise verification coupling in the existing
+// negative request; the paid caller still checks every row before its rejection.
+const verificationPlan = `The new parallel policy adapter must start all five checks, map provider failures
+at their original indices, and preserve the already accepted ordered-denial precedence.
+A provider can throw synchronously before returning a Promise; the proposed map currently
+lets that throw escape and prevents later checks from starting.
+A new receipt JSON formatter must expose the stored integer amountCents unchanged;
+its test coverage depth remains undecided. This does not change atomic receipt storage.
+A new notification worker must not dispatch queued work after caller cancellation,
+but the current implementation lacks that guard. Its separate retry limit is two attempts;
+a proposal to raise the retry limit has not been decided.`;
+const directRegression = call('direct-contract-regression', brief('D3 — Contain synchronous policy failures',
+  'The parallel adapter already promises all-five dispatch and ordered failure mapping. Calling a provider inside an async wrapper converts its synchronous throw into an indexed rejection, preserving that behavior. The proposed R12 cases check an earlier denial plus a later synchronous throw, an initial synchronous throw with its original cause, and all five recorded calls.',
+  'Wrap each provider call and add R12 to establish the promised behavior.', [
+    { label: 'Wrap calls and add R12 (recommended)', description: 'Invoke each provider inside an async wrapper and test exactly the indexed rejection, denial precedence and all-five dispatch behavior described above.' },
+    { label: 'Wrap calls without R12', description: 'Use the same wrapper and behavior, but omit its direct regression coverage.' },
+    { label: 'Keep the current map', description: 'Retain the synchronous escape and incomplete dispatch, leaving the accepted behavior broken.' },
+  ]));
+const verificationDepth = call('same-behavior-test-depth', brief('D4 — Receipt formatter verification depth',
+  'The formatter must expose stored amountCents unchanged. Unit cases, an HTTP integration case and a real-store smoke case all verify that same mapping at different layers. Choose the coverage depth; none of these options changes rounding, storage, payment retries or the accepted JSON field.',
+  'Use all three layers to check the same mapping through the production path.', [
+    { label: 'Unit, integration and smoke (recommended)', description: 'Verify the unchanged stored amountCents mapping in focused unit cases, through the HTTP response and against the real store.' },
+    { label: 'Unit cases only', description: 'Verify the identical mapping in isolated formatter cases, without the integration or smoke layers.' },
+    { label: 'Smoke case only', description: 'Verify the identical mapping only through the real-store smoke path.' },
+  ]));
+const independentPolicy = call('independent-code-and-test-policy', brief('D5 — Cancellation guard and retry limit',
+  'Queued work currently starts after caller cancellation. A dispatch guard can enforce the accepted cancellation behavior while retaining the existing two-attempt retry limit. This package also raises that separate limit to three attempts and changes the retry tests to require three, adding another possible provider attempt whether or not cancellation occurs.',
+  'Add the cancellation guard and raise the retry limit together.', [
+    { label: 'Guard cancellation and allow three attempts (recommended)', description: 'Stop queued dispatch after cancellation; also raise the retry limit from two to three attempts and update its tests to require three.' },
+    { label: 'Keep both current behaviors', description: 'Retain post-cancellation dispatch and the existing two-attempt retry limit together.' },
+  ]));
+
 export function planDecisionCalibrations(): DecisionCalibration[] {
   const positiveExpected = { 'setup-mode': workflow, 'setup-query': finding('query'), 'setup-email': finding('email'), 'future-todo': backlog, 'next-review': workflow };
   const candidates = ['Slack', 'Teams', 'Email', 'SMS', 'Push'];
@@ -99,8 +132,11 @@ export function planDecisionCalibrations(): DecisionCalibration[] {
     { name: 'early-findings-and-mandatory-workflow', input: { plan, targets, fingerprints: [mode, query, email, todo, handoff], floor: 2, ceiling: 2, kind: 'findings' }, expected: positiveExpected, count: 2 },
     { name: 'dropped-current-obligation', input: { plan, targets, fingerprints: [mode, email, todo, handoff], floor: 2, ceiling: 2, kind: 'findings' },
       expected: { 'setup-mode': workflow, 'setup-email': finding('email'), 'future-todo': backlog, 'next-review': workflow }, rejection: 'missing target decisions' },
-    { name: 'bundled-independent-remedies', input: { plan, targets, fingerprints: [mode, bundle], floor: 2, ceiling: 2, kind: 'findings' },
-      expected: { 'setup-mode': workflow, 'bundled-remedies': { kind: 'finding', targetIds: ['query', 'email'], independentDecisions: 2 } }, rejection: 'bundled independent decisions' },
+    { name: 'bundled-independent-remedies', input: { plan: plan + '\n\n' + verificationPlan, targets, fingerprints: [mode, bundle, directRegression, verificationDepth, independentPolicy], floor: 2, ceiling: 2, kind: 'findings' },
+      expected: { 'setup-mode': workflow, 'bundled-remedies': { kind: 'finding', targetIds: ['query', 'email'], independentDecisions: 2 },
+        'direct-contract-regression': { kind: 'finding', targetIds: [], independentDecisions: 1 },
+        'same-behavior-test-depth': { kind: 'finding', targetIds: [], independentDecisions: 1 },
+        'independent-code-and-test-policy': { kind: 'finding', targetIds: [], independentDecisions: 2 } }, rejection: 'bundled independent decisions' },
     { name: 'source-split-include-defer-cut', input: { plan: '# Notification integrations\nFive independent candidates: Slack, Teams, Email, SMS, Push. Decide each complete integration using the split-per-option protocol; no candidate is already accepted.',
       targets: scopeTargets, fingerprints: scopeCalls, floor: 5, ceiling: 5, kind: 'scope' },
       expected: Object.fromEntries(scopeTargets.map((target, i) => [`scope-${i + 1}`, { kind: 'scope', targetIds: [target.id], independentDecisions: 1 }])), count: 5 },
