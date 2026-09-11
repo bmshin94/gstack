@@ -46,7 +46,8 @@ describe('CEO review decision boundaries contract', () => {
     expect(alternatives).toContain('Preserve accepted requirements and unchanged contracts');
     expect(alternatives).toContain('For every approach comparison');
     expect(alternatives).toContain('identify one decision first');
-    expect(alternatives).toContain('independent behavior, coverage and remedy choices constant or pending');
+    expect(alternatives).toContain('Hold only approved behavior, coverage and remedies constant');
+    expect(alternatives).toContain('other choices stay pending outside option commitments');
     expect(alternatives).toContain('cannot bundle coverage choices for separate contracts');
     expect(alternatives).not.toContain('for architecture choices');
     expect(alternatives).toContain('Ask each pending remedy separately');
@@ -56,7 +57,22 @@ describe('CEO review decision boundaries contract', () => {
     expect(alternatives).toContain('Sharing a file or step is not coupling');
     expect(alternatives).toContain('"minimal viable"');
     expect(alternatives).toContain('"ideal architecture"');
-    expect(alternatives).toContain('Do NOT proceed to mode selection (0F) without user approval');
+    expect(alternatives).toContain('New/reopened choices need user approval before 0D/0F');
+  });
+
+  test('settled approach authority resolves the gate while new choices still require approval', () => {
+    const approach = alternatives.split('### 0F. Mode Selection')[0]!;
+    const reuse = approach.split('For new/reopened choices, compare')[0]!;
+    const gate = approach.split('**STOP:**')[1] ?? '';
+    expect(reuse).toContain('Evaluate approaches before 0F');
+    expect(reuse).toContain('applicable instructions or an accepted decision');
+    expect(reuse).toContain('cite that authority');
+    expect(reuse).toContain('mark 0C-bis resolved without re-asking');
+    expect(reuse).toContain('unless concrete contradiction or changed assumptions warrant reopening');
+    expect(gate).toContain('New/reopened choices need user approval before 0D/0F, even one viable option');
+    expect(gate).toContain('A recommendation is not approval');
+    expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
+    expect(approach).toContain('Ask each pending remedy separately');
   });
 
   test('coverage scoring is conditional and legitimate early decisions retain their exact approval', () => {

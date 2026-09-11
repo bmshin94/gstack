@@ -3954,15 +3954,26 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(planModeIdx).toBeLessThan(upgradeIdx);
   });
 
-  test('0C-bis STOP block present in plan-ceo-review/SKILL.md', () => {
+  test('0C-bis authority and fresh-approval paths precede mode selection', () => {
     const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
-    const presentIdx = content.indexOf('Present these approach options via AskUserQuestion');
+    const approachIdx = content.indexOf('### 0C-bis.');
+    const presentIdx = content.indexOf('For new/reopened choices, AskUserQuestion');
+    const stopIdx = content.indexOf('**STOP:**', presentIdx);
+    const modeIdx = content.indexOf('### 0F. Mode Selection');
     const preludeIdx = content.indexOf('### 0D-prelude');
-    expect(presentIdx).toBeGreaterThan(0);
-    expect(preludeIdx).toBeGreaterThan(presentIdx);
-    const between = content.slice(presentIdx, preludeIdx);
-    expect(between).toContain('**STOP.**');
-    expect(between).toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
+    const positions = [approachIdx, presentIdx, stopIdx, modeIdx, preludeIdx];
+    expect(positions.every(position => position > 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    const approach = content.slice(approachIdx, modeIdx);
+    expect(approach).toContain('Evaluate approaches before 0F');
+    expect(approach).toContain('applicable instructions or an accepted decision');
+    expect(approach).toContain('cite that authority and mark 0C-bis resolved without re-asking');
+    expect(approach).toContain('unless concrete contradiction or changed assumptions warrant reopening');
+    const gate = content.slice(stopIdx, modeIdx);
+    expect(gate).toContain('New/reopened choices need user approval before 0D/0F, even one viable option');
+    expect(gate).toContain('A recommendation is not approval');
+    expect(approach).toContain('Ask each pending remedy separately');
+    expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
   });
 });
 

@@ -891,22 +891,21 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Alternatives (MANDATORY)
 
-Before 0F, compare 2-3 distinct approaches for this prioritization or implementation.
+Evaluate approaches before 0F. If applicable instructions or an accepted decision settle one, cite that authority and mark 0C-bis resolved without re-asking, unless concrete contradiction or changed assumptions warrant reopening.
 
-For each approach A/B/C, list name, summary (1-2 sentences), effort (S/M/L/XL), risk (low/medium/high), pros and cons (2-3 each), and reused code/patterns.
+For new/reopened choices, compare 2-3 distinct approaches (prefer 3 for non-trivial plans; justify only one). Each A/B/C: name, 1-2 sentence summary, effort S/M/L/XL, risk low/medium/high, 2-3 pros/cons, reused code/patterns.
 
-**RECOMMENDATION:** Choose [X] because [reason mapped to engineering preferences].
+**RECOMMENDATION:** [X] because [engineering preference].
 
 Rules:
-- Preserve accepted requirements and unchanged contracts. **For every approach comparison**, identify one decision first. Vary method or organization while holding independent behavior, coverage and remedy choices constant or pending. One "complete test suite" cannot bundle coverage choices for separate contracts. Approving an approach approves no pending remedy.
+- Preserve accepted requirements and unchanged contracts. **For every approach comparison**, identify one decision first. Hold only approved behavior, coverage and remedies constant; other choices stay pending outside option commitments. A test suite cannot bundle coverage choices for separate contracts. Approving an approach approves no pending remedy.
 - Ask each pending remedy separately. Combine only inseparable choices; explain the constraint and exact scope approved. Direct implementation and tests proving the same behavior belong together. Sharing a file or step is not coupling. Do not re-ask approved requirements or remedies.
-- Prefer 3 approaches for non-trivial plans; justify having only one.
 - For implementation, include "minimal viable" (fewest files/smallest diff) and "ideal architecture" (best long-term trajectory).
-- **Give alternatives equal weight.** Recommend what serves the user, even rewrites; smaller is not automatically better.
+- Weight alternatives equally; rewrites may serve the user better than the smallest diff.
 
-Present these approach options via AskUserQuestion: preamble format + RECOMMENDATION. Score `Completeness: N/10` only for coverage of that one decision; otherwise use `Note: options differ in kind, not coverage — no completeness score.`
+For new/reopened choices, AskUserQuestion: preamble + RECOMMENDATION. Score `Completeness: N/10` only for coverage of that one decision; otherwise `Note: options differ in kind, not coverage — no completeness score.`
 
-**STOP.** Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis. Do NOT proceed to mode selection (0F) without user approval. Ask once per issue, never batch; even a clear winner needs approval. Review only; do NOT change code.
+**STOP:** New/reopened choices need user approval before 0D/0F, even one viable option. A recommendation is not approval. One issue per call. Review only; do NOT change code.
 
 ### 0F. Mode Selection
 Run after 0C-bis, before 0D. Keep the approved approach; add scope only with explicit user approval.
