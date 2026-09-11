@@ -2495,9 +2495,13 @@ export async function runPlanSkillCounting(opts: {
         }
         continue;
       }
-      // Native permissions are separate from AUQs. Consume the rendered
-      // window before writing, so old permission text cannot send again.
-      if (!call && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
+      // A queued AUQ can be persisted while an earlier file request owns the
+      // modal. Advance only its current hook-backed file controls; the grant
+      // still requires the exact owner/path and cannot answer the queued AUQ.
+      const currentFileRequest = pendingPermissionRequests.length === 1 && currentFilePermissionTarget(permissionVisible) !== null;
+      // Consume the rendered window before writing, so old permission text
+      // cannot send again. Other permissions retain the no-pending-AUQ rule.
+      if ((!call || currentFileRequest) && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
         lastLoopStage = 'permission-grant';
         if (expired()) break;
         if (!reserveNativePermissionGrant(native, permissionVisible, grantedTools, grantedRequests)) continue;

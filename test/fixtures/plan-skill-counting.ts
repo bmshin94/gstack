@@ -75,6 +75,7 @@ async function main() {
   const permissionRepaintCase = scenario.startsWith('permission-repaint-');
   const longPermissionCase = scenario.startsWith('permission-long-frame') || permissionRepaintCase;
   const editPermissionCase = scenario.startsWith('permission-edit-');
+  const queuedFileQuestionCase = scenario.startsWith('permission-final-queued-question');
   const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
@@ -499,17 +500,22 @@ async function main() {
                 emit(fileDialog('make this edit to'));
                 return;
               }
-              permissionInput = { file_path: path.join(project, 'plan.md'), content: plan };
+              permissionInput = { file_path: path.join(project, scenario === 'permission-final-queued-question-mismatch' ? 'different.md' : 'plan.md'), content: plan };
               permissionId = scenario === 'permission-final-first-arrival-race' ? `tool-${++sequence}` : tool('Write', permissionInput);
               initialPermissionId = permissionId;
-              emit(fileDialog('create'));
+              // Native can persist an AUQ while an earlier Write still owns
+              // the modal. The AUQ must remain queued until its own paint.
+              if (queuedFileQuestionCase) ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
+              if (scenario === 'permission-final-queued-question-ambiguous') tool('Write', { file_path: path.join(project, 'other.md'), content: 'Other' });
+              if (scenario !== 'permission-final-queued-question-stale') emit(scenario === 'permission-final-queued-question-malformed'
+                ? fileDialog('create').replace('3.No', '3.Maybe') : fileDialog('create'));
               if (scenario === 'permission-final-first-arrival-race') publishDuringScreen = () => {
                 recordFilePermission(permissionInput!); raceInjected = true; raceJustInjected = true;
               };
               else if (scenario === 'permission-final-input-race') publishDuringScreen = () => {
                 recordFilePermission({ ...permissionInput, content: 'Changed by an earlier tool hook' }); raceInjected = true; raceJustInjected = true;
               };
-              else if (scenario !== 'permission-final-missing-request') recordFilePermission(permissionInput);
+              else if (!['permission-final-missing-request', 'permission-final-queued-question-missing-request'].includes(scenario)) recordFilePermission(permissionInput);
               return;
             }
             if (scenario.startsWith('permission-current-create') || scenario === 'permission-current-overwrite') {
@@ -641,6 +647,12 @@ async function main() {
                   return;
                 }
                 permissionGrantIds.push(permissionId);
+                if (scenario === 'permission-final-queued-question-no-ack') {
+                  permissionWrites.push(permissionOperation);
+                  permissionId = null;
+                  emit('\x1b[2J\x1b[HWORK_IN_PROGRESS\n');
+                  return;
+                }
                 if (finalPermissionPending && scenario !== 'permission-final-native'
                   || !finalPermissionPending && scenario === 'permission-final-first-arrival-race') {
                   append({ type: 'assistant', cwd: options.cwd, message: { id: permissionId, role: 'assistant', stop_reason: 'tool_use',
@@ -660,7 +672,7 @@ async function main() {
                   if (['permission-final-repeat-overwrite', 'permission-final-repeat-identical'].includes(scenario) && finalWriteCount === 1) requestFinalWrite();
                   else finish();
                 } else {
-                  ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
+                  if (!queuedFileQuestionCase) ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
                   emit('\x1b[2J\x1b[HD1 — Pick a mode\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\n');
                 }
                 return;
@@ -763,7 +775,7 @@ async function main() {
     try { observation = await runPlanSkillCounting({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
       cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling, timeoutMs: helperTimeoutMs,
-      defaultPick: previewCase ? scenario === 'preview-menu-focused' ? 1 : 2 : scenario === 'permission-current-create-pick-two' ? 2 : undefined,
+      defaultPick: previewCase ? scenario === 'preview-menu-focused' ? 1 : 2 : ['permission-current-create-pick-two', 'permission-final-queued-question-pick-two'].includes(scenario) ? 2 : undefined,
       firstAUQPick: scenario === 'first-route' || scenario === 'question-picker-first' ? () => 2 : undefined,
       questionPick: retentionCase || ceilingCase || scenario.includes('picker') ? (question, isFirst) => {
         if (scenario === 'retention-original-error') throw injectedError;

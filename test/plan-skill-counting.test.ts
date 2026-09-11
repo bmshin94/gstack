@@ -473,6 +473,36 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.outcome).toBe('completion_summary');
     expect(result.closed).toBe(true);
   }, 15_000);
+  test.each(['normal', 'pick-two'])('an active owned file dialog can advance before a queued native question (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `permission-final-queued-question-${variant}`);
+    const answer = variant === 'pick-two' ? '2' : '1';
+    expect(result.error).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', answer, answer, answer, '1\r']);
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.permissionWrites).toEqual(['create', 'overwrite']);
+    expect(result.permissionAckIds).toEqual(result.permissionGrantIds);
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1, reviewCount: 2 });
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['mismatch', 'ambiguous', 'missing-request', 'stale', 'malformed'])('a queued question cannot weaken the file permission %s guard', async variant => {
+    const result = await runFakeCounting('**DONE**', `permission-final-queued-question-${variant}`);
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.permissionWrites).toEqual([]);
+    if (variant === 'mismatch') expect(result.error).toContain('cannot be bound');
+    else if (variant === 'ambiguous') expect(result.error).toContain('Ambiguous native permission owner');
+    else expect(result.observation.outcome).toBe('timeout');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test('a file grant with a queued question still requires its native ACK and a question paint', async () => {
+    const result = await runFakeCounting('**DONE**', 'permission-final-queued-question-no-ack');
+    expect(result.error).toBeUndefined();
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+    expect(result.permissionWrites).toEqual(['create']);
+    expect(result.permissionAckIds).toEqual([]);
+    expect(result.observation).toMatchObject({ outcome: 'timeout', step0Count: 0, reviewCount: 0 });
+    expect(result.closed).toBe(true);
+  }, 15_000);
   test('a later changed-content overwrite has one owned grant and ACK before terminal completion', async () => {
     const result = await runFakeCounting('**DONE**', 'permission-final-repeat-overwrite');
     expect(result.error).toBeUndefined();
