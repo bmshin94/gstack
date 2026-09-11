@@ -69,8 +69,10 @@ export class AutoplanFilePermissionViewport {
       if (restored !== null) { this.inputMark = restored; this.owner = null; }
       return true;
     }
+    // A queued Bash cannot own this pinned file repaint. The unchanged exact
+    // current-card reservation below still decides the sole file grant.
     if (native.permissionRequests.filter(request => request.result === 'pending').length !== 1
-      || native.permissionTools.some(tool => tool.id !== owner.nativeToolId)) {
+      || native.permissionTools.some(tool => tool.id !== owner.nativeToolId && tool.name !== 'Bash')) {
       throw new Error('Ambiguous native permission owner during Autoplan viewport recovery');
     }
     if (native.pendingBytes || frame.rawEnd !== this.opts.session.mark() || frame.rawEnd <= this.inputMark
@@ -83,15 +85,18 @@ export class AutoplanFilePermissionViewport {
   }
 
   /** The caller first runs all existing fixture/symlink/owner/grant checks.
-   * Only their exact path-binding failure can request a larger fresh paint. */
+   * A clipped identity can also fail disambiguation against a queued Bash;
+   * neither error authorizes input before the full file card is recovered. */
   async recover(error: unknown, native: ReturnType<typeof readPlanSkillQuestions>, frame: { text: string; rawEnd: number }): Promise<boolean> {
-    if (!(error instanceof Error) || error.message !== 'Visible permission cannot be bound to its pending native command or file path'
-      || this.owner || !this.opts.session.resizeQuestionViewport || frame.rawEnd !== this.opts.session.mark()
+    const identityError = error instanceof Error && (error.message === 'Visible permission cannot be bound to its pending native command or file path'
+      || error.message === 'Ambiguous native permission owner: multiple tools are pending'
+        && native.permissionTools.some(tool => tool.name === 'Bash'));
+    if (!identityError || this.owner || !this.opts.session.resizeQuestionViewport || frame.rawEnd !== this.opts.session.mark()
       || native.pendingBytes || native.ready || native.calls.some(call => call.result === 'pending')) return false;
     const pending = native.permissionRequests.filter(request => request.result === 'pending');
     const owner = pending[0];
     if (!native.permissionRequestCapture || pending.length !== 1 || !owner
-      || native.permissionTools.some(tool => tool.id !== owner.nativeToolId)
+      || native.permissionTools.some(tool => tool.id !== owner.nativeToolId && tool.name !== 'Bash')
       || this.opts.granted.has(`request:${owner.requestId}`) || !this.clipped(owner, frame.text)) return false;
     this.owner = structuredClone(owner);
     this.paints = 0;

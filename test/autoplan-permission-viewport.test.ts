@@ -174,3 +174,100 @@ test('a recovery deadline causes no viewport mutation or permission input', asyn
   expect(await expired.recover(error, native, frame)).toBe(true);
   expect(expired.inputMark).toBe(-1); expect(resizes).toEqual([]); expect(sends).toEqual([]);
 });
+
+
+const queueBashDuringRepaint = () => {
+  const owner = native.permissionRequests[0]!;
+  owner.nativeToolId = 'owned-edit-tool';
+  native.permissionTools.push(
+    { id: owner.nativeToolId, name: 'Edit', cwd, input: structuredClone(owner.input) },
+    { id: 'queued-bash', name: 'Bash', cwd,
+      input: { command: 'printf queued', description: 'Separate queued command' }, bashPermissionRequestId: null },
+  );
+};
+
+test('a queued Bash during file repaint cannot own or block the exact Edit grant', async () => {
+  await tick(); expect(resizes).toEqual([240]);
+  queueBashDuringRepaint();
+  await tick(); expect(resizes).toEqual([240, 480]); expect(sends).toEqual([]);
+  await tick(); await tick();
+  expect(sends).toEqual(['1\r']);
+  expect([...granted]).toEqual(['request:owned-edit']);
+  expect([...requests.entries()]).toEqual([['Edit:' + file, { requestId: 'owned-edit', operation: 'edit' }]]);
+  expect(native.permissionTools.find(tool => tool.id === 'queued-bash')?.bashPermissionRequestId).toBeNull();
+  Object.assign(native.permissionRequests[0]!, { result: 'completed', nativeResultAtMs: 2 });
+  native.permissionTools = native.permissionTools.filter(tool => tool.name === 'Bash');
+  await tick(); expect(resizes).toEqual([240, 480, 120]); expect(viewport.active).toBe(false);
+  expect(sends).toEqual(['1\r']); expect(granted.has('queued-bash')).toBe(false);
+});
+
+test.each(['request', 'Edit', 'Write'])('queued Bash cannot hide a competing %s owner', async kind => {
+  await tick(); queueBashDuringRepaint();
+  if (kind === 'request') native.permissionRequests.push({ ...structuredClone(native.permissionRequests[0]!), requestId: 'competitor' });
+  else native.permissionTools.push({ id: 'competitor', name: kind, cwd, input: { file_path: file } });
+  await expect(tick()).rejects.toThrow('Ambiguous native permission owner');
+  expect(resizes).toEqual([240]); expect(sends).toEqual([]); expect(granted.size).toBe(0);
+});
+
+test('queued Bash cannot conceal a change to the pinned file input', async () => {
+  await tick(); queueBashDuringRepaint();
+  native.permissionRequests[0]!.input.new_string = 'changed plan';
+  await expect(tick()).rejects.toThrow('changed ownership or input');
+  expect(resizes).toEqual([240]); expect(sends).toEqual([]); expect(granted.size).toBe(0);
+});
+
+test('a Bash permission frame cannot replace the pinned Edit during recovery', async () => {
+  await tick(); queueBashDuringRepaint();
+  const bashFrame = '\x1b[2J\x1b[H' + [
+    ' Bash command', '   printf queued', '   Separate queued command',
+    ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No', '', ' Esc to cancel',
+  ].join('\r\n');
+  raw += bashFrame; screen.feed(bashFrame);
+  await expect(tick()).rejects.toThrow('Visible permission cannot be bound');
+  expect(resizes).toEqual([240]); expect(sends).toEqual([]); expect(granted.size).toBe(0);
+});
+
+
+test('a Bash queued before the first repaint still leaves one exact captured Edit owner', async () => {
+  queueBashDuringRepaint();
+  await tick(); expect(resizes).toEqual([240]); expect(sends).toEqual([]);
+  await tick(); expect(resizes).toEqual([240, 480]); expect(sends).toEqual([]);
+  await tick(); await tick();
+  expect(sends).toEqual(['1\r']); expect([...granted]).toEqual(['request:owned-edit']);
+  expect([...requests.keys()]).toEqual(['Edit:' + file]);
+  Object.assign(native.permissionRequests[0]!, { result: 'completed', nativeResultAtMs: 2 });
+  native.permissionTools = native.permissionTools.filter(tool => tool.name === 'Bash');
+  await tick(); expect(resizes).toEqual([240, 480, 120]); expect(viewport.active).toBe(false);
+  expect(sends).toEqual(['1\r']); expect(granted.has('queued-bash')).toBe(false);
+});
+
+test.each(['Edit', 'Write'])('initial queued Bash cannot hide a second %s file owner', async name => {
+  queueBashDuringRepaint();
+  native.permissionTools.push({ id: 'competitor', name, cwd, input: { file_path: file } });
+  await expect(tick()).rejects.toThrow('multiple tools are pending');
+  expect(viewport.active).toBe(false); expect(resizes).toEqual([]); expect(sends).toEqual([]);
+});
+
+test('initial queued Bash cannot start recovery with two captured file requests', async () => {
+  queueBashDuringRepaint();
+  native.permissionRequests.push({ ...structuredClone(native.permissionRequests[0]!), requestId: 'competitor' });
+  await tick();
+  expect(viewport.active).toBe(false); expect(resizes).toEqual([]); expect(sends).toEqual([]); expect(granted.size).toBe(0);
+});
+
+test('initial queued Bash cannot turn an explicit full-path mismatch into clipping', async () => {
+  queueBashDuringRepaint(); lines = 3; displayPath = '.claude/other/review.md'; paint();
+  await expect(tick()).rejects.toThrow('multiple tools are pending');
+  expect(viewport.active).toBe(false); expect(resizes).toEqual([]); expect(sends).toEqual([]); expect(granted.size).toBe(0);
+});
+
+test('an initial Bash permission card cannot start file recovery', async () => {
+  queueBashDuringRepaint();
+  const bashFrame = '\x1b[2J\x1b[H' + [
+    ' Bash command', '   printf queued', '   Separate queued command',
+    ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No', '', ' Esc to cancel',
+  ].join('\r\n');
+  raw += bashFrame; screen.feed(bashFrame);
+  await expect(tick()).rejects.toThrow('multiple tools are pending');
+  expect(viewport.active).toBe(false); expect(resizes).toEqual([]); expect(sends).toEqual([]); expect(granted.size).toBe(0);
+});
