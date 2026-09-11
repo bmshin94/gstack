@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { E2E_TIERS, E2E_TOUCHFILES, selectTests } from './helpers/touchfiles';
+import { E2E_TIERS, E2E_TOUCHFILES, LLM_JUDGE_TOUCHFILES, selectTests } from './helpers/touchfiles';
 import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
@@ -118,5 +118,20 @@ test('review report resolver selects every periodic completion consumer', () => 
   for (const id of required) {
     expect(result.selected).toContain(id);
     expect(E2E_TIERS[id]).toBe('periodic');
+  }
+});
+
+
+test('shared plan question source selects every generated review consumer', () => {
+  const source = 'scripts/resolvers/preamble/generate-ask-user-format.ts';
+  const renders = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'plan-devex-review']
+    .map(skill => `${skill}/SKILL.md`);
+  for (const map of [E2E_TOUCHFILES, LLM_JUDGE_TOUCHFILES]) {
+    const expected = selectTests(renders, map);
+    const actual = selectTests([source], map);
+    expect(expected.reason).toBe('diff');
+    expect(actual.reason).toBe('diff');
+    expect(expected.selected.length).toBeGreaterThan(0);
+    expect(expected.selected.filter(id => !actual.selected.includes(id))).toEqual([]);
   }
 });

@@ -170,20 +170,13 @@ on demand when a question contains CJK.
 
 ### Self-check before emitting
 
-Before calling AskUserQuestion, verify:
-- [ ] D<N> header present
-- [ ] ELI10 paragraph present (stakes line too)
-- [ ] Recommendation line present with concrete reason
-- [ ] Completeness scored (coverage) OR kind-note present (kind)
-- [ ] Every option has ≥2 ✅ and ≥1 ❌, each ≥40 chars (or hard-stop escape)
-- [ ] (recommended) label on one option (even for neutral-posture)
-- [ ] Dual-scale effort labels on effort-bearing options (human / CC)
-- [ ] Net line closes the decision
-- [ ] You are calling the tool, not writing prose — unless `CONDUCTOR_SESSION: true` (then prose is the DEFAULT, not the tool) OR the documented failure fallback applies (then: the prose fallback's mandatory triad + a "reply with a letter" instruction, then STOP); in `SESSION_KIND: spawned` (the echoed STATUS line only) you should never reach this checklist — auto-choose the recommended option, no tool call, no prose
-- [ ] Non-ASCII characters (CJK / accents) written directly, NOT \u-escaped
-- [ ] If you had 5+ options, you split (or batched into ≤4-groups) — did NOT drop any
-- [ ] If you split, you checked dependencies between options before firing the chain
-- [ ] If a per-option Hold fires, you stopped the chain immediately (didn't queue)
+Before emitting a tool or prose decision brief, verify:
+- [ ] Inspect the whole question and EVERY option's commitments. Could a user accept one remedy and reject another while both choices remain viable? If yes, separate them before emitting.
+- [ ] Resolve unresolved adoption/disposition prerequisites before implementation-policy choices. Hold other approved values fixed and other choices pending across ALL options.
+- [ ] Keep routine mechanics and code/tests/docs establishing the same chosen behavior together; do not demand extra approvals for them. Score completeness within that one decision.
+- [ ] Format above: D<N>, ELI10 + stakes, concrete Recommendation with one (recommended), coverage Completeness or kind-note, ≥2 ✅/≥1 ❌ per option at ≥40 chars (or hard-stop escape), human/CC effort when needed, and Net.
+- [ ] Follow Tool resolution: tool call unless Conductor or documented prose fallback; prose includes the mandatory triad + explicit reply selectors, then STOP. Spawned sessions follow their auto-choice rule.
+- [ ] Write non-ASCII directly, not \u-escaped. For 5+ options, split/batch into ≤4 without dropping; check dependencies and stop the chain immediately on Hold.
 
 
 ## Artifacts Sync (skill start)
