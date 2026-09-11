@@ -273,13 +273,14 @@ test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-
     '# Plan: Payment Processing — Test Coverage', '',
     '## Existing implementation',
     'Read README.md, src/payment.ts and contract.test.ts for the unchanged function',
-    'and existing coverage. This change adds tests; the runtime behavior stays fixed.', '',
-    '## Tests',
-    'We need test coverage for `processPayment()`. Specifically:',
-    '1. The happy path (successful Stripe charge — assert correct receipt is generated).',
-    '2. The error/timeout path (Stripe returns 502 — assert retry-with-backoff fires once, then fails clean).', '',
-    'Currently neither has a unit test. These are deliberately separate concerns:',
-    'the success path is correctness, the failure path is graceful degradation.',
+    'and existing coverage. The runtime behavior stays fixed.', '',
+    '## Proposed verification',
+    'For now, manually check `processPayment()` for:',
+    '1. The happy path (Stripe succeeds on the first charge — confirm the correct receipt is returned).',
+    '2. The error/timeout path (Stripe returns 502 or times out — confirm one retry after the 100 ms wait, then clean failure).', '',
+    'Neither path has a dedicated unit test. This proposal relies on manual checks',
+    'for both; whether and what dedicated unit coverage to add is unresolved.',
+    'The success path is correctness; the failure path is graceful degradation.',
   ].join('\n');
   fs.writeFileSync(script, `
 import { describe, expect, mock } from 'bun:test';

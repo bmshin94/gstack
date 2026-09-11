@@ -1,7 +1,7 @@
 # Existing payment function
 
-This private application module already runs in Bun. The proposed change adds
-unit tests for `processPayment()` in `src/payment.ts`; it changes no runtime
+This private application module already runs in Bun. The proposal considers
+verification of `processPayment()` in `src/payment.ts`; it changes no runtime
 behavior, dependency, public API, persistence or deployment. Run the existing
 contract tests with `bun test contract.test.ts`. No install, credentials,
 network service or real clock is needed.
