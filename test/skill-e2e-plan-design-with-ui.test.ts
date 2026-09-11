@@ -18,7 +18,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   runPlanSkillCounting,
-  designStep0Boundary,
   type AskUserQuestionFingerprint,
 } from './helpers/claude-pty-runner';
 
@@ -27,10 +26,13 @@ const ROOT = path.resolve(import.meta.dir, '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'plans', 'ui-heavy-feature.md');
 
 const designFocusBoundary = (fp: AskUserQuestionFingerprint): boolean =>
-  designStep0Boundary(fp) || (fp.questions ?? []).some(question =>
-    // Retained native paraphrase of the source template's Step 0D question.
-    /^(?:D\d+(?:\.\d+)?\s*[—–:-]\s*)?Review all 7 design dimensions, or focus on specific areas\?$/i
-      .test(question.question.split(/\r?\n/, 1)[0]!.trim()));
+  (fp.questions ?? []).some(({ question }) => {
+    const text = question.trim().replace(/^D\d+(?:\.\d+)?\s*[—–:-]\s*/i, '');
+    // Require the source Step 0D question or its retained native paraphrase.
+    // A target menu can mention a design system without reviewing this plan.
+    return /^I(?:['’]ve| have) rated this plan (?:10(?:\.0+)?|[0-9](?:\.\d+)?)\/10 on design completeness\.[\s\S]*\bWant me to focus on specific areas instead of all 7\?/i.test(text)
+      || /^Review all 7 design dimensions, or focus on specific areas\?$/i.test(text.split(/\r?\n/, 1)[0]!);
+  });
 
 describeE2E('/plan-design-review with UI scope (gate)', () => {
   test(

@@ -63,6 +63,14 @@ describe('matchGlob', () => {
 // --- selectTests ---
 
 describe('selectTests', () => {
+  test.each(['test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts'])(
+    'native completion changes select the Design UI gate: %s', (file) => {
+      const result = selectTests([file], E2E_TOUCHFILES);
+      expect(result.selected).toContain('plan-design-with-ui-scope');
+      expect(E2E_TIERS['plan-design-with-ui-scope']).toBe('gate');
+    },
+  );
+
   test.each(['test/helpers/coverage-audit.ts', 'test/coverage-audit.test.ts'])(
     'coverage-audit validation changes select all three gate cases: %s', (file) => {
       const result = selectTests([file], E2E_TOUCHFILES);

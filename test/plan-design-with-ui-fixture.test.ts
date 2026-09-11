@@ -21,7 +21,6 @@ const fixture = ${JSON.stringify(path.join(ROOT, 'test/fixtures/plans/ui-heavy-f
 const template = fs.readFileSync(${JSON.stringify(path.join(ROOT, 'plan-design-review/SKILL.md.tmpl'))}, 'utf8');
 const focus = template.match(/### 0D\\. Focus Areas\\nAskUserQuestion: "([^\\n]+)"/)![1]
   .replace('{N}', '4').replace('{X, Y, Z}', 'hierarchy, spacing, contrast');
-const { designStep0Boundary } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))});
 const { pickPlanReviewQuestion } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))});
 const fp = (id, question, preReview = true) => ({
   signature: id, toolUseId: id, promptSnippet: question.slice(0, 240),
@@ -34,6 +33,10 @@ const fp = (id, question, preReview = true) => ({
 });
 const target = fp('target', 'D1 — What should I design-review?\\nProject/branch/task: gstack repo, no plan file drafted yet.\\nELI10: A design review needs a target. Pick what I should rate 0-10 across the 7 design dimensions.');
 target.questions[0].header = 'Review target';
+if (mode === 'target-menu-design-system') {
+  target.questions[0].question = 'What should I design-review? ELI10: Choose a plan, design system, or the current branch diff.';
+  target.promptSnippet = target.questions[0].question;
+}
 target.questions[0].options = [
   { label: 'B) A plan or design doc (recommended)', description: 'You need to paste the plan or point me to a path.' },
   { label: 'A) The current branch diff', description: 'The working tree is clean, so there may be no UI scope to review.' },
@@ -45,7 +48,6 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () =
   describeE2ETier: tier => { expect(tier).toBe('gate'); return describe; },
 }));
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))}, () => ({
-  designStep0Boundary,
   runPlanSkillCounting: async opts => {
     calls++;
     expect(path.dirname(opts.cwd)).toBe(${JSON.stringify(directory)});
@@ -68,7 +70,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.questionPick(chosenFocus.questions[0], true)).toBe(1);
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ calls, cwd: opts.cwd, seeded: true }));
     if (mode === 'throw') throw new Error('controlled UI observation failure');
-    const observed = mode === 'target-menu' ? [target, fp('other', 'Which artifact should I inspect?', false)]
+    const observed = mode.startsWith('target-menu') ? [target, fp('other', 'Which artifact should I inspect?', false)]
       : mode === 'early-exit' ? [] : [chosenFocus, fp('finding', 'Which loading feedback should Save show?', false)];
     return {
       outcome: mode === 'early-exit' ? 'plan_ready' : mode === 'timeout' ? 'timeout' : mode === 'exited' ? 'exited' : 'ceiling_reached',
@@ -108,7 +110,7 @@ test.each(['source', 'paraphrase'])('UI gate seeds the exact target and accepts 
   expect(result.code, result.output).toBe(0);
 }, 20_000);
 
-test.each(['target-menu', 'early-exit', 'timeout', 'exited'])('UI gate rejects %s and removes its fixture', mode => {
+test.each(['target-menu', 'target-menu-design-system', 'early-exit', 'timeout', 'exited'])('UI gate rejects %s and removes its fixture', mode => {
   const result = exercise(mode);
   expect(result.code, result.output).toBe(1);
   expect(result.output).toContain('plan-design-review with UI scope FAILED');
