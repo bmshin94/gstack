@@ -79,7 +79,11 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         let outcome: 'chain_complete' | 'plan_ready' | 'timeout' | 'exited' = 'timeout';
         let evidence = '';
         let exitCode: number | null = null;
-        const observations = () => JSON.stringify({ sessionId, transcript, renderedPhases, corroboratedPhases });
+        const counting: NonNullable<Parameters<typeof retainAutoplanFailure>[0]['counting']> = {
+          native: null, dialog: '', events: session.nativeQuestionEvents, frame: null,
+        };
+        let lastPermissionCheck: { mark: number; nativeStable: boolean; lastInputMark: number } | null = null;
+        const observations = () => JSON.stringify({ sessionId, transcript, renderedPhases, corroboratedPhases, lastPermissionCheck });
 
         try {
           await Bun.sleep(8000);
@@ -110,10 +114,16 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
 
             // Autoplan owns its decisions. Only grant a current, owned file
             // permission within this fixture or its private native plan folder.
+            lastPermissionCheck = null;
             const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
+            counting.native = native;
             const frame = await session.currentScreen!();
+            counting.dialog = frame.text;
+            counting.frame = { text: frame.text, rawEnd: frame.rawEnd, observedAtMs: Date.now() - start,
+              questionSince: since, viewportInputSince: lastPermissionInputMark };
             const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
-            if (frame.rawEnd !== session.mark() || !isDeepStrictEqual(native, afterFrame)) continue;
+            lastPermissionCheck = { mark: session.mark(), nativeStable: isDeepStrictEqual(native, afterFrame), lastInputMark: lastPermissionInputMark };
+            if (frame.rawEnd !== lastPermissionCheck.mark || !lastPermissionCheck.nativeStable) continue;
             const recentTail = frame.text;
             if (frame.rawEnd > lastPermissionInputMark && isNumberedOptionListVisible(recentTail) && isPermissionDialogVisible(recentTail)) {
               if (Date.now() - start >= budgetMs) break;
@@ -157,7 +167,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         } finally {
           if (outcome !== 'chain_complete') retainAutoplanFailure({
             configDir: session.hermeticConfigDir, sessionId,
-            observation: { outcome, exitCode, transcript, renderedPhases, corroboratedPhases },
+            observation: { outcome, exitCode, transcript, renderedPhases, corroboratedPhases, lastPermissionCheck }, counting,
             raw: () => session.rawOutput(), visible: () => session.visibleText(),
           });
           await session.close();

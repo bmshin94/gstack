@@ -586,7 +586,7 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.sends.filter((value: string) => value === '1\r')).toHaveLength(variant === 'repeat-identical' ? 2 : 1);
     expect(result.closed).toBe(true);
   }, 15_000);
-  test.each(['native', 'early', 'arrival-race', 'stale-redraw'])('a later owned Edit appends the report after the prior Edit completes (%s)', async variant => {
+  test.each(['native', 'early', 'arrival-race', 'stale-redraw', 'settings'])('a later owned Edit appends the report after the prior Edit completes (%s)', async variant => {
     const result = await runFakeCounting('**DONE**', `permission-edit-${variant}`);
     expect(result.error).toBeUndefined();
     expect(result.prematureAnswers).toEqual([]);

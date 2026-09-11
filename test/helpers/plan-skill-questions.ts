@@ -517,10 +517,13 @@ function currentFilePermissionDetails(visible: string): { operation: 'create' | 
     menu = menu.slice(0, extension.index) + menu.slice(extension.index + extension[0].length);
   }
   const controls = menu.replace(/\s+/g, '');
-  if (!/^❯1\.Yes2\.Yes,andswitchtoacceptedits\(auto-approvefileeditsandcommonfilecommands\)forthissession(?:\(shift\+tab\))?3\.No(?:\b|Esc)/.test(controls)) return null;
+  const settingsEdit = /^❯1\.Yes2\.Yes,andallowClaudetoedititsownsettingsforthissession3\.No(?:\b|Esc)/.test(controls);
+  if (!settingsEdit && !/^❯1\.Yes2\.Yes,andswitchtoacceptedits\(auto-approvefileeditsandcommonfilecommands\)forthissession(?:\(shift\+tab\))?3\.No(?:\b|Esc)/.test(controls)) return null;
   const prompt = /Do\s*you\s*want\s*to\s*(create|edit|overwrite|make\s+this\s+edit\s+to)\s+([^\r\n?]+)\?\s*$/.exec(visible.slice(0, cursor.index));
   if (!prompt) return null;
   const operation = prompt[1]!.startsWith('make') ? 'edit' : prompt[1] as 'create' | 'edit' | 'overwrite';
+  // Only this exact Edit variant is observed; option 2 is never selected.
+  if (settingsEdit && operation !== 'edit') return null;
   let filePath = prompt[2]!.trim();
   // Claude's file dialog asks about a basename, but its own title/subtitle
   // identifies the complete path. Bind only that current, untruncated header;

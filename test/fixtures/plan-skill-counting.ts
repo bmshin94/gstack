@@ -203,7 +203,13 @@ async function main() {
         ? longPermissionDialog().replace('3. No', '3. Nohift+tab)')
         : permissionRepaintDialog().replace('\n ' + path.relative(project, longPermissionPath) + '\n',
         '\n ' + path.relative(project, longPermissionPath).replace('plan.md', 'pl n.md') + '\n');
-      const fileDialog = (operation: string) => `\x1b[2J\x1b[HDo you want to ${operation} plan.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel`;
+      const fileDialog = (operation: string) => {
+        const settings = scenario === 'permission-edit-settings';
+        const header = settings ? '─'.repeat(240) + '\n Edit file\n plan.md\n' + '╌'.repeat(240) + '\n' : '';
+        const option2 = settings ? 'Yes, and allow Claude to edit its own settings for this session'
+          : 'Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)';
+        return `\x1b[2J\x1b[H${header}Do you want to ${operation} plan.md?\n❯1.Yes\n2.${option2}\n3.No\nEsc to cancel`;
+      };
       const nativeBashInput = { command: 'printf %s ready > probe.txt', description: 'Write the owned marker' };
       // Source-shaped short native card; no legacy "requires permission" sentence.
       const nativeBashDialog = () => '\x1b[2J\x1b[H' + '─'.repeat(240) + '\n Bash command\n\n   '
