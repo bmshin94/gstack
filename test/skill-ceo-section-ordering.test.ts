@@ -196,14 +196,15 @@ describe('CEO review decision continuity contract', () => {
     expect(template).toContain('New or reopened decisions still require explicit approval');
   });
 
-  test('Design and DX retain the exact preceding anti-shortcut contract on every host', () => {
-    // SHA-256 of the e801b515 resolver output; detects collateral prompt changes.
+  test('Design retains its preceding contract while DX reuses the Eng gate on every host', () => {
+    // SHA-256 of the e801b515 Design resolver output; detects collateral changes.
     const original = '82e55bcd35a16a20d243978707c786f25e24ac5d6a197d9fedb2cb0bb223abb7';
-    for (const skillName of ['plan-devex-review', 'plan-design-review']) {
-      for (const host of ALL_HOST_CONFIGS) {
-        const clause = generateAntiShortcutClause({ skillName, host: host.name } as TemplateContext);
-        expect(createHash('sha256').update(clause).digest('hex'), `${skillName}/${host.name}`).toBe(original);
-      }
+    for (const host of ALL_HOST_CONFIGS) {
+      const design = generateAntiShortcutClause({ skillName: 'plan-design-review', host: host.name } as TemplateContext);
+      expect(createHash('sha256').update(design).digest('hex'), `plan-design-review/${host.name}`).toBe(original);
+      const dx = generateAntiShortcutClause({ skillName: 'plan-devex-review', host: host.name } as TemplateContext);
+      const eng = generateAntiShortcutClause({ skillName: 'plan-eng-review', host: host.name } as TemplateContext);
+      expect(dx, `plan-devex-review/${host.name}`).toBe(eng);
     }
   });
 });
