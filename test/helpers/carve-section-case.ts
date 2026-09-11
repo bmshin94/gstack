@@ -92,7 +92,7 @@ export function registerCarveSectionCase(skill: string): void {
           git('commit', '-m', 'Refactor invoice access check');
         }
 
-        const { readSections, reportProduced: completionMarked, reportWritten, output } = await captureSectionReads({
+        const { readSections, reportProduced: completionMarked, reportWritten, exitReason, output } = await captureSectionReads({
           planDir,
           skillName: guard.skill,
           scenario: guard.scenario,
@@ -124,7 +124,8 @@ export function registerCarveSectionCase(skill: string): void {
           expected: guard.requiredReads,
           observed: [...readSections],
           missing,
-        }).toEqual({
+        }, `${guard.skill}: native exit=${exitReason}; reportWritten=${reportWritten}\n` +
+          `--- final output ---\n${output.slice(-2000)}`).toEqual({
           skill: guard.skill,
           reportProduced: true,
           expected: guard.requiredReads,
