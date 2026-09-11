@@ -157,9 +157,9 @@ Before reviewing anything, answer these questions:
    - How will users download or install it (GitHub Releases, package manager, container registry)?
    If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
 
-If the complexity check triggers (8+ files or 2+ new classes/services), STOP before any review-section work. Call AskUserQuestion: name what's overbuilt, propose a minimal version that achieves the core goal, ask whether to reduce or proceed as-is. The AskUserQuestion call is a tool_use, not prose — call the tool directly. Keep independent security, error, test and performance remedies constant or pending in every scope option. Fewer components does not approve a pending remedy; ask about each separately before applying it.
+If the complexity check triggers (8+ files or 2+ new classes/services), STOP before section work. Use the preamble's question flow: name what's overbuilt, propose a minimal version meeting the goal, ask: reduce or proceed as-is. Keep independent security, error, test and performance remedies constant or pending in every scope option. Fewer components does not approve a pending remedy; ask about each separately before applying it.
 
-**STOP.** Do NOT enter Section 1 (Architecture review), apply the scope reduction to the plan, or call ExitPlanMode before the user responds. Prose and ToolSearch schema loading cannot replace the AskUserQuestion call.
+**STOP.** Until the decision is resolved by the user (including prior approval) or an authorized auto-decision, do not enter Section 1, call ExitPlanMode, or put Step 0 findings, revised approaches or proposed remedies in plan files, including new files and findings appendices. A seed may be copied unchanged, without review content.
 
 If the complexity check does not trigger, present your Step 0 findings and enter Review Sections: run Prior Learnings and Confidence Calibration, then Section 1.
 
