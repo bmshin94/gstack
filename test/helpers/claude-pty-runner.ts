@@ -1099,14 +1099,14 @@ export interface AskUserQuestionFingerprint {
   options: Array<{ index: number; label: string }>;
   /** Wall-clock when first observed (ms since the helper started polling). */
   observedAtMs: number;
-  /** True if observed BEFORE the Step-0 boundary fired. */
+  /** True before the Step-0 boundary, or when isReviewAUQ excludes a setup call. */
   preReview: boolean;
 }
 
 /**
  * Predicate fired against the AUQ we just answered (not the visible buffer).
  * Returns true if this AUQ's fingerprint marks the LAST Step-0 question for
- * its skill — all subsequent AUQs are review-phase findings.
+ * its skill — subsequent AUQs enter the review phase, subject to isReviewAUQ.
  *
  * Event-based by design: matching against an answered AUQ's fingerprint
  * (prompt + options) is deterministic, whereas matching against later
@@ -2120,7 +2120,7 @@ export interface PlanSkillCountObservation {
   elapsedMs: number;
   /** All distinct AskUserQuestions observed, in observation order. */
   fingerprints: AskUserQuestionFingerprint[];
-  /** Count of fingerprints with `preReview === true`. */
+  /** Count of fingerprints with `preReview === true`, including excluded setup calls. */
   step0Count: number;
   /** Count of fingerprints with `preReview === false`. */
   reviewCount: number;
@@ -2198,6 +2198,11 @@ export async function runPlanSkillCounting(opts: {
   followUpPrompt: string;
   /** Per-skill predicate: which answered AUQ is the last Step-0 question. */
   isLastStep0AUQ: Step0BoundaryPredicate;
+  /** Optional filter for acknowledged post-Step-0 calls. Receives validated
+   * selectedOptions only after every tab's successful native result. Defaults
+   * to counting every post-boundary call. Excluded setup calls are retained
+   * with preReview=true and cannot satisfy the review ceiling. */
+  isReviewAUQ?: (fp: AskUserQuestionFingerprint) => boolean;
   /** Hard cap on review-phase count; helper returns when reached. Should be
    *  set ABOVE the test's assertion ceiling so the test sees the cap as a
    *  failure rather than a silent stop. Explicit null disables only this cap;
@@ -2333,7 +2338,9 @@ export async function runPlanSkillCounting(opts: {
     if (opts.followUpPrompt) session.send(`${opts.followUpPrompt}\r`);
 
     while (!expired()) {
-      await pause(2000);
+      // Observe at the session wait helper's cadence. Fresh native/frame and
+      // ACK checks below gate input; fixed post-input sleeps add no authority.
+      await pause(250);
       if (expired()) break;
       const visible = session.visibleSince(since);
       const questionWindow = session.visibleSince(questionSince);
@@ -2473,8 +2480,10 @@ export async function runPlanSkillCounting(opts: {
         state.counted = true;
         state.fp.preReview = !boundaryFired;
         state.fp.selectedOptions = [...state.selectedOptions];
+        const isReview = boundaryFired && (opts.isReviewAUQ?.(state.fp) ?? true);
+        state.fp.preReview = !isReview;
         fingerprints.push(state.fp);
-        if (boundaryFired) reviewCount += 1;
+        if (isReview) reviewCount += 1;
         else step0Count += 1;
         if (!boundaryFired && call.questions.some(q => opts.isLastStep0AUQ({ ...state.fp, promptSnippet: q.question.slice(0, 240), options: q.options.map((o, i) => ({ index: i + 1, label: o.label })) }))) boundaryFired = true;
       }
@@ -2570,7 +2579,6 @@ export async function runPlanSkillCounting(opts: {
         if (!reserveNativePermissionGrant(native, permissionVisible, grantedTools, grantedRequests)) continue;
         questionSince = session.mark();
         session.send('1\r'); // Grant this request; AUQ preferences cannot enable session-wide access.
-        await pause(1500);
         continue;
       }
 
@@ -2642,7 +2650,6 @@ export async function runPlanSkillCounting(opts: {
         state.previewFocus = pickIdx;
         questionSince = session.mark();
         session.send(String(pickIdx));
-        await pause(2000);
         continue;
       }
       delete state.previewFocus;
@@ -2654,9 +2661,6 @@ export async function runPlanSkillCounting(opts: {
       // Final multi-tab submission remains a separate screen-bound action.
       session.send(selection.kind === 'preview' ? '\r' : String(pickIdx));
       lastLoopStage = 'question-input-sent';
-
-      // Give the agent a beat to advance to the next state.
-      await pause(2000);
     }
 
     return snapshot(

@@ -185,7 +185,7 @@ describe('autoplan project fixture preamble', () => {
 
 // Run the actual paid body with only its provider/native boundaries replaced.
 // A completed Edit1 and new Edit2 may precede the next terminal repaint.
-test('autoplan waits for a new permission frame after its preceding input', () => {
+test.each(['progress', 'deadline', 'late-completion'] as const)('autoplan permission progression preserves fresh frames and the deadline: %s', mode => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-caller-'));
   const script = path.join(dir, 'caller.fixture.test.ts');
   const factsPath = path.join(dir, 'facts.json');
@@ -197,8 +197,9 @@ import { execFileSync } from 'node:child_process';
 import * as questions from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-skill-questions.ts'))};
 import { isNumberedOptionListVisible, isPermissionDialogVisible } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
 const root = ${JSON.stringify(ROOT)};
-const facts = { inputs: [], frameInputs: [], closed: false };
-let clock = 0, frames = 0, grants = 0, rawEnd = 100, cwd, file, config, sessionId;
+const facts = { inputs: [], inputTimes: [], frameInputs: [], closed: false, startedAt: null, elapsedMs: null };
+const mode = ${JSON.stringify(mode)};
+let clock = 0, frames = 0, grants = mode === 'late-completion' ? 2 : 0, rawEnd = 100, cwd, file, config, sessionId;
 Date.now = () => clock;
 Bun.sleep = async ms => { clock += ms; };
 const phaseText = '**Phase 1 complete.**\\n**Phase 2 complete.**\\n**Phase 2.5 complete.**\\n**Phase 3 complete.**';
@@ -239,17 +240,23 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
       visibleText: () => grants === 2 ? phaseText : '', visibleSince: () => grants === 2 ? phaseText : '',
       currentScreen: async () => {
         frames++; rawEnd = frames < 3 ? 110 : 111;
+        if (mode !== 'progress') clock = facts.startedAt + 900000;
+        if (mode === 'late-completion') {
+          fs.writeFileSync(path.join(config, 'projects', 'fixture', sessionId + '.jsonl'),
+            JSON.stringify({ type: 'assistant', isSidechain: false, sessionId, message: { role: 'assistant', content: [{ type: 'text', text: phaseText }] } }) + '\\n');
+          return { rawEnd, text: phaseText };
+        }
         return { rawEnd, text: '─'.repeat(120) + '\\n Edit file\\n ' + path.relative(cwd, file) + '\\n' + '╌'.repeat(120) + '\\n' +
           Array.from({ length: 30 }, (_, i) => '  ' + (i + 1) + ' ' + 'plan preview '.repeat(4)).join('\\n') + '\\n' + '╌'.repeat(120) + '\\n Do you want to make this edit to ' + path.basename(file) + '?\\n❯ 1. Yes\\n  2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session\\n  3. No\\nEsc to cancel' };
       },
       send: value => {
-        facts.inputs.push(value);
-        if (value !== '1\\r') return;
+        facts.inputs.push(value); facts.inputTimes.push(clock);
+        if (value !== '1\\r') { facts.startedAt = clock; return; }
         facts.frameInputs.push(frames); grants++;
         if (grants === 2) fs.writeFileSync(path.join(config, 'projects', 'fixture', sessionId + '.jsonl'),
           JSON.stringify({ type: 'assistant', isSidechain: false, sessionId, message: { role: 'assistant', content: [{ type: 'text', text: phaseText }] } }) + '\\n');
       },
-      close: async () => { facts.closed = true; },
+      close: async () => { facts.closed = true; facts.elapsedMs = clock - facts.startedAt; },
     };
   },
 }));
@@ -262,10 +269,20 @@ await import(path.join(root, 'test/skill-e2e-autoplan-chain.test.ts'));
       env: { ...process.env, EVALS: '', EVALS_ALL: '', TMPDIR: dir, TMP: dir, TEMP: dir },
     });
     expect(child.error, child.stderr).toBeUndefined();
-    expect(child.status, child.stderr).toBe(0);
+    expect(child.status, child.stderr).toBe(mode === 'progress' ? 0 : 1);
     const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'));
-    expect(facts.inputs).toEqual(['/autoplan\r', '1\r', '1\r']);
-    expect(facts.frameInputs).toEqual([1, 3]);
+    if (mode !== 'progress') {
+      expect(child.stderr).toContain('outcome=timeout');
+      expect(facts.inputs).toEqual(['/autoplan\r']);
+      expect(facts.frameInputs).toEqual([]);
+      expect(facts.elapsedMs).toBe(900000);
+    } else {
+      expect(facts.inputs).toEqual(['/autoplan\r', '1\r', '1\r']);
+      expect(facts.frameInputs).toEqual([1, 3]);
+      // Immediate native ACKs still need fresh frames, not fixed multi-second waits.
+      expect(facts.inputTimes[1] - facts.inputTimes[0]).toBeLessThan(1000);
+      expect(facts.inputTimes[2] - facts.inputTimes[1]).toBeLessThan(1000);
+    }
     expect(facts.closed).toBe(true);
     expect(fs.readdirSync(dir).filter(name => name.startsWith('gstack-autoplan-chain-'))).toEqual([]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }

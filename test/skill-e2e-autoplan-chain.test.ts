@@ -93,6 +93,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
 
           const budgetMs = 900_000; // 15 min
           const start = Date.now();
+          const deadlineAt = start + budgetMs;
           // Phase markers live in autoplan's carved phase sections
           // (autoplan/sections/{ceo,design,eng,dx}-phase.md — the skeleton
           // STOP-Reads each one at its phase boundary):
@@ -101,9 +102,12 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
           const granted = new Set<string>();
           const requests = new Map<string, NativePermissionGrant>();
           let lastPermissionInputMark = -1;
-          const permissionViewport = new AutoplanFilePermissionViewport({ session, deadlineAt: start + budgetMs, granted });
-          while (Date.now() - start < budgetMs) {
-            await Bun.sleep(5000);
+          const permissionViewport = new AutoplanFilePermissionViewport({ session, deadlineAt, granted });
+          while (Date.now() < deadlineAt) {
+            // Match the runner's 250ms observation cadence. Native ownership,
+            // fresh frames, and ACKs below authorize grants; elapsed sleep does not.
+            await Bun.sleep(Math.min(250, Math.max(0, deadlineAt - Date.now())));
+            if (Date.now() >= deadlineAt) break;
             if (session.exited()) {
               outcome = 'exited';
               exitCode = session.exitCode();
@@ -124,6 +128,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
               questionSince: since, viewportInputSince: lastPermissionInputMark };
             const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
             lastPermissionCheck = { mark: session.mark(), nativeStable: isDeepStrictEqual(native, afterFrame), lastInputMark: lastPermissionInputMark };
+            if (Date.now() >= deadlineAt) break;
             if (frame.rawEnd !== lastPermissionCheck.mark || !lastPermissionCheck.nativeStable) continue;
             if (permissionViewport.active) {
               const wait = await permissionViewport.advance(native, frame);
@@ -136,7 +141,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
             }
             const recentTail = frame.text;
             if (frame.rawEnd > lastPermissionInputMark && isNumberedOptionListVisible(recentTail) && isPermissionDialogVisible(recentTail)) {
-              if (Date.now() - start >= budgetMs) break;
+              if (Date.now() >= deadlineAt) break;
               let reserved: boolean;
               try {
                 reserved = reserveAutoplanFilePermission(native, recentTail, {
@@ -150,7 +155,6 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
               if (reserved) {
                 lastPermissionInputMark = session.mark();
                 session.send('1\r');
-                await Bun.sleep(2000);
                 continue;
               }
             }
@@ -158,6 +162,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
             transcript = readAutoplanTranscript(session.hermeticConfigDir, sessionId);
             renderedPhases = [...new Set(observedAutoplanPhases(visible))];
             corroboratedPhases = corroboratedAutoplanPhases(transcript.phases, visible);
+            if (Date.now() >= deadlineAt) break;
             // Reject a wrong authoritative order even if a tool preview looks
             // correct or some assistant announcements have not rendered yet.
             if (transcript.phases.includes(3)) validateAutoplanPhaseOrder(transcript.phases);

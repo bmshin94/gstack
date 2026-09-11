@@ -74,11 +74,13 @@ async function main() {
   const retentionCase = scenario.startsWith('retention-');
   const injectedError = new Error('PRIVATE_CALLBACK_ERROR');
   const ceilingCase = scenario.startsWith('ceiling-');
+  const reviewFilterCase = scenario.startsWith('review-filter-');
   const multiQuestionCase = scenario === 'multi-question' || scenario.startsWith('question-picker-multi');
   const terminalDiagnosticCase = scenario.startsWith('terminal-diagnostic-');
   const permissionRepaintCase = scenario.startsWith('permission-repaint-');
   const longPermissionCase = scenario.startsWith('permission-long-frame') || permissionRepaintCase;
   const editPermissionCase = scenario.startsWith('permission-edit-');
+  const consecutiveFileCase = scenario.startsWith('permission-edit-consecutive-');
   const queuedFileQuestionCase = scenario.startsWith('permission-final-queued-question');
   const nativeBashCase = scenario.startsWith('native-bash-');
   const bashRepaintCase = scenario.startsWith('native-bash-repaint-');
@@ -88,7 +90,7 @@ async function main() {
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
   const exitConfirmationCase = scenario.startsWith('exit-confirmation-');
-  const timing = nativeBashCase || longPermissionCase || scenario.startsWith('retention-timeout-') || ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const timing = reviewFilterCase || nativeBashCase || longPermissionCase || scenario.startsWith('retention-timeout-') || ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = scenario === 'retention-timeout-boot' ? 4_000 : ceilingCase || viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = multiQuestionCase || ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'question-picker-redraw'].includes(scenario);
@@ -100,6 +102,7 @@ async function main() {
   let retainedBeforeClose = false;
   const sends: string[] = [];
   const pickerCalls: Array<{ question: unknown; isFirst: boolean }> = [];
+  const reviewFilterCalls: Array<{ questions: unknown; selectedOptions: number[] | undefined }> = [];
   const resizes: number[][] = [];
   let terminalCloseCount = 0;
   let viewportSnapshots = 0;
@@ -108,6 +111,7 @@ async function main() {
   let closed = false;
   let launches = 0;
   let sleeps = 0;
+  let previousPollProgress = '';
   let redraws = 0;
   let clock = 0;
   let pendingRedrawSleeps = 0;
@@ -435,6 +439,10 @@ async function main() {
             publish(); raceInjected = true; raceJustInjected = true;
             emit(fileDialog('make this edit to'));
           };
+        } else if (scenario === 'permission-edit-consecutive-stale') {
+          publish();
+          delayedRender = () => emit(fileDialog('make this edit to'));
+          pendingRedrawSleeps = 2; // New request/ACK arrive before its next native paint.
         } else { publish(); emit(fileDialog('make this edit to')); }
       };
       const requestFinalWrite = () => {
@@ -584,7 +592,7 @@ async function main() {
               return;
             }
             if (scenario === 'exit-confirmation-stale-frame') { requestExitConfirmation(); return; }
-            if (scenario === 'setup-budget' || scenario === 'launch-budget' || scenario === 'setup-exhausted') {
+            if (scenario === 'setup-budget' || scenario === 'launch-budget' || scenario === 'setup-exhausted' || scenario === 'late-completion') {
               emit('WORK_IN_PROGRESS\n');
               return;
             }
@@ -787,7 +795,10 @@ async function main() {
                   permissionWrites.push('edit');
                   permissionId = null;
                   if (finalPermissionPending) finish();
-                  else {
+                  else if (consecutiveFileCase) {
+                    clock = scenario.endsWith('deadline') ? caseBudgetMs - 100 : clock + 100;
+                    requestFinalEdit();
+                  } else {
                     const showMode = () => {
                       ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
                       emit('\x1b[2J\x1b[HD1 — Pick a mode\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\n');
@@ -856,6 +867,7 @@ async function main() {
             }
             if (['letter-prefixed-mode-no-ack', 'parenthesized-mode-no-ack'].includes(scenario) && answer === 1) { emit('\nWORK_IN_PROGRESS\n'); return; }
             if (['no-ack', 'hook-no-ack'].includes(scenario) && answer === 2) { emit('\nWORK_IN_PROGRESS\n'); return; }
+            if (scenario === 'review-filter-no-ack' && answer === 3) { emit('\nWORK_IN_PROGRESS\n'); return; }
             if (ceilingCase) {
               if (answer === 7 && scenario.endsWith('no-ack')) { emit('WORK_IN_PROGRESS\n'); return; }
               acknowledge();
@@ -897,8 +909,8 @@ async function main() {
               } else if (scenario === 'redraw' || scenario === 'stale-redraw' || scenario === 'question-picker-redraw') {
                 redraws++;
                 emit(scenario === 'stale-redraw' ? finding(1).trimEnd() + ' Working frame 2\n' : finding(1));
-                // One post-answer pause, then a poll sees the same question;
-                // only the next poll receives a genuinely different prompt.
+                // Keep the old prompt through two observation turns; only
+                // the third turn receives a genuinely different prompt.
                 pendingRedrawSleeps = 3;
                 delayedRender = showSecondFinding;
               } else showSecondFinding();
@@ -920,13 +932,20 @@ async function main() {
     Bun.sleep = (async (ms: number) => {
       raceJustInjected = false;
       if (!closed && ++sleeps > 50) throw new Error('Fake counting session did not converge');
-      if (timing) clock += ms;
+      // Coarse virtual ticks only while the fake PTY is idle, with no queued
+      // redraw. Progress and cadence/deadline probes use exact requested sleeps.
+      // This bounds real hook/frame work without extending the model deadline.
+      const progress = `${sends.length}:${fixtureRawEnd}`;
+      const idle = ms <= 250 && previousPollProgress === progress && pendingRedrawSleeps === 0;
+      previousPollProgress = ms <= 250 ? progress : '';
+      const exactCadence = consecutiveFileCase || ['permission-edit-native', 'late-completion'].includes(scenario);
+      if (timing) clock += Math.min(idle && !exactCadence ? Math.max(ms, 2000) : ms, caseBudgetMs - clock);
       if (scenario === 'late-completion' && clock >= caseBudgetMs && !lateCompletionSent) finishLate();
       if (pendingRedrawSleeps > 0 && --pendingRedrawSleeps === 0) delayedRender();
     }) as typeof Bun.sleep;
     const helperTimeoutMs = scenario === 'invalid-nan' ? Number.NaN : scenario === 'invalid-infinity' ? Number.POSITIVE_INFINITY
       : caseBudgetMs - (Date.now() - caseStartedAt);
-    const reviewCountCeiling = scenario.startsWith('ceiling-null') ? null
+    const reviewCountCeiling = reviewFilterCase ? 1 : scenario.startsWith('ceiling-null') ? null
       : scenario === 'invalid-cap-nan' ? Number.NaN : scenario === 'invalid-cap-infinity' ? Number.POSITIVE_INFINITY
       : scenario === 'invalid-cap-negative' ? -1 : scenario === 'invalid-cap-fraction' ? 1.5
       : scenario === 'invalid-cap-unsafe' ? Number.MAX_SAFE_INTEGER + 1 : scenario === 'ceiling-zero' ? 0 : 4;
@@ -936,6 +955,10 @@ async function main() {
     try { observation = await runPlanSkillCounting({
       skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
       cwd: project, isLastStep0AUQ: ceoStep0Boundary, reviewCountCeiling, timeoutMs: helperTimeoutMs,
+      ...(reviewFilterCase ? { isReviewAUQ: (fp: import('../helpers/claude-pty-runner').AskUserQuestionFingerprint) => {
+        reviewFilterCalls.push({ questions: fp.questions, selectedOptions: fp.selectedOptions });
+        return scenario !== 'review-filter-all-setup' && fp.questions?.some(q => q.question === 'Finding 2 — Failure test') === true;
+      } } : {}),
       defaultPick: previewCase ? scenario === 'preview-menu-focused' ? 1 : 2 : ['permission-current-create-pick-two', 'permission-final-queued-question-pick-two'].includes(scenario) ? 2 : undefined,
       firstAUQPick: scenario === 'first-route' || scenario === 'question-picker-first' ? () => 2 : undefined,
       questionPick: retentionCase || ceilingCase || lateHookCompletion || scenario.includes('picker') ? (question, isFirst) => {
@@ -958,7 +981,7 @@ async function main() {
     const diagnosticDirectory = path.join(evalDir, 'plan-counting');
     const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
     const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
-    console.log(JSON.stringify({ observation, error, persistedBashUses, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, persistedBashUses, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, reviewFilterCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

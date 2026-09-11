@@ -42,6 +42,33 @@ target.questions[0].options = [
   { label: 'A) The current branch diff', description: 'The working tree is clean, so there may be no UI scope to review.' },
 ];
 const paraphrase = fp('focus', 'D1 — Review all 7 design dimensions, or focus on specific areas?\\nELI10: I rated this plan 4/10.');
+// Public titles/options projected from the retained Sep 11 native PostToolUse
+// events: focus toolu_01XJZk6qbs3Fj3VRbm6sCNv2, setup toolu_01WkR4juMdcMxCTJe8FfRMVY,
+// finding toolu_012EsyqshgBk2Ap7CfuzwhwQ. No transcript paths or private content.
+const nativeFocus = fp('native-focus', 'D1 — Review all 7 design dimensions, or focus?');
+nativeFocus.questions[0].options = [
+  { label: 'All 7 dimensions (recommended)', description: 'Full review: hierarchy, states, journey, specificity, AI slop, responsive, accessibility. Completeness 10/10.' },
+  { label: 'States + hierarchy + a11y', description: 'Focus on the three weakest areas only. Completeness 7/10.' },
+  { label: 'Visual + AI slop only', description: 'Focus on look and originality, skip state and interaction passes. Completeness 4/10.' },
+];
+const nativeSetup = fp('native-setup', 'D2 — Run outside design voices before the 7 passes?', false);
+nativeSetup.questions[0].options = [
+  { label: 'Yes, run outside voices (recommended)', description: 'Codex design critique + independent Claude subagent, run in parallel, synthesized into a litmus scorecard.' },
+  { label: 'No, skip to the passes', description: 'Go straight to Pass 1 with my review only.' },
+];
+const nativeFinding = fp('native-finding', "D3 — Issue 1 [HARD REJECTION risk]: Which region is the dashboard's primary anchor, and how is the page composed?", false);
+nativeFinding.questions[0].options = [
+  { label: '1A Notifications-primary (recommended)', description: 'Status line + unread count anchors; notifications ~7/12, activity ~5/12; mobile order status, notifications, activity. Completeness 10/10.' },
+  { label: '1B Activity-primary (Codex)', description: 'Activity dominant ~7/12, notifications right rail; primary action beside title. Completeness 10/10.' },
+  { label: '1C Three peer regions, decide later', description: 'Keep the plan as written; hard rejection #1 stays open. Completeness 3/10.' },
+];
+const unnumberedFinding = fp('unnumbered-finding', "Which region is the dashboard's primary anchor, and how is the page composed?", false);
+unnumberedFinding.questions[0].options = nativeFinding.questions[0].options;
+const finding = fp('finding', 'Which loading feedback should Save show?', false);
+finding.questions[0].options = [
+  { label: 'Saving label and spinner (recommended)', description: 'Show in-flight feedback in the Save button.' },
+  { label: 'Keep the current button', description: 'Keep the button label and current loading feedback.' },
+];
 let calls = 0;
 fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ calls }));
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
@@ -66,12 +93,22 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.isLastStep0AUQ(target)).toBe(false);
     expect(opts.isLastStep0AUQ(fp('focus', focus))).toBe(true);
     expect(opts.isLastStep0AUQ(paraphrase)).toBe(true);
-    const chosenFocus = mode === 'paraphrase' ? paraphrase : fp('focus', focus);
+    if (mode.startsWith('native-')) expect(opts.isLastStep0AUQ(nativeFocus)).toBe(true);
+    expect(opts.isReviewAUQ(target)).toBe(false);
+    expect(opts.isReviewAUQ(nativeFocus)).toBe(false);
+    expect(opts.isReviewAUQ(nativeSetup)).toBe(false);
+    expect(opts.isReviewAUQ(nativeFinding)).toBe(true);
+    expect(opts.isReviewAUQ(unnumberedFinding)).toBe(true);
+    expect(opts.isReviewAUQ(finding)).toBe(true);
+    const chosenFocus = mode.startsWith('native-') ? nativeFocus : mode === 'paraphrase' ? paraphrase : fp('focus', focus);
     expect(opts.questionPick(chosenFocus.questions[0], true)).toBe(1);
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ calls, cwd: opts.cwd, seeded: true }));
     if (mode === 'throw') throw new Error('controlled UI observation failure');
     const observed = mode.startsWith('target-menu') ? [target, fp('other', 'Which artifact should I inspect?', false)]
-      : mode === 'early-exit' ? [] : [chosenFocus, fp('finding', 'Which loading feedback should Save show?', false)];
+      : mode === 'early-exit' ? [] : mode === 'focus-only' ? [chosenFocus]
+      : mode === 'native-setup-only' ? [nativeFocus, nativeSetup]
+      : mode.startsWith('native-') ? [nativeFocus, nativeSetup, mode === 'native-unnumbered' ? unnumberedFinding : nativeFinding]
+      : [chosenFocus, finding];
     return {
       outcome: mode === 'early-exit' ? 'plan_ready' : mode === 'timeout' ? 'timeout' : mode === 'exited' ? 'exited' : 'ceiling_reached',
       fingerprints: observed, step0Count: 1, reviewCount: 1, elapsedMs: 1000,
@@ -105,12 +142,12 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-design-with-u
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }
 
-test.each(['source', 'paraphrase'])('UI gate seeds the exact target and accepts Design progress with an unselected no-UI alternative (%s)', mode => {
+test.each(['source', 'paraphrase', 'native-sequence', 'native-unnumbered'])('UI gate seeds the exact target and accepts Design progress with an unselected no-UI alternative (%s)', mode => {
   const result = exercise(mode);
   expect(result.code, result.output).toBe(0);
 }, 20_000);
 
-test.each(['target-menu', 'target-menu-design-system', 'early-exit', 'timeout', 'exited'])('UI gate rejects %s and removes its fixture', mode => {
+test.each(['target-menu', 'target-menu-design-system', 'focus-only', 'native-setup-only', 'early-exit', 'timeout', 'exited'])('UI gate rejects %s and removes its fixture', mode => {
   const result = exercise(mode);
   expect(result.code, result.output).toBe(1);
   expect(result.output).toContain('plan-design-review with UI scope FAILED');

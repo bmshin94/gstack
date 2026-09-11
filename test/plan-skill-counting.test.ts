@@ -210,6 +210,19 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.fingerprints.map((fp: any) => fp.selectedOptions)).toEqual([[1], [1], [1], [1], [1]]);
     expect(result.closed).toBe(true);
   }, 15_000);
+  test.each(['finding', 'all-setup', 'no-ack'])('optional acknowledged-review predicate preserves setup and ACK boundaries (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `review-filter-${variant}`);
+    expect(result.observation).toMatchObject({
+      outcome: variant === 'finding' ? 'ceiling_reached' : variant === 'all-setup' ? 'completion_summary' : 'timeout',
+      step0Count: variant === 'all-setup' ? 3 : 2, reviewCount: variant === 'finding' ? 1 : 0,
+    });
+    expect(result.observation.fingerprints.map((fp: any) => fp.preReview)).toEqual(
+      variant === 'finding' ? [true, true, false] : variant === 'all-setup' ? [true, true, true] : [true, true]);
+    expect(result.reviewFilterCalls.map((call: any) => call.questions[0].question)).toEqual(
+      variant === 'no-ack' ? ['Finding 1 — Success test'] : ['Finding 1 — Success test', 'Finding 2 — Failure test']);
+    expect(result.reviewFilterCalls.every((call: any) => JSON.stringify(call.selectedOptions) === '[1]')).toBe(true);
+    expect(result.closed).toBe(true);
+  }, 15_000);
   test('zero phase ceiling preserves its immediate-stop behavior', async () => {
     const result = await runFakeCounting('**DONE**', 'ceiling-zero');
     expect(result.observation).toMatchObject({ outcome: 'ceiling_reached', step0Count: 0, reviewCount: 0 });
@@ -593,12 +606,33 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.unsolicitedWrites).toEqual([]);
     expect(result.raceInjected).toBe(variant === 'arrival-race');
     expect(result.fileNativeBeforeGrant).toEqual([true, variant === 'native']);
+    if (variant === 'native') {
+      // Ready file grants and acknowledged AUQ tabs both advance on the next observation.
+      expect(result.sendTimes.slice(2).every((at: number, i: number) => at - result.sendTimes[i + 1] < 1000)).toBe(true);
+    }
     expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1', '1', '1', '1\r']);
     expect(result.permissionWrites).toEqual(['edit', 'edit']);
     expect(result.writtenPlanTail).toEndWith('VERDICT: APPROVED');
     expect(result.observation.step0Count).toBe(1);
     expect(result.observation.reviewCount).toBe(2);
     expect(result.observation.outcome).toBe('completion_summary');
+    expect(result.closed).toBe(true);
+  }, 15_000);
+  test.each(['ready', 'stale', 'deadline'])('consecutive owned file requests progress promptly without bypassing freshness or the deadline (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', `permission-edit-consecutive-${variant}`);
+    expect(result.error).toBeUndefined();
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.unsolicitedWrites).toEqual([]);
+    expect(result.observation).toMatchObject({ outcome: variant === 'deadline' ? 'timeout' : 'completion_summary', step0Count: 0, reviewCount: 0 });
+    expect(result.sends).toEqual(variant === 'deadline' ? ['/plan-ceo-review\r', '1\r'] : ['/plan-ceo-review\r', '1\r', '1\r']);
+    expect(result.permissionWrites).toEqual(variant === 'deadline' ? ['edit'] : ['edit', 'edit']);
+    expect(result.fileNativeBeforeGrant).toEqual(variant === 'deadline' ? [true] : [true, false]);
+    expect(result.sendTimes.every((at: number) => at < result.caseBudgetMs)).toBe(true);
+    if (variant === 'deadline') expect(result.observation.elapsedMs).toBe(result.caseBudgetMs);
+    else {
+      expect(result.sendTimes[2] - result.sendTimes[1]).toBeLessThan(1000);
+      expect(result.writtenPlanTail).toEndWith('VERDICT: APPROVED');
+    }
     expect(result.closed).toBe(true);
   }, 15_000);
   test('a second owned Edit grant cannot complete without its own later native result', async () => {

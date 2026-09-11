@@ -31,7 +31,18 @@ const designFocusBoundary = (fp: AskUserQuestionFingerprint): boolean =>
     // Require the source Step 0D question or its retained native paraphrase.
     // A target menu can mention a design system without reviewing this plan.
     return /^I(?:['’]ve| have) rated this plan (?:10(?:\.0+)?|[0-9](?:\.\d+)?)\/10 on design completeness\.[\s\S]*\bWant me to focus on specific areas instead of all 7\?/i.test(text)
-      || /^Review all 7 design dimensions, or focus on specific areas\?$/i.test(text.split(/\r?\n/, 1)[0]!);
+      || /^Review all 7 design dimensions, or focus(?: on specific areas)?\?$/i.test(text.split(/\r?\n/, 1)[0]!);
+  });
+
+// Require a choice about the supplied UI, not a workflow offer after focus.
+// Both the question and an offered remedy must describe concrete UI behavior.
+const uiChoice = /\b(?:layout|compos(?:e|ed|ition)|anchor|regions?|panels?|notifications?|activity|quick actions?|loading|skeletons?|empty|errors?|success|modals?|toasts?|buttons?|links?|copy|typography|fonts?|spacing|contrast|colors?|breakpoints?|responsive|keyboard|focus (?:order|trap|management)|aria|a11y|accessibility)\b/i;
+const designReviewFinding = (fp: AskUserQuestionFingerprint): boolean =>
+  !designFocusBoundary(fp) && (fp.questions ?? []).some(({ question, options }) => {
+    const title = question.split(/\r?\n/, 1)[0]!.trim().replace(/^D\d+(?:\.\d+)?\s*[—–:-]\s*/i, '');
+    const setup = /\b(?:outside (?:design )?voices|cross[ -]project learnings|review (?:target|scope|mode)|what should I (?:design[ -])?review|which (?:artifact|plan|file))\b/i;
+    return !setup.test(title) && uiChoice.test(title)
+      && options.some(option => uiChoice.test(`${option.label} ${option.description}`));
   });
 
 describeE2E('/plan-design-review with UI scope (gate)', () => {
@@ -46,12 +57,13 @@ describeE2E('/plan-design-review with UI scope (gate)', () => {
           skillName: 'plan-design-review', slashCommand: '/plan-design-review',
           followUpPrompt: '', cwd: project,
           isLastStep0AUQ: designFocusBoundary,
+          isReviewAUQ: designReviewFinding,
           reviewCountCeiling: 1,
           questionPick: pickPlanReviewQuestion,
           timeoutMs: 600_000 - (Date.now() - startedAt),
         });
         const focus = obs.fingerprints.findIndex(designFocusBoundary);
-        const postFocus = focus >= 0 && obs.fingerprints.slice(focus + 1).some(fp => !fp.preReview);
+        const postFocus = focus >= 0 && obs.fingerprints.slice(focus + 1).some(fp => !fp.preReview && designReviewFinding(fp));
         if (obs.outcome !== 'ceiling_reached' || !postFocus) {
           throw new Error(
             `plan-design-review with UI scope FAILED: outcome=${obs.outcome}; no acknowledged Design focus and subsequent review question\n` +
