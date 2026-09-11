@@ -120,8 +120,11 @@ test('Fetch preserves native errors and refuses indistinguishable stale renderin
   expect([...s.grants]).toEqual(['fetch-1']);
 });
 
+const syntheticCredentialUrl = new URL('https://example.com/');
+syntheticCredentialUrl.username = 'user';
+syntheticCredentialUrl.password = 'password';
 test.each([{ ...captured.input, prompt: '' }, { ...captured.input, url: 'file:///tmp/page' },
-  { ...captured.input, url: 'https://user:password@example.com/' }, { ...captured.input, prompt: 'Injected\u001b[2J' }])(
+  { ...captured.input, url: syntheticCredentialUrl.href }, { ...captured.input, prompt: 'Injected\u001b[2J' }])(
   'Fetch rejects malformed or non-projectable payload %#', input => {
     expect(() => nativePermissionKey({ id: 'fetch', name: 'WebFetch', input }, captured.card)).toThrow('cannot be bound');
   });
