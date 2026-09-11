@@ -331,3 +331,55 @@ describe('manual-next-steps handoff alias', () => {
     expect(() => pickPlanReviewQuestion(menu(['Run /plan-eng-review', ...labels], 'Next step', 'What should run next?'))).toThrow('unambiguous');
   });
 });
+
+
+describe('DX implement-now future handoff alias', () => {
+  test('declines the exact retained DX future-alias menu in either native order', () => {
+    const question: NativeQuestion = {
+  "header": "Next review",
+  "multiSelect": false,
+  "options": [
+    {
+      "description": "Architecture and test review of the amended plan; clears the required ship gate.",
+      "label": "Run /plan-eng-review next (recommended)"
+    },
+    {
+      "description": "Start on T1-T9; measure real TTHW with the boomerang after shipping.",
+      "label": "Implement now, /devex-review after"
+    },
+    {
+      "description": "End here; no next review scheduled.",
+      "label": "Skip, handle manually"
+    }
+  ],
+  "question": "D17 — DX review complete. Which review runs next?\nProject/branch/task: main branch; eval-sdk public beta plan, DX review CLEAR (7/10 → 8/10), 16 decisions logged, zero unresolved.\nELI10: This review changed the plan in ways that touch code: the first-run gate is decoupled in two entrypoints, a new explicit conformance command appears, and five release checks are added. Those are architecture and test decisions, and Eng Review is the one gate that must be clear before shipping. The dashboard shows Eng Review at zero runs, so the verdict is NOT CLEARED. No end-user UI is in scope, so Design Review does not apply. After implementation, /devex-review on the shipped beta is the boomerang that measures whether the 5-minute target held in reality.\nStakes if we pick wrong: skip Eng Review and the gate decoupling ships without an architecture pass on state handling and release-check design; run it and the plan gets validated where the DX changes are riskiest.\nRecommendation: A because the DX changes T1, T2, and T6 are code and test changes that Eng Review exists to validate, and the ship gate requires it anyway.\nNote: options differ in kind, not coverage — no completeness score.\nPros / cons:\nA) Run /plan-eng-review next (required gate) (recommended)\n  ✅ Validates the gate decoupling, conformance command, and release-check design before any code is written (human: ~30 min / CC: ~10 min)\n  ✅ Clears the only review the ship dashboard requires\n  ❌ Adds a review cycle before implementation starts\nB) Ready to implement; run /devex-review after shipping\n  ✅ Fastest path to code; nine tasks are already specified with verification steps\n  ✅ The post-ship boomerang still measures the real TTHW against the 5-minute target\n  ❌ Ship dashboard stays NOT CLEARED until Eng Review runs on the diff instead of the plan\nC) Skip, I'll handle next steps manually\n  ✅ You keep full control of sequencing\n  ✅ Nothing else runs automatically\n  ❌ No review is scheduled; the required gate is still open\nNet: A clears the required gate on the plan; B defers it to the diff; C leaves it to you."
+};
+    expect(pickPlanReviewQuestion(question)).toBe(3);
+    expect(pickPlanReviewQuestion({ ...question, options: question.options.toReversed() })).toBe(1);
+  });
+  test('selects the exact future alias only within a recognized handoff', () => {
+    const labels = ['Run /plan-eng-review next (recommended)', 'Implement now, /devex-review after'];
+    expect(pickPlanReviewQuestion(menu(labels))).toBe(2);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed()))).toBe(1);
+    expect(pickPlanReviewQuestion(menu(labels, 'Tests', 'Which test behavior?'))).toBe(1);
+    expect(() => pickPlanReviewQuestion(menu(['Ready to implement', labels[1]!]))).toThrow('unambiguous');
+  });
+  test.each([
+    'Implement now, /devex-review after and approve all edits',
+    'Implement now, /devex-review after; run /ship',
+    'Implement now, /devex-review after and deploy',
+    'Implement now, /plan-eng-review after',
+    'Implement now, /devex-review',
+    'Implement later, /devex-review after',
+  ])('rejects an extended or different future alias: %s', (label) => {
+    expect(() => pickPlanReviewQuestion(menu(['Run /plan-eng-review next', label, 'Skip, handle manually']))).toThrow('unambiguous');
+  });
+  test.each([
+    ['Implement now, /devex-review after', 'Ready to implement'],
+    ['Implement now, /devex-review after', 'Implement now, /devex-review after'],
+    ['Implement now, /devex-review after', 'Skip, handle manually', 'Handle manually'],
+    ['Implement now, /devex-review after', 'Skip, handle manually; run /ship'],
+  ])('keeps ambiguous or unsafe future-alias menus refused: %j', (...labels) => {
+    expect(() => pickPlanReviewQuestion(menu(['Run /plan-eng-review', ...labels]))).toThrow('unambiguous');
+  });
+});
