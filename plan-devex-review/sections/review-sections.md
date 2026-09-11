@@ -338,6 +338,12 @@ compliments. Just the problems.
 THE PLAN:
 <plan content>"
 
+Run one preflight-selected backend: foreground Codex when ready, or the fallback
+below when unavailable. After a failed Codex attempt, finish its termination before
+fallback. Preserve unique `mktemp` paths; allocate any extra prompt/output files
+uniquely too. Consume only this invocation's completed output, never shared fixed
+filenames or another task's output.
+
 **If `CODEX_MODE: ready` — run Codex:**
 
 ```bash
