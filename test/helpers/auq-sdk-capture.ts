@@ -237,6 +237,7 @@ export async function captureSectionReads(opts: {
 }): Promise<{
   readSections: Set<string>;
   reportProduced: boolean;
+  /** The report file was created or its bytes changed during this attempt. */
   reportWritten: boolean;
   exitReason: SkillTestResult['exitReason'];
   toolCalls: SkillTestResult['toolCalls'];
@@ -244,6 +245,14 @@ export async function captureSectionReads(opts: {
   output: string;
 }> {
   const outFile = path.join(opts.planDir, opts.reportFile ?? 'REPORT.md');
+  const readReport = (): Buffer | undefined => {
+    try { return fs.readFileSync(outFile); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return undefined;
+    }
+  };
+  const beforeReport = readReport();
   const skillPath = path.join(opts.planDir, opts.skillName, 'SKILL.md');
   const prompt = `You are running an automated skill-execution test. No human is present, so AskUserQuestion is unavailable. The ONLY skill file you may read is this absolute path: ${skillPath}. Do NOT Glob/find/search for any other SKILL.md anywhere — especially nothing under ~/.claude or /Users.
 
@@ -282,12 +291,11 @@ Rules for this run:
     if (m) readSections.add(m[1]);
   }
 
-  let output = '';
-  let reportWritten = false;
-  try {
-    output = fs.readFileSync(outFile, 'utf-8');
-    reportWritten = true;
-  } catch { output = result.output ?? ''; }
+  const afterReport = readReport();
+  const reportWritten = afterReport !== undefined
+    && (beforeReport === undefined || !afterReport.equals(beforeReport));
+  // An unchanged seed (including a same-byte rewrite) is not this attempt's report.
+  const output = reportWritten ? afterReport!.toString('utf-8') : result.output ?? '';
   const reportProduced = result.exitReason === 'success'
     && (opts.reportMarker ? opts.reportMarker.test(output) : output.trim().length > 0);
 

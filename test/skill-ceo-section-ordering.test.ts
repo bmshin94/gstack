@@ -260,24 +260,31 @@ describe('plan-ceo-review carve — static ordering', () => {
 describe('section capture completion signal', () => {
   // Isolate the runner mock in its own Bun process. Loading a mock in this free
   // shard would replace the real runner for unrelated tests in the same process.
-  function captureFixture(exitReason: string, draft: boolean) {
+  function captureFixture(exitReason: string, draft: boolean, options: { seed?: string; output?: string; directoryBefore?: boolean; directoryAfter?: boolean } = {}) {
     const planDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-capture-result-'));
     try {
+      if (options.seed !== undefined) fs.writeFileSync(path.join(planDir, 'REPORT.md'), options.seed);
+      if (options.directoryBefore) fs.mkdirSync(path.join(planDir, 'REPORT.md'));
       const script = `
         import { mock } from 'bun:test';
-        import { writeFileSync } from 'node:fs';
+        import { writeFileSync, mkdirSync } from 'node:fs';
+        let runnerCalls = 0;
         import { captureSectionReads } from ${JSON.stringify(path.join(ROOT, 'test/helpers/auq-sdk-capture.ts'))};
         mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/session-runner.ts'))}, () => ({
           runSkillTest: async () => {
+            runnerCalls++;
+            ${options.directoryAfter ? `mkdirSync(${JSON.stringify(path.join(planDir, 'REPORT.md'))});` : ''}
             ${draft ? `writeFileSync(${JSON.stringify(path.join(planDir, 'REPORT.md'))}, '# Review report\\nIN PROGRESS');` : ''}
-            return { exitReason: ${JSON.stringify(exitReason)}, toolCalls: [], output: 'Final review report from stdout' };
+            return { exitReason: ${JSON.stringify(exitReason)}, toolCalls: [], output: ${JSON.stringify(options.output ?? 'Final review report from stdout')} };
           },
         }));
+        try {
         const capture = await captureSectionReads({
           planDir: ${JSON.stringify(planDir)}, skillName: 'plan-ceo-review',
           scenario: 'fixture', testName: 'capture-result-fixture', reportMarker: /review report/i,
         });
         process.stdout.write(JSON.stringify(capture));
+        } catch (error) { process.stdout.write(JSON.stringify({ errorCode: error.code, runnerCalls })); }
       `;
       const child = Bun.spawnSync([process.execPath, '-e', script], { cwd: ROOT, timeout: 10_000 });
       expect(child.exitCode).toBe(0);
@@ -287,6 +294,37 @@ describe('section capture completion signal', () => {
       fs.rmSync(planDir, { recursive: true, force: true });
     }
   }
+
+  test('an unchanged seeded report marker cannot supply attempt completion', () => {
+    expect(captureFixture('success', false, { seed: '# Review report\nSeeded plan', output: 'Nothing completed' }))
+      .toMatchObject({ exitReason: 'success', reportWritten: false, reportProduced: false, output: 'Nothing completed' });
+  });
+  test('unchanged seed preserves a valid successful terminal report fallback', () => {
+    expect(captureFixture('success', false, { seed: '# Review report\nSeeded plan' }))
+      .toMatchObject({ reportWritten: false, reportProduced: true, output: 'Final review report from stdout' });
+  });
+  test('changed seeded bytes are this attempt artifact, still gated by native success', () => {
+    for (const exitReason of ['success', 'timeout']) {
+      expect(captureFixture(exitReason, true, { seed: 'Original plan', output: '' }))
+        .toMatchObject({ exitReason, reportWritten: true, reportProduced: exitReason === 'success', output: '# Review report\nIN PROGRESS' });
+    }
+  });
+  test('same-byte rewrite is not new report evidence and empty terminal text stays incomplete', () => {
+    expect(captureFixture('success', true, { seed: '# Review report\nIN PROGRESS', output: '' }))
+      .toMatchObject({ reportWritten: false, reportProduced: false, output: '' });
+  });
+  test('a newly created report is retained on successful native completion', () => {
+    expect(captureFixture('success', true, { output: '' }))
+      .toMatchObject({ reportWritten: true, reportProduced: true, output: '# Review report\nIN PROGRESS' });
+  });
+  test('report snapshot errors retain their cause before the native attempt', () => {
+    expect(captureFixture('success', false, { directoryBefore: true }))
+      .toEqual({ errorCode: 'EISDIR', runnerCalls: 0 });
+  });
+  test('report read errors retain their cause after the native attempt', () => {
+    expect(captureFixture('success', false, { directoryAfter: true }))
+      .toEqual({ errorCode: 'EISDIR', runnerCalls: 1 });
+  });
 
   test.each(['timeout', 'error_api'])('a draft from %s does not signal shared capture completion', exitReason => {
     const capture = captureFixture(exitReason, true);
