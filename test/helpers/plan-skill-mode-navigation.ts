@@ -211,7 +211,7 @@ async function driveModeQuestions(
       if (modeCall?.result !== 'answered') continue;
       downstreamSnapshot = session.visibleSince(postMode.sincePick);
       const posture = readNativeModePosture(session.hermeticConfigDir, opts.sessionId, postMode.toolUseId,
-        downstreamSnapshot, postMode.postureRe);
+        downstreamSnapshot, postMode.postureRe, frame && frame.rawEnd === session.mark() ? visible : '');
       if (Date.now() >= deadline) break;
       if (posture && [...answered.values()].every(state => state.counted) && !native.permissionTools.length
         && !native.permissionRequests.some(request => request.result === 'pending')) return postMode;
@@ -302,14 +302,22 @@ async function driveModeQuestions(
 }
 
 /** Mode acknowledgement and its echoed label are not downstream posture.
- * Read only assistant text after that result; corroborate the actual matched
- * phrase in the rendered output, excluding thinking and tool payloads.
+ * Read assistant text and completed, non-mode question text after that result.
+ * Questions require fresh rendered output and their own native ACK. Preserve
+ * the existing assistant-text history across viewport restoration; other tool
+ * payloads never qualify.
  */
-export function readNativeModePosture(configDir: string | null, sessionId: string, toolUseId: string, visible: string, posture: RegExp): string | null {
+export function readNativeModePosture(configDir: string | null, sessionId: string, toolUseId: string, visible: string, posture: RegExp, questionVisible = ''): string | null {
   const transcript = readOwnedClaudeTranscript(configDir, sessionId);
   if (transcript.pendingBytes) return null;
   let acknowledged = false;
   let resultTime: string | null = null;
+  const questions = new Map<string, { text: string[]; timestamp: string | null }>();
+  const renderedMatch = (text: string, rendered: string) => {
+    const found = new RegExp(posture.source, posture.flags.replace(/[gy]/g, '')).exec(text)?.[0];
+    const compact = (value: string) => value.replace(/[\s*#]/g, '').toLowerCase();
+    return found && compact(rendered).includes(compact(found)) ? found : null;
+  };
   for (const row of transcript.rows) {
     const message = row.message;
     if (!Array.isArray(message?.content)) continue;
@@ -319,11 +327,25 @@ export function readNativeModePosture(configDir: string | null, sessionId: strin
         acknowledged = true;
         resultTime = typeof row.timestamp === 'string' ? row.timestamp : null;
       }
-      if (!acknowledged || row.type !== 'assistant' || message.role !== 'assistant' || block?.type !== 'text' || typeof block.text !== 'string') continue;
+      if (!acknowledged) continue;
       if (resultTime && typeof row.timestamp === 'string' && row.timestamp < resultTime) continue;
-      const found = new RegExp(posture.source, posture.flags.replace(/[gy]/g, '')).exec(block.text)?.[0];
-      const compact = (text: string) => text.replace(/[\s*#]/g, '').toLowerCase();
-      if (found && compact(visible).includes(compact(found))) return found;
+      if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result') {
+        const question = questions.get(block.tool_use_id);
+        if (!question || block.is_error || question.timestamp && typeof row.timestamp === 'string' && row.timestamp < question.timestamp) continue;
+        for (const text of question.text) { const found = renderedMatch(text, questionVisible); if (found) return found; }
+      }
+      if (row.type !== 'assistant' || message.role !== 'assistant') continue;
+      if (block?.type === 'text' && typeof block.text === 'string') {
+        const found = renderedMatch(block.text, visible); if (found) return found;
+      }
+      if (block?.type !== 'tool_use' || block.name !== 'AskUserQuestion' || typeof block.id !== 'string' || !block.id || block.id === toolUseId) continue;
+      const input = block.input?.questions;
+      if (!Array.isArray(input) || !input.length || !input.every(question => typeof question?.question === 'string'
+        && question.question.trim() && question.multiSelect !== true && Array.isArray(question.options) && question.options.length
+        && question.options.every((option: any) => typeof option?.label === 'string' && option.label.trim() && !MODE_RE.test(option.label)))) continue;
+      // A repeated mode menu or changed/replayed invocation cannot become prose.
+      if (questions.has(block.id)) return null;
+      questions.set(block.id, { text: input.map(question => question.question), timestamp: typeof row.timestamp === 'string' ? row.timestamp : null });
     }
   }
   return null;

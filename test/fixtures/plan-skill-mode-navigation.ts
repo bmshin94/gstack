@@ -285,6 +285,7 @@ async function reviewStartFixture(scenario: string) {
 }
 
 async function postModeFixture(scenario: string) {
+  const questionPosture = scenario.startsWith('post-question-posture');
   const fileRequestCase = scenario.startsWith('post-permission-request');
   const longPermissionCase = scenario.startsWith('post-permission-request-long');
   const previewCase = scenario.startsWith('post-preview-');
@@ -310,6 +311,9 @@ async function postModeFixture(scenario: string) {
   const mode = question('Review Mode', 'D1 — Which review mode for this plan?', ['SCOPE EXPANSION', 'SELECTIVE EXPANSION (Recommended)', 'HOLD SCOPE', 'SCOPE REDUCTION']);
   const approach = question('Impl Approach', 'D2 — Which implementation approach should this plan use?',
     ['A — Client-side CSV', 'B — Server formatter module (Recommended)', 'C — Dedicated export endpoint']);
+  if (questionPosture) approach.question = scenario.endsWith('-wrong-mode')
+    ? 'D2 — Shall we dream bigger with a settings comparison view?'
+    : 'D2 — Which failure contract makes the current export bulletproof?';
   if (viewportCase) Object.assign(approach, viewportReplay.question);
   if (scenario === 'post-no-recommendation') approach.options[1]!.label = 'B — Server formatter module';
   if (scenario === 'post-ambiguous-recommendation') approach.options[0]!.label += ' (Recommended)';
@@ -463,11 +467,12 @@ async function postModeFixture(scenario: string) {
     get hermeticConfigDir() { if (scenario === 'post-read-deadline') clock = 30_000; return config; },
     nativeQuestionEvents: events,
     exited: () => scenario === 'post-exited' || (scenario === 'post-exit-during-pause' && clock > 0), exitCode: () => 9,
-    visibleSince: (mark = 0) => buffer.slice(mark), rawOutput: () => buffer,
+    visibleSince: (mark = 0) => questionPosture && !scenario.endsWith('-no-frame') ? buffer.slice(mark).replaceAll('bulletproof', 'bulletprof') : buffer.slice(mark), rawOutput: () => buffer,
     currentScreen: async () => {
       const decoded = decoder ? await decoder.snapshot() : null;
       if (decoded && stage === 'permission') longPermissionFrame = decoded.text;
-      const frame = { text: decoded?.text ?? screen, rawEnd: scenario === 'post-stale' || scenario === 'post-permission-request-long-stale' ? 0 : buffer.length };
+      const frame = { text: decoded?.text ?? screen, rawEnd: scenario === 'post-stale' || scenario === 'post-permission-request-long-stale'
+        || scenario === 'post-question-posture-stale' && stage === 'done' ? 0 : buffer.length };
       if (previewCase) {
         previewFrameReads++;
         if (focusWrites && scenario === 'post-preview-deadline') clock = 30_000;
@@ -477,6 +482,7 @@ async function postModeFixture(scenario: string) {
       }
       const publish = publishDuringScreen; publishDuringScreen = null;
       if (publish) { publish(); paint('Do you want to overwrite plan.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel'); }
+      if (scenario === 'post-question-posture-output-after-snapshot' && stage === 'done') buffer += '\nUnobserved terminal output\n';
       return frame;
     },
     mark: () => { if (scenario === 'post-mark-deadline') clock = 30_000; return buffer.length; },
@@ -520,13 +526,17 @@ async function postModeFixture(scenario: string) {
         else { stage = 'submit'; paint('\nReview your answers\nReady to submit your answers?\nSubmit answers\n'); }
       } else if (stage === 'submit' && data === '\r') {
         if (events && !fileRequestCase) tool('follow-up', input);
-        if (!['post-no-ack', 'post-preview-no-ack', 'post-preview-short-no-ack', 'post-viewport-no-ack'].includes(scenario)) { ack(followId, ['post-error-ack', 'post-viewport-error-ack'].includes(scenario)); acknowledged = !['post-error-ack', 'post-viewport-error-ack'].includes(scenario); }
+        if (!['post-no-ack', 'post-preview-no-ack', 'post-preview-short-no-ack', 'post-viewport-no-ack', 'post-question-posture-no-ack'].includes(scenario)) { ack(followId, ['post-error-ack', 'post-viewport-error-ack'].includes(scenario)); acknowledged = !['post-error-ack', 'post-viewport-error-ack'].includes(scenario); }
         if (scenario === 'post-many-questions' && followNumber < 13) {
           followId = `follow-up-${++followNumber}`;
           input.questions[0] = { ...approach, header: `Approach ${followNumber}`, question: `D${followNumber + 1} — Confirm implementation approach ${followNumber}?` };
           tool(followId, input); tab = 0; stage = 'question'; show(); return;
         }
         stage = 'done';
+        if (questionPosture) {
+          paint(scenario.endsWith('-unrendered') ? '\nReview continues\n' : '\nUser answered the question:\n' + approach.question + '\n');
+          return;
+        }
         const text = scenario === 'post-wrong-posture' ? 'Dream big with scope expansion.' : 'I will make this plan bulletproof.';
         if (scenario !== 'post-missing-posture') append({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } });
         paint(scenario === 'post-not-rendered' || textDiagnostic ? '\nReview continues\n' : '\n' + text + '\n');
@@ -534,7 +544,7 @@ async function postModeFixture(scenario: string) {
     },
     close: async () => { decoder?.dispose(); closed = true; diagnosticBeforeClose = fs.existsSync(diagnosticPath); fs.rmSync(config, { recursive: true, force: true }); },
   } as unknown as ClaudePtySession;
-  if (scenario.endsWith('-history')) delete session.currentScreen;
+  if (scenario.endsWith('-history') || scenario === 'post-question-posture-no-frame') delete session.currentScreen;
   const oldSleep = Bun.sleep, oldNow = Date.now;
   Bun.sleep = (async (ms: number) => { clock += ms; }) as typeof Bun.sleep;
   Date.now = () => clock;

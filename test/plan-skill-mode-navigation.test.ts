@@ -203,6 +203,47 @@ test('posture requires rendered assistant text after the selected mode result', 
   } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });
 
+test('post-mode question-only posture uses fresh decoded output and waits for the question ACK', async () => {
+  const result = await run('post-question-posture');
+  expect(result.error).toBeUndefined();
+  expect(result.sends).toEqual(['2', '\r']);
+  expect(result.acknowledged).toBe(true);
+  expect(result.closed).toBe(true);
+  expect(result.premature).toEqual([]);
+});
+
+test.each(['stale', 'unrendered', 'wrong-mode', 'no-ack', 'no-frame', 'output-after-snapshot'])('question-only posture refuses %s evidence', async variant => {
+  const result = await run('post-question-posture-' + variant);
+  expect(result.error).toContain('no posture match');
+  expect(result.sends).toEqual(['2', '\r']);
+  expect(result.elapsed).toBe(30_000);
+  expect(result.closed).toBe(true);
+});
+
+test.each(['question', 'mode-menu', 'selected-mode-id', 'wrong-mode', 'preview-only', 'history-only', 'read', 'bash', 'delegate', 'sidechain', 'foreign', 'before-mode', 'error-ack', 'no-ack'])('posture only admits owned post-mode question text (%s)', variant => {
+  const config = fs.mkdtempSync(path.join(os.tmpdir(), 'native-question-posture-'));
+  const sessionId = '00000000-0000-4000-8000-000000000001';
+  const file = path.join(config, 'projects', 'fixture', `${sessionId}.jsonl`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const append = (row: object) => fs.appendFileSync(file, JSON.stringify({ sessionId, ...row }) + '\n');
+  const ack = (id: string, error = false) => append({ type: 'user', timestamp: '2026-09-11T07:01:00Z', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: error, content: 'Selected SCOPE EXPANSION' }] } });
+  const labels = variant === 'mode-menu' ? ['SCOPE EXPANSION', 'HOLD SCOPE'] : ['Include', 'Defer'];
+  const question = variant === 'preview-only' ? 'Choose the filename?' : variant === 'wrong-mode' ? 'Keep this export bulletproof?' : 'Could this comparison view deliver a 10x improvement?';
+  const id = variant === 'selected-mode-id' ? 'mode' : 'follow-up';
+  const name = ({ read: 'Read', bash: 'Bash', delegate: 'Agent' } as Record<string, string>)[variant] ?? 'AskUserQuestion';
+  try {
+    ack('mode');
+    append({ type: 'assistant', timestamp: variant === 'before-mode' ? '2026-09-11T07:00:00Z' : '2026-09-11T07:01:00Z',
+      ...(variant === 'sidechain' ? { isSidechain: true } : variant === 'foreign' ? { sessionId: '00000000-0000-4000-8000-000000000002' } : {}),
+      message: { role: 'assistant', content: [{ type: 'tool_use', name, id, input: { questions: [{ question, header: 'Scope', multiSelect: false,
+        options: labels.map(label => ({ label, description: '10x improvement' })) }] } }] } });
+    if (variant !== 'no-ack') ack(id, variant === 'error-ack');
+    expect(readNativeModePosture(config, sessionId, 'mode', '10x improvement', /\b(expansion|10x|delight|dream|cathedral|opt[\s-]?in)\b/i,
+      variant === 'history-only' ? undefined : '10x improvement'))
+      .toBe(variant === 'question' ? '10x' : null);
+  } finally { fs.rmSync(config, { recursive: true, force: true }); }
+});
+
 for (const [scenario, sends] of [
   ['post-many-questions', Array.from({ length: 13 }, () => ['2', '\r']).flat()],
   ['post-next-modal', ['2', '\r']], ['post-multi-tab', ['2', '1', '\r']],
