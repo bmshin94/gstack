@@ -552,11 +552,13 @@ async function main() {
               emit('\x1b7\x1b[1;4H\x1b[@d\x1b8');
               return;
             }
+            // /./ keeps competing raw inputs distinct until normalized target
+            // ambiguity is checked, instead of the earlier input-change guard.
             if (longPermissionCase) {
               permissionInput = { file_path: longPermissionPath + (scenario.endsWith('mismatch') ? '.other' : ''), content: plan };
               permissionId = tool('Write', permissionInput);
               recordFilePermission(permissionInput);
-              if (scenario.endsWith('ambiguous')) tool('Write', { file_path: path.join(project, 'other.md'), content: 'Other' });
+              if (scenario.endsWith('ambiguous')) tool('Write', { file_path: path.dirname(longPermissionPath) + path.sep + '.' + path.sep + path.basename(longPermissionPath), content: 'Other' });
               if (!scenario.endsWith('stale')) emit(permissionRepaintCase ? corruptedPermissionDialog() : longPermissionDialog());
               return;
             }
@@ -575,7 +577,7 @@ async function main() {
               // Native can persist an AUQ while an earlier Write still owns
               // the modal. The AUQ must remain queued until its own paint.
               if (queuedFileQuestionCase) ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
-              if (scenario === 'permission-final-queued-question-ambiguous') tool('Write', { file_path: path.join(project, 'other.md'), content: 'Other' });
+              if (scenario === 'permission-final-queued-question-ambiguous') tool('Write', { file_path: project + path.sep + '.' + path.sep + 'plan.md', content: 'Other' });
               if (scenario !== 'permission-final-queued-question-stale') emit(scenario === 'permission-final-queued-question-malformed'
                 ? fileDialog('create').replace('3.No', '3.Maybe') : fileDialog('create'));
               if (scenario === 'permission-final-first-arrival-race') publishDuringScreen = () => {
@@ -643,9 +645,9 @@ async function main() {
                   : 'PRIVATE_SCREEN_PREVIEW\n❯1.Yes\n2.No\n');
                 return;
               }
-              if (scenario === 'retention-ambiguous') tool('Edit', { file_path: path.join(project, 'other.md'), old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });
+              if (scenario === 'retention-ambiguous') tool('Edit', { file_path: project + path.sep + '.' + path.sep + 'plan.md', old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });
               emit(fileDialog(scenario === 'retention-binding' ? 'create different.md instead of' : 'create') + '\nPRIVATE_SCREEN_PREVIEW');
-              if (scenario === 'retention-write-failure') tool('Edit', { file_path: path.join(project, 'other.md'), old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });
+              if (scenario === 'retention-write-failure') tool('Edit', { file_path: project + path.sep + '.' + path.sep + 'plan.md', old_string: 'PRIVATE_OLD', new_string: 'PRIVATE_NEW' });
               return;
             }
             if (nativeBashCase) {
