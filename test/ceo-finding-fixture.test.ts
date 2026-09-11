@@ -94,7 +94,7 @@ test('the committed current invoice fixture is runnable without implementing the
     expect(child.error, child.stdout + child.stderr).toBeUndefined();
     expect(child.status, child.stdout + child.stderr).toBe(0);
     expect(child.stderr).toContain('2 pass');
-    expect(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' })).toBe('');
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: 30_000 })).toBe('');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -147,10 +147,10 @@ describe('CEO finding fixture establishes scope before launch', () => {
         cwd, env: { PATH: process.env.PATH!, HOME: home }, encoding: 'utf8', timeout: 10_000,
       });
       expect(output).toBe(`Design doc found: ${path.join(cwd, 'DESIGN.md')}\n`);
-      expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8' })).toBe(design);
-      expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd, encoding: 'utf8' })).toBe(plan);
-      expect(execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' })).toBe('');
-      expect(execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd, encoding: 'utf8' })).toBe('');
+      expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8', timeout: 30_000 })).toBe(design);
+      expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd, encoding: 'utf8', timeout: 30_000 })).toBe(plan);
+      expect(execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8', timeout: 30_000 })).toBe('');
+      expect(execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd, encoding: 'utf8', timeout: 30_000 })).toBe('');
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -163,7 +163,7 @@ describe('CEO finding fixture establishes scope before launch', () => {
       const guide = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
       expect(guide).toContain(`/${skill}`);
       expect(guide).not.toContain('/plan-ceo-review');
-      expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: root, encoding: 'utf8' })).toBe(plan);
+      expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: root, encoding: 'utf8', timeout: 30_000 })).toBe(plan);
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
   test('input and project instructions are committed before the real preamble runs', () => {

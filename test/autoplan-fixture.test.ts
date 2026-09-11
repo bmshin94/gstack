@@ -20,7 +20,7 @@ function withFixture(check: (project: string, runStart: () => string, state: str
     const home = path.join(root, 'home');
     const state = path.join(root, 'state');
     for (const dir of [project, home, state]) fs.mkdirSync(dir);
-    execFileSync('git', ['init', '-b', 'main'], { cwd: project, stdio: 'pipe' });
+    execFileSync('git', ['init', '-b', 'main'], { cwd: project, stdio: 'pipe', timeout: 5000 });
     fs.writeFileSync(path.join(state, 'config.yaml'), 'update_check: false\nrouting_declined: false\n');
     fs.writeFileSync(path.join(state, '.proactive-prompted'), '');
     seedAutoplanProject(project);
@@ -217,13 +217,13 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
     cwd = fs.realpathSync(opts.cwd); file = path.join(cwd, '.gstack', 'projects', 'fixture', 'restore.md');
     const design = fs.readFileSync(path.join(root, 'test/fixtures/plans/autoplan-password-visibility-design.md'), 'utf8');
     expect(fs.readFileSync(path.join(cwd, 'DESIGN.md'), 'utf8')).toBe(design);
-    expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8' })).toBe(design);
+    expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(design);
     const proposedPlan = fs.readFileSync(path.join(root, 'test/fixtures/plans/autoplan-password-visibility.md'), 'utf8');
-    expect(execFileSync('git', ['show', 'HEAD:.claude/plans/autoplan-password-visibility.md'], { cwd, encoding: 'utf8' })).toBe(proposedPlan);
-    expect(execFileSync('git', ['ls-files', '.claude/plans'], { cwd, encoding: 'utf8' }))
+    expect(execFileSync('git', ['show', 'HEAD:.claude/plans/autoplan-password-visibility.md'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(proposedPlan);
+    expect(execFileSync('git', ['ls-files', '.claude/plans'], { cwd, encoding: 'utf8', timeout: 5000 }))
       .toBe('.claude/plans/autoplan-password-visibility.md\\n');
     const currentForm = fs.readFileSync(path.join(root, 'test/fixtures/autoplan-existing-app/src/main.tsx'), 'utf8');
-    expect(execFileSync('git', ['show', 'HEAD:src/main.tsx'], { cwd, encoding: 'utf8' })).toBe(currentForm);
+    expect(execFileSync('git', ['show', 'HEAD:src/main.tsx'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(currentForm);
     const discovery = execFileSync('bash', ['-c', ${JSON.stringify('SLUG=fixture; BRANCH=main; ' + DESIGN_DOC_DISCOVERY_BLOCK)}], {
       cwd, env: { PATH: process.env.PATH, HOME: path.join(cwd, '.isolated-home') }, encoding: 'utf8', timeout: 5000,
     });
