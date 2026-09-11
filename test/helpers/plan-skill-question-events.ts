@@ -44,6 +44,17 @@ export interface QuestionCompletionEventCall {
   response: Record<string, unknown>;
   cwd: string;
 }
+export interface BashEventCall {
+  id: string;
+  capturedAtMs: number;
+  toolName: 'Bash';
+  input: Record<string, unknown>;
+  cwd: string;
+}
+export interface BashCompletionEventCall extends BashEventCall {
+  hookEventName: 'PostToolUse' | 'PostToolUseFailure';
+  response: Record<string, unknown>;
+}
 export interface ExitPlanModeEventCall {
   id: string;
   toolName: 'ExitPlanMode';
@@ -58,6 +69,9 @@ export interface PermissionRequestEventCall {
   input: Record<string, unknown>;
   cwd: string;
 }
+export interface BashPermissionRequestEventCall extends Omit<PermissionRequestEventCall, 'toolName'> {
+  toolName: 'Bash';
+}
 export interface FileCompletionEventCall {
   id: string;
   capturedAtMs: number;
@@ -70,11 +84,43 @@ type EventRecord = Binding & {
   transcriptFile: string;
   input: Record<string, unknown>;
 } & ({ hookEventName: 'PreToolUse'; toolName: 'AskUserQuestion' | 'ExitPlanMode'; id: string }
-  | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit'; requestId: string; capturedAtMs: number }
+  | { hookEventName: 'PreToolUse'; toolName: 'Bash'; id: string; capturedAtMs: number }
+  | { hookEventName: 'PostToolUse' | 'PostToolUseFailure'; toolName: 'Bash'; id: string; capturedAtMs: number; response: Record<string, unknown> }
+  | { hookEventName: 'PermissionRequest'; toolName: 'Write' | 'Edit' | 'Bash'; requestId: string; capturedAtMs: number }
   | { hookEventName: 'PostToolUse'; toolName: 'Write' | 'Edit' | 'AskUserQuestion'; id: string; capturedAtMs: number; response: Record<string, unknown> });
 const eventId = (event: EventRecord): string => event.hookEventName === 'PermissionRequest' ? event.requestId
-  : event.hookEventName === 'PostToolUse' && event.toolName === 'AskUserQuestion'
-    ? `PostToolUse:AskUserQuestion:${event.id}` : event.id;
+  : (event.hookEventName === 'PostToolUse' || event.hookEventName === 'PostToolUseFailure')
+    && (event.toolName === 'AskUserQuestion' || event.toolName === 'Bash')
+    ? `${event.hookEventName}:${event.toolName}:${event.id}` : event.id;
+
+function bashInput(input: Record<string, unknown>): boolean {
+  return typeof input.command === 'string' && !!input.command.trim()
+    && (input.description === undefined || typeof input.description === 'string');
+}
+
+// Pinned native Bash data. A background dispatch resolves the invocation, not
+// the command/process. Preserve that metadata and never invent an exit code.
+function bashResponse(event: unknown, response: unknown): response is Record<string, unknown> {
+  if (!object(response)) return false;
+  if (event === 'PostToolUseFailure') return typeof response.error === 'string' && !!response.error
+    && typeof response.is_interrupt === 'boolean'
+    && Object.keys(response).every(key => ['error', 'is_interrupt'].includes(key));
+  if (event !== 'PostToolUse' || typeof response.stdout !== 'string' || typeof response.stderr !== 'string'
+    || typeof response.interrupted !== 'boolean') return false;
+  const strings = ['rawOutputPath', 'backgroundTaskId', 'backgroundCwdHint', 'returnCodeInterpretation',
+    'persistedOutputPath', 'staleReadFileStateHint', 'ghRateLimitHint'];
+  const booleans = ['isImage', 'backgroundedByUser', 'backgroundedByTurnAbort', 'backgroundedToDeliverMessage',
+    'dangerouslyDisableSandbox', 'noOutputExpected'];
+  const numbers = ['timedOutAfterMs', 'persistedOutputSize'];
+  return Object.keys(response).every(key => ['stdout', 'stderr', 'interrupted', ...strings, ...booleans,
+    ...numbers, 'backgroundEndsWithFinalResponse', 'structuredContent', 'gitOperation'].includes(key))
+    && strings.every(key => response[key] === undefined || typeof response[key] === 'string')
+    && booleans.every(key => response[key] === undefined || typeof response[key] === 'boolean')
+    && numbers.every(key => response[key] === undefined || typeof response[key] === 'number' && Number.isFinite(response[key]))
+    && (response.backgroundEndsWithFinalResponse === undefined || response.backgroundEndsWithFinalResponse === true)
+    && (response.structuredContent === undefined || Array.isArray(response.structuredContent))
+    && (response.gitOperation === undefined || object(response.gitOperation));
+}
 
 // Native successful Write/Edit output schemas, not a tool-result text guess.
 // Preserve the whole response; the CLI can normalize edit text internally.
@@ -212,9 +258,10 @@ export function setupQuestionEventSource(opts: {
     fs.writeFileSync(bindingPath, bindingBytes, { flag: 'wx', mode: 0o600 });
     const command = [process.execPath, import.meta.path, '--record-question-event', bindingPath, binding.nonce].map(quote).join(' ');
     const settingsBytes = JSON.stringify({ hooks: {
-      PreToolUse: [{ matcher: '^(AskUserQuestion|ExitPlanMode)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
-      PermissionRequest: [{ matcher: '^(Write|Edit)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
-      PostToolUse: [{ matcher: '^(Write|Edit|AskUserQuestion)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PreToolUse: [{ matcher: '^(AskUserQuestion|ExitPlanMode|Bash)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PermissionRequest: [{ matcher: '^(Write|Edit|Bash)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PostToolUse: [{ matcher: '^(Write|Edit|AskUserQuestion|Bash)$', hooks: [{ type: 'command', command, timeout: 5 }] }],
+      PostToolUseFailure: [{ matcher: '^Bash$', hooks: [{ type: 'command', command, timeout: 5 }] }],
     } }) + '\n';
     fs.writeFileSync(settingsPath, settingsBytes, { flag: 'wx', mode: 0o600 });
     const source = Object.freeze({ ...binding, directory,
@@ -251,7 +298,18 @@ function eventFromInput(value: unknown, binding: Binding): EventRecord | null {
     return { ...binding, hookEventName: 'PreToolUse', toolName: value.tool_name,
       transcriptFile: value.transcript_path, id: value.tool_use_id, input: value.tool_input };
   }
-  if (value.hook_event_name === 'PermissionRequest' && (value.tool_name === 'Write' || value.tool_name === 'Edit')) {
+  if (value.tool_name === 'Bash' && typeof value.tool_use_id === 'string'
+    && value.tool_use_id.trim() && value.tool_use_id.length <= 256 && bashInput(value.tool_input)) {
+    const base = { ...binding, toolName: 'Bash' as const, transcriptFile: value.transcript_path,
+      id: value.tool_use_id, capturedAtMs: Date.now(), input: value.tool_input };
+    if (value.hook_event_name === 'PreToolUse') return { ...base, hookEventName: 'PreToolUse' };
+    const response = value.hook_event_name === 'PostToolUseFailure'
+      ? { error: value.error, is_interrupt: value.is_interrupt } : value.tool_response;
+    if ((value.hook_event_name === 'PostToolUseFailure' && !Object.hasOwn(value, 'tool_response')
+      || value.hook_event_name === 'PostToolUse' && !Object.hasOwn(value, 'error') && value.is_error !== true)
+      && bashResponse(value.hook_event_name, response)) return { ...base, hookEventName: value.hook_event_name, response };
+  }
+  if (value.hook_event_name === 'PermissionRequest' && (value.tool_name === 'Write' || value.tool_name === 'Edit' || value.tool_name === 'Bash' && bashInput(value.tool_input))) {
     // Each hook emission is a distinct request observation. The payload cannot
     // provide this identity, and it must never masquerade as a native tool ID.
     return { ...binding, hookEventName: 'PermissionRequest', toolName: value.tool_name,
@@ -304,7 +362,7 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
       const existing = parseJsonBytes(readRegular(path.join(directory, name), MAX_EVENT_BYTES));
       // Repeated identical completion delivery retains the first immutable
       // observation time; it cannot create a second answer or change payload.
-      const repeated = event.hookEventName === 'PostToolUse' && event.toolName === 'AskUserQuestion'
+      const repeated = (event.toolName === 'Bash' || event.hookEventName === 'PostToolUse' && event.toolName === 'AskUserQuestion')
         && object(existing) ? { ...event, capturedAtMs: existing.capturedAtMs } : event;
       if (canonical(existing) !== canonical(repeated)) throw new Error('Conflicting native question event for an existing tool ID');
     }
@@ -320,7 +378,7 @@ async function recordQuestionEvent(bindingPath: string, nonce: string): Promise<
 
 function readCapturedEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
-}): (QuestionEventCall | QuestionCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | FileCompletionEventCall)[] {
+}): (QuestionEventCall | QuestionCompletionEventCall | BashEventCall | BashCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | BashPermissionRequestEventCall | FileCompletionEventCall)[] {
   if (expected.configDir === null || canonicalDirectory(expected.configDir) !== source.configDir
     || expected.sessionId !== source.sessionId) throw new Error('Question event source belongs to another session');
   const scope = hookScopes.get(source);
@@ -345,7 +403,7 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
   if (expected.transcriptFile === null) return [];
   const transcriptFile = expectedTranscript(expected.transcriptFile, expected.configDir, binding);
   let total = 0;
-  const calls: (QuestionEventCall | QuestionCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | FileCompletionEventCall)[] = [];
+  const calls: (QuestionEventCall | QuestionCompletionEventCall | BashEventCall | BashCompletionEventCall | ExitPlanModeEventCall | PermissionRequestEventCall | BashPermissionRequestEventCall | FileCompletionEventCall)[] = [];
   const observed = observedEvents.get(source);
   if (!observed) throw new Error('Question event source was not created by this launcher');
   if ([...observed.keys()].some(file => !files.includes(file))) throw new Error('Previously observed native question event disappeared');
@@ -362,7 +420,12 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
       && typeof event.id === 'string' && !!event.id.trim() && event.id.length <= 256;
     const timed = typeof event.capturedAtMs === 'number' && Number.isSafeInteger(event.capturedAtMs)
       && event.capturedAtMs > 0 && event.capturedAtMs <= 8_640_000_000_000_000;
-    const permission = event.hookEventName === 'PermissionRequest' && (event.toolName === 'Write' || event.toolName === 'Edit')
+    const bash = event.hookEventName === 'PreToolUse' && event.toolName === 'Bash'
+      && typeof event.id === 'string' && !!event.id.trim() && event.id.length <= 256 && timed && bashInput(event.input);
+    const bashCompletion = event.toolName === 'Bash' && typeof event.id === 'string'
+      && !!event.id.trim() && event.id.length <= 256 && timed && bashInput(event.input)
+      && bashResponse(event.hookEventName, event.response);
+    const permission = event.hookEventName === 'PermissionRequest' && (event.toolName === 'Write' || event.toolName === 'Edit' || event.toolName === 'Bash' && bashInput(event.input))
       && typeof event.requestId === 'string' && UUID.test(event.requestId) && timed;
     const completion = event.hookEventName === 'PostToolUse' && typeof event.id === 'string'
       && !!event.id.trim() && event.id.length <= 256 && timed && fileResponse(event.toolName, event.input, event.response);
@@ -370,18 +433,23 @@ function readCapturedEvents(source: QuestionEventSource, expected: {
       && typeof event.id === 'string' && !!event.id.trim() && event.id.length <= 256 && timed
       && questionResponse(event.input, event.response);
     const identityKey = permission ? 'requestId' : 'id';
-    if ((!native && !permission && !completion && !questionCompletion) || file !== sha(eventId(event as EventRecord)) + '.json'
-      || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', identityKey, 'input', ...(permission || completion || questionCompletion ? ['capturedAtMs'] : []), ...(completion || questionCompletion ? ['response'] : [])].includes(key))) throw new Error('Native question event identity or input changed');
+    if ((!native && !bash && !bashCompletion && !permission && !completion && !questionCompletion) || file !== sha(eventId(event as EventRecord)) + '.json'
+      || Object.keys(event).some(key => !['schemaVersion', 'nonce', 'sessionId', 'configDir', 'cwd', 'hookEventName', 'toolName', 'transcriptFile', identityKey, 'input', ...(permission || completion || questionCompletion || bash || bashCompletion ? ['capturedAtMs'] : []), ...(completion || questionCompletion || bashCompletion ? ['response'] : [])].includes(key))) throw new Error('Native question event identity or input changed');
     const hash = sha(bytes);
     if (observed.has(file) && observed.get(file) !== hash) throw new Error('Previously observed native question event changed');
     observed.set(file, hash);
     if (native) calls.push({ id: event.id as string, toolName: event.toolName as 'AskUserQuestion' | 'ExitPlanMode', input: event.input, cwd: event.cwd });
+    else if (bash) calls.push({ id: event.id as string, capturedAtMs: event.capturedAtMs as number,
+      toolName: 'Bash', input: event.input, cwd: event.cwd });
+    else if (bashCompletion) calls.push({ id: event.id as string, capturedAtMs: event.capturedAtMs as number,
+      toolName: 'Bash', hookEventName: event.hookEventName as 'PostToolUse' | 'PostToolUseFailure',
+      input: event.input, response: event.response as Record<string, unknown>, cwd: event.cwd });
     else if (questionCompletion) calls.push({ id: event.id as string, capturedAtMs: event.capturedAtMs as number,
       toolName: 'AskUserQuestion', input: event.input, response: event.response as Record<string, unknown>, cwd: event.cwd });
     else if (completion) calls.push({ id: event.id as string, capturedAtMs: event.capturedAtMs as number,
       toolName: event.toolName as 'Write' | 'Edit', input: event.input, response: event.response as Record<string, unknown>, cwd: event.cwd });
     else calls.push({ requestId: event.requestId as string, capturedAtMs: event.capturedAtMs as number,
-      toolName: event.toolName as 'Write' | 'Edit', input: event.input, cwd: event.cwd });
+      toolName: event.toolName as 'Write' | 'Edit' | 'Bash', input: event.input, cwd: event.cwd });
   }
   return calls;
 }
@@ -401,6 +469,20 @@ export function readQuestionCompletionEvents(source: QuestionEventSource, expect
     call.toolName === 'AskUserQuestion' && 'response' in call);
 }
 
+/** Native Bash execution input; it never grants a permission by itself. */
+export function readBashEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): BashEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is BashEventCall => call.toolName === 'Bash' && !('response' in call) && !('requestId' in call));
+}
+
+/** Native invocation resolution, including failure or background dispatch. */
+export function readBashCompletionEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): BashCompletionEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is BashCompletionEventCall => call.toolName === 'Bash' && 'response' in call);
+}
+
 /** Pending native ExitPlanMode only: no approval, result or AUQ authority. */
 export function readExitPlanModeEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
@@ -412,14 +494,21 @@ export function readExitPlanModeEvents(source: QuestionEventSource, expected: {
 export function readPermissionRequestEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
 }): PermissionRequestEventCall[] {
-  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => 'requestId' in call);
+  return readCapturedEvents(source, expected).filter((call): call is PermissionRequestEventCall => 'requestId' in call && call.toolName !== 'Bash');
+}
+
+/** Post-PreToolUse Bash permission input; observer UUID supplies no native ID. */
+export function readBashPermissionRequestEvents(source: QuestionEventSource, expected: {
+  configDir: string | null; sessionId: string; transcriptFile: string | null;
+}): BashPermissionRequestEventCall[] {
+  return readCapturedEvents(source, expected).filter((call): call is BashPermissionRequestEventCall => 'requestId' in call && call.toolName === 'Bash');
 }
 
 /** Successful native execution, not a grant or an AUQ/ExitPlanMode result. */
 export function readFileCompletionEvents(source: QuestionEventSource, expected: {
   configDir: string | null; sessionId: string; transcriptFile: string | null;
 }): FileCompletionEventCall[] {
-  return readCapturedEvents(source, expected).filter((call): call is FileCompletionEventCall => 'response' in call && call.toolName !== 'AskUserQuestion');
+  return readCapturedEvents(source, expected).filter((call): call is FileCompletionEventCall => 'response' in call && (call.toolName === 'Write' || call.toolName === 'Edit'));
 }
 
 if (import.meta.main && process.argv.length === 5 && process.argv[2] === '--record-question-event') {

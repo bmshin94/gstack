@@ -1715,3 +1715,139 @@ test('changed execution hooks cannot use the transcript-only schema projection',
   early.emit('hook-conflict', { questions: [{ ...question, multiSelar: false }] });
   expect(() => readPlanSkillQuestions(config, sessionId, early.source)).toThrow('Native question event capture failed');
 });
+
+function bashHooks() {
+  write({ type: 'user', sessionId, message: { role: 'user', content: 'Review' } });
+  const { source, settingsPath } = setupQuestionEventSource({ configDir: config, cwd: config, sessionId, rootDir: config });
+  const command = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.PreToolUse[0].hooks[0].command;
+  const input = { command: 'printf %s ready > probe.txt', description: 'Write the owned marker' };
+  const response = { stdout: 'ready', stderr: '', interrupted: false };
+  const emit = (event: string, id = 'bash-1', toolInput: unknown = input, extra: Record<string, unknown> = {}) => {
+    const result = Bun.spawnSync(['bash', '-c', command], { timeout: 5000, stdin: Buffer.from(JSON.stringify({
+      hook_event_name: event, session_id: sessionId, transcript_path: file, cwd: config,
+      tool_name: 'Bash', tool_use_id: id, tool_input: toolInput, ...extra,
+    })), stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode).toBe(0); expect(result.stdout.length).toBe(0); expect(result.stderr.length).toBe(0);
+  };
+  const read = () => readPlanSkillQuestions(config, sessionId, source);
+  const post = (output: unknown = response, extra: Record<string, unknown> = {}) => emit('PostToolUse', 'bash-1', input, { tool_response: output, ...extra });
+  return { source, input, response, emit, post, read };
+}
+
+test('owned Bash hooks authorize one exact current command and retire it before transcript persistence', () => {
+  const s = bashHooks(); s.emit('PreToolUse');
+  const frame = nativeBashDialog(s.input.command, s.input.description);
+  const granted = new Set<string>(); const requests = new Map<string, NativePermissionGrant>();
+  expect(s.read().permissionTools).toEqual([{ id: 'bash-1', name: 'Bash', input: s.input, cwd: config, bashPermissionRequestId: null }]);
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(false);
+  s.emit('PermissionRequest');
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(false);
+  s.post();
+  expect(s.read().permissionTools).toEqual([]);
+  expect(s.read().permissionResults).toEqual([{ id: 'bash-1', result: 'completed' }]);
+  expect(fs.readFileSync(file, 'utf8')).not.toContain('bash-1');
+  const next = { ...s.input, command: 'printf %s next > next.txt' };
+  s.emit('PreToolUse', 'bash-2', next); s.emit('PermissionRequest', 'ignored-native-id', next);
+  expect(reserveNativePermissionGrant(s.read(), nativeBashDialog(next.command, next.description), granted, requests)).toBe(true);
+  expect([...granted]).toEqual(['bash-1', 'bash-2']);
+  expect(s.read().calls).toEqual([]); expect(s.read().ready).toBe(false); expect(s.read().permissionRequests).toEqual([]);
+});
+
+test.each(['foreign', 'sidechain', 'orphan', 'screen-only'] as const)('owned Bash hooks do not invent invocation authority (%s)', variant => {
+  const s = bashHooks();
+  if (variant !== 'orphan' && variant !== 'screen-only') s.emit('PreToolUse', 'bash-1', s.input,
+    variant === 'foreign' ? { session_id: '00000000-0000-4000-8000-000000000099' } : { agent_id: 'sidechain' });
+  if (variant === 'orphan') s.post();
+  expect(s.read().permissionTools).toEqual([]); expect(s.read().permissionResults).toEqual([]);
+  expect(reserveNativePermissionGrant(s.read(), nativeBashDialog(s.input.command, s.input.description), new Set(), new Map())).toBe(false);
+});
+
+test.each(['command', 'description', 'cwd', 'name', 'unfinished'] as const)('owned Bash hooks reject later invocation conflict (%s)', variant => {
+  const s = bashHooks(); s.emit('PreToolUse');
+  write(nativeWrite('bash-1', variant === 'command' || variant === 'description' ? { ...s.input, [variant]: 'changed' } : s.input,
+    variant === 'cwd' ? path.dirname(config) : config, variant === 'name' ? 'Write' : 'Bash', variant === 'unfinished' ? null : 'tool_use'));
+  if (variant === 'unfinished') {
+    expect(s.read().permissionTools[0]?.id).toBe('bash-1');
+    write(nativeWrite('bash-1', { ...s.input, command: 'changed' }, config, 'Bash', null));
+  }
+  expect(() => s.read()).toThrow('Native tool changed');
+});
+
+test.each(['changed-input', 'wrong-cwd', 'malformed', 'error-envelope', 'two-completions'] as const)
+('owned Bash hooks refuse invalid or conflicting completion (%s)', variant => {
+  const s = bashHooks(); s.emit('PreToolUse');
+  if (variant === 'changed-input') s.emit('PostToolUse', 'bash-1', { ...s.input, command: 'changed' }, { tool_response: s.response });
+  else if (variant === 'two-completions') {
+    s.post(); s.emit('PostToolUseFailure', 'bash-1', s.input, { error: 'Command failed', is_interrupt: false });
+  } else s.post(variant === 'malformed' ? { ...s.response, interrupted: 'false' } : s.response,
+    variant === 'wrong-cwd' ? { cwd: path.dirname(config) } : variant === 'error-envelope' ? { error: 'Failed' } : {});
+  expect(() => s.read()).toThrow(variant === 'changed-input' ? 'Native Bash completion changed'
+    : variant === 'two-completions' ? 'Conflicting native Bash completion' : 'Native question event capture failed');
+});
+
+test.each(['native-failure', 'interrupt-post', 'interrupt-failure'] as const)('owned Bash hooks preserve failed invocation status (%s)', variant => {
+  const s = bashHooks(); s.emit('PreToolUse');
+  const grants = new Set<string>(); const requests = new Map<string, NativePermissionGrant>();
+  const frame = nativeBashDialog(s.input.command, s.input.description);
+  s.emit('PermissionRequest');
+  expect(reserveNativePermissionGrant(s.read(), frame, grants, requests)).toBe(true);
+  if (variant === 'interrupt-post') s.post({ ...s.response, interrupted: true });
+  else s.emit('PostToolUseFailure', 'bash-1', s.input, { error: 'Command failed with exit code 1', is_interrupt: variant === 'interrupt-failure' });
+  expect(s.read().permissionResults).toEqual([{ id: 'bash-1', result: 'error' }]);
+  expect(s.read().permissionTools).toEqual([]);
+  s.emit('PreToolUse', 'bash-2'); s.emit('PermissionRequest');
+  expect(() => reserveNativePermissionGrant(s.read(), frame, grants, requests)).toThrow();
+});
+
+test.each(['background', 'semantic-nonzero', 'stored-output', 'identical-repeat'] as const)
+('owned Bash hooks retain native invocation semantics (%s)', variant => {
+  const s = bashHooks(); s.emit('PreToolUse');
+  const response = variant === 'background' ? { ...s.response, stdout: '', backgroundTaskId: 'task-1',
+    backgroundedByUser: true, timedOutAfterMs: 3000 } : variant === 'semantic-nonzero'
+      ? { ...s.response, stdout: '', returnCodeInterpretation: 'No matches found' } : s.response;
+  s.post(response); const first = s.read();
+  expect(first.permissionResults).toEqual([{ id: 'bash-1', result: 'completed' }]);
+  if (variant === 'identical-repeat') { s.emit('PreToolUse'); s.post(response); expect(s.read()).toEqual(first); }
+  write(nativeWrite('bash-1', s.input, config, 'Bash'), { type: 'user', sessionId,
+    toolUseResult: variant === 'stored-output' ? { ...response, stdout: '', stderr: '' } : response,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'bash-1', content: 'native formatted output', is_error: false }] } });
+  expect(s.read().permissionResults).toEqual(first.permissionResults);
+});
+
+test.each(['error', 'raw-output', 'success-after-failure', 'failure-text'] as const)
+('owned Bash hooks refuse contradictory persisted results (%s)', variant => {
+  const s = bashHooks(); s.emit('PreToolUse');
+  const failure = variant === 'success-after-failure' || variant === 'failure-text';
+  if (failure) s.emit('PostToolUseFailure', 'bash-1', s.input, { error: 'Native failure', is_interrupt: false }); else s.post();
+  write(nativeWrite('bash-1', s.input, config, 'Bash'), { type: 'user', sessionId,
+    ...(!failure ? { toolUseResult: variant === 'raw-output' ? { ...s.response, interrupted: true } : s.response } : {}),
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'bash-1',
+      content: variant === 'failure-text' ? 'Different error' : failure ? 'Native failure' : 'ready',
+      is_error: variant === 'error' || variant === 'failure-text' }] } });
+  expect(() => s.read()).toThrow('Native Bash completion conflicts');
+});
+
+
+
+test.each(['changed-command', 'changed-description', 'changed-option', 'orphan', 'duplicate-request', 'ambiguous-invocations'] as const)
+('owned Bash hooks require one effective post-Pre permission input (%s)', variant => {
+  const s = bashHooks();
+  if (variant !== 'orphan') s.emit('PreToolUse');
+  if (variant === 'ambiguous-invocations') s.emit('PreToolUse', 'bash-2');
+  const effective = variant === 'changed-command' ? { ...s.input, command: 'changed' }
+    : variant === 'changed-description' ? { ...s.input, description: 'Changed' }
+    : variant === 'changed-option' ? { ...s.input, dangerouslyDisableSandbox: true } : s.input;
+  s.emit('PermissionRequest', 'not-a-native-owner', effective);
+  if (variant === 'duplicate-request') s.emit('PermissionRequest', 'also-not-a-native-owner', effective);
+  if (variant === 'duplicate-request' || variant === 'ambiguous-invocations') expect(() => s.read()).toThrow('native Bash permission request');
+  else expect(reserveNativePermissionGrant(s.read(), nativeBashDialog(s.input.command, s.input.description), new Set(), new Map())).toBe(false);
+});
+
+test('owned Bash hooks retain harmless Pre safety settings and require final permission pairing', () => {
+  fs.writeFileSync(path.join(config, 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [
+    { matcher: 'Bash', hooks: [{ type: 'command', command: 'exit 0' }] },
+  ] } }));
+  const s = bashHooks(); s.emit('PreToolUse'); s.emit('PermissionRequest');
+  expect(reserveNativePermissionGrant(s.read(), nativeBashDialog(s.input.command, s.input.description), new Set(), new Map())).toBe(true);
+});

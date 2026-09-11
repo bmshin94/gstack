@@ -1038,3 +1038,47 @@ test('viewport restoration preserves the raw Ready marker following the actual a
   expect(result.observation).toMatchObject({ outcome: 'plan_ready', step0Count: 1, reviewCount: 0 });
   expect(result.closed).toBe(true);
 }, 15_000);
+
+
+test.each(['valid', 'background', 'failure'] as const)('Bash hook lag preserves real counting-loop invocation resolution (%s)', async variant => {
+  const result = await runFakeCounting('**DONE**', `native-bash-hook-lag-${variant}`);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+  expect(result.permissionGrantIds).toEqual(['tool-1']); expect(result.permissionAckIds).toEqual(['tool-1']);
+  expect(result.persistedBashUses).toBe(0);
+  expect(result.observation.outcome).toBe('completion_summary'); expect(result.closed).toBe(true);
+}, 15_000);
+
+test('Bash hook lag resolves the grant before answering a separately queued AUQ', async () => {
+  const result = await runFakeCounting('**DONE**', 'native-bash-queued-hook-lag');
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1']);
+  expect(result.permissionGrantIds).toEqual(['tool-1']); expect(result.permissionAckIds).toEqual(['tool-1']);
+  expect(result.bashQuestionAckIds).toEqual(['tool-2']); expect(result.persistedBashUses).toBe(0);
+  expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1 });
+  expect(result.prematureAnswers).toEqual([]); expect(result.closed).toBe(true);
+}, 15_000);
+
+test.each(['foreign', 'mismatch', 'no-ack'] as const)('Bash hook lag preserves real-loop refusal (%s)', async variant => {
+  const result = await runFakeCounting('**DONE**', variant === 'no-ack' ? 'native-bash-queued-hook-lag-no-ack' : `native-bash-hook-lag-${variant}`);
+  expect(result.sends).toEqual(variant === 'no-ack' ? ['/plan-ceo-review\r', '1\r'] : ['/plan-ceo-review\r']);
+  expect(result.permissionAckIds).toEqual([]); expect(result.bashQuestionAckIds).toEqual([]);
+  expect(result.persistedBashUses).toBe(0); expect(result.closed).toBe(true);
+  if (variant === 'mismatch') expect(result.error).toContain('cannot be bound');
+  else expect(result.observation.outcome).toBe('timeout');
+}, 15_000);
+
+
+test('Bash hook lag retains its exact invocation and resolution before failure cleanup', async () => {
+  const result = await runFakeCounting('**DONE**', 'native-bash-hook-lag-completed-timeout');
+  expect(result.observation.outcome).toBe('timeout'); expect(result.retainedBeforeClose).toBe(true);
+  expect(result.nativeRemoved).toBe(true); expect(result.closed).toBe(true);
+  const evidence = result.diagnostic.counting.bashEvidence;
+  expect(evidence.candidateCount).toBe(1); expect(evidence.candidatesOmitted).toBe(0);
+  expect(evidence.invocations).toHaveLength(1); expect(evidence.resolutions).toHaveLength(1);
+  expect(evidence.permissionRequests).toHaveLength(1);
+  expect(evidence.permissionRequests[0].requestId.text).not.toBe(evidence.invocations[0].id.text);
+  expect(evidence.invocations[0].id.text).toBe('tool-1');
+  expect(JSON.parse(evidence.invocations[0].inputJson.text)).toEqual({ command: 'printf %s ready > probe.txt', description: 'Write the owned marker' });
+  expect(evidence.resolutions[0].hookEventName).toBe('PostToolUse');
+  expect(JSON.parse(evidence.resolutions[0].responseJson.text)).toEqual({ stdout: 'ready', stderr: '', interrupted: false });
+  expect(result.persistedBashUses).toBe(0);
+}, 15_000);

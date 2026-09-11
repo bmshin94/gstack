@@ -3,8 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { currentFilePermissionTarget, reserveNativePermissionGrant, type readPlanSkillQuestions, type NativePermissionGrant } from './plan-skill-questions';
-import { readQuestionEvents, readQuestionCompletionEvents, type QuestionEventSource,
-  type QuestionEventCall, type QuestionCompletionEventCall } from './plan-skill-question-events';
+import { readQuestionEvents, readQuestionCompletionEvents, readBashEvents, readBashCompletionEvents, readBashPermissionRequestEvents, type QuestionEventSource,
+  type QuestionEventCall, type QuestionCompletionEventCall, type BashEventCall, type BashCompletionEventCall, type BashPermissionRequestEventCall } from './plan-skill-question-events';
 
 /** The chain may grant file edits in its fixture and native plan directory.
  * The shared reservation still requires the exact owned request and menu;
@@ -97,14 +97,29 @@ export function retainAutoplanFailure(opts: {
     const observedPending = state?.calls.filter(call => call.result === 'pending') ?? [];
     let hookQuestions: QuestionEventCall[] = [];
     let hookCompletions: QuestionCompletionEventCall[] = [];
+    let bashInvocations: BashEventCall[] = [];
+    let bashCompletions: BashCompletionEventCall[] = [];
+    let bashRequests: BashPermissionRequestEventCall[] = [];
     let hookReadError: ReturnType<typeof clip> | null = null;
     if (opts.counting?.events) {
       try { hookQuestions = readQuestionEvents(opts.counting.events, { configDir: opts.configDir,
         sessionId: opts.sessionId, transcriptFile: native.file });
         hookCompletions = readQuestionCompletionEvents(opts.counting.events, { configDir: opts.configDir,
+          sessionId: opts.sessionId, transcriptFile: native.file });
+        bashInvocations = readBashEvents(opts.counting.events, { configDir: opts.configDir,
+          sessionId: opts.sessionId, transcriptFile: native.file });
+        bashCompletions = readBashCompletionEvents(opts.counting.events, { configDir: opts.configDir,
+          sessionId: opts.sessionId, transcriptFile: native.file });
+        bashRequests = readBashPermissionRequestEvents(opts.counting.events, { configDir: opts.configDir,
           sessionId: opts.sessionId, transcriptFile: native.file }); }
       catch (error) { hookReadError = clip(String(error), 1024); }
     }
+    const bashCandidateIds = [...new Set([...(state?.permissionTools.filter(tool => tool.name === 'Bash').map(tool => tool.id) ?? []),
+      ...bashCompletions.slice().sort((a, b) => b.capturedAtMs - a.capturedAtMs).map(event => event.id),
+      ...bashInvocations.slice().sort((a, b) => b.capturedAtMs - a.capturedAtMs).map(event => event.id)])];
+    const bashIds = new Set(bashCandidateIds.slice(0, 16));
+    const selectedBashRequests = bashRequests.filter(request => bashInvocations.some(invoked => bashIds.has(invoked.id)
+      && invoked.cwd === request.cwd && JSON.stringify(invoked.input) === JSON.stringify(request.input)));
     const nativeQuestions = calls.filter(call => call.name === 'AskUserQuestion');
     const candidateIds = [...new Set([...observedPending.slice(-16).map(call => call.id),
       ...hookCompletions.slice().sort((a, b) => b.capturedAtMs - a.capturedAtMs).map(event => event.id),
@@ -142,6 +157,19 @@ export function retainAutoplanFailure(opts: {
       permissionRequests: state?.permissionRequests.slice(-16).map(request => ({ requestId: clip(request.requestId, 256),
         nativeToolId: request.nativeToolId?.slice(0, 256) ?? null, name: request.name, result: request.result,
         capturedAtMs: request.capturedAtMs, cwd: clip(request.cwd, 4096), input: safeInput(request.name, request.input) })) ?? [],
+      bashEvidence: {
+        candidateCount: bashCandidateIds.length, candidatesOmitted: Math.max(0, bashCandidateIds.length - 16),
+        chronology: 'Later owned diagnostic reads; no grant or outcome credit. Pending IDs first, then latest native resolution and invocation observations. Background resolution is not command completion.',
+        permissionRequestCount: selectedBashRequests.length, permissionRequestsOmitted: Math.max(0, selectedBashRequests.length - 16),
+        permissionRequests: selectedBashRequests.slice(-16).map(event => ({ requestId: clip(event.requestId, 256),
+          capturedAtMs: event.capturedAtMs, cwd: clip(event.cwd, 4096), inputJson: clip(JSON.stringify(event.input), 65_536) })),
+        invocations: bashInvocations.filter(event => bashIds.has(event.id)).map(event => ({ id: clip(event.id, 256),
+          capturedAtMs: event.capturedAtMs, cwd: clip(event.cwd, 4096), inputJson: clip(JSON.stringify(event.input), 65_536) })),
+        resolutions: bashCompletions.filter(event => bashIds.has(event.id)).map(event => ({ id: clip(event.id, 256),
+          hookEventName: event.hookEventName, capturedAtMs: event.capturedAtMs, cwd: clip(event.cwd, 4096),
+          inputJson: clip(JSON.stringify(event.input), 65_536), responseJson: clip(JSON.stringify(event.response), 65_536) })),
+        hookReadError,
+      },
       questionEvidence: {
         count: observedPending.length, omitted: Math.max(0, observedPending.length - 16),
         candidateCount: candidateIds.length, candidatesOmitted: Math.max(0, candidateIds.length - 16),
@@ -178,7 +206,7 @@ export function retainAutoplanFailure(opts: {
       rawTail: { ...(counting ? signature(raw.slice(-65_536)) : clip(raw.slice(-65_536), 65_536)), omittedPrefixCodeUnits: Math.max(0, raw.length - 65_536) }, rawCodeUnits: raw.length,
       visibleTail: { ...(counting ? signature(visible.slice(-65_536)) : clip(visible.slice(-65_536), 65_536)), omittedPrefixCodeUnits: Math.max(0, visible.length - 65_536) }, visibleCodeUnits: visible.length,
       ...(counting ? { counting } : {}),
-      limits: counting ? 'Diagnostic only. Selected owned AUQ inputs/results and the last sampled decoded viewport are retained with explicit clipping. The viewport keeps its own observation/input epochs; it is not resampled at retention or proof of current ownership. Other native inputs, queue content and raw/flattened history stay hashed. Native thinking and unrelated/foreign results are omitted. Later evidence cannot change the observation, grant input or establish completion.' : 'Diagnostic only. Pending tools are not proof of a permission prompt or a failed command. Native thinking, signatures and tool results are omitted; clipped command inputs remain incomplete evidence.',
+      limits: counting ? 'Diagnostic only. Selected owned AUQ/Bash hook inputs/results and the last sampled decoded viewport are retained with explicit clipping. The viewport keeps its own observation/input epochs; it is not resampled at retention or proof of current ownership. Other native inputs, queue content and raw/flattened history stay hashed. Native thinking and unrelated/foreign results are omitted. Later evidence cannot change the observation, grant input or establish completion.' : 'Diagnostic only. Pending tools are not proof of a permission prompt or a failed command. Native thinking, signatures and tool results are omitted; clipped command inputs remain incomplete evidence.',
     };
     const evalDir = opts.evalDir ?? process.env.GSTACK_EVAL_DIR;
     if (!evalDir) throw new Error('GSTACK_EVAL_DIR is not configured');

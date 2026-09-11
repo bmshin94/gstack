@@ -52,19 +52,20 @@ function inventory(opts: Options): string {
     if (!object(value)) fail('settings/frontmatter must be an object');
     if (value.hooks !== undefined) {
       if (!object(value.hooks)) fail('unparseable hooks');
-      for (const event of ['PreToolUse', 'PermissionRequest', 'PostToolUse']) {
+      for (const event of ['PreToolUse', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure']) {
         const entries = value.hooks[event];
         if (entries === undefined) continue;
         if (!Array.isArray(entries)) fail(`unparseable ${event} hooks`);
         for (const entry of entries) {
-          // AUQ is observed before permission; file input is observed at the
+          // AUQ is observed before permission; file/Bash grant input is observed at the
           // permission request, after legitimate PreToolUse safety hooks.
           // Reject matching mutators at or after each observation boundary.
           // Substrings are conservatively refused too, independent of anchoring.
           if (!object(entry) || typeof entry.matcher !== 'string'
             || !/^[A-Za-z][A-Za-z0-9_]*$/.test(entry.matcher)
             || (event === 'PreToolUse' ? ['askuserquestion', 'exitplanmode']
-              : event === 'PostToolUse' ? ['write', 'edit', 'askuserquestion'] : ['askuserquestion', 'exitplanmode', 'write', 'edit'])
+              : event === 'PostToolUse' ? ['write', 'edit', 'askuserquestion', 'bash']
+                : event === 'PostToolUseFailure' ? ['bash'] : ['askuserquestion', 'exitplanmode', 'write', 'edit', 'bash'])
               .some(tool => tool.includes(entry.matcher.toLowerCase()))
             || !Array.isArray(entry.hooks)) fail(`competing or unsupported ${event} matcher`);
         }

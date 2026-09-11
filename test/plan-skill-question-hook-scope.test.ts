@@ -101,7 +101,7 @@ const child = String.raw`
     case 'plugin-container-symlink': { const scope = passes(); const outside = path.join(root, 'external-plugins'); fs.mkdirSync(outside); fs.symlinkSync(outside, path.join(configDir, 'plugins'), 'dir'); refuses(() => check(scope)); break; }
     case 'plugin-container-nondirectory': { const scope = passes(); write(path.join(configDir, 'plugins'), ''); refuses(() => check(scope)); break; }
     case 'literal-noncaptured':
-      json(settings, hooks('Bash')); json(path.join(project, '.claude', 'settings.local.json'), hooks('Read'));
+      json(settings, hooks('Glob')); json(path.join(project, '.claude', 'settings.local.json'), hooks('Read'));
       write(skillFile, '---\nname: review\nhooks:\n  PreToolUse:\n    - matcher: Grep\n      hooks: []\n---\n');
       passes(); break;
     case 'auq-settings': json(settings, hooks('AskUserQuestion')); refuses(() => setup({configDir,cwd})); break;
@@ -109,8 +109,8 @@ const child = String.raw`
     case 'lowercase-auq': json(settings, hooks('askuserquestion')); refuses(() => setup({configDir,cwd})); break;
     case 'permission-auq': json(settings, {hooks: {PermissionRequest: hooks('AskUserQuestion').hooks.PreToolUse}}); refuses(() => setup({configDir,cwd})); break;
     case 'permission-other-tool':
-      json(settings, {hooks: {PermissionRequest: hooks('Bash').hooks.PreToolUse}});
-      write(skillFile, '---\nname: review\nhooks:\n  PermissionRequest:\n    - matcher: Bash\n      hooks: []\n---\n');
+      json(settings, {hooks: {PermissionRequest: hooks('Read').hooks.PreToolUse}});
+      write(skillFile, '---\nname: review\nhooks:\n  PermissionRequest:\n    - matcher: Read\n      hooks: []\n---\n');
       passes(); break;
     case 'regex-settings': json(settings, hooks('Bash|AskUserQuestion')); refuses(() => setup({configDir,cwd})); break;
     case 'wildcard-settings': json(settings, hooks('.*')); refuses(() => setup({configDir,cwd})); break;
@@ -139,7 +139,7 @@ const child = String.raw`
     case 'forged-descriptor': refuses(() => check({})); break;
     case 'fifo': { const result = require('node:child_process').spawnSync('mkfifo', [settings], {timeout: 1000}); assert.equal(result.status, 0); refuses(() => setup({configDir,cwd})); break; }
     default: {
-      const match = /^file-tool-(PreToolUse|PermissionRequest|PostToolUse)-(Write|Edit|ExitPlanMode|AskUserQuestion)-(settings|frontmatter|managed|drift)$/.exec(scenario);
+      const match = /^file-tool-(PreToolUse|PermissionRequest|PostToolUse|PostToolUseFailure)-(Write|Edit|ExitPlanMode|AskUserQuestion|Bash)-(settings|frontmatter|managed|drift)$/.exec(scenario);
       if (!match) throw new Error('unknown scenario');
       const [, event, tool, location] = match;
       const scope = location === 'drift' ? passes() : null;
@@ -149,7 +149,7 @@ const child = String.raw`
         const file = location === 'managed' ? path.join(managedFixture, 'managed-settings.json') : settings;
         json(file, {hooks: {[event]: hooks(tool).hooks.PreToolUse}});
       }
-      if ((event === 'PreToolUse' && tool !== 'ExitPlanMode' || event === 'PostToolUse' && tool === 'ExitPlanMode') && location !== 'drift') passes();
+      if ((event === 'PreToolUse' && (tool === 'Write' || tool === 'Edit' || tool === 'Bash') || event === 'PostToolUse' && tool === 'ExitPlanMode') && location !== 'drift') passes();
       else refuses(() => scope ? check(scope) : setup({configDir,cwd}));
       break;
     }
@@ -178,6 +178,8 @@ for (const event of ['PreToolUse', 'PermissionRequest', 'PostToolUse']) {
   }
 }
 for (const location of ['settings', 'frontmatter', 'managed', 'drift']) scenarios.push(`file-tool-PostToolUse-AskUserQuestion-${location}`);
+for (const event of ['PreToolUse', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure'])
+  for (const location of ['settings', 'frontmatter', 'managed', 'drift']) scenarios.push(`file-tool-${event}-Bash-${location}`);
 if (process.platform !== 'win32') scenarios.push('fifo');
 
 for (const scenario of scenarios) test(`controlled question hook scope: ${scenario}`, () => {

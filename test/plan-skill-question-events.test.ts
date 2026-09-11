@@ -49,11 +49,11 @@ test('silent native hook publishes the pending invocation before its assistant J
   const call = readQuestionEvents(f.source, f.expected)[0]!;
   expect(call).not.toHaveProperty('result'); expect(call).not.toHaveProperty('answered');
   expect(f.settings.hooks.PreToolUse).toHaveLength(1);
-  expect(f.settings.hooks.PreToolUse[0].matcher).toBe('^(AskUserQuestion|ExitPlanMode)$');
+  expect(f.settings.hooks.PreToolUse[0].matcher).toBe('^(AskUserQuestion|ExitPlanMode|Bash)$');
   expect(f.settings.hooks.PermissionRequest).toHaveLength(1);
-  expect(f.settings.hooks.PermissionRequest[0]).toEqual({ matcher: '^(Write|Edit)$',
+  expect(f.settings.hooks.PermissionRequest[0]).toEqual({ matcher: '^(Write|Edit|Bash)$',
     hooks: [{ type: 'command', command: f.command, timeout: 5 }] });
-  expect(f.settings.hooks.PostToolUse[0]).toEqual({ matcher: '^(Write|Edit|AskUserQuestion)$',
+  expect(f.settings.hooks.PostToolUse[0]).toEqual({ matcher: '^(Write|Edit|AskUserQuestion|Bash)$',
     hooks: [{ type: 'command', command: f.command, timeout: 5 }] });
   expect(f.settings.hooks.PreToolUse[0].hooks[0]).toEqual({ type: 'command', command: f.command, timeout: 5 });
   expect(Object.keys(f.settings)).toEqual(['hooks']);

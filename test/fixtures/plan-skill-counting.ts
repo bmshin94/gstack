@@ -81,6 +81,7 @@ async function main() {
   const editPermissionCase = scenario.startsWith('permission-edit-');
   const queuedFileQuestionCase = scenario.startsWith('permission-final-queued-question');
   const nativeBashCase = scenario.startsWith('native-bash-');
+  const bashHookLag = nativeBashCase && scenario.includes('hook-lag');
   const queuedBashCase = scenario.startsWith('native-bash-queued-');
   const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
@@ -93,7 +94,7 @@ async function main() {
   const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
   const evalDir = path.join(project, 'evals');
-  if (retentionCase || hookAckLag) process.env.GSTACK_EVAL_DIR = evalDir;
+  if (retentionCase || hookAckLag || bashHookLag) process.env.GSTACK_EVAL_DIR = evalDir;
   let nativeFile = '';
   let retainedBeforeClose = false;
   const sends: string[] = [];
@@ -116,6 +117,7 @@ async function main() {
   const permissionGrantIds: string[] = [];
   const permissionAckIds: string[] = [];
   const bashQuestionAckIds: string[] = [];
+  let persistedBashUses = 0;
   const hookCompletionIds: string[] = [];
   let persistedQuestionResults = 0;
   const fileNativeBeforeGrant: boolean[] = [];
@@ -215,6 +217,15 @@ async function main() {
       const nativeBashDialog = () => '\x1b[2J\x1b[H' + '─'.repeat(240) + '\n Bash command\n\n   '
         + nativeBashInput.command + '\n   ' + nativeBashInput.description
         + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+      const recordBash = (event: string, id: string, input: unknown, extra: Record<string, unknown> = {}) => {
+        const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
+        const recorded = Bun.spawnSync(['bash', '-c', settings.hooks[event][0].hooks[0].command], {
+          timeout: 5000, stdin: Buffer.from(JSON.stringify({ hook_event_name: event, session_id: sessionId,
+            transcript_path: file, cwd: options.cwd, tool_name: 'Bash', tool_use_id: id, tool_input: input, ...extra })),
+          stdout: 'pipe', stderr: 'pipe',
+        });
+        if (recorded.exitCode !== 0 || recorded.stdout.length) throw new Error(`Bash recorder failed: ${recorded.stderr}`);
+      };
       const recordFilePermission = (input: Record<string, unknown>, name = 'Write') => {
         const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
         const recorded = Bun.spawnSync(['bash', '-c', settings.hooks.PermissionRequest[0].hooks[0].command], {
@@ -225,7 +236,10 @@ async function main() {
       };
       const tool = (name: string, input: unknown) => {
         const id = `tool-${++sequence}`;
-        if (name === 'AskUserQuestion' && (scenario.startsWith('hook-') || scenario.startsWith('retention-questions'))) {
+        if (name === 'Bash' && bashHookLag) {
+          recordBash('PreToolUse', id, input, scenario.endsWith('foreign') ? { session_id: '00000000-0000-4000-8000-000000000099' } : {});
+          recordBash('PermissionRequest', id, input);
+        } else if (name === 'AskUserQuestion' && (scenario.startsWith('hook-') || scenario.startsWith('retention-questions'))) {
           hookQuestionInputs.set(id, input);
           // Native CLI can show this modal before persisting its tool_use.
           // Exercise the recorder installed by the real launcher.
@@ -642,7 +656,7 @@ async function main() {
               if (queuedBashCase) ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
               if (scenario === 'native-bash-stale' || scenario === 'native-bash-queued-stale') return;
               let card = nativeBashDialog();
-              if (scenario === 'native-bash-command-mismatch' || scenario === 'native-bash-queued-mismatch') card = card.replace('printf %s ready', 'printf %s changed');
+              if (scenario === 'native-bash-command-mismatch' || scenario === 'native-bash-queued-mismatch' || bashHookLag && scenario.endsWith('mismatch')) card = card.replace('printf %s ready', 'printf %s changed');
               if (scenario === 'native-bash-history') card += '\n❯ New unrelated draft';
               if (scenario === 'native-bash-clipped') card = card.replace(nativeBashInput.command, 'printf %s ready…');
               if (scenario === 'native-bash-wrong-focus') card = card.replace(' ❯ 1. Yes', '   1. Yes').replace('   2. No', ' ❯ 2. No');
@@ -678,12 +692,17 @@ async function main() {
               if (nativeBashCase) {
                 permissionGrantIds.push(permissionId);
                 if (!scenario.endsWith('no-ack')) {
-                  append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Complete' }] } });
+                  if (bashHookLag) {
+                    if (scenario.endsWith('failure')) recordBash('PostToolUseFailure', permissionId, nativeBashInput,
+                      { error: 'Command failed with exit code 1', is_interrupt: false });
+                    else recordBash('PostToolUse', permissionId, nativeBashInput, { tool_response: { stdout: 'ready', stderr: '', interrupted: false,
+                      ...(scenario.endsWith('background') ? { backgroundTaskId: 'task-fixture', backgroundedByUser: true } : {}) } });
+                  } else append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Complete' }] } });
                   permissionAckIds.push(permissionId);
                 }
                 permissionId = null;
                 if (queuedBashCase) emit('\x1b[2J\x1b[HD1 — Pick a mode\n❯1.HOLD SCOPE\n2.SCOPE EXPANSION\n');
-                else if (scenario.endsWith('no-ack')) emit('WORK_IN_PROGRESS\n');
+                else if (scenario.endsWith('no-ack') || bashHookLag && scenario.endsWith('timeout')) emit('WORK_IN_PROGRESS\n');
                 else finish();
                 return;
               }
@@ -837,7 +856,8 @@ async function main() {
           }
         } },
         kill() {
-          if (retentionCase || hookAckLag) {
+          if (bashHookLag) persistedBashUses = fs.readFileSync(file, 'utf8').split('\n').filter(line => line && JSON.parse(line).message?.content?.some?.((block: any) => block.type === 'tool_use' && block.name === 'Bash')).length;
+          if (retentionCase || hookAckLag || bashHookLag) {
             retainedBeforeClose = fs.existsSync(path.join(evalDir, 'plan-counting', `${sessionId}.json`));
             fs.rmSync(file, { force: true });
           }
@@ -886,7 +906,7 @@ async function main() {
     const diagnosticDirectory = path.join(evalDir, 'plan-counting');
     const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
     const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
-    console.log(JSON.stringify({ observation, error, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, persistedBashUses, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

@@ -1,8 +1,8 @@
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { readQuestionEvents, readQuestionCompletionEvents, readExitPlanModeEvents, readPermissionRequestEvents, readFileCompletionEvents,
-  type FileCompletionEventCall, type QuestionCompletionEventCall, type QuestionEventSource } from './plan-skill-question-events';
+import { readQuestionEvents, readQuestionCompletionEvents, readBashEvents, readBashCompletionEvents, readBashPermissionRequestEvents, readExitPlanModeEvents, readPermissionRequestEvents, readFileCompletionEvents,
+  type FileCompletionEventCall, type QuestionCompletionEventCall, type BashEventCall, type BashCompletionEventCall, type QuestionEventSource } from './plan-skill-question-events';
 
 export interface NativeQuestion {
   question: string;
@@ -17,7 +17,11 @@ export interface NativeQuestionCall {
   /** Exact offered labels from a validated native PostToolUse response. */
   answerLabels?: string[];
 }
-export interface NativePermissionTool { id: string; name: string; input: Record<string, unknown>; cwd?: string }
+export interface NativePermissionTool {
+  id: string; name: string; input: Record<string, unknown>; cwd?: string;
+  /** Early Bash input cannot grant until its post-PreToolUse request matches. */
+  bashPermissionRequestId?: string | null;
+}
 export interface NativeFilePermissionRequest {
   requestId: string;
   capturedAtMs: number;
@@ -100,7 +104,7 @@ function questionInputShape(input: any): string {
 
 /** The launch's native PreToolUse event can precede transcript persistence.
  * Both sources must agree. Exact owned successful PostToolUse data can retire
- * an answered AUQ or file request before the native transcript persists it.
+ * an answered AUQ or file request, or resolve a Bash invocation, before transcript persistence.
  * PTY scrollback and tool previews supply neither invocation nor acknowledgement.
  */
 export function readPlanSkillQuestions(configDir: string | null, sessionId: string, events?: QuestionEventSource): {
@@ -134,8 +138,11 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const permissionInputs = new Map<string, NativePermissionTool>();
   const unfinishedFileInputs: NativePermissionTool[] = [];
   const requestEvents = events ? readPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
+  const bashRequestEvents = events ? readBashPermissionRequestEvents(events, { configDir, sessionId, transcriptFile: transcript.file }) : [];
   const earlyCompletions = new Map<string, FileCompletionEventCall>();
   const questionCompletions = new Map<string, QuestionCompletionEventCall>();
+  const bashInvocations = new Map<string, BashEventCall>();
+  const bashCompletions = new Map<string, BashCompletionEventCall>();
   const addQuestion = (id: unknown, input: any, fromExecution = false) => {
     if (typeof id !== 'string' || !id) throw new Error('Native AskUserQuestion is missing its tool ID');
     if (permissionInputs.has(id)) throw new Error('Native tool changed input or name for an existing tool ID');
@@ -158,11 +165,24 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       || previous.cwd !== undefined && tool.cwd !== undefined && previous.cwd !== tool.cwd)) {
       throw new Error('Native tool changed input, name or cwd for an existing tool ID');
     }
-    const bound = previous?.cwd !== undefined ? { ...tool, cwd: previous.cwd } : tool;
-    if (['Write', 'Edit'].includes(tool.name)) permissionInputs.set(tool.id, bound);
+    const bound = { ...previous, ...tool, ...(previous?.cwd !== undefined ? { cwd: previous.cwd } : {}) };
+    if (['Write', 'Edit', 'Bash'].includes(tool.name)) permissionInputs.set(tool.id, bound);
     permissionTools.set(tool.id, bound);
   };
   if (events) {
+    for (const event of readBashEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+      addPermission({ id: event.id, name: 'Bash', input: event.input, cwd: event.cwd, bashPermissionRequestId: null });
+      bashInvocations.set(event.id, event);
+    }
+    for (const event of readBashCompletionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+      const invoked = bashInvocations.get(event.id);
+      // Resolution alone cannot introduce an owner or authorize any input.
+      if (!invoked) continue;
+      if (event.cwd !== invoked.cwd || !isDeepStrictEqual(event.input, invoked.input)
+        || event.capturedAtMs <= invoked.capturedAtMs) throw new Error('Native Bash completion changed input or preceded invocation');
+      if (bashCompletions.has(event.id)) throw new Error('Conflicting native Bash completion for an existing tool ID');
+      bashCompletions.set(event.id, event);
+    }
     for (const event of readQuestionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
       addQuestion(event.id, event.input, true);
       executionQuestionInputs.set(event.id, questionInputWithDefaults(event.input));
@@ -177,7 +197,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       questionCompletions.set(event.id, event);
     }
     for (const event of readExitPlanModeEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
-      if (inputs.has(event.id)) throw new Error('Native ExitPlanMode changed input or name for an existing tool ID');
+      if (inputs.has(event.id) || permissionInputs.has(event.id)) throw new Error('Native ExitPlanMode changed input or name for an existing tool ID');
       earlyExits.set(event.id, { input: event.input, cwd: event.cwd });
       ready.add(event.id);
     }
@@ -200,6 +220,19 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
     if (!Array.isArray(message?.content)) continue;
     for (const block of message.content) {
       if (row.type === 'user' && message.role === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+        const bashCompletion = bashCompletions.get(block.tool_use_id);
+        if (bashCompletion) {
+          const failed = bashCompletion.hookEventName === 'PostToolUseFailure' || bashCompletion.response.interrupted === true;
+          const raw = bashCompletion.response;
+          // The native storage adapter can clear stdout/stderr after persisting
+          // the large output. Every other field, including background flags, stays exact.
+          const stored = { ...raw, stdout: '', stderr: '' };
+          if ((block.is_error === true) !== failed
+            || bashCompletion.hookEventName === 'PostToolUse' && row.toolUseResult !== undefined
+              && !isDeepStrictEqual(row.toolUseResult, raw) && !isDeepStrictEqual(row.toolUseResult, stored)
+            || bashCompletion.hookEventName === 'PostToolUseFailure' && raw.is_interrupt === false
+              && block.content !== raw.error) throw new Error('Native Bash completion conflicts with its later result');
+        }
         const questionCompletion = questionCompletions.get(block.tool_use_id);
         if (questionCompletion && (block.is_error === true
           || row.toolUseResult !== undefined && !isDeepStrictEqual(row.toolUseResult, questionCompletion.response)
@@ -270,9 +303,25 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       call.answerLabels = call.questions.map(q => (completion.response.answers as Record<string, string>)[q.question]!);
     } else if (results.has(call.id)) call.result = results.get(call.id) ? 'error' : 'answered';
   }
+  for (const completion of bashCompletions.values()) {
+    // Background launch means this invocation resolved, not that its command
+    // or process finished. Failed/interrupted invocations retain error status.
+    results.set(completion.id, completion.hookEventName === 'PostToolUseFailure' || completion.response.interrupted === true);
+    resultTimes.set(completion.id, completion.capturedAtMs);
+  }
   for (const completion of earlyCompletions.values()) {
     results.set(completion.id, false);
     resultTimes.set(completion.id, completion.capturedAtMs);
+  }
+  for (const request of bashRequestEvents) {
+    const matches = [...bashInvocations.values()].filter(invoked => invoked.cwd === request.cwd
+      && isDeepStrictEqual(invoked.input, request.input) && invoked.capturedAtMs < request.capturedAtMs
+      && (!resultTimes.has(invoked.id) || resultTimes.get(invoked.id)! > request.capturedAtMs));
+    if (matches.length > 1) throw new Error('Ambiguous native Bash permission request');
+    if (!matches.length) continue; // Orphan or changed post-Pre input cannot authorize a grant.
+    const owner = permissionTools.get(matches[0]!.id)!;
+    if (owner.bashPermissionRequestId !== null) throw new Error('Duplicate native Bash permission request');
+    owner.bashPermissionRequestId = request.requestId;
   }
   const permissionRequests: NativeFilePermissionRequest[] = [];
   if (events) {
@@ -696,6 +745,7 @@ export function reserveNativePermissionGrant(
     owner = matches[0]!;
   }
   if (native.permissionRequestCapture && !('requestId' in owner) && ['Write', 'Edit'].includes(owner.name)) return false;
+  if (!('requestId' in owner) && owner.bashPermissionRequestId === null) return false;
   const key = 'requestId' in owner ? `request:${owner.requestId}` : owner.id;
   if (granted.has(key)) return false;
   const request = nativePermissionKey(owner, visible);
