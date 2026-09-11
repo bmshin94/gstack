@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readPlanSkillQuestions, matchesNativeQuestion, nativeQuestionSelection, isNativeQuestionSubmitVisible, currentFilePermissionTarget, nativePermissionKey, reserveNativePermissionGrant, type NativeQuestion, type NativePermissionGrant } from './helpers/plan-skill-questions';
+import { readPlanSkillQuestions, matchesNativeQuestion, nativeQuestionSelection, isNativeQuestionSubmitVisible, currentFilePermissionTarget, matchesClippedBashPermission, nativePermissionKey, reserveNativePermissionGrant, type NativeQuestion, type NativePermissionGrant } from './helpers/plan-skill-questions';
 import { isPermissionDialogVisible, parseNumberedOptions, stripAnsi } from './helpers/claude-pty-runner';
 import { setupQuestionEventSource, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
 
@@ -1892,4 +1892,30 @@ test('owned Bash hooks retain harmless Pre safety settings and require final per
   ] } }));
   const s = bashHooks(); s.emit('PreToolUse'); s.emit('PermissionRequest');
   expect(reserveNativePermissionGrant(s.read(), nativeBashDialog(s.input.command, s.input.description), new Set(), new Map())).toBe(true);
+});
+
+
+test('native Bash projection preserves literal U+2026 without widening to complex Unicode', () => {
+  const command = 'printf "Saving…"';
+  const tool = { id: 'ellipsis', name: 'Bash', input: { command, description: 'Print Saving…' } };
+  expect(nativePermissionKey(tool, nativeBashDialog(command, tool.input.description))).toBe('Bash:' + command);
+  for (const foreign of ['\u200b', '\u202e', '好', '👩‍💻']) {
+    const input = { command: command.replace('…', foreign), description: tool.input.description };
+    expect(() => nativePermissionKey({ ...tool, input }, nativeBashDialog(input.command, input.description))).toThrow('cannot be bound');
+  }
+});
+
+
+test('clipped Bash suffix only requests repaint and never supplies grant authority', () => {
+  const input = { command: 'printf first\nprintf "Saving…"\nprintf third', description: 'Write owned status' };
+  const tool = { id: 'clipped', name: 'Bash', cwd: '/owned', input };
+  const visible = '   │ printf "Saving…"\n   │ printf third\n   Write owned status'
+    + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+  expect(matchesClippedBashPermission(tool, visible, 240)).toBe(true);
+  expect(() => nativePermissionKey(tool, visible)).toThrow('cannot be bound');
+  for (const changed of [visible.replace('printf third', 'printf other'), visible.replace('owned status', 'foreign status'),
+    visible.replace(' ❯ 1. Yes', '   1. Yes'), ' Bash command\n' + visible, ' Create file\n' + visible,
+    visible + '\n❯ A new prompt', '```\n' + visible]) expect(matchesClippedBashPermission(tool, changed, 240)).toBe(false);
+  expect(matchesClippedBashPermission({ ...tool, bashPermissionRequestId: null }, visible, 240)).toBe(false);
+  expect(matchesClippedBashPermission({ ...tool, name: 'Read' }, visible, 240)).toBe(false);
 });

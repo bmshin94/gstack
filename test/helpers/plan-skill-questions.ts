@@ -663,14 +663,34 @@ export function currentBashPermissionCard(visible: string): { columns: number; p
 }
 
 /** Match the renderer's projection, never whitespace-normalize the command.
- * ASCII takes the pinned CLI's direct Bun.wrapAnsi path. Sanitized/control or
- * complex Unicode payloads have no proven identical projection here. */
+ * ASCII and literal U+2026 take the pinned CLI's direct Bun.wrapAnsi path.
+ * Other Unicode and sanitized/control payloads remain unproven and refused. */
 function nativeBashPayload(value: string, columns: number): string[] | null {
-  if (value.length > 200_000 || /[^\x20-\x7e\n]/.test(value) || typeof Bun.wrapAnsi !== 'function') return null;
+  if (value.length > 200_000 || /[^\x20-\x7e\n…]/.test(value) || typeof Bun.wrapAnsi !== 'function') return null;
   const gutter = value.includes('\n') || value.length > 80;
   const prefix = gutter ? '   │ ' : '   ';
   return Bun.wrapAnsi(value, columns - (gutter ? 8 : 6), { hard: true, trim: false })
     .split('\n').map(line => (prefix + line).replace(/ +$/, ''));
+}
+
+/** A clipped payload suffix can request one repaint, never grant permission.
+ * Reconstruct only to validate the pinned controls; nativePermissionKey must
+ * later match the complete real frame. No header or history supplies authority. */
+export function matchesClippedBashPermission(tool: NativePermissionTool, visible: string, columns: number): boolean {
+  if (tool.name !== 'Bash' || tool.bashPermissionRequestId === null || ![120, 240].includes(columns)
+    || typeof tool.input.command !== 'string') return false;
+  const description = tool.input.description === undefined || tool.input.description === '' ? 'Run shell command' : tool.input.description;
+  if (typeof description !== 'string' || description.length > 2_000) return false;
+  const command = nativeBashPayload(tool.input.command, columns);
+  const detail = nativeBashPayload(description, columns);
+  if (!command || !detail) return false;
+  const lines = visible.split('\n').map(line => line.replace(/ +$/, ''));
+  while (lines.at(-1) === '') lines.pop();
+  const end = lines.indexOf('');
+  const payload = [...command, ...detail];
+  if (!lines[0]?.startsWith('   │ ') || end < 1 || end >= payload.length
+    || !isDeepStrictEqual(lines.slice(0, end), payload.slice(-end))) return false;
+  return currentBashPermissionCard(['─'.repeat(columns), ' Bash command', '', ...payload, ...lines.slice(end)].join('\n')) !== null;
 }
 
 export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermissionRequest, visible: string): string {

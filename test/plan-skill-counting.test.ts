@@ -1082,3 +1082,62 @@ test('Bash hook lag retains its exact invocation and resolution before failure c
   expect(JSON.parse(evidence.resolutions[0].responseJson.text)).toEqual({ stdout: 'ready', stderr: '', interrupted: false });
   expect(result.persistedBashUses).toBe(0);
 }, 15_000);
+
+
+test('owned clipped Bash repaint binds the full retained Design command and restores only after ACK', async () => {
+  const result = await runFakeCounting('**DONE**', 'native-bash-repaint-fresh');
+  expect(result.error).toBeUndefined();
+  expect(result.longPermissionFrame).toStartWith('   │ TASKS_DIR=');
+  expect(result.longPermissionFrame).not.toContain(' Bash command');
+  expect(result.resizes).toEqual([[240, 120], [240, 40]]);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+  expect(result.permissionGrantIds).toEqual(result.permissionAckIds);
+  expect(result.permissionGrantIds).toHaveLength(1);
+  expect(result.prematureAnswers).toEqual([]);
+  expect(result.observation.outcome).toBe('completion_summary');
+  expect(result.terminalCloseCount).toBe(1);
+  expect(result.closed).toBe(true);
+});
+
+
+test('owned clipped Bash repaint finishes before its queued native question', async () => {
+  const result = await runFakeCounting('**DONE**', 'native-bash-repaint-queued');
+  expect(result.error).toBeUndefined();
+  expect(result.resizes).toEqual([[240, 120], [240, 40]]);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1']);
+  expect(result.permissionAckIds).toEqual(result.permissionGrantIds);
+  expect(result.prematureAnswers).toEqual([]);
+  expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 1 });
+  expect(result.closed).toBe(true);
+});
+
+test.each(['stale', 'ambiguous', 'wrong-focus', 'foreign-suffix', 'arrival-race', 'deadline',
+  'no-output', 'cap', 'output-after-snapshot', 'mismatch', 'owner-change', 'cwd-change', 'owner-missing',
+  'resize-failure', 'unsolicited-ack', 'error-ack', 'foreign-ack', 'no-ack'])
+('owned clipped Bash repaint preserves %s boundary', async variant => {
+  const result = await runFakeCounting('**DONE**', 'native-bash-repaint-' + variant);
+  const noResize = ['stale', 'ambiguous', 'wrong-focus', 'foreign-suffix', 'arrival-race', 'deadline'].includes(variant);
+  const grantOnly = ['error-ack', 'foreign-ack', 'no-ack'].includes(variant);
+  expect(result.resizes).toEqual(noResize ? [] : [[240, 120]]);
+  expect(result.sends).toEqual(grantOnly ? ['/plan-ceo-review\r', '1\r'] : ['/plan-ceo-review\r']);
+  expect(result.prematureAnswers).toEqual([]);
+  if (variant === 'mismatch') expect(result.error).toContain('cannot be bound');
+  else if (['owner-change', 'cwd-change'].includes(variant)) expect(result.error).toContain('changed input');
+  else if (['owner-missing', 'unsolicited-ack'].includes(variant)) expect(result.error).toContain('lacks its successful native ACK');
+  else if (variant === 'error-ack') expect(result.error).toContain('returned an error');
+  else if (variant === 'resize-failure') expect(result.error).toContain('controlled Bash resize failure');
+  else { expect(result.error).toBeUndefined(); expect(result.observation.outcome).toBe('timeout'); }
+  expect(result.terminalCloseCount).toBe(1);
+  expect(result.closed).toBe(true);
+});
+
+
+test('owned clipped Bash repaint retries a decoder barrier race without consuming its one actual resize', async () => {
+  const result = await runFakeCounting('**DONE**', 'native-bash-repaint-decoder-race');
+  expect(result.error).toBeUndefined();
+  expect(result.raceInjected).toBe(true);
+  expect(result.resizes).toEqual([[240, 120], [240, 40]]);
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+  expect(result.observation.outcome).toBe('completion_summary');
+  expect(result.closed).toBe(true);
+});

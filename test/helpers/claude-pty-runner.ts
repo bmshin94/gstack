@@ -26,7 +26,7 @@ import { submitPlanSeed, PlanSeedTimeout } from './plan-seed-submission';
 import { isDeepStrictEqual } from 'node:util';
 import { retainAutoplanFailure } from './autoplan-phase-order';
 import { readPlanSkillCompletion } from './plan-skill-completion';
-import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, currentBashPermissionCard, hasCurrentBashPermissionHeading, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
+import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, currentBashPermissionCard, matchesClippedBashPermission, hasCurrentBashPermissionHeading, type NativePermissionTool, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -2247,6 +2247,8 @@ export async function runPlanSkillCounting(opts: {
   const viewportAttempts = new Map<string, number>();
   let permissionViewport: Pick<NativeFilePermissionRequest, 'requestId' | 'name' | 'cwd' | 'input' | 'capturedAtMs'> | null = null;
   const permissionViewportAttempts = new Set<string>();
+  let bashPermissionViewport: NativePermissionTool | null = null;
+  const bashPermissionViewportAttempts = new Set<string>();
   let viewportInputSince = 0;
   const grantedTools = new Set<string>();
   const grantedRequests = new Map<string, NativePermissionGrant>();
@@ -2407,6 +2409,29 @@ export async function runPlanSkillCounting(opts: {
         ? frame.rawEnd > Math.max(questionSince, viewportInputSince) ? frame.text : ''
         : questionWindow;
       if (expired()) break;
+      if (bashPermissionViewport) {
+        const owner = native.permissionTools.find(tool => tool.id === bashPermissionViewport!.id);
+        const result = native.permissionResults.find(tool => tool.id === bashPermissionViewport!.id);
+        if (owner && (owner.name !== bashPermissionViewport.name || owner.cwd !== bashPermissionViewport.cwd
+          || !isDeepStrictEqual(owner.input, bashPermissionViewport.input))) {
+          throw new Error('Expanded native Bash permission changed ownership or input');
+        }
+        if (result?.result === 'error') throw new Error('Expanded native Bash permission returned an error');
+        if (!owner && (!result || !grantedTools.has(bashPermissionViewport.id))) {
+          throw new Error('Expanded native Bash permission lacks its successful native ACK');
+        }
+        if (!frame || frame.rawEnd !== session.mark()) { lastLoopStage = 'bash-permission-frame-changed'; continue; }
+        if (result?.result === 'completed') {
+          lastLoopStage = 'restoring-bash-permission-viewport';
+          const restored = await session.resizeQuestionViewport!(40, deadlineAt);
+          if (restored !== null) { viewportInputSince = restored; bashPermissionViewport = null; }
+          continue;
+        }
+        if (native.permissionTools.length !== 1 || native.permissionRequests.some(request => request.result === 'pending')) {
+          throw new Error('Ambiguous expanded native Bash permission owner');
+        }
+        if (!currentBashPermissionCard(questionVisible)) { lastLoopStage = 'awaiting-complete-bash-permission'; continue; }
+      }
       if (permissionViewport) {
         const owner = native.permissionRequests.find(request => request.requestId === permissionViewport!.requestId);
         if (!owner || owner.name !== permissionViewport.name || owner.cwd !== permissionViewport.cwd
@@ -2495,6 +2520,22 @@ export async function runPlanSkillCounting(opts: {
       lastObservation.permissionMenu = { numbered: isNumberedOptionListVisible(questionVisible),
         permissionTail: isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES)),
         permissionWindow: isPermissionDialogVisible(permissionVisible) };
+      // Only an exact owned command suffix with current native controls may
+      // request a repaint. It never supplies grant authority; the complete
+      // fresh card must still pass the normal command/description binding.
+      const bashRepaintOwner = native.permissionTools.length === 1 && pendingPermissionRequests.length === 0
+        ? native.permissionTools[0] : undefined;
+      if (frame && frame.rawEnd === session.mark() && !viewport && !permissionViewport && !bashPermissionViewport
+        && bashRepaintOwner && session.resizeQuestionViewport && !bashPermissionViewportAttempts.has(bashRepaintOwner.id)
+        && matchesClippedBashPermission(bashRepaintOwner, permissionVisible, 240)) {
+        lastLoopStage = 'repainting-bash-permission-viewport';
+        const resized = await session.resizeQuestionViewport(120, deadlineAt);
+        if (resized !== null) {
+          bashPermissionViewportAttempts.add(bashRepaintOwner.id);
+          bashPermissionViewport = structuredClone(bashRepaintOwner); viewportInputSince = resized;
+        }
+        continue;
+      }
       // A damaged header cannot authorize a grant. Once per exact owned
       // request, reuse the coordinated viewport resize to ask the native CLI
       // for a fresh paint. The normal owner/frame/path guards still decide it.

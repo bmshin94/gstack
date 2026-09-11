@@ -81,8 +81,9 @@ async function main() {
   const editPermissionCase = scenario.startsWith('permission-edit-');
   const queuedFileQuestionCase = scenario.startsWith('permission-final-queued-question');
   const nativeBashCase = scenario.startsWith('native-bash-');
+  const bashRepaintCase = scenario.startsWith('native-bash-repaint-');
   const bashHookLag = nativeBashCase && scenario.includes('hook-lag');
-  const queuedBashCase = scenario.startsWith('native-bash-queued-');
+  const queuedBashCase = scenario.startsWith('native-bash-queued-') || bashRepaintCase && scenario.includes('queued');
   const filePermissionCase = scenario.startsWith('permission-final-') || editPermissionCase;
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
@@ -123,6 +124,7 @@ async function main() {
   const fileNativeBeforeGrant: boolean[] = [];
   let longPermissionFrame = '';
   let publishDuringScreen: (() => void) | null = null;
+  let publishResizeRace: (() => void) | null = null;
   let raceInjected = false;
   let raceJustInjected = false;
   let postExitOwnerRaceScreens = 0;
@@ -135,9 +137,14 @@ async function main() {
     lastFixtureFrame = { text: frame.text, rawEnd };
     return frame;
   };
-  if (longPermissionCase || scenario.endsWith('arrival-race') || scenario === 'terminal-diagnostic-frame-race' || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
+  if (bashRepaintCase || longPermissionCase || scenario.endsWith('arrival-race') || scenario === 'terminal-diagnostic-frame-race' || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
     if (scenario === 'exit-confirmation-early-owner-arrival-race' && raceInjected) postExitOwnerRaceScreens++;
     const frame = await originalScreenSnapshot.call(this);
+    if (bashRepaintCase && !longPermissionFrame) longPermissionFrame = frame.text;
+    if (scenario === 'native-bash-repaint-decoder-race' && frame.text.includes('TASKS_DIR') && ++viewportSnapshots === 2) {
+      raceInjected = true; const publish = publishResizeRace; publishResizeRace = null; publish?.();
+    }
+    if (scenario === 'native-bash-repaint-deadline' && frame.text.includes('TASKS_DIR')) clock = caseBudgetMs;
     if (longPermissionCase && frame.text.includes(' Create file')) longPermissionFrame = frame.text;
     if (scenario === 'permission-repaint-deadline' && frame.text.includes('pl n.md') && ++viewportSnapshots === 2) clock = caseBudgetMs;
     if (scenario === 'viewport-flush-deadline' && frame.rows === 40 && frame.text.includes('Clipped native prompt') && ++viewportSnapshots === 2) clock = caseBudgetMs;
@@ -212,11 +219,23 @@ async function main() {
           : 'Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)';
         return `\x1b[2J\x1b[H${header}Do you want to ${operation} plan.md?\n❯1.Yes\n2.${option2}\n3.No\nEsc to cancel`;
       };
-      const nativeBashInput = { command: 'printf %s ready > probe.txt', description: 'Write the owned marker' };
+      // Exact ordinary owned input from Design V4, including its two literal U+2026 characters.
+      const retainedDesignBashInput = {"command": "cd /tmp/gstack-paid-shard-vlEwAb/tmp/gstack-e2e-plan-design-slg7FV\neval \"$(/tmp/gstack-paid-shard-vlEwAb/tmp/gstack-hermetic-3638961-KLdDFm/with-skills/runtime/bin/gstack-slug 2>/dev/null)\"\nTASKS_DIR=\"${HOME}/.gstack/projects/${SLUG:-unknown}\"\nmkdir -p \"$TASKS_DIR\"\nTASKS_FILE=\"$TASKS_DIR/tasks-design-review-$(date +%Y%m%d-%H%M%S).jsonl\"\nCOMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)\nBRANCH=$(git branch --show-current 2>/dev/null || echo unknown)\nRUN_ID=\"$(date -u +%Y%m%dT%H%M%SZ)-$$\"\ncommand -v jq >/dev/null || { echo \"NO_JQ\"; exit 0; }\nemit() { jq -nc --arg phase 'design-review' --arg run_id \"$RUN_ID\" --arg branch \"$BRANCH\" --arg commit \"$COMMIT\" \\\n  --arg id \"$1\" --arg priority \"$2\" --arg component \"$3\" --arg effort_human \"$4\" --arg effort_cc \"$5\" --arg title \"$6\" --arg source_finding \"$7\" --argjson files \"$8\" \\\n  '{phase:$phase, run_id:$run_id, branch:$branch, commit:$commit, id:$id, priority:$priority, component:$component, files:$files, effort_human:$effort_human, effort_cc:$effort_cc, title:$title, source_finding:$source_finding}' >> \"$TASKS_FILE\"; }\nemit T1 P1 \"Button / Settings header\" \"~2h\" \"~10min\" \"Apply three-tier variants: Save filled, Reset and Export outlined, Cancel text\" \"Pass 1: four header buttons with identical emphasis (decision 1)\" '[]'\nemit T2 P1 \"Button / Save\" \"~3h\" \"~15min\" \"In-flight state: Saving… label, 16px spinner, locked min-width, aria-disabled, reduced-motion fallback\" \"Pass 2: spinner-or-skeleton unresolved; native disabled drops focus (decision 2)\" '[]'\nemit T3 P1 \"Saved-status line\" \"~1h\" \"~5min\" \"Add 'Saving your changes…' state announced via polite live region\" \"Pass 2: spoken arc silent during Save (decision 2)\" '[]'\nemit T4 P2 \"Save request\" \"~2h\" \"~10min\" \"15s client timeout lands in existing failure state; confirm retry is safe to repeat\" \"Pass 2: no upper bound on in-flight state (decision 3)\" '[]'\nemit T5 P2 \"FormStack\" \"~30min\" \"~3min\" \"Set Settings section gap to 40px on existing custom property\" \"Pass 5: 16/24/32px mix (decision 4)\" '[]'\nemit T6 P2 \"Field\" \"~1h\" \"~5min\" \"Label 16px/600, helper 14px/400, remove 18px labels\" \"Pass 5: three label sizes (decision 5)\" '[]'\nemit T7 P1 \"Field / status line / Export failure\" \"~1h\" \"~5min\" \"Error pair #991B1B on #FEF2F2 with 1px border on all three error surfaces\" \"Pass 6: 3:1 contrast; three surfaces one pair (decisions 6, 7)\" '[]'\nemit T8 P2 \"Error messages\" \"~30min\" \"~3min\" \"16px error icon from bundled icon set, currentColor, 8px from text\" \"Pass 6/7: color-only error cue (decisions 7, 8)\" '[]'\nemit T9 P2 \"DESIGN.md\" \"~30min\" \"~3min\" \"Replace five unresolved passages with decisions 1-8; add token front matter\" \"TODOS: TODO 2 approved to build now\" '[\"DESIGN.md\"]'\nemit T10 P3 \"TODOS.md\" \"~10min\" \"~1min\" \"Create TODOS.md with TODO 1 (app-wide button tiers)\" \"TODOS: TODO 1 approved to add\" '[\"TODOS.md\"]'\nemit T11 P2 \"Visual QA\" \"~1h\" \"~10min\" \"Run /design-review on built page: composite Save state and 375px wrap\" \"Pass 2 and 6 remaining points\" '[]'\necho \"TASKS_FILE: $TASKS_FILE ($(wc -l < \"$TASKS_FILE\") tasks)\"\necho \"--- REVIEW LOG ---\"\n/tmp/gstack-paid-shard-vlEwAb/tmp/gstack-hermetic-3638961-KLdDFm/with-skills/runtime/bin/gstack-review-log '{\"skill\":\"plan-design-review\",\"timestamp\":\"'\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"'\",\"status\":\"clean\",\"initial_score\":4,\"overall_score\":9,\"unresolved\":0,\"decisions_made\":8,\"commit\":\"'\"$(git rev-parse --short HEAD)\"'\"}' && echo LOGGED\necho \"--- REVIEW READ ---\"\n/tmp/gstack-paid-shard-vlEwAb/tmp/gstack-hermetic-3638961-KLdDFm/with-skills/runtime/bin/gstack-review-read\necho \"--- SKIP ENG ---\"\n/tmp/gstack-paid-shard-vlEwAb/tmp/gstack-hermetic-3638961-KLdDFm/with-skills/runtime/bin/gstack-config get skip_eng_review 2>/dev/null || echo \"unset\"", "description": "Write tasks JSONL, log review, read review dashboard"};
+      const nativeBashInput = bashRepaintCase ? { ...retainedDesignBashInput,
+        ...(scenario.endsWith('cap') ? { command: retainedDesignBashInput.command + '\n' + 'printf cap\n'.repeat(150) } : {}) }
+        : { command: 'printf %s ready > probe.txt', description: 'Write the owned marker' };
       // Source-shaped short native card; no legacy "requires permission" sentence.
-      const nativeBashDialog = () => '\x1b[2J\x1b[H' + '─'.repeat(240) + '\n Bash command\n\n   '
-        + nativeBashInput.command + '\n   ' + nativeBashInput.description
-        + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+      const nativeBashDialog = () => {
+        const render = (value: string) => {
+          const gutter = value.includes('\n') || value.length > 80;
+          return Bun.wrapAnsi(value, 240 - (gutter ? 8 : 6), { hard: true, trim: false })
+            .split('\n').map(line => (gutter ? '   │ ' : '   ') + line).join('\n');
+        };
+        return '\x1b[2J\x1b[H' + '─'.repeat(240) + '\n Bash command\n\n'
+          + render(nativeBashInput.command) + '\n' + render(nativeBashInput.description)
+          + (bashRepaintCase ? '\n\n Contains brace with quote character (expansion obfuscation)' : '')
+          + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+      };
       const recordBash = (event: string, id: string, input: unknown, extra: Record<string, unknown> = {}) => {
         const settings = JSON.parse(fs.readFileSync(_command[_command.indexOf('--settings') + 1], 'utf8'));
         const recorded = Bun.spawnSync(['bash', '-c', settings.hooks[event][0].hooks[0].command], {
@@ -474,12 +493,28 @@ async function main() {
       if (scenario === 'exit-confirmation-stale-frame') emit('\x1b[2J\x1b[H' + exitConfirmation());
       if (scenario === 'retention-timeout-stale-frame') emit(fileDialog('create'));
       if (scenario === 'permission-long-frame-stale') emit(longPermissionDialog());
-      if (scenario === 'native-bash-stale' || scenario === 'native-bash-queued-stale') emit(nativeBashDialog());
+      if (scenario === 'native-bash-stale' || scenario === 'native-bash-queued-stale' || scenario === 'native-bash-repaint-stale') emit(nativeBashDialog());
       return {
         exited: new Promise<number>(resolve => { end = resolve; }),
         terminal: {
-          ...(viewportCase || permissionRepaintCase ? { resize(cols: number, rows: number) {
+          ...(viewportCase || permissionRepaintCase || bashRepaintCase ? { resize(cols: number, rows: number) {
             resizes.push([cols, rows]);
+            if (bashRepaintCase) {
+              if (scenario.endsWith('resize-failure')) throw new Error('controlled Bash resize failure');
+              if (scenario.endsWith('no-output')) return;
+              if (rows === 40) { emit('\x1b[2J\x1b[H' + latestPaint); return; }
+              if (scenario.endsWith('owner-change') || scenario.endsWith('cwd-change')) append({ type: 'assistant',
+                cwd: scenario.endsWith('cwd-change') ? options.cwd + '/foreign' : options.cwd,
+                message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: permissionId,
+                  name: 'Bash', input: scenario.endsWith('owner-change') ? { ...nativeBashInput, command: 'false' } : nativeBashInput }] } });
+              if (scenario.endsWith('owner-missing')) { fs.writeFileSync(file, ''); tool('Bash', nativeBashInput); }
+              if (scenario.endsWith('unsolicited-ack')) append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Unsolicited' }] } });
+              let repaint = nativeBashDialog();
+              if (scenario.endsWith('mismatch')) repaint = repaint.replace('TASKS_DIR=', 'TASKS_NEW=');
+              emit(repaint);
+              if (scenario.endsWith('output-after-snapshot')) publishDuringScreen = () => emit('\x1b[1;1HUNOWNED NEW OUTPUT');
+              return;
+            }
             if (permissionRepaintCase) {
               if (scenario === 'permission-repaint-failure') throw new Error('controlled permission resize failure');
               if (scenario === 'permission-repaint-no-output') return;
@@ -652,17 +687,20 @@ async function main() {
             }
             if (nativeBashCase) {
               permissionId = tool('Bash', scenario === 'native-bash-queued-malformed' ? { ...nativeBashInput, command: null } : nativeBashInput);
-              if (scenario === 'native-bash-ambiguous' || scenario === 'native-bash-queued-ambiguous') tool('Read', { file_path: '/fixture' });
+              if (scenario === 'native-bash-ambiguous' || scenario === 'native-bash-queued-ambiguous' || scenario === 'native-bash-repaint-ambiguous') tool('Read', { file_path: '/fixture' });
               if (scenario === 'native-bash-queued-file') recordFilePermission({ file_path: path.join(project, 'other.md'), content: 'Other pending file' });
               if (scenario === 'native-bash-queued-unknown') tool('ToolSearch', { query: 'tools' });
               if (queuedBashCase) ask('D1 — Pick a mode', ['HOLD SCOPE', 'SCOPE EXPANSION']);
-              if (scenario === 'native-bash-stale' || scenario === 'native-bash-queued-stale') return;
+              if (scenario === 'native-bash-stale' || scenario === 'native-bash-queued-stale' || scenario === 'native-bash-repaint-stale') return;
               let card = nativeBashDialog();
               if (scenario === 'native-bash-command-mismatch' || scenario === 'native-bash-queued-mismatch' || bashHookLag && scenario.endsWith('mismatch')) card = card.replace('printf %s ready', 'printf %s changed');
               if (scenario === 'native-bash-history') card += '\n❯ New unrelated draft';
               if (scenario === 'native-bash-clipped') card = card.replace(nativeBashInput.command, 'printf %s ready…');
-              if (scenario === 'native-bash-wrong-focus') card = card.replace(' ❯ 1. Yes', '   1. Yes').replace('   2. No', ' ❯ 2. No');
+              if (scenario === 'native-bash-wrong-focus' || scenario === 'native-bash-repaint-wrong-focus') card = card.replace(' ❯ 1. Yes', '   1. Yes').replace('   2. No', ' ❯ 2. No');
+              if (scenario === 'native-bash-repaint-foreign-suffix') card = card.replace('TASKS_FILE:', 'OTHER_FILE:');
               emit(card);
+              if (scenario === 'native-bash-repaint-decoder-race') publishResizeRace = () => emit(nativeBashDialog());
+              if (scenario === 'native-bash-repaint-arrival-race') publishDuringScreen = () => tool('Read', { file_path: '/new-owner' });
               return;
             }
             if (['permission-redraw', 'permission-ambiguous', 'permission-owner-change'].includes(scenario)) {
@@ -699,7 +737,7 @@ async function main() {
                       { error: 'Command failed with exit code 1', is_interrupt: false });
                     else recordBash('PostToolUse', permissionId, nativeBashInput, { tool_response: { stdout: 'ready', stderr: '', interrupted: false,
                       ...(scenario.endsWith('background') ? { backgroundTaskId: 'task-fixture', backgroundedByUser: true } : {}) } });
-                  } else append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Complete' }] } });
+                  } else append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: scenario === 'native-bash-repaint-foreign-ack' ? 'foreign-result' : permissionId, content: 'Complete', ...(scenario === 'native-bash-repaint-error-ack' ? { is_error: true } : {}) }] } });
                   permissionAckIds.push(permissionId);
                 }
                 permissionId = null;
@@ -780,7 +818,7 @@ async function main() {
                 }
                 return;
               }
-              append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Complete' }] } });
+              append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: scenario === 'native-bash-repaint-foreign-ack' ? 'foreign-result' : permissionId, content: 'Complete', ...(scenario === 'native-bash-repaint-error-ack' ? { is_error: true } : {}) }] } });
               permissionId = null;
               if (scenario === 'permission-owner-change') tool('Read', { file_path: '/new-owner-only' });
               emit('Bash command true requires permission\n❯1.Yes\n2.No Redraw\n');
