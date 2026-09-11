@@ -21,9 +21,10 @@ export class AuthFailure extends Error {
   }
 }
 
-// Current behavior to preserve during the proposed internal restructuring.
-// No shared memoization, automatic retries, cancellation or single-flight work
-// happens here. The caller maps denied to 403 and dependency failures to 503.
+// Preserve public outcomes, failure ordering and the Platform adapter contracts.
+// Current implementation: no shared memoization, automatic retries, cancellation
+// or single-flight work. This describes today's code, not the refactor's design.
+// The caller maps denied to 403 and dependency failures to 503.
 export async function legacyAuthFlow(identity: Identity, platform: Platform): Promise<Session> {
   for (const policy of POLICIES) {
     let allowed: boolean;
