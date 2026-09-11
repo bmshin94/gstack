@@ -1881,7 +1881,14 @@ export async function runPlanSkillObservation(opts: {
     cwd: opts.cwd,
     timeoutMs: (opts.timeoutMs ?? 180_000) + 30_000,
     extraArgs: opts.extraArgs,
-    env: opts.env,
+    // This observer launches plan mode and stops at the first outcome. Supply
+    // its initial hint without overriding explicit env or later CLI mode args.
+    env: {
+      ...(opts.inPlanMode !== false
+        && !opts.extraArgs?.some(arg => /^--permission-mode(?:=|$)/.test(arg))
+        ? { GSTACK_PLAN_MODE: 'active' } : {}),
+      ...opts.env,
+    },
     model: opts.model,
     seedSkills: true,
   });

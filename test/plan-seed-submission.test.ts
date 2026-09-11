@@ -139,3 +139,50 @@ for (const mode of ['unseeded-deadline', 'seeded-deadline', 'protocol-error']) t
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }, 15000);
+
+for (const entry of [
+  { name: 'plan seed', seeded: true, inPlanMode: true, extraArgs: [], env: {}, expectedHint: 'active' },
+  { name: 'outside plan mode', inPlanMode: false, extraArgs: [], env: {}, expectedHint: null },
+  { name: 'explicit inactive hint', inPlanMode: true, extraArgs: [], env: { GSTACK_PLAN_MODE: 'inactive' }, expectedHint: 'inactive' },
+  { name: 'explicit outside hint', inPlanMode: false, extraArgs: [], env: { GSTACK_PLAN_MODE: 'active' }, expectedHint: 'active' },
+  { name: 'separate CLI override', inPlanMode: true, extraArgs: ['--permission-mode', 'auto'], env: {}, expectedHint: null },
+  { name: 'equals CLI override', inPlanMode: true, extraArgs: ['--permission-mode=default'], env: {}, expectedHint: null },
+  { name: 'unrelated CLI option', inPlanMode: true, extraArgs: ['--disallowedTools', 'AskUserQuestion'], env: {}, expectedHint: 'active' },
+]) test.skipIf(process.platform === 'win32')(`actual observation launch preserves initial plan hint: ${entry.name}`, async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-mode-hint-')));
+  const config = path.join(dir, '.claude'); fs.mkdirSync(config);
+  const script = path.join(dir, 'cli.ts');
+  fs.writeFileSync(script, `#!${process.execPath}\n${CLI}`, { mode: 0o700 });
+  const old = process.env.BROWSE_TERMINAL_BINARY;
+  process.env.BROWSE_TERMINAL_BINARY = script;
+  try {
+    const plan = '# Existing plan\nKeep the review scope.';
+    const obs = await runPlanSkillObservation({ skillName: 'plan-eng-review', cwd: dir,
+      inPlanMode: entry.inPlanMode, extraArgs: entry.extraArgs,
+      ...(entry.seeded ? { initialPlanContent: plan } : {}), timeoutMs: entry.seeded ? 12000 : 600, model: 'fixture',
+      env: { CLAUDE_CONFIG_DIR: config, SEED_CASE: entry.seeded ? 'observation-scope-hint' : 'success', ...entry.env } });
+    const launch = JSON.parse(fs.readFileSync(path.join(config, 'launch.json'), 'utf8'));
+    expect(launch.argv).toEqual(['--model', 'fixture', ...(entry.inPlanMode ? ['--permission-mode', 'plan'] : []),
+      '--strict-mcp-config', ...entry.extraArgs]);
+    expect(launch.planModeHint).toBe(entry.expectedHint);
+    expect(launch.planModeForce).toBeNull();
+    if (entry.seeded) {
+      expect(obs.outcome).toBe('asked');
+      // The fixture supplies no mode announcement: wiring proof is not native
+      // announcement-compliance proof and must not manufacture that flag.
+      expect(obs.scopeGateAutoSelectObserved).toBe(false);
+      const seed = `Keep this draft plan as context. Briefly acknowledge receipt, then wait for my next message containing a slash command. Do not start the review or call tools yet.\n\n${plan}`;
+      const events = fs.readFileSync(path.join(config, 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+      expect(events.map(e => e.kind)).toEqual(['paste', 'enter', 'end_turn', 'slash']);
+      expect(events.slice(0, 3).every(e => e.value === seed)).toBe(true);
+      expect(events[3].value).toBe('/plan-eng-review\r');
+    } else {
+      expect(obs.outcome).toBe('timeout');
+      expect(fs.existsSync(path.join(config, 'events.jsonl'))).toBe(false);
+    }
+  } finally {
+    if (old === undefined) delete process.env.BROWSE_TERMINAL_BINARY;
+    else process.env.BROWSE_TERMINAL_BINARY = old;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}, 18000);

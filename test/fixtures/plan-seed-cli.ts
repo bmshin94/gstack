@@ -14,6 +14,7 @@ if(scenario==='wrong-start')status.procStart+='0';
 if(scenario==='wrong-domain')status.pidDomain+='-different';
 if(scenario==='startup-waiting')status.waitingFor='permission prompt';
 fs.writeFileSync(statusFile,JSON.stringify(status));
+fs.writeFileSync(path.join(dir,'launch.json'),JSON.stringify({argv:process.argv.slice(2),planModeHint:process.env.GSTACK_PLAN_MODE??null,planModeForce:process.env.GSTACK_PLAN_MODE_FORCE??null}));
 const event=(kind,value)=>fs.appendFileSync(events,JSON.stringify({kind,value,at:Date.now()})+'\n');
 const row=(type,content,stop)=>JSON.stringify({type,sessionId:sid,cwd,message:{role:type,content,stop_reason:stop}})+'\n';
 const text=s=>[{type:'text',text:s}];
@@ -75,6 +76,6 @@ process.stdin.on('data',chunk=>{
    if(scenario==='stray-prompt-after-current')process.stdout.write('\r❯ keep this later draft');
   },180);return;
  }
- if(input==='/plan-eng-review\r'){event('slash',input);input='';}
+ if(input==='/plan-eng-review\r'){event('slash',input);input='';if(scenario==='observation-scope-hint')process.stdout.write('\r\n❯ 1. Review changes\r\n  2. Keep current plan\r\nEnter to select\r\n');}
 });
-setTimeout(()=>process.exit(0),scenario==='wrong-pid'?12000:5000);
+setTimeout(()=>process.exit(0),scenario==='observation-scope-hint'?15000:scenario==='wrong-pid'?12000:5000);
