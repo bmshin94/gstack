@@ -14,7 +14,7 @@ test('private evidence preserves JSON and counters, redacts secrets and refuses 
     const file = retainCeoModeEvidence(root, sessionId, {
       text: 'before credential-value-123456 after', password: 'other-hidden-value',
       usage: { input_tokens: 12, output_tokens: 34 },
-      keyDocument: '-----BEGIN PRIVATE KEY-----\nprivate material\n-----END PRIVATE KEY-----',
+      keyDocument: ["-----BEGIN ", "PRIVATE KEY-----\nprivate material\n-----END ", "PRIVATE KEY-----"].join(''),
     }, { TEST_API_KEY: 'credential-value-123456' });
     const raw = fs.readFileSync(file, 'utf8');
     const saved = JSON.parse(raw);

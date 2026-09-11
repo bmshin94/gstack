@@ -130,13 +130,16 @@ When fixing failures or preparing `/ship`, follow this order:
    for another agent run. Check behavior and acknowledgments; match exact prose
    only when that prose is the contract. Do not lower thresholds, increase model
    budgets, skip cases, or rejudge a failure to manufacture a pass.
-5. Run adjacent cheap checks before paid work: generated-content freshness,
-   prompt-size/parity limits, source assertions, fixture checks, and dependency
-   selection as applicable. A changed prompt must clear these before its eval.
+5. Run required cheap CI checks, including credential scanning, before paid work.
+   Also run adjacent cheap checks: generated-content freshness, prompt-size/parity
+   limits, source assertions, fixture checks, and dependency selection as
+   applicable. A changed prompt must clear these before its eval.
 6. Preflight the actual launcher: required binaries, isolated state, display when
    needed, explicit test tier, selection, and expected executed-case counts.
    Preserve exit status through logging. Use the documented detached runner and
-   eval lock. Skipped or unstarted cases
+   eval lock. Review the final launcher after edits; preparation and `--list`
+   modes must not start monitors, retainers, or test processes. Verify this with
+   a before/after process check. Skipped or unstarted cases
    do not satisfy coverage; preserve configured retries and every attempt.
 7. Prove all known repairs with focused tests, including affected paid cases.
    Rerun a failed case only after a concrete repair or a demonstrated launch
