@@ -1,6 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { generateCodexPlanReview } from '../scripts/resolvers/review';
 import { CODEX_MODEL_CONFIG_FLAG } from '../scripts/resolvers/constants';
 import type { TemplateContext } from '../scripts/resolvers/types';
@@ -20,6 +22,120 @@ import { ALL_HOST_CONFIGS } from '../hosts';
 // resolver edit.
 
 const ROOT = path.resolve(import.meta.dir, '..');
+
+describe('generated Codex plan-review shell invocation', () => {
+  const rendered = generateCodexPlanReview({ host: 'claude' } as TemplateContext);
+  const ready = rendered.slice(rendered.indexOf('**If `CODEX_MODE: ready` — run Codex:**'),
+    rendered.indexOf('Present the full output verbatim:'));
+  const blocks = [...ready.matchAll(/```bash\n([\s\S]*?)\n```/g)].map(match => match[1]!);
+  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+
+  function fixture() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-codex-plan-shell-'));
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(bin);
+    const created = path.join(dir, 'created');
+    const calls = path.join(dir, 'calls');
+    const stale = path.join(dir, 'codex-out-foreign');
+    const staleError = path.join(dir, 'codex-planreview-foreign');
+    fs.writeFileSync(stale, 'FOREIGN OLD REVIEW\n');
+    fs.writeFileSync(staleError, 'FOREIGN OLD ERROR\n');
+    const writeBin = (name: string, body: string) => fs.writeFileSync(path.join(bin, name), '#!/bin/sh\n' + body, { mode: 0o755 });
+    writeBin('git', 'printf "%s\\n" "$FAKE_REPO"\n');
+    writeBin('mktemp', `
+if [ "$FAKE_MKTEMP_FAIL" = 1 ]; then exit 42; fi
+p=$(${quote(Bun.which('mktemp')!)} "$FAKE_REPO/codex-planreview-XXXXXXXX") || exit 1
+printf '%s\\n' "$p" >> "$FAKE_CREATED"
+printf '%s\\n' "$p"
+`);
+    writeBin('codex', `
+printf '%s\\n' "$FAKE_REVIEW_ID" >> "$FAKE_CALLS"
+printf '%s\\n' "$FAKE_REVIEW_ID: current findings"
+printf '%s\\n' "$FAKE_REVIEW_ID: current stderr" >&2
+exit "$FAKE_CODEX_STATUS"
+`);
+    writeBin('cat', `
+if [ "$FAKE_CAT_FAIL" = 1 ]; then
+  printf '%s\\n' 'cat: simulated current-file read failure' >&2
+  exit 47
+fi
+exec ${quote(Bun.which('cat')!)} "$@"
+`);
+    const run = (id: string, code = 0, errexit = false, mktempFailure = false, catFailure = false) => {
+      const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}`, FAKE_REPO: dir,
+        FAKE_CREATED: created, FAKE_CALLS: calls, FAKE_REVIEW_ID: id,
+        FAKE_CODEX_STATUS: String(code), FAKE_MKTEMP_FAIL: mktempFailure ? '1' : '0',
+        FAKE_CAT_FAIL: catFailure ? '1' : '0' };
+      // Each displayed block gets a fresh shell, as separate Bash tool calls do.
+      return blocks.map(block => spawnSync('bash', ['-c', (errexit ? 'set -e\n' : '') + block], {
+        cwd: dir, env, encoding: 'utf8', timeout: 3_000,
+      }));
+    };
+    return { dir, run, stale, staleError, calls,
+      created: () => fs.existsSync(created) ? fs.readFileSync(created, 'utf8').trim().split('\n') : [],
+      cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+  }
+
+  test('fresh shells retain the current stderr and clean its exact temporary file', () => {
+    const f = fixture();
+    try {
+      const results = f.run('current');
+      expect(results.map(result => result.status)).toEqual([0]);
+      expect(results[0]!.stdout).toBe('current: current findings\n');
+      expect(results[0]!.stderr).toBe('current: current stderr\n');
+      expect(f.created()).toHaveLength(1);
+      expect(f.created().every(file => !fs.existsSync(file))).toBe(true);
+    } finally { f.cleanup(); }
+  });
+  test.each([false, true])('preserves the real failure status and stderr with errexit=%s', (errexit) => {
+    const f = fixture();
+    try {
+      const results = f.run('failed', 23, errexit);
+      expect(results.map(result => result.status)).toEqual([23]);
+      expect(results[0]!.stdout).toBe('failed: current findings\n');
+      expect(results[0]!.stderr).toBe('failed: current stderr\n');
+      expect(f.created()).toHaveLength(1);
+      expect(f.created().every(file => !fs.existsSync(file))).toBe(true);
+    } finally { f.cleanup(); }
+  });
+  test.each([[0, false], [0, true], [23, false], [23, true]] as const)(
+    'stderr display failure preserves Codex status %s with errexit=%s', (code, errexit) => {
+      const f = fixture();
+      try {
+        const results = f.run('display-failed', code, errexit, false, true);
+        expect(results.map(result => result.status)).toEqual([code || 1]);
+        expect(results[0]!.stdout).toBe('display-failed: current findings\n');
+        expect(results[0]!.stderr).toBe('cat: simulated current-file read failure\n');
+        expect(f.created()).toHaveLength(1);
+        expect(f.created().every(file => !fs.existsSync(file))).toBe(true);
+      } finally { f.cleanup(); }
+    });
+  test('two invocations consume only their own output and leave stale files untouched', () => {
+    const f = fixture();
+    try {
+      for (const id of ['first', 'second']) {
+        const results = f.run(id);
+        expect(results.map(result => result.status)).toEqual([0]);
+        expect(results[0]!.stdout).toBe(`${id}: current findings\n`);
+        expect(results[0]!.stderr).toBe(`${id}: current stderr\n`);
+      }
+      expect(new Set(f.created()).size).toBe(2);
+      expect(f.created().every(file => !fs.existsSync(file))).toBe(true);
+      expect(fs.readFileSync(f.stale, 'utf8')).toBe('FOREIGN OLD REVIEW\n');
+      expect(fs.readFileSync(f.staleError, 'utf8')).toBe('FOREIGN OLD ERROR\n');
+      expect(fs.readFileSync(f.calls, 'utf8')).toBe('first\nsecond\n');
+    } finally { f.cleanup(); }
+  });
+  test('temporary-file failure stops before starting Codex', () => {
+    const f = fixture();
+    try {
+      const results = f.run('unstarted', 0, false, true);
+      expect(results.map(result => result.status)).toEqual([1]);
+      expect(fs.existsSync(f.calls)).toBe(false);
+      expect(f.created()).toEqual([]);
+    } finally { f.cleanup(); }
+  });
+});
 
 // Only these plan-review carriers use the bounded outside-voice task. Every
 // other synchronous dispatch keeps the existing explicit foreground rule.

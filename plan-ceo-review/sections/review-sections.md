@@ -361,23 +361,24 @@ compliments. Just the problems.
 THE PLAN:
 <plan content>"
 
-Run one preflight-selected backend: foreground Codex when ready, or the fallback
-below when unavailable. After a failed Codex attempt, finish its termination before
-fallback. Preserve unique `mktemp` paths; allocate any extra prompt/output files
-uniquely too. Consume only this invocation's completed output, never shared fixed
-filenames or another task's output.
+Run only the preflight-selected backend. Use the entire block in one foreground
+Bash invocation (`run_in_background: false`, `timeout: 300000` — 5 minutes).
+No background jobs, shared globs or later shell-variable lookups. Extra spools
+need unique `mktemp` paths. Finish a failed attempt's termination before fallback;
+consume only its completed output.
 
 **If `CODEX_MODE: ready` — run Codex:**
 
 ```bash
-TMPERR_PV=$(mktemp /tmp/codex-planreview-XXXXXXXX)
+(
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c "model=\"${GSTACK_CODEX_MODEL:-gpt-6-astra}\"" -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR_PV"
-```
-
-Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
-```bash
-cat "$TMPERR_PV"
+TMPERR_PV=$(mktemp /tmp/codex-planreview-XXXXXXXX) || exit 1
+trap 'rm -f "$TMPERR_PV"' EXIT
+CODEX_STATUS_PV=0
+codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c "model=\"${GSTACK_CODEX_MODEL:-gpt-6-astra}\"" -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR_PV" || CODEX_STATUS_PV=$?
+cat "$TMPERR_PV" >&2 || { [ "$CODEX_STATUS_PV" -ne 0 ] || CODEX_STATUS_PV=1; }
+exit "$CODEX_STATUS_PV"
+)
 ```
 
 Present the full output verbatim:
@@ -486,8 +487,6 @@ If no tension points exist, note: "No cross-model tension — both reviewers agr
 
 Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist.
 SOURCE = "codex" if Codex ran, "claude" if subagent ran.
-
-**Cleanup:** Run `rm -f "$TMPERR_PV"` after processing (if Codex was used).
 
 ---
 
