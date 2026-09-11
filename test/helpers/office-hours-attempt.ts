@@ -1,6 +1,6 @@
 /** Record complete office-hours attempts only after their existing oracle settles. */
 import { recordE2E } from './e2e-helpers';
-import type { EvalCollector } from './eval-store';
+import type { EvalCollector, EvalTestEntry } from './eval-store';
 import type { SkillTestResult } from './session-runner';
 import { CAPTURE_LONG_MS } from './eval-budgets';
 
@@ -14,6 +14,8 @@ export interface OfficeHoursAttemptOptions {
   suite: string;
   model: string;
   budgetMs?: number;
+  /** Deferred judge metadata; terminal pass/failure stays owned by this attempt. */
+  judgeMetadata?: Pick<EvalTestEntry, 'judge_scores' | 'judge_reasoning'>;
   run: (signal: AbortSignal) => Promise<SkillTestResult>;
   validate: (result: SkillTestResult, signal: AbortSignal) => void | Promise<void>;
 }
@@ -30,7 +32,7 @@ export async function runRecordedOfficeHoursAttempt(opts: OfficeHoursAttemptOpti
   let deadlineTimer: ReturnType<typeof setTimeout>;
   let drainTimer: ReturnType<typeof setTimeout> | undefined;
   const expire = () => {
-    if (!controller.signal.aborted) controller.abort(new OfficeHoursDeadline(`Office-hours attempt exceeded ${budgetMs}ms`));
+    if (!controller.signal.aborted) controller.abort(new OfficeHoursDeadline(`${opts.name} attempt exceeded ${budgetMs}ms`));
     return controller.signal.reason;
   };
   const checkDeadline = () => {
@@ -78,6 +80,7 @@ export async function runRecordedOfficeHoursAttempt(opts: OfficeHoursAttemptOpti
       // Keep runner exit reasons and all existing usage/transcript diagnostics.
       // A successful process can still fail the fixture or posture assertions.
       recordE2E(opts.collector, opts.name, opts.suite, result, {
+        ...opts.judgeMetadata,
         passed, ...(passed ? {} : { error }),
         ...(timedOut ? {
           // Preserve genuine process failures even if pipe cleanup met the deadline.

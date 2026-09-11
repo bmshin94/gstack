@@ -270,7 +270,8 @@ ${text}`, undefined, { signal });
  * Format spec: scripts/resolvers/preamble/generate-ask-user-format.ts
  *   Recommendation: <choice> because <one-line reason>
  */
-export async function judgeRecommendation(askUserText: string): Promise<RecommendationScore> {
+export async function judgeRecommendation(askUserText: string, signal?: AbortSignal): Promise<RecommendationScore> {
+  signal?.throwIfAborted();
   // Deterministic checks. The format spec requires:
   //   "Recommendation: <choice> because <reason>"
   // Match case-insensitive on the leading word, allow optional markdown
@@ -344,6 +345,7 @@ Respond with ONLY valid JSON:
   const out = await callJudge<{ reason_substance: number; reasoning: string }>(
     prompt,
     'claude-haiku-4-5-20251001',
+    { signal },
   );
 
   // Defensive clamp: rubric is 1-5. If Haiku returns out-of-range or non-numeric,

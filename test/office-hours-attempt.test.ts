@@ -546,3 +546,145 @@ describe('session runner native CLI max-turns exit semantics', () => {
     });
   });
 });
+
+// Exercise the real format registrations and recommendation helper. Only the
+// native capture and SDK request boundaries are fake; no provider is reachable.
+const FORMAT_CASES = [
+  ['skill-e2e-plan-format.test.ts', 'plan-ceo-review-format-mode'],
+  ['skill-e2e-plan-format.test.ts', 'plan-ceo-review-format-approach'],
+  ['skill-e2e-plan-format.test.ts', 'plan-eng-review-format-coverage'],
+  ['skill-e2e-plan-format.test.ts', 'plan-eng-review-format-kind'],
+  ['skill-e2e-plan-prosons.test.ts', 'plan-review-prosons-format'],
+  ['skill-e2e-plan-prosons.test.ts', 'plan-review-prosons-hardstop-neg'],
+  ['skill-e2e-plan-prosons.test.ts', 'plan-review-prosons-neutral-neg'],
+  ['skill-e2e-plan-prosons.test.ts', 'plan-ceo-review-prosons-cadence'],
+] as const;
+
+async function runFormatLifecycle(file: string, id: string, scenario: string) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'format-finalization-'));
+  const evalDir = path.join(dir, 'evals');
+  const facts = path.join(dir, 'events.jsonl');
+  const script = path.join(dir, 'format.test.ts');
+  fs.writeFileSync(script, `
+import { mock, spyOn } from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+const root = ${JSON.stringify(ROOT)}, selected = ${JSON.stringify(id)}, scenario = ${JSON.stringify(scenario)};
+const event = value => fs.appendFileSync(${JSON.stringify(facts)}, JSON.stringify(value) + '\\n');
+let attempt = 0;
+let currentSignal;
+mock.module(path.join(root, 'test/helpers/eval-budgets.ts'), () => ({ CAPTURE_MS: 300, CAPTURE_LONG_MS: 600 }));
+mock.module(path.join(root, 'test/helpers/session-runner.ts'), () => ({
+  SESSION_DRAIN_GRACE_MS: 50,
+  runSkillTest: async opts => {
+    const id = ++attempt;
+    currentSignal = opts.signal;
+    event({ kind: 'start', id, timeout: opts.timeout, maxTurns: opts.maxTurns, model: opts.model, cwd: opts.workingDirectory });
+    opts.signal?.addEventListener('abort', () => event({ kind: 'abort', id }), { once: true });
+    const timeout = scenario === 'both-timeout' || (scenario === 'recover' && id === 1);
+    await new Promise(resolve => setTimeout(resolve, timeout ? opts.timeout + 50 : scenario === 'late-judge' || scenario === 'near-success' ? 220 : 20));
+    event({ kind: 'ready', id, fixtureExists: fs.existsSync(opts.workingDirectory) });
+    if (!timeout) {
+      const kind = selected.endsWith('-mode') || selected.endsWith('-kind');
+      const text = scenario === 'bad-format' ? 'invalid' :
+        'D1 — Fixture decision\\nELI10: Pick the complete contract.\\nStakes if we pick wrong: users lose updates.\\n' +
+        'Recommendation: A because the indexed contract preserves deterministic outcomes.\\n' +
+        (kind ? 'Note: options differ in kind, not coverage.\\n' : 'Completeness: A=10/10, B=7/10\\n') +
+        'Pros/cons:\\nA) Complete (recommended)\\n✅ Retains all outcomes\\n✅ Preserves ordering\\n❌ More work\\n' +
+        'B) Partial\\n✅ Less work\\n✅ Smaller diff\\n❌ Drops outcomes\\nNet: completeness versus implementation effort.\\n';
+      fs.writeFileSync(path.join(opts.workingDirectory, 'ask-capture.md'), text);
+    }
+    return { exitReason: timeout ? 'timeout' : 'success', duration: timeout ? opts.timeout : 220,
+      model: opts.model, toolCalls: [], browseErrors: [], output: 'x'.repeat(2100),
+      transcript: [{ type: 'fixture', attempt: id }], firstResponseMs: 5, maxInterTurnMs: 10,
+      costEstimate: { estimatedCost: 0.12, estimatedTokens: 528, turnsUsed: 2 } };
+  },
+}));
+const fakeJudgeRequest = async (body, options) => {
+  event({ kind: 'judge-start', id: attempt, sameSignal: options?.signal === currentSignal, model: body.model });
+  const id = attempt;
+  await new Promise(resolve => setTimeout(resolve, scenario === 'late-judge' ? 130 : 10));
+  event({ kind: 'judge-ready', id, aborted: options?.signal?.aborted ?? false });
+  return { content: [{ type: 'text', text: JSON.stringify({ reason_substance: scenario === 'bad-score' ? 3 : 5, reasoning: 'fixture specific tradeoff' }) }] };
+};
+mock.module('@anthropic-ai/sdk', () => ({ default: class { messages = { create: fakeJudgeRequest }; } }));
+globalThis.fetch = () => { throw new Error('No network is permitted in this free lifecycle fixture'); };
+const { EvalCollector } = await import(path.join(root, 'test/helpers/eval-store.ts'));
+const addTest = EvalCollector.prototype.addTest;
+spyOn(EvalCollector.prototype, 'addTest').mockImplementation(function(entry) {
+  event({ kind: 'record', id: entry.transcript?.[0]?.attempt, passed: entry.passed, exitReason: entry.exit_reason });
+  return addTest.call(this, entry);
+});
+const finalize = EvalCollector.prototype.finalize;
+spyOn(EvalCollector.prototype, 'finalize').mockImplementation(function() {
+  event({ kind: 'finalized' });
+  return finalize.call(this);
+});
+await import(path.join(root, 'test', ${JSON.stringify(file)}));
+`);
+  try {
+    const proc = Bun.spawnSync([process.execPath, 'test', '--retry', '1', '--concurrent', '--max-concurrency', '2', script], {
+      cwd: ROOT, timeout: 15_000, stdout: 'pipe', stderr: 'pipe',
+      env: {
+        ...process.env, EVALS: '1', EVALS_ALL: '', EVALS_TIER: 'periodic', EVALS_PREFLIGHT_OK: '1',
+        EVALS_SELECTION_JSON: JSON.stringify({ selected: [id], reason: 'free format lifecycle' }),
+        GSTACK_EVAL_DIR: evalDir, GSTACK_CLAUDE_CLI_VERSION: 'free fixture',
+        ANTHROPIC_API_KEY: 'free-fixture', ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: 'http://127.0.0.1:1',
+      },
+    });
+    const output = proc.stdout.toString() + proc.stderr.toString();
+    const events = fs.readFileSync(facts, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    const finals = listEvalJsonFiles(evalDir).filter(isFinalizedEvalResultFile)
+      .map(file => JSON.parse(fs.readFileSync(file, 'utf8')));
+    return { code: proc.exitCode, output, events, entries: finals.flatMap(saved => saved.tests) };
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+describe('Plan format actual capture and judge lifecycle', () => {
+  for (const [file, id] of FORMAT_CASES) {
+    for (const scenario of ['recover', 'both-timeout', 'bad-format']) {
+      test(`${id}: ${scenario} finishes before retry and fixture cleanup`, async () => {
+        const { code, output, events, entries } = await runFormatLifecycle(file, id, scenario);
+        expect(code, output).toBe(scenario === 'recover' ? 0 : 1);
+        expect(output).not.toContain('Unhandled error between tests');
+        const starts = events.filter(event => event.kind === 'start');
+        expect(starts.map(({ timeout, maxTurns, model }) => ({ timeout, maxTurns, model })))
+          .toEqual([1, 2].map(() => ({ timeout: 300, maxTurns: 10, model: 'claude-opus-4-7' })));
+        expect(events.filter(event => event.kind === 'ready').map(event => event.fixtureExists)).toEqual([true, true]);
+        expect(entries).toHaveLength(2);
+        expect(entries.map(entry => entry.attempt)).toEqual([1, 2]);
+        expect(entries.map(entry => entry.passed)).toEqual([false, scenario === 'recover']);
+        expect(entries.every(entry => entry.cost_usd === 0.12 && entry.output.length === 2000)).toBe(true);
+        expect(events.filter(event => event.kind === 'record')).toHaveLength(2);
+        expect(events.findIndex(event => event.kind === 'record' && event.id === 1))
+          .toBeLessThan(events.findIndex(event => event.kind === 'start' && event.id === 2));
+        expect(events.findIndex(event => event.kind === 'record' && event.id === 2))
+          .toBeLessThan(events.findIndex(event => event.kind === 'finalized'));
+        expect(events.filter(event => event.kind === 'finalized')).toHaveLength(1);
+        for (const start of starts) expect(fs.existsSync(start.cwd)).toBe(false);
+        if (scenario === 'recover' && file.includes('plan-format')) {
+          expect(entries[1].judge_scores.rec_substance).toBe(5);
+          expect(entries[1].judge_reasoning).toContain('fixture specific tradeoff');
+        }
+      });
+    }
+  }
+
+  for (const scenario of ['near-success', 'late-judge', 'bad-score']) {
+    test(`recommendation ${scenario} stays inside the shared work deadline`, async () => {
+      const { code, output, events, entries } = await runFormatLifecycle(FORMAT_CASES[0][0], FORMAT_CASES[0][1], scenario);
+      expect(code, output).toBe(scenario === 'near-success' ? 0 : 1);
+      expect(output).not.toContain('Unhandled error between tests');
+      expect(events.filter(event => event.kind === 'judge-start')).toHaveLength(scenario === 'near-success' ? 1 : 2);
+      expect(events.filter(event => event.kind === 'judge-start').every(event => event.sameSignal)).toBe(true);
+      expect(entries).toHaveLength(scenario === 'near-success' ? 1 : 2);
+      expect(entries.every(entry => entry.passed === (scenario === 'near-success'))).toBe(true);
+      if (scenario === 'late-judge') {
+        expect(entries.every(entry => entry.exit_reason === 'timeout' && !entry.judge_scores)).toBe(true);
+        expect(events.filter(event => event.kind === 'judge-ready').every(event => event.aborted)).toBe(true);
+      }
+      if (scenario === 'bad-score') expect(entries.every(entry => entry.judge_scores.rec_substance === 3)).toBe(true);
+      expect(events.filter(event => event.kind === 'record')).toHaveLength(entries.length);
+    });
+  }
+});
