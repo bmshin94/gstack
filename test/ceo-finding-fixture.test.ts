@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { applyPaidProjection, WebhookDispatcher, type PaymentRequest, type User } from './fixtures/ceo-existing-payment/platform';
+import { createWebhookApplication } from './fixtures/ceo-existing-payment/application';
+import { MailDeliveryError, MailTimeoutError, observedConfirmationClient, type Telemetry } from './fixtures/ceo-existing-payment/application-services';
 import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -25,6 +27,123 @@ const paymentRequest = (): PaymentRequest => ({ accountId: 'acct', eventId: 'evt
   orderIds: ['b', 'a'], params: { userId: 'user' } });
 const boundLookup = (db: Database, request: PaymentRequest) => (id: string) =>
   db.query<User, string[]>('SELECT * FROM users WHERE account_id = ? AND id = ?').get(request.accountId, id) ?? undefined;
+
+function recordedTelemetry() {
+  const warnings: unknown[] = [], increments: unknown[] = [];
+  const telemetry: Telemetry = {
+    logger: { warn: (message, fields) => { warnings.push({ message, fields }); } },
+    metrics: { increment: (name, labels) => { increments.push({ name, labels }); } },
+  };
+  return { ...telemetry, warnings, increments };
+}
+
+test('application composition exposes current services without changing invoice or untrusted lookup behavior', async () => {
+  const db = paymentBoundaryDb(), telemetry = recordedTelemetry();
+  let sends = 0;
+  const app = createWebhookApplication({ db, ...telemetry, confirmationClient: { send: async () => { sends++; } } });
+  try {
+    expect(app.services.db).toBe(db);
+    expect(app.services.logger).toBe(telemetry.logger);
+    expect(app.services.metrics).toBe(telemetry.metrics);
+    const injection = { ...paymentRequest(), params: { userId: "missing' OR id='other' --" } };
+    expect(await app.receive('invoice.paid', injection)).toEqual({ status: 200, kind: 'unknown-user' });
+    expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 0 });
+    expect(await app.receive('invoice.paid', paymentRequest())).toEqual({ status: 200, kind: 'committed' });
+    expect(await app.receive('invoice.paid', paymentRequest())).toEqual({ status: 200, kind: 'duplicate' });
+    expect(db.query('SELECT COUNT(*) AS n FROM payment_audit').get()).toEqual({ n: 1 });
+    expect(sends).toBe(0);
+    expect(telemetry.increments).toEqual(['unknown-user', 'committed', 'duplicate'].map(outcome => ({
+      name: 'webhook_requests_total', labels: { outcome },
+    })));
+    expect(telemetry.warnings).toEqual([]);
+  } finally { db.close(); }
+});
+
+test('request adaptation retains authorization and rollback outcomes with scoped telemetry', async () => {
+  const db = paymentBoundaryDb(), telemetry = recordedTelemetry();
+  let sends = 0;
+  const app = createWebhookApplication({ db, ...telemetry, confirmationClient: { send: async () => { sends++; } } });
+  try {
+    expect(await app.receive('invoice.paid', { ...paymentRequest(), customerId: 'foreign' }))
+      .toEqual({ status: 403, kind: 'forbidden' });
+    expect(await app.receive('invoice.paid', { ...paymentRequest(), orderIds: ['missing'] }))
+      .toEqual({ status: 503, kind: 'failed' });
+    expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 0 });
+    expect(db.query('SELECT COUNT(*) AS n FROM payment_audit').get()).toEqual({ n: 0 });
+    expect(db.query('SELECT payment_status FROM users WHERE id = ?').get('user')).toEqual({ payment_status: 'unpaid' });
+    db.exec('DROP TABLE orders');
+    expect(await app.receive('invoice.paid', paymentRequest())).toEqual({ status: 503, kind: 'failed' });
+    expect(sends).toBe(0);
+    expect(telemetry.increments).toHaveLength(3);
+    expect(telemetry.warnings).toHaveLength(3);
+    for (const warning of telemetry.warnings as Array<{ fields: Record<string, unknown> }>) {
+      expect(warning.fields.accountId).toBe('acct');
+      expect(warning.fields.eventId).toBe('evt');
+      expect(Object.keys(warning.fields).sort()).toEqual(warning.fields.errorName
+        ? ['accountId', 'errorName', 'eventId', 'outcome'] : ['accountId', 'eventId', 'outcome']);
+    }
+  } finally { db.close(); }
+});
+
+test('the new unregistered-event assumption does no handler work and does not change dispatcher semantics', async () => {
+  const db = paymentBoundaryDb(), telemetry = recordedTelemetry();
+  let sends = 0;
+  const app = createWebhookApplication({ db, ...telemetry, confirmationClient: { send: async () => { sends++; } } });
+  try {
+    expect(await app.dispatcher.dispatch('payment_intent.succeeded', paymentRequest())).toBeUndefined();
+    expect(await app.receive('payment_intent.succeeded', paymentRequest()))
+      .toEqual({ status: 503, kind: 'unregistered-event' });
+    expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 0 });
+    expect(db.query('SELECT COUNT(*) AS n FROM payment_audit').get()).toEqual({ n: 0 });
+    expect(db.query('SELECT payment_status FROM users WHERE id = ?').get('user')).toEqual({ payment_status: 'unpaid' });
+    expect(sends).toBe(0);
+    expect(telemetry.increments).toEqual([{ name: 'webhook_requests_total', labels: { outcome: 'unregistered-event' } }]);
+    expect(telemetry.warnings).toEqual([{ message: 'Webhook request failed', fields: {
+      accountId: 'acct', eventId: 'evt', outcome: 'unregistered-event',
+    } }]);
+  } finally { db.close(); }
+});
+
+test.each(['sent', 'timeout', 'rejected', 'failed'] as const)('client telemetry observes %s before a caller catch without retrying', async outcome => {
+  const db = paymentBoundaryDb(), telemetry = recordedTelemetry();
+  const user = boundLookup(db, paymentRequest())('user')!;
+  const orders: import('./fixtures/ceo-existing-payment/platform').Order[] = [];
+  const failure = outcome === 'timeout' ? new MailTimeoutError('deadline')
+    : outcome === 'rejected' ? new MailDeliveryError('rejected') : new Error('transport failed');
+  let sends = 0, caught: unknown;
+  const client = observedConfirmationClient({ send: async (actualUser, actualOrders) => {
+    sends++;
+    expect(actualUser).toBe(user);
+    expect(actualOrders).toBe(orders);
+    if (outcome !== 'sent') throw failure;
+  } }, telemetry);
+  try {
+    try { await client.send(user, orders); } catch (error) {
+      caught = error;
+      expect(telemetry.increments).toEqual([{ name: 'confirmation_mail_total', labels: { outcome } }]);
+      expect(telemetry.warnings).toHaveLength(1);
+    }
+    expect(caught).toBe(outcome === 'sent' ? undefined : failure);
+    expect(sends).toBe(1);
+    expect(telemetry.increments).toEqual([{ name: 'confirmation_mail_total', labels: { outcome } }]);
+    expect(telemetry.warnings).toHaveLength(outcome === 'sent' ? 0 : 1);
+    expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 0 });
+  } finally { db.close(); }
+});
+
+test('telemetry sink exceptions cannot change a client result or replace its original error', async () => {
+  const db = paymentBoundaryDb(), user = boundLookup(db, paymentRequest())('user')!;
+  const telemetry: Telemetry = { logger: { warn: () => { throw new Error('logger offline'); } },
+    metrics: { increment: () => { throw new Error('metrics offline'); } } };
+  const failure = new MailTimeoutError('original');
+  let sends = 0;
+  try {
+    await expect(observedConfirmationClient({ send: async () => { sends++; } }, telemetry).send(user, [])).resolves.toBeUndefined();
+    await expect(observedConfirmationClient({ send: async () => { sends++; throw failure; } }, telemetry).send(user, []))
+      .rejects.toBe(failure);
+    expect(sends).toBe(2);
+  } finally { db.close(); }
+});
 
 test('the shared facade does not sanitize the proposed raw lookup into a safe lookup', async () => {
   const db = paymentBoundaryDb();
@@ -220,7 +339,7 @@ test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-
   const script = path.join(root, 'registration.test.ts');
   const factsPath = path.join(root, 'facts.json');
   const established = [
-    "## Established integration boundary (unchanged)",
+    "## Revised synthetic integration baseline",
     "",
     "This is a synthetic backend application for handling an already-settled Stripe",
     "payment, not charging a card. Read the existing source in `src/`: it contains a",
@@ -235,9 +354,10 @@ test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-
     "only invokes that handler and supplies none of those choices automatically.",
     "",
     "Events have at most 100 distinct order IDs. The existing confirmation renderer",
-    "uses the returned set sorted by ID; an empty set is valid. Missing/foreign data or",
+    "uses the returned set sorted by ID; an empty set is valid. Missing orders or",
     "database failure leaves the transaction uncommitted. Existing request adaptation",
-    "logs these failures and returns 503; unknown users are acknowledged without work.",
+    "logs these failures and returns 503; authorization rejection remains 403, and",
+    "unknown users are acknowledged without work.",
     "The local status is an idempotent projection; the financial ledger is upstream.",
     "",
     "Confirmation email runs after this transaction. Its existing client uses the",
@@ -247,6 +367,14 @@ test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-
     "statement deadline. The request adapter's scoped logs/metrics and application",
     "release/rollback procedure stay in place. No new schema, migration, quarantine",
     "service, customer-facing UI or handler-routing flag is proposed.",
+    "",
+    "application.ts materializes the existing request adapter and composition API:",
+    "its services expose db, mail, logger and metrics alongside the current dispatcher.",
+    "NEW synthetic assumptions in this revision: an unregistered event returns 503",
+    "without projection/mail work (no external retry guarantee); the bounded mail",
+    "client records each send outcome before any handler catch and rethrows the same",
+    "error. Telemetry is best effort and preserves the transport outcome. This adds",
+    "no handler recovery, retry/outbox, alert rule or new-path regression coverage.",
     "",
     "Existing tests cover only the shared boundary and current invoice.paid handler.",
     "They do not execute the proposed PaymentService. Review its five sections below",
@@ -325,8 +453,8 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
       cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
     })).toBe('');
     if (!paired) {
-      expect(fs.readdirSync(path.join(opts.cwd, 'src')).sort()).toEqual(['existing-invoice-handler.ts', 'platform.ts']);
-      for (const file of ['README.md', 'src/platform.ts', 'src/existing-invoice-handler.ts', 'schema.sql', 'contract.test.ts']) {
+      expect(fs.readdirSync(path.join(opts.cwd, 'src')).sort()).toEqual(['application-services.ts', 'application.ts', 'existing-invoice-handler.ts', 'platform.ts']);
+      for (const file of ['README.md', 'src/platform.ts', 'src/existing-invoice-handler.ts', 'src/application.ts', 'src/application-services.ts', 'schema.sql', 'contract.test.ts']) {
         expect(execFileSync('git', ['show', 'HEAD:' + file], {
           cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
         })).toBe(fs.readFileSync(path.join(opts.cwd, file), 'utf8'));

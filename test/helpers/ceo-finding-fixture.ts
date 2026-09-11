@@ -42,6 +42,7 @@ export function seedCeoPaymentProject(projectDir: string, plan: string): void {
   const fixture = path.resolve(import.meta.dir, '../fixtures/ceo-existing-payment');
   const files = [['README.md', 'README.md'], ['platform.ts', 'src/platform.ts'],
     ['existing-invoice-handler.ts', 'src/existing-invoice-handler.ts'],
+    ['application.ts', 'src/application.ts'], ['application-services.ts', 'src/application-services.ts'],
     ['schema.sql', 'schema.sql'], ['contract.test.ts.fixture', 'contract.test.ts']];
   fs.mkdirSync(path.join(projectDir, 'src'));
   for (const [source, target] of files) {

@@ -18,6 +18,25 @@ facade. A notification failure cannot undo the database commit.
 
 `src/existing-invoice-handler.ts` registers only the current `invoice.paid` path. That
 path updates the local projection and audit without sending notification mail.
+`src/application.ts` materializes the application composition API and request
+adaptation described by this fixture: handlers can access `services.db`, `mail`,
+`logger` and `metrics`, and register with this application's existing dispatcher.
+It accepts already-admitted requests without changing userId. It passes committed,
+duplicate, unknown-user and forbidden outcomes through; exceptions produce scoped
+logs/metrics and a 503. The signature verifier, provider I/O, database statement
+deadline and production telemetry sinks remain external dependencies.
+
+This revision introduces two **NEW synthetic baseline contracts**, not facts
+established by an earlier review run:
+- An unregistered event returns a visible 503 without projection or mail work.
+  This does not specify external Stripe retry behavior or preapprove registration.
+- `src/application-services.ts` observes the already-bounded confirmation client
+  independently of a handler's catch. Each send records sent/timeout/rejected/failed;
+  failures are logged and the exact original error is rethrown. Telemetry is best
+  effort and cannot change the transport outcome. The supplied transport retains
+  its existing template, recipient and five-second timeout; there is no retry,
+  outbox, handler recovery policy, alert threshold or dashboard in this contract.
+
 The proposed PaymentService for `payment_intent.succeeded` is absent. Its proposed
 raw user lookup, inline uncaught email, per-order read loop, dispatcher bypass and
 missing new-path tests remain the review target in `review-input.md`.
