@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { planDecisionCalibrations } from './fixtures/plan-decision-classification';
 import { buildPlanReviewDecisionPrompt } from './helpers/plan-review-decisions';
+import { ENG_BATCHING_FINDINGS } from './helpers/plan-review-cases';
 import { E2E_TOUCHFILES, E2E_TIERS, selectTests } from './helpers/touchfiles';
 
 const ROOT = path.resolve(import.meta.dir, '..');
@@ -43,6 +44,23 @@ test('calibration briefs preserve source-required structure and actual choices w
     }
   }
   expect(corpus[3].input.fingerprints.map(fp => fp.selectedOptions)).toEqual([[1], [2], [3], [1], [2]]);
+});
+
+test('graph calibration uses the original graph target without requiring a payload-fetch change', () => {
+  const target = ENG_BATCHING_FINDINGS.find(target => target.id === 'dependency-cache')!;
+  expect(target.description).toContain('caching and reusing the dependency graph across retries');
+  expect(target.description).toContain('Payload fetching or freshness is a separate policy');
+  const corpus = planDecisionCalibrations();
+  expect(corpus).toHaveLength(4);
+  const negative = corpus.find(calibration => calibration.name === 'bundled-independent-remedies')!;
+  expect(negative.input.targets.find(row => row.id === target.id)).toEqual(target);
+  expect(negative.expected['graph-cache-with-payload-refresh']).toEqual({ kind: 'finding', targetIds: [target.id], independentDecisions: 1 });
+  expect(negative.expected['payload-cache-with-graph-rebuild']).toEqual({ kind: 'finding', targetIds: [], independentDecisions: 1 });
+  const prompt = buildPlanReviewDecisionPrompt({ ...negative.input, deadlineAt: Date.now() + 10000 });
+  for (const id of ['graph-cache-with-payload-refresh', 'payload-cache-with-graph-rebuild']) {
+    const fp = negative.input.fingerprints.find(fp => fp.toolUseId === id)!;
+    expect(prompt).toContain(JSON.stringify(fp.questions));
+  }
 });
 
 async function exercise(mode: string) {
@@ -101,6 +119,12 @@ mock.module(path.join(root, 'test/helpers/llm-judge.ts'), () => ({ callJudge: as
     raw.questions.find(row => row.toolUseId === id).independentDecisions = mode === 'independent-undercount' ? 1 : 2;
     return raw;
   }
+  if (['graph-missing-credit', 'payload-spurious-credit'].includes(mode) && calls === 3) {
+    const raw = response(calibration);
+    const id = mode === 'graph-missing-credit' ? 'graph-cache-with-payload-refresh' : 'payload-cache-with-graph-rebuild';
+    raw.questions.find(row => row.toolUseId === id).targetIds = mode === 'graph-missing-credit' ? [] : ['dependency-cache'];
+    return raw;
+  }
   if (mode === 'deadline') return await new Promise(resolve => { lateResolve = () => resolve(response(calibration)); });
   return response(calibration);
 } }));
@@ -142,6 +166,13 @@ test('real calibration body preserves outcome and exactly one complete attempt r
         expect(row.independentDecisions).toBe(mode === 'independent-undercount' ? 1 : 2);
         expect(records[0].transcript[2].passed).toBeUndefined();
       }
+      if (['graph-missing-credit', 'payload-spurious-credit'].includes(mode)) {
+        expect(calls).toBe(3); expect(records[0].exit_reason).toBe('validation_failed');
+        const id = mode === 'graph-missing-credit' ? 'graph-cache-with-payload-refresh' : 'payload-cache-with-graph-rebuild';
+        const row = records[0].transcript[2].response.questions.find(row => row.toolUseId === id);
+        expect(row.targetIds).toEqual(mode === 'graph-missing-credit' ? [] : ['dependency-cache']);
+        expect(records[0].transcript[2].passed).toBeUndefined();
+      }
       if (mode === 'deadline') {
         expect(records[0].exit_reason).toBe('timeout'); expect(calls).toBe(1);
         const before = JSON.stringify(records);
@@ -166,7 +197,7 @@ test('real calibration body preserves outcome and exactly one complete attempt r
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
-test.each(['success', 'provider-failure', 'malformed', 'negative-diagnostic-injection', 'coupled-overcount', 'test-depth-overcount', 'independent-undercount', 'deadline', 'unselected'])('calibration attempt outcome stays accurate: %s', async mode => {
+test.each(['success', 'provider-failure', 'malformed', 'negative-diagnostic-injection', 'coupled-overcount', 'test-depth-overcount', 'independent-undercount', 'graph-missing-credit', 'payload-spurious-credit', 'deadline', 'unselected'])('calibration attempt outcome stays accurate: %s', async mode => {
   const result = await exercise(mode);
   expect(result.records).toBe(mode === 'unselected' ? 0 : 1);
 }, 15000);

@@ -42,22 +42,40 @@ are not copied into this fixture.
   cases contain inputs and expected outputs, and the caller supplies the metric
   and acceptance rule. Results expose per-case scores and failures. There is no
   hard-coded quality threshold or implied built-in production acceptance policy.
+  Result/Failure str/repr already show readable per-case scores and expected/actual
+  failure summaries, with explicit truncation; structured fields retain full values.
   The existing guide runs the same callable and cases as real usage, without a
-  separate scaffold/configuration language or an interactive demo.
+  separate scaffold/configuration language or an interactive demo. It includes a
+  five-line caller-owned exact-match metric for structured outputs and a custom-
+  metric shape for free text; neither is a bundled metric or an implicit default.
 - Both the CLI and library enforce the mandatory first-run CI prerequisite
   described above. Existing API documentation does not bypass that requirement.
+  Its documented purpose is maintainer compatibility/conformance checking using
+  bundled deterministic cases; it writes a diagnostic report. Evaluation does not
+  consume that report or prerequisite state, but both entrypoints still block
+  the first eval for the full five-minute step with no skip.
 - Errors have stable codes, the originating cause, and an actionable next step;
   secrets are redacted. CLI help documents noninteractive execution and exit
-  statuses. The same validated invocation runs locally and in CI.
+  statuses. The same validated invocation runs locally and in CI. Text and
+  structured errors carry a stable versioned URL/anchor to the code's reference
+  entry; release checks verify code/anchor coverage.
 - Provider calls have documented request timeouts and a finite retry policy;
   execution accepts an overall deadline. Cost ceilings remain enforced in
-  noninteractive mode. Responses and scores are not persisted in a shared cache.
-  These existing reliability controls do not establish any first-run time target.
+  noninteractive mode, and the same configured ceilings/deadlines apply locally.
+  Before work, the CLI reports case count, deadline and ceiling (or "none set") to
+  stderr; the library reports them when stderr is a TTY, with a documented reporter
+  on/off override. Library output never touches stdout. Responses and scores are
+  not persisted in a shared cache. These controls establish no first-run time target.
 - In-repo API, error, configuration, and upgrade references already exist, with
-  executable examples and a documented pytest pattern. Releases preserve the
+  executable examples and a documented pytest pattern. Shipped documentation
+  snippets and shown output come from offline examples run in release checks.
+  Releases preserve the
   published API/configuration contract during beta. Breaking changes require a
-  versioned migration guide and deprecation notices; no AST rewriting tool or
-  plugin is part of this launch.
+  versioned migration guide and deprecation notices; runtime DeprecationWarning at
+  the call site names the replacement, removal version and migration anchor.
+  Removal requires two minor releases of notice and a breaking release. Public API
+  type hints and py.typed already ship; release checks include strict type checking.
+  No AST rewriting tool or plugin is part of this launch.
 - The SDK is already open source. CONTRIBUTING, issue templates, and a public
   discussion forum define support and contribution paths. The beta adds no
   hosted docs service, new CI provider, telemetry system, or watch-mode feature.

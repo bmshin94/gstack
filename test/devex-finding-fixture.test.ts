@@ -88,6 +88,24 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(baseline).toContain('no onboarding-duration measurement or peer-DX benchmark');
     expect(baseline).toContain('Cost ceilings remain enforced in\\n  noninteractive mode');
     expect(baseline).toContain('Releases preserve the\\n  published API/configuration contract during beta');
+    for (const contract of [
+      'five-line caller-owned exact-match metric for structured outputs',
+      'neither is a bundled metric or an implicit default',
+      'Result/Failure str/repr already show readable per-case scores',
+      'structured fields retain full values',
+      'maintainer compatibility/conformance checking using',
+      'Evaluation does not\\n  consume that report or prerequisite state',
+      'full five-minute step with no skip',
+      'same configured ceilings/deadlines apply locally',
+      'the library reports them when stderr is a TTY',
+      'Library output never touches stdout',
+      'code/anchor coverage',
+      'snippets and shown output come from offline examples run in release checks',
+      'runtime DeprecationWarning at\\n  the call site names the replacement',
+      'Removal requires two minor releases of notice and a breaking release',
+      'type hints and py.typed already ship',
+    ]) expect(baseline).toContain(contract);
+
     expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: opts.cwd, encoding: 'utf8' })).toBe(input);
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ cwd: opts.cwd, checked: true }));
     throw new Error('controlled DX runner failure');

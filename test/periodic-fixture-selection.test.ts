@@ -13,6 +13,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/autoplan-existing-app/src/auth.ts', ['autoplan-chain-pty']],
     ['test/fixtures/autoplan-existing-app/db/schema.sql', ['autoplan-chain-pty']],
     ['test/fixtures/plans/ui-heavy-feature-design.md', ['autoplan-chain-pty']],
+    ['test/fixtures/plans/autoplan-password-visibility.md', ['autoplan-chain-pty']],
+    ['test/fixtures/plans/autoplan-password-visibility-design.md', ['autoplan-chain-pty']],
     ['test/helpers/ceo-mode-preference.ts', ['auto-decide-preserved']],
     ['test/helpers/ceo-mode-evidence.ts', ['auto-decide-preserved']],
     ['test/ceo-mode-evidence.test.ts', ['auto-decide-preserved']],
@@ -45,6 +47,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/paired-payment/src/payment.ts', ['plan-ceo-finding-count']],
     ['test/fixtures/paired-payment/contract.test.ts.fixture', ['plan-ceo-finding-count']],
     ['test/fixtures/paired-payment/README.md', ['plan-ceo-finding-count']],
+    ...['README.md', 'platform.ts', 'existing-invoice-handler.ts', 'schema.sql', 'contract.test.ts.fixture'].map((file): [string, string[]] =>
+      [`test/fixtures/ceo-existing-payment/${file}`, ['plan-ceo-finding-count']]),
     ['test/helpers/plan-mode-evidence.ts', ['plan-design-review-plan-mode', 'plan-eng-review-plan-mode']],
     ['test/plan-mode-evidence.test.ts', ['plan-design-review-plan-mode', 'plan-eng-review-plan-mode']],
     ...['test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts'].map((file): [string, string[]] => [file,

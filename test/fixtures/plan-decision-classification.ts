@@ -2,6 +2,7 @@
  * and docs/askuserquestion-split.md. These are synthetic calibrations, not live captures. */
 import type { AskUserQuestionFingerprint } from '../helpers/claude-pty-runner';
 import type { NativeQuestion } from '../helpers/plan-skill-questions';
+import { ENG_BATCHING_FINDINGS } from '../helpers/plan-review-cases';
 import type { PlanReviewDecisionInput, PlanReviewDecision } from '../helpers/plan-review-decisions';
 
 type Option = { label: string; description: string };
@@ -116,6 +117,28 @@ const independentPolicy = call('independent-code-and-test-policy', brief('D5 —
     { label: 'Keep both current behaviors', description: 'Retain post-cancellation dispatch and the existing two-attempt retry limit together.' },
   ]));
 
+// Keep the original graph-reuse target distinct from payload-fetch policy.
+// The payload-only choice comes first and retains refresh; graph reuse is then
+// accepted without reversing that earlier choice. Both are one-decision menus.
+const graphTarget = ENG_BATCHING_FINDINGS.find(target => target.id === 'dependency-cache')!;
+const graphPlan = `A background job currently fetches its payload on each retry and rebuilds the
+pure dependency graph. Reusing the graph from a previous attempt remains undecided.
+The graph can be keyed by the fetched payload version; a changed payload must rebuild it.
+Whether to replace payload refresh with the job library's queued snapshot is a separate
+proposal. Neither graph caching nor payload reuse has been approved before these choices.`;
+const payloadCacheOnly = call('payload-cache-with-graph-rebuild', brief('D6 — Payload source for each retry',
+  'Choose whether to reuse the queued payload snapshot or retain the database refresh. Both alternatives still rebuild the dependency graph on every retry; graph reuse remains pending for its own decision.',
+  'Keep the database refresh while deciding graph reuse separately.', [
+    { label: 'Reuse the queued payload', description: 'Remove the payload database fetch, but still recompute the dependency graph on every attempt.' },
+    { label: 'Keep the payload refresh (recommended)', description: 'Fetch the payload on every retry and still recompute the graph on every attempt.' },
+  ]), 2);
+const graphCacheWithRefresh = call('graph-cache-with-payload-refresh', brief('D7 — Reuse the dependency graph',
+  'Payload refresh was retained in the preceding choice and stays fixed in every option. Decide whether to reuse the graph when the freshly fetched payload version is unchanged, rebuilding when it changes, or continue rebuilding it on every attempt.',
+  'Reuse the graph for an unchanged payload version without changing payload refresh.', [
+    { label: 'Cache graph by payload version (recommended)', description: 'Keep every database payload fetch. Reuse the prior graph when the fetched version matches, and rebuild/cache the graph when the version changes.' },
+    { label: 'Rebuild graph on every attempt', description: 'Keep every database payload fetch and recompute the graph even when its payload version has not changed.' },
+  ]));
+
 export function planDecisionCalibrations(): DecisionCalibration[] {
   const positiveExpected = { 'setup-mode': workflow, 'setup-query': finding('query'), 'setup-email': finding('email'), 'future-todo': backlog, 'next-review': workflow };
   const candidates = ['Slack', 'Teams', 'Email', 'SMS', 'Push'];
@@ -132,11 +155,13 @@ export function planDecisionCalibrations(): DecisionCalibration[] {
     { name: 'early-findings-and-mandatory-workflow', input: { plan, targets, fingerprints: [mode, query, email, todo, handoff], floor: 2, ceiling: 2, kind: 'findings' }, expected: positiveExpected, count: 2 },
     { name: 'dropped-current-obligation', input: { plan, targets, fingerprints: [mode, email, todo, handoff], floor: 2, ceiling: 2, kind: 'findings' },
       expected: { 'setup-mode': workflow, 'setup-email': finding('email'), 'future-todo': backlog, 'next-review': workflow }, rejection: 'missing target decisions' },
-    { name: 'bundled-independent-remedies', input: { plan: plan + '\n\n' + verificationPlan, targets, fingerprints: [mode, bundle, directRegression, verificationDepth, independentPolicy], floor: 2, ceiling: 2, kind: 'findings' },
+    { name: 'bundled-independent-remedies', input: { plan: plan + '\n\n' + verificationPlan + '\n\n' + graphPlan, targets: [...targets, graphTarget], fingerprints: [mode, bundle, directRegression, verificationDepth, independentPolicy, payloadCacheOnly, graphCacheWithRefresh], floor: 2, ceiling: 2, kind: 'findings' },
       expected: { 'setup-mode': workflow, 'bundled-remedies': { kind: 'finding', targetIds: ['query', 'email'], independentDecisions: 2 },
         'direct-contract-regression': { kind: 'finding', targetIds: [], independentDecisions: 1 },
         'same-behavior-test-depth': { kind: 'finding', targetIds: [], independentDecisions: 1 },
-        'independent-code-and-test-policy': { kind: 'finding', targetIds: [], independentDecisions: 2 } }, rejection: 'bundled independent decisions' },
+        'independent-code-and-test-policy': { kind: 'finding', targetIds: [], independentDecisions: 2 },
+        'payload-cache-with-graph-rebuild': { kind: 'finding', targetIds: [], independentDecisions: 1 },
+        'graph-cache-with-payload-refresh': finding(graphTarget.id) }, rejection: 'bundled independent decisions' },
     { name: 'source-split-include-defer-cut', input: { plan: '# Notification integrations\nFive independent candidates: Slack, Teams, Email, SMS, Push. Decide each complete integration using the split-per-option protocol; no candidate is already accepted.',
       targets: scopeTargets, fingerprints: scopeCalls, floor: 5, ceiling: 5, kind: 'scope' },
       expected: Object.fromEntries(scopeTargets.map((target, i) => [`scope-${i + 1}`, { kind: 'scope', targetIds: [target.id], independentDecisions: 1 }])), count: 5 },

@@ -5,22 +5,28 @@ import { seedHermeticGstackHome } from './hermetic-env';
 
 const UI_FIXTURE = path.resolve(import.meta.dir, '..', 'fixtures', 'plans', 'ui-heavy-feature.md');
 const DESIGN_FIXTURE = path.resolve(import.meta.dir, '..', 'fixtures', 'plans', 'ui-heavy-feature-design.md');
+const CHAIN_UI_FIXTURE = path.resolve(import.meta.dir, '..', 'fixtures', 'plans', 'autoplan-password-visibility.md');
+const CHAIN_DESIGN_FIXTURE = path.resolve(import.meta.dir, '..', 'fixtures', 'plans', 'autoplan-password-visibility-design.md');
 const APP_FIXTURE = path.resolve(import.meta.dir, '..', 'fixtures', 'autoplan-existing-app');
 
-export function seedAutoplanProject(projectDir: string): string {
+export function seedAutoplanProject(projectDir: string, scenario: 'dashboard' | 'password-visibility' = 'dashboard'): string {
   const plansDir = path.join(projectDir, '.claude', 'plans');
   fs.mkdirSync(plansDir, { recursive: true });
-  fs.copyFileSync(UI_FIXTURE, path.join(plansDir, 'ui-heavy-feature.md'));
-  fs.copyFileSync(DESIGN_FIXTURE, path.join(projectDir, 'DESIGN.md'));
-  // The unchanged plan extends an existing React/Tailwind app and PostgreSQL
-  // tables. Supply that source baseline, leaving the proposed dashboard absent.
+  const plan = scenario === 'password-visibility' ? CHAIN_UI_FIXTURE : UI_FIXTURE;
+  const design = scenario === 'password-visibility' ? CHAIN_DESIGN_FIXTURE : DESIGN_FIXTURE;
+  fs.copyFileSync(plan, path.join(plansDir, path.basename(plan)));
+  fs.copyFileSync(design, path.join(projectDir, 'DESIGN.md'));
+  // Both scenarios extend this existing React/Tailwind app with PostgreSQL-backed
+  // authentication. Supply its source, leaving the proposed UI unimplemented.
   fs.cpSync(APP_FIXTURE, projectDir, { recursive: true, errorOnExist: true, force: false });
   fs.writeFileSync(path.join(projectDir, 'README.md'), [
     '# Workspace app', '',
     'Current behavior: password sign-in issues a one-hour server session; the',
     'post-login page is `/workspace`. PostgreSQL schema is in `db/schema.sql`.',
     'Activity and notifications are stored already; notifications have read state.',
-    'The dashboard plan is `.claude/plans/ui-heavy-feature.md`; it is not implemented.', '',
+    scenario === 'password-visibility'
+      ? 'The proposed password visibility control is `.claude/plans/autoplan-password-visibility.md`; it is not implemented.'
+      : 'The dashboard plan is `.claude/plans/ui-heavy-feature.md`; it is not implemented.', '',
     'To run the app: install the manifest dependencies, apply the schema to a',
     'PostgreSQL database with provisioned users/password hashes, set DATABASE_URL and',
     'APP_ORIGIN to the public HTTPS origin,',

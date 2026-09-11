@@ -4,6 +4,8 @@
 
 **Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-11) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
+**Match the requested deliverable.** For scope prioritization, evaluate all 11 sections against include/defer/cut and material feasibility under the accepted constraints. Use architecture, failure paths, security, dependencies, cost and verification requirements as evidence for those choices. Keep open implementation details and risks explicit; unchosen mitigations are not approved or verified. Resolve material blockers now, and reopen priorities when new evidence warrants it. Do not silently turn prioritization into full implementation-design approval: ask before expanding that deliverable. Preserve actual earlier approvals. Evaluating every section does not authorize inventing endpoint, method or state-machine contracts on the user's behalf.
+
 **Anti-shortcut clause:** Analyze → resolve → apply for each section before advancing. The plan file records the interactive review; it cannot replace it. Do not prewrite the remaining sections or their implementation tasks and then walk through a fixed question list. Proposed findings are not accepted plan changes: mark them pending until their actual decisions are made. Ask once per unresolved or reopened issue, wait for the answer, and apply only the exact accepted choice and scope to the working plan. An earlier approach selection does not authorize unrelated choices. Keep established contracts, accepted decisions, and their evidence available to later sections; new material risks or changed remedies still need approval. Cross-referencing settled decisions never replaces the full review and terminal report. Follow the working review decisions below; never invent a question merely because a new section starts.
 
 ### Working review decisions
@@ -22,6 +24,8 @@ Keep a working ledger in the plan: issue ID, owner section, evidence, exact acce
 Approval settles the planning choice; it does not prove the mitigation is implemented or verified. In later sections, cross-reference an exact settled decision instead of asking it again. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
 
 ### Section 1: Architecture Review
+Open this section in your own chat with the complete Step 0F mode-handoff line, retaining the approved approach and saved-preference attribution when applicable, then `Section 1: Architecture Review`. This repeats the agreement; it does not replace the earlier handoff.
+
 Evaluate and diagram:
 * Overall system design and component boundaries. Draw the dependency graph.
 * Data flow — all four paths. For every new data flow, ASCII diagram the:

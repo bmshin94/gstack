@@ -72,6 +72,46 @@ test('uses full ACK-backed briefs across phases, with no qid or sentence grammar
   expect(logged('plan-review-decisions-raw-judgment')).toEqual([{ type: 'plan-review-decisions-raw-judgment', validated: false, judgment: returned! }]);
 });
 
+test('actual judge prompt specifies uncertain row shape while fully covered uncertainty still rejects', async () => {
+  const { input, judgment } = fixture();
+  expect(validatePlanReviewDecisionResponse(input, judgment).coveredTargetIds).toEqual(input.targets.map(t => t.id));
+  const extra = fingerprint('unseeded-docs', [question('Release-blocking receiver documentation')], false);
+  input.fingerprints.push(extra);
+  judgment.questions.push({ ...row(extra, null), kind: 'uncertain', independentDecisions: 0 });
+  const original = clone(input);
+  let calls = 0, sentPrompt = '';
+  let raw!: PlanReviewDecisionJudgment, rawBefore!: PlanReviewDecisionJudgment;
+  await expect(evaluatePlanReviewDecisions(input, async prompt => {
+    calls++; sentPrompt = prompt;
+    raw = responseForPrompt(input, judgment, prompt); rawBefore = clone(raw);
+    return raw;
+  })).rejects.toThrow('uncertain classification');
+  expect(calls).toBe(1);
+  expect(sentPrompt).toContain('0 for workflow/backlog/uncertain');
+  expect(sentPrompt).toContain('Workflow/backlog/uncertain cannot carry targetIds.');
+  expect(sentPrompt).toContain('For uncertain rows, targetIds and optionActions must be [], and independentDecisions must be 0; uncertain still rejects the assessment.');
+  expect(sentPrompt).toContain('use uncertain; never guess');
+  expect(input).toEqual(original); expect(raw).toEqual(rawBefore);
+  expect(logged('plan-review-decisions-raw-judgment')).toEqual([{ type: 'plan-review-decisions-raw-judgment', validated: false, judgment: rawBefore }]);
+});
+
+test.each(['decision count', 'target coverage'] as const)('uncertain %s remains an unrepaired one-call rejection', async mode => {
+  const { input, judgment } = fixture();
+  const extra = fingerprint('unseeded-docs', [question('Release-blocking receiver documentation')], false);
+  input.fingerprints.push(extra);
+  judgment.questions.push({ ...row(extra, null), kind: 'uncertain',
+    targetIds: mode === 'target coverage' ? ['E1'] : [], independentDecisions: mode === 'decision count' ? 1 : 0 });
+  const original = clone(input);
+  let calls = 0;
+  let raw!: PlanReviewDecisionJudgment, rawBefore!: PlanReviewDecisionJudgment;
+  await expect(evaluatePlanReviewDecisions(input, async prompt => {
+    calls++; raw = responseForPrompt(input, judgment, prompt); rawBefore = clone(raw);
+    return raw;
+  })).rejects.toThrow('non-substantive row claims target or decision coverage');
+  expect(calls).toBe(1); expect(input).toEqual(original); expect(raw).toEqual(rawBefore);
+  expect(logged('plan-review-decisions-raw-judgment')).toEqual([{ type: 'plan-review-decisions-raw-judgment', validated: false, judgment: rawBefore }]);
+});
+
 test('judge uses short request-local IDs and returns native IDs without mutating either snapshot or raw response', async () => {
   const { input, judgment } = fixture();
   const nativeIds = ['c2', 'c1', 'toolu_01AwAEWS8vjsLa17AiZthhWD', 'opaque-' + 'x'.repeat(200), 'native-last'];

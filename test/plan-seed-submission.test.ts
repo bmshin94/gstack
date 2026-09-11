@@ -81,7 +81,7 @@ for (const scenario of ['success', 'completed-tool', 'status-updating',
   }, 6000);
 }
 
-test.skipIf(process.platform === 'win32')('actual PTY launcher carries placeholder styling into owned seed submission', async () => {
+for (const inheritedTerm of ['dumb', '', 'xterm-256color']) test.skipIf(process.platform === 'win32')(`actual PTY launcher carries placeholder styling into owned seed submission: ${inheritedTerm || 'empty TERM'}`, async () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-seed-launcher-')));
   const config = path.join(dir, '.claude'); fs.mkdirSync(config);
   const script = path.join(dir, 'cli.ts'); fs.writeFileSync(script, `#!${process.execPath}\n${CLI}`, { mode: 0o700 });
@@ -89,7 +89,7 @@ test.skipIf(process.platform === 'win32')('actual PTY launcher carries placehold
   const launchedAt = Date.now(); let session: Awaited<ReturnType<typeof launchClaudePty>> | undefined;
   try {
     session = await launchClaudePty({ cwd: dir, captureScreen: true, permissionMode: 'plan', timeoutMs: 4000, model: 'fixture',
-      env: { CLAUDE_CONFIG_DIR: config, SEED_CASE: 'startup-placeholder-cursor' } });
+      env: { CLAUDE_CONFIG_DIR: config, SEED_CASE: 'startup-terminal-placeholder-cursor', TERM: inheritedTerm } });
     const seed = '# Real launcher seed\nKeep this exact plan.';
     await submitPlanSeed(session, seed, { cwd: dir, launchedAt, deadlineAt: launchedAt + 2500,
       isQuestionOrPermission: text => isProseAUQVisible(text) || isNumberedOptionListVisible(text) || isPermissionDialogVisible(text) });

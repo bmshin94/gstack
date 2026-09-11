@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { applyPaidProjection, WebhookDispatcher, type PaymentRequest, type User } from './fixtures/ceo-existing-payment/platform';
 import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -9,6 +11,92 @@ import { FORCING_SPLIT_OVERFLOW_CEO } from './fixtures/forcing-finding-seeds';
 import { DESIGN_DOC_DISCOVERY_BLOCK } from '../scripts/resolvers/design-doc-discovery';
 
 const ROOT = path.resolve(import.meta.dir, '..');
+
+// These boundary probes belong to the harness, not the seeded project's tests.
+// They prove the proposed lookup, email and reader decisions remain independent.
+function paymentBoundaryDb(): Database {
+  const db = new Database(':memory:');
+  db.exec(fs.readFileSync(path.join(ROOT, 'test/fixtures/ceo-existing-payment/schema.sql'), 'utf8'));
+  db.exec("INSERT INTO users VALUES ('acct','user','customer','unpaid'), ('acct','other','customer','unpaid')");
+  db.exec("INSERT INTO orders VALUES ('acct','a','user','First',100), ('acct','b','user','Second',200)");
+  return db;
+}
+const paymentRequest = (): PaymentRequest => ({ accountId: 'acct', eventId: 'evt', customerId: 'customer',
+  orderIds: ['b', 'a'], params: { userId: 'user' } });
+const boundLookup = (db: Database, request: PaymentRequest) => (id: string) =>
+  db.query<User, string[]>('SELECT * FROM users WHERE account_id = ? AND id = ?').get(request.accountId, id) ?? undefined;
+
+test('the shared facade does not sanitize the proposed raw lookup into a safe lookup', async () => {
+  const db = paymentBoundaryDb();
+  const request = { ...paymentRequest(), orderIds: [], params: { userId: "missing' OR id='other' --" } };
+  const notified: string[] = [];
+  try {
+    const callbacks = { readOrders: () => [], afterCommit: async (user: User) => { notified.push(user.id); } };
+    expect(await applyPaidProjection(db, request, { ...callbacks, lookupUser: boundLookup(db, request) }))
+      .toEqual({ status: 200, kind: 'unknown-user' });
+    expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 0 });
+    expect(await applyPaidProjection(db, request, { ...callbacks, lookupUser: id =>
+      db.query<User, []>(`SELECT * FROM users WHERE account_id = '${request.accountId}' AND id = '${id}'`).get() ?? undefined }))
+      .toEqual({ status: 200, kind: 'committed' });
+    expect(notified).toEqual(['other']);
+    expect(db.query('SELECT id,payment_status FROM users ORDER BY id').all()).toEqual([
+      { id: 'other', payment_status: 'paid' }, { id: 'user', payment_status: 'unpaid' },
+    ]);
+  } finally { db.close(); }
+});
+
+test('the shared facade leaves an email exception uncaught after the database commit', async () => {
+  const db = paymentBoundaryDb(), request = paymentRequest();
+  const failure = new Error('mail delivery failed');
+  let sends = 0;
+  const callbacks = { lookupUser: boundLookup(db, request),
+    readOrders: (ids: readonly string[], reader: import('./fixtures/ceo-existing-payment/platform').OrderReader) => reader.list(ids),
+    afterCommit: async () => { sends++; throw failure; } };
+  try {
+    await expect(applyPaidProjection(db, request, callbacks)).rejects.toBe(failure);
+    expect(db.query('SELECT payment_status FROM users WHERE id = ?').get('user')).toEqual({ payment_status: 'paid' });
+    expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 1 });
+    expect(db.query('SELECT COUNT(*) AS n FROM payment_audit').get()).toEqual({ n: 1 });
+    expect(await applyPaidProjection(db, request, callbacks)).toEqual({ status: 200, kind: 'duplicate' });
+    expect(sends).toBe(1);
+  } finally { db.close(); }
+});
+
+test('registering a handler leaves per-order versus batch reading as a separate choice', async () => {
+  const results: Array<{ one: number; list: number; ordered: string[] }> = [];
+  for (const strategy of ['one', 'list'] as const) {
+    const db = paymentBoundaryDb(), request = paymentRequest(), dispatcher = new WebhookDispatcher();
+    const calls = { one: 0, list: 0, ordered: [] as string[] };
+    try {
+      dispatcher.register('probe', input => applyPaidProjection(db, input, {
+        lookupUser: boundLookup(db, request),
+        readOrders: (ids, reader) => strategy === 'one'
+          ? ids.map(id => { calls.one++; return reader.one(id)!; })
+          : (calls.list++, reader.list(ids)),
+        afterCommit: async (_user, orders) => { calls.ordered = orders.map(order => order.id); },
+      }));
+      expect(await dispatcher.dispatch('probe', request)).toEqual({ status: 200, kind: 'committed' });
+      results.push(calls);
+    } finally { db.close(); }
+  }
+  expect(results).toEqual([{ one: 2, list: 0, ordered: ['a', 'b'] }, { one: 0, list: 1, ordered: ['a', 'b'] }]);
+});
+
+test('the committed current invoice fixture is runnable without implementing the proposed route', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-current-invoice-'));
+  try {
+    ceoFixture.seedCeoPaymentProject(root, '# Proposed PaymentService\n');
+    const child = spawnSync(process.execPath, ['test', 'contract.test.ts'], {
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+      env: { PATH: process.env.PATH ?? '', HOME: root, TMPDIR: root, TEMP: root, TMP: root,
+        ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
+    });
+    expect(child.error, child.stdout + child.stderr).toBeUndefined();
+    expect(child.status, child.stdout + child.stderr).toBe(0);
+    expect(child.stderr).toContain('2 pass');
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' })).toBe('');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 const reviewStartLead = 'D1 — Run /office-hours before this review?';
 const reviewStartLabels = ['A) Run /office-hours first', 'B) Skip — standard review (recommended)'];
@@ -132,79 +220,37 @@ test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-
   const script = path.join(root, 'registration.test.ts');
   const factsPath = path.join(root, 'facts.json');
   const established = [
-    "## Established platform (unchanged)",
-    "The running payment flow uses WebhookDispatcher and the existing Stripe, database",
-    "and mail clients. This is a backend change: the event format, confirmation-email",
-    "template and recipient resolution, UI, dependencies and credentials stay unchanged.",
-    "Admission middleware verifies the raw Stripe signature and signing account,",
-    "checks the JSON envelope/event ID/type and rejects malformed or oversized bodies.",
-    "Unsupported event types are acknowledged without work. The request userId remains",
-    "untrusted and is passed unchanged to the handler. Database access is scoped",
-    "to the signing account. Missing/empty userId or an unknown user is logged and",
-    "acknowledged with 200, without a mutation or email.",
-    "The handler performs its user lookup first. Before any payment update, the existing",
-    "repository commit guard requires the selected user's stored Stripe customer ID to",
-    "match the verified event's nonempty payment customer ID within the signing account.",
-    "A missing or mismatched customer is logged and returns 403 without mutation or email.",
-    "Before exposing any order data, the existing repository read guard checks this",
-    "customer match and rejects it with the same 403 policy. It also acknowledges",
-    "a committed event receipt with 200 before reading orders, even if referenced",
-    "orders were later deleted. The commit transaction still rechecks both guards",
-    "under lock; concurrent first deliveries are deduplicated only at commit.",
+    "## Established integration boundary (unchanged)",
     "",
-    "The existing repository transaction owns the unique event receipt, payment update",
-    "and audit entry as one atomic commit, including concurrent deliveries. A failed or",
-    "rolled-back transaction never marks an event processed; a committed duplicate is",
-    "acknowledged without another mutation. Payment success only sets the existing",
-    "users.payment_status column to 'paid'. The audit records event/account/user IDs,",
-    "changed fields and timestamp. User and order reads finish before this commit.",
-    "Existing order-reader authorization scopes every requested order ID to the",
-    "signing account and selected user; a foreign order follows the same missing",
-    "order quarantine policy below. It applies to individual reads as well as lists.",
-    "An empty order list is valid. Order reads supply line-item labels and amounts for",
-    "the unchanged itemized confirmation-email template. A missing referenced order quarantines the",
-    "event, logs its ID and returns 200 without a payment mutation or email; it does not",
-    "write a processed-event receipt. Before 200, the existing account/event-keyed",
-    "quarantine store durably records the verified payload, requested user ID and reason.",
-    "A failed quarantine write returns 503. The existing on-call runbook restores missing",
-    "data and replays the retained event through the same identity checks and idempotent",
-    "transaction. DatabaseConnectionError, StatementTimeoutError",
-    "and DeadlockDetectedError from any repository read/write abort the whole",
-    "transaction; the existing request adapter logs the operation and event ID, returns",
-    "503 and leaves Stripe able to retry. No partial order results escape. These",
-    "facilities are below both handlers and do not depend on WebhookDispatcher.",
+    "This is a synthetic backend application for handling an already-settled Stripe",
+    "payment, not charging a card. Read the existing source in `src/`: it contains a",
+    "small payment projection boundary, WebhookDispatcher and the current invoice.paid",
+    "handler. The proposed payment_intent.succeeded PaymentService is not implemented.",
     "",
-    "The user lookup uses users.id; individual order reads use orders.id. Both are",
-    "existing primary keys; the orders.user_id list lookup is also indexed. Admission",
-    "permits at most 100 orders per event and 20 concurrent requests within the existing",
-    "25-connection pool. Requests beyond the payload/order limits are rejected with 400;",
-    "excess concurrency returns 503 for retry. Neither marks an event processed. The",
-    "repository has a one-second statement deadline. Email is sent only after the",
-    "database commit and remains inline, with no email-leg catch, outbox or retry in",
-    "the proposed handler.",
-    "The unchanged mail client aborts a send after five seconds and releases",
-    "its resources, throwing MailTimeoutError. It never retries automatically;",
-    "provider-declared rejections use MailDeliveryError. The handler has no catch.",
+    "The existing ingress adapter verifies Stripe signatures/accounts and envelopes.",
+    "It passes event metadata userId unchanged: that string is untrusted. The shared",
+    "facade owns receipt deduplication, account/customer authorization, scoped order",
+    "reads, and the atomic user-status/receipt/audit transaction. The callback interface",
+    "leaves user lookup and order access strategy to the handler. Dispatcher registration",
+    "only invokes that handler and supplies none of those choices automatically.",
     "",
-    "The existing request/repository instrumentation carries a correlation ID and emits",
-    "operation/status/latency/error-code logs and query/commit/failure metrics without",
-    "raw payloads, credentials or email content. The payments dashboard and on-call",
-    "alerts cover failed requests, missing commits, latency and pool saturation;",
-    "retained event/audit records support the documented retry and incident runbooks.",
-    "The platform team owns these clients, schema, operational docs and runbooks. Its",
-    "existing tests cover these unchanged contracts, not the new PaymentService path.",
+    "Events have at most 100 distinct order IDs. The existing confirmation renderer",
+    "uses the returned set sorted by ID; an empty set is valid. Missing/foreign data or",
+    "database failure leaves the transaction uncommitted. Existing request adaptation",
+    "logs these failures and returns 503; unknown users are acknowledged without work.",
+    "The local status is an idempotent projection; the financial ledger is upstream.",
     "",
-    "An upstream routing flag, outside WebhookDispatcher, switches traffic between the",
-    "old and new handlers. They share the same event-receipt transaction and schema.",
-    "The existing rollout runbook deploys to staging, checks the request/commit metrics,",
-    "then increases the flag gradually. Rollback disables the flag, drains in-flight",
-    "requests and reverts the release. Events whose database transaction did not commit",
-    "remain retryable. There is no migration or backfill, and the old route remains",
-    "available during mixed versions.",
-    "For effects already committed by a defective release, the existing rollback",
-    "runbook reconciles verified Stripe events against the payment/audit records",
-    "and applies documented per-event corrections and confirmation re-sends. The",
-    "platform team owns these repair procedures; rollout disables traffic first.",
+    "Confirmation email runs after this transaction. Its existing client uses the",
+    "current template/recipient, aborts after five seconds with MailTimeoutError, and",
+    "reports provider rejection as MailDeliveryError. It supplies no retry, outbox or",
+    "handler error policy. Ordinary database requests have the existing one-second",
+    "statement deadline. The request adapter's scoped logs/metrics and application",
+    "release/rollback procedure stay in place. No new schema, migration, quarantine",
+    "service, customer-facing UI or handler-routing flag is proposed.",
+    "",
+    "Existing tests cover only the shared boundary and current invoice.paid handler.",
+    "They do not execute the proposed PaymentService. Review its five sections below",
+    "and any actual additional defect; none of its remedies has been approved.",
   ].join('\n');
   const originalDefects = [
     '## Architecture',
@@ -277,6 +323,14 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(execFileSync('git', ['diff', 'origin/main...HEAD'], {
       cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
     })).toBe('');
+    if (!paired) {
+      expect(fs.readdirSync(path.join(opts.cwd, 'src')).sort()).toEqual(['existing-invoice-handler.ts', 'platform.ts']);
+      for (const file of ['README.md', 'src/platform.ts', 'src/existing-invoice-handler.ts', 'schema.sql', 'contract.test.ts']) {
+        expect(execFileSync('git', ['show', 'HEAD:' + file], {
+          cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
+        })).toBe(fs.readFileSync(path.join(opts.cwd, file), 'utf8'));
+      }
+    }
     if (paired) {
       for (const file of ['README.md', 'src/payment.ts', 'contract.test.ts']) {
         expect(execFileSync('git', ['show', 'HEAD:' + file], {

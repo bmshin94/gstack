@@ -1410,6 +1410,9 @@ export async function launchClaudePty(
   // Hermetic by default (test/helpers/hermetic-env.ts): operator session
   // context never reaches the child; per-test opts.env merges last.
   const childEnv = hermeticChildEnv(opts.env);
+  // Bun provides a full VT terminal here. An inherited dumb terminal disables
+  // CLI styling needed to distinguish empty-input hints from actual drafts.
+  if (!childEnv.TERM || childEnv.TERM === 'dumb') childEnv.TERM = 'xterm-256color';
   if (opts.seedSkills && hermetic && !opts.env?.CLAUDE_CONFIG_DIR) {
     childEnv.CLAUDE_CONFIG_DIR = hermeticSkillsConfigDir();
   }

@@ -18,6 +18,16 @@ item or cheap patch groups them. Keep code and tests establishing the same chose
 behavior together. Only then score completeness within that decision; "full"
 cannot approve several policies.
 
+Preserve established contracts in every alternative; changing one requires its
+own explicit decision first. Never make a thinner option by dropping settled
+behavior. Include tests and documentation directly required to establish a newly
+chosen behavior, even after the Tests section; separate unrelated verification
+or policy choices. For example, a retry helper's attempt limit, jitter and
+exhausted-job disposition remain separate choices; crash tests proving that same
+chosen behavior are not another policy. Correct factual descriptions against
+established evidence and disclose the correction. Factual corrections do not
+authorize behavior changes.
+
 ### 1. Architecture review
 Evaluate:
 * Overall system design and component boundaries.

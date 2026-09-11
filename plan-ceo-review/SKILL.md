@@ -887,9 +887,9 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
   [describe]          --->       [describe delta]    --->    [describe target]
 ```
 
-### 0C-bis. Implementation Alternatives (MANDATORY)
+### 0C-bis. Alternatives (MANDATORY)
 
-Before 0F, present 2-3 distinct implementation approaches (mandatory).
+Before 0F, compare 2-3 distinct approaches for this deliverable: prioritization or implementation.
 
 For each approach:
 ```
@@ -911,13 +911,12 @@ APPROACH C: [Name] (if meaningfully different)
 **RECOMMENDATION:** Choose [X] because [one-line reason mapped to engineering preferences].
 
 Rules:
-- Preserve accepted requirements and unchanged contracts. **Separate architecture from remedies:** vary component ownership/control flow; keep independent error, security, test and performance choices constant or pending in every approach. Approving an architecture approves no pending remedy; unsafe/untested versus safe/tested is not an architecture comparison.
+- Preserve accepted requirements and unchanged contracts. **Separate architecture from remedies:** for architecture choices, vary component ownership/control flow; keep independent error, security, test and performance choices constant or pending in every approach. Approving an architecture approves no pending remedy; unsafe/untested versus safe/tested is not an architecture comparison.
 - Ask each pending remedy separately. Combine only inseparable choices; explain the constraint and exact scope approved. Sharing a file or step is not coupling. Do not re-ask approved requirements or remedies.
-- At least 2 approaches; prefer 3 for non-trivial plans.
-- Include "minimal viable" (fewest files, smallest diff).
-- Include "ideal architecture" (best long-term trajectory).
-- **These two approaches have equal weight.** Recommend what best serves the user, even a rewrite; smaller is not automatically better.
-- If only one approach exists, explain concretely why alternatives were eliminated.
+- Prefer 3 approaches for non-trivial plans.
+- For implementation, include "minimal viable" (fewest files, smallest diff) and "ideal architecture" (best long-term trajectory).
+- **Give alternatives equal weight.** Recommend what serves the user, even a rewrite; smaller is not automatically better.
+- If only one approach exists, justify why alternatives were eliminated.
 - Do NOT proceed to mode selection (0F) without user approval of the chosen approach.
 
 Present these approach options via AskUserQuestion using the preamble's format with RECOMMENDATION. Include `Completeness: N/10` on each only when these alternatives differ in coverage of the same decision. Otherwise use `Note: options differ in kind, not coverage — no completeness score.`

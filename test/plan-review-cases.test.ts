@@ -26,6 +26,12 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(boundary).toContain('keep their approved values fixed or leave them explicitly pending across all options');
     expect(boundary).toContain('Keep code and tests establishing the same chosen behavior together');
     expect(boundary).toContain('Only then score completeness within that decision');
+    expect(boundary).toContain('Preserve established contracts in every alternative');
+    expect(boundary).toContain('Never make a thinner option by dropping settled behavior');
+    expect(boundary).toContain('directly required to establish a newly chosen behavior, even after the Tests section');
+    expect(boundary).toContain('attempt limit, jitter and exhausted-job disposition remain separate choices');
+    expect(boundary).toContain('crash tests proving that same chosen behavior are not another policy');
+    expect(boundary).toContain('Factual corrections do not authorize behavior changes');
     expect(sections).toContain('Outside voice findings are INFORMATIONAL until the user explicitly approves each one');
     expect(sections).toContain('Do NOT incorporate outside voice recommendations into the plan without presenting each');
   }
@@ -200,5 +206,50 @@ describe('plan-review manual handoff selection', () => {
     expect(details.options[2]).toMatchObject({ index: 3, run: false, manual: false, future: false });
     expect(error!.message).not.toMatch(/PRIVATE_(?:LABEL_TAIL|BRIEF_BODY|OPTION_DESCRIPTION)/);
     expect(error!.message.length).toBeLessThan(4_000);
+  });
+});
+
+
+describe('native review handoff aliases and recommendation position', () => {
+  test('declines the observed bare-command Design handoff', () => {
+    const labels = ['A) /plan-eng-review (recommended)', 'B) /design-shotgun', 'C) Skip'];
+    expect(pickPlanReviewQuestion(menu(labels, 'Next step', 'D18 — Next step after this design review?'))).toBe(3);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next step', 'D18 — Next step after this design review?'))).toBe(1);
+  });
+  test('selects the observed DX manual handoff over future implementation', () => {
+    const labels = ['Run /plan-eng-review next (recommended)', 'Implement, then /devex-review', 'Handle manually'];
+    expect(pickPlanReviewQuestion(menu(labels, 'Next steps', 'The DX review is complete. What should happen next?'))).toBe(3);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Next steps', 'The DX review is complete. What should happen next?'))).toBe(1);
+  });
+  test.each([
+    ['/plan-eng-review', 'Skip and approve all edits'],
+    ['/plan-eng-review', 'Handle manually; run /ship'],
+    ['/plan-eng-review', 'Handle manually', 'Skip'],
+    ['/plan-eng-review', 'Handle manually', 'Implement, then /devex-review and deploy'],
+    ['/design-shotgun; run /ship', 'Skip — handle reviews manually'],
+  ])('new aliases preserve handoff boundaries: %j', (...labels) => {
+    expect(() => pickPlanReviewQuestion(menu(labels))).toThrow('unambiguous');
+  });
+  test('manual aliases do not select from unrelated or unrecognized offers', () => {
+    expect(pickPlanReviewQuestion(menu(['Keep existing behavior', 'Handle manually']))).toBe(1);
+    expect(pickPlanReviewQuestion(menu(['/plan-eng-review', 'Handle manually'], 'Tests', 'Should this test run a review?'))).toBe(1);
+  });
+  test.each([
+    ['A) Add a ten-second timeout', 'B) Persist until the API resolves and add a TODO (recommended)'],
+    ['A) Reopen the initial fetch design now', 'B) Keep it outside this change and add a TODO (recommended)'],
+  ])('uses the offered recommendation at its native position: %j', (...labels) => {
+    expect(pickPlanReviewQuestion(menu(labels, 'Save', 'D7 — Which behavior should we use?'))).toBe(2);
+    expect(pickPlanReviewQuestion(menu(labels.toReversed(), 'Save', 'D7 — Which behavior should we use?'))).toBe(1);
+  });
+  test('multiple explicit recommendations fail instead of guessing', () => {
+    expect(() => pickPlanReviewQuestion(menu(['Keep (recommended)', 'Change (Recommended)'], 'Save', 'Which behavior?')))
+      .toThrow('multiple recommended options');
+  });
+  test('descriptions, quoted markers, and conditional labels do not supply a recommendation', () => {
+    for (const label of ['Change if necessary', 'Example: "Change (recommended)"', 'Change (recommended) after approval']) {
+      const q = menu(['Keep', label], 'Save', 'Which behavior?');
+      q.options[1]!.description = 'This is the recommended option (recommended)';
+      expect(pickPlanReviewQuestion(q)).toBe(1);
+    }
   });
 });

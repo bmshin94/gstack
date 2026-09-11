@@ -6,6 +6,11 @@ behavior, dependency, public API, persistence or deployment. Run the existing
 contract tests with `bun test contract.test.ts`. No install, credentials,
 network service or real clock is needed.
 
+Repository convention: public-function contracts live in `contract.test.ts`,
+with inline `PaymentIO` stubs in each case, as in the existing tests. Extend that
+suite for additional contracts; there is no separate test framework or shared
+mock-helper layer to design for this change.
+
 The injected `chargeOnce` transport makes one Stripe request per invocation and
 returns a validated charge ID or a `ProviderError`. It has no automatic retries.
 `processPayment` owns the sole retry: a 502 or timeout waits 100 ms, then tries
@@ -26,8 +31,5 @@ Existing tests cover invalid input, nonretryable errors (including cause identit
 and recovery after a first 502. Recovery checks retry ownership, a frozen request
 and receipt despite caller mutation, and that the second transport call cannot
 start until the injected 100 ms wait resolves. These are existing tested contracts.
-They do not exercise first-attempt success or exhaust the retry on 502/timeout.
-Those are the two independent gaps in the review plan: first-attempt receipt
-correctness and clean failure after the sole retry is exhausted.
 The function and these existing contracts are available for inspection; report
 any actual additional defect rather than assuming undocumented payment features.

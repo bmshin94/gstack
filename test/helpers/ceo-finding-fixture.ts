@@ -35,6 +35,24 @@ export function seedCeoFindingProject(projectDir: string, plan: string, design?:
   seedPlanReviewProject(projectDir, plan, 'plan-ceo-review', design);
 }
 
+/** The five-finding review gets a small existing handler boundary, not an
+ * implementation or regression coverage for its proposed PaymentService. */
+export function seedCeoPaymentProject(projectDir: string, plan: string): void {
+  seedCeoFindingProject(projectDir, plan);
+  const fixture = path.resolve(import.meta.dir, '../fixtures/ceo-existing-payment');
+  const files = [['README.md', 'README.md'], ['platform.ts', 'src/platform.ts'],
+    ['existing-invoice-handler.ts', 'src/existing-invoice-handler.ts'],
+    ['schema.sql', 'schema.sql'], ['contract.test.ts.fixture', 'contract.test.ts']];
+  fs.mkdirSync(path.join(projectDir, 'src'));
+  for (const [source, target] of files) {
+    fs.copyFileSync(path.join(fixture, source!), path.join(projectDir, target!));
+  }
+  const git = (args: string[]) => execFileSync('git', args, { cwd: projectDir, stdio: 'pipe', timeout: 10_000 });
+  git(['add', ...files.map(([, target]) => target!)]);
+  git(['-c', 'user.name=Finding fixture', '-c', 'user.email=fixture@gstack.test', 'commit', '-m', 'Seed existing invoice integration']);
+  git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+}
+
 export function seedPlanReviewProject(projectDir: string, plan: string, skill: 'plan-ceo-review' | 'plan-eng-review' | 'plan-design-review' | 'plan-devex-review', design?: string): void {
   if (!fs.lstatSync(projectDir).isDirectory() || fs.readdirSync(projectDir).length !== 0) {
     throw new Error('Plan review fixture requires a fresh private directory');

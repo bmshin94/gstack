@@ -33,6 +33,10 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(design).toContain('values already use named CSS custom properties');
     expect(design).toContain('unchanged FormStack uses 16px between fields');
     expect(design).toContain('8px between a label and its input');
+    expect(design).toContain('Reset and Export are\\ndisabled, Cancel remains available');
+    expect(design).toContain('two-pixel offset on all Button variants');
+    expect(design).toContain('Settings role values are scoped to the Settings page.');
+    expect(design).toContain('wrap in their existing order, with intrinsic widths');
     expect(design).toContain('No new storyboard or onboarding flow is required.');
     expect(design).toContain('choosing the five proposed visual treatments remains open.');
     for (const file of ['DESIGN.md', 'review-input.md']) {

@@ -2,10 +2,28 @@ import type { NativeQuestion } from './plan-skill-questions';
 import { pickPlanReviewQuestion } from './plan-review-cases';
 
 /** This simulated user keeps the split fixture's stated 2–3 integration cap.
- * Only the explicit assembled-set reconciliation changes the ordinary picker;
+ * Reconcile an over-cap set or defer an added channel atop three confirmed candidates;
  * every original candidate still gets its own native decision and evaluation. */
 export function pickCeoSplitQuestion(question: NativeQuestion): number {
   const lead = question.question.split(/\r?\n/, 1)[0]!;
+  // The native proposal states the three accepted candidate IDs itself. Do not
+  // infer an ACK history, change any E1–E5 decision, or count an in-channel
+  // feature (such as test alerts or severity routing) as another integration.
+  const confirmed = /^Project\/branch\/task: [^\r\n]+; cherry-pick [1-9]\d* of [1-9]\d* on top of the confirmed (E[1-5](?: \+ E[1-5]){2}) scope\.$/
+    .exec(question.question.split(/\r?\n/)[1] ?? '');
+  if (question.header.trim() === 'Webhook'
+    && /^D[1-9]\d*(?:\.[1-9]\d*)? — Expansion: add a generic Slack-compatible incoming-webhook channel\?$/.test(lead)
+    && confirmed) {
+    const labels = question.options.map(option => option.label.trim()
+      .replace(/^[A-D][).] /, '').replace(/ \(recommended\)$/i, ''));
+    const deferrals = labels.flatMap((label, index) => label === 'Defer to TODOS.md' ? [index + 1] : []);
+    if (question.multiSelect || new Set(confirmed[1]!.split(' + ')).size !== 3
+      || labels.length < 2 || labels.length > 4 || deferrals.length !== 1
+      || labels.some(label => !['Add to scope', 'Defer to TODOS.md', 'Skip'].includes(label))) {
+      throw new Error('Additional channel at the integration cap has no unique offered deferral');
+    }
+    return deferrals[0]!;
+  }
   const capQuestion = question.header.trim() === 'Final set'
     && /^D[1-9]\d*(?:\.final)? — The assembled set is (?:[4-9]|[1-9]\d+|four|five|six|seven|eight|nine) items at ~?\d+ weeks, but the plan caps this quarter at 2[-–]3 integrations\. How do we resolve that\?$/.test(lead);
   if (!capQuestion) return pickPlanReviewQuestion(question);

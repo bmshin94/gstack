@@ -78,8 +78,9 @@ The proposed visual emphasis of Save relative to the other actions is unresolved
 The shared Button already applies the app's disabled-opacity token to every visual
 variant without changing its size or position. This disabled treatment is unchanged;
 the redesign chooses action emphasis, not a new disabled-state design.
-During an in-flight Save, duplicate submission is blocked; fields keep their
-values, focus stays on Save, and cancellation does not discard the draft.
+During an in-flight Save, duplicate submission is blocked; Reset and Export are
+disabled, Cancel remains available, fields keep their values, focus stays on Save,
+and cancellation does not discard the draft. These action states are unchanged.
 The visual feedback during this delay is the unresolved part of the proposal.
 Success shows the existing saved-status line and announces it through the polite
 live region. Failure preserves every draft value and offers retry beside the
@@ -96,7 +97,8 @@ The app uses its locally bundled Source Sans 3 face. Body and input text are 16p
 page headings 24px, and section headings 20px. Form-label tiers are under review;
 the current inconsistent 14px, 16px, and 18px usage remains a defect to resolve.
 The app's primary accent is #0F6E6E on white. Neutral text is #1F2937 on white,
-with a visible two-pixel focus outline. Section gaps currently vary as described
+with a visible two-pixel focus outline and two-pixel offset on all Button variants,
+including filled buttons. The existing outline and offset are unchanged. Section gaps currently vary as described
 in the proposal; the redesign must choose a coherent rhythm. The error-message
 foreground/background pair is also unresolved; other colors remain unchanged.
 No new font, brand palette, dark mode, component library, or motion system is needed.
@@ -104,13 +106,16 @@ Color, spacing, type, and motion values already use named CSS custom properties
 on the shared Button, FormStack, and Field components. The current inconsistent
 values are legacy role assignments, not missing token infrastructure. Reuse the
 existing mechanism; choosing the five proposed visual treatments remains open.
+Settings role values are scoped to the Settings page. Shared component defaults
+and other pages retain their existing values; app-wide adoption is outside this change.
 Within each section, the unchanged FormStack uses 16px between fields and the
 Field component uses 8px between a label and its input. Only the gaps between
 sections are inconsistent and under review; intra-section spacing is preserved.
 
 ## Responsive and accessible behavior already in place
 At 375px the form fits the viewport with 16px side padding; the header actions
-wrap in their existing order, without hiding actions or causing horizontal scroll.
+wrap in their existing order, with intrinsic widths, without hiding actions or
+causing horizontal scroll. The visual redesign preserves that geometry.
 At 768px and above the content column remains at most 640px, centered with at least
 24px side gutters. Controls and touch targets are at least 44px high.
 There is one main landmark, a page heading, named form sections, and explicit

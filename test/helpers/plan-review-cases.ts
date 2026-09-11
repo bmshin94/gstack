@@ -50,7 +50,7 @@ export const ENG_BATCHING_FINDINGS = [
   { id: 'retry-library', description: 'Decide reuse of existing job-library retry hooks instead of a custom inline backoff scheduler per worker.' },
   { id: 'retry-duplication', description: 'Decide consolidation of the copied retry envelope across five workers.' },
   { id: 'at-most-once', description: 'Decide regression coverage for processWebhookJob at-most-once delivery when rewriting it.' },
-  { id: 'dependency-cache', description: 'Decide caching the dependency graph/payload instead of fetching and recomputing it on every retry.' },
+  { id: 'dependency-cache', description: 'Decide caching and reusing the dependency graph across retries instead of rebuilding it on every attempt. Payload fetching or freshness is a separate policy and is not required for graph-cache coverage.' },
 ];
 
 /** Answer only the finite next-step menus offered by the review sources. These
@@ -60,19 +60,26 @@ export function pickPlanReviewQuestion(question: NativeQuestion): number {
   const lead = question.question.split(/\r?\n/, 1)[0]!.replace(/^D\d+(?:\.\d+)?\s*[—–:-]\s*/, '');
   const nextReview = /^(?:next review|next steps?|what['’]s next)\b/i.test(question.header.trim())
     || /^(?:next reviews?|next steps?|what['’]s next)\b/i.test(lead.trim());
-  if (!nextReview) return 1;
+  const recommended = () => {
+    const choices = question.options.flatMap((option, index) =>
+      /\s\(recommended\)\s*$/i.test(option.label) ? [index + 1] : []);
+    if (choices.length > 1) throw new Error('Review question has multiple recommended options');
+    return choices[0] ?? 1;
+  };
+  if (!nextReview) return recommended();
   const labels = question.options.map(option => option.label.trim()
     .replace(/^[A-E][).:]\s+/, '').replace(/\s*\(recommended\)\s*$/i, '').trim());
-  const run = (label: string) => /^Run \/plan-(?:ceo|eng|design|devex)-review(?: next)?(?:\s*\((?:required gate|only if UI scope detected(?: and no design review exists)?|only if fundamental product gaps found|only if significant product change and no CEO review exists)\))?$/i.test(label)
-    || /^Run \/design-shotgun(?: after adding an OpenAI key|\s*[—–-]\s*explore visual design variants for issues found)?$/i.test(label)
-    || /^Run \/design-html(?:\s*[—–-]\s*generate Pretext-native HTML from approved mockups)?$/i.test(label);
+  const run = (label: string) => /^(?:Run )?\/plan-(?:ceo|eng|design|devex)-review(?: next)?(?:\s*\((?:required gate|only if UI scope detected(?: and no design review exists)?|only if fundamental product gaps found|only if significant product change and no CEO review exists)\))?$/i.test(label)
+    || /^(?:Run )?\/design-shotgun(?: after adding an OpenAI key|\s*[—–-]\s*explore visual design variants for issues found)?$/i.test(label)
+    || /^(?:Run )?\/design-html(?:\s*[—–-]\s*generate Pretext-native HTML from approved mockups)?$/i.test(label);
   // A bare Skip declines only an offered, recognized follow-up in this handoff.
   const offersFollowUp = labels.some(run);
   const manual = (label: string) => /^Skip\s*[,—–-]\s*(?:I(?:['’]ll| will)\s+)?handle (?:reviews|next steps) manually$/i.test(label)
-    || (offersFollowUp && (/^Skip$/i.test(label) || /^Skip\s*[,—–-]\s*handle manually$/i.test(label)));
+    || (offersFollowUp && (/^(?:Skip|Handle manually)$/i.test(label) || /^Skip\s*[,—–-]\s*handle manually$/i.test(label)));
   const future = (label: string) => /^Ready to implement(?:\s*[—–-]\s*run \/ship when done)?$/i.test(label)
-    || /^Ready to implement, run \/devex-review after shipping$/i.test(label);
-  if (!labels.some(label => run(label) || manual(label) || future(label))) return 1;
+    || /^Ready to implement, run \/devex-review after shipping$/i.test(label)
+    || (offersFollowUp && /^Implement, then \/devex-review$/i.test(label));
+  if (!labels.some(label => run(label) || manual(label) || future(label))) return recommended();
   const manualChoices = labels.flatMap((label, index) => manual(label) ? [index + 1] : []);
   const futureChoices = labels.flatMap((label, index) => future(label) ? [index + 1] : []);
   const choices = manualChoices.length ? manualChoices : futureChoices;

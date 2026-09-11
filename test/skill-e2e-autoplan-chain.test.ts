@@ -48,7 +48,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
   test(
     'completion markers follow CEO, optional Design, optional DX, then Eng',
     async () => {
-      // UI-heavy fixture so Phase 2 runs.
+      // A dedicated UI change exercises the full chain, including Phase 2.
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-autoplan-chain-'));
       try {
         const gitRun = (args: string[]) =>
@@ -57,9 +57,9 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         gitRun(['config', 'user.email', 'test@test.com']);
         gitRun(['config', 'user.name', 'Test']);
 
-        const stateDir = seedAutoplanProject(tempDir);
+        const stateDir = seedAutoplanProject(tempDir, 'password-visibility');
         gitRun(['add', '.']);
-        gitRun(['commit', '-m', 'init UI-heavy fixture']);
+        gitRun(['commit', '-m', 'init password-visibility fixture']);
 
         const sessionId = randomUUID();
         const session = await launchClaudePty({

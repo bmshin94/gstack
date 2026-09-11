@@ -15,8 +15,11 @@ const question = (labels = ['A) Keep all six, lift the cap', 'B) Trim to cap: Sl
 });
 
 test('the observed cap conflict selects the offered trim rather than lifting the fixture cap', () => {
-  expect(pickPlanReviewQuestion(question())).toBe(1);
+  expect(pickPlanReviewQuestion(question())).toBe(2);
   expect(pickCeoSplitQuestion(question())).toBe(2);
+  const recommendsLiftingCap = question(['Keep all six, lift the cap (recommended)', 'Trim to cap: Slack + Teams']);
+  expect(pickPlanReviewQuestion(recommendsLiftingCap)).toBe(1);
+  expect(pickCeoSplitQuestion(recommendsLiftingCap)).toBe(2);
 });
 
 test.each([
@@ -68,6 +71,75 @@ test('the existing manual review handoff remains available unchanged', () => {
   expect(pickCeoSplitQuestion(handoff)).toBe(2);
 });
 
+// Exact ordinary native D5.1 input from the retained V4 split timeout.
+const extraChannel = (): NativeQuestion => ({
+  "header": "Webhook",
+  "multiSelect": false,
+  "options": [
+    {
+      "description": "Ship the Slack-compatible webhook channel this quarter after E1.",
+      "label": "A) Add to scope (recommended)"
+    },
+    {
+      "description": "Record it for next quarter.",
+      "label": "B) Defer to TODOS.md"
+    },
+    {
+      "description": "Do not pursue.",
+      "label": "C) Skip"
+    }
+  ],
+  "question": "D5.1 — Expansion: add a generic Slack-compatible incoming-webhook channel?\nProject/branch/task: main branch; cherry-pick 1 of 4 on top of the confirmed E1 + E3 + E4 scope.\nELI10: Picture the Mattermost admin at a high-ARR account opening your integration settings and finding a 'Slack-compatible webhook URL' field. They paste the URL their Mattermost server gave them, hit save, and the next incident lands in their channel formatted exactly like the Slack version. Same for a Discord community lead using their webhook's /slack endpoint. No bot install, no app review, no new auth flow. It reuses E1's Slack message builder and the adapter's post-and-retry loop, so the work is a settings field, a URL validator, and a test. Effort: S (human ~2-3 days / CC ~1 hour). Risk: low; the main gotcha is that Slack-format compatibility covers text and attachments but not interactive buttons.\nStakes if we pick wrong: skipping it leaves the two deferred segments with nothing this quarter; adding it costs a few days at the end of a full quarter.\nRecommendation: Add — this is a taste call, no strong preference either way, but it is the cheapest way to give the deferred segments something real this quarter.\nNote: options differ in kind, not coverage — no completeness score.\nPros / cons:\nA) Add to this quarter's scope (recommended) (human: ~2-3 days / CC: ~1 hour)\n  ✅ Alert delivery reaches Mattermost and Discord this quarter for a fraction of a bot's cost\n  ✅ Doubles as a generic channel for any tool that speaks Slack payloads (Rocket.Chat, Zulip, custom)\n  ❌ Text-only delivery: no interactive buttons or slash commands on those platforms\n  ❌ Adds a fourth delivery surface to monitor at launch\nB) Defer to TODOS.md\n  ✅ Keeps the quarter at exactly three named integrations with a little more buffer\n  ✅ Still cheap next quarter since it depends only on E1's formatter\n  ❌ Deferred segments wait a full quarter for something that costs days\nC) Skip\n  ✅ Keeps the integrations page to first-class, branded platforms only\n  ✅ Avoids supporting arbitrary webhook endpoints you do not control\n  ❌ Gives up the eureka that made deferring E2 and E5 comfortable\nNet: a cheap generic channel for the deferred segments versus a tighter, branded-only launch."
+});
+
+test('the actual fourth-channel proposal defers while preserving the complete native input', () => {
+  const native = extraChannel();
+  const original = structuredClone(native);
+  expect(pickPlanReviewQuestion(native)).toBe(1);
+  expect(pickCeoSplitQuestion(native)).toBe(2);
+  expect(native).toEqual(original);
+});
+
+test('the extra channel uses its unique offered deferral even when choices move', () => {
+  const native = extraChannel();
+  native.options = [native.options[1]!, native.options[2]!, native.options[0]!];
+  expect(pickCeoSplitQuestion(native)).toBe(1);
+});
+
+test.each([
+  ['Add to scope', 'Skip'],
+  ['Add to scope', 'Defer to TODOS.md', 'Defer to TODOS.md'],
+  ['Add to scope', 'If the cap stays, Defer to TODOS.md'],
+  ['Add to scope', 'Defer to TODOS.md if convenient'],
+  ['Add to scope', 'Defer to TODOS.md', 'Skip the review'],
+].map(labels => [labels]))('a capped extra channel cannot invent a deferral: %j', labels => {
+  const native = extraChannel();
+  native.options = labels.map(label => ({ label, description: '' }));
+  expect(() => pickCeoSplitQuestion(native)).toThrow('no unique offered deferral');
+});
+
+test('multi-select or repeated candidate IDs do not establish three confirmed integrations', () => {
+  expect(() => pickCeoSplitQuestion({ ...extraChannel(), multiSelect: true })).toThrow('no unique offered deferral');
+  const native = extraChannel();
+  native.question = native.question.replace('E1 + E3 + E4', 'E1 + E3 + E1');
+  expect(() => pickCeoSplitQuestion(native)).toThrow('no unique offered deferral');
+});
+
+test('the added-channel policy does not decline features, swaps, examples or a two-candidate set', () => {
+  const native = extraChannel();
+  for (const other of [
+    { ...native, header: 'Test alert', question: native.question.replace(
+      'add a generic Slack-compatible incoming-webhook channel?', "add a 'Send test alert' button on each integration's settings page?") },
+    { ...native, header: 'Routing', question: native.question.replace(
+      'add a generic Slack-compatible incoming-webhook channel?', 'route alerts by severity to different channels?') },
+    { ...native, question: native.question.replace('Expansion: add', 'Expansion: replace Teams with') },
+    { ...native, question: native.question.replace('E1 + E3 + E4', 'E1 + E3') },
+    { ...native, question: 'Quoted example: ' + native.question },
+    { ...native, question: 'If capacity later changes, ' + native.question },
+    { ...native, question: native.question.replace('the confirmed', 'the proposed') },
+  ]) expect(pickCeoSplitQuestion(other)).toBe(pickPlanReviewQuestion(other));
+});
+
 // Import the actual paid case in a separate process with only its provider
 // boundaries mocked. Seeding, chooser wiring, finalization and judgment gating run.
 test.each(['complete', 'timeout'])('actual split registration keeps all five decisions and the native outcome gate: %s', async scenario => {
@@ -82,6 +154,7 @@ import { pickCeoSplitQuestion } from ${JSON.stringify(path.join(ROOT, 'test/help
 import { CEO_SCOPE_CANDIDATES } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
 import { FORCING_SPLIT_OVERFLOW_CEO } from ${JSON.stringify(path.join(ROOT, 'test/fixtures/forcing-finding-seeds.ts'))};
 const cap = ${JSON.stringify(question())};
+const extraChannel = ${JSON.stringify(extraChannel())};
 const facts = { calls: 0, judgments: 0, cwd: '', selected: [], validated: false };
 const fingerprints = [];
 const save = () => fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify(facts));
@@ -110,19 +183,21 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     }
     const selected = opts.questionPick(cap); expect(selected).toBe(2);
     fingerprints.push({ toolUseId: 'scope-cap', questions: [cap], selectedOptions: [selected] });
+    const extraSelected = opts.questionPick(extraChannel); expect(extraSelected).toBe(2);
+    fingerprints.push({ toolUseId: 'extra-channel', questions: [extraChannel], selectedOptions: [extraSelected] });
     facts.validated = true; save();
     return { outcome: ${JSON.stringify(scenario)} === 'timeout' ? 'timeout' : 'plan_ready',
-      fingerprints, step0Count: 0, reviewCount: 6, elapsedMs: 1, evidence: 'controlled registration' };
+      fingerprints, step0Count: 0, reviewCount: 7, elapsedMs: 1, evidence: 'controlled registration' };
   },
 }));
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
   evaluatePlanReviewDecisions: async opts => {
     facts.judgments++; save();
-    expect(opts.fingerprints).toBe(fingerprints); expect(opts.fingerprints).toHaveLength(6);
+    expect(opts.fingerprints).toBe(fingerprints); expect(opts.fingerprints).toHaveLength(7);
     expect(opts.targets).toBe(CEO_SCOPE_CANDIDATES); expect(opts.targets.map(t => t.id)).toEqual(['E1','E2','E3','E4','E5']);
     expect(opts.kind).toBe('scope'); expect(opts.floor).toBe(4); expect(opts.ceiling).toBeUndefined();
     expect(opts.deadlineAt).toBeGreaterThan(Date.now()); expect(opts.deadlineAt).toBeLessThanOrEqual(Date.now() + 1_500_000);
-    return { count: 6, coveredTargetIds: opts.targets.map(t => t.id) };
+    return { count: 7, coveredTargetIds: opts.targets.map(t => t.id) };
   },
 }));
 await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-split-overflow.test.ts'))});
