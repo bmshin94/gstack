@@ -871,6 +871,8 @@ sections. Read a section in full before doing its step; do not work from memory.
 
 ## Step 0: Nuclear Scope Challenge + Mode Selection
 
+From input reading through Step 0 and outside voice, keep a ledger of declared contracts, conventions, existing coverage and exact decisions. Reopen only with concrete contradiction or changed assumptions; hypothetical violations or model agreement alone do not invalidate a contract. Keep actual code risks visible.
+
 ### 0A. Premise Challenge
 1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
 2. What is the actual user/business outcome? Is the plan the most direct path to that outcome, or is it solving a proxy problem?
@@ -889,40 +891,22 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Alternatives (MANDATORY)
 
-Before 0F, compare 2-3 distinct approaches for this deliverable: prioritization or implementation.
+Before 0F, compare 2-3 distinct approaches for this prioritization or implementation.
 
-For each approach:
-```
-APPROACH A: [Name]
-  Summary: [1-2 sentences]
-  Effort:  [S/M/L/XL]
-  Risk:    [Low/Med/High]
-  Pros:    [2-3 bullets]
-  Cons:    [2-3 bullets]
-  Reuses:  [existing code/patterns leveraged]
+For each approach A/B/C, list name, summary (1-2 sentences), effort (S/M/L/XL), risk (low/medium/high), pros and cons (2-3 each), and reused code/patterns.
 
-APPROACH B: [Name]
-  ...
-
-APPROACH C: [Name] (if meaningfully different)
-  ...
-```
-
-**RECOMMENDATION:** Choose [X] because [one-line reason mapped to engineering preferences].
+**RECOMMENDATION:** Choose [X] because [reason mapped to engineering preferences].
 
 Rules:
-- Preserve accepted requirements and unchanged contracts. **Separate architecture from remedies:** for architecture choices, vary component ownership/control flow; keep independent error, security, test and performance choices constant or pending in every approach. Approving an architecture approves no pending remedy; unsafe/untested versus safe/tested is not an architecture comparison.
-- Ask each pending remedy separately. Combine only inseparable choices; explain the constraint and exact scope approved. Sharing a file or step is not coupling. Do not re-ask approved requirements or remedies.
-- Prefer 3 approaches for non-trivial plans.
-- For implementation, include "minimal viable" (fewest files, smallest diff) and "ideal architecture" (best long-term trajectory).
-- **Give alternatives equal weight.** Recommend what serves the user, even a rewrite; smaller is not automatically better.
-- If only one approach exists, justify why alternatives were eliminated.
-- Do NOT proceed to mode selection (0F) without user approval of the chosen approach.
+- Preserve accepted requirements and unchanged contracts. **For every approach comparison**, identify one decision first. Vary method or organization while holding independent behavior, coverage and remedy choices constant or pending. One "complete test suite" cannot bundle coverage choices for separate contracts. Approving an approach approves no pending remedy.
+- Ask each pending remedy separately. Combine only inseparable choices; explain the constraint and exact scope approved. Direct implementation and tests proving the same behavior belong together. Sharing a file or step is not coupling. Do not re-ask approved requirements or remedies.
+- Prefer 3 approaches for non-trivial plans; justify having only one.
+- For implementation, include "minimal viable" (fewest files/smallest diff) and "ideal architecture" (best long-term trajectory).
+- **Give alternatives equal weight.** Recommend what serves the user, even rewrites; smaller is not automatically better.
 
-Present these approach options via AskUserQuestion using the preamble's format with RECOMMENDATION. Include `Completeness: N/10` on each only when these alternatives differ in coverage of the same decision. Otherwise use `Note: options differ in kind, not coverage — no completeness score.`
+Present these approach options via AskUserQuestion: preamble format + RECOMMENDATION. Score `Completeness: N/10` only for coverage of that one decision; otherwise use `Note: options differ in kind, not coverage — no completeness score.`
 
-**STOP.** Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis. Ask once per issue, never batch; recommend + WHY. Even a clear winner needs explicit approval before entering the plan.
-**Reminder: Do NOT make any code changes. Review only.**
+**STOP.** Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis. Do NOT proceed to mode selection (0F) without user approval. Ask once per issue, never batch; even a clear winner needs approval. Review only; do NOT change code.
 
 ### 0F. Mode Selection
 Run after 0C-bis, before 0D. Keep the approved approach; add scope only with explicit user approval.

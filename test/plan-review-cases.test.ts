@@ -17,7 +17,16 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(rule).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
     expect(skeleton.slice(rule, rule + 350).replace(/\s+/g, ' ')).toContain('Keep implementation details and tests directly establishing one chosen contract together');
     expect((skeleton + sections).split(definition)).toHaveLength(2);
-    expect(skeleton).toContain('Fewer components does not approve a pending remedy; ask about each separately before applying it.');
+    const scope = skeleton.slice(skeleton.indexOf('### Step 0: Scope Challenge'), skeleton.indexOf('**STOP.** Until the decision'));
+    expect(scope).toContain('8+ files or 2+ new classes/services');
+    expect(scope).toContain('STOP before section work');
+    expect(scope).toContain("Via the preamble's question flow");
+    expect(scope).toContain('minimal scope meeting the goal with retained component scope');
+    expect(scope).toContain('Both preserve established contracts');
+    expect(scope).toContain('security, error, test and performance remedies stay constant or pending');
+    expect(scope).toContain('Scope approval never accepts, cuts or defers independent remedies');
+    expect(scope).toContain('ask about each separately before applying it');
+    expect(scope).not.toContain('proceed as-is');
     const inventory = sections.indexOf('**Before drafting options (every section and outside voice):**');
     expect(inventory).toBeGreaterThan(0);
     expect(inventory).toBeLessThan(sections.indexOf('### 1. Architecture review'));

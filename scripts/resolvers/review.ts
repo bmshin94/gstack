@@ -856,24 +856,32 @@ CROSS-MODEL TENSION:
 \`\`\`
 
 **User Sovereignty:** Do NOT auto-incorporate outside voice recommendations into the plan.
-Present each tension point to the user. The user decides. Cross-model agreement is a
-strong signal — present it as such — but it is NOT permission to act. You may state
-which argument you find more compelling, but you MUST NOT apply the change without
+Before drafting options, split each tension point into independently selectable
+actions, including adding, changing, dropping or deferring work. One reviewer bullet
+or shared topic can contain several decisions. Ask one per call; hold every other
+action fixed at its approved value or explicitly pending in all options. Adding one
+remedy cannot also approve another remedy's TODO. Tests establishing the same chosen
+behavior stay together. Compare completeness only within that one decision.
+
+The user decides. Cross-model agreement is evidence, not permission. Preserve declared
+contracts and exact earlier approvals; reopening requires concrete contradictory
+evidence or a changed assumption. State what changed. You MUST NOT apply the change without
 explicit user approval.
 
-For each substantive tension point, use AskUserQuestion:
+For each unresolved independent decision, use AskUserQuestion:
 
 > "Cross-model disagreement on [topic]. The review found [X] but the outside voice
 > argues [Y]. [One sentence on what context you might be missing.]"
 >
 > RECOMMENDATION: Choose [A or B] because [one-line reason explaining which argument
-> is more compelling and why]. Completeness: A=X/10, B=Y/10.
+> is more compelling and why]. Score completeness only if options vary coverage of
+> this decision; otherwise state that they differ in kind.
 
 Options:
-- A) Accept the outside voice's recommendation (I'll apply this change)
-- B) Keep the current approach (reject the outside voice)
-- C) Investigate further before deciding
-- D) Add to TODOS.md for later
+- A) Apply this one change
+- B) Keep this decision's current disposition
+- C) Investigate this decision before choosing
+- D) Defer this one change to TODOS.md
 
 Wait for the user's response. Do NOT default to accepting because you agree with the
 outside voice. If the user chooses B, the current approach stands — do not re-argue.

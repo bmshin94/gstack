@@ -574,6 +574,12 @@ the highest-leverage outputs.
 **One issue = one AskUserQuestion call.** This applies to every phase, including Step 0.
 Ask each independent substantive decision in its own call and wait for its answer;
 separate tabs in one call still bundle those decisions.
+Hold other decisions fixed or pending across options.
+
+From input reading through outside voice, carry declared contracts, constraints,
+existing coverage and exact approvals forward. Silence in a summary or unavailable
+source does not establish missing product behavior. Reopen only with concrete contradiction or changed assumptions;
+keep real risks and unknowns visible without inventing missing behavior.
 
 ## PRE-REVIEW SYSTEM AUDIT (before Step 0)
 
@@ -1089,30 +1095,21 @@ AskUserQuestion:
 
 ## The 0-10 Rating Method
 
-For each DX section, rate the plan 0-10. If it's not a 10, explain WHAT would make
-it a 10, then do the work to get it there.
-
-**Critical rule:** Every rating MUST reference evidence from Step 0. Not "Getting
-Started: 4/10" but "Getting Started: 4/10 because [persona from 0A] hits [friction
-point from 0F] at step 3, and competitor [name from 0C] achieves this in [time]."
-
-Pattern:
-1. **Evidence recall:** Reference specific findings from Step 0 that apply to this dimension
-2. Rate: "Getting Started Experience: 4/10"
-3. Gap: "It's a 4 because [evidence]. A 10 would be [specific description for THIS product]."
-4. Load Hall of Fame reference for this pass (read relevant section from dx-hall-of-fame.md)
-5. Fix: Edit the plan to add what's missing
-6. Re-rate: "Now 7/10, still missing [specific gap]"
-7. AskUserQuestion if there's a genuine DX choice to resolve
-8. Fix again until 10 or user says "good enough, move on"
+For each DX section:
+1. Recall Step 0 evidence: persona, friction trace and competitive benchmark.
+2. Rate 0-10, explain the evidenced gap and what 10 means for this product.
+3. Read this pass's Hall of Fame section from dx-hall-of-fame.md.
+4. Resolve each new in-scope gap via AskUserQuestion BEFORE editing the plan.
+   Carry exact prior approvals forward; do not ask again merely in a new pass.
+5. Apply approved changes, then re-rate the amended plan. Keep unresolved risks
+   visible. A score is not measured success; never add scope just to reach 10.
 
 **Mode-specific behavior:**
-- **DX EXPANSION:** After fixing to 10, also ask "What would make this dimension
-  best-in-class? What would make [persona] rave about it?" Present expansions as
-  individual opt-in AskUserQuestions.
-- **DX POLISH:** Fix every gap. No shortcuts. Trace each issue to specific files/lines.
-- **DX TRIAGE:** Only flag gaps that would block adoption (score below 5). Skip gaps
-  that are nice-to-have (score 5-7).
+- **DX EXPANSION:** Also propose what would make this dimension best-in-class
+  for the persona. Each expansion requires its own opt-in AskUserQuestion.
+- **DX POLISH:** Examine every touchpoint within the accepted scope and contracts.
+  Trace each issue to evidence. Do not redesign established APIs to improve a score.
+- **DX TRIAGE:** Flag adoption blockers (below 5); skip nice-to-haves (5-7).
 
 > **STOP.** Before running the 8 DX passes, required outputs, and review report (only after Step 0 investigation is complete), Read `~/.claude/skills/gstack/plan-devex-review/sections/review-sections.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.

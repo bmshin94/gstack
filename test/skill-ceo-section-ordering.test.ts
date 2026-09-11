@@ -42,12 +42,17 @@ describe('CEO review decision boundaries contract', () => {
   const temporal = skeleton.split('### 0E.')[1]?.split('### 0F.')[0] ?? '';
   const apply = section.split('**Apply.**')[1]?.split('### Section 1:')[0] ?? '';
 
-  test('architecture alternatives hold accepted requirements constant and separate independent remedies', () => {
+  test('every approach comparison holds independent contracts and remedies constant', () => {
     expect(alternatives).toContain('Preserve accepted requirements and unchanged contracts');
-    expect(alternatives).toContain('keep independent error, security, test and performance choices constant or pending in every approach');
+    expect(alternatives).toContain('For every approach comparison');
+    expect(alternatives).toContain('identify one decision first');
+    expect(alternatives).toContain('independent behavior, coverage and remedy choices constant or pending');
+    expect(alternatives).toContain('cannot bundle coverage choices for separate contracts');
+    expect(alternatives).not.toContain('for architecture choices');
     expect(alternatives).toContain('Ask each pending remedy separately');
     expect(alternatives).toContain('Combine only inseparable choices; explain the constraint and exact scope approved');
-    expect(alternatives).toContain('Approving an architecture approves no pending remedy');
+    expect(alternatives).toContain('Approving an approach approves no pending remedy');
+    expect(alternatives).toContain('Direct implementation and tests proving the same behavior belong together');
     expect(alternatives).toContain('Sharing a file or step is not coupling');
     expect(alternatives).toContain('"minimal viable"');
     expect(alternatives).toContain('"ideal architecture"');
@@ -55,7 +60,8 @@ describe('CEO review decision boundaries contract', () => {
   });
 
   test('coverage scoring is conditional and legitimate early decisions retain their exact approval', () => {
-    expect(alternatives).toContain('only when these alternatives differ in coverage');
+    expect(alternatives).toContain('only for coverage of that one decision');
+    expect(alternatives.indexOf('identify one decision first')).toBeLessThan(alternatives.indexOf('Completeness: N/10'));
     expect(alternatives).toContain('Note: options differ in kind, not coverage — no completeness score.');
     expect(alternatives).not.toContain('These approaches differ in coverage (minimal viable vs ideal architecture)');
     expect(temporal).toContain('separate questions for the user NOW');
@@ -131,6 +137,17 @@ describe('CEO review decision continuity contract', () => {
   });
 
   test('the ledger carries exact approvals and declared contracts without claiming implementation', () => {
+    const skeleton = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
+    const start = skeleton.indexOf('From input reading through Step 0 and outside voice');
+    expect(start).toBeGreaterThan(skeleton.indexOf('## Step 0:'));
+    expect(start).toBeLessThan(skeleton.indexOf('### 0C-bis.'));
+    const earlyLedger = skeleton.slice(start, skeleton.indexOf('### 0A.'));
+    expect(earlyLedger).toContain('declared contracts, conventions, existing coverage and exact decisions');
+    expect(earlyLedger).toContain('concrete contradiction or changed assumptions');
+    expect(earlyLedger).toContain('hypothetical violations or model agreement alone do not invalidate a contract');
+    expect(earlyLedger).toContain('Keep actual code risks visible');
+    expect(continuity).toContain('Continue the ledger from input reading and Step 0');
+    expect(continuity).toContain('declared conventions and existing test coverage');
     for (const requirement of ['issue ID', 'owner section', 'evidence', 'exact accepted choice and scope',
       'decision reference', 'unresolved, approved, or reopened',
       'Selecting an approach is not blanket approval',
