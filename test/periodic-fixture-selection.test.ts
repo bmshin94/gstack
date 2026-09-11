@@ -106,3 +106,17 @@ test('seed submission dependencies select every seeded caller with its existing 
   }
   expect(expected.map(id => E2E_TIERS[id])).toEqual(['periodic', 'periodic', 'periodic', 'gate']);
 });
+
+test('review report resolver selects every periodic completion consumer', () => {
+  const required = [
+    'plan-ceo-finding-count', 'plan-eng-finding-count', 'plan-design-finding-count',
+    'plan-devex-finding-count', 'plan-ceo-split-overflow', 'autoplan-chain-pty',
+    'carve-section-loading', 'plan-ceo-section-loading', 'plan-eng-multi-finding-batching',
+  ];
+  const result = selectTests(['scripts/resolvers/review.ts'], E2E_TOUCHFILES);
+  expect(result.reason).toBe('diff');
+  for (const id of required) {
+    expect(result.selected).toContain(id);
+    expect(E2E_TIERS[id]).toBe('periodic');
+  }
+});
