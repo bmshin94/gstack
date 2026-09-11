@@ -312,8 +312,12 @@ export function hermeticSkillsConfigDir(): string {
         }), null, 2),
       );
     }
+    // Explicit plan-mode evals use native manual permission checks, without
+    // silently adding the CLI's default auto safety-classifier dependency.
     atomicWriteSync(path.join(configDir, 'settings.json'),
-      JSON.stringify(questionCompanionReadSettings(repoRoot(), path.join(privateDir, 'runtime')), null, 2), { mode: 0o600 });
+      JSON.stringify({ useAutoModeDuringPlan: false,
+        ...questionCompanionReadSettings(repoRoot(), path.join(privateDir, 'runtime')),
+      }, null, 2), { mode: 0o600 });
     cachedSkillsConfigDir = configDir;
     return configDir;
   } catch (error) {

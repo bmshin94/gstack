@@ -110,10 +110,11 @@ describe('PTY temporary workspace trust', () => {
       const explicit = path.join(cwd, 'explicit');
       fs.mkdirSync(explicit);
       fs.writeFileSync(path.join(explicit, '.claude.json'), '{"diffSidebarOpen":true}');
-      const explicitSettings = '{"permissions":{"deny":["Read"]}}';
+      const explicitSettings = '{"useAutoModeDuringPlan":true,"permissions":{"deny":["Read"]}}';
       fs.writeFileSync(path.join(explicit, 'settings.json'), explicitSettings);
       const override = await launch({ env: { CLAUDE_CONFIG_DIR: explicit } });
       expect(override.env.CLAUDE_CONFIG_DIR).toBe(explicit);
+      expect(fs.readFileSync(path.join(explicit, 'settings.json'), 'utf8')).toBe(explicitSettings);
       expect(override.session.visibleText()).toBe('FIXTURE_UNTRUSTED');
       expect(fs.readFileSync(path.join(explicit, '.claude.json'), 'utf8')).toBe('{"diffSidebarOpen":true}');
       process.env.EVALS_HERMETIC = '0';
@@ -159,6 +160,8 @@ test.skipIf(process.platform === 'win32')('a live PTY child receives only the sc
     const printed = JSON.parse(session.visibleText().match(/COMPANION_SETTINGS (.+)/)![1]);
     const expected = JSON.parse(fs.readFileSync(path.join(hermeticSkillsConfigDir(), 'settings.json'), 'utf8'));
     expect(printed.settings).toEqual(expected);
+    expect(printed.settings.useAutoModeDuringPlan).toBe(false);
+    expect(Object.keys(printed.settings).sort()).toEqual(['permissions', 'useAutoModeDuringPlan']);
     expect(printed.settings.permissions.allow).toHaveLength(4);
     expect(printed.args.slice(0, 4)).toEqual(['--model', 'fixture', '--permission-mode', 'plan']);
     expect(printed.args).not.toContain('--add-dir');
