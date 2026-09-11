@@ -568,6 +568,9 @@ export function reserveNativePermissionGrant(
     if (!native.permissionRequestCapture || !currentFilePermissionTarget(visible)
       || owners.filter(item => ['Write', 'Edit'].includes(item.name)).length !== 1) throw ambiguous();
     const matches = owners.filter(item => {
+      // Native tool discovery cannot own a file-edit dialog. Keep it pending
+      // for lifecycle accounting; this path never grants its execution.
+      if (item.name === 'ToolSearch') return false;
       try { nativePermissionKey(item, visible); return true; }
       catch (error) {
         if (error instanceof Error && error.message === 'Visible permission cannot be bound to its pending native command or file path') return false;

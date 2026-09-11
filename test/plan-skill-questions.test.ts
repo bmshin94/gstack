@@ -611,6 +611,7 @@ async function scopedEditSequence(variant = 'native') {
     variant === 'wrong-cwd' ? path.dirname(config) : config, 'Edit'));
   if (variant === 'multiple-owner') rows.push(nativeWrite('other-pending', { command: 'true' }, config, 'Bash'));
   if (variant === 'parallel-read') rows.push(nativeWrite('other-pending', { file_path: path.join(config, 'README.md') }, config, 'Read'));
+  if (variant === 'parallel-tool-search') rows.push(nativeWrite('other-pending', { query: 'select:AskUserQuestion' }, config, 'ToolSearch'));
   if (variant === 'same-path-owner') rows.push(nativeWrite('other-pending', { ...nextInput, new_string: 'Different pending edit' }, config, 'Edit'));
   write(...rows);
   await Bun.sleep(5);
@@ -622,7 +623,7 @@ async function scopedEditSequence(variant = 'native') {
   return { read, dialog, granted, requests, firstEvent, nextEvent, resultAtMs, nextInput };
 }
 
-test.each(['native', 'early', 'multiple-owner', 'parallel-read'])('fresh scoped Edit can append the terminal report after a completed Edit (%s)', async variant => {
+test.each(['native', 'early', 'multiple-owner', 'parallel-read', 'parallel-tool-search'])('fresh scoped Edit can append the terminal report after a completed Edit (%s)', async variant => {
   const sequence = await scopedEditSequence(variant);
   const native = sequence.read();
   const prior = native.permissionRequests.find(item => item.requestId === sequence.firstEvent.requestId)!;
@@ -634,10 +635,30 @@ test.each(['native', 'early', 'multiple-owner', 'parallel-read'])('fresh scoped 
   expect(reserveNativePermissionGrant(native, sequence.dialog, sequence.granted, sequence.requests)).toBe(false);
   expect(sequence.granted.size).toBe(2);
   expect(sequence.requests.get(`Edit:${path.join(config, 'plan.md')}`)?.requestId).toBe(sequence.nextEvent.requestId);
-  if (variant === 'multiple-owner' || variant === 'parallel-read') {
+  if (variant === 'multiple-owner' || variant === 'parallel-read' || variant === 'parallel-tool-search') {
     expect(native.permissionTools.some(tool => tool.id === 'other-pending')).toBe(true);
     expect(sequence.granted.has('other-pending')).toBe(false);
   }
+});
+
+test.each(['no-file-owner', 'wrong-file', 'two-file-owners', 'no-observer'])
+('parallel ToolSearch cannot authorize a file grant with %s', async variant => {
+  const sequence = await scopedEditSequence('parallel-tool-search');
+  const native = sequence.read();
+  if (variant === 'no-file-owner') {
+    native.permissionRequests = [];
+    native.permissionTools = native.permissionTools.filter(tool => tool.name === 'ToolSearch');
+  }
+  if (variant === 'two-file-owners') native.permissionRequests.push({
+    ...native.permissionRequests.find(request => request.result === 'pending')!,
+    requestId: 'second-edit', nativeToolId: undefined,
+  });
+  if (variant === 'no-observer') native.permissionRequestCapture = false;
+  const dialog = variant === 'wrong-file' ? sequence.dialog.replace('plan.md', 'other.md') : sequence.dialog;
+  const grantedBefore = [...sequence.granted], requestsBefore = [...sequence.requests];
+  expect(() => reserveNativePermissionGrant(native, dialog, sequence.granted, sequence.requests)).toThrow();
+  expect([...sequence.granted]).toEqual(grantedBefore);
+  expect([...sequence.requests]).toEqual(requestsBefore);
 });
 
 test.each(['no-ack', 'error', 'before-result', 'equal-result', 'unfinished-prior', 'same-input', 'changed-id', 'wrong-path', 'wrong-cwd', 'same-path-owner', 'no-observer'])
