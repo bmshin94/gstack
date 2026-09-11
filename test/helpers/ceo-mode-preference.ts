@@ -146,7 +146,13 @@ function proseReply(text: string, questionId: string, selectors: string[]): stri
   if (selectors.length < 2 || selectors.length > 4 || new Set(selectors).size !== selectors.length) return undefined;
   const physical = text.replace(/\*\*/g, '').split('\n');
   const lines = physical.map(line => line.trim());
-  const replies = physical.flatMap((line, index) => /^ {0,3}Reply\b/.test(line) ? [index] : []);
+  const tuningFooter = 'Reply `tune: never-ask`, `tune: always-ask`, or free-form to tune this question.';
+  const lastLine = lines.findLastIndex(line => line.length > 0);
+  const liveFooter = dialogue(text, true).trim().split('\n').at(-1)?.trim() === tuningFooter;
+  // Only the exact final tuning footer is metadata. A second choice directive,
+  // or a modified or duplicated footer, still makes the directive ambiguous.
+  const replies = physical.flatMap((line, index) => /^ {0,3}Reply\b/.test(line)
+    && !(index === lastLine && line.trim() === tuningFooter && liveFooter) ? [index] : []);
   if (replies.length !== 1) return undefined;
   const index = replies[0];
   const reply = lines[index];
@@ -164,9 +170,12 @@ function proseReply(text: string, questionId: string, selectors: string[]): stri
   const instruction = reply.replace(/`?<gstack-qid:[a-z0-9-]+>`?/, '').trim();
   // Parse a selector list, optionally with "to ..." descriptions. This is a
   // structural choice grammar; no question-specific phrasing or fuzzy matching.
+  const letterPrefix = instruction.startsWith('Reply with a letter:');
   const selectorList = (clause: string) => {
-    return new RegExp('^Reply(?:\\s+with)?\\s+' + clause + '(?:(?:,\\s*|,?\\s+or\\s+)' + clause + '){1,3}[.!]?$');
+    const prefix = letterPrefix ? '^Reply with a letter:\\s+' : '^Reply(?:\\s+with)?\\s+';
+    return new RegExp(prefix + clause + '(?:(?:,\\s*|,?\\s+or\\s+)' + clause + '){1,3}[.!]?$');
   };
+  if (letterPrefix && !selectorList('(?:[A-D]|`[A-D]`)').test(instruction)) return undefined;
   let inventory = instruction;
   if (!selectorList('(?:[A-D1-4]|`[A-D1-4]`)(?:\\s+to\\s+.+?)?').test(instruction)) {
     const headings = physical.flatMap(line => line.match(/^ {0,3}(?:#{1,6}\s+)?(D[1-9]\d*)\s+[—–-]\s+\S/) ?? [])

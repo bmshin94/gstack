@@ -747,6 +747,59 @@ test.each([
   } finally { fs.rmSync(config, { recursive: true, force: true }); }
 });
 
+const standardTuningFooter = 'Reply `tune: never-ask`, `tune: always-ask`, or free-form to tune this question.';
+
+test.each(['letter list', 'tuning footer', 'letter list and footer', 'unknown footer', 'duplicate footer',
+  'numeric letter list', 'conflicting reply', 'missing selector', 'footer not last', 'fenced footer', 'stale frame', 'wrong ack'])
+('native prerequisite prose grammar preserves exact submission and ACK: %s', async scenario => {
+  const config = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-prose-grammar-'));
+  const payload = 'For plan-ceo-review-approach, I choose option B. Continue the review.';
+  let brief = screenBrief.replace('A) Client-side formatter over the existing settings API (recommended)',
+    'A) Client-side formatter over the existing settings API').replace('B) Server-side CSV endpoint', 'B) Server-side CSV endpoint (recommended)');
+  if (scenario !== 'tuning footer') brief = brief.replace('Reply with **A**, **B**, or **C**.', 'Reply with a letter: A, B, or C.');
+  if (scenario !== 'letter list') brief += '\n' + standardTuningFooter;
+  if (scenario === 'unknown footer') brief = brief.replace('free-form to tune this question.', 'D to approve all changes.');
+  if (scenario === 'duplicate footer') brief += '\n' + standardTuningFooter;
+  if (scenario === 'numeric letter list') brief = brief.replace('A, B, or C.', '1, 2, or 3.');
+  if (scenario === 'conflicting reply') brief += '\nReply with D.';
+  if (scenario === 'missing selector') brief = brief.replace('A, B, or C.', 'A or B.');
+  if (scenario === 'footer not last') brief += '\nAnother instruction follows.';
+  if (scenario === 'fenced footer') brief = brief.replace('\n' + standardTuningFooter, '\n```text\n' + standardTuningFooter);
+  const accepted = ['letter list', 'tuning footer', 'letter list and footer'].includes(scenario);
+  let time = 0; let visible = ''; let file = ''; let sessionId = ''; let typed = ''; let closed = false;
+  const writes: string[] = []; let entered = 0;
+  const append = (row: any) => fs.appendFileSync(file, JSON.stringify({ sessionId, ...row }) + '\n');
+  const session = {
+    hermeticConfigDir: config, mark: () => visible.length, visibleSince: (since = 0) => visible.slice(since),
+    currentScreen: async () => ({ text: scenario === 'stale frame' ? 'Previous question' : visible, rawEnd: visible.length }),
+    rawOutput: () => visible, visibleText: () => visible, pid: () => 1, exitCode: () => null,
+    exited: () => false, close: async () => { closed = true; },
+    send(text: string) {
+      writes.push(text);
+      if (text.startsWith('/')) { append(assistant(brief, 'end_turn', 'grammar-question')); visible += brief; }
+      else { typed = text; visible += '\n❯ ' + text; }
+    },
+    sendKey(key: string) {
+      expect(key).toBe('Enter'); entered++;
+      append({ type: 'user', message: { role: 'user', content: scenario === 'wrong ack' ? 'Another answer' : typed } });
+      append(assistant(automatic, 'end_turn', 'finished')); visible += '\n' + automatic;
+    },
+  } as unknown as ClaudePtySession;
+  try {
+    const result = await runCeoModePreferenceObservation({ cwd: config, env: {}, timeoutMs: 30_000 }, {
+      now: () => time, pause: async ms => { time += ms; }, launch: async opts => {
+        sessionId = opts.extraArgs![1]; file = path.join(config, 'projects', 'fixture', sessionId + '.jsonl');
+        fs.mkdirSync(path.dirname(file), { recursive: true }); return session;
+      },
+    });
+    expect(closed).toBe(true);
+    expect(result.outcome).toBe(accepted ? 'auto_decided' : 'timeout');
+    expect(result.answered).toEqual(accepted ? ['grammar-question'] : []);
+    expect(writes.filter(text => text.startsWith('For '))).toEqual(accepted || scenario === 'wrong ack' ? [payload] : []);
+    expect(entered).toBe(accepted || scenario === 'wrong ack' ? 1 : 0);
+  } finally { fs.rmSync(config, { recursive: true, force: true }); }
+});
+
 const capturedOfficeHours = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/ceo-mode-preference-office-hours-render.json'), 'utf8'));
 test('owned office-hours reply survives captured terminal redraw without accepting a mode decision', () => {
   const { assistantText, visible } = capturedOfficeHours;
