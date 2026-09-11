@@ -727,10 +727,10 @@ export function reserveNativePermissionGrant(
   let owner = owners[0]!;
   if (owners.length > 1) {
     const ambiguous = () => new Error('Ambiguous native permission owner: multiple tools are pending');
-    // Only the current native file controls disambiguate parallel Read/Bash
-    // work. Multiple writable owners and legacy/Bash dialogs still fail closed.
-    if (!native.permissionRequestCapture || !currentFilePermissionTarget(visible)
-      || owners.filter(item => ['Write', 'Edit'].includes(item.name)).length !== 1) throw ambiguous();
+    // Only current native file controls can disambiguate parallel work.
+    // The exact operation/path must identify one owner; same-path writes
+    // (including different operations) and legacy/Bash dialogs fail closed.
+    if (!native.permissionRequestCapture || !currentFilePermissionTarget(visible)) throw ambiguous();
     const matches = owners.filter(item => {
       // Native tool discovery cannot own a file-edit dialog. Keep it pending
       // for lifecycle accounting; this path never grants its execution.
@@ -742,6 +742,12 @@ export function reserveNativePermissionGrant(
       }
     });
     if (matches.length !== 1) throw ambiguous();
+    const writablePaths = owners.filter(item => ['Write', 'Edit'].includes(item.name)).map(item => {
+      const filePath = item.input.file_path;
+      if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw ambiguous();
+      return path.normalize(filePath);
+    });
+    if (new Set(writablePaths).size !== writablePaths.length) throw ambiguous();
     owner = matches[0]!;
   }
   if (native.permissionRequestCapture && !('requestId' in owner) && ['Write', 'Edit'].includes(owner.name)) return false;

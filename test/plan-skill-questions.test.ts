@@ -676,6 +676,48 @@ test('extended menu reserves the hook-owned Write once and keeps multiple writab
   expect(refused.size).toBe(0);
 });
 
+// Autoplan can queue the restore Write, plan Edit, a Read and Bash before
+// the first permission finishes. The current file card owns only its exact path.
+test.each(['Edit', 'Write'] as const)('current file grant distinguishes a pending %s to another file', name => {
+  const relative = '.gstack/projects/fixture/restore.md';
+  const input = { file_path: path.join(config, relative), content: 'Restore point' };
+  const other = name === 'Edit'
+    ? { file_path: path.join(config, '.claude/plans/plan.md'), old_string: '# Plan', new_string: '# Updated plan' }
+    : { file_path: path.join(config, 'other/restore.md'), content: 'Other restore point' };
+  write(nativeWrite('restore', input), nativeWrite('plan', other, config, name),
+    nativeWrite('read', { file_path: path.join(config, 'review-sections.md') }, config, 'Read'),
+    nativeWrite('bash', { command: 'true' }, config, 'Bash'));
+  const { source, event } = filePermissionRequest(input);
+  const native = readPlanSkillQuestions(config, sessionId, source);
+  expect(native.permissionRequests).toHaveLength(1);
+  expect(native.permissionTools).toHaveLength(4);
+  const dialog = nestedFileDialog('create', relative);
+  const granted = new Set<string>(), requests = new Map<string, NativePermissionGrant>();
+  expect(reserveNativePermissionGrant(native, dialog, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(native, dialog, granted, requests)).toBe(false);
+  expect([...granted]).toEqual([`request:${event.requestId}`]);
+  expect([...requests.keys()]).toEqual([`Write:${input.file_path}`]);
+
+  // A second captured permission remains pending, regardless of request order.
+  const next = { ...native.permissionRequests[0]!, requestId: 'other-request',
+    nativeToolId: 'plan', name, input: other };
+  native.permissionRequests.unshift(next);
+  expect(reserveNativePermissionGrant(native, dialog, new Set(), new Map())).toBe(true);
+  expect(native.permissionRequests[0]).toEqual(next);
+});
+
+test.each(['relative-path', 'missing-path'] as const)('parallel writable owner refuses %s without recording a grant', variant => {
+  const input = { file_path: path.join(config, 'restore.md'), content: 'Restore point' };
+  write(nativeWrite('restore', input));
+  const { source } = filePermissionRequest(input);
+  const native = readPlanSkillQuestions(config, sessionId, source);
+  native.permissionTools.push({ id: 'other', name: 'Edit', cwd: config,
+    input: variant === 'relative-path' ? { file_path: 'other.md' } : {} });
+  const granted = new Set<string>(), requests = new Map<string, NativePermissionGrant>();
+  expect(() => reserveNativePermissionGrant(native, nestedFileDialog('create', 'restore.md'), granted, requests)).toThrow();
+  expect(granted.size).toBe(0); expect(requests.size).toBe(0);
+});
+
 test.each(['create', 'edit', 'overwrite'] as const)('current %s title and subtitle bind a nested basename to its owned file', operation => {
   const relative = path.join('.gstack', 'projects', 'fixture', 'restore.md');
   const filePath = path.join(config, relative);
