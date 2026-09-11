@@ -1485,6 +1485,19 @@ further.`);
     expect(template).toContain('never self-reference this CEO artifact');
   });
 
+  test('CEO reviewer receives one complete prompt without duplicate scoring instructions', () => {
+    const output = render('plan-ceo-review');
+    const dispatch = output.split('**Step 1: Dispatch reviewer subagent**')[1]?.split('**Step 2:')[0] ?? '';
+    expect(dispatch.match(/Read both files in full/g)).toHaveLength(1);
+    expect(dispatch).not.toContain('Read these documents and review them');
+    expect(dispatch.match(/quality score/g)).toHaveLength(1);
+    expect(dispatch).toContain('A quality score (1-10) across all dimensions');
+    expect(dispatch).toContain('Return overall PASS if all dimensions pass');
+    expect(dispatch).toContain('For each dimension, return PASS or numbered issues with descriptions and suggested fixes');
+    expect(dispatch).toContain('Cite file and requirement for each finding');
+    expect(dispatch).toContain('report that failure instead of grading a partial input');
+  });
+
   test('contains all 5 review dimensions', () => {
     for (const dim of ['Completeness', 'Consistency', 'Clarity', 'Scope', 'Feasibility']) {
       expect(content).toContain(dim);

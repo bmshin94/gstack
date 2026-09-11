@@ -229,9 +229,21 @@ Feed into the Premise Challenge (0A) and Dream State Mapping (0C). If you find a
 
 ## Step 0: Nuclear Scope Challenge + Mode Selection
 
-**Order:** Challenge 0A–0C → approve approaches in 0C-bis → select mode in 0F → follow its route below.
+Section labels are stable references; follow this execution order:
 
-Keep a ledger from input reading through Step 0 and outside review. Record behavior, conventions, existing test coverage, and exact approved or pending scope. Reopen a contract or decision only for a concrete contradiction or changed assumption, never speculation or reviewer agreement. Retain actual code risks.
+| Order | Phase | Sections |
+|---|---|---|
+| 1 | Challenge the plan and present your findings to the user. | 0A–0C |
+| 2 | Resolve each pending approach decision. | 0C-bis |
+| 3 | Select and announce the review mode. | 0F |
+| 4 | Follow that mode's route, then complete Review Sections. | Route table below |
+
+Keep a decision ledger from input reading onward:
+
+| ID and owner section | Requirement and evidence | Proposed change | Status | Exact approval and scope |
+|---|---|---|---|---|
+
+Record current behavior, conventions and existing test coverage as requirements with evidence. Mark rows unresolved, approved, reopened, deferred or declined; cite the instruction or answer authorizing each resolved choice. Use this same table through outside review. Reopen a contract or decision only for a concrete contradiction or changed assumption, never speculation or reviewer agreement. Retain actual code risks.
 
 ### 0A. Premise Challenge
 1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
@@ -242,7 +254,7 @@ Keep a ledger from input reading through Step 0 and outside review. Record behav
 1. What existing code already partially or fully solves each sub-problem? Map every sub-problem to existing code. Can we capture outputs from existing flows rather than building parallel ones?
 2. Is this plan rebuilding anything that already exists? If yes, explain why rebuilding is better than refactoring.
 
-Keep each limit in its original unit and retain its dependencies. Changing a limit through reuse or effort savings requires evidence and approval. Finishing faster does not increase the allowed number of deliverables.
+Preserve what each limit measures and any prerequisites it depends on. A limit of two deliverables stays two deliverables even if reuse halves the work. Change a limit only with evidence and user approval; faster completion alone does not authorize more scope.
 
 ### 0C. Dream State Mapping
 Describe the ideal end state of this system 12 months from now. Does this plan move toward that state or away from it?
@@ -253,11 +265,11 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Alternatives (MANDATORY)
 
-Before 0F, honor applicable instructions or an accepted approach decision. Cite its authority and resolve 0C-bis without asking again.
+Present the 0A–0C findings before comparing approaches; do not treat that presentation as approval. Before 0F, honor applicable instructions or an accepted approach decision. Cite its authority and resolve 0C-bis without asking again.
 
 Resolve pending decisions one row at a time:
 
-1. **Construct rows.** Record `reference | commitment/contract | current value + approval | proposed value | others fixed/pending`. Each row changes one commitment or value; an issue or helper name is only a reference. For each behavior contract, compare the method and depth of verification, even within one test suite. Carry forward actual approvals; an approach approval covers only its stated scope.
+1. **Construct rows.** Use the ledger above. Each row changes one commitment or value, not everything in a shared issue or helper. For every required behavior, state how each option verifies it and how much it covers. A shared test suite does not turn distinct behaviors into one decision. An approach approval covers only its stated scope.
 2. **Split before drafting.** Try accepting one proposed change while rejecting another. If viable, split into separate rows before A/B/C. Apply this check to every offered option. Combine only inseparable choices; explain why and state their exact scope. Keep code and tests for one behavior together. Sharing files, steps or helpers does not make independent changes inseparable. Every option must preserve accepted requirements, unchanged contracts, and approved behavior, tests and fixes. Leave other changes pending.
 3. **Compare 2-3 approaches for one row** (prefer 3 for non-trivial plans; justify only one). Give each A/B/C option a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, and reused code/patterns. For implementation: "minimal viable" (fewest files/smallest diff) and "ideal architecture" (best long-term trajectory). Weigh equally; a rewrite may beat the smallest diff.
 
@@ -270,22 +282,15 @@ For new or reopened choices, use AskUserQuestion, the preamble format and RECOMM
 For later unresolved choices, use the same one-row approval process, even for obvious fixes; honor preference/session precedence. Report settled findings without re-asking. Say "No issues, moving on." only when no findings remain.
 
 ### 0F. Mode Selection
-After 0C-bis, before 0D. Keep the approved approach; add scope only with explicit user approval.
+Select the mode after approach approval and before mode-specific analysis.
 
-Use Philosophy's full mode definitions: **SCOPE EXPANSION**, **SELECTIVE EXPANSION**, **HOLD SCOPE**, **SCOPE REDUCTION**.
+The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport, not permission to choose.
 
-Defaults recommend modes; >15 files suggests reduction, never approves cuts. The >8-file check challenges complexity within the chosen mode.
+1. An explicit user mode choice outranks every default below. "Go big", "ambitious" or "cathedral" selects SCOPE EXPANSION; "hold scope but tempt me", "show me options" or "cherry-pick" selects SELECTIVE EXPANSION. Do not ask again.
+2. Otherwise recommend SCOPE EXPANSION for greenfield work, SELECTIVE EXPANSION for enhancements/iterations, or HOLD SCOPE for bug fixes/hotfixes/refactors. For plans touching >15 files, recommend SCOPE REDUCTION even for greenfield work, unless the user pushes back.
+3. For an unresolved selection, if `QUESTION_TUNING: true`, check `plan-ceo-review-mode` via `gstack-question-preference --check` before choosing or asking. `AUTO_DECIDE` permits the recommended mode; `ASK_NORMALLY` requires a mode question. If `QUESTION_TUNING: false`, skip the lookup and ask normally. Preamble session rules still take precedence.
 
-* Greenfield → SCOPE EXPANSION
-* Enhancement / iteration → SELECTIVE EXPANSION
-* Bug fix / hotfix / refactor → HOLD SCOPE
-* >15 files → suggest SCOPE REDUCTION unless the user pushes back
-* "go big" / "ambitious" / "cathedral" → SCOPE EXPANSION, no question
-* "hold scope but tempt me" / "show me options" / "cherry-pick" → SELECTIVE EXPANSION, no question
-
-Keep explicit user choices and preamble session-kind precedence. If `QUESTION_TUNING: true`, check `plan-ceo-review-mode` via `gstack-question-preference --check` before selecting or presenting a mode. `AUTO_DECIDE` permits the recommended mode; `ASK_NORMALLY` requires a question. These are permissions, not modes. Other interactive selections need a question; `CONDUCTOR_SESSION: true` controls transport only.
-
-Mode questions use preamble format/transport, RECOMMENDATION and the kind-difference note above.
+Selecting a mode never approves a scope change. The >8-file check challenges complexity within the chosen mode. Mode questions use the preamble format, RECOMMENDATION and the kind-difference note above.
 
 **Mode handoff before 0D:** Announce the exact selected mode name, then its rationale and approved approach, in normal chat before analysis, edits, tools or questions:
 - `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected mode> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
@@ -320,16 +325,17 @@ Both are outcome-framed. Only one makes the user feel the cathedral. Lead with t
 1. 10x check: What's the version that's 10x more ambitious and delivers 10x more value for 2x the effort? Describe it concretely.
 2. Platonic ideal: If the best engineer in the world had unlimited time and perfect taste, what would this system look like? What would the user feel when using it? Start from experience, not architecture.
 3. Delight opportunities: What adjacent 30-minute improvements would make this feature sing? Things where a user would think "oh nice, they thought of that." List at least 5.
-4. **Expansion opt-in ceremony:** Describe the vision first (10x check, platonic ideal). Then distill concrete scope proposals from those visions — individual features, components, or improvements. Present each proposal as its own AskUserQuestion. Recommend enthusiastically — explain why it's worth doing. But the user decides. Options: **A)** Add to this plan's scope **B)** Defer to TODOS.md **C)** Skip. Accepted items become plan scope for all remaining review sections. Rejected items go to "NOT in scope."
+4. **Expansion opt-in ceremony:** Present the 10x and platonic visions, then propose individual features, components or improvements. Recommend enthusiastically and explain why each is worth doing. Use the scope menu below; the user decides.
 
 **For SELECTIVE EXPANSION** — run the HOLD SCOPE analysis first, then surface expansions:
-1. Run the HOLD SCOPE complexity check below.
-2. Run its check for the minimum changes needed.
-3. Then run the expansion scan (do NOT add these to scope yet — they are candidates):
+1. Run both HOLD SCOPE checks below.
+2. Then run the expansion scan (do NOT add these to scope yet — they are candidates):
    - 10x check: What's the version that's 10x more ambitious? Describe it concretely.
    - Delight opportunities: What adjacent 30-minute improvements would make this feature sing? List at least 5.
    - Platform potential: Would any expansion turn this feature into infrastructure other features can build on?
-4. **Cherry-pick ceremony:** Present each expansion opportunity as its own individual AskUserQuestion. Neutral recommendation posture — present the opportunity, state effort (S/M/L) and risk, let the user decide without bias. Options: **A)** Add to this plan's scope **B)** Defer to TODOS.md **C)** Skip. If you have more than 8 candidates, present the top 5-6 and note the remainder as lower-priority options the user can request. Accepted items become plan scope for all remaining review sections. Rejected items go to "NOT in scope."
+3. **Cherry-pick ceremony:** Present opportunities neutrally with effort (S/M/L) and risk. Use the scope menu below without bias. If there are more than 8 candidates, present the top 5-6 and note that the user can request the lower-priority remainder.
+
+For both expansion modes, present each proposal as its own AskUserQuestion: **A)** Add to this plan's scope **B)** Defer to TODOS.md **C)** Skip. Accepted items govern all remaining review sections. Put rejected items in "NOT in scope."
 
 **For HOLD SCOPE** — run this:
 1. Complexity check: If the plan touches more than 8 files or introduces more than 2 new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
@@ -339,11 +345,11 @@ Both are outcome-framed. Only one makes the user feel the cathedral. Lead with t
 1. Ruthless cut: What is the absolute minimum that ships value to a user? Everything else is deferred. No exceptions.
 2. What can be a follow-up PR? Separate "must ship together" from "nice to ship together."
 
-Resolve each proposed cut with the user; review the agreed reduced scope in Review Sections.
+Present each proposed cut as its own AskUserQuestion: **A)** Defer this item to TODOS.md **B)** Keep it in scope. Review only the agreed reduced scope.
+
+For every approved deferral, add the item and its context to TODOS.md.
 
 ### 0D-POST. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
-
-After the opt-in or cherry-pick ceremony, persist the plan below.
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
@@ -392,7 +398,7 @@ Repo: {owner/repo}
 
 Derive the feature slug from the reviewed plan; use a YYYY-MM-DD date.
 
-"Plan under review" must name the actual amended plan, including accepted changes. Save complete conversation-only plans in a separate file first, never self-reference this CEO artifact. Send both paths; this scope summary cannot replace the full plan.
+"Plan under review" must name the actual amended plan, including accepted changes. Save complete conversation-only plans in a separate file first, never self-reference this CEO artifact. Give the user links to both files; this scope summary cannot replace the full plan.
 
 Run the Spec Review Loop below. Continue to 0E after it completes or if unavailable.
 
