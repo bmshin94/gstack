@@ -44,7 +44,14 @@ test('the actual DX finding registration commits its mode, unchanged defects, an
   const script = path.join(directory, 'registration.test.ts');
   const facts = path.join(directory, 'facts.json');
   const originalPlan = [
-    '# Plan: Public SDK Beta Launch', '', '## Persona',
+    '# Plan: First-Run Onboarding Polish for the Public SDK Beta', '',
+    'This change is limited to first-run onboarding polish for the existing SDK.',
+    'All five obligations below remain unresolved, including the mandatory first-run',
+    'gate in both the API and CLI. Other existing API/CLI semantics, packaging and',
+    'release-policy work are not otherwise redesign scope. Documentation/reference',
+    'corrections and genuine risks required by the selected persona or new onboarding',
+    'journey remain in scope. Unknown baseline details stay unknown, not assumed solved.',
+    '', '## Persona',
     "The plan doesn't specify which developer persona is the target — we're",
     'shipping for "everyone," which means we tune for nobody.', '',
     '## TTHW (time to hello world)',
