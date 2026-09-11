@@ -910,6 +910,10 @@ Tool              | TTHW      | Notable DX Choice          | Source
 YOUR PRODUCT      | [est]     | [from README/plan]         | current plan
 ```
 
+Assess feasibility within the accepted scope. Choose only a target tier here:
+name its blockers, but leave each independent remedy pending for its own decision.
+Do not imply that choosing a target approves new capabilities or a gate removal.
+
 AskUserQuestion:
 
 > "Your closest competitors' TTHW:
@@ -919,8 +923,8 @@ AskUserQuestion:
 >
 > Where do you want to land?
 >
-> A) Champion tier (< 2 min) -- requires [specific changes]. Stripe/Vercel territory.
-> B) Competitive tier (2-5 min) -- achievable with [specific gap to close]
+> A) Champion tier (< 2 min) -- [feasibility and unresolved blockers]
+> B) Competitive tier (2-5 min) -- [feasibility and unresolved blockers]
 > C) Current trajectory ([X] min) -- acceptable for now, improve later
 > D) Tell me what's realistic for our constraints"
 
@@ -935,35 +939,25 @@ Load the "## Pass 1" section from `~/.claude/skills/gstack/plan-devex-review/dx-
 for gold standard examples.
 
 Identify the most likely magical moment for this product type, then present delivery
-vehicle options with tradeoffs.
+vehicle options with tradeoffs. Adapt the examples below to the accepted mode and
+contracts. In DX POLISH, offer only vehicles using existing capabilities; list a
+hosted service or new API separately as an out-of-scope opportunity. A Hall of Fame
+example does not authorize an expansion. Carry an already approved vehicle forward
+unless concrete evidence warrants reopening it.
 
 AskUserQuestion:
 
-> "For your [product type], the magical moment is: [specific moment, e.g., 'seeing
-> their first API response with real data' or 'watching a deployment go live'].
+> "For your [product type], the magical moment is: [specific visible success].
 >
 > How should your [persona from 0A] experience this moment?
 >
-> A) **Interactive playground/sandbox** -- zero install, try in browser. Highest
->    conversion but requires building a hosted environment.
->    (human: ~1 week / CC: ~2 hours). Examples: Stripe's API explorer, Supabase SQL editor.
+> A) [Viable vehicle] -- [developer action, visible result, effort and tradeoff]
 >
-> B) **Copy-paste demo command** -- one terminal command that produces the magical output.
->    Low effort, high impact for CLI tools, but requires local install first.
->    (human: ~2 days / CC: ~30 min). Examples: `npx create-next-app`, `docker run hello-world`.
+> B) [Alternative vehicle within the same scope] -- [action, result and tradeoff]
 >
-> C) **Video/GIF walkthrough** -- shows the magic without requiring any setup.
->    Passive (developer watches, doesn't do), but zero friction.
->    (human: ~1 day / CC: ~1 hour). Examples: Vercel's homepage deploy animation.
+> C) Keep the current experience -- [remaining evidenced gap]
 >
-> D) **Guided tutorial with the developer's own data** -- step-by-step with their project.
->    Deepest engagement but longest time-to-magic.
->    (human: ~1 week / CC: ~2 hours). Examples: Stripe's interactive onboarding.
->
-> E) Something else -- describe what you have in mind.
->
-> RECOMMENDATION: [A/B/C/D] because for [persona], [reason]. Your competitor [name]
-> uses [their approach]."
+> RECOMMENDATION: [choice] because for [persona], [evidence-backed reason]."
 
 **STOP.** The chosen delivery vehicle is tracked through the scoring passes.
 
@@ -1075,21 +1069,18 @@ T+3:00  [Final state: gave up / succeeded / asked for help]
 Ground this in the ACTUAL docs and code from the pre-review audit. Not hypothetical.
 Reference specific README headings, error messages, and file paths.
 
-AskUserQuestion:
+Map each confusion point to its evidence and exact prior decision. If every point
+is already resolved, report that mapping and continue without reconfirming it.
+Do not offer bulk acceptance or cuts across approved decisions.
 
-> "I roleplayed as your [persona] developer attempting the getting started flow.
-> Here's what confused me:
->
-> [confusion report]
->
-> Which of these should we address in the plan?
->
-> A) All of them -- fix every confusion point
-> B) Let me pick which ones matter
-> C) The critical ones (#[N], #[N]) -- skip the rest
-> D) This is unrealistic -- our developers already know [context]"
+For each unresolved, evidenced point, ask one AskUserQuestion: propose its remedy,
+explain the tradeoffs and offer alternatives for that point alone. Hold the other
+decisions fixed or pending. If new evidence contradicts a prior approval, identify
+that evidence and reopen only the affected decision. An imagined confusion or
+missing summary detail is an unknown to verify, not a proven defect.
 
-**STOP.** Do NOT proceed until user responds.
+**STOP for each new or reopened decision.** Wait for its answer before amending
+the plan or advancing; then continue through the remaining points.
 
 ---
 
