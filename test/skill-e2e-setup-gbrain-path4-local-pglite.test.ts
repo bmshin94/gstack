@@ -25,13 +25,14 @@ import {
   passThroughNonAskUserQuestion,
   resolveClaudeBinary,
 } from './helpers/agent-sdk-runner';
-import { createSetupGbrainSandbox, runSetupGbrainAttempt } from './helpers/setup-gbrain-sandbox';
+import { createSetupGbrainSandbox, runSetupGbrainAttempt, SETUP_GBRAIN_FINALIZE_MS } from './helpers/setup-gbrain-sandbox';
 import { chooseLocalPgliteFixtureAnswer } from './helpers/setup-gbrain-fixture';
 
 const describeE2E = describeE2ETier('periodic');
 
 describeE2E('/setup-gbrain Path 4 + Step 4d Yes → local PGLite for code', () => {
   test('opt-in flow invokes install + gbrain init + remote MCP register', async () => {
+    const started = Date.now();
     const binary = resolveClaudeBinary();
     const fixture = await createSetupGbrainSandbox({
       name: 'local-pglite', status: 200,
@@ -79,6 +80,6 @@ describeE2E('/setup-gbrain Path 4 + Step 4d Yes → local PGLite for code', () =
       expect(JSON.parse(final.gbrainConfig ?? '{}').engine).toBe('pglite');
       expect(final.claudeMdTokenLeak).toBe(false);
       expect(result.output.includes(fixture.token)).toBe(false);
-    });
-  }, CAPTURE_MS);
+    }, CAPTURE_MS - (Date.now() - started));
+  }, CAPTURE_MS + SETUP_GBRAIN_FINALIZE_MS);
 });

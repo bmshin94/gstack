@@ -7,11 +7,16 @@ import { createHash, randomUUID } from 'crypto';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import {
   runAgentSdkTest,
+  toSkillTestResult,
   type AgentSdkResult,
   type QueryProvider,
   type RunAgentSdkOptions,
 } from './agent-sdk-runner';
 import { buildSetupGbrainFixture } from './setup-gbrain-fixture';
+import { CAPTURE_MS } from './eval-budgets';
+import { runRecordedOfficeHoursAttempt, OFFICE_HOURS_BUN_GRACE_MS } from './office-hours-attempt';
+
+export const SETUP_GBRAIN_FINALIZE_MS = OFFICE_HOURS_BUN_GRACE_MS;
 
 const ROOT = path.resolve(import.meta.dir, '..', '..');
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -160,6 +165,7 @@ export async function runSetupGbrainAttempt(
   fixture: SetupGbrainSandbox,
   options: Omit<RunAgentSdkOptions, 'env' | 'workingDirectory' | 'maxRetries'>,
   check: (result: AgentSdkResult) => void | Promise<void>,
+  budgetMs = CAPTURE_MS,
 ) {
   const events: unknown[] = [];
   const permissions: unknown[] = [];
@@ -167,6 +173,7 @@ export async function runSetupGbrainAttempt(
   let result: AgentSdkResult | undefined;
   let failure: string | undefined;
   let stage = 'running';
+  let finalized = false;
   const started = Date.now();
   let sdkVersion = 'unknown';
   try {
@@ -186,42 +193,64 @@ export async function runSetupGbrainAttempt(
       model: input.options?.model, sdkVersion, binary: input.options?.pathToClaudeCodeExecutable ?? 'sdk-default',
     };
     const source = provider(input);
-    // The SDK runner only consumes the async iterable; do not change the generic runner.
-    return (async function* () {
-      for await (const event of source) { events.push(event); retain(); yield event; }
-    })() as ReturnType<QueryProvider>;
+    const observed = (async function* () {
+      for await (const event of source) {
+        if (!finalized) { events.push(event); retain(); }
+        yield event;
+      }
+    })();
+    // Preserve the SDK's explicit cancellation surface through observation.
+    return Object.assign(observed, { close: () => source.close?.() }) as ReturnType<QueryProvider>;
   };
-  const retain = () => fixture.retain({
+  const retain = () => !finalized && fixture.retain({
     stage, configuration, result, events, permissions, failure, elapsedMs: Date.now() - started,
     modelOutputTokenLeak: result?.output.includes(fixture.token) ?? false,
   });
   try {
-    result = await runAgentSdkTest({
-      ...options, env: fixture.env, workingDirectory: fixture.home,
-      // Shard-level retries create a fresh fixture and evidence ID. SDK retries
-      // would otherwise combine partial state and discard the earlier result.
-      maxRetries: 0, queryProvider,
-      ...(options.canUseTool ? { canUseTool: async (...args) => {
-        const entry: Record<string, unknown> = { tool: args[0], input: args[1] };
-        permissions.push(entry);
+    // Work deadline → SDK cancellation → bounded settlement → sanitized
+    // evidence → fixture cleanup. Bun's outer timeout includes finalization.
+    await runRecordedOfficeHoursAttempt({
+      collector: null, name: 'setup-gbrain', suite: 'setup-gbrain', model: options.model ?? 'sdk-default',
+      budgetMs: Math.max(0, budgetMs - (Date.now() - started)),
+      run: async (deadlineSignal) => {
+        const signal = options.signal ? AbortSignal.any([options.signal, deadlineSignal]) : deadlineSignal;
+        const captured = await runAgentSdkTest({
+          ...options, env: fixture.env, workingDirectory: fixture.home, signal,
+          // Shard retries own fresh fixtures; SDK retries would combine state.
+          maxRetries: 0, queryProvider,
+          ...(options.canUseTool ? { canUseTool: async (...args) => {
+            signal.throwIfAborted();
+            const entry: Record<string, unknown> = { tool: args[0], input: args[1] };
+            permissions.push(entry);
+            retain();
+            const decision = await options.canUseTool!(...args);
+            signal.throwIfAborted();
+            entry.decision = decision;
+            retain();
+            return decision;
+          } } : {}),
+        });
+        if (!finalized) result = captured;
+        return toSkillTestResult(captured);
+      },
+      validate: async (_captured, signal) => {
+        signal.throwIfAborted();
+        options.signal?.throwIfAborted();
+        stage = 'before-assertions';
         retain();
-        const decision = await options.canUseTool!(...args);
-        entry.decision = decision;
-        retain();
-        return decision;
-      } } : {}),
+        if (result!.exitReason !== 'success') throw new Error(`setup-gbrain runner exited ${result!.exitReason}`);
+        await check(result!);
+        signal.throwIfAborted();
+        options.signal?.throwIfAborted();
+        stage = 'passed';
+      },
     });
-    stage = 'before-assertions';
-    retain();
-    if (result.exitReason !== 'success') throw new Error(`setup-gbrain runner exited ${result.exitReason}`);
-    await check(result);
-    stage = 'passed';
   } catch (error) {
     failure = fixture.redact(error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ''}` : String(error));
     stage = 'failed';
     // Assertion diagnostics can include model text. Only the sanitized message escapes.
     throw new Error(`${failure}\nEvidence: ${fixture.evidencePath}`);
   } finally {
-    try { retain(); } finally { await fixture.cleanup(); }
+    try { retain(); } finally { finalized = true; await fixture.cleanup(); }
   }
 }

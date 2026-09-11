@@ -20,12 +20,13 @@ import {
   passThroughNonAskUserQuestion,
   resolveClaudeBinary,
 } from './helpers/agent-sdk-runner';
-import { createSetupGbrainSandbox, runSetupGbrainAttempt } from './helpers/setup-gbrain-sandbox';
+import { createSetupGbrainSandbox, runSetupGbrainAttempt, SETUP_GBRAIN_FINALIZE_MS } from './helpers/setup-gbrain-sandbox';
 
 const describeE2E = describeE2ETier('periodic');
 
 describeE2E('/setup-gbrain Path 4 — bad token STOPs cleanly', () => {
   test('AUTH classifier fires, no MCP registration, no CLAUDE.md mutation', async () => {
+    const started = Date.now();
     // Resolve the real SDK runner before placing the owned fake claude on child PATH.
     const binary = resolveClaudeBinary();
     const fixture = await createSetupGbrainSandbox({
@@ -69,6 +70,6 @@ describeE2E('/setup-gbrain Path 4 — bad token STOPs cleanly', () => {
       expect(fixture.snapshot().claudeMdUnchanged).toBe(true);
       expect(fixture.snapshot().claudeMdTokenLeak).toBe(false);
       expect(result.output.includes(fixture.token)).toBe(false);
-    });
-  }, CAPTURE_MS);
+    }, CAPTURE_MS - (Date.now() - started));
+  }, CAPTURE_MS + SETUP_GBRAIN_FINALIZE_MS);
 });

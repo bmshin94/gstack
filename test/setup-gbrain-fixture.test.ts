@@ -129,6 +129,91 @@ describe('setup-gbrain owned Path 4 fixture', () => {
     }, 30_000);
   }
 
+  test.each(['deadline', 'caller'])('SDK deadline or caller cancellation closes the query before cleanup (%s)', async mode => {
+    const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gbrain-deadline-evidence-'));
+    const fixture = await createSetupGbrainSandbox({
+      name: 'deadline', status: 401, originalClaudeMd, sections: ['brain-init.md'], evidenceRoot,
+    });
+    let calls = 0;
+    let closes = 0;
+    let aborted = false;
+    let validated = false;
+    let aliveAtClose = false;
+    let release = () => {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let callerTimer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    const queryProvider: QueryProvider = (input) => {
+      calls++;
+      input.options!.abortController!.signal.addEventListener('abort', () => { aborted = true; });
+      if (mode === 'caller') callerTimer = setTimeout(() => controller.abort(new Error('caller cancellation')), 250);
+      return Object.assign((async function* () {
+        yield { type: 'system', subtype: 'init' };
+        // Finite fallback makes the baseline fail without leaving model work.
+        await new Promise<void>(resolve => { release = resolve; timer = setTimeout(resolve, 900); });
+        yield { type: 'result', subtype: 'success', num_turns: 0, total_cost_usd: 0 };
+      })(), { close: () => {
+        closes++;
+        aliveAtClose = fs.existsSync(fixture.home);
+        clearTimeout(timer);
+        release();
+      } }) as ReturnType<QueryProvider>;
+    };
+    try {
+      let failure = '';
+      try {
+        await runSetupGbrainAttempt(fixture, {
+          systemPrompt: '', userPrompt: 'free deadline probe', queryProvider,
+          pathToClaudeCodeExecutable: '/nonexistent/free-test-never-spawn-claude',
+          signal: controller.signal,
+        }, () => { validated = true; }, mode === 'deadline' ? 250 : 1000);
+      } catch (error) { failure = String(error); }
+      expect(failure).toContain(mode === 'deadline' ? 'attempt exceeded' : 'caller cancellation');
+      expect(calls).toBe(1);
+      expect(aborted).toBe(true);
+      expect(closes).toBe(1);
+      expect(aliveAtClose).toBe(true);
+      expect(validated).toBe(false);
+      expect(fs.existsSync(fixture.root)).toBe(false);
+      const evidence = JSON.parse(fs.readFileSync(fixture.evidencePath, 'utf8'));
+      expect(evidence.stage).toBe('failed');
+      expect(evidence.failure).toContain(mode === 'deadline' ? 'attempt exceeded' : 'caller cancellation');
+    } finally {
+      clearTimeout(timer);
+      clearTimeout(callerTimer);
+      release();
+      await fixture.cleanup();
+      fs.rmSync(evidenceRoot, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  test('caller cancellation during asynchronous validation retains failure', async () => {
+    const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gbrain-validation-cancel-'));
+    const fixture = await createSetupGbrainSandbox({
+      name: 'validation-cancel', status: 401, originalClaudeMd, sections: ['brain-init.md'], evidenceRoot,
+    });
+    const controller = new AbortController();
+    const queryProvider: QueryProvider = () => (async function* () {
+      yield { type: 'result', subtype: 'success', num_turns: 0, total_cost_usd: 0 };
+    })() as ReturnType<QueryProvider>;
+    try {
+      await expect(runSetupGbrainAttempt(fixture, {
+        systemPrompt: '', userPrompt: 'free validation cancellation probe', queryProvider,
+        pathToClaudeCodeExecutable: '/nonexistent/free-test-never-spawn-claude', signal: controller.signal,
+      }, async () => {
+        await Promise.resolve();
+        controller.abort(new Error('caller cancelled during validation'));
+      }, 1000)).rejects.toThrow('caller cancelled during validation');
+      const evidence = JSON.parse(fs.readFileSync(fixture.evidencePath, 'utf8'));
+      expect(evidence.stage).toBe('failed');
+      expect(evidence.failure).toContain('caller cancelled during validation');
+      expect(fs.existsSync(fixture.root)).toBe(false);
+    } finally {
+      await fixture.cleanup();
+      fs.rmSync(evidenceRoot, { recursive: true, force: true });
+    }
+  });
+
   test('SDK failure/exception evidence is unique, redacted, and retained before assertions and cleanup', async () => {
     const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gbrain-attempt-evidence-'));
     const paths: string[] = [];
