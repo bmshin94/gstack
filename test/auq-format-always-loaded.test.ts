@@ -59,7 +59,10 @@ const MANDATORY: Array<{ name: string; re: RegExp }> = [
  * must never be DROPPED. Asserted against the skeleton+sections union. */
 const PER_SKILL_RULES: Record<string, RegExp[]> = {
   'plan-ceo-review': [/One issue = one AskUserQuestion call/i],
-  'plan-eng-review': [/One issue = one AskUserQuestion call/i],
+  'plan-eng-review': [
+    /One new or reopened decision = one AskUserQuestion call/i,
+    /Never combine independent decisions into one question/i,
+  ],
   'plan-design-review': [/One issue = one AskUserQuestion call/i],
   'plan-devex-review': [/One issue = one AskUserQuestion call/i],
   // /codex emits its recommendation as prose; the instruction MUST stay in the
