@@ -1890,7 +1890,7 @@ export async function runPlanSkillObservation(opts: {
     // Boot and seed preflight consume the same case budget as the review.
     await Bun.sleep(Math.min(8000, Math.max(0, deadlineAt - Date.now())));
     if (opts.initialPlanContent) {
-      const seed = `Please review the following draft plan when I run the skill below:\n\n${opts.initialPlanContent}`;
+      const seed = `Keep this draft plan as context. Briefly acknowledge receipt, then wait for my next message containing a slash command. Do not start the review or call tools yet.\n\n${opts.initialPlanContent}`;
       try {
         await submitPlanSeed(session, seed, {
           cwd: opts.cwd ?? process.cwd(), launchedAt: startedAt, deadlineAt,

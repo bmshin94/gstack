@@ -206,7 +206,7 @@ After each verdict, BEFORE fixing any findings or dispatching again, validate th
 saved files with the helper (list every completed round in order):
 
 ```bash
-~/.claude/skills/gstack/bin/gstack-office-hours-review check "<round-1.json>" "<round-2.json if present>"
+~/.claude/skills/gstack/bin/gstack-office-hours-review check "<round-1.json>" "<round-2.json if present>" "<round-3.json if present>"
 ```
 
 Omit absent arguments rather than passing placeholders.
@@ -221,7 +221,7 @@ Omit absent arguments rather than passing placeholders.
 On a stop, do not fix again or re-dispatch. Run the finalizer before approval:
 
 ```bash
-~/.claude/skills/gstack/bin/gstack-office-hours-review finalize --design "<design-path>" "<round-1.json>" "<round-2.json if present>"
+~/.claude/skills/gstack/bin/gstack-office-hours-review finalize --design "<design-path>" "<round-1.json>" "<round-2.json if present>" "<round-3.json if present>"
 ```
 
 It installs the complete `## Reviewer Concerns` section directly from the JSON.

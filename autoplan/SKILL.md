@@ -782,7 +782,7 @@ methodology and required outputs.
 Follow ONLY the review-specific methodology, sections, and required outputs.
 
 Output: "Here's what I'm working with: [plan summary]. UI scope: [yes/no]. DX scope: [yes/no].
-Loaded review skills from disk. Starting full review pipeline with auto-decisions."
+Will load skills by phase. Starting full review pipeline with auto-decisions."
 
 ---
 
