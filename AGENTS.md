@@ -113,6 +113,45 @@ End-to-end walkthrough: [docs/howto-ios-testing-with-gstack.md](docs/howto-ios-t
 | `/make-pdf` | Turn any markdown file into a publication-quality PDF. Renders through Aside, or gstack's own browser when Aside is absent. |
 | `/diagram` | English in, diagram out: mermaid source + editable .excalidraw + SVG/PNG, offline. Renders through Aside, or gstack's own browser when Aside is absent. |
 
+## Validation discipline
+
+When fixing failures or preparing `/ship`, follow this order:
+
+1. List the known failing cases, their logs and source revision, the demonstrated
+   cause, and the smallest check that can prove each repair. Keep one current
+   list in `.context/`; update it instead of starting overlapping repair plans.
+2. Resolve base-branch integration and assign one owner per shared file before
+   editing. Keep repairs within the observed failures and the user's scope.
+3. Diagnose before changing code. Distinguish a product defect, an invalid test
+   expectation, a detector/fixture defect, and a launch/environment failure.
+   Preserve the original failure. Do not call it pre-existing without evidence.
+4. Reproduce with the smallest relevant test. For agent tests, reuse captured
+   public events in free regressions, including negative controls, before paying
+   for another agent run. Check behavior and acknowledgments; match exact prose
+   only when that prose is the contract. Do not lower thresholds, increase model
+   budgets, skip cases, or rejudge a failure to manufacture a pass.
+5. Run adjacent cheap checks before paid work: generated-content freshness,
+   prompt-size/parity limits, source assertions, fixture checks, and dependency
+   selection as applicable. A changed prompt must clear these before its eval.
+6. Preflight the actual launcher: required binaries, isolated state, display when
+   needed, explicit test tier, selection, and expected executed-case counts.
+   Preserve exit status through logging. Use the documented detached runner and
+   eval lock. Skipped or unstarted cases
+   do not satisfy coverage; preserve configured retries and every attempt.
+7. Prove all known repairs with focused tests, including affected paid cases.
+   Rerun a failed case only after a concrete repair or a demonstrated launch
+   correction. Run the remaining required selected evaluations on the integrated
+   code. Do not use the full free suite to discover predictable adjacent failures.
+8. Finish review fixes, generation, release metadata, and build before final
+   acceptance. Freeze the code, then run `bun run test` once at the end. During
+   repair, focused checks replace a full-suite run before every commit. If final
+   acceptance unexpectedly fails, retain the failure, diagnose it narrowly, and
+   report the changed validation plan before another full run; never retry it
+   blindly or claim a pass from an older revision.
+9. Publish only with passing required checks, unless the user explicitly grants
+   an exception for identified failures. Report revision, actual pass/fail/skip
+   counts, and incomplete coverage. A passing subset is not release acceptance.
+
 ## Build commands
 
 ```bash

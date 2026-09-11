@@ -71,9 +71,14 @@ in sync.
 ## Testing
 
 ```bash
-bun run test         # run before every commit — free, ~90-100s for the full ~8,700-test suite
+bun run test         # final full free acceptance after focused repairs and source freeze
 bun run test:evals   # run before shipping — paid, diff-based (~$4.35/run max)
 ```
+
+Follow [Validation discipline in AGENTS.md](AGENTS.md#validation-discipline):
+prove repairs with focused checks first, complete required selected evaluations,
+then run the full free suite once on the final integrated code. During repairs,
+focused checks replace a full-suite run before every commit.
 
 `bun run test` routes through `scripts/test-free-shards.ts` (N concurrent
 shard processes, serial within each, packed by recorded per-file durations
