@@ -128,12 +128,23 @@ describe('selectTests', () => {
     }
   });
 
-  test('the shared recording lifecycle selects coverage-audit attempts', () => {
+  test('the shared recording lifecycle selects every bounded attempt', () => {
     const result = selectTests(['test/helpers/office-hours-attempt.ts'], E2E_TOUCHFILES);
     const expected = {
       'office-hours-forcing-energy': 'periodic',
       'office-hours-builder-wildness': 'periodic',
       'office-hours-brain-writeback': 'periodic',
+      'plan-ceo-review-format-mode': 'periodic',
+      'plan-ceo-review-format-approach': 'periodic',
+      'plan-eng-review-format-coverage': 'periodic',
+      'plan-eng-review-format-kind': 'periodic',
+      'plan-ceo-review-prosons-cadence': 'periodic',
+      'plan-review-prosons-format': 'periodic',
+      'plan-review-prosons-hardstop-neg': 'periodic',
+      'plan-review-prosons-neutral-neg': 'periodic',
+      'setup-gbrain-bad-token': 'periodic',
+      'setup-gbrain-path4-local-pglite': 'periodic',
+      'review-army-red-team': 'periodic',
       'review-coverage-audit': 'gate',
       'plan-eng-coverage-audit': 'gate',
       'ship-coverage-audit': 'gate',
