@@ -23,6 +23,17 @@ export function seedEngFindingProject(projectDir: string, plan: string): string 
     'there is no per-function rollout flag in this module or deployment change here.',
     'This is a Bun TypeScript package. Use its existing `bun test` command for new',
     'tests; choosing a different runner or adding a toolchain is outside the refactor.',
+    '',
+    '## Undecided internal failure interface',
+    // Newly authored synthetic input; this is not evidence about prior reviews.
+    'The proposed validateAndDispatch catches would swallow failures. The refactor',
+    'has not chosen how those failures reach the existing public auth boundary:',
+    'typed exception propagation or a discriminated result handled exhaustively',
+    'before that boundary.',
+    'Both must preserve the public failure codes, causes and POLICIES-order precedence.',
+    'This internal choice fits the accepted single-function/module or class organization;',
+    'it does not require a new helper or adapter. It is independent of sequential or',
+    'parallel IDP dispatch and the algorithm used to settle the policy outcomes.',
   ].join('\n') + '\n';
   seedPlanReviewProject(projectDir, input, 'plan-eng-review');
   fs.mkdirSync(path.join(projectDir, 'src'));
