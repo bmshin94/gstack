@@ -316,6 +316,7 @@ describe('CEO finding fixture establishes scope before launch', () => {
       const committed = execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: root, encoding: 'utf8', timeout: 10_000 });
       expect(committed).toBe(input);
       expect(committed).toContain(target);
+      expect(committed).toContain('Use HOLD SCOPE for this review of the five integration candidates.');
       expect(committed.match(/^## E[1-5]\)/gm)).toHaveLength(5);
       expect(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8')).not.toContain('Payment processing');
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
