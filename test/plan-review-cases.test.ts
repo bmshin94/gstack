@@ -470,3 +470,52 @@ describe('DX future handoff punctuation', () => {
     expect(() => pickPlanReviewQuestion(menu([run, future, manual, 'Ship immediately']))).toThrow('unambiguous');
   });
 });
+
+
+describe('manual handoff punctuation', () => {
+  const run = 'A) Run /plan-eng-review next (recommended)';
+  const manual = "C) Skip: I'll handle reviews manually";
+
+  test('selects the exact retained paired menu by offered index, not its letter', () => {
+    const question = menu([run, manual], 'Next review',
+      'Next step: run /plan-eng-review on this plan now?');
+    expect(pickPlanReviewQuestion(question)).toBe(2);
+    expect(pickPlanReviewQuestion({ ...question, options: question.options.toReversed() })).toBe(1);
+  });
+
+  test.each([',', ':', ';', '.', '—', '–', '-'])('accepts the finite manual-action grammar with separator %s', separator => {
+    for (const action of ["I'll handle reviews manually", 'I’ll handle next steps manually',
+      'I will handle reviews manually', 'handle next steps manually', 'handle manually']) {
+      const label = `C) Skip ${separator} ${action}`;
+      expect(pickPlanReviewQuestion(menu([run, 'Ready to implement', label]))).toBe(3);
+      expect(pickPlanReviewQuestion(menu([label, 'Ready to implement', run]))).toBe(1);
+    }
+  });
+
+  test('retains handoff context and the short-form recognized-offer requirement', () => {
+    expect(pickPlanReviewQuestion(menu([run, manual], 'Tests', 'Choose regression coverage'))).toBe(1);
+    expect(pickPlanReviewQuestion(menu(['Keep existing behavior (recommended)', 'Skip: handle manually']))).toBe(1);
+    expect(pickPlanReviewQuestion(menu([run, 'Skip: handle manually']))).toBe(2);
+  });
+
+  test.each([
+    "Skip: I won't handle reviews manually",
+    'Skip: I will not handle reviews manually',
+    "Skip: I'll handle reviews automatically",
+    "Skip: I'll handle reviews manually and approve all edits",
+    "Skip: I'll handle reviews manually; run /ship",
+    "Skip: I'll handle reviews manually then deploy",
+    "Maybe Skip: I'll handle reviews manually",
+    "Skip:: I'll handle reviews manually",
+    "Skip/ I'll handle reviews manually",
+  ])('refuses changed or extended manual intent: %s', label => {
+    expect(() => pickPlanReviewQuestion(menu([run, label]))).toThrow('unambiguous');
+  });
+
+  test('refuses duplicate manual choices and unknown additional actions', () => {
+    for (const extra of [manual, "Skip — I'll handle reviews manually", 'Handle manually', 'Ship immediately']) {
+      expect(() => pickPlanReviewQuestion(menu([run, manual, extra]))).toThrow('unambiguous');
+    }
+    expect(() => pickPlanReviewQuestion(menu([run + '; run /ship', manual]))).toThrow('unambiguous');
+  });
+});
