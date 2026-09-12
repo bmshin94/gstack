@@ -934,9 +934,12 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
 
   test('plan gap additions wait for their test-contract decision', () => {
     const action = planSkill.split('**Step 5. Add missing tests to the plan:**')[1]!.split('### Test Plan Artifact')[0]!;
-    expect(action).toContain('use the decision gate to determine whether its test contract is already approved or still needs a choice');
+    expect(action).toContain('Collect the requirements for each GAP and the LLM/eval scope above');
     expect(action).toContain('Carry forward required proof of approved behavior');
-    expect(action).toContain('ask separately about each new contract or optional depth choice before adding it as accepted work');
+    expect(action).toContain('Mark new contracts and optional depth choices pending until the decision gate below resolves them');
+    expect(action).toContain('**STOP for each pending decision.**');
+    expect(action).toContain('Wait for its answer before applying that remedy');
+    expect(action).not.toContain('report the findings and their dispositions and continue');
     expect(action).not.toContain('For each GAP identified in the diagram, add a test requirement');
     expect(action).not.toContain('explain what broke');
   });
@@ -954,6 +957,16 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
       expect(skill).toContain('Test Framework Detection');
       expect(skill).toContain('CLAUDE.md');
     }
+  });
+
+  test('plan framework absence keeps requirements without offering test generation', () => {
+    const detection = planSkill.split('### Test Framework Detection')[1]!.split('**Step 1.')[0]!;
+    expect(detection).toContain('still produce the coverage diagram and planned test assertions');
+    expect(detection).toContain('State that the framework is unknown');
+    expect(detection).toContain('use the decision gate if selecting one needs approval');
+    expect(detection).toContain('Do not install a framework or write the proposed tests during this review');
+    expect(detection).not.toContain('skip test generation');
+    expect(shipSkill).toContain('use the bootstrap decision already made in Step 4');
   });
 
   test('plan mode adds tests to plan + includes test plan artifact', () => {

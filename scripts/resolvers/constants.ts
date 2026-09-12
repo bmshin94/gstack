@@ -111,11 +111,14 @@ On any error: continue — ${feature} is informational, not a gate.`;
  *   - `codex-only` (diff adversarial): disabled gates only the Codex passes; the
  *     free Claude adversarial subagent still runs.
  */
-export function codexPreflight(opts: { modeVar?: string; disabledBehavior: 'skip-all' | 'codex-only' }): string {
+export function codexPreflight(opts: { modeVar?: string; disabledBehavior: 'skip-all' | 'codex-only'; underCodexBehavior?: 'skip-section' }): string {
   const m = opts.modeVar ?? '_CODEX_MODE';
   const disabledLine = opts.disabledBehavior === 'codex-only'
     ? 'Skip the Codex passes only; the Claude adversarial subagent below STILL runs (it is free and fast). Print: "Codex passes skipped (codex_reviews disabled) — running Claude adversarial only."'
     : 'Skip this section entirely; do NOT fall back to a Claude subagent — disabled means no extra review step. Print: "Codex review skipped (codex_reviews disabled). Re-enable: `gstack-config set codex_reviews enabled`."';
+  const underCodexRoute = opts.underCodexBehavior === 'skip-section'
+    ? 'skip this outside-voice section and continue to the required outputs. No in-host substitute is defined here; do not label a self-review as independent.'
+    : "skip the codex invocations below; run the section's free in-host pass instead if it defines one.";
   return `\`\`\`bash
 # Codex preflight: one block (functions sourced here don't persist to later blocks).
 _TEL=$(~/.claude/skills/gstack/bin/gstack-config get telemetry 2>/dev/null || echo off)
@@ -153,7 +156,7 @@ echo "CODEX_MODE: $${m}"
 Branch on the echoed \`CODEX_MODE\`:
 - **\`disabled\`** — the user turned Codex reviews off (\`codex_reviews=disabled\`). ${disabledLine}
 - **\`not_installed\`** — Codex CLI absent. Print: "Codex not installed — falling back to a Claude subagent (fresh context, but the SAME model family — not an outside model). Install Codex for an actual outside-model read: \`npm install -g @openai/codex\`." Fall back to the Claude subagent path.
-- **\`under_codex\`** — this session is already running INSIDE a Codex host, so spawning codex again is the same model reviewing itself at multiplied token cost (#2519). Print exactly one line: "[running under Codex — nested codex passes skipped; set GSTACK_FORCE_CODEX_REVIEW=1 to force]" and skip the codex invocations below; run the section's free in-host pass instead if it defines one.
+- **\`under_codex\`** — this session is already running INSIDE a Codex host, so spawning codex again is the same model reviewing itself at multiplied token cost (#2519). Print exactly one line: "[running under Codex — nested codex passes skipped; set GSTACK_FORCE_CODEX_REVIEW=1 to force]" and ${underCodexRoute}
 - **\`not_authed\`** — installed but no credentials. Print: "Codex installed but not authenticated — falling back to a Claude subagent (same model family, not an outside model). Run \`codex login\` or set \`$CODEX_API_KEY\`." Fall back to the Claude subagent path.
 - **\`broken_install\`** — the CLI is on PATH but cannot execute (spawn ENOENT, non-executable binary, missing vendor payload). Print: "Codex is installed but its binary cannot run — Codex passes skipped. Reinstall: \`npm install -g @openai/codex\`." Relay the probe's HINT lines and fall back to the Claude subagent path. This state exists because a missing binary used to land in the model probe's fail-open bucket and report \`ready\`, so every Codex pass was skipped silently (#2742).
 - **\`model_unusable\`** — authed but the account cannot use gstack's selected Codex model (#2477: HTTP 400 on every call). Relay the probe's HINT lines, tell the user the one-line fix (set \`GSTACK_CODEX_MODEL=<supported-model>\` or pass an explicit \`-c model=...\` override), and fall back to the Claude subagent path. The ~10s round trip is cached for 1h; timeouts fail open to \`ready\`.

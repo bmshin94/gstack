@@ -770,9 +770,7 @@ review. The user turns this off only by asking explicitly
 
 **Preflight — decide whether and how the outside voice runs:**
 
-${codexPreflight({ disabledBehavior: 'skip-all' })}
-
-On \`under_codex\`, no in-host substitute is defined here: skip this outside-voice section and continue to the required outputs. Do not invoke Codex again or label a self-review as independent.
+${codexPreflight({ disabledBehavior: 'skip-all', ...(ctx.skillName === 'plan-eng-review' ? { underCodexBehavior: 'skip-section' as const } : {}) })}${ctx.skillName === 'plan-eng-review' ? '' : '\n\nOn `under_codex`, no in-host substitute is defined here: skip this outside-voice section and continue to the required outputs. Do not invoke Codex again or label a self-review as independent.'}
 
 For all other non-disabled modes (\`ready\`, \`not_installed\`, \`not_authed\`, \`broken_install\`, \`model_unusable\`), print one line so the off-switch
 stays discoverable: "Running the outside voice automatically (standard step). Disable: \`gstack-config set codex_reviews disabled\`."
@@ -881,16 +879,14 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 ${ctx.skillName === 'plan-eng-review' ? `**Cross-model tension:**
 
-Use the same seven-column decision ledger and the five-step decision gate above; do not start a second table. Check the original sources and actual answers under Step 1. Exact confirmations and factual corrections update evidence; a new proposal still needs approval even when both reviewers agree. Reopening an approved choice requires a concrete new risk, contradictory evidence or a changed assumption.
+Run every outside finding through the same Decision procedure and seven-column ledger above. Record the reviewer and evidence. Agreement between reviewers is evidence, not approval: confirmations and factual corrections update the record; new or reopened choices still need their own answers. Keep necessary code, tests and docs for one approved behavior together.
 
-Under Steps 2-3, enumerate each menu's full commitments against current values, then separate independent choices before assigning rows. These four-option menus take precedence over the ordinary 2-3 option format:
+For these questions, use the following four-option menus instead of the ordinary 2-3 options. First list everything the options would change, split separate choices and save their rows as the Decision procedure requires.
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Keep other approved choices fixed and other pending choices undecided. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those are separate rows.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After the individual answers, check the assembled set's capacity and dependencies. If they conflict, return to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck the set before confirming it. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-Under Step 4, match the separated choices to existing rows or assign new IDs. Record the reviewer and its evidence in \`Evidence and exact approval\`, and record every option in \`Option comparisons\`. Save or present those rows and comparisons before asking. Finish Step 5: ask one question for one row, record its actual selected option and answer with the exact accepted scope, and apply only those amendments before the next row. Keep necessary code, tests and docs for one approved behavior together. Investigation or deferral does not authorize implementation. In /autoplan, preserve its authorized auto-decisions, audit trail and User Challenge rules; challenges wait for the final gate.
-
-Report all findings, dispositions and remaining disagreements after the queue is resolved. An answer to one row does not resolve the finding's other pending rows.
+Report all findings, dispositions and remaining disagreements after resolving the questions. An answer to one row does not resolve the finding's other pending rows. Preserve /autoplan's authorized auto-decisions, audit trail and User Challenge rules; challenges wait for its final gate.
 
 ` : ctx.skillName === 'plan-ceo-review' ? `**Cross-model tension:**
 
@@ -977,7 +973,7 @@ After processing the queue, report findings, dispositions and remaining disagree
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 \`\`\`
 
-Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist.
+Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist.${ctx.skillName === 'plan-eng-review' ? ' These are the completed outside reviewer\'s findings, even if the parent later resolves them; this log does not describe the parent review\'s remaining decisions.' : ''}
 SOURCE = "codex" if Codex ran, "claude" if subagent ran.
 
 ---`;

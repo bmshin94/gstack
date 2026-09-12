@@ -1,6 +1,8 @@
 <!-- AUTO-GENERATED from review-sections.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
-## Review Sections (after scope is agreed)
+## Review preparation
+
+After Step 0 resolves scope, complete Prior Learnings and Confidence Calibration below. Then use the Decision procedure throughout Sections 1–4 and the outside review.
 
 **Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-4) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
@@ -110,30 +112,43 @@ confirms it IS a real issue, that is a calibration event. Your initial confidenc
 too low. Log the corrected pattern as a learning so future reviews catch it with
 higher confidence.
 
-**Decision gate (all sections and outside voice):** Use this one ledger throughout the review. Start it after Step 0 resolves scope. For each new or reopened choice, follow these five steps. Each row tracks one separately selectable change through its answer and resulting plan edit.
+## Decision procedure
 
-**1. Establish current contracts.** Read the original request, relevant source and prior answers. For each finding, record what happens now, what the user has already chosen, and the evidence for both. Cite the selected option, question/answer reference and exact approved scope. Keep unknown values unknown. Correct a factual mistake against source evidence and disclose it; that correction does not approve a behavior change. Check these sources before treating your own draft as evidence for another finding.
+**Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. Keep one table for the whole review. One row means one choice the user can accept or reject separately. For each finding, follow these five steps before sending a question.
 
-Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, recommendation or agreement between reviewers does not approve other work. Keep work outside the prior answer pending. Reopen a choice only for a concrete new risk, contradictory evidence or changed assumption; explain what changed. A risk may need a response before it is confirmed; disclose that uncertainty rather than inventing a current value.
+**1. Check the source and prior answers.** Read the original request, relevant source and actual user answers. Record the current behavior, what was approved, and the evidence for each. An approval needs its selected option, answer reference and exact scope. A number in your draft is not a user answer; leave unknown values unknown.
 
-**2. Enumerate option commitments.** Before assigning row IDs, list what EVERY provisional option would authorize, including commitments in its label, description and pros/cons. Compare each commitment with the current values and actual answers from Step 1. Include commitments shared by all options; sharing a value does not make it approved. Record each bound's meaning and unit, and the current and proposed verification method and depth. Keep all other approved choices fixed and unresolved choices undecided. These are provisional comparisons, not questions to send yet.
+Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, your recommendation or agreement between reviewers does not approve other work. Correct factual mistakes against source evidence and disclose the correction; do not change behavior as part of that correction. Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption, and explain what changed. An uncertain risk can still need a decision; state what is unknown.
 
-**3. Separate independent choices.** Ask: could the user accept one change and reject another? If yes, split them and rebuild the options, even if they share an issue heading, helper or patch. A choice can concern a behavior, an implementation approach, one bound, or optional verification depth. Repeat the comparison until every option changes only that choice. Do not use the finding's topic or a draft row name to define what the answer approves.
+**2. List what each option changes.** Draft the options before assigning row IDs. For EVERY option, read its label, description and pros/cons and list:
+- Each proposed change: current value → proposed value. For a bound, include what it measures and its unit. For verification, include the method and depth.
+- Which other approved choices it preserves.
+- Which other choices remain pending.
 
-Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof is part of that approved work, not an optional extra. For a fixed behavior, choosing unit, integration or smoke-test depth is one verification choice. A test that introduces a different guarantee or policy needs its own decision. Keep tests for pending policies conditional on approval; retain their risks and required proof.
+Include values shared by all options. A value is not approved just because every option contains it. Compare each item with the source and actual answers from Step 1, not with an assumption in your draft.
 
-A partial option can reveal two separate choices inside a "complete" package; simply testing the same chosen behavior less thoroughly does not separate the fix from its proof. Do not make an option smaller by dropping an established contract or an earlier accepted choice. Changing either needs its own decision.
+**3. Split choices that can be answered separately.** Could the user accept one change and reject another? If yes, split them and rebuild the options. Sharing an issue heading, helper or patch does not make two changes one choice. Repeat until every option decides only one behavior, implementation approach, bound or optional verification depth. Keep other approved choices fixed and unresolved choices pending.
 
-**4. Assign and save rows.** Match each separated choice to an existing row or assign it a new ID. Record the comparisons from Steps 2-3 in the same ledger:
+Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof is part of that approved work. Choosing unit, integration or smoke-test depth for a fixed behavior is one verification choice. A test that adds a different guarantee or policy needs its own decision; keep tests for an unapproved policy conditional on its approval.
+
+If an option keeps one proposed change but drops another, you have two choices. If it only checks the same chosen behavior less thoroughly, you have one depth choice. Never shrink an option by dropping an established contract or earlier accepted choice; changing that contract needs its own decision.
+
+**4. Assign and save rows.** Now match each separate choice to an existing row or give it a new ID. Use this table:
 
 | Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |
 |-----|-------------------|--------------------------------|---------------------------------|-----------------------------|--------|--------------------|
 
-In `Option comparisons`, record `label: changes; preserves; pending` with the concrete values for every option. A row ID alone is not an option comparison. This review records notes in the explicitly requested output/report file, otherwise the reviewed plan. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present the table instead. Use Write or Edit to save the rows and option comparisons before calling AskUserQuestion. Preserve the plan's existing content and approvals. Mark undecided rows `pending`; do not insert their remedies as accepted work. If saving fails, report the error and stop before asking.
+For each option, fill `Option comparisons` as `label: changes; preserves; pending`, using the concrete values from Step 2. For example: `A: cache lifetime 1 minute → 5 minutes; preserves access rules; deployment date pending`. Include the source or reviewer behind the finding. Mark undecided rows `pending`; do not add their remedies as accepted work.
 
-**5. Ask and record the answer.** Follow the preamble's tool, prose, preference and session rules. Each AskUserQuestion call contains exactly one question for one row. Name the behavior, approach, bound or verification depth it decides; recommend an option and explain why. While the question awaits an answer, stop: do not apply the remedy, enter the next section or call ExitPlanMode. An obvious fix still needs approval when it is not already covered by an exact prior answer.
+Save the rows and options with Write or Edit before calling AskUserQuestion. Use the explicitly requested report file, otherwise the reviewed plan, and preserve its existing content and approvals. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present the table instead. If saving fails, report the error and stop before asking.
 
-Record the actual selected option and answer, their reference and exact accepted scope, separately from the provisional comparisons. A value appearing only in your draft is not an accepted value. Apply only those amendments with a scoped Edit before taking the next row; in read-only mode, present the amendments instead. Leave other rows unchanged. Record investigation, deferral and unresolved risks explicitly. A decision log does not replace the working plan. In /autoplan, follow its authorized auto-decisions and keep User Challenges pending for its final gate.
+**5. Ask, record the answer, then edit.** Follow the preamble's tool, prose, preference and session rules. Each AskUserQuestion call contains exactly one question for one row. Name the behavior, approach, bound or depth it decides; recommend an option and explain why. An obvious fix still needs approval unless an exact prior answer already covers it.
+
+While waiting for the answer, stop. Do not apply the remedy, enter the next section or call ExitPlanMode. Record the actual selected option and answer, their reference and exact accepted scope separately from your draft options. Then apply only those amendments with a scoped Edit before taking the next row. In read-only mode, present the amendments instead. Leave other rows unchanged. Investigation or deferral does not approve implementation; retain unresolved risks and required verification. The table does not replace updating the working plan.
+
+In /autoplan, use its authorized auto-decisions and audit trail. Keep User Challenges pending for its final gate.
+
+## Review Sections (after scope is agreed)
 
 ### 1. Architecture review
 Evaluate:
@@ -188,7 +203,7 @@ ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pyt
 git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)tests?\.py$|(^|/)test_[^/]+\.py$|_test\.(go|py|rb|ts|js|exs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.(java|kt)$' | sed 's/^/TESTFILES:/'
 ```
 
-3. **If no framework detected:** still produce the coverage diagram, but skip test generation.
+3. **If no framework detected:** still produce the coverage diagram and planned test assertions. State that the framework is unknown; use the decision gate if selecting one needs approval. Do not install a framework or write the proposed tests during this review.
 
 **Step 1. Trace every codepath in the plan:**
 
@@ -292,17 +307,23 @@ QUALITY: ★★★:2 ★★:2 ★:1  |  GAPS: 8 (2 E2E, 1 eval)
 Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke check
 [→E2E] = needs integration test  |  [→EVAL] = needs LLM eval
 
-**Fast path:** All paths covered → "Test review: All new code paths have test coverage ✓" Continue.
+**Fast path:** All paths covered → "Test review: All new code paths have test coverage ✓" Still check LLM/eval scope and produce the Test Plan Artifact below.
+
+### LLM/eval scope
+
+For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Include unapproved eval scope among the choices resolved in Step 5.
 
 **Step 5. Add missing tests to the plan:**
 
-For each GAP in the diagram, use the decision gate to determine whether its test contract is already approved or still needs a choice. Carry forward required proof of approved behavior; ask separately about each new contract or optional depth choice before adding it as accepted work. Be specific:
+Collect the requirements for each GAP and the LLM/eval scope above. Carry forward required proof of approved behavior. Mark new contracts and optional depth choices pending until the decision gate below resolves them. For every proposed test, specify:
 - What test file to create (match existing naming conventions)
 - What the test should assert (specific inputs → expected outputs/behavior)
 - Whether it's a unit test, E2E test, or eval (use the decision matrix)
 - For regression risks: flag as **CRITICAL** and name the behavior to protect
 
-The plan should be complete enough that when implementation begins, every test is written alongside the feature code — not deferred to a follow-up.
+Run the decision gate for this section's new or reopened choices. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode.
+
+When these test and eval choices are resolved, write the Test Plan Artifact below. Its approved requirements should be specific enough to implement alongside the feature code.
 
 ### Test Plan Artifact
 
@@ -342,9 +363,7 @@ Repo: {owner/repo}
 
 This file is consumed by `/qa` and `/qa-only` as primary test input. Include only the information that helps a QA tester know **what to test and where** — not implementation details.
 
-For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Use the decision gate for any eval scope not already approved.
-
-Run the decision gate for this section's new or reopened choices. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode. When no decision remains, report the findings and their dispositions and continue.
+After the Test Plan Artifact is saved or presented, report the Test review findings and their dispositions and continue to Performance review. Step 5 above resolves the test and eval decisions before that artifact is written.
 
 ### 4. Performance review
 Evaluate:
@@ -402,13 +421,11 @@ echo "CODEX_MODE: $_CODEX_MODE"
 Branch on the echoed `CODEX_MODE`:
 - **`disabled`** — the user turned Codex reviews off (`codex_reviews=disabled`). Skip this section entirely; do NOT fall back to a Claude subagent — disabled means no extra review step. Print: "Codex review skipped (codex_reviews disabled). Re-enable: `gstack-config set codex_reviews enabled`."
 - **`not_installed`** — Codex CLI absent. Print: "Codex not installed — falling back to a Claude subagent (fresh context, but the SAME model family — not an outside model). Install Codex for an actual outside-model read: `npm install -g @openai/codex`." Fall back to the Claude subagent path.
-- **`under_codex`** — this session is already running INSIDE a Codex host, so spawning codex again is the same model reviewing itself at multiplied token cost (#2519). Print exactly one line: "[running under Codex — nested codex passes skipped; set GSTACK_FORCE_CODEX_REVIEW=1 to force]" and skip the codex invocations below; run the section's free in-host pass instead if it defines one.
+- **`under_codex`** — this session is already running INSIDE a Codex host, so spawning codex again is the same model reviewing itself at multiplied token cost (#2519). Print exactly one line: "[running under Codex — nested codex passes skipped; set GSTACK_FORCE_CODEX_REVIEW=1 to force]" and skip this outside-voice section and continue to the required outputs. No in-host substitute is defined here; do not label a self-review as independent.
 - **`not_authed`** — installed but no credentials. Print: "Codex installed but not authenticated — falling back to a Claude subagent (same model family, not an outside model). Run `codex login` or set `$CODEX_API_KEY`." Fall back to the Claude subagent path.
 - **`broken_install`** — the CLI is on PATH but cannot execute (spawn ENOENT, non-executable binary, missing vendor payload). Print: "Codex is installed but its binary cannot run — Codex passes skipped. Reinstall: `npm install -g @openai/codex`." Relay the probe's HINT lines and fall back to the Claude subagent path. This state exists because a missing binary used to land in the model probe's fail-open bucket and report `ready`, so every Codex pass was skipped silently (#2742).
 - **`model_unusable`** — authed but the account cannot use gstack's selected Codex model (#2477: HTTP 400 on every call). Relay the probe's HINT lines, tell the user the one-line fix (set `GSTACK_CODEX_MODEL=<supported-model>` or pass an explicit `-c model=...` override), and fall back to the Claude subagent path. The ~10s round trip is cached for 1h; timeouts fail open to `ready`.
 - **`ready`** — run the Codex pass below.
-
-On `under_codex`, no in-host substitute is defined here: skip this outside-voice section and continue to the required outputs. Do not invoke Codex again or label a self-review as independent.
 
 For all other non-disabled modes (`ready`, `not_installed`, `not_authed`, `broken_install`, `model_unusable`), print one line so the off-switch
 stays discoverable: "Running the outside voice automatically (standard step). Disable: `gstack-config set codex_reviews disabled`."
@@ -517,23 +534,21 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-Use the same seven-column decision ledger and the five-step decision gate above; do not start a second table. Check the original sources and actual answers under Step 1. Exact confirmations and factual corrections update evidence; a new proposal still needs approval even when both reviewers agree. Reopening an approved choice requires a concrete new risk, contradictory evidence or a changed assumption.
+Run every outside finding through the same Decision procedure and seven-column ledger above. Record the reviewer and evidence. Agreement between reviewers is evidence, not approval: confirmations and factual corrections update the record; new or reopened choices still need their own answers. Keep necessary code, tests and docs for one approved behavior together.
 
-Under Steps 2-3, enumerate each menu's full commitments against current values, then separate independent choices before assigning rows. These four-option menus take precedence over the ordinary 2-3 option format:
+For these questions, use the following four-option menus instead of the ordinary 2-3 options. First list everything the options would change, split separate choices and save their rows as the Decision procedure requires.
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Keep other approved choices fixed and other pending choices undecided. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those are separate rows.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After the individual answers, check the assembled set's capacity and dependencies. If they conflict, return to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck the set before confirming it. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-Under Step 4, match the separated choices to existing rows or assign new IDs. Record the reviewer and its evidence in `Evidence and exact approval`, and record every option in `Option comparisons`. Save or present those rows and comparisons before asking. Finish Step 5: ask one question for one row, record its actual selected option and answer with the exact accepted scope, and apply only those amendments before the next row. Keep necessary code, tests and docs for one approved behavior together. Investigation or deferral does not authorize implementation. In /autoplan, preserve its authorized auto-decisions, audit trail and User Challenge rules; challenges wait for the final gate.
-
-Report all findings, dispositions and remaining disagreements after the queue is resolved. An answer to one row does not resolve the finding's other pending rows.
+Report all findings, dispositions and remaining disagreements after resolving the questions. An answer to one row does not resolve the finding's other pending rows. Preserve /autoplan's authorized auto-decisions, audit trail and User Challenge rules; challenges wait for its final gate.
 
 **Persist the result:**
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
-Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist.
+Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist. These are the completed outside reviewer's findings, even if the parent later resolves them; this log does not describe the parent review's remaining decisions.
 SOURCE = "codex" if Codex ran, "claude" if subagent ran.
 
 ---

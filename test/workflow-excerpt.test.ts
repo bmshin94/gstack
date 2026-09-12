@@ -94,12 +94,38 @@ describe('workflow judge excerpts', () => {
     expect(text).toContain('if VERSION is absent, use the completion date only');
   });
 
+  test('Eng preparation and decision procedure precede the four review sections', () => {
+    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## CRITICAL RULE');
+    const stages = ['## Review preparation', '## Confidence Calibration', '## Decision procedure',
+      '**Decision gate (all sections and outside voice):**', '## Review Sections',
+      '### 1. Architecture review', '### 2. Code quality review', '### 3. Test review', '### 4. Performance review']
+      .map(heading => eng.indexOf(heading));
+    expect(stages.every(index => index >= 0)).toBe(true);
+    expect(stages).toEqual([...stages].sort((a, b) => a - b));
+    expect(eng.match(/^## Decision procedure$/gm)).toHaveLength(1);
+    expect(eng.slice(stages[2], stages[4]).match(/^\*\*[1-5]\. /gm)).toHaveLength(5);
+  });
+
+  test('Eng LLM scope and pending decisions precede the test artifact', () => {
+    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## CRITICAL RULE');
+    const tests = eng.slice(eng.indexOf('### 3. Test review'), eng.indexOf('### 4. Performance review'));
+    const scope = tests.indexOf('### LLM/eval scope');
+    const decisions = tests.indexOf('**Step 5. Add missing tests to the plan:**');
+    const stop = tests.indexOf('**STOP for each pending decision.**', decisions);
+    const artifact = tests.indexOf('### Test Plan Artifact');
+    expect(0 <= scope && scope < decisions && decisions < stop && stop < artifact).toBe(true);
+    expect(tests.match(/For LLM\/prompt changes:/g)).toHaveLength(1);
+    expect(tests.slice(artifact)).not.toContain('**STOP for each pending decision.**');
+    const fastPath = tests.slice(tests.indexOf('**Fast path:**'), scope);
+    expect(fastPath).toContain('Still check LLM/eval scope and produce the Test Plan Artifact');
+  });
+
   test('plan review evidence and design approval rules precede their use', () => {
-    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## Review Sections', '## CRITICAL RULE');
+    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## CRITICAL RULE');
     expect(eng.indexOf('## Confidence Calibration')).toBeLessThan(eng.indexOf('### 1. Architecture review'));
     expect(eng).toContain('quote the motivating plan requirement');
     expect(eng).toContain('including all Claude fallback modes');
-    expect(eng).toContain('no in-host substitute is defined here');
+    expect(eng).toMatch(/no in-host substitute is defined here/i);
     const design = readWorkflowExcerpt('plan-design-review/SKILL.md', '## Review Sections', '## CRITICAL RULE');
     expect(design).toContain('wait for approval, then edit the plan and re-rate');
     const pass4 = design.slice(design.indexOf('### Pass 4:'), design.indexOf('### Pass 5:'));

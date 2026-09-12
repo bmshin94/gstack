@@ -254,7 +254,7 @@ ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pyt
 git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)tests?\\.py$|(^|/)test_[^/]+\\.py$|_test\\.(go|py|rb|ts|js|exs)$|\\.(test|spec)\\.[jt]sx?$|_spec\\.rb$|Test\\.(java|kt)$' | sed 's/^/TESTFILES:/'
 \`\`\`
 
-3. **If no framework detected:**${mode === 'ship' ? ' use the bootstrap decision already made in Step 4; report diagram-only coverage if setup was declined. Do not restart bootstrap from this audit.' : ' still produce the coverage diagram, but skip test generation.'}`);
+3. **If no framework detected:**${mode === 'ship' ? ' use the bootstrap decision already made in Step 4; report diagram-only coverage if setup was declined. Do not restart bootstrap from this audit.' : mode === 'plan' ? ' still produce the coverage diagram and planned test assertions. State that the framework is unknown; use the decision gate if selecting one needs approval. Do not install a framework or write the proposed tests during this review.' : ' still produce the coverage diagram, but skip test generation.'}`);
 
   // ── Before/after count (ship only) ──
   if (mode === 'ship') {
@@ -403,20 +403,26 @@ QUALITY: ★★★:2 ★★:2 ★:1  |  GAPS: 8 (2 E2E, 1 eval)
 Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke check
 [→E2E] = needs integration test  |  [→EVAL] = needs LLM eval
 
-**Fast path:** All paths covered → "${mode === 'ship' ? 'Step 7' : mode === 'review' ? 'Step 4.75' : 'Test review'}: All new code paths have test coverage ✓" Continue.`);
+**Fast path:** All paths covered → "${mode === 'ship' ? 'Step 7' : mode === 'review' ? 'Step 4.75' : 'Test review'}: All new code paths have test coverage ✓" ${mode === 'plan' ? 'Still check LLM/eval scope and produce the Test Plan Artifact below.' : 'Continue.'}`);
 
   // ── Mode-specific action section ──
   if (mode === 'plan') {
     sections.push(`
+### LLM/eval scope
+
+For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Include unapproved eval scope among the choices resolved in Step 5.
+
 **Step 5. Add missing tests to the plan:**
 
-For each GAP in the diagram, use the decision gate to determine whether its test contract is already approved or still needs a choice. Carry forward required proof of approved behavior; ask separately about each new contract or optional depth choice before adding it as accepted work. Be specific:
+Collect the requirements for each GAP and the LLM/eval scope above. Carry forward required proof of approved behavior. Mark new contracts and optional depth choices pending until the decision gate below resolves them. For every proposed test, specify:
 - What test file to create (match existing naming conventions)
 - What the test should assert (specific inputs → expected outputs/behavior)
 - Whether it's a unit test, E2E test, or eval (use the decision matrix)
 - For regression risks: flag as **CRITICAL** and name the behavior to protect
 
-The plan should be complete enough that when implementation begins, every test is written alongside the feature code — not deferred to a follow-up.`);
+Run the decision gate for this section's new or reopened choices. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode.
+
+When these test and eval choices are resolved, write the Test Plan Artifact below. Its approved requirements should be specific enough to implement alongside the feature code.`);
 
     // ── Test plan artifact (plan + ship) ──
     sections.push(`
