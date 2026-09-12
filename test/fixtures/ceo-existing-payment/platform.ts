@@ -15,7 +15,7 @@ export type DataSteps = {
   readOrders(ids: readonly string[], reader: OrderReader): Order[];
   afterCommit(user: User, orders: readonly Order[]): Promise<void>;
 };
-export class MissingOrder extends Error {}
+export class MissingOrder extends Error { override name = 'MissingOrder'; }
 
 // Independently reusable callbacks already used by the invoice handler. Neither
 // the dispatcher nor the facade selects these policies for another handler.

@@ -143,6 +143,9 @@ When fixing failures or preparing `/ship`, follow this order:
    applicable. A changed prompt must clear these before its eval.
 6. Preflight the actual launcher: required binaries, isolated state, display when
    needed, explicit test tier, selection, and expected executed-case counts.
+   Verify required tool execution with a no-cost smoke check under that launch
+   environment; versions and authentication alone do not prove it works. Set
+   private artifact modes explicitly and preserve normal fixture permissions.
    Preserve exit status through logging. Use the documented detached runner and
    eval lock. Review the final launcher after edits; preparation and `--list`
    modes must not start monitors, retainers, or test processes. Verify this with

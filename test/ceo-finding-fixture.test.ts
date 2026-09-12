@@ -78,6 +78,7 @@ test('request adaptation retains authorization and rollback outcomes with scoped
       name: 'webhook_requests_total', labels: { outcome, eventType: 'invoice.paid' },
     })));
     expect(telemetry.warnings).toHaveLength(3);
+    expect(telemetry.warnings[1]).toMatchObject({ fields: { errorName: 'MissingOrder', outcome: 'failed' } });
     for (const warning of telemetry.warnings as Array<{ fields: Record<string, unknown> }>) {
       expect(warning.fields.accountId).toBe('acct');
       expect(warning.fields.eventId).toBe('evt');
@@ -160,7 +161,10 @@ test.each(['sent', 'timeout', 'rejected', 'failed'] as const)('client telemetry 
     expect(caught).toBe(outcome === 'sent' ? undefined : failure);
     expect(sends).toBe(1);
     expect(telemetry.increments).toEqual([{ name: 'confirmation_mail_total', labels: { outcome } }]);
-    expect(telemetry.warnings).toHaveLength(outcome === 'sent' ? 0 : 1);
+    expect(telemetry.warnings).toEqual(outcome === 'sent' ? [] : [{
+      message: 'Confirmation mail failed', fields: { accountId: 'acct', outcome,
+        errorName: outcome === 'timeout' ? 'MailTimeoutError' : outcome === 'rejected' ? 'MailDeliveryError' : 'Error' },
+    }]);
     expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 0 });
   } finally { db.close(); }
 });

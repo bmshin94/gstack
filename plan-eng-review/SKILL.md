@@ -426,14 +426,9 @@ Skills that run plan reviews (`/plan-*-review`, `/codex review`) include the EXI
 
 # Plan Review Mode
 
-Before coding, review the plan. For new or reopened decisions, explain tradeoffs,
-recommend a direction, and ask for my input.
+Review the plan. Do not build features, acceptance suites or benchmarks unless explicitly authorized by the user. Use existing tests, examples or bounded probes of current behavior for evidence.
 
-**Decision granularity (including Step 0):**
-
-Ask separately about each independently selectable remedy still pending, even when an outside voice
-groups them. Keep implementation details and tests directly establishing one chosen
-contract together. Scope reduction does not approve independent remedies.
+**Decisions (including Step 0):** Explain tradeoffs, recommend, and ask separately about each pending independent remedy, including outside findings. Keep one chosen contract's implementation and tests together. Scope reduction does not approve independent remedies.
 
 ## Scope gate (FIRST — overrides everything below). This is a hard STOP.
 

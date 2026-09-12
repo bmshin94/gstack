@@ -1,12 +1,12 @@
 # Changelog
 
-## [1.87.1.0] - 2026-09-11
+## [1.87.1.0] - 2026-09-12
 
 ### Fixed
 - `/health` preserves checker exit statuses and complete diagnostics, shows missing coverage, and reports `N/A` when no checks run. Trends compare results with the same coverage.
 - Skill generation awaits every artifact across all hosts. Freshness checks detect missing output, validate generated content, preserve files and directories during dry runs, and report generation errors instead of accepting partial output.
 - Evaluation records follow the runner result and assertions. Timeouts, failed validations, inherited output pipes, and interrupted attempts retain their actual outcomes, captured usage, and bounded cleanup.
-- Plan reviews preserve the selected mode and prior approvals, ask separately about independent changes, and require complete saved reports. Outside-review suggestions use explicit approval menus; a dependency conflict returns to the affected decision before the plan is declared ready.
+- Plan reviews preserve the selected mode and prior approvals, compare each option against independent changes, and require complete saved reports. Engineering reviews keep proposed implementation separate from review evidence. DX reviews use the same onboarding milestone for benchmarks, targets, examples, and measurement. Outside-review suggestions use explicit approval menus; a dependency conflict returns to the affected decision before the plan is declared ready.
 - `/autoplan` loads each review's complete instructions, carries approved decisions between phases, and verifies phase order and completion. Native review drivers acknowledge current questions and permissions promptly, reject stale frames and late completions, and recognize the offered manual handoff.
 - `/office-hours` preserves structured review evidence through completion and develops distinct builder ideas. `/setup-gbrain` handles fresh state, remote-only sharing declines, and interrupted attempts without leaking fixture state.
 - Browser shutdown drains terminal output and cleans up only the configured server instance. Setup tolerates disappearing process entries; pairing fixtures use checked ports and bounded cleanup. Deprecated-flag scans exclude workspace caches before searching and propagate command and filesystem failures.

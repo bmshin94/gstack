@@ -7,8 +7,8 @@ export interface ApplicationMetrics {
   increment(name: 'webhook_requests_total' | 'confirmation_mail_total', labels: { outcome: string; eventType?: string }): void;
 }
 export type Telemetry = { logger: ApplicationLogger; metrics: ApplicationMetrics };
-export class MailTimeoutError extends Error {}
-export class MailDeliveryError extends Error {}
+export class MailTimeoutError extends Error { override name = 'MailTimeoutError'; }
+export class MailDeliveryError extends Error { override name = 'MailDeliveryError'; }
 
 // The supplied transport already uses the current template/recipient and aborts
 // after five seconds. Provider I/O and that timeout are outside this local model.

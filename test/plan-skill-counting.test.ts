@@ -1254,3 +1254,45 @@ describe('owned captured Fetch permission in the real counting driver', () => {
       expect(result.closed).toBe(true);
     }, 15_000);
 });
+
+
+describe('owned captured Read permission in the real counting driver', () => {
+  test.skipIf(process.platform === 'win32').each(['complete', 'error-ack'])(
+    'one-time Read waits for its native result before the next question (%s)', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-read-${variant}`);
+      expect(result.error).toBeUndefined();
+      expect(result.observation.outcome).toBe('completion_summary');
+      expect(result.permissionGrantIds).toHaveLength(1);
+      expect(result.permissionAckIds).toEqual(result.permissionGrantIds);
+      expect(result.readQuestionAckIds).toHaveLength(1);
+      expect(result.prematureAnswers).toEqual([]);
+      expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r', '1']);
+      expect(result.closed).toBe(true);
+    }, 15_000);
+
+  test.skipIf(process.platform === 'win32').each(['no-ack', 'foreign-ack', 'late-ack'])(
+    'unacknowledged Read cannot advance the next question (%s)', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-read-${variant}`);
+      expect(result.error).toBeUndefined();
+      expect(result.observation.outcome).toBe('timeout');
+      expect(result.permissionGrantIds).toHaveLength(1);
+      expect(result.permissionAckIds).toHaveLength(variant === 'late-ack' ? 1 : 0);
+      expect(result.readQuestionAckIds).toEqual([]);
+      expect(result.prematureAnswers).toEqual([]);
+      expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+      expect(result.closed).toBe(true);
+    }, 15_000);
+
+  test.skipIf(process.platform === 'win32').each(['path-mismatch', 'multiple-owner', 'owner-arrival-race', 'input-arrival-race', 'stale', 'deadline'])(
+    'unbound, changed or late Read evidence sends no input (%s)', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-read-${variant}`);
+      expect(result.permissionGrantIds).toEqual([]);
+      expect(result.readQuestionAckIds).toEqual([]);
+      expect(result.sends).toEqual(['/plan-ceo-review\r']);
+      if (variant === 'multiple-owner' || variant === 'owner-arrival-race') expect(result.error).toContain('Ambiguous native permission owner');
+      else if (variant === 'input-arrival-race') expect(result.error).toMatch(/Native .*changed input/);
+      else { expect(result.error).toBeUndefined(); expect(result.observation.outcome).toBe('timeout'); }
+      if (variant === 'deadline') expect(result.caseElapsedMs).toBe(result.caseBudgetMs);
+      expect(result.closed).toBe(true);
+    }, 15_000);
+});

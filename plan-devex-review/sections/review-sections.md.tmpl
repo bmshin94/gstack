@@ -81,7 +81,7 @@ time chosen in 0C.
 Stripe test: Can a [persona from 0A] go from "never heard of this" to "it worked"
 in one terminal session without leaving the terminal?
 
-**STOP.** AskUserQuestion once per issue. Recommend + WHY. Reference the persona.
+**STOP.** Run the Decision gate; ask only for a new or justified reopened decision. Recommend + WHY. Reference the persona.
 
 ### Pass 2: API/CLI/SDK Design (Usable + Useful)
 
@@ -105,7 +105,7 @@ Evaluate:
 
 Good API design test: Can a [persona] use this API correctly after seeing one example?
 
-**STOP.** AskUserQuestion once per issue. Recommend + WHY.
+**STOP.** Run the Decision gate; ask only for a new or justified reopened decision. Recommend + WHY.
 
 ### Pass 3: Error Messages & Debugging (Fight Uncertainty)
 
@@ -130,7 +130,7 @@ Also evaluate:
 - **Debug mode**: Verbose output available?
 - **Stack traces**: Useful or internal framework noise?
 
-**STOP.** AskUserQuestion once per issue. Recommend + WHY.
+**STOP.** Run the Decision gate; ask only for a new or justified reopened decision. Recommend + WHY.
 
 ### Pass 4: Documentation & Learning (Findable + Learn by Doing)
 
@@ -150,7 +150,7 @@ Evaluate:
 - **Versioning**: Docs match the version dev is using?
 - **Tutorials vs references**: Both exist?
 
-**STOP.** AskUserQuestion once per issue. Recommend + WHY.
+**STOP.** Run the Decision gate; ask only for a new or justified reopened decision. Recommend + WHY.
 
 ### Pass 5: Upgrade & Migration Path (Credible)
 
@@ -165,7 +165,7 @@ Evaluate:
 - **Codemods**: Automated migration scripts?
 - **Versioning strategy**: Semantic versioning? Clear policy?
 
-**STOP.** AskUserQuestion once per issue. Recommend + WHY.
+**STOP.** Run the Decision gate; ask only for a new or justified reopened decision. Recommend + WHY.
 
 ### Pass 6: Developer Environment & Tooling (Valuable + Accessible)
 
@@ -186,7 +186,7 @@ Evaluate:
 - **Local env reproducibility**: Works across OS, package managers, containers, proxies?
 - **Observability/testability**: Dry-run mode? Verbose output? Sample apps? Fixtures?
 
-**STOP.** AskUserQuestion once per issue. Recommend + WHY.
+**STOP.** Run the Decision gate; ask only for a new or justified reopened decision. Recommend + WHY.
 
 ### Pass 7: Community & Ecosystem (Findable + Desirable)
 
@@ -202,7 +202,7 @@ Evaluate:
 - **Contributing guide**: Process clear?
 - **Pricing transparency**: No surprise bills?
 
-**STOP.** AskUserQuestion once per issue. Recommend + WHY.
+**STOP.** Run the Decision gate; ask only for a new or justified reopened decision. Recommend + WHY.
 
 ### Pass 8: DX Measurement & Feedback Loops (Implement + Refine)
 
@@ -217,17 +217,13 @@ Evaluate:
 - **Friction audits**: Periodic reviews planned?
 - **Boomerang readiness**: Will /devex-review be able to measure reality vs. plan?
 
-Define what each proposed measurement includes before choosing it. Developer
-TTHW runs from the selected persona encountering the documented start through
-their first understood, useful result, including reading, setup and first-run
-state. Record observed human onboarding separately from automated execution
-time; a warm snippet timer is neither a fresh-start check nor a human benchmark.
-Keep estimates labeled until measured. Prefer the simplest method that measures
-the chosen target. A target tier does not itself approve telemetry, an automated
+Measure the approved 0C clock and 0D useful result. Include the full documented
+start state; do not substitute a warm execution timer or a different endpoint.
+Prefer the simplest method that measures the chosen target. A target tier does not itself approve telemetry, an automated
 release gate, or a recurring human process; ask about those independent policies
 only when proposing them, with ownership and frequency explicit.
 
-**STOP.** AskUserQuestion once per issue. Recommend + WHY.
+**STOP.** Run the Decision gate; ask only for a new or justified reopened decision. Recommend + WHY.
 
 ### Appendix: Claude Code Skill DX Checklist
 
@@ -242,11 +238,14 @@ Check each item. For any unchecked item, explain what's missing and suggest the 
 
 **STOP.** AskUserQuestion for any item that requires a design decision.
 
-{{CODEX_PLAN_REVIEW}}
+For the outside voice, supply the persona, exact approved clock and target,
+benchmark boundaries, evidence limitations and prior decisions. Reconcile findings
+against inspected source and exact answers before proposing remedies. Correct
+unsupported draft claims directly; preserve unknown behavior as verification work.
+A new guarantee, optional example or measurement extension remains a decision;
+required proof of the accepted contract does not reopen that contract.
 
-When constructing the outside voice prompt, include the Developer Persona from Step 0A
-and the Competitive Benchmark from Step 0C. The outside voice should critique the plan
-in the context of who is using it and what they're competing against.
+{{CODEX_PLAN_REVIEW}}
 
 ## CRITICAL RULE — How to ask questions
 

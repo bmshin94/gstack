@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import type { AskUserQuestionFingerprint } from './helpers/claude-pty-runner';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
-import { DEVEX_FINDINGS } from './helpers/plan-review-cases';
+import { DEVEX_FINDINGS, ENG_BATCHING_FINDINGS } from './helpers/plan-review-cases';
 import {
   buildPlanReviewDecisionPrompt, evaluatePlanReviewDecisions, validatePlanReviewDecisionResponse,
   type PlanReviewDecision, type PlanReviewDecisionInput, type PlanReviewDecisionJudgment,
@@ -554,3 +554,238 @@ test('DX artifact judging shares cancellation and cannot accept a late response'
   resolve(judgment); await Promise.resolve();
   expect(logged('plan-review-decisions-raw-judgment')).toHaveLength(0);
 }, 1000);
+
+// Retained public 1a127f10 Eng batching menus. These deterministic controls
+// preserve the recorded verdicts; they do not rejudge model behavior. The
+// source-order control is separate because a free validator cannot prove that
+// the next native review will follow the revised option-to-row instructions.
+const RETAINED_ENG_OPTIONS: Array<{ call: string; question: NativeQuestion; selectedOptions: number[]; judgment: PlanReviewDecision }> = [
+  {
+    "call": "c3",
+    "question": {
+      "header": "R1 mechanism",
+      "multiSelect": false,
+      "options": [
+        {
+          "description": "✅ Retry state survives worker restarts because the queue store holds it. ✅ Curve stays fully yours via the library's backoff callback or strategy option. ❌ Requires confirming the installed library exposes a custom-delay hook; if it does not, revisit. (human: ~1 day / CC: ~20 min)",
+          "label": "1A) Library retry hooks + custom delay function (recommended)"
+        },
+        {
+          "description": "✅ Retries persist because each attempt is a real delayed job in the queue. ✅ Full ownership of attempt counting and curve without in-process sleeps. ❌ Re-implements attempt tracking the library already does; more surface to test. (human: ~2 days / CC: ~40 min)",
+          "label": "1B) Custom curve, but re-enqueue through the library's delayed-job API"
+        },
+        {
+          "description": "✅ Zero dependency on library retry semantics; behavior fully local to the worker. ✅ Simplest to read in isolation inside one worker file. ❌ Pending retries die with the process; every worker restart or deploy drops in-flight backoffs. (human: ~3 days / CC: ~1 hr)",
+          "label": "1C) Custom in-process scheduler as planned"
+        }
+      ],
+      "question": "D3 (ledger R1) — Retry scheduling mechanism: library built-in hooks or a custom in-process scheduler?\nProject/branch/task: main; retry framework plan, Architecture section (review-input.md:6-8).\nELI10: When a job fails, something has to remember \"try again in 4 minutes.\" The plan puts that memory inside each worker process. The job library already has retry hooks that store it in the queue. The plan's stated reason for rolling its own is control over the delay curve, but most libraries let you plug in your own delay function.\nStakes if we pick wrong: In-process scheduling loses every pending retry on a deploy or crash, silently. Custom code also means the team owns scheduling bugs the library already fixed.\nRecommendation: 1A because it is boring, persisted, and still gives full curve control through a delay function. Maps to your \"explicit over clever\" and right-sized-diff preferences: one function instead of a scheduler. [Layer 1]\nCompleteness: 1A=9/10, 1B=7/10, 1C=4/10\nNet: A few lines of curve config on proven infrastructure versus owning a scheduler that forgets retries when the process dies."
+    },
+    "selectedOptions": [
+      1
+    ],
+    "judgment": {
+      "toolUseId": "toolu_01DmMN6fdKUm8r1gSuEwer9u",
+      "questionIndex": 1,
+      "kind": "finding",
+      "targetIds": [
+        "retry-library"
+      ],
+      "independentDecisions": 1,
+      "evidence": [
+        {
+          "field": "question",
+          "optionIndex": null,
+          "quote": "D3 (ledger R1) — Retry scheduling mechanism: library built-in hooks or a custom in-process scheduler?"
+        },
+        {
+          "field": "optionLabel",
+          "optionIndex": 1,
+          "quote": "1A) Library retry hooks + custom delay function (recommended)"
+        },
+        {
+          "field": "optionDescription",
+          "optionIndex": 1,
+          "quote": "Curve stays fully yours via the library's backoff callback or strategy option."
+        }
+      ],
+      "reason": "Explicit decision on the retry-library target: selected reuse of the library's retry hooks with a custom delay function instead of the plan's custom inline in-process scheduler. One coupled decision (mechanism + delay function).",
+      "optionActions": []
+    }
+  },
+  {
+    "call": "c4",
+    "question": {
+      "header": "R7 curve",
+      "multiSelect": false,
+      "options": [
+        {
+          "description": "✅ Retries spread out under mass failure instead of stampeding the downstream. ✅ Delay never exceeds a known ceiling, so operators can reason about worst-case latency. ❌ Jittered delays make exact-value assertions harder; tests bound the range instead. (human: ~2 hr / CC: ~5 min)",
+          "label": "4A) Cap + jitter, named constants, unit-tested at attempt 0/1/N/cap (recommended)"
+        },
+        {
+          "description": "✅ Exact, predictable delays that are trivial to assert in tests. ✅ Bounded worst-case wait. ❌ Lockstep retries remain; correlated failures retry as a herd. (human: ~1 hr / CC: ~3 min)",
+          "label": "4B) Cap only, deterministic curve"
+        },
+        {
+          "description": "✅ Smallest possible function; nothing to configure. ✅ Matches the plan text exactly. ❌ Unbounded delay growth and no spread; both known production footguns. (human: ~30 min / CC: ~2 min)",
+          "label": "4C) Pure exponential as implied by the plan"
+        }
+      ],
+      "question": "D4 (ledger R7) — Backoff curve bounds: add a max-delay cap and jitter to the custom delay function?\nProject/branch/task: main; retry plan, Architecture section (review-input.md:8), with R1 fixed at library hooks + custom delay function.\nELI10: Pure doubling has two problems. Without a cap, attempt 12 waits over an hour. Without jitter (a small random spread), every job that failed in the same outage retries at the exact same instant and re-creates the spike that broke things. Both are one-line additions to the delay function you already own under 1A.\nStakes if we pick wrong: A downstream blip fails hundreds of jobs at once; they all retry in lockstep and knock it over again, repeatedly.\nRecommendation: 4A because jitter and a cap are the standard shape of this function and cost nothing extra with the library doing the scheduling. Maps to your \"handle more edge cases\" preference.\nCompleteness: 4A=10/10, 4B=7/10, 4C=4/10\nNet: Two named constants and a random factor now versus a thundering-herd incident later."
+    },
+    "selectedOptions": [
+      1
+    ],
+    "judgment": {
+      "toolUseId": "toolu_0141yTgoL9HKUF4Te6vwCFYx",
+      "questionIndex": 1,
+      "kind": "finding",
+      "targetIds": [],
+      "independentDecisions": 2,
+      "evidence": [
+        {
+          "field": "question",
+          "optionIndex": null,
+          "quote": "D4 (ledger R7) — Backoff curve bounds: add a max-delay cap and jitter to the custom delay function?"
+        },
+        {
+          "field": "optionLabel",
+          "optionIndex": 1,
+          "quote": "4A) Cap + jitter, named constants, unit-tested at attempt 0/1/N/cap (recommended)"
+        },
+        {
+          "field": "optionLabel",
+          "optionIndex": 2,
+          "quote": "4B) Cap only, deterministic curve"
+        }
+      ],
+      "reason": "Unseeded substantive remedy on the backoff curve. Selected cap plus jitter; option 4B shows cap without jitter, so cap and jitter are independently variable remedies (2). The unit tests prove the same chosen curve contract and do not add a separate decision.",
+      "optionActions": []
+    }
+  },
+  {
+    "call": "c8",
+    "question": {
+      "header": "R4 DRY",
+      "multiSelect": false,
+      "options": [
+        {
+          "description": "✅ Every approved behavior (R2, R3, R7, R8) is implemented and tested exactly once. ✅ Guards for NaN/negative delay, throwing logger, and missing attempt counter live in one place with tests. ❌ Workers with genuinely different retry needs must express that through parameters, not copies. (human: ~1 day / CC: ~25 min)",
+          "label": "8A) One shared retry-policy module (delay fn, classifier, attempt logger, exhaustion handler); workers register it; single test suite (recommended)"
+        },
+        {
+          "description": "✅ The parts most likely to change (curve, taxonomy) are centralized. ✅ Smaller touch on each worker file. ❌ Attempt logging and exhaustion handling still duplicated five times, so half the drift risk remains. (human: ~half day / CC: ~15 min)",
+          "label": "8B) Shared delay function and classifier only; keep per-worker logging and dispatch"
+        },
+        {
+          "description": "✅ No refactor in this PR; each worker is self-contained to read. ✅ Zero coordination between worker files. ❌ Five copies of the curve, classifier and exhaustion logic, each needing its own tests, each able to drift. (human: ~0 / CC: ~0)",
+          "label": "8C) Leave the five copies as the plan proposes"
+        }
+      ],
+      "question": "D8 (ledger R4) — Retry envelope duplication: one shared retry-policy module now, or leave the five copies?\nProject/branch/task: main; retry plan, Code quality section (review-input.md:11-13). R1, R2, R3, R7, R8 fixed.\nELI10: Five worker files each carry their own pasted copy of the retry logic. Every decision you just made (delay curve, error classifier, exhaustion handling, idempotency key) would have to be pasted five times too, and every future fix applied five times. One shared module that each worker registers with the library's hooks means one implementation and one test suite. The plan says \"refactor later\"; with CC the refactor is minutes, so \"later\" mostly means \"never, plus five bug sites.\"\nStakes if we pick wrong: A fix to the curve or classifier lands in four workers and misses the fifth; the divergence is invisible until that worker misbehaves.\nRecommendation: 8A because it is the DRY call you asked me to flag aggressively, it is the smallest diff that cleanly expresses the change once the library handles scheduling, and the guards in finding 2 get written once. Explicit over clever: a plain module, not a metaprogrammed mixin.\nCompleteness: 8A=10/10, 8B=6/10, 8C=2/10\nNet: One module with one test suite versus five drifting copies that each need the same tests."
+    },
+    "selectedOptions": [
+      1
+    ],
+    "judgment": {
+      "toolUseId": "toolu_01KLMvLfiXzwRDjYEu8SgBEB",
+      "questionIndex": 1,
+      "kind": "finding",
+      "targetIds": [
+        "retry-duplication"
+      ],
+      "independentDecisions": 2,
+      "evidence": [
+        {
+          "field": "question",
+          "optionIndex": null,
+          "quote": "D8 (ledger R4) — Retry envelope duplication: one shared retry-policy module now, or leave the five copies?"
+        },
+        {
+          "field": "optionLabel",
+          "optionIndex": 1,
+          "quote": "8A) One shared retry-policy module (delay fn, classifier, attempt logger, exhaustion handler); workers register it; single test suite (recommended)"
+        },
+        {
+          "field": "optionDescription",
+          "optionIndex": 1,
+          "quote": "Guards for NaN/negative delay, throwing logger, and missing attempt counter live in one place with tests."
+        }
+      ],
+      "reason": "Explicit decision on the retry-duplication target: consolidate the copied retry envelope into one shared module now rather than leaving five copies. The selected option additionally authorizes input/robustness guards (NaN/negative delay, throwing logger, missing attempt counter) with tests, a separate behavioral requirement not present in 8B/8C, so counted as a second independent decision.",
+      "optionActions": []
+    }
+  },
+  {
+    "call": "c15",
+    "question": {
+      "header": "C5 graph",
+      "multiSelect": false,
+      "options": [
+        {
+          "description": "✅ No persisted derived state, so no staleness or invalidation bugs are possible. ✅ One metric gives the real rebuild cost to justify (or kill) caching later. ❌ Per-retry rebuild cost remains until the follow-up, which may matter under heavy retry storms. (human: ~2 hr / CC: ~10 min)",
+          "label": "15B) Revert R5 to measure-first: recompute per attempt, fetch only needed fields, add a graph-rebuild timing metric; revisit caching as a TODO with data (recommended)"
+        },
+        {
+          "description": "✅ Removes the per-retry rebuild while detecting changed inputs, not just changed schema. ✅ Retries run against a graph provably built from the same payload. ❌ More persisted state and two invalidation keys to maintain, for a win nobody has measured. (human: ~1.5 days / CC: ~35 min)",
+          "label": "15A) Keep 10A and add payload-snapshot hash invalidation; test hash mismatch triggers recompute"
+        },
+        {
+          "description": "✅ Decision already made; no rework of the ledger. ✅ Handles the deploy-changes-format case. ❌ Does not detect changed inputs; Codex's inconsistency scenario stays open. (human: ~0 / CC: ~0)",
+          "label": "15C) Keep 10A exactly as approved (schema-version tag only)"
+        }
+      ],
+      "question": "D15 (ledger C5, reopens R5) — Graph caching: keep 10A with stronger invalidation, revert to measure-first, or keep 10A as approved?\nProject/branch/task: main; retry plan, outside-voice row C5. Only R5 is open here; every other row stays fixed.\nELI10: You approved storing the computed dependency graph with the job and invalidating it when the graph format's version changes. Codex raises two points. First, a version tag does not notice if the inputs the graph was built from changed, so the retry could run against a graph that no longer matches its inputs. Second, nobody has measured how expensive the rebuild is, so the cache may be solving a cost that does not exist. Stronger invalidation means also storing a hash of the payload snapshot the graph came from and rebuilding when the hash differs.\nStakes if we pick wrong: Either a retry executes an inconsistent graph (wrong work, hard to debug), or you build and maintain a cache for a rebuild that costs milliseconds.\nRecommendation: 15B because the plan itself gives no rebuild cost, the persisted graph adds a correctness surface Codex is right about, and one timing metric turns this into a data-driven follow-up. Reversibility: 10A can land later in minutes once the number says it matters. Boring by default.\nCompleteness: 15A=10/10, 15B=8/10, 15C=6/10\nNet: Measure first and keep correctness trivially simple versus adding a cache with a payload-hash invalidation scheme before knowing it pays for itself."
+    },
+    "selectedOptions": [
+      1
+    ],
+    "judgment": {
+      "toolUseId": "toolu_01MAZs2cUxXRWui48qzWdFDB",
+      "questionIndex": 1,
+      "kind": "finding",
+      "targetIds": [
+        "dependency-cache"
+      ],
+      "independentDecisions": 2,
+      "evidence": [
+        {
+          "field": "question",
+          "optionIndex": null,
+          "quote": "D15 (ledger C5, reopens R5) — Graph caching: keep 10A with stronger invalidation, revert to measure-first, or keep 10A as approved?"
+        },
+        {
+          "field": "optionLabel",
+          "optionIndex": 1,
+          "quote": "15B) Revert R5 to measure-first: recompute per attempt, fetch only needed fields, add a graph-rebuild timing metric; revisit caching as a TODO with data (recommended)"
+        }
+      ],
+      "reason": "Reopened explicit decision on the dependency-cache target: reverts 10A and decides not to cache the graph now, recomputing per attempt with a rebuild timing metric (measure-first). The selected option also authorizes narrowing the payload fetch to needed fields, which the target notes is a separate payload-fetching policy; it is independently variable, so 2 decisions. Repeated question on the same target still counts.",
+      "optionActions": []
+    }
+  }
+];
+
+test.each(RETAINED_ENG_OPTIONS)('retained Eng $call keeps complete option content and its recorded independence verdict', captured => {
+  const original = clone(captured);
+  const fp = fingerprint(captured.judgment.toolUseId, [clone(captured.question)]);
+  fp.selectedOptions = [...captured.selectedOptions];
+  const targetIds = captured.judgment.targetIds;
+  if (captured.judgment.independentDecisions === 1) {
+    const input: PlanReviewDecisionInput = { plan: 'Decide the retry scheduling mechanism; curve bounds, classification and exhaustion remain pending.',
+      kind: 'findings', targets: targetIds.map(id => clone(ENG_BATCHING_FINDINGS.find(target => target.id === id)!)),
+      fingerprints: [fp], floor: 1, ceiling: 1, deadlineAt: Date.now() + 60_000 };
+    expect(validatePlanReviewDecisionResponse(input, {questions: [clone(captured.judgment)]}).count).toBe(1);
+  } else {
+    const {input, judgment} = fixture();
+    input.fingerprints.push(fp);
+    for (const id of targetIds) input.targets.push(clone(ENG_BATCHING_FINDINGS.find(target => target.id === id)!));
+    judgment.questions.push(clone(captured.judgment));
+    const supplied = suppliedCalls(buildPlanReviewDecisionPrompt(input)).at(-1)!;
+    expect(supplied.questions).toEqual([captured.question]);
+    expect(supplied.selectedOptions).toEqual(captured.selectedOptions);
+    expect(() => validatePlanReviewDecisionResponse(input, judgment)).toThrow('bundled independent decisions');
+  }
+  expect(captured).toEqual(original);
+});

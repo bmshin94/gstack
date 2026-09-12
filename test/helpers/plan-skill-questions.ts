@@ -171,7 +171,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       throw new Error('Native tool changed input, name or cwd for an existing tool ID');
     }
     const bound = { ...(tool.name === 'WebFetch' ? { webFetchPermissionRequestId: null } : {}), ...previous, ...tool, ...(previous?.cwd !== undefined ? { cwd: previous.cwd } : {}) };
-    if (['Write', 'Edit', 'Bash', 'WebFetch'].includes(tool.name)) permissionInputs.set(tool.id, bound);
+    if (['Read', 'Write', 'Edit', 'Bash', 'WebFetch'].includes(tool.name)) permissionInputs.set(tool.id, bound);
     permissionTools.set(tool.id, bound);
   };
   if (events) {
@@ -228,7 +228,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       // denotes one immutable operation, including before stop_reason arrives.
       if (row.type === 'assistant' && message.role === 'assistant' && block?.type === 'tool_use' && typeof block.id === 'string') {
         const previous = observedToolInputs.get(block.id);
-        if (previous && (['Write', 'Edit', 'WebFetch'].includes(previous.name) || ['Write', 'Edit', 'WebFetch'].includes(block.name))
+        if (previous && (['Read', 'Write', 'Edit', 'WebFetch'].includes(previous.name) || ['Read', 'Write', 'Edit', 'WebFetch'].includes(block.name))
           && (previous.name !== block.name || !isDeepStrictEqual(previous.input, block.input ?? {})
             || previous.cwd !== undefined && typeof row.cwd === 'string' && previous.cwd !== row.cwd)) {
           throw new Error('Native file permission changed input, name or cwd for an existing tool ID');
@@ -668,6 +668,38 @@ export function hasCurrentWebFetchPermissionHeading(visible: string): boolean {
   return /^ Fetch(?: |$)/.test(lines[top + 1] ?? '');
 }
 
+export function hasCurrentReadPermissionHeading(visible: string): boolean {
+  const lines = visible.split('\n');
+  const top = lines.findLastIndex(line => /^─{10,} *$/.test(line));
+  return /^ Read file(?: |$)/.test(lines[top + 1] ?? '');
+}
+
+/** Pinned Read card: the directory label corroborates the full file path but
+ * never grants directory access. Only its focused one-time Yes is supported. */
+export function currentReadPermissionCard(visible: string): { filePath: string } | null {
+  const lines = visible.split('\n').map(line => line.replace(/ +$/, ''));
+  while (lines.at(-1) === '') lines.pop();
+  const top = lines.findLastIndex(line => /^─{10,}$/.test(line));
+  if (top < 0 || lines.length !== top + 11 || lines[top + 1] !== ' Read file') return null;
+  const columns = lines[top]!.length;
+  if (columns < 40 || lines.slice(top + 1).some(line => line.length > columns || /[\r\t\x00-\x1f]/.test(line))) return null;
+  let fence = '';
+  for (const line of lines.slice(0, top)) {
+    const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!marker) continue;
+    if (!fence) fence = marker[1]!;
+    else if (marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = '';
+  }
+  if (fence) return null;
+  const filePath = /^  Read\((.+)\)$/.exec(lines[top + 3] ?? '')?.[1];
+  if (!filePath || !path.isAbsolute(filePath) || filePath !== filePath.trim() || /…|\.\.\./.test(filePath)
+    || lines[top + 2] !== '' || lines[top + 4] !== '' || lines[top + 5] !== ' Do you want to proceed?'
+    || lines[top + 6] !== ' ❯ 1. Yes'
+    || lines[top + 7] !== `   2. Yes, allow reading from ${path.dirname(filePath)} during this session`
+    || lines[top + 8] !== '   3. No' || lines[top + 9] !== '' || lines[top + 10] !== ' Esc to cancel · Tab to amend') return null;
+  return { filePath };
+}
+
 /** Complete native Fetch card: one-time Yes, exact domain and unmodified payload. */
 export function currentWebFetchPermissionCard(visible: string): { columns: number; domain: string; payload: string[] } | null {
   const lines = visible.split('\n').map(line => line.replace(/ +$/, ''));
@@ -783,6 +815,14 @@ export function matchesClippedBashPermission(tool: NativePermissionTool, visible
 }
 
 export function nativePermissionKey(tool: NativePermissionTool | NativeFilePermissionRequest, visible: string): string {
+  if (hasCurrentReadPermissionHeading(visible)) {
+    const card = currentReadPermissionCard(visible);
+    if (!card || tool.name !== 'Read' || Object.keys(tool.input).length !== 1
+      || tool.input.file_path !== card.filePath) {
+      throw new Error('Visible permission cannot be bound to its pending native command or file path');
+    }
+    return 'Read:' + card.filePath;
+  }
   if (tool.name === 'WebFetch' || hasCurrentWebFetchPermissionHeading(visible)) {
     const card = currentWebFetchPermissionCard(visible);
     const input = tool.input;

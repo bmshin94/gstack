@@ -26,7 +26,7 @@ import { submitPlanSeed, PlanSeedTimeout } from './plan-seed-submission';
 import { isDeepStrictEqual } from 'node:util';
 import { retainAutoplanFailure } from './autoplan-phase-order';
 import { readPlanSkillCompletion } from './plan-skill-completion';
-import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, currentBashPermissionCard, currentWebFetchPermissionCard, hasCurrentWebFetchPermissionHeading, matchesClippedBashPermission, hasCurrentBashPermissionHeading, type NativePermissionTool, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
+import { readPlanSkillQuestions, nativeQuestionSelection, isNativeQuestionSubmitVisible, reserveNativePermissionGrant, currentFilePermissionTarget, currentBashPermissionCard, currentWebFetchPermissionCard, hasCurrentWebFetchPermissionHeading, currentReadPermissionCard, hasCurrentReadPermissionHeading, matchesClippedBashPermission, hasCurrentBashPermissionHeading, type NativePermissionTool, type NativeQuestion, type NativePermissionGrant, type NativeFilePermissionRequest } from './plan-skill-questions';
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -345,7 +345,9 @@ export const TAIL_SCAN_BYTES = 1500;
  * `allow all edits`, `always allow access to`, `Bash command requires permission`)
  * remain unconditional.
  */
-export function isPermissionDialogVisible(visible: string): boolean {
+// Modern Read is opt-in: callers must bind native ownership before replying.
+export function isPermissionDialogVisible(visible: string, includeBoundRead = false): boolean {
+  if (includeBoundRead && hasCurrentReadPermissionHeading(visible)) return currentReadPermissionCard(visible) !== null;
   if (hasCurrentWebFetchPermissionHeading(visible)) return currentWebFetchPermissionCard(visible) !== null;
   if (hasCurrentBashPermissionHeading(visible)) return currentBashPermissionCard(visible) !== null;
   if (currentFilePermissionTarget(visible)) return true;
@@ -2528,8 +2530,8 @@ export async function runPlanSkillCounting(opts: {
       const permissionVisible = frame ? questionVisible : questionVisible.slice(-TAIL_SCAN_BYTES);
       // Diagnostic evaluation only; the permission guard below is unchanged.
       lastObservation.permissionMenu = { numbered: isNumberedOptionListVisible(questionVisible),
-        permissionTail: isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES)),
-        permissionWindow: isPermissionDialogVisible(permissionVisible) };
+        permissionTail: isPermissionDialogVisible(questionVisible.slice(-TAIL_SCAN_BYTES), true),
+        permissionWindow: isPermissionDialogVisible(permissionVisible, true) };
       // Only an exact owned command suffix with current native controls may
       // request a repaint. It never supplies grant authority; the complete
       // fresh card must still pass the normal command/description binding.
@@ -2576,7 +2578,7 @@ export async function runPlanSkillCounting(opts: {
         && native.permissionTools[0]!.name === 'WebFetch' && currentWebFetchPermissionCard(permissionVisible) !== null;
       // Consume the rendered window before writing, so old permission text
       // cannot send again. Other permissions retain the no-pending-AUQ rule.
-      if ((!call || currentFileRequest || currentBashRequest || currentFetchRequest) && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible)) {
+      if ((!call || currentFileRequest || currentBashRequest || currentFetchRequest) && isNumberedOptionListVisible(questionVisible) && isPermissionDialogVisible(permissionVisible, true)) {
         lastLoopStage = 'permission-grant';
         if (expired()) break;
         if (!reserveNativePermissionGrant(native, permissionVisible, grantedTools, grantedRequests)) continue;
@@ -2585,9 +2587,9 @@ export async function runPlanSkillCounting(opts: {
         continue;
       }
 
-      // A sent Bash/Fetch grant is not its execution result. Even if the queued
+      // A sent Read/Bash/Fetch grant is not its execution result. Even if the queued
       // question paints first, require the matching native result before it.
-      if (native.permissionTools.some(tool => ['Bash', 'WebFetch'].includes(tool.name) && grantedTools.has(tool.id))) {
+      if (native.permissionTools.some(tool => ['Read', 'Bash', 'WebFetch'].includes(tool.name) && grantedTools.has(tool.id))) {
         lastLoopStage = 'awaiting-permission-result';
         continue;
       }

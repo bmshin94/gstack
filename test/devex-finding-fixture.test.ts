@@ -46,6 +46,16 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       expect(allContent).toContain('Record observed human onboarding separately from automated execution');
       expect(allContent).toContain('a warm snippet timer is neither a fresh-start check nor a human benchmark');
       expect(allContent).toContain('Keep estimates labeled until measured');
+      const benchmark = content.slice(content.indexOf('### 0C. Competitive DX Benchmarking'),
+        content.indexOf('### 0D. Magical Moment Design'));
+      expect(benchmark.indexOf('Define the clock before comparing')).toBeGreaterThanOrEqual(0);
+      expect(benchmark.indexOf('Define the clock before comparing')).toBeLessThan(benchmark.indexOf('AskUserQuestion:'));
+      expect(benchmark).toContain('Compare times only across equivalent boundaries');
+      expect(benchmark).toContain('Never infer no wait from a peer');
+      expect(benchmark).toContain('Start → result');
+      expect(benchmark).toContain('Carry the approved clock and target into 0D, Pass 1, Pass 8 and the report');
+      expect(allContent).toContain('Measure the approved 0C clock and 0D useful result');
+      expect(allContent).not.toContain('**STOP.** AskUserQuestion once per issue.');
       expect(allContent).toContain('A target tier does not itself approve telemetry, an automated');
       expect(allContent).toContain('only when proposing them, with ownership and frequency explicit');
       expect(allContent).toContain('Continue the same working list from Step 0');

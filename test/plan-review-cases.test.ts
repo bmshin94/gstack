@@ -81,17 +81,21 @@ describe('plan report persistence precedes completion logging', () => {
 });
 
 test('Eng independent-remedy rule is loaded before Step 0 and retains outside-voice consent', () => {
-  const definition = 'Ask separately about each independently selectable remedy';
+  const definition = 'ask separately about each pending independent remedy';
   for (const suffix of ['.tmpl', '']) {
     const skeleton = readFileSync(`plan-eng-review/SKILL.md${suffix}`, 'utf8');
     const sections = readFileSync(`plan-eng-review/sections/review-sections.md${suffix}`, 'utf8');
+    const reviewBoundary = skeleton.indexOf('Do not build features, acceptance suites or benchmarks unless explicitly authorized by the user');
+    expect(reviewBoundary).toBeGreaterThan(skeleton.indexOf('# Plan Review Mode'));
+    expect(reviewBoundary).toBeLessThan(skeleton.indexOf('## Scope gate'));
+    expect(skeleton.slice(reviewBoundary, skeleton.indexOf('## Scope gate'))).toContain('Use existing tests, examples or bounded probes of current behavior for evidence');
     const rule = skeleton.indexOf(definition);
     expect(rule).toBeGreaterThan(0);
     expect(rule).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
-    expect(skeleton.slice(rule, rule + 350).replace(/\s+/g, ' ')).toContain('Keep implementation details and tests directly establishing one chosen contract together');
+    expect(skeleton.slice(rule, rule + 350).replace(/\s+/g, ' ')).toContain("Keep one chosen contract's implementation and tests together");
     expect((skeleton + sections).split(definition)).toHaveLength(2);
-    expect(skeleton).toContain('For new or reopened decisions, explain tradeoffs');
-    expect(skeleton).toContain('Ask separately about each independently selectable remedy still pending');
+    expect(skeleton).toContain('Explain tradeoffs, recommend, and ask separately about each pending independent remedy, including outside findings');
+    expect(skeleton).toContain('Scope reduction does not approve independent remedies');
     expect(skeleton).not.toContain('For every issue or recommendation');
     const scope = skeleton.slice(skeleton.indexOf('### Step 0: Scope Challenge'), skeleton.indexOf('**STOP.** Before user/prior approval'));
     expect(scope).toContain('8+ files or 2+ new classes/services');
@@ -116,7 +120,7 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(boundary).toContain('For each, record exactly what was approved and what is still undecided');
     expect(boundary).toContain('In every offered option, keep all other approved choices fixed and all unresolved choices undecided');
     expect(boundary).toContain('Keep a chosen behavior and the code, tests and docs needed to establish it together');
-    expect(boundary).toContain('Score completeness only within this one decision');
+    expect(sections).toContain('Score completeness only within this one decision');
     expect(boundary).toContain('Preserve established contracts; ask separately before changing one');
     expect(boundary).toContain('Never make an option smaller by dropping settled behavior');
     expect(boundary).toContain('For that approved behavior, add its required implementation work, tests and docs to the plan without asking again, even after the Tests section');
@@ -172,6 +176,20 @@ describe('Eng approved-work decision gate', () => {
       'Outside voice findings are INFORMATIONAL until the user explicitly approves each one']) {
       expect(template).not.toContain(stale);
     }
+  });
+
+  test('every option is recorded against one decision before asking or scoring coverage', () => {
+    const compare = gate.indexOf('**4. Compare options for one row.**');
+    const record = gate.indexOf("Record each option's changed values, preserved approvals and still-pending choices in the same ledger");
+    const save = gate.indexOf('Save or present the corrected rows and option comparisons before AskUserQuestion');
+    const ask = gate.indexOf('**5. Ask and record the answer.**');
+    expect(0 <= compare && compare < record && record < save && save < ask).toBe(true);
+    expect(gate.slice(0, compare)).toContain('| Option comparisons |');
+    expect(gate.slice(record, save)).toContain('`label: changes; preserves; pending`');
+    const format = template.split('## CRITICAL RULE — How to ask questions')[1]!.split('## Required outputs')[0]!;
+    expect(format).toContain('After the decision gate validates the options');
+    expect(format).toContain('one recorded decision');
+    expect(format).not.toContain('per-issue AskUserQuestion');
   });
 
   test('exact prior answers authorize follow-through while new risk and optional depth stay pending', () => {

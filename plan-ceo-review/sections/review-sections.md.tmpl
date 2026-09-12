@@ -10,17 +10,19 @@
 
 Continue the ledger from input reading and Step 0 in the plan: issue ID, owner section, evidence, exact accepted choice and scope, decision reference, and status (unresolved, approved, or reopened). Retain declared unchanged contracts, declared conventions and existing test coverage, and actual earlier decisions. Keep proposed findings separate from accepted amendments. Selecting an approach is not blanket approval of every implementation choice: carry its explicit commitments forward, then resolve the remaining tradeoffs.
 
-Each decision row names one changed commitment: current value, proposed value, and other commitments fixed or pending. An issue or helper name is only a reference. For example, parameterizing a user lookup and batching a per-order loop remain separate decisions even when one reusable helper can implement both.
+Use the decision units from Step 0C-bis: requested deliverables and exact approvals define the boundaries, not an issue, method or helper name. Each row records one commitment's current and proposed value, with other commitments fixed or pending. For example, parameterizing a user lookup and batching a per-order loop remain separate decisions even when one helper can implement both.
 
-**Analyze.** Evaluate the current section against the amended plan and ledger. Carry forward declared contracts and concerns already judged mitigated, with their evidence. A later subsection's silence does not invalidate a stated contract. Reopen one only with concrete new evidence or a changed assumption; identify the contradiction or failure mechanism. Keep the risk and required verification visible even after its planning decision is approved.
+**Analyze.** Reconcile each finding with the original input, inspected source and actual approvals before drafting options. Correct source-disproven draft claims and their dependent test/runbook text first; the draft supplies no authority to change baseline behavior. If a correction conflicts with an accepted requirement, surface that conflict. Preserve unsupported premises as unknown, including external dependencies whose implementation is unavailable; neither failure nor safety is established by that absence.
 
-**Resolve.** Give the same underlying issue one complete choice in its natural owner section. For example, a missing test plan and its contradictory reliance on existing tests belong together in Test Review; earlier sections can cross-reference that pending issue. Do not defer a newly discovered critical risk to reach its owner section: resolve it now and carry the decision forward. Topic names alone never establish equivalence: compare the specific failure, proposed action, and accepted scope. Distinct choices remain separate: email recovery does not settle request instrumentation; correcting test wording does not choose test depth. A materially different remedy, scope, or risk needs its own explicit decision, even on the same topic. State what changed and cite the earlier decision when reopening. An obvious recommendation is still a decision when it has not been accepted.
+Carry forward declared contracts and mitigated concerns with evidence. A later subsection's silence does not invalidate them. Reopen only with concrete new evidence or a changed assumption: cite the earlier decision and what changed. Reviewer agreement or a premise introduced by your own draft is not new evidence. Keep unknown risks, their owners and required verification visible; approval does not verify them.
 
-Before presenting options, try accepting one proposed change while rejecting another. If that combination is viable, split the decisions. Apply this test to every offered option, not just the recommendation. An option with an independent add-on bundles another decision, even if it is not selected. Keep the add-on pending outside this menu and decide it separately if warranted; do not invent one to fill a third option. Reusing a component does not approve independent behavior choices it offers; name those choices and leave them pending. Put only this decision's commitments in its options. Existing machinery is evidence for a recommendation, not consent to additional fixes. Trace each later plan amendment to the exact choice actually presented and accepted.
+**Resolve.** Resolve each decision unit in its natural owner section; earlier sections cross-reference the pending row. Do not defer a newly discovered critical risk to reach its owner section: resolve it now and carry the decision forward. Topic names alone never establish equivalence. A materially different remedy, scope, or risk needs its own explicit decision. Correcting test wording does not choose test depth; email recovery does not settle request instrumentation. An obvious recommendation still needs approval if not already accepted.
+
+Check every offered option against its unit. Independently proposed commitments require separate rows when one can be adopted while another stays unchanged, including an unselected partial-package option. Do not invent independent add-ons to fill a third option. One overall verification-depth choice for an accepted delivery may span its cases without changing its policies; necessary code and regression proof stay together. Verification of pending policy remains conditional or waits for its own answer. Reuse is evidence, not consent to other changes. Trace each amendment to its exact accepted option.
 
 **Apply.** Use this plan-write procedure before advancing to the next section. If no plan file exists, first create it from the provided input and explicitly accepted Step 0 decisions.
 1. If the current section has an unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**. Before the answer, you may record only the pending issue, evidence, and alternatives in the ledger. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
-2. After the actual answer, check each new or changed commitment in the proposed amendment against the selected option or an explicit earlier approval. Details found only in pending proposals or surrounding analysis remain pending. Preserve unsupported premises as unknown: choosing a remedy does not verify its factual premise. Carry unchanged contracts through the amendment's success and failure paths. Correct source-disproven draft assertions and their dependent test/runbook text before treating them as requirements; the draft itself supplies no authority to change baseline behavior. If a correction conflicts with an explicit accepted requirement, present that conflict; keep independent remedies and additional verification depth pending. Then use a scoped Edit to record the choice and its authorized amendments, including explicit deferrals. Preserve existing content and approvals, including direct implementation and verification of the accepted behavior; carrying a constraint forward does not claim a later section has been reviewed.
+2. After the actual answer, check each new or changed commitment in the proposed amendment against the selected option or an explicit earlier approval. Details found only in pending proposals or surrounding analysis remain pending. Preserve unsupported premises as unknown: choosing a remedy does not verify its factual premise. Carry unchanged contracts through the amendment's success and failure paths. Keep independent remedies and additional verification depth pending. Then use a scoped Edit to record the choice and its authorized amendments, including explicit deferrals. Preserve existing content and approvals, including direct implementation and verification of the accepted behavior; carrying a constraint forward does not claim a later section has been reviewed.
 3. Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Assemble the required outputs and terminal report after all 11 sections have been evaluated.
 
 Approval settles the planning choice; it does not prove the mitigation is implemented or verified. In later sections, cross-reference an exact settled decision instead of asking it again. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
@@ -50,7 +52,7 @@ Evaluate and diagram:
 **SELECTIVE EXPANSION:** If any accepted cherry-picks from Step 0D affect the architecture, evaluate their architectural fit here. Flag any that create coupling concerns or don't integrate cleanly — this is a chance to revisit the decision with new information.
 
 Required ASCII diagram: full system architecture showing new components and their relationships to existing ones.
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 2: Error & Rescue Map
@@ -80,7 +82,7 @@ Rules for this section:
 * Every rescued error must either: retry with backoff, degrade gracefully with a user-visible message, or re-raise with added context. "Swallow and continue" is almost never acceptable.
 * For each GAP (unrescued error that should be rescued): specify the rescue action and what the user should see.
 * For LLM/AI service calls specifically: what happens when the response is malformed? When it's empty? When it hallucinates invalid JSON? When the model returns a refusal? Each of these is a distinct failure mode.
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 3: Security & Threat Model
@@ -96,7 +98,7 @@ Evaluate:
 * Audit logging. For sensitive operations: is there an audit trail?
 
 For each finding: threat, likelihood (High/Med/Low), impact (High/Med/Low), and whether the plan mitigates it.
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 4: Data Flow & Interaction Edge Cases
@@ -133,7 +135,7 @@ For each node: what happens on each shadow path? Is it tested?
                        | Queue backs up 2 hours | ?        |
 ```
 Flag any unhandled edge case as a gap. For each gap, specify the fix.
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 5: Code Quality Review
@@ -146,7 +148,7 @@ Evaluate:
 * Over-engineering check. Any new abstraction solving a problem that doesn't exist yet?
 * Under-engineering check. Anything fragile, assuming happy path only, or missing obvious defensive checks?
 * Cyclomatic complexity. Flag any new method that branches more than 5 times. Propose a refactor.
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 6: Test Review
@@ -189,7 +191,7 @@ Flakiness risk: Flag any test depending on time, randomness, external services, 
 Load/stress test requirements: For any new codepath called frequently or processing significant data.
 
 For LLM/prompt changes: Check CLAUDE.md for the "Prompt/LLM changes" file patterns. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against.
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 7: Performance Review
@@ -201,7 +203,7 @@ Evaluate:
 * Background job sizing. For every new job: worst-case payload, runtime, retry behavior?
 * Slow paths. Top 3 slowest new codepaths and estimated p99 latency.
 * Connection pool pressure. New DB connections, Redis connections, HTTP connections?
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 8: Observability & Debuggability Review
@@ -218,7 +220,7 @@ Evaluate:
 
 **EXPANSION and SELECTIVE EXPANSION addition:**
 * What observability would make this feature a joy to operate? (For SELECTIVE EXPANSION, include observability for any accepted cherry-picks.)
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 9: Deployment & Rollout Review
@@ -234,7 +236,7 @@ Evaluate:
 
 **EXPANSION and SELECTIVE EXPANSION addition:**
 * What deploy infrastructure would make shipping this feature routine? (For SELECTIVE EXPANSION, assess whether accepted cherry-picks change the deployment risk profile.)
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 10: Long-Term Trajectory Review
@@ -250,7 +252,7 @@ Evaluate:
 * What comes after this ships? Phase 2? Phase 3? Does the architecture support that trajectory?
 * Platform potential. Does this create capabilities other features can leverage?
 * (SELECTIVE EXPANSION only) Retrospective: Were the right cherry-picks accepted? Did any rejected expansions turn out to be load-bearing for the accepted ones?
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
 
 ### Section 11: Design & UX Review (skip if no UI scope detected)
@@ -273,27 +275,27 @@ Evaluate:
 Required ASCII diagram: user flow showing screens/states and transitions.
 
 If this plan has significant UI scope, recommend: "Consider running /plan-design-review for a deep design review of this plan before implementation."
-**Decision gate.** For each unresolved or reopened decision in this section, one issue = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
+**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
 **Reminder: Do NOT make any code changes. Review only.**
-
-{{CODEX_PLAN_REVIEW}}
 
 ### Outside Voice Integration Rule
 
-Outside-voice findings use the same working decision ledger. Cross-reference evidence
-for an exact settled decision; agreement alone does not settle an unresolved choice.
-New or reopened decisions still require explicit approval. Do NOT incorporate those
-outside voice recommendations into the plan without presenting each decision via
-AskUserQuestion and getting explicit approval. This applies even when you
-agree with the outside voice. Cross-model consensus is a strong signal — present it as
-such — but the user makes the decision.
+Outside-voice findings use the same working decision ledger. Before admitting a
+finding to the decision queue, apply Analyze above against original evidence and
+actual approvals. Correct draft-created assurances first; preserve unresolved
+risks and dependencies. Agreement is not new evidence or approval. A newly
+supported material risk can reopen an earlier choice; cite that choice and the
+new evidence. New or reopened decisions still require explicit approval through
+AskUserQuestion before their recommendations become plan amendments.
+
+{{CODEX_PLAN_REVIEW}}
 
 ## Post-Implementation Design Audit (if UI scope detected)
 After implementation, run `/design-review` on the live site to catch visual issues that can only be evaluated with rendered output.
 
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
-* **One issue = one AskUserQuestion call.** Never combine multiple issues into one question.
+* **One decision unit = one AskUserQuestion call.** Use Step 0C-bis boundaries, not topic labels.
 * Describe the problem concretely, with file and line references.
 * Present 2-3 options, including "do nothing" where reasonable.
 * For each option: effort, risk, and maintenance burden in one line.

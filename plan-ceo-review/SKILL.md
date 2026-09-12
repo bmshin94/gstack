@@ -900,31 +900,33 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Alternatives (MANDATORY)
 
-Present the 0A–0C findings to the user. Presenting findings does not approve changes.
+Present the 0A–0C findings without implying approval.
 
-**1. Reuse existing approvals.**
-Retain applicable instructions and earlier answers with their exact scope. Do not re-ask settled choices. Do not broaden the recorded approval.
+**1. Establish authority.**
+Current contracts come from original input, inspected source and actual approvals, never your draft. Correct source-disproven draft claims before options; surface conflicts with approvals. Retain unknowns; reuse exact approvals without broadening or re-asking.
 
-**2. Record the affected contracts.**
-Record current and proposed values and verification method and depth for each affected behavior or bound. Stay at the requested review depth, retain unknowns, and leave other changes fixed or pending.
+**2. Define decision units.**
+Derive units from requested deliverables and exact approvals, not topics or methods. Independently proposed commitments stay separate if one can be accepted while another stays unchanged. Mixed adoption exposes separability; sharing a helper or test suite does not remove it.
 
-Before drafting A/B/C, try accepting one change while rejecting another. If possible, split the rows. Shared files, steps, helpers or test suites do not join independent decisions. Keep code and tests for one behavior together. Combine only changes that must stand together; explain why and state their exact scope.
+One accepted delivery can have one verification-depth choice across its cases, with policies fixed. Keep necessary code and regression proof together. Verification of a pending policy stays conditional or waits for that policy's answer.
 
-When edits are authorized, Write/Edit the provisional rows to the requested output, reviewed plan, or host active plan, in that order. Create the plan from supplied input if absent. Keep proposals pending; do not prewrite section conclusions. If writing fails, report it and stop before asking. When user constraints prohibit edits, present the table instead.
+Before drafting A/B/C, record current and proposed values, verification method and depth, and other commitments fixed or pending. Stay at the requested review depth. Combine only inseparable changes; explain why.
+
+When authorized, Write/Edit pending rows to the requested output, reviewed plan or host active plan, in that order; create from supplied input if absent. Do not prewrite conclusions. If writing fails, report it and stop before asking. If edits are forbidden, present the table.
 
 **3. Compare options for one recorded row.**
-Compare 2-3 approaches; prefer 3 for non-trivial plans and justify offering only one.
-- Name each option; give a 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reused code or patterns, and how it verifies this behavior and with what coverage.
-- For implementation, weigh "minimal viable" (fewest files/smallest diff) and "ideal architecture" (best long-term trajectory) equally; a rewrite may be better.
+Compare 2-3 approaches (prefer 3 for non-trivial plans); justify a lone option.
+- Give a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reuse and verification coverage.
+- Weigh "minimal viable" (smallest diff) and "ideal architecture" (long-term fit) equally; a rewrite may be better.
 
-Check every option for separability. Preserve accepted requirements, unchanged contracts, and approved behavior, tests and fixes.
+Check every option against the unit; split independent add-ons. Preserve accepted requirements, contracts, behavior, tests and fixes.
 
 **4. Ask and record the answer.**
-Apply the preamble's AskUserQuestion format. Score only differing coverage of this row; 10 includes all in-scope edge cases. Use the kind note for options that differ in kind.
+Use the preamble's AskUserQuestion format. Score only differing coverage of this row; 10 includes all its edge cases. Use the kind note for differences in kind.
 
-**STOP:** Before 0F, get user approval for each new or reopened choice, even if only one option is viable. A recommendation is not approval. Ask about one recorded row per call and cite its ID; record its exact answer and approved scope before the next row. Do not edit code.
+**STOP:** Before 0F, get user approval for each new or reopened choice, even a lone option. Recommendations are not approval. Ask one row per call, cite its ID, then record the exact answer and scope before the next row. Do not edit code.
 
-Before each later AskUserQuestion, repeat this process for unresolved choices, even obvious fixes. Follow the preamble's preference/session rules. Report settled findings. Say "No issues, moving on." only when no findings remain.
+Repeat this process before later questions, even for obvious fixes. Honor preamble preference/session rules. Report settled findings; say "No issues, moving on." only when none remain.
 
 ### 0F. Mode Selection
 The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport, not permission to choose.
@@ -1114,7 +1116,7 @@ For scope prioritization, resolve scope and feasibility blockers now. Keep other
 ```
 These are human-team hours: with CC + gstack, 6 hours becomes ~30-60 minutes (10-20x faster), with identical decisions. Always present both effort scales.
 
-Ask urgent decisions separately, one issue per AskUserQuestion; never defer critical risks. Carry each Step 0 answer's exact choice/scope in the ledger across sections. Re-ask only for new material tradeoffs or changed assumptions; get approval before changing the choice.
+Ask urgent decisions separately, one commitment per call; never defer critical risks. Carry each Step 0 answer's exact choice/scope in the ledger across sections. Re-ask only for new material tradeoffs or changed assumptions; get approval before changing the choice.
 
 > **STOP.** Before running the 11-section deep review, required outputs, and review report (only after Step 0 scope and mode are agreed), Read `~/.claude/skills/gstack/plan-ceo-review/sections/review-sections.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.

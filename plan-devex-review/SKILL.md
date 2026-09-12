@@ -570,6 +570,7 @@ Keep one list for every phase, including Step 0 and outside voice:
 source/evidence | current value | proposed value | exact approval + scope | other values fixed/pending.
 
 1. **Ground the evidence.** Distinguish observed output, docs and predictions.
+   Check predictions against source examples before options.
    Quote runtime text only from captured output or implementation. Retain unknowns and required verification.
 2. **Classify the finding.** Carry exact approvals and factual corrections forward.
    New choices need approval; reopen only for concrete contradiction or changed assumptions.
@@ -881,53 +882,49 @@ it and feel what the developer feels.
 
 ### 0C. Competitive DX Benchmarking
 
-Before scoring anything, understand how comparable tools handle DX. Research through
-Aside (Web research runs in Aside, above) to find real TTHW data and onboarding approaches.
+Define the clock before comparing: persona, documented start, first understood
+useful result, including reading, setup and first-run state. Label unknowns.
+Record observed human onboarding separately from automated execution
+time; a warm snippet timer is neither a fresh-start check nor a human benchmark.
+Keep estimates labeled until measured. Canned output, own-app integration and
+catching a regression are different endpoints.
 
-Run three searches, one read-only request each:
+Run three read-only searches through Aside (Web research above):
 1. "[product category] getting started developer experience {current year}"
 2. "[closest competitor] developer onboarding time"
 3. "[product category] SDK CLI developer experience best practices {current year}"
 
 ```bash
 _EG="$HOME/.claude/skills/gstack/bin/gstack-egress-lib.sh"; [ -r "$_EG" ] && . "$_EG"; _aside_exec() { if command -v _gstack_egress_run >/dev/null 2>&1; then _gstack_egress_run open aside-agent aside.com aside-exec "user invoked this skill" --no-payload aside exec "$@"; else aside exec "$@"; fi; }
-_aside_exec "Search the web for [closest competitor] developer onboarding time and time to hello world. Read-only: do not sign in, submit, or change anything. Reply with up to 6 bullets, each with the stated setup time and its source URL, then stop."
+_aside_exec "Search for [closest competitor] onboarding time. Read-only: no sign-in or submissions. Return up to 6 bullets: time, start/end, measured or estimated, source URL. Label unknowns."
 ```
 
-If the Aside check did not print `READY`, run the same searches with the WebSearch tool when the host provides it. With neither: "Search unavailable. Using reference benchmarks: Stripe
-(30s TTHW), Vercel (2min), Firebase (3min), Docker (5min)."
+If Aside did not print `READY`, use WebSearch when available; otherwise disclose
+unavailable research. Illustrations are not measurements.
 
-Produce a competitive benchmark table:
+Include peers and YOUR PRODUCT from inspected docs/plan:
 
-```
-COMPETITIVE DX BENCHMARK
-=========================
-Tool              | TTHW      | Notable DX Choice          | Source
-[competitor 1]    | [time]    | [what they do well]        | [url/source]
-[competitor 2]    | [time]    | [what they do well]        | [url/source]
-[competitor 3]    | [time]    | [what they do well]        | [url/source]
-YOUR PRODUCT      | [est]     | [from README/plan]         | current plan
-```
+| Tool | Start → result | Time + evidence type | DX choice | Source |
+|------|----------------|----------------------|-----------|--------|
+| [name] | [boundaries/unknown] | [observed/reported/estimated] | [choice] | [URL/source] |
 
-Assess feasibility within the accepted scope. Choose only a target tier here:
-name its blockers, but leave each independent remedy pending for its own decision.
-Do not imply that choosing a target approves new capabilities or a gate removal.
+Compare times only across equivalent boundaries; otherwise disclose the limitation
+and compare DX choices. Never infer no wait from a peer's silence.
+Choosing a target leaves independent remedies pending.
 
 AskUserQuestion:
 
-> "Your closest competitors' TTHW:
-> [benchmark table]
->
-> Your plan's current TTHW estimate: [X] minutes ([Y] steps).
->
-> Where do you want to land?
->
-> A) Champion tier (< 2 min) -- [feasibility and unresolved blockers]
-> B) Competitive tier (2-5 min) -- [feasibility and unresolved blockers]
-> C) Current trajectory ([X] min) -- acceptable for now, improve later
-> D) Tell me what's realistic for our constraints"
+> "For [persona], [start] to [useful result] takes [X] minutes estimated
+> ([Y] steps). [Comparable peer evidence and limitations.]
+> Which target fits this journey? Include feasibility and blockers for each:
+> A) Champion (< 2 min)
+> B) Competitive (2-5 min)
+> C) Current trajectory ([X] min)
+> D) Tell me what's realistic"
 
-**STOP.** The chosen tier becomes the benchmark for Pass 1 (Getting Started).
+**STOP.** Carry the approved clock and target into 0D, Pass 1, Pass 8 and the report.
+The vehicle must reach that result, not a quicker endpoint.
+New targets or journey extensions require their own decisions.
 
 ### 0D. Magical Moment Design
 

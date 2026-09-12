@@ -3992,7 +3992,7 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
   test('0C-bis authority and fresh-approval paths precede mode selection', () => {
     const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
     const approachIdx = content.indexOf('### 0C-bis.');
-    const presentIdx = content.indexOf("Apply the preamble's AskUserQuestion format", approachIdx);
+    const presentIdx = content.indexOf("Use the preamble's AskUserQuestion format", approachIdx);
     const stopIdx = content.indexOf('**STOP:**', presentIdx);
     const modeIdx = content.indexOf('### 0F. Mode Selection');
     const preludeIdx = content.indexOf('### 0D-prelude');
@@ -4000,16 +4000,16 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions.every(position => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
-    expect(approach).toContain('Retain applicable instructions and earlier answers with their exact scope');
-    expect(approach).toContain('Do not re-ask settled choices');
+    expect(approach).toContain('actual approvals, never your draft');
+    expect(approach).toContain('reuse exact approvals without broadening or re-asking');
     expect(content).toContain('cite the instruction or answer authorizing each resolved choice');
     const reopenRule = 'Reopen only for a concrete contradiction or changed assumption';
     expect(content).toContain(reopenRule);
     expect(content.indexOf(reopenRule)).toBeLessThan(approachIdx);
     const gate = content.slice(stopIdx, modeIdx);
-    expect(gate).toContain('Before 0F, get user approval for each new or reopened choice, even if only one option is viable');
-    expect(gate).toContain('A recommendation is not approval');
-    expect(gate).toContain('Ask about one recorded row per call and cite its ID; record its exact answer and approved scope before the next row');
+    expect(gate).toContain('Before 0F, get user approval for each new or reopened choice, even a lone option');
+    expect(gate).toContain('Recommendations are not approval');
+    expect(gate).toContain('Ask one row per call, cite its ID, then record the exact answer and scope before the next row');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
   });
 });
