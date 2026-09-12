@@ -291,8 +291,8 @@ describe('outside-voice commitment queue', () => {
         const queue = generated.slice(start, end);
         // Each review reuses its own gate; DX retains the generic queue.
         if (skillName === 'plan-ceo-review') {
-          const order = ['**1. Establish authority.**', '**2. Record the decision.**',
-            "**3. Compare one row's options.**", '**4. Ask and record the answer.**']
+          const order = ['**1. Check sources and prior answers.**', '**2. Record the pending choice.**',
+            "**3. Compare and save that row's options.**", '**4. Ask, record the answer, and amend.**']
             .map(stage => queue.indexOf(stage));
           expect(order.every(position => position >= 0)).toBe(true);
           expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -302,8 +302,8 @@ describe('outside-voice commitment queue', () => {
           expect(queue).toContain('Correct false premises in the draft and its evidence without changing accepted behavior');
           expect(queue).toContain('Keep factual uncertainty explicit, with its owner and required verification');
           expect(queue).toContain('A credible material risk can require action before its occurrence is confirmed');
-          expect(queue).toContain("Apply 0C-bis's decision-unit and approval rules");
-          expect(queue).toContain('distinction between required proof and new verification deliverables');
+          expect(queue).toContain("Apply 0C-bis's separation and approval rules");
+          expect(queue).toContain('distinction between required proof and new test additions');
           expect(queue).toContain('Hold every other commitment fixed or pending in every option; split independently selectable changes');
           expect(queue).toContain("A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only");
           expect(queue).toContain('does not defer its candidate or authorize a new schedule gate');
@@ -314,8 +314,12 @@ describe('outside-voice commitment queue', () => {
           expect(queue).toContain("A conflict returns to the affected candidate's Include/Defer/Cut/Hold row");
           expect(queue).toContain('retain prior answers, report unresolved conflicts and recheck before confirming the set');
           expect(queue).toContain('Never silently trim or replace another candidate');
-          expect(queue).toContain('one row per call, its actual answer and exact accepted scope');
-          expect(queue).toContain('then a scoped Edit for only those amendments before the next row');
+          expect(queue).toContain('one row per call, record its actual answer and scope');
+          expect(queue).toContain('then amend only that approved scope');
+          expect(queue).toContain('Follow 0C-bis Step 4');
+          expect(queue).toContain('Update the saved rows and comparisons under 0C-bis Step 3 before asking');
+          const skeleton = readFileSync('plan-ceo-review/SKILL.md.tmpl', 'utf8');
+          expect(skeleton).toContain('apply only approved amendments to the working plan before the next row');
           expect(queue).toContain('Keep preserves the current disposition; investigation and deferral do not authorize implementation');
           expect(queue).toContain('preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate');
           expect(queue).toContain('One answer does not resolve other pending rows');

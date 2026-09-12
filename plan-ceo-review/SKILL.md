@@ -864,7 +864,7 @@ sections. Read a section in full before doing its step; do not work from memory.
 
 ## Step 0: Nuclear Scope Challenge + Mode Selection
 
-Section labels are stable references; follow this execution order:
+Follow this order (section labels are stable references):
 
 | Order | Phase | Sections |
 |---|---|---|
@@ -878,18 +878,18 @@ Keep a decision ledger from input reading onward:
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
 
-Record conventions, existing test coverage and code risks with evidence. Mark rows unresolved, approved, reopened, deferred or declined. Cite the instruction or answer for each resolved row. Keep the ledger through the Spec Review Loop and later Outside Voice. Reopen only for a concrete contradiction or changed assumption, never speculation or reviewer agreement.
+Record conventions, test coverage and code risks with evidence. Status is unresolved, approved, reopened, deferred or declined. Cite each resolved row's instruction or answer. Keep this ledger through Spec Review Loop and Outside Voice. Reopen only for a concrete contradiction or changed assumption, never speculation or reviewer agreement.
 
 ### 0A. Premise Challenge
-1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
-2. What is the actual user/business outcome? Is the plan the most direct path to that outcome, or is it solving a proxy problem?
-3. What would happen if we did nothing? Real pain point or hypothetical one?
+1. Is this the right problem? Would another framing be simpler or more impactful?
+2. What is the user/business outcome? Does this plan reach it directly or solve a proxy problem?
+3. What happens if we do nothing? Is the pain real or hypothetical?
 
 ### 0B. Existing Code Leverage
 1. What existing code already partially or fully solves each sub-problem? Map every sub-problem to existing code. Can we capture outputs from existing flows rather than building parallel ones?
 2. Is this plan rebuilding anything that already exists? If yes, explain why rebuilding is better than refactoring.
 
-Preserve what each limit measures and any prerequisites it depends on. A limit of two deliverables stays two deliverables even if reuse halves the work. Change a limit only with evidence and user approval; faster completion alone does not authorize more scope.
+Keep what each limit measures, its unit and prerequisites. A two-deliverable limit stays two deliverables even if reuse halves the work. Changing that limit needs evidence and user approval.
 
 ### 0C. Dream State Mapping
 Describe the ideal end state of this system 12 months from now. Does this plan move toward that state or away from it?
@@ -900,29 +900,31 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Alternatives (MANDATORY)
 
-**1. Establish authority.**
-Check the original input, inspected source and actual approvals. Your draft cannot establish facts or consent. Correct false factual claims; surface approval conflicts. Keep unknowns explicit and reuse exact approvals without broadening or asking again.
+**1. Check sources and prior answers.**
+Use original input, inspected source and actual answers to establish facts and approvals. Correct factual mistakes in the draft; flag conflicts with approvals. Keep unknowns explicit. Carry exact approvals forward without broadening or asking again.
 
-**2. Record the decision.**
-If one proposed change can be accepted while another stays unchanged, give them separate rows, even in one helper or suite. This includes proposed test additions for fixed runtime. Explain inseparable changes.
+**2. Record the pending choice.**
+If one change can be selected while another stays unchanged, give them separate rows, even in one helper or suite. Explain inseparable changes.
 
-Keep a change's code and required regression proof together; don't re-ask once approved. One uniform depth/method choice may span an accepted delivery's fixed obligations. Runtime contracts do not approve new tests. Tests for undecided behavior stay pending.
+- Keep a code change and its required regression tests together; carry their approval forward.
+- One method/depth choice may cover an accepted delivery's required cases while its behavior stays fixed.
+- Separately proposed tests for existing behavior stay separate if one can be selected without the other. Tests for undecided behavior stay pending.
 
-Record current and proposed behavior, limits and verification method and depth. Keep other commitments fixed or pending and honor the requested review depth.
+Record current/proposed behavior, limits and verification method/depth. Keep other commitments fixed or pending; honor the requested review depth.
 
-Honor user and host restrictions on plan edits. Otherwise use Write/Edit for pending notes within the requested scope. Use the requested output file, or else the reviewed plan, or else the host's active plan. Create it from supplied input if absent. Do not prewrite conclusions. If writing fails, report it and stop before asking. If edits are forbidden, show the table in chat.
+The **working plan** is the requested output file, otherwise the reviewed plan, otherwise the host's active plan. Respect user/host edit restrictions. When allowed, use Write/Edit to save pending rows there; create it from supplied input if absent. If edits are forbidden, show rows in chat. A failed save stops the review: report the error and do not ask the decision question. Do not prewrite approval or implementation tasks.
 
-**3. Compare one row's options.**
-Compare 2-3 approaches; prefer 3 for non-trivial plans and explain a lone option. Give each a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reuse and verification coverage. Weigh "minimal viable" (smallest diff) and "ideal architecture" (long-term fit) equally; a rewrite may be better.
+**3. Compare and save that row's options.**
+Only new or reopened choices need alternatives. Compare 2-3 approaches; prefer 3 for non-trivial plans and explain a lone option. Give each a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reuse and verification coverage. Weigh the smallest diff and long-term architecture equally; a rewrite may be better.
 
-Each option must fit its row. Separate independent additions; preserve accepted requirements, contracts, behavior, tests and fixes.
+Check every option, including unselected options and changes shared by all options. Split independent additions into separate rows; preserve accepted requirements, contracts, tests and fixes. Update the rows and comparisons in the ledger's Proposed field before asking, using Step 2's save/chat rules.
 
-**4. Ask and record the answer.**
+**4. Ask, record the answer, and amend.**
 Use the preamble's AskUserQuestion format, recommendation and preference/session rules. If options differ in coverage, score only this row: 10 covers all its edge cases, 7 the happy path, 3 a shortcut. Otherwise write: "Note: options differ in kind, not coverage — no completeness score."
 
-**STOP:** Before 0F, get user approval for each new or reopened choice, even a lone option. Recommendations are not approval. Ask one row per call, cite its ID, then record the exact answer and scope before the next row. Do not edit code.
+**STOP:** Resolve each pending approach before 0F, even a lone option. Recommendations are not approval. Ask one row per call, cite its ID, and record the actual answer reference and scope in Exact approval and scope. Update Status and apply only approved amendments to the working plan before the next row. Do not edit code.
 
-Repeat this process before later questions, even for obvious fixes. Report settled findings; say "No issues, moving on." only when none remain.
+Use these four steps for new or reopened choices in later sections and Outside Voice. Mode and scope questions keep their menus below. Report settled findings; say "No issues, moving on." only when none remain.
 
 ### 0F. Mode Selection
 The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport only.
@@ -933,7 +935,7 @@ The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: 
 
 Selecting a mode never approves a scope change. The >8-file check applies to HOLD SCOPE and SELECTIVE EXPANSION. Mode questions use 0C-bis's question format and note for differences in kind.
 
-**Mode handoff before 0D:** Announce the exact selected mode name, then its rationale and approved approach, in normal chat before analysis, edits, tools or questions:
+**Mode handoff before 0D:** Announce the exact mode, rationale and approved approach in normal chat before starting its remaining route:
 - `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected mode> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
 - Other selections: `Mode: <selected mode>; approach: <approved 0C-bis approach>.`
 
@@ -951,15 +953,15 @@ Then read Review Sections; complete all 11 sections, required outputs and termin
 
 ### 0D-prelude. Expansion Framing (shared by EXPANSION and SELECTIVE EXPANSION)
 
-Every expansion proposal you generate in SCOPE EXPANSION or SELECTIVE EXPANSION mode follows this framing pattern:
+Frame every proposal in either expansion mode around the user's experience:
 
-FLAT (avoid): "Add real-time notifications. Users would see workflow results faster — latency drops from ~30s polling to <500ms push. Effort: ~1 hour CC."
+FLAT (avoid): "Add real-time notifications. Replace 30s polling with <500ms push. Effort: ~1 hour CC."
 
-EXPANSIVE (aim for): "Imagine the moment a workflow finishes — the user sees the result instantly, no tab-switching, no polling, no 'did it actually work?' anxiety. Real-time feedback turns a tool they check into a tool that talks to them. Concrete shape: WebSocket channel + optimistic UI + desktop notification fallback. Effort: human ~2 days / CC ~1 hour. Makes the product feel 10x more alive."
+EXPANSIVE (aim for): "When a workflow finishes, the user sees the result instantly: no tab-switching, polling or 'did it work?' anxiety. The tool talks to them. Concrete shape: WebSocket + optimistic UI + desktop notification fallback. Effort: human ~2 days / CC ~1 hour. Makes the product feel 10x more alive."
 
-Both are outcome-framed. Only one makes the user feel the cathedral. Lead with the felt experience, close with concrete effort and impact.
+Lead with the felt experience; finish with concrete effort and impact.
 
-**For SELECTIVE EXPANSION:** neutral recommendation posture ≠ flat prose. Present vivid options, then let the user decide. Do not over-sell — "Makes the product feel 10x more alive" is vivid; "This would 10x your revenue" is over-sell. Evocative, not promotional.
+**For SELECTIVE EXPANSION:** present vivid options without over-selling, then let the user decide. "Feels 10x more alive" conveys an experience; "10x your revenue" over-promises.
 
 ### 0D. Mode-Specific Analysis
 **For SCOPE EXPANSION** — run all three, then the opt-in ceremony:
@@ -1002,7 +1004,7 @@ echo "CEO_PLANS=$CEO_PLANS"
 
 Use the printed `CEO_PLANS` absolute path below. Before writing, offer to archive existing plans >30 days old or from merged/deleted branches. If approved, create its `archive/` subdirectory and move each stale plan there.
 
-Use native Write/Edit (host file editor if unavailable) to create `{printed CEO_PLANS}/{date}-{feature-slug}.md` and make scoped amendments. Keep content in file-tool input; the shell above only prepares the directory. Format:
+Use native Write/Edit (host file editor if unavailable) to create the CEO summary at `{printed CEO_PLANS}/{date}-{feature-slug}.md`. Keep content in file-tool input; the shell above only prepares the directory. Format:
 
 ```markdown
 ---
@@ -1039,9 +1041,9 @@ Repo: {owner/repo}
 
 Derive the feature slug from the reviewed plan; use a YYYY-MM-DD date.
 
-"Plan under review" must point to the complete amended plan, including accepted changes. If the plan exists only in chat, save it to its own file before writing the CEO summary. The summary cannot replace or point to itself as the full plan.
+"Plan under review" must link to the complete working plan, including accepted changes. Save a chat-only plan to its own file first. Amend behavior and requirements in that plan and scope decisions in the CEO summary; keep both consistent. The summary cannot replace or point to itself as the full plan.
 
-## Spec Review Loop
+#### Spec Review Loop
 
 Before presenting the document to the user for approval, run an adversarial review.
 

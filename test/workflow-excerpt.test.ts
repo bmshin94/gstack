@@ -106,6 +106,21 @@ describe('workflow judge excerpts', () => {
     expect(eng.slice(stages[2], stages[4]).match(/^\*\*[1-5]\. /gm)).toHaveLength(5);
   });
 
+  test('CEO mode handoff precedes its route and spec review stays within persistence', () => {
+    const ceo = readWorkflowExcerpt('plan-ceo-review/SKILL.md', '## Step 0: Nuclear Scope Challenge', '## Review Sections');
+    const positions = ['### 0C-bis.', '### 0F. Mode Selection', '**Mode handoff before 0D:**',
+      'Follow the selected mode\'s route:', '### 0D-prelude.', '### 0D. Mode-Specific Analysis',
+      '### 0D-POST.', '#### Spec Review Loop', '### 0E. Temporal Interrogation']
+      .map(heading => ceo.indexOf(heading));
+    expect(positions.every(index => index >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    const persistence = ceo.slice(positions[6], positions[8]);
+    expect(persistence.match(/^#### Spec Review Loop$/gm)).toHaveLength(1);
+    expect(persistence).not.toMatch(/^## Spec Review Loop$/m);
+    expect(ceo.slice(positions[2], positions[3])).toContain('Auto-decided review mode → <selected mode> (your preference)');
+    expect(ceo.slice(positions[2], positions[3])).toContain('Mode: <selected mode>; approach: <approved 0C-bis approach>');
+  });
+
   test('Eng LLM scope and pending decisions precede the test artifact', () => {
     const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## CRITICAL RULE');
     const tests = eng.slice(eng.indexOf('### 3. Test review'), eng.indexOf('### 4. Performance review'));

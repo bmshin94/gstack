@@ -331,7 +331,7 @@ reviewer-confirmed resolutions. An unavailable score is null, never invented.`;
 export function generateSpecReviewLoop(_ctx: TemplateContext): string {
   if (_ctx.skillName === 'office-hours') return generateOfficeHoursSpecReviewLoop();
   const ceo = _ctx.skillName === 'plan-ceo-review';
-  return `## Spec Review Loop
+  return `${ceo ? '####' : '##'} Spec Review Loop
 
 Before presenting the document to the user for approval, run an adversarial review.
 
@@ -892,16 +892,16 @@ Report all findings, dispositions and remaining disagreements after resolving th
 
 Use the same six-column decision ledger and the four steps of 0C-bis; do not start a second table.
 
-**1. Establish authority.** Reconcile each outside finding with the original input, inspected source and exact approvals. Correct false premises in the draft and its evidence without changing accepted behavior. Keep factual uncertainty explicit, with its owner and required verification; it does not itself create a new policy requirement. If that uncertainty threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before its occurrence is confirmed. Merely imagining an alternative behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
+**1. Check sources and prior answers.** Reconcile each outside finding with the original input, inspected source and exact approvals. Correct false premises in the draft and its evidence without changing accepted behavior. Keep factual uncertainty explicit, with its owner and required verification; it does not itself create a new policy requirement. If that uncertainty threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before its occurrence is confirmed. Merely imagining an alternative behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
 
-**2. Record the decision.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0C-bis's decision-unit and approval rules, including its distinction between required proof and new verification deliverables. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0C-bis Step 2, preserving its write restrictions and failure handling.
+**2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0C-bis's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0C-bis Step 2.
 
-**3. Compare one row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Use the applicable menu:
+**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the saved rows and comparisons under 0C-bis Step 3 before asking. Use the applicable menu:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-**4. Ask and record the answer.** Follow 0C-bis's question and session rules: one row per call, its actual answer and exact accepted scope, then a scoped Edit for only those amendments before the next row. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
+**4. Ask, record the answer, and amend.** Follow 0C-bis Step 4: one row per call, record its actual answer and scope, then amend only that approved scope. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
 
 Report every finding, its disposition, required verification and remaining disagreement, including findings that needed only factual correction.
 
