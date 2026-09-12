@@ -30,7 +30,7 @@ Check every offered option against its unit. Independently proposed commitments 
 Approval settles the planning choice; it does not prove the mitigation is implemented or verified. In later sections, cross-reference an exact settled decision instead of asking it again. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
 
 ### Section 1: Architecture Review
-Open this section in your own chat with the complete Step 0E mode-handoff line, retaining the approved approach and saved-preference attribution when applicable, then `Section 1: Architecture Review`. This repeats the agreement; it does not replace the earlier handoff.
+Open in your own chat using the Step 0E mode-handoff format and the current ledger dispositions, including actual later scope-answer references. Retain the current mode, rationale and saved-preference attribution when applicable. Keep the original handoff as history; do not reannounce superseded scope as current. Then say `Section 1: Architecture Review`.
 
 Evaluate and diagram:
 * Overall system design and component boundaries. Draw the dependency graph.

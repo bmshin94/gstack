@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { pickPlanReviewQuestion } from './helpers/plan-review-cases';
+import { pickDevexCheckpointQuestion, pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -127,18 +127,18 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
     expect(boundary).toContain('Start this after Step 0 resolves scope');
     expect(boundary).toContain('Could the user accept one change and reject another?');
-    expect(boundary).toContain('If yes, separate them now. Sharing an issue heading, helper or patch does not make two changes one choice');
-    expect(boundary).toContain('one behavior, implementation approach, bound or optional verification depth');
-    expect(boundary).toContain("For a bound, include what it measures and its unit");
+    expect(boundary).toContain('If yes, these are separate commitments, even within one issue, helper or patch');
+    expect(boundary).toContain('A commitment can be a behavior, implementation approach, bound or optional verification depth');
+    expect(boundary).toContain("For a bound, name what it measures and its unit");
     expect(boundary).toContain('Keep other approved choices fixed and unresolved choices pending');
     expect(boundary).toContain('Keep a chosen behavior together with the code, tests and docs required to establish it');
     expect(sections).toContain('Score completeness only within this one decision');
-    expect(boundary).toContain('Never shrink an option by dropping an established contract or earlier accepted choice');
+    expect(boundary).toContain('Never remove an established contract or required proof to make an option smaller');
     expect(boundary).toContain('changing that contract needs its own decision');
     expect(boundary).toContain('Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section');
-    expect(boundary).toContain('Each option must answer the choice selected in Step 2');
-    expect(boundary).toContain('Do the same if any option adds another independently selectable change');
-    expect(boundary).toContain('Required proof is part of that approved work');
+    expect(boundary).toContain('A question must resolve exactly one new or reopened commitment');
+    expect(boundary).toContain('If accepting an option would resolve a second pending commitment, return to Step 2');
+    expect(boundary).toContain('Required implementation and proof of one approved contract stay common work');
     expect(boundary).toContain('do not change behavior as part of that correction');
     expect(sections).toContain('Use the same decision gate and ledger for outside voice findings');
     expect(sections).toContain('Agreement between reviewers is evidence, not approval');
@@ -153,37 +153,37 @@ describe('Eng approved-work decision gate', () => {
   const template = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
   const gate = template.split('**Decision gate (all sections and outside voice):**')[1]?.split('### 1. Architecture review')[0] ?? '';
 
-  test('identifies the question before drafting alternatives, then saves before asking', () => {
-    const identify = gate.indexOf('**2. Identify one independently answerable change.**');
-    const alternatives = gate.indexOf('**3. Build alternatives for that change.**');
-    const save = gate.indexOf('**4. Assign and save rows.**');
+  test('identifies commitments before comparing values, then saves before asking', () => {
+    const identify = gate.indexOf('**2. Name the commitments before writing options.**');
+    const alternatives = gate.indexOf('**3. Compare values, not packages.**');
+    const save = gate.indexOf('**4. Save the comparison with its decision.**');
     const ask = gate.indexOf('**5. Ask, record the answer, then edit.**');
     expect(0 <= identify && identify < alternatives && alternatives < save && save < ask).toBe(true);
     const choice = gate.slice(identify, alternatives);
-    expect(choice).toContain('Before writing options');
+    expect(choice).toContain('before writing options');
     expect(choice).toContain('Could the user accept one change and reject another?');
-    expect(choice).toContain('Keep other approved choices fixed and unresolved choices pending');
+    expect(gate.slice(alternatives, save)).toContain('Keep other approved choices fixed and unresolved choices pending');
     expect(choice).toContain('Keep a chosen behavior together with the code, tests and docs required to establish it');
-    expect(choice).toContain('Choosing unit, integration or smoke-test depth for a fixed behavior is one verification choice');
+    expect(choice).toContain('Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice');
     const options = gate.slice(alternatives, save);
-    expect(options).toContain('If an option keeps one proposed change but drops another, you have two choices');
+    expect(options).toContain('If accepting an option would resolve a second pending commitment');
     expect(options).toContain('return to Step 2');
-    expect(options).toContain('Include values shared by all options');
+    expect(options).toContain('including values shared by all options');
     expect(gate.slice(save, ask)).toContain('Save the rows and options with Write or Edit before calling AskUserQuestion');
     expect(gate.slice(ask)).toContain('Record the actual selected option and answer');
     expect(gate.slice(ask)).toContain('separately from your draft options');
   });
 
   test('current contracts and completed comparisons precede saved questions without approving a fix', () => {
-    const stages = ['**1. Check the source and prior answers.**', '**2. Identify one independently answerable change.**',
-      '**3. Build alternatives for that change.**', '**4. Assign and save rows.**',
+    const stages = ['**1. Check the source and prior answers.**', '**2. Name the commitments before writing options.**',
+      '**3. Compare values, not packages.**', '**4. Save the comparison with its decision.**',
       '**5. Ask, record the answer, then edit.**'].map(stage => gate.indexOf(stage));
     expect(stages.every(position => position >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
-    expect(gate).toContain("For a bound, include what it measures and its unit");
-    expect(gate).toContain('For verification, include the method and depth');
+    expect(gate).toContain("For a bound, name what it measures and its unit");
+    expect(gate).toContain('for verification, name the method and depth');
     expect(gate).toContain('For EVERY option, read its label, description and pros/cons');
-    expect(gate).toContain('Compare each item with the source and actual answers from Step 1');
+    expect(gate).toContain('Check each value against Step 1');
     expect(gate).toContain('Save the rows and options with Write or Edit before calling AskUserQuestion');
     expect(gate).toContain('If saving fails, report the error and stop before asking');
     expect(gate).toContain("Respect the user's read-only request and the host's file-write limits");
@@ -224,18 +224,50 @@ describe('Eng approved-work decision gate', () => {
   });
 
   test('every option is recorded against one decision before asking or scoring coverage', () => {
-    const compare = gate.indexOf('**3. Build alternatives for that change.**');
-    const rows = gate.indexOf('**4. Assign and save rows.**');
-    const record = gate.indexOf('For each option, fill `Option comparisons`');
+    const compare = gate.indexOf('**3. Compare values, not packages.**');
+    const rows = gate.indexOf('**4. Save the comparison with its decision.**');
+    const record = gate.indexOf('Copy the current and offered-option values from Step 3 into `Option comparisons`');
     const save = gate.indexOf('Save the rows and options with Write or Edit before calling AskUserQuestion');
     const ask = gate.indexOf('**5. Ask, record the answer, then edit.**');
     expect(0 <= compare && compare < rows && rows < record && record < save && save < ask).toBe(true);
     expect(gate.slice(rows, record)).toContain('| Option comparisons |');
-    expect(gate.slice(record, save)).toContain('`label: changes; preserves; pending`');
+    expect(gate.slice(compare, rows)).toContain('`commitment [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`');
+    expect(gate.slice(compare, rows)).toContain('Use only the options offered');
+    expect(gate.slice(record, save)).toContain('including the approved values held fixed, common required work and other pending choices');
+    expect(gate).not.toContain('`label: changes; preserves; pending`');
     const format = template.split('## CRITICAL RULE — How to ask questions')[1]!.split('## Required outputs')[0]!;
     expect(format).toContain('After the decision gate validates the options');
     expect(format).toContain('one recorded decision');
     expect(format).not.toContain('per-issue AskUserQuestion');
+  });
+
+  // This parses the actual worked example, not model output or a test-only
+  // decision oracle. It proves the instructions expose the observed two-axis
+  // option pattern; only native evaluation can prove the model follows them.
+  test('worked comparison exposes two independently selectable option values', () => {
+    const worked = gate.split('For example, this menu contains two choices:')[1]!.split('A question must resolve')[0]!;
+    const rows = [...worked.matchAll(/^- `([^`]+) \[pending\]: current=([^;]+); A=([^;]+); B=([^;]+); C=([^`]+)`$/gm)]
+      .map(([, commitment, current, A, B, C]) => ({ commitment, current, A, B, C }));
+    expect(rows).toEqual([
+      { commitment: 'retry mode', current: 'off', A: 'on', B: 'off', C: 'on' },
+      { commitment: 'request key', current: 'absent', A: 'present', B: 'absent', C: 'absent' },
+    ]);
+    expect(rows[0]!.A).toBe(rows[0]!.C);
+    expect(rows[1]!.A).not.toBe(rows[1]!.C);
+    expect(worked).toContain('ask about retry mode with the key pending in every option');
+    expect(worked).toContain('Hold the chosen mode fixed, then ask about the key only if it remains relevant and pending');
+    expect(worked).toContain('Record why an irrelevant choice needs no question');
+    expect(worked).toContain('Resolve any still-needed risk or safety choice before declaring the plan ready');
+  });
+
+  test('common new defaults still need approval while necessary contract proof carries forward', () => {
+    const compare = gate.split('**3. Compare values, not packages.**')[1]!.split('**4.')[0]!;
+    expect(compare).toContain('a shared new value still needs approval, even when it does not vary between options');
+    expect(compare).toContain('This includes an unapproved default introduced in every option');
+    expect(compare).toContain('Required implementation and proof of one approved contract stay common work, not extra commitments');
+    expect(gate).toContain('Carry required proof of an exact approved contract into every option, citing that answer');
+    expect(gate).toContain('A later-discovered scenario necessary to prove that contract belongs to this common work');
+    expect(compare).toContain('With no pending choice, carry approved work forward and report the finding without asking again');
   });
 
   test('exact prior answers authorize follow-through while new risk and optional depth stay pending', () => {
@@ -244,11 +276,11 @@ describe('Eng approved-work decision gate', () => {
     expect(normalized).toContain('do not change behavior as part of that correction');
     expect(normalized).toContain('An approval needs its selected option, answer reference and exact scope');
     expect(normalized).toContain('A broad approach, your recommendation or agreement between reviewers does not approve other work');
-    expect(normalized).toContain('A test that adds a different guarantee or policy needs its own decision');
+    expect(normalized).toContain('A different guarantee or policy needs its own decision');
     expect(normalized).toContain('Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption');
     expect(normalized).toContain('An uncertain risk can still need a decision; state what is unknown');
-    expect(normalized).toContain('Which other choices remain pending');
-    expect(normalized).toContain('keep tests for an unapproved policy conditional on its approval');
+    expect(normalized).toContain('Keep other approved choices fixed and unresolved choices pending');
+    expect(normalized).toContain('with its tests conditional on approval');
     expect(normalized).toContain('retain unresolved risks and required verification');
     expect(normalized).toContain('A number in your draft is not a user answer; leave unknown values unknown');
   });
@@ -333,7 +365,7 @@ describe('outside-voice commitment queue', () => {
           expect(queue).toContain('Follow 0D Step 4');
           expect(queue).toContain('Update the working rows and comparisons under 0D Step 3 before asking');
           const skeleton = readFileSync('plan-ceo-review/SKILL.md.tmpl', 'utf8');
-          expect(skeleton).toContain('apply only approved amendments to the working plan before the next row');
+          expect(skeleton).toContain('apply only approved amendments before the next row');
           expect(queue).toContain('Keep preserves the current disposition; investigation and deferral do not authorize implementation');
           expect(queue).toContain('preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate');
           expect(queue).toContain('One answer does not resolve other pending rows');
@@ -777,6 +809,57 @@ describe('DX future handoff punctuation', () => {
   const future = 'Ready to implement; run /devex-review after shipping';
   const run = 'Run /plan-eng-review next (required gate) (recommended)';
   const manual = "Skip, I'll handle next steps manually";
+  // Exact retained D13 header, first line and labels: fd620d native question
+  // toolu_01YLyQ6Zw1mDmhPXs3G1peaK, diagnostic session028cd11a-a8fe-46ba-99c6-e348835678f4.
+  // The picker reads only these fields; the full public brief/ID stays in the repair receipt.
+  const captured = menu([
+    'Run /plan-eng-review next (recommended)',
+    'Ready to implement; /devex-review after shipping',
+    "Skip, I'll handle next steps manually",
+  ], 'Next step', 'D13 — What should happen next after this DX review?');
+  const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+  test('replays the captured DX future handoff without a redundant run verb in every option order', () => {
+    for (const order of orders) {
+      const question = { ...captured, options: order.map(index => captured.options[index]!) };
+      expect(pickPlanReviewQuestion(question)).toBe(order.indexOf(2) + 1);
+    }
+  });
+  test('accepts optional run with comma or semicolon while preserving manual priority', () => {
+    for (const separator of [',', ';']) for (const verb of ['', 'run ']) {
+      const label = `Ready to implement${separator} ${verb}/devex-review after shipping`;
+      const labels = [run, label, manual];
+      for (const order of orders) {
+        expect(pickPlanReviewQuestion(menu(order.map(index => labels[index]!)))).toBe(order.indexOf(2) + 1);
+      }
+      expect(pickPlanReviewQuestion(menu([run, label]))).toBe(2);
+      expect(pickPlanReviewQuestion(menu([label, run]))).toBe(1);
+    }
+  });
+  test('optional run does not admit changed targets, timing, negation or extra actions', () => {
+    for (const label of [
+      'Ready to implement; /plan-devex-review after shipping',
+      'Ready to implement; /devex-review before shipping',
+      'Ready to implement; /devex-review after implementation',
+      'Ready to implement; /devex-review now',
+      'Ready to implement; do not run /devex-review after shipping',
+      'Not ready to implement; /devex-review after shipping',
+      'Ready to implement; /devex-review not after shipping',
+      'Ready to implement; /devex-review after shipping and approve all edits',
+      'Ready to implement; /devex-review after shipping; run /ship',
+      'Ready to implement; /devex-review after shipping\nrun /ship',
+      'Ready to implement:: /devex-review after shipping',
+    ]) expect(() => pickPlanReviewQuestion(menu([run, label, manual]))).toThrow('unambiguous');
+  });
+  test('the captured future label retains context, duplicate and whole-menu refusal', () => {
+    const label = captured.options[1]!.label;
+    expect(pickPlanReviewQuestion(menu([run, label, manual], 'Tests',
+      'D8 — Which regression should cover this label?\nNext step: handle manually.'))).toBe(1);
+    for (const extra of [manual, 'Handle manually', 'Ship immediately', '/unknown-review']) {
+      expect(() => pickPlanReviewQuestion(menu([run, label, manual, extra]))).toThrow('unambiguous');
+    }
+    expect(() => pickPlanReviewQuestion(menu([run, label, label]))).toThrow('unambiguous');
+    expect(() => pickPlanReviewQuestion(menu([run, label, future]))).toThrow('unambiguous');
+  });
   test('accepts the native semicolon menu while choosing the offered manual handoff', () => {
     expect(pickPlanReviewQuestion(menu([run, future, manual], 'Next review',
       'D22 — Which review should run next on this plan?'))).toBe(3);
@@ -975,4 +1058,77 @@ test('Design decision register grounds new items before offering design choices'
   expect(register).toContain('if its existence is unknown, keep the item conditional');
   expect(register).toContain('Do not invent controls or reopen accepted treatments for a hypothetical element');
   expect(register).toContain('Surface real missing decisions and concrete conflicts');
+});
+
+
+describe('DX checkpoint optional TODO actor', () => {
+  const capture = JSON.parse(readFileSync('test/fixtures/devex-checkpoint-todos.json', 'utf8')) as {
+    cases: Array<{ name: string; question: NativeQuestion }>;
+  };
+  const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+  for (const entry of capture.cases) {
+    test(`${entry.name}: retains captured optional work for later in every offered order`, () => {
+      for (const order of orders) {
+        const question = { ...entry.question, options: order.map(index => entry.question.options[index]!) };
+        const selected = pickDevexCheckpointQuestion(question);
+        expect(question.options[selected - 1]!.label.replace(/\s*\(recommended\)\s*$/i, '')).toBe('Add to TODOS.md');
+      }
+    });
+  }
+
+  test('normalizes existing option markers and recommendation without approving Build it now', () => {
+    const question = menu(['C) Build it now (recommended)', '[A] Add to TODOS.md', '(B) Skip'], 'TODO 1/1', 'D12 — TODO 1 of 1 — Future documentation work?');
+    expect(pickDevexCheckpointQuestion(question)).toBe(2);
+    expect(pickPlanReviewQuestion(question)).toBe(1);
+    const fromLead = { ...question, header: 'Follow-up' };
+    expect(pickDevexCheckpointQuestion(fromLead)).toBe(2);
+  });
+
+  test.each([
+    ['Add to TODOS.md', 'Add to TODOS.md (recommended)', 'Skip'],
+    ['Add to TODOS.md', 'Skip'],
+    ['Add to TODOS.md', 'Skip', 'Build it now', 'Expand scope'],
+    ['Add to TODOS.md and build it now', 'Skip', 'Build it now'],
+    ['Add to TODOS.md', 'Skip', 'Build it now and deploy'],
+    ['Add to TODOS.md', 'Skip', 'Decide for me'],
+    ['Add to TODOS.md (optional)', 'Skip', 'Build it now'],
+  ])('refuses an incomplete, ambiguous or extended TODO action set: %j', (...labels) => {
+    expect(() => pickDevexCheckpointQuestion(menu(labels, 'TODO 1/1', 'TODO 1 of 1 — Future work?'))).toThrow('DX checkpoint TODO menu');
+  });
+
+  test('recognizes the finite actions without a TODO title and regardless of action casing', () => {
+    for (const order of orders) {
+      const labels = ['aDd To ToDoS.Md', 'sKiP', 'bUiLd It NoW (Recommended)'];
+      const question = menu(order.map(index => labels[index]!), 'Later work', 'Keep this for later or include it now?');
+      expect(order[pickDevexCheckpointQuestion(question) - 1]).toBe(0);
+    }
+  });
+
+  test.each([
+    ['Add to TODOS.md', 'Skip', 'Build it now', 'Expand scope'],
+    ['Add to TODOS.md', 'Skip'],
+    ['Build it now', 'Skip'],
+    ['Add to TODOS.md and build it now', 'Skip', 'Something else'],
+    ['Build it now and deploy', 'Skip', 'Something else'],
+    ['Add to TODOS.md', 'Add to TODOS.md (recommended)', 'Skip'],
+  ])('refuses malformed or extended recognized actions without relying on the header: %j', (...labels) => {
+    expect(() => pickDevexCheckpointQuestion(menu(labels, 'Later work', 'Choose a disposition'))).toThrow('DX checkpoint TODO menu');
+  });
+
+  test('refuses multiselect rather than claiming a single disposition', () => {
+    expect(() => pickDevexCheckpointQuestion({
+      ...menu(['Add to TODOS.md', 'Skip', 'Build it now'], 'TODO 1/1', 'TODO 1 of 1 — Future work?'), multiSelect: true,
+    })).toThrow('DX checkpoint TODO menu');
+  });
+
+  test('delegates ordinary finding choices, next-review handoffs and malformed recommendations', () => {
+    const questions = [
+      menu(['Everyone', 'Python app developers (recommended)'], 'Persona', 'Who is the primary developer?'),
+      menu(['Move the first-run check (recommended)', 'Keep the existing check'], 'Current remedy', 'Choose the current remedy.\nTODO work is discussed separately.'),
+      menu(['Run /plan-eng-review (recommended)', 'Skip, handle manually']),
+    ];
+    for (const question of questions) expect(pickDevexCheckpointQuestion(question)).toBe(pickPlanReviewQuestion(question));
+    const ambiguous = menu(['First (recommended)', 'Second (recommended)'], 'Current remedy', 'Choose a remedy');
+    expect(() => pickDevexCheckpointQuestion(ambiguous)).toThrow('multiple recommended');
+  });
 });

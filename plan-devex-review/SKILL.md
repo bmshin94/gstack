@@ -570,8 +570,13 @@ source/evidence | current value | proposed value | exact approval + scope | othe
    against source examples. Retain unknowns and required verification.
 2. **Classify the finding.** Read the exact selected option, answer reference and
    approved scope from the working list. Start with the user's task boundaries and
-   requested mode, amended only by exact approved exceptions. Carry those approvals and factual corrections
-   forward; reopen only for concrete contradiction or changed assumptions.
+   requested mode, amended only by exact approved exceptions. Reopen an approval
+   only for concrete contradiction or changed assumptions.
+   Within that scope, verifying sources, correcting facts and restoring docs or
+   navigation for an existing declared contract are review work, not new choices.
+   Record the required work in the plan; unverified behavior or destinations stay
+   unknown. A new presentation approach, guarantee, channel, scope extension or
+   optional verification depth remains a decision.
 3. **Check the scope.** Compare the proposed change with that current scope.
    Obtain approval for a new boundary crossing. A mode's default does not cancel
    an explicitly approved exception. Honor actual guarantees; unknown implementation
@@ -1055,16 +1060,12 @@ T+3:00  [Final state: gave up / succeeded / asked for help]
 Ground this in the ACTUAL docs and code from the pre-review audit. Not hypothetical.
 Reference specific README headings, error messages, and file paths.
 
-Map each confusion point to its evidence and exact prior decision. If every point
-is already resolved, report that mapping and continue without reconfirming it.
-Do not offer bulk acceptance or cuts across approved decisions.
+Run the Decision gate on each evidenced confusion point. Report routine work and
+prior answers without reconfirming them. Verify imagined confusion rather than
+calling it a defect. Never bulk-accept or cut approved decisions.
 
-For each unresolved, evidenced point, follow the one-decision rules above: propose
-its remedy, tradeoffs and alternatives. Apply the working list's reopening rule
-only to the affected decision; verify imagined confusion rather than calling it a defect.
-
-**STOP for each new or reopened decision.** Wait for its answer before amending
-the plan or advancing; then continue through the remaining points.
+For each admitted new or reopened choice, offer its remedy, tradeoffs and alternatives.
+**STOP.** Wait for its answer before applying that remedy or advancing.
 
 ---
 
@@ -1074,8 +1075,8 @@ For each DX section:
 1. Recall Step 0 evidence: persona, friction trace and competitive benchmark.
 2. Rate 0-10, explain the evidenced gap and what 10 means for this product.
 3. Read this pass's Hall of Fame section from dx-hall-of-fame.md.
-4. Resolve each new in-scope gap via AskUserQuestion BEFORE editing the plan.
-   Carry exact prior approvals forward; do not ask again merely in a new pass.
+4. Run the Decision gate for each gap. Record routine work within scope; ask and
+   wait only for admitted new or reopened choices.
 5. Apply approved changes, then re-rate the amended plan. Keep unresolved risks
    visible. A score is not measured success; never add scope just to reach 10.
 

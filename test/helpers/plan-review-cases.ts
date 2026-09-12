@@ -53,11 +53,35 @@ export const ENG_BATCHING_FINDINGS = [
   { id: 'dependency-cache', description: 'Decide caching and reusing the dependency graph across retries instead of rebuilding it on every attempt. Payload fetching or freshness is a separate policy and is not required for graph-cache coverage.' },
 ];
 
+const planReviewQuestionLead = (question: NativeQuestion) =>
+  question.question.split(/\r?\n/, 1)[0]!.replace(/^D\d+(?:\.\d+)?\s*[—–:-]\s*/, '');
+const planReviewOptionLabel = (label: string) => label.trim()
+  .replace(/^(?:[A-E][).:]?|\([A-E]\)|\[[A-E]\])\s+/i, '')
+  .replace(/\s*\(recommended\)\s*$/i, '').trim();
+
+/** This fixture's actor retains optional roadmap work for later planning.
+ * It does not classify findings: a seeded obligation offered as a TODO still
+ * has to satisfy the unchanged semantic judge after native completion. */
+export function pickDevexCheckpointQuestion(question: NativeQuestion): number {
+  const labels = question.options.map(option => planReviewOptionLabel(option.label).toLowerCase());
+  const todo = /^TODO(?:\s|:|$)/i;
+  const actionContext = labels.some(label => /^(?:add to todos\.md|build it now)\b/.test(label));
+  if (!todo.test(question.header.trim()) && !todo.test(planReviewQuestionLead(question).trim()) && !actionContext) {
+    return pickPlanReviewQuestion(question);
+  }
+  const actions = ['add to todos.md', 'skip', 'build it now'];
+  if (question.multiSelect || labels.length !== actions.length
+    || actions.some(action => labels.filter(label => label === action).length !== 1)) {
+    throw new Error('DX checkpoint TODO menu must offer exactly Add to TODOS.md, Skip and Build it now');
+  }
+  return labels.indexOf('add to todos.md') + 1;
+}
+
 /** Answer only the finite next-step menus offered by the review sources. These
  * are future handoffs; the driver still requires native completion and never
  * approves ExitPlanMode or treats this selection as completion. */
 export function pickPlanReviewQuestion(question: NativeQuestion): number {
-  const lead = question.question.split(/\r?\n/, 1)[0]!.replace(/^D\d+(?:\.\d+)?\s*[—–:-]\s*/, '');
+  const lead = planReviewQuestionLead(question);
   const nextReview = /^(?:next review|next steps?|what['’]s next)\b/i.test(question.header.trim())
     || /^(?:next reviews?|next steps?|what['’]s next)\b/i.test(lead.trim());
   const recommended = () => {
@@ -67,8 +91,7 @@ export function pickPlanReviewQuestion(question: NativeQuestion): number {
     return choices[0] ?? 1;
   };
   if (!nextReview) return recommended();
-  const labels = question.options.map(option => option.label.trim()
-    .replace(/^(?:[A-E][).:]?|\([A-E]\)|\[[A-E]\])\s+/i, '').replace(/\s*\(recommended\)\s*$/i, '').trim());
+  const labels = question.options.map(option => planReviewOptionLabel(option.label));
   const run = (label: string) => /^(?:Run )?\/plan-(?:ceo|eng|design|devex)-review(?: (?:next|first))?(?:\s*\((?:required gate|only if UI scope detected(?: and no design review exists)?|only if fundamental product gaps found|only if significant product change and no CEO review exists)\))?$/i.test(label)
     || /^(?:Run )?\/design-shotgun(?: to explore visual variants| for visual variants| after adding an OpenAI key|\s*[—–-]\s*explore visual design variants for issues found)?$/i.test(label)
     || /^(?:Run )?\/design-html(?:\s*[—–-]\s*generate Pretext-native HTML from approved mockups)?$/i.test(label);
@@ -77,7 +100,7 @@ export function pickPlanReviewQuestion(question: NativeQuestion): number {
   const manual = (label: string) => /^Skip\s*[,:;.—–-]\s*(?:I(?:['’]ll| will)\s+)?handle (?:reviews|next steps) manually$/i.test(label)
     || (offersFollowUp && (/^(?:Skip|Handle manually)$/i.test(label) || /^Skip\s*[,:;.—–-]\s*handle manually$/i.test(label) || /^Skip, manual next steps$/i.test(label)));
   const future = (label: string) => /^Ready to implement(?:\s*[—–-]\s*run \/ship when done)?$/i.test(label)
-    || /^Ready to implement[,;] run \/devex-review after shipping$/i.test(label)
+    || /^Ready to implement[,;] (?:run )?\/devex-review after shipping$/i.test(label)
     || (offersFollowUp && (/^Implement, then \/devex-review$/i.test(label)
       || /^Implement now, \/devex-review after$/i.test(label)));
   if (!labels.some(label => run(label) || manual(label) || future(label))) return recommended();

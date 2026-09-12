@@ -229,14 +229,21 @@ Feed into the Premise Challenge (0A) and Dream State Mapping (0C). If you find a
 
 ## Step 0: Nuclear Scope Challenge + Mode Selection
 
-Complete 0A–0E in order. Present findings from 0A–0C as brief observations with evidence; they do not imply approval. Then follow the selected mode's route below before Review Sections.
+Complete 0A–0E in order. Summarize the 0A–0C observations and evidence once in the working plan; they do not imply approval. Then follow the selected mode's route before Review Sections.
 
-A pending choice is an unanswered decision needed for the requested goal, identified in 0A–0C or later review. Facts and already approved work are evidence, not new choices. Keep one decision ledger:
+A pending choice is an unanswered decision needed for the requested goal and review depth. Facts and already approved work do not create new questions. Keep one decision ledger:
 
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
 
-Record conventions, test coverage and code risks with evidence. Status is unresolved, approved, reopened, deferred or declined. Cite each resolved row's instruction or answer. Keep this ledger through Spec Review Loop and Outside Voice. Reopen only for a concrete contradiction or changed assumption, never speculation or reviewer agreement.
+- **ID and owner:** the decision reference and responsible review section.
+- **Contract and evidence:** the requirement, existing behavior or risk, and its source. Mark unknown facts explicitly.
+- **Current:** the existing or already approved state.
+- **Proposed:** the change and its alternatives, before an answer.
+- **Status:** unresolved, approved, reopened, deferred or declined.
+- **Exact approval and scope:** the actual instruction or answer reference and precisely what it authorized.
+
+Keep conventions, test coverage and code risks with their evidence. Retain this ledger through Spec Review Loop and Outside Voice. Reopen only for a concrete contradiction, changed assumption or explicit new user instruction; not speculation or reviewer agreement.
 
 **Storage policy (entire review).** User/host edit restrictions govern artifacts, metadata and cleanup, including tasks, TODOs and logs. The **working plan** is the requested output file, otherwise the reviewed plan, otherwise the host's active plan. For each output without a permitted path, keep its complete text in chat, labeled **not persisted**. Never claim a file, read-back or log that did not happen. Report a failed artifact save and stop; a known write restriction does not skip review or approval.
 
@@ -249,7 +256,7 @@ Record conventions, test coverage and code risks with evidence. Status is unreso
 1. What existing code already partially or fully solves each sub-problem? Map every sub-problem to existing code. Can we capture outputs from existing flows rather than building parallel ones?
 2. Is this plan rebuilding anything that already exists? If yes, explain why rebuilding is better than refactoring.
 
-Keep the quantity, unit and prerequisites of each limit: a two-deliverable limit stays two deliverables even if reuse halves the work. Changing it needs evidence and user approval.
+Record what each limit counts, its unit and prerequisites. Reuse can reduce effort without changing the agreed limit: cheaper implementation does not turn two allowed deliverables into three. Changing the limit needs evidence and user approval.
 
 ### 0C. Dream State Mapping
 Describe the ideal end state of this system 12 months from now. Does this plan move toward that state or away from it?
@@ -261,30 +268,32 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 ### 0D. Alternatives (MANDATORY)
 
 **1. Check sources and prior answers.**
-Use original input, inspected source and actual answers to establish facts and approvals. Correct factual mistakes in the draft; flag conflicts with approvals. Keep unknowns explicit. Carry exact approvals forward without broadening or asking again.
+Check the original input, inspected source and actual answers. Correct factual errors in the working plan; flag conflicts with approvals and preserve unknowns. Carry exact approvals forward without broadening or asking again.
+
+If no pending approach choice remains, continue to 0E with the existing decisions. Do not invent an alternative or an approval to fill the handoff.
 
 **2. Record the pending choice.**
-If one change can be selected while another stays unchanged, give them separate rows, even in one helper or suite. Explain inseparable changes.
+If one change can be selected while another stays unchanged, give them separate rows, even in one helper or suite. Explain why inseparable changes must stay together.
 
 - Keep a code change and its required regression tests together; carry their approval forward.
-- If the code change is approved but its test method or coverage is still undecided, ask once about that choice. Every option must preserve the required behavior and any test requirements already approved.
+- If an approved change still needs a test-method or coverage decision, ask once about that choice. Every option must preserve its required behavior and approved test requirements.
 - Separately proposed tests for existing behavior stay separate if one can be selected without the other. Tests for undecided behavior stay pending.
 
-Record the existing and proposed behavior, limits, test method and coverage. Keep other commitments fixed or pending; honor the requested review depth.
-
-When allowed, use Write/Edit to save pending rows in the working plan; create it from supplied input if absent. Otherwise show them in the complete chat plan under the storage policy. A failed save stops the review before the question. Do not prewrite approval or implementation tasks.
+Record existing and proposed behavior, limits, test method and coverage at the requested review depth. Save the pending row in the working plan using Write/Edit, or present it in the complete chat plan under the storage policy. A failed save stops before the question. Never prewrite approval or implementation tasks.
 
 **3. Compare and save that row's options.**
-Only new or reopened choices need alternatives. Compare 2-3 approaches; prefer 3 for non-trivial plans and explain a lone option. Give each a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reuse and verification coverage. Weigh the smallest diff and long-term architecture equally; a rewrite may be better.
+Compare 2–3 approaches for this new or reopened choice. Prefer 3 for non-trivial plans; explain a lone viable option. Give each a name, a 1–2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage. Weigh the smallest diff and long-term architecture equally; a rewrite may be better.
 
-Check every option, including unselected options and changes shared by all options. Split independent additions into separate rows; preserve accepted requirements, contracts, tests and fixes. Update the rows and comparisons in the ledger's Proposed field before asking, using 0D Step 2's storage rules.
+Check every option, including unselected options and changes shared by all options. Keep other commitments fixed or pending. Split independent additions; preserve accepted requirements, contracts, tests and fixes. Update Proposed with the comparisons before asking. Save or present the updated row as in 0D Step 2.
 
 **4. Ask, record the answer, and amend.**
-Use the preamble's AskUserQuestion format, recommendation and preference/session rules. If options differ in coverage, score only this row: 10 covers all its edge cases, 7 the happy path, 3 a shortcut. Otherwise write: "Note: options differ in kind, not coverage — no completeness score."
+Use the preamble's question format, recommendation and preference/session rules. Ask one row per call and cite its ID. Recommendations are not approval.
 
-**STOP:** Resolve each pending approach before 0E, even a lone option. Recommendations are not approval. Ask one row per call, cite its ID, and record the actual answer reference and scope in Exact approval and scope. Update Status and apply only approved amendments to the working plan before the next row. Do not edit code.
+If options differ in coverage, score this row only: 10 covers all its edge cases, 7 the happy path, 3 a shortcut. Otherwise write: "Note: options differ in kind, not coverage — no completeness score."
 
-Use these four steps for new or reopened choices in later sections and Outside Voice. Mode and scope questions keep their menus below. Report settled findings; say "No issues, moving on." only when none remain.
+**STOP:** Resolve each pending approach before 0E, even a lone option. Record the actual answer reference and scope in Exact approval and scope. Update Status and apply only approved amendments before the next row. Do not edit code.
+
+Use these four steps for later new or reopened choices, including Outside Voice. Mode and scope questions use their own menus below. Report settled findings; say "No issues, moving on." only when none remain.
 
 ### 0E. Mode Selection
 The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport only.
@@ -295,11 +304,11 @@ The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: 
 
 Selecting a mode never approves a scope change. The >8-file check applies to HOLD SCOPE and SELECTIVE EXPANSION. Mode questions use 0D's question format and note for differences in kind.
 
-**Mode handoff:** Announce the exact mode, rationale and approved approach in normal chat before following the selected route:
-- `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected mode> (your preference). Change with /plan-tune. Approach: <approved 0D approach>.`
-- Other selections: `Mode: <selected mode>; approach: <approved 0D approach>.`
+**Mode handoff:** In normal chat, give the mode, rationale and every governing approved row's ID, answer reference and accepted scope. Do not collapse several choices into one approach.
+- `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected mode> (your preference). Change with /plan-tune. Approved decisions: <rows or none>.`
+- Other selections: `Mode: <selected mode>; approved decisions: <rows or none>.`
 
-Ask before changing mode or approved approach.
+If 0D needed no new choice, say "No new approach decision was needed" and carry prior approvals forward. Ask before changing the mode.
 
 Follow the selected mode's route:
 
@@ -313,44 +322,39 @@ Then read Review Sections; complete all 11 sections, required outputs and termin
 
 ### 0F. Expansion Framing (shared by EXPANSION and SELECTIVE EXPANSION)
 
-Frame every proposal in either expansion mode around the user's experience:
+Lead with the user's experience, then give the concrete change, effort and impact.
 
-FLAT (avoid): "Add real-time notifications. Replace 30s polling with <500ms push. Effort: ~1 hour CC."
+Example: "See finished work without refreshing. Use push updates with notification fallback. Human: ~2 days; CC: ~1 hour."
 
-EXPANSIVE (aim for): "When a workflow finishes, the user sees the result instantly: no tab-switching, polling or 'did it work?' anxiety. The tool talks to them. Concrete shape: WebSocket + optimistic UI + desktop notification fallback. Effort: human ~2 days / CC ~1 hour. Makes the product feel 10x more alive."
-
-Lead with the felt experience; finish with concrete effort and impact.
-
-**For SELECTIVE EXPANSION:** present vivid options without over-selling, then let the user decide. "Feels 10x more alive" conveys an experience; "10x your revenue" over-promises.
+In SELECTIVE EXPANSION, make benefits vivid without promising unsupported outcomes. Let the user decide.
 
 ### 0G. Mode-Specific Analysis
-**For SCOPE EXPANSION** — run all three, then the opt-in ceremony:
-1. 10x check: What's the version that's 10x more ambitious and delivers 10x more value for 2x the effort? Describe it concretely.
-2. Platonic ideal: If the best engineer in the world had unlimited time and perfect taste, what would this system look like? What would the user feel when using it? Start from experience, not architecture.
-3. Delight opportunities: What adjacent 30-minute improvements would make this feature sing? Things where a user would think "oh nice, they thought of that." List at least 5.
-4. **Expansion opt-in ceremony:** Present the 10x and platonic visions, then propose individual features, components or improvements. Recommend enthusiastically and explain why each is worth doing. Use the scope menu below; the user decides.
+**For SCOPE EXPANSION:**
+1. **10x check:** Describe a version that delivers 10x more value for 2x the effort.
+2. **Platonic ideal:** Describe what the best engineer with unlimited time and perfect taste would build. Start with what the user would feel, not architecture.
+3. **Delight scan:** List at least 5 adjacent 30-minute improvements that would delight the user.
+4. **Expansion opt-in ceremony:** Present these visions and individual proposals. Recommend enthusiastically and explain each proposal's value; the user decides.
 
-**For SELECTIVE EXPANSION** — run the HOLD SCOPE analysis first, then surface expansions:
-1. Run both HOLD SCOPE checks below.
-2. Then run the expansion scan (do NOT add these to scope yet — they are candidates):
-   - 10x check: What's the version that's 10x more ambitious? Describe it concretely.
-   - Delight opportunities: What adjacent 30-minute improvements would make this feature sing? List at least 5.
-   - Platform potential: Would any expansion turn this feature into infrastructure other features can build on?
-3. **Cherry-pick ceremony:** Present opportunities neutrally with effort (S/M/L) and risk. Use the scope menu below without bias. If there are more than 8 candidates, present the top 5-6 and note that the user can request the lower-priority remainder.
+**For SELECTIVE EXPANSION:**
+1. Run both HOLD SCOPE checks below, including their defer/keep decisions.
+2. Describe a version that is 10x more ambitious. Run the delight scan above and assess platform potential for other features. Keep these candidates pending until scope answers.
+3. **Cherry-pick ceremony:** Present candidates neutrally with S/M/L effort and risk. If there are more than 8, present the top 5–6 and offer the remainder on request.
 
-For both expansion modes, present each proposal as its own AskUserQuestion: **A)** Add to this plan's scope **B)** Defer to TODOS.md **C)** Skip. Accepted items govern all remaining review sections. Put rejected items in "NOT in scope."
+For both expansion modes, ask separately for each proposed addition: **A)** Add to this plan's scope **B)** Defer to TODOS.md **C)** Skip. Accepted items govern the remaining sections; put rejected items in "NOT in scope."
 
 **For HOLD SCOPE** — run this:
 1. Complexity check: If the plan touches more than 8 files or introduces more than 2 new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
 2. What is the minimum set of changes that achieves the stated goal? Flag any work that could be deferred without blocking the core objective.
 
 **For SCOPE REDUCTION** — run this:
-1. Ruthless cut: What is the absolute minimum that ships value to a user? Everything else is deferred. No exceptions.
+1. Ruthless cut: Identify the minimum that ships value to a user. Propose everything else for deferral.
 2. What can be a follow-up PR? Separate "must ship together" from "nice to ship together."
 
-Present each proposed cut as its own AskUserQuestion: **A)** Defer this item to TODOS.md **B)** Keep it in scope. Review only the agreed reduced scope.
+**Deferring current scope:** In REDUCTION, HOLD, and the HOLD checks performed by SELECTIVE, ask separately for each proposed cut: **A)** Defer this item to TODOS.md **B)** Keep it in scope. Review only the agreed scope.
 
-Record approved deferrals and their context in TODOS.md under the storage policy. Reuse answered scope menus without another question or alternatives comparison. In HOLD SCOPE, use REDUCTION's defer/keep menu for each new deferral.
+Name the item and its current approval. To reopen it, cite contradictory evidence, a changed assumption or an explicit new user instruction. Selecting a mode never approves the cut. Wait for the item's actual answer before changing its disposition. An approved cut changes only its delivery scope: retain the earlier answer as history, record the new answer and reopening reason, and leave other approvals and limits unchanged.
+
+Record approved deferrals and context in TODOS.md under the storage policy. Reuse answered scope decisions without another question or alternatives comparison.
 
 ### 0H. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
 
@@ -415,7 +419,7 @@ For scope prioritization, resolve scope and feasibility blockers now. Keep other
   HOUR 4-5 (integration):  What will surprise them?
   HOUR 6+ (polish/tests):  What will they wish they'd planned for?
 ```
-These are human-team hours: with CC + gstack, 6 hours becomes ~30-60 minutes (10-20x faster), with identical decisions. Always present both effort scales.
+Add this sequence, feasibility blockers and remaining choices to the working plan. These are human-team hours: with CC + gstack, 6 hours becomes ~30–60 minutes (10–20x faster), with identical decisions. Present both effort scales.
 
 Ask urgent decisions separately, one commitment per call; never defer critical risks. Carry each Step 0 answer's exact choice/scope in the ledger across sections. Re-ask only for new material tradeoffs or changed assumptions; get approval before changing the choice.
 

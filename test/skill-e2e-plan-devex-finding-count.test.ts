@@ -4,7 +4,7 @@
 
 import { test } from 'bun:test';
 import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
-import { DEVEX_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
+import { DEVEX_FINDINGS, pickDevexCheckpointQuestion } from './helpers/plan-review-cases';
 import { seedDevexReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
@@ -119,12 +119,18 @@ const planDevex5Findings = (planPath: string) => [
   '# Plan: First-Run Onboarding Polish for the Public SDK Beta',
   '',
   // This onboarding scope is authored for the synthetic fixture.
-  'This change is limited to first-run onboarding polish for the existing SDK.',
-  'All five obligations below remain unresolved, including the mandatory first-run',
-  'gate in both the API and CLI. Other existing API/CLI semantics, packaging and',
-  'release-policy work are not otherwise redesign scope. Documentation/reference',
-  'corrections and genuine risks required by the selected persona or new onboarding',
-  'journey remain in scope. Unknown baseline details stay unknown, not assumed solved.',
+  'This is a decision-planning checkpoint for the five first-run obligations below,',
+  'not a beta-launch readiness review. All five remain unresolved, including the',
+  'mandatory first-run gate in both the API and CLI. Evaluate all eight DX passes',
+  'and the required peer comparison. Include the code, documentation and regression',
+  'proof necessary for the chosen remedies; no obligation may be deferred as a TODO.',
+  'Unknown SDK or repository facts remain verification requirements or blockers,',
+  'not assumptions that the product is complete. Surface any real incompatibility',
+  'that affects a chosen remedy, even if it prevents completing this checkpoint.',
+  'Independent roadmap, baseline-documentation, packaging and release additions',
+  'belong in separate planning; this session does not authorize scope expansion.',
+  'Report those opportunities without adding them to this delivery. If offered an',
+  'optional TODO disposition, keep it for later planning in TODOS.md, not Build it now.',
   '',
   '## Persona',
   "The plan doesn't specify which developer persona is the target — we're",
@@ -168,7 +174,7 @@ describeE2E('/plan-devex-review per-finding AskUserQuestion count (periodic)', (
           followUpPrompt: '', // plan already committed before the first model turn
           isLastStep0AUQ: devexStep0Boundary,
           reviewCountCeiling: null, // classify findings after actual workflow completion
-          questionPick: pickPlanReviewQuestion,
+          questionPick: pickDevexCheckpointQuestion,
           // The review target is present before scope selection.
           cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt),

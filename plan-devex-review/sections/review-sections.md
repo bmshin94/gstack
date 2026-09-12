@@ -14,9 +14,11 @@ any pass or responding to outside findings; a new pass does not reset approvals.
 - **Prior approval:** For a later or outside proposal, compare its evidence with the prior decision and options already considered.
   A disclosed tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it;
   identify a concrete contradiction or changed assumption before reopening.
-  Exact approved follow-through and source-proven factual corrections need no new
-  approval; they do not authorize changed behavior or optional verification depth.
-  New independent remedies remain pending decisions, even when earlier work is approved.
+  Carry exact approved follow-through and the Decision gate's routine review work
+  forward without a new approval. Inspect source before stating behavior or restoring
+  a declared destination; if verification is unavailable, record that dependency.
+  This does not authorize new presentation choices, behavior, channels or optional
+  verification depth. New independent remedies remain pending decisions.
 - **Scope:** Unverified loss of existing coverage remains a risk to verify,
   not proof that a new release policy is needed. Establish what the existing
   contract actually guarantees before claiming that a remedy or delay is required.
@@ -29,8 +31,8 @@ any pass or responding to outside findings; a new pass does not reset approvals.
 In DX POLISH, improve the accepted journey using existing capabilities. A checklist
 or Hall of Fame example is a lens, not a requirement to add its features. Identify
 out-of-scope opportunities separately; do not add APIs or change established
-behavior to earn 10/10. "FIX TO 10" means resolve evidenced, in-scope gaps with
-approval before edits; retain honest residual scores. Reuse prior decisions across
+behavior to earn 10/10. "FIX TO 10" means resolve evidenced, in-scope gaps through
+the Decision gate; retain honest residual scores. Reuse prior decisions across
 passes and outside voice. Implementation details and proof of one chosen behavior
 stay together; independent policies each need their own decision.
 
@@ -459,7 +461,7 @@ Do not record a clean review when no reviewer completed within the accepted wait
 Use the same five-field working list and four-step Decision gate above; do not start a second table. Record the reviewer and its evidence in `source/evidence`. Process each finding in this order before offering a menu:
 
 1. **Ground the evidence.** Compare the claim with original sources and actual answers, not unsupported draft text. Correct factual mistakes in the draft and evidence. Retain unknown facts and required verification; missing information does not prove a missing guarantee. If an unknown blocks a required contract, report the dependency. A concrete material risk may still need a decision before its occurrence is confirmed.
-2. **Classify the finding.** Carry exact approved follow-through forward. A known tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it. Reopen only for a concrete contradiction or changed assumption. Keep code, tests and docs establishing one approved behavior together; new policies or optional verification depth remain separate choices.
+2. **Classify the finding.** Apply the Decision gate's distinction between routine review work and a new choice. Carry exact approved follow-through forward. Verify and record factual or navigation corrections within scope; unknown behavior or destinations remain verification dependencies, not invented guarantees or links. A known tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it. Reopen only for a concrete contradiction or changed assumption. Keep code, tests and docs establishing one approved behavior together; new presentation approaches, guarantees, channels or optional verification depth remain separate choices.
 3. **Check the scope.** Start with the user's task boundaries and requested DX mode, amended only by exact approved exceptions and their answer references from Review Context. A mode's default does not revoke an approved exception. Establish the current contract before claiming a remedy or delay is necessary; missing implementation stays a verification dependency. Obtain scope approval for a new boundary crossing; authorization for one expansion does not approve another.
 4. **Draft and answer one decision.** Match a pending choice to its row or add one to the same list. Cite the current value, proposed value, exact approval and changed evidence. Hold every other value fixed or pending in EVERY option; split independently selectable changes. Use AskUserQuestion, recommend + WHY, and compare completeness only within this commitment's coverage:
 
@@ -498,7 +500,8 @@ DX reviews:
 * **No pending decisions:** report the section's findings, evidence and dispositions,
   then proceed. If it has no findings, state "No issues, moving on." Otherwise,
   ask only for new or justified reopened decisions identified by the Decision gate.
-  An unapproved remedy still needs approval even when its fix is obvious.
+  An independent choice still needs approval even when its fix is obvious;
+  routine verification or restoring an existing declared contract does not.
 * Assume the user hasn't looked at this window in 20 minutes. Re-ground every question.
 
 ## Required Outputs
@@ -957,5 +960,5 @@ Outside voice| Recommended      | Recommended        | Skip
 * NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).
 * Label with NUMBER + LETTER (e.g., "3A", "3B").
 * One sentence max per option.
-* After each pass, pause and wait for feedback before moving on.
+* After each pass, report its findings. Wait for any pending decision before moving on.
 * Rate before and after each pass for scannability.

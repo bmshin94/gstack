@@ -122,16 +122,25 @@ When fixing failures or preparing `/ship`, follow this order:
    list in `.context/`; update it instead of starting overlapping repair plans.
 2. Resolve base-branch integration and assign one owner per shared file before
    editing. Keep repairs within the observed failures and the user's scope.
+   Schedule independent checks independently. Gate a check only on inputs or
+   prerequisites it actually needs; an unrelated failure must not serialize the
+   whole validation plan. Keep source fixed while tests live-link its files.
 3. Diagnose before changing code. Distinguish a product defect, an invalid test
    expectation, a detector/fixture defect, and a launch/environment failure.
    Preserve the original failure. Do not call it pre-existing without evidence.
    Verify pinned runtime tool schemas and defaults before treating omitted fields
    as model noncompliance.
+   Check that a bounded evaluation’s fixture scope and automated answers support
+   its metric. Do not let the driver approve unrelated expansion, then blame the
+   skill for the extra work; preserve required findings and evidence limits.
 4. Reproduce with the smallest relevant test. For agent tests, reuse captured
    public events in free regressions, including negative controls, before paying
    for another agent run. Check behavior and acknowledgments; match exact prose
    only when that prose is the contract. Do not lower thresholds, increase model
    budgets, skip cases, or rejudge a failure to manufacture a pass.
+   When renderer or parser failures recur at the same boundary, verify the
+   supported input class against the pinned runtime. Keep adversarial controls;
+   do not add one spelling or glyph per paid failure.
    For workflow clarity failures, read the complete evaluated excerpt and its
    referenced source. Resolve all demonstrated ambiguities together: order,
    definitions, ownership and approval. Consolidate dense instructions into
@@ -141,6 +150,8 @@ When fixing failures or preparing `/ship`, follow this order:
    Also run adjacent cheap checks: generated-content freshness, prompt-size/parity
    limits, source assertions, fixture checks, and dependency selection as
    applicable. A changed prompt must clear these before its eval.
+   Check each edit or setup command’s result before running dependent checks. A
+   failed edit is not a reason to test the unchanged input again.
 6. Preflight the actual launcher: required binaries, isolated state, display when
    needed, explicit test tier, selection, and expected executed-case counts.
    Verify required tool execution with a no-cost smoke check under that launch

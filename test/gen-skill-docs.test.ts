@@ -4022,7 +4022,7 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
   test('0D authority and fresh-approval paths precede mode selection', () => {
     const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
     const approachIdx = content.indexOf('### 0D.');
-    const presentIdx = content.indexOf("Use the preamble's AskUserQuestion format", approachIdx);
+    const presentIdx = content.indexOf("Use the preamble's question format", approachIdx);
     const stopIdx = content.indexOf('**STOP:**', presentIdx);
     const modeIdx = content.indexOf('### 0E. Mode Selection');
     const preludeIdx = content.indexOf('### 0F');
@@ -4030,18 +4030,19 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions.every(position => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
-    expect(approach).toContain('Use original input, inspected source and actual answers to establish facts and approvals');
-    expect(approach).toContain('Correct factual mistakes in the draft; flag conflicts with approvals');
+    expect(approach).toContain('Check the original input, inspected source and actual answers');
+    expect(approach).toContain('Correct factual errors in the working plan; flag conflicts with approvals');
     expect(approach).toContain('Carry exact approvals forward without broadening or asking again');
-    expect(content).toContain("Cite each resolved row's instruction or answer");
-    const reopenRule = 'Reopen only for a concrete contradiction or changed assumption';
+    expect(content).toContain("the actual instruction or answer reference and precisely what it authorized");
+    const reopenRule = 'Reopen only for a concrete contradiction, changed assumption or explicit new user instruction';
     expect(content).toContain(reopenRule);
     expect(content.indexOf(reopenRule)).toBeLessThan(approachIdx);
     const gate = content.slice(stopIdx, modeIdx);
     expect(gate).toContain('Resolve each pending approach before 0E, even a lone option');
-    expect(gate).toContain('Recommendations are not approval');
-    expect(gate).toContain('Ask one row per call, cite its ID, and record the actual answer reference and scope in Exact approval and scope');
-    expect(gate).toContain('Update Status and apply only approved amendments to the working plan before the next row');
+    expect(approach).toContain('Recommendations are not approval');
+    expect(approach).toContain('Ask one row per call and cite its ID');
+    expect(gate).toContain('Record the actual answer reference and scope in Exact approval and scope');
+    expect(gate).toContain('Update Status and apply only approved amendments before the next row');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
   });
 });

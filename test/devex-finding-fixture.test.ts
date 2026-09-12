@@ -33,6 +33,17 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       expect(earlyEvidence).toContain('selected option, answer reference and approved scope');
       expect(earlyEvidence).toContain("user's task boundaries and requested mode, amended only by exact approved exceptions");
       expect(earlyEvidence).toContain("A mode's default does not cancel an explicitly approved exception");
+      // Required factual/navigation repair is review work; it must not become
+      // an approval solely because the rating pass finds a gap. New approaches
+      // and policies still go through the same gate.
+      const classification = earlyEvidence.slice(earlyEvidence.indexOf('2. **Classify the finding.**'),
+        earlyEvidence.indexOf('3. **Check the scope.**'));
+      expect(classification).toContain('verifying sources, correcting facts and restoring docs or navigation');
+      expect(classification).toContain('unverified behavior or destinations stay unknown');
+      expect(classification).toContain('A new presentation approach, guarantee, channel, scope extension or optional verification depth remains a decision');
+      const rating = content.slice(content.indexOf('## The 0-10 Rating Method'));
+      expect(rating).toContain('4. Run the Decision gate for each gap.');
+      expect(rating).not.toContain('Resolve each new in-scope gap via AskUserQuestion');
       const journey = content.slice(content.indexOf('### 0F.'), content.indexOf('### 0G.'));
       const wholeGate = journey.indexOf('Run all four Decision gate steps');
       expect(wholeGate).toBeGreaterThanOrEqual(0);
@@ -93,6 +104,7 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
         expect(outside.slice(context, planBody)).toContain('including any explicitly approved exception');
         expect(outside.slice(context, planBody)).toContain('Missing implementation remains a verification');
         expect(outside.slice(context, planBody)).toContain('concrete new evidence or a changed assumption');
+        expect(outside).toContain("Apply the Decision gate's distinction between routine review work and a new choice.");
       } else {
         expect(allContent).not.toContain('REVIEW CONTEXT (from the full working list, outside the truncated plan body)');
       }
@@ -107,12 +119,18 @@ test('the actual DX finding registration commits its mode, unchanged defects, an
   const facts = path.join(directory, 'facts.json');
   const originalPlan = [
     '# Plan: First-Run Onboarding Polish for the Public SDK Beta', '',
-    'This change is limited to first-run onboarding polish for the existing SDK.',
-    'All five obligations below remain unresolved, including the mandatory first-run',
-    'gate in both the API and CLI. Other existing API/CLI semantics, packaging and',
-    'release-policy work are not otherwise redesign scope. Documentation/reference',
-    'corrections and genuine risks required by the selected persona or new onboarding',
-    'journey remain in scope. Unknown baseline details stay unknown, not assumed solved.',
+    'This is a decision-planning checkpoint for the five first-run obligations below,',
+    'not a beta-launch readiness review. All five remain unresolved, including the',
+    'mandatory first-run gate in both the API and CLI. Evaluate all eight DX passes',
+    'and the required peer comparison. Include the code, documentation and regression',
+    'proof necessary for the chosen remedies; no obligation may be deferred as a TODO.',
+    'Unknown SDK or repository facts remain verification requirements or blockers,',
+    'not assumptions that the product is complete. Surface any real incompatibility',
+    'that affects a chosen remedy, even if it prevents completing this checkpoint.',
+    'Independent roadmap, baseline-documentation, packaging and release additions',
+    'belong in separate planning; this session does not authorize scope expansion.',
+    'Report those opportunities without adding them to this delivery. If offered an',
+    'optional TODO disposition, keep it for later planning in TODOS.md, not Build it now.',
     '', '## Persona',
     "The plan doesn't specify which developer persona is the target — we're",
     'shipping for "everyone," which means we tune for nobody.', '',
@@ -148,6 +166,8 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.timeoutMs).toBeGreaterThan(1400000);
     expect(opts.timeoutMs).toBeLessThanOrEqual(1500000);
     expect(opts.reviewCountCeiling).toBeNull();
+    const { pickDevexCheckpointQuestion } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))});
+    expect(opts.questionPick).toBe(pickDevexCheckpointQuestion);
     expect(opts.env).toEqual({ QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' });
     const expected = [
       'Please review this plan thoroughly. As you go, write your plan-mode plan to ' + path.join(opts.cwd, 'gstack-test-plan-devex.md') + ' (use Edit/Write to that exact path).',

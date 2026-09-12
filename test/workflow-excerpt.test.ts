@@ -118,7 +118,7 @@ describe('workflow judge excerpts', () => {
     expect(persistence.match(/^#### Spec Review Loop$/gm)).toHaveLength(1);
     expect(persistence).not.toMatch(/^## Spec Review Loop$/m);
     expect(ceo.slice(positions[2], positions[3])).toContain('Auto-decided review mode → <selected mode> (your preference)');
-    expect(ceo.slice(positions[2], positions[3])).toContain('Mode: <selected mode>; approach: <approved 0D approach>');
+    expect(ceo.slice(positions[2], positions[3])).toContain('Mode: <selected mode>; approved decisions: <rows or none>');
   });
 
   test('CEO Step 0 headings follow their sequential execution labels', () => {

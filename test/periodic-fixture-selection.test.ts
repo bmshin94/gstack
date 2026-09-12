@@ -41,6 +41,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/design-html-section-complete.md', ['carve-section-loading']],
     ['test/plan-design-floor-fixture.test.ts', ['plan-design-finding-floor']],
     ['test/devex-finding-fixture.test.ts', ['plan-devex-finding-count']],
+    ['test/fixtures/devex-checkpoint-todos.json', ['plan-devex-finding-count']],
     ['test/fixtures/devex-existing-sdk/README.md', ['plan-devex-finding-count']],
     ['test/fixtures/devex-existing-sdk/docs/getting-started.md', ['plan-devex-finding-count']],
     ['test/fixtures/devex-existing-sdk/docs/feedback.md', ['plan-devex-finding-count']],
