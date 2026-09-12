@@ -57,6 +57,23 @@ test('captured complete Fetch card binds URL, wrapped prompt and domain to one o
   expect(s.read().permissionResults).toEqual([{ id: 'fetch-1', result: 'completed' }]);
 });
 
+test('Fetch one-cell Unicode projection retains exact prompt and native request binding', () => {
+  const s = fixture();
+  const input = { ...captured.input, prompt: captured.input.prompt.replace('exact', '≤date') };
+  const frame = captured.card.replace('exact', '≤date');
+  expect(input.prompt).not.toBe(captured.input.prompt);
+  s.invoke('fetch-1', input);
+  expect(s.grant(frame)).toBe(false);
+  expect([...s.grants]).toEqual([]);
+  s.request(input);
+  expect(() => s.grant(captured.card)).toThrow('cannot be bound');
+  expect([...s.grants]).toEqual([]);
+  expect(s.grant(frame)).toBe(true);
+  expect(s.grant(frame)).toBe(false);
+  s.result();
+  expect(s.read().permissionResults).toEqual([{ id: 'fetch-1', result: 'completed' }]);
+});
+
 const damaged = {
   url: captured.card.replace('/retirement-of-office-', '/other-retirement-of-office-'),
   prompt: captured.card.replace('Quote the exact dates.', 'Quote approximate dates.'),

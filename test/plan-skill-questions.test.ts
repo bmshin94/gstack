@@ -6,6 +6,7 @@ import { readPlanSkillQuestions, matchesNativeQuestion, nativeQuestionSelection,
 import { isPermissionDialogVisible, parseNumberedOptions, stripAnsi } from './helpers/claude-pty-runner';
 import { setupQuestionEventSource, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
 import retainedBashDirectory from './fixtures/bash-directory-permission.json';
+import retainedDesignTasksPermission from './fixtures/design-tasks-bash-permission.json';
 import { E2E_TOUCHFILES, selectTests } from './helpers/touchfiles';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
@@ -547,7 +548,7 @@ test('native Bash command bytes and description remain separate authority', () =
   expect(() => nativePermissionKey(tool, nativeBashDialog('false', tool.input.command))).toThrow('cannot be bound');
   expect(() => nativePermissionKey(tool, nativeBashDialog('false', 'Bash command printf "a  b" requires permission'))).toThrow('cannot be bound');
   expect(() => nativePermissionKey({ ...tool, input: { command: 'printf\t"a  b"', description: tool.input.description } }, frame)).toThrow('cannot be bound');
-  expect(() => nativePermissionKey({ ...tool, input: { command: 'printf café', description: 'Print text' } }, nativeBashDialog('printf café', 'Print text'))).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...tool, input: { command: 'printf cafe\u0301', description: 'Print text' } }, nativeBashDialog('printf cafe\u0301', 'Print text'))).toThrow('cannot be bound');
   expect(nativePermissionKey({ id: 'bash', name: 'Bash', input: { command: 'true' } }, nativeBashDialog('true', 'Run shell command'))).toBe('Bash:true');
 });
 
@@ -2167,7 +2168,7 @@ test('native Bash em dash uses literal positive-width projection without widenin
   const input = { command: 'printf "A—B…"', description: 'Print A—B…' };
   const tool = { id: 'em-dash', name: 'Bash', input };
   expect(nativePermissionKey(tool, nativeBashDialog(input.command, input.description))).toBe('Bash:' + input.command);
-  for (const foreign of ['–', '\u00a0', '\u200b', '\u202e', '\u2066', '\u0301', '好', '👩‍💻', '\t', '\r', '\x1b', '\u0085']) {
+  for (const foreign of ['\u2029', '\u00a0', '\u200b', '\u202e', '\u2066', '\u0301', '好', '👩‍💻', '\t', '\r', '\x1b', '\u0085']) {
     const changed = { ...input, command: input.command.replace('—', foreign) };
     expect(() => nativePermissionKey({ ...tool, input: changed }, nativeBashDialog(changed.command, changed.description))).toThrow('cannot be bound');
   }
@@ -2258,4 +2259,83 @@ test('pinned Bash clipped top rule requires the entire exact payload and only pe
   expect(matchesClippedBashPermission(tool, frame, 120)).toBe(false);
   expect(matchesClippedBashPermission({ ...tool, bashPermissionRequestId: null }, frame, 240)).toBe(false);
   expect(matchesClippedBashPermission({ ...tool, input: { ...input, command: input.command + ' changed' } }, frame, 240)).toBe(false);
+});
+
+
+test('captured Design tasks permission binds its exact single-cell Unicode payload', () => {
+  const { tool, frame } = retainedDesignTasksPermission;
+  expect(nativePermissionKey(tool, frame)).toBe('Bash:' + tool.input.command);
+});
+
+
+test.each(['≤', '–', 'é', '©', '™'])('native Bash preserves unsanitized one-cell BMP text: %s', glyph => {
+  const input = { command: `printf "${glyph}"`, description: `Print ${glyph}` };
+  expect(nativePermissionKey({ id: 'one-cell', name: 'Bash', input }, nativeBashDialog(input.command, input.description))).toBe('Bash:' + input.command);
+});
+
+test.each(['\u0000', '\u007f', '\u0085', '\t', '\r', '\x1b', '\u00a0', '\u2028', '\u2029',
+  '\u200b', '\u2060', '\u202e', '\u2066', '\u0301', 'e\u0301', '\u034f', '\ufe0f', '\u2800',
+  '\ud800', '好', '😀', '👩‍💻', '𝔸'])
+('native Bash refuses sanitized or non-single-cell payload %j', glyph => {
+  for (const field of ['command', 'description'] as const) {
+    const input = { command: 'printf ready', description: 'Print ready', [field]: `Print ${glyph}` };
+    expect(() => nativePermissionKey({ id: 'unsafe-glyph', name: 'Bash', input }, nativeBashDialog(input.command, input.description))).toThrow('cannot be bound');
+  }
+});
+
+test('one-cell Unicode keeps exact hard indentation and soft continuation at both viewports', () => {
+  for (const columns of [120, 240]) {
+    const head = 'x'.repeat(columns - 9) + '≤';
+    const input = { command: head + '  étail\n  ™hard', description: 'Print ≤–é©™' };
+    const tool = { id: 'unicode-wrap', name: 'Bash', input };
+    const frame = '─'.repeat(columns) + '\n Bash command\n\n   │ ' + head
+      + '\n   │  étail\n   │   ™hard\n   Print ≤–é©™'
+      + '\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend';
+    expect(nativePermissionKey(tool, frame)).toBe('Bash:' + input.command);
+    for (const changed of [frame.replace('   │  étail', '   │ étail'), frame.replace('   │   ™hard', '   │  ™hard'),
+      frame.replace('Print ≤–é©™', 'Print <–é©™')]) expect(() => nativePermissionKey(tool, changed)).toThrow('cannot be bound');
+  }
+});
+
+test('captured Design tasks card still requires exact command, description, width and controls', () => {
+  const { tool, frame } = retainedDesignTasksPermission;
+  const lines = frame.split('\n');
+  const heading = lines.indexOf(' Bash command');
+  expect(heading).toBeGreaterThanOrEqual(0);
+  expect(lines[heading + 1]).toMatch(/^ *$/);
+  const clipped = lines.slice(heading + 3).join('\n');
+  expect(matchesClippedBashPermission(tool, clipped, 240)).toBe(true);
+  expect(() => nativePermissionKey(tool, clipped)).toThrow('cannot be bound');
+  for (const changed of [frame.replace('≤16px', '<16px'), frame.replace(tool.input.description, 'Different task'),
+    frame.replace('─'.repeat(240), '─'.repeat(120)), frame.replace('─'.repeat(240), '─'.repeat(239)),
+    frame.replace(' ❯ 1. Yes', '   1. Yes'), frame.replace(' Esc to cancel · Tab to amend', ' Esc to cancel'),
+    frame + '\n❯ Another prompt', '```\n' + frame]) expect(() => nativePermissionKey(tool, changed)).toThrow('cannot be bound');
+  for (const field of ['command', 'description'] as const) {
+    expect(() => nativePermissionKey({ ...tool, input: { ...tool.input, [field]: tool.input[field] + ' changed' } }, frame)).toThrow('cannot be bound');
+  }
+  expect(matchesClippedBashPermission({ ...tool, bashPermissionRequestId: null }, clipped, 240)).toBe(false);
+});
+
+test('captured Design tasks permission needs an owned request and retires on its actual completion', () => {
+  const s = bashHooks(); const { tool, frame } = retainedDesignTasksPermission; const input = tool.input;
+  const granted = new Set<string>(), requests = new Map<string, NativePermissionGrant>();
+  s.emit('PreToolUse', 'tasks-owned', input);
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(false);
+  s.emit('PermissionRequest', 'hook-not-native-id', input);
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, requests)).toBe(false);
+  expect(s.read().permissionTools.map(tool => tool.id)).toEqual(['tasks-owned']);
+  s.emit('PostToolUse', 'tasks-owned', input, { tool_response: { stdout: '', stderr: '', interrupted: false } });
+  expect(s.read().permissionTools).toEqual([]);
+  expect(s.read().permissionResults).toEqual([{ id: 'tasks-owned', result: 'completed' }]);
+  expect([...granted]).toEqual(['tasks-owned']);
+});
+
+test.each(['command', 'description'] as const)('captured Design tasks refuses changed post-Pre %s', field => {
+  const s = bashHooks(); const { tool, frame } = retainedDesignTasksPermission;
+  s.emit('PreToolUse', 'tasks-owned', tool.input);
+  s.emit('PermissionRequest', 'hook-not-native-id', { ...tool.input, [field]: tool.input[field] + ' changed' });
+  const granted = new Set<string>();
+  expect(reserveNativePermissionGrant(s.read(), frame, granted, new Map())).toBe(false);
+  expect(granted.size).toBe(0);
 });

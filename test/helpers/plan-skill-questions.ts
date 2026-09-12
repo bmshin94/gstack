@@ -785,11 +785,24 @@ export function currentBashPermissionCard(visible: string, includeReadDirectorie
   return null;
 }
 
+let nativePayloadSegmenter: Intl.Segmenter | undefined;
+
 /** Match the renderer's projection, never whitespace-normalize the command.
- * ASCII and literal U+2014/U+2026 take the pinned CLI's direct Bun.wrapAnsi path.
- * Other Unicode and sanitized/control payloads remain unproven and refused. */
+ * The pinned CLI passes unsanitized single-codepoint graphemes to Bun.wrapAnsi.
+ * Keep the proven one-cell BMP subset; complex/zero-width/wide text is refused. */
 function nativeBashPayload(value: string, columns: number): string[] | null {
-  if (value.length > 200_000 || /[^\x20-\x7e\n—…]/.test(value) || typeof Bun.wrapAnsi !== 'function') return null;
+  if (value.length > 200_000 || typeof Bun.wrapAnsi !== 'function') return null;
+  if (/[^\x20-\x7e\n]/.test(value)) {
+    if (typeof Intl.Segmenter !== 'function' || typeof Bun.stringWidth !== 'function') return null;
+    nativePayloadSegmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    for (const { segment } of nativePayloadSegmenter.segment(value)) {
+      if (segment === ' ' || segment === '\n') continue;
+      // U+2800 is also treated as invisible by the pinned sanitizer. Do not
+      // admit separators, controls, combining marks or surrogate pairs.
+      if (segment.length !== 1 || /[\p{Cc}\p{Cf}\p{Cs}\p{M}\p{Z}\p{Default_Ignorable_Code_Point}\u2800]/u.test(segment)
+        || Bun.stringWidth(segment, { ambiguousIsNarrow: true }) !== 1) return null;
+    }
+  }
   const gutter = value.includes('\n') || value.length > 80;
   const prefix = gutter ? '   │ ' : '   ';
   // Pinned Eg preserves hard-line indentation, but elides one separator on
