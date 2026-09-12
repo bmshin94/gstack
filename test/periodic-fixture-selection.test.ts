@@ -93,6 +93,16 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
   }
 });
 
+test('decision-log CLI and validator select the demonstrated DX consumer without global or quality fanout', () => {
+  for (const file of ['bin/gstack-decision-log', 'lib/gstack-decision.ts']) {
+    const selected = selectTests([file], E2E_TOUCHFILES);
+    expect(selected.reason).toBe('diff');
+    expect(selected.selected).toEqual(['plan-devex-finding-count']);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+  expect(E2E_TIERS['plan-devex-finding-count']).toBe('periodic');
+});
+
 test('shared native input dependencies select every PTY consumer without changing tiers', () => {
   const expected = selectTests(['test/helpers/claude-pty-runner.ts'], E2E_TOUCHFILES).selected.sort();
   expect(expected).toHaveLength(22);
