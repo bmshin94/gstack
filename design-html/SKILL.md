@@ -455,10 +455,10 @@ Commands:
 - `$D check --image /path.png --brief "..."` — vision quality gate
 - `$D iterate --session /path/session.json --feedback "..." --output /path.png` — iterate
 
-**CRITICAL PATH RULE:** All design artifacts (mockups, comparison boards, approved.json)
-MUST be saved to `~/.gstack/projects/$SLUG/designs/`, NEVER to `.context/`,
-`docs/designs/`, `/tmp/`, or any project-local directory. Design artifacts are USER
-data, not project files. They persist across branches, conversations, and workspaces.
+**CRITICAL PATH RULE:** Design artifacts belong in `$GSTACK_STATE_ROOT/projects/$SLUG/designs/`.
+Use `bin/gstack-paths`: GSTACK_HOME → plugin storage → ~/.gstack. Keep it even if temporary; never substitute
+.context/, docs/designs/ or another directory.
+These are user files, not application source.
 
 **Design detector (optional, deterministic):** gstack runs impeccable's engine when one is installed under the user's home directory. gstack never runs impeccable's installer, its launcher, or `npx impeccable`; the one download it can make is the engine binary itself, only after the user says yes to the offer below, verified against a checksum pinned in gstack.
 
@@ -481,7 +481,7 @@ Read the first line. `IMPECCABLE_READY: <engine>`: the scans in this skill run. 
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 ```
 
-Detect what design context exists for this project. Run all four checks:
+Detect context with the CEO-plan check and the design-artifact checks below:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
@@ -490,20 +490,14 @@ _CEO=$(ls -t ~/.gstack/projects/$SLUG/ceo-plans/*.md 2>/dev/null | head -1)
 ```
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
 setopt +o nomatch 2>/dev/null || true
-_APPROVED=$(ls -t ~/.gstack/projects/$SLUG/designs/*/approved.json 2>/dev/null | head -1)
+_APPROVED=$(ls -t "$GSTACK_STATE_ROOT/projects/$SLUG/designs/"*/approved.json 2>/dev/null | head -1)
 [ -n "$_APPROVED" ] && echo "APPROVED: $_APPROVED" || echo "NO_APPROVED"
-```
-
-```bash
-setopt +o nomatch 2>/dev/null || true
-_VARIANTS=$(ls -t ~/.gstack/projects/$SLUG/designs/*/variant-*.png 2>/dev/null | head -1)
+_VARIANTS=$(ls -t "$GSTACK_STATE_ROOT/projects/$SLUG/designs/"*/variant-*.png 2>/dev/null | head -1)
 [ -n "$_VARIANTS" ] && echo "VARIANTS: $_VARIANTS" || echo "NO_VARIANTS"
-```
-
-```bash
-setopt +o nomatch 2>/dev/null || true
-_FINALIZED=$(ls -t ~/.gstack/projects/$SLUG/designs/*/finalized.html 2>/dev/null | head -1)
+_FINALIZED=$(ls -t "$GSTACK_STATE_ROOT/projects/$SLUG/designs/"*/finalized.html 2>/dev/null | head -1)
 [ -n "$_FINALIZED" ] && echo "FINALIZED: $_FINALIZED" || echo "NO_FINALIZED"
 [ -f DESIGN.md ] && echo "DESIGN_MD: exists" || echo "NO_DESIGN_MD"
 ```
@@ -681,10 +675,10 @@ Run the detected install command. Then use standard imports in the component.
 ### HTML Generation
 
 Write a single file using the Write tool. Save to:
-`~/.gstack/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.html`
+`$GSTACK_STATE_ROOT/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.html`
 
 For framework output, save to:
-`~/.gstack/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.[tsx|svelte|vue]`
+`$GSTACK_STATE_ROOT/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.[tsx|svelte|vue]`
 
 **Always include in vanilla HTML:**
 - Pretext source (inlined or CDN, see above)

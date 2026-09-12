@@ -27,4 +27,14 @@ that typing and password-manager autofill still work with the visibility control
 This proposal does not add an endpoint or change credential validation, session
 cookies, login errors, or the post-login destination. Password reset, strength
 meters, remembering visibility, and a form redesign are separate product work.
+
+For this review, product scope is fixed to the show/hide feature above. Keep extra
+user-visible behaviors as proposals pending the final user gate; do not
+auto-accept them. Ordinary implementation and verification choices remain open
+to /autoplan's normal process. Complete SELECTIVE EXPANSION exploration and all
+required phases, outside voices and spec reviews. Address the correctness,
+accessibility and security needed for this feature. If a necessary remedy would
+expand product scope, retain its evidence and unresolved blocker for the final
+gate rather than assuming approval.
+
 The control is not implemented; the proposal remains subject to the full review.

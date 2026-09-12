@@ -271,44 +271,63 @@ export function getHermeticDirs(): HermeticDirs {
 }
 
 
-/** Only split's own generated CEO review documents need child-agent Read.
- * The opt-in never grants another fixture, an operator home, or other tools. */
-export function hermeticCeoPlanReadArgs(cwd: string, childEnv: Record<string, string>): string[] {
-  if (!isHermeticEnabled()) throw new Error('CEO artifact Read requires hermetic mode');
+/** The caller owns a private fixture and its generated artifact subtree.
+ * Only the two fixed wrappers below choose the admitted fixture and file types. */
+function hermeticArtifactReadArgs(cwd: string, childEnv: Record<string, string>, scopeSpec: {
+  label: string; fixturePattern: RegExp; fixtureDescription: string;
+  artifactDirectory: string; filePattern: string;
+}): string[] {
+  const { label, fixturePattern, fixtureDescription, artifactDirectory, filePattern } = scopeSpec;
+  if (!isHermeticEnabled()) throw new Error(`${label} artifact Read requires hermetic mode`);
   const dirs = getHermeticDirs();
   const fixture = path.resolve(cwd);
   const slug = path.basename(fixture);
   if (childEnv.GSTACK_HOME !== dirs.gstackHome || childEnv.GSTACK_PROJECT_SLUG
-    || !/^gstack-e2e-plan-ceo-split-overflow-[A-Za-z0-9]+$/.test(slug)
+    || !fixturePattern.test(slug)
     || !fs.lstatSync(fixture).isDirectory()
     || fs.realpathSync(path.dirname(fixture)) !== fs.realpathSync(os.tmpdir())) {
-    throw new Error('CEO artifact Read requires this private split fixture and hermetic home');
+    throw new Error(`${label} artifact Read requires this ${fixtureDescription} and hermetic home`);
   }
   for (const directory of [dirs.runRoot, dirs.gstackHome, path.join(fixture, '.git')]) {
-    if (!fs.lstatSync(directory).isDirectory()) throw new Error('CEO artifact Read refuses substituted directories');
+    if (!fs.lstatSync(directory).isDirectory()) throw new Error(`${label} artifact Read refuses substituted directories`);
   }
   // Use the same native slug resolver before granting anything; never allow
   // an ancestor project or a foreign remote to redirect this fixture's scope.
   const resolved = execFileSync('bash', [path.join(repoRoot(), 'bin', 'gstack-slug')], {
     cwd: fixture, env: childEnv, encoding: 'utf8', timeout: 10_000,
   }).match(/^SLUG=([^\r\n]+)$/m)?.[1];
-  if (resolved !== slug) throw new Error('CEO artifact Read requires the exact fixture project slug');
+  if (resolved !== slug) throw new Error(`${label} artifact Read requires the exact fixture project slug`);
   const project = path.join(dirs.gstackHome, 'projects', slug);
-  const scope = path.join(project, 'ceo-plans');
+  const scope = path.join(project, artifactDirectory);
   for (const directory of [path.dirname(project), project, scope]) {
     const existing = fs.lstatSync(directory, { throwIfNoEntry: false });
-    if (existing && !existing.isDirectory()) throw new Error('CEO artifact Read refuses substituted directories');
+    if (existing && !existing.isDirectory()) throw new Error(`${label} artifact Read refuses substituted directories`);
     if (!existing) fs.mkdirSync(directory, { mode: 0o700 });
   }
   const scopes = new Set([scope, fs.realpathSync(scope)]);
   const rules = [...scopes].map(directory => {
     const absolute = directory.split(path.sep).join('/');
     if (/[\x00-\x1f\x7f\\*?\[\]{}()|+^$,]/.test(absolute)) {
-      throw new Error('CEO artifact path contains unsupported permission-pattern syntax');
+      throw new Error(`${label} artifact path contains unsupported permission-pattern syntax`);
     }
-    return `Read(${absolute.startsWith('/') ? '/' : ''}${absolute}/*.md)`;
+    return `Read(${absolute.startsWith('/') ? '/' : ''}${absolute}/${filePattern})`;
   });
   return ['--allowedTools', ...rules];
+}
+
+/** Only split's own generated CEO review documents need child-agent Read. */
+export function hermeticCeoPlanReadArgs(cwd: string, childEnv: Record<string, string>): string[] {
+  return hermeticArtifactReadArgs(cwd, childEnv, { label: 'CEO',
+    fixturePattern: /^gstack-e2e-plan-ceo-split-overflow-[A-Za-z0-9]+$/, fixtureDescription: 'private split fixture',
+    artifactDirectory: 'ceo-plans', filePattern: '*.md' });
+}
+
+/** Only the two Design fixtures may read their own generated PNG mockups.
+ * No operator-home, other-project, document, shell or write permission is added. */
+export function hermeticDesignReadArgs(cwd: string, childEnv: Record<string, string>): string[] {
+  return hermeticArtifactReadArgs(cwd, childEnv, { label: 'Design',
+    fixturePattern: /^(?:gstack-e2e-plan-design-|design-ui-project-)[A-Za-z0-9]+$/, fixtureDescription: 'private Design fixture',
+    artifactDirectory: 'designs', filePattern: '*/*.png' });
 }
 
 let cachedSkillsConfigDir: string | null = null;

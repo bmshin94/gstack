@@ -114,40 +114,38 @@ higher confidence.
 
 ## Decision procedure
 
-**Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. Keep one table for the whole review. One row means one choice the user can accept or reject separately. For each finding, follow these five steps before sending a question.
+**Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. Keep one table for the whole review. One row means one choice the user can accept or reject separately. Use these five steps for every new or reopened question.
 
 **1. Check the source and prior answers.** Read the original request, relevant source and actual user answers. In `Current value and verification`, distinguish observed runtime from the accepted plan; an approved plan is not implemented behavior. Compare against the latest accepted plan value and its selected option, answer reference and exact scope. If none was approved, use the original proposal. Retain earlier values as history; reopening does not reset an approval to the original proposal. A number in your draft is not a user answer; leave unknown values unknown.
 
 Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, your recommendation or agreement between reviewers does not approve other work. Correct factual mistakes against source evidence and disclose the correction; do not change behavior as part of that correction. Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption, and explain what changed. An uncertain risk can still need a decision; state what is unknown.
 
-**2. Name the commitments before writing options.** Use Step 1 to list each new or reopened change as current value → proposed value. Could the user accept one change and reject another? If yes, these are separate commitments, even within one issue, helper or patch. A commitment can be a behavior, implementation approach, bound or optional verification depth. For a bound, name what it measures and its unit; for verification, name the method and depth. Leave unknown values unknown.
-
-Keep a chosen behavior together with the code, tests and docs required to establish it. Carry required proof of an exact approved contract into every option, citing that answer. A later-discovered scenario necessary to prove that contract belongs to this common work. Beyond that required proof, compare proposed instrumentation or follow-up work separately when the behavior can be chosen with or without it. Calling it evidence-gathering does not make it common required work. Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice. A different guarantee or policy needs its own decision, with its tests conditional on approval.
-
-**3. Compare values, not packages.** For EVERY option, read its label, description and pros/cons. Write one comparison line per independently selectable commitment, including values shared by all options:
-
-`commitment [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`
-
-Use only the options offered. Each cell states the resulting value for that commitment, not an option label or a package of remedies. For Investigate and Defer, show which plan value stays unchanged or pending. Put any separately selectable measurement, implementation or follow-up work on its own comparison line. Check each value against Step 1: a shared new value still needs approval, even when it does not vary between options. Required implementation and proof of one approved contract stay common work, not extra commitments.
-
-For example, this menu contains two choices:
-- `retry mode [pending]: current=off; A=on; B=off; C=on`
-- `request key [pending]: current=absent; A=present; B=absent; C=absent`
-
-A and C keep retries on but disagree on the key. Split them: ask about retry mode with the key pending in every option. Hold the chosen mode fixed, then ask about the key only if it remains relevant and pending. Record why an irrelevant choice needs no question. Resolve any still-needed risk or safety choice before declaring the plan ready.
-
-A question must resolve exactly one new or reopened commitment. If accepting an option would resolve a second pending commitment, return to Step 2 and rebuild it. This includes an unapproved default introduced in every option. Keep other approved choices fixed and unresolved choices pending. Never remove an established contract or required proof to make an option smaller; changing that contract needs its own decision. With no pending choice, carry approved work forward and report the finding without asking again.
-
-**4. Save the comparison with its decision.** Match each separate commitment to an existing row or give it a new ID. Keep the same ledger:
+**2. Identify the rows before drafting a menu.** List each new or reopened change as current value → proposed value. Could the user accept one change and reject another? If yes, give them separate rows, even within one issue, helper or patch. Match each to its existing ID or assign a new one now. Record the source or reviewer and mark undecided rows `pending`; their remedies are not accepted work.
 
 | Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |
 |-----|-------------------|--------------------------------|---------------------------------|-----------------------------|--------|--------------------|
 
-Before every new or reopened question, rebuild `Option comparisons` from all offered options in Step 3, using Step 1's latest accepted plan value. Include values held fixed, common required work and other pending choices. A previous comparison or the critic's recommendation cannot replace this one. Record the source or reviewer and mark undecided rows `pending`; their remedies are not accepted work.
+A row can concern behavior, an implementation approach, a bound or optional verification depth. For a bound, name what it measures and its unit; for verification, name the method and depth. Leave unknown values unknown. Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof of an exact approved contract stays in every option, citing that answer, including later-discovered scenarios needed to prove it. Separately selectable instrumentation or follow-up work needs its own row; calling a new runtime effect "proof" does not make it a required test. Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice. A different guarantee or policy needs its own decision, with its tests conditional on approval.
 
-Save the rows and options with Write or Edit before calling AskUserQuestion. Use the explicitly requested report file, otherwise the reviewed plan, and preserve its existing content and approvals. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present the table instead. If saving fails, report the error and stop before asking.
+With no pending choice, carry approved work forward and report the finding without asking again.
 
-**5. Ask, record the answer, then edit.** Follow the preamble's tool, prose, preference and session rules. Each AskUserQuestion call contains exactly one question for one row. Name the behavior, approach, bound or depth it decides; recommend an option and explain why. An obvious fix still needs approval unless an exact prior answer already covers it.
+**3. Build and audit the complete question for one row.** Draft the question text, recommendation and every option's label, description and tradeoffs. Follow the preamble's tool, prose, preference and session rules and the question-format rules below now, before saving. An obvious fix still needs approval unless an exact prior answer already covers it.
+
+In this row's `Option comparisons`, state its latest accepted value and the resulting value under EVERY offered option:
+
+`row ID [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`
+
+Use only the options offered. State values and resulting work, not package names. Distinguish common necessary implementation and proof from new runtime effects or optional work. For Investigate and Defer, name the bounded investigation, if any, and which plan value stays unchanged or pending; neither approves implementation. Keep other approved rows fixed and other pending rows undecided.
+
+Read the entire brief against this row's comparison, including recommendations and values shared by all options. A shared new value still needs approval. If any option adds or resolves another independent commitment, return to Step 2 and split the menu. For example:
+- `R1 retry mode [pending]: current=off; A=on; B=off; C=on`
+- `R2 request key [pending]: current=absent; A=present; B=absent; C=absent`
+
+A and C keep retries on but disagree on the key. Ask about R1 with R2 pending in every option. Hold the chosen mode fixed, then ask about R2 only if it remains relevant and pending. Record why an irrelevant choice needs no question. Resolve any still-needed risk or safety choice before declaring the plan ready. Never remove an established contract or required proof to make an option smaller; changing that contract needs its own decision.
+
+**4. Save the audited question and comparison.** Before every new or reopened question, save its row, rebuilt comparison and exact question brief with Write or Edit. A previous comparison or the critic's recommendation cannot replace this audit. Use the explicitly requested report file, otherwise the reviewed plan, preserving its content, other rows and approvals. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present them instead. If saving fails, report the error and stop before asking. If the question's proposed outcomes, work or meaning change, return to Step 3 and save the revised brief before sending it.
+
+**5. Send, record the answer, then edit.** Send that audited brief without adding work or changing scope. Each AskUserQuestion call contains exactly one question for one row.
 
 While waiting for the answer, stop. Do not apply the remedy, enter the next section or call ExitPlanMode. Record the actual selected option and answer, their reference and exact accepted scope separately from your draft options. Then apply only those amendments with a scoped Edit before taking the next row. In read-only mode, present the amendments instead. Leave other rows unchanged. Investigation or deferral does not approve implementation; retain unresolved risks and required verification. The table does not replace updating the working plan.
 
@@ -567,7 +565,7 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 * **One new or reopened decision = one AskUserQuestion call.** Never combine independent decisions into one question.
 * Describe the problem concretely, with file and line references.
 * Present 2-3 options, including "do nothing" where that's reasonable. The four-option outside-voice menus above take precedence for those findings.
-* After the decision gate validates the options, specify each option's effort (human: ~X / CC: ~Y), risk and maintenance burden in one line. Within that decision, recommend the complete option when it costs only marginally more with CC.
+* Include each option's effort (human: ~X / CC: ~Y), risk and maintenance burden in the brief audited by the decision gate. Within that decision, recommend the complete option when it costs only marginally more with CC.
 * **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference (DRY, explicit > clever, minimal diff, etc.).
 * Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
 * **Coverage vs kind:** Score completeness only within this one decision. For each question, compare valid options for one recorded decision: coverage varies the depth of its implementation or proof; kind varies the approach. Coverage options receive `Completeness: N/10`. Kind options receive no score and the line `Note: options differ in kind, not coverage — no completeness score.` Do not score a package of independent policies as more complete, or fabricate scores for different approaches.

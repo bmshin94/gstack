@@ -24,6 +24,7 @@ import {
   gcStaleHermeticDirs,
   hermeticChildEnv,
   hermeticCeoPlanReadArgs,
+  hermeticDesignReadArgs,
 } from './hermetic-env';
 
 const CONTAMINATED: NodeJS.ProcessEnv = {
@@ -358,11 +359,69 @@ describe('split CEO artifact Read scope', () => {
 });
 
 
+
+describe('Design artifact Read scope', () => {
+  function fixture(prefix: string, check: (cwd: string, env: Record<string, string>) => void): void {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    try {
+      seedCeoFindingProject(cwd, 'Review the supplied design.');
+      check(cwd, hermeticChildEnv());
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  }
+
+  for (const prefix of ['gstack-e2e-plan-design-', 'design-ui-project-']) {
+    test(`grants only generated PNG Read for ${prefix}`, () => fixture(prefix, (cwd, env) => {
+      const scope = path.join(getHermeticDirs().gstackHome, 'projects', path.basename(cwd), 'designs');
+      const args = hermeticDesignReadArgs(cwd, env);
+      expect(args).toEqual(['--allowedTools', ...new Set([scope, fs.realpathSync(scope)].map(directory =>
+        `Read(${directory.startsWith('/') ? '/' : ''}${directory.split(path.sep).join('/')}/*/*.png)`))]);
+      expect(args.join(' ')).not.toContain('/**');
+      expect(args.join(' ')).not.toMatch(/Write\(|Edit\(|Bash\(|--add-dir|\.md\)/);
+      expect(hermeticDesignReadArgs(cwd, env)).toEqual(args);
+    }));
+  }
+
+  test('refuses operator/foreign roots, slug overrides and another fixture kind', () => {
+    fixture('gstack-e2e-plan-design-', (cwd, env) => {
+      for (const home of [path.join(os.homedir(), '.gstack'), path.dirname(env.GSTACK_HOME!), env.GSTACK_HOME! + '-other']) {
+        expect(() => hermeticDesignReadArgs(cwd, { ...env, GSTACK_HOME: home })).toThrow('private Design fixture');
+      }
+      expect(() => hermeticDesignReadArgs(cwd, { ...env, GSTACK_PROJECT_SLUG: 'foreign' })).toThrow('private Design fixture');
+      execFileSync('git', ['remote', 'add', 'origin', 'https://example.invalid/foreign/repo.git'], { cwd, timeout: 5000 });
+      expect(() => hermeticDesignReadArgs(cwd, env)).toThrow('exact fixture project slug');
+    });
+    fixture('gstack-e2e-plan-ceo-split-overflow-', (cwd, env) => {
+      expect(() => hermeticDesignReadArgs(cwd, env)).toThrow('private Design fixture');
+    });
+  });
+
+  test('refuses substituted working directories, projects and image roots without touching the target', () => {
+    fixture('gstack-e2e-plan-design-', (cwd, env) => {
+      const project = path.join(env.GSTACK_HOME!, 'projects', path.basename(cwd));
+      const foreign = fs.mkdtempSync(path.join(os.tmpdir(), 'foreign-design-images-'));
+      const link = cwd + 'link';
+      fs.writeFileSync(path.join(foreign, 'sentinel.png'), 'foreign image');
+      try {
+        fs.symlinkSync(cwd, link, 'dir');
+        expect(() => hermeticDesignReadArgs(link, env)).toThrow();
+        fs.mkdirSync(path.dirname(project), { recursive: true });
+        fs.symlinkSync(foreign, project, 'dir');
+        expect(() => hermeticDesignReadArgs(cwd, env)).toThrow('substituted directories');
+        fs.unlinkSync(project); fs.mkdirSync(project);
+        fs.symlinkSync(foreign, path.join(project, 'designs'), 'dir');
+        expect(() => hermeticDesignReadArgs(cwd, env)).toThrow('substituted directories');
+        expect(fs.readdirSync(foreign)).toEqual(['sentinel.png']);
+        expect(fs.readFileSync(path.join(foreign, 'sentinel.png'), 'utf8')).toBe('foreign image');
+      } finally { fs.rmSync(project, { recursive: true, force: true }); fs.unlinkSync(link); fs.rmSync(foreign, { recursive: true, force: true }); }
+    });
+  });
+});
+
 describe('split artifact Read launch wiring', () => {
   async function fixture(check: (cwd: string, observed: {
     commands: string[][]; settings: any[]; captures: any[]; closes: number;
-  }) => Promise<void>): Promise<void> {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-ceo-split-overflow-'));
+  }) => Promise<void>, prefix = 'gstack-e2e-plan-ceo-split-overflow-'): Promise<void> {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
     const observed = { commands: [] as string[][], settings: [] as any[], captures: [] as any[], closes: 0 };
     const spawn = Bun.spawn, sleep = Bun.sleep;
     const binary = process.env.BROWSE_TERMINAL_BINARY, hermetic = process.env.EVALS_HERMETIC;
@@ -438,6 +497,39 @@ describe('split artifact Read launch wiring', () => {
       expect(capture.settings.hooks).toHaveProperty('PostToolUse');
       expect(observed.closes).toBe(1);
     });
+  });
+
+  for (const prefix of ['gstack-e2e-plan-design-', 'design-ui-project-']) test(`forwards owned Design Read without changing capture: ${prefix}`, async () => {
+    await fixture(async (cwd, observed) => {
+      const result = await runPlanSkillCounting({ skillName: 'plan-design-review', slashCommand: '/plan-design-review',
+        followUpPrompt: '', isLastStep0AUQ: () => false, reviewCountCeiling: null,
+        cwd, timeoutMs: 1, model: 'fixture', readDesignArtifacts: true });
+      expect(result.outcome).toBe('timeout');
+      expect(observed.commands).toHaveLength(1);
+      const command = observed.commands[0]!;
+      const args = command.slice(command.indexOf('--allowedTools'), command.indexOf('--session-id'));
+      expect(args).toEqual(hermeticDesignReadArgs(cwd, hermeticChildEnv()));
+      expect(command).not.toContain('--add-dir');
+      expect(command).toContain('--strict-mcp-config');
+      expect(observed.settings[0].useAutoModeDuringPlan).toBe(false);
+      expect(observed.settings[0].permissions.allow).toHaveLength(4);
+      expect(observed.captures[0].binding.cwd).toBe(fs.realpathSync(cwd));
+      expect(Object.keys(observed.captures[0].settings)).toEqual(['hooks']);
+      expect(observed.closes).toBe(1);
+    }, prefix);
+  });
+
+  for (const override of ['config', 'home', 'slug', 'non-hermetic']) test(`rejects Design ${override} before CLI spawn`, async () => {
+    await fixture(async (cwd, observed) => {
+      const opts: ClaudePtyOptions = { cwd, seedSkills: true, readDesignArtifacts: true,
+        captureQuestionsForSession: crypto.randomUUID(), model: 'fixture', timeoutMs: 1000 };
+      if (override === 'config') opts.env = { CLAUDE_CONFIG_DIR: getHermeticDirs().configDir };
+      if (override === 'home') opts.env = { GSTACK_HOME: path.join(cwd, 'foreign-home') };
+      if (override === 'slug') opts.env = { GSTACK_PROJECT_SLUG: 'foreign-project' };
+      if (override === 'non-hermetic') process.env.EVALS_HERMETIC = '0';
+      await expect(launchClaudePty(opts)).rejects.toThrow('unmodified hermetic launch context');
+      expect(observed.commands).toHaveLength(0);
+    }, 'gstack-e2e-plan-design-');
   });
 
   for (const override of ['config', 'home', 'slug', 'non-hermetic']) test(`rejects ${override} before CLI spawn`, async () => {

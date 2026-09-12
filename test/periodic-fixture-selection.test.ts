@@ -10,7 +10,6 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/office-hours-attempt.test.ts', ['office-hours-forcing-energy', 'office-hours-builder-wildness', 'office-hours-brain-writeback', 'plan-ceo-review-format-mode', 'plan-ceo-review-format-approach', 'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'review-army-red-team']],
     ['test/helpers/setup-gbrain-sandbox.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['test/helpers/setup-gbrain-fixture-command.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
-    ['bin/gstack-paths', ['autoplan-chain-pty']],
     ['test/gstack-paths.test.ts', ['autoplan-chain-pty']],
     ['test/autoplan-permission-viewport.test.ts', ['autoplan-chain-pty']],
     ['test/fixtures/autoplan-existing-app/src/auth.ts', ['autoplan-chain-pty']],

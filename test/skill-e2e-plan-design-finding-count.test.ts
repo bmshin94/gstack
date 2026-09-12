@@ -165,6 +165,7 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
         seedPlanReviewProject(tmpDir, planText, 'plan-design-review', existingSettingsDesign);
         seedDesignBoardActorProtocol(tmpDir);
         const obs = await runPlanSkillCounting({
+          readDesignArtifacts: true,
           skillName: 'plan-design-review',
           slashCommand: '/plan-design-review',
           followUpPrompt: '', // plan already committed before the first model turn

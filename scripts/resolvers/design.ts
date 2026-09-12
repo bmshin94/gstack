@@ -553,7 +553,7 @@ AI Slop is 5% of Design Score but also graded independently as a headline metric
 ### Regression Output
 
 When previous \`design-baseline.json\` exists or \`--regression\` flag is used:
-- Previous baseline = the newest readable \`design-baseline*.json\` under \`${'${GSTACK_HOME:-$HOME/.gstack}'}/projects/$SLUG/designs/design-audit-*/\` older than this run; unreadable → "previous baseline unreadable (first scan)"
+- Previous baseline = the newest readable \`design-baseline*.json\` under \`$GSTACK_STATE_ROOT/projects/$SLUG/designs/design-audit-*/\` older than this run; unreadable → "previous baseline unreadable (first scan)"
 - Load baseline grades; compare per-category deltas, new findings, resolved findings
 - Detector delta only when \`detector.mode\` and \`targetSet\` both match: ids appeared, ids disappeared, totals, per page (\`+ kicker-above-heading (2)  - gradient-text (1)  total 14 → 9\`). Otherwise say "detector modes differ, no delta" or "target set changed, no delta"; a different \`engine\` prints the delta with \`engine changed X → Y; rule set may differ\`; no \`detector\` field → "no detector baseline (first scan)", never \`+N\`. Live pages jitter, so counts are advisory and id appear/disappear is the signal
 - Append regression table to report
@@ -1142,10 +1142,10 @@ Commands:
 - \`$D check --image /path.png --brief "..."\` — vision quality gate
 - \`$D iterate --session /path/session.json --feedback "..." --output /path.png\` — iterate
 
-**CRITICAL PATH RULE:** All design artifacts (mockups, comparison boards, approved.json)
-MUST be saved to \`~/.gstack/projects/$SLUG/designs/\`, NEVER to \`.context/\`,
-\`docs/designs/\`, \`/tmp/\`, or any project-local directory. Design artifacts are USER
-data, not project files. They persist across branches, conversations, and workspaces.`;
+**CRITICAL PATH RULE:** Design artifacts belong in \`$GSTACK_STATE_ROOT/projects/$SLUG/designs/\`.
+Use \`bin/gstack-paths\`: GSTACK_HOME → plugin storage → ~/.gstack. Keep it even if temporary; never substitute
+.context/, docs/designs/ or another directory.
+These are user files, not application source.`;
 }
 
 export function generateDesignMockup(ctx: TemplateContext): string {
@@ -1170,7 +1170,8 @@ Generating visual mockups of the proposed design... (say "skip" if you don't nee
 
 \`\`\`bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-_DESIGN_DIR="$HOME/.gstack/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+_DESIGN_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 \`\`\`

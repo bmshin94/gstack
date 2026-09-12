@@ -86,11 +86,21 @@ describe('plan report persistence precedes completion logging', () => {
   }, 30_000);
 });
 
-test('Eng independent-remedy rule is loaded before Step 0 and retains outside-voice consent', () => {
+test('Eng independent-remedy rule is loaded before Step 0 and retains outside-voice consent', async () => {
+  const outputRoot = mkdtempSync(join(tmpdir(), 'eng-decision-order-'));
+  let rendered: { skeleton: string; sections: string };
+  try {
+    const generated = await runGeneration({ host: 'claude', outputRoot, contentLinkRoot: null });
+    expect(generated.exitCode, JSON.stringify(generated.diagnostics)).toBe(0);
+    rendered = {
+      skeleton: readFileSync(join(outputRoot, 'plan-eng-review/SKILL.md'), 'utf8'),
+      sections: readFileSync(join(outputRoot, 'plan-eng-review/sections/review-sections.md'), 'utf8'),
+    };
+  } finally { rmSync(outputRoot, { recursive: true, force: true }); }
   const definition = 'ask separately about each pending independent remedy';
   for (const suffix of ['.tmpl', '']) {
-    const skeleton = readFileSync(`plan-eng-review/SKILL.md${suffix}`, 'utf8');
-    const sections = readFileSync(`plan-eng-review/sections/review-sections.md${suffix}`, 'utf8');
+    const skeleton = suffix ? readFileSync(`plan-eng-review/SKILL.md${suffix}`, 'utf8') : rendered.skeleton;
+    const sections = suffix ? readFileSync(`plan-eng-review/sections/review-sections.md${suffix}`, 'utf8') : rendered.sections;
     const reviewBoundary = skeleton.indexOf('Do not build features, acceptance suites or benchmarks unless explicitly authorized by the user');
     expect(reviewBoundary).toBeGreaterThan(skeleton.indexOf('# Plan Review Mode'));
     expect(reviewBoundary).toBeLessThan(skeleton.indexOf('## Scope gate'));
@@ -127,24 +137,24 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
     expect(boundary).toContain('Start this after Step 0 resolves scope');
     expect(boundary).toContain('Could the user accept one change and reject another?');
-    expect(boundary).toContain('If yes, these are separate commitments, even within one issue, helper or patch');
-    expect(boundary).toContain('A commitment can be a behavior, implementation approach, bound or optional verification depth');
+    expect(boundary).toContain('If yes, give them separate rows, even within one issue, helper or patch');
+    expect(boundary).toContain('A row can concern behavior, an implementation approach, a bound or optional verification depth');
     expect(boundary).toContain("For a bound, name what it measures and its unit");
-    expect(boundary).toContain('Keep other approved choices fixed and unresolved choices pending');
+    expect(boundary).toContain('Keep other approved rows fixed and other pending rows undecided');
     expect(boundary).toContain('Keep a chosen behavior together with the code, tests and docs required to establish it');
     expect(sections).toContain('Score completeness only within this one decision');
     expect(boundary).toContain('Never remove an established contract or required proof to make an option smaller');
     expect(boundary).toContain('changing that contract needs its own decision');
     expect(boundary).toContain('Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section');
-    expect(boundary).toContain('A question must resolve exactly one new or reopened commitment');
-    expect(boundary).toContain('If accepting an option would resolve a second pending commitment, return to Step 2');
-    expect(boundary).toContain('Required implementation and proof of one approved contract stay common work');
+    expect(boundary).toContain('Each AskUserQuestion call contains exactly one question for one row');
+    expect(boundary).toContain('If any option adds or resolves another independent commitment, return to Step 2');
+    expect(boundary).toContain('Distinguish common necessary implementation and proof from new runtime effects or optional work');
     expect(boundary).toContain('do not change behavior as part of that correction');
     expect(sections).toContain('Use the same decision gate and ledger for outside voice findings');
     expect(sections).toContain('Agreement between reviewers is evidence, not approval');
     expect(sections).toContain('keep new or reopened choices pending until their own answers resolve them');
   }
-});
+}, 30_000);
 
 // Source/renderer contract controls only: native review behavior remains a paid
 // regression. Resolve the actual Eng clause on every host without trusting an
@@ -154,30 +164,30 @@ describe('Eng approved-work decision gate', () => {
   const gate = template.split('**Decision gate (all sections and outside voice):**')[1]?.split('### 1. Architecture review')[0] ?? '';
 
   test('identifies commitments before comparing values, then saves before asking', () => {
-    const identify = gate.indexOf('**2. Name the commitments before writing options.**');
-    const alternatives = gate.indexOf('**3. Compare values, not packages.**');
-    const save = gate.indexOf('**4. Save the comparison with its decision.**');
-    const ask = gate.indexOf('**5. Ask, record the answer, then edit.**');
+    const identify = gate.indexOf('**2. Identify the rows before drafting a menu.**');
+    const alternatives = gate.indexOf('**3. Build and audit the complete question for one row.**');
+    const save = gate.indexOf('**4. Save the audited question and comparison.**');
+    const ask = gate.indexOf('**5. Send, record the answer, then edit.**');
     expect(0 <= identify && identify < alternatives && alternatives < save && save < ask).toBe(true);
     const choice = gate.slice(identify, alternatives);
-    expect(choice).toContain('before writing options');
+    expect(choice).toContain('before drafting a menu');
     expect(choice).toContain('Could the user accept one change and reject another?');
-    expect(gate.slice(alternatives, save)).toContain('Keep other approved choices fixed and unresolved choices pending');
+    expect(gate.slice(alternatives, save)).toContain('Keep other approved rows fixed and other pending rows undecided');
     expect(choice).toContain('Keep a chosen behavior together with the code, tests and docs required to establish it');
     expect(choice).toContain('Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice');
     const options = gate.slice(alternatives, save);
-    expect(options).toContain('If accepting an option would resolve a second pending commitment');
+    expect(options).toContain('If any option adds or resolves another independent commitment');
     expect(options).toContain('return to Step 2');
-    expect(options).toContain('including values shared by all options');
-    expect(gate.slice(save, ask)).toContain('Save the rows and options with Write or Edit before calling AskUserQuestion');
+    expect(options).toContain('including recommendations and values shared by all options');
+    expect(gate.slice(save, ask)).toContain('save its row, rebuilt comparison and exact question brief with Write or Edit');
     expect(gate.slice(ask)).toContain('Record the actual selected option and answer');
     expect(gate.slice(ask)).toContain('separately from your draft options');
   });
 
   test('current contracts and completed comparisons precede saved questions without approving a fix', () => {
-    const stages = ['**1. Check the source and prior answers.**', '**2. Name the commitments before writing options.**',
-      '**3. Compare values, not packages.**', '**4. Save the comparison with its decision.**',
-      '**5. Ask, record the answer, then edit.**'].map(stage => gate.indexOf(stage));
+    const stages = ['**1. Check the source and prior answers.**', '**2. Identify the rows before drafting a menu.**',
+      '**3. Build and audit the complete question for one row.**', '**4. Save the audited question and comparison.**',
+      '**5. Send, record the answer, then edit.**'].map(stage => gate.indexOf(stage));
     expect(stages.every(position => position >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     // A reopened row must use its latest accepted plan, not the seed/runtime
@@ -189,28 +199,53 @@ describe('Eng approved-work decision gate', () => {
     expect(baseline).toContain('If none was approved, use the original proposal');
     expect(baseline).toContain('Retain earlier values as history; reopening does not reset an approval to the original proposal');
     const options = gate.slice(stages[2], stages[3]);
-    expect(options).toContain('Each cell states the resulting value for that commitment, not an option label or a package of remedies');
-    expect(options).toContain('For Investigate and Defer, show which plan value stays unchanged or pending');
-    expect(options).toContain('Put any separately selectable measurement, implementation or follow-up work on its own comparison line');
+    expect(options).toContain('State values and resulting work, not package names');
+    expect(options).toContain('For Investigate and Defer, name the bounded investigation, if any, and which plan value stays unchanged or pending; neither approves implementation');
+    expect(gate.slice(stages[1], stages[2])).toContain('Separately selectable instrumentation or follow-up work needs its own row');
     const record = gate.slice(stages[3], stages[4]);
-    expect(record).toContain("using Step 1's latest accepted plan value");
-    expect(record).toContain("A previous comparison or the critic's recommendation cannot replace this one");
+    expect(options).toContain("state its latest accepted value and the resulting value under EVERY offered option");
+    expect(record).toContain("A previous comparison or the critic's recommendation cannot replace this audit");
     const commitments = gate.slice(stages[1], stages[2]);
-    expect(commitments).toContain('Carry required proof of an exact approved contract into every option, citing that answer');
-    expect(commitments).toContain('A later-discovered scenario necessary to prove that contract belongs to this common work');
-    expect(commitments).toContain('Beyond that required proof, compare proposed instrumentation or follow-up work separately when the behavior can be chosen with or without it');
+    expect(commitments).toContain('Required proof of an exact approved contract stays in every option, citing that answer');
+    expect(commitments).toContain('including later-discovered scenarios needed to prove it');
+    expect(commitments).toContain('Separately selectable instrumentation or follow-up work needs its own row');
     expect(commitments).toContain('Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice');
     expect(gate).toContain("For a bound, name what it measures and its unit");
     expect(gate).toContain('for verification, name the method and depth');
-    expect(gate).toContain('For EVERY option, read its label, description and pros/cons');
-    expect(gate).toContain('Check each value against Step 1');
-    expect(gate).toContain('Save the rows and options with Write or Edit before calling AskUserQuestion');
+    expect(options).toContain("Draft the question text, recommendation and every option's label, description and tradeoffs");
+    expect(options).toContain("Read the entire brief against this row's comparison");
+    expect(gate).toContain('save its row, rebuilt comparison and exact question brief with Write or Edit');
     expect(gate).toContain('If saving fails, report the error and stop before asking');
     expect(gate).toContain("Respect the user's read-only request and the host's file-write limits");
-    expect(gate).toContain('when no writable plan is in scope, present the table instead');
+    expect(gate).toContain('when no writable plan is in scope, present them instead');
     expect(gate).toContain('Each AskUserQuestion call contains exactly one question for one row');
     expect(gate).toContain('mark undecided rows `pending`');
     expect(gate).toContain('their remedies are not accepted work');
+  });
+
+  test('assigns independent row IDs before constructing the final question', () => {
+    const identify = gate.slice(gate.indexOf('**2.'), gate.indexOf('**3.'));
+    expect(identify).toContain('Match each to its existing ID or assign a new one now');
+    expect(identify).toContain('mark undecided rows `pending`');
+    expect(identify).toContain('| Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |');
+    const audit = gate.slice(gate.indexOf('**3.'), gate.indexOf('**4.'));
+    expect(audit).toContain("Draft the question text, recommendation and every option's label, description and tradeoffs");
+    expect(audit).toContain("Read the entire brief against this row's comparison");
+    expect(audit).toContain('If any option adds or resolves another independent commitment, return to Step 2');
+    expect(identify).toContain('calling a new runtime effect "proof" does not make it a required test');
+  });
+
+  test('saves the final brief and re-audits substantive revisions before sending', () => {
+    const audit = gate.slice(gate.indexOf('**3.'), gate.indexOf('**4.'));
+    const save = gate.slice(gate.indexOf('**4.'), gate.indexOf('**5.'));
+    const send = gate.slice(gate.indexOf('**5.'));
+    expect(audit).toContain('question-format rules below now, before saving');
+    expect(save).toContain('save its row, rebuilt comparison and exact question brief with Write or Edit');
+    expect(save).toContain("If the question's proposed outcomes, work or meaning change, return to Step 3 and save the revised brief before sending it");
+    expect(send).toContain('Send that audited brief without adding work or changing scope');
+    expect(send).toContain('Each AskUserQuestion call contains exactly one question for one row');
+    expect(send).toContain('Record the actual selected option and answer');
+    expect(save).toContain('If saving fails, report the error and stop before asking');
   });
 
   test('all four section gates and outside voice distinguish pending choices from findings', () => {
@@ -243,21 +278,21 @@ describe('Eng approved-work decision gate', () => {
     }
   });
 
-  test('every option is recorded against one decision before asking or scoring coverage', () => {
-    const compare = gate.indexOf('**3. Compare values, not packages.**');
-    const rows = gate.indexOf('**4. Save the comparison with its decision.**');
-    const record = gate.indexOf('Before every new or reopened question, rebuild `Option comparisons` from all offered options in Step 3');
-    const save = gate.indexOf('Save the rows and options with Write or Edit before calling AskUserQuestion');
-    const ask = gate.indexOf('**5. Ask, record the answer, then edit.**');
-    expect(0 <= compare && compare < rows && rows < record && record < save && save < ask).toBe(true);
-    expect(gate.slice(rows, record)).toContain('| Option comparisons |');
-    expect(gate.slice(compare, rows)).toContain('`commitment [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`');
-    expect(gate.slice(compare, rows)).toContain('Use only the options offered');
-    expect(gate.slice(record, save)).toContain('Include values held fixed, common required work and other pending choices');
+  test('every option is recorded against one decision before sending or scoring coverage', () => {
+    const rows = gate.indexOf('**2. Identify the rows before drafting a menu.**');
+    const compare = gate.indexOf('**3. Build and audit the complete question for one row.**');
+    const save = gate.indexOf('**4. Save the audited question and comparison.**');
+    const ask = gate.indexOf('**5. Send, record the answer, then edit.**');
+    expect(0 <= rows && rows < compare && compare < save && save < ask).toBe(true);
+    expect(gate.slice(rows, compare)).toContain('| Option comparisons |');
+    expect(gate.slice(compare, save)).toContain('`row ID [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`');
+    expect(gate.slice(compare, save)).toContain('Use only the options offered');
+    expect(gate.slice(compare, save)).toContain('Keep other approved rows fixed and other pending rows undecided');
     expect(gate).not.toContain('`label: changes; preserves; pending`');
     const format = template.split('## CRITICAL RULE — How to ask questions')[1]!.split('## Required outputs')[0]!;
-    expect(format).toContain('After the decision gate validates the options');
+    expect(format).toContain('in the brief audited by the decision gate');
     expect(format).toContain('one recorded decision');
+    expect(format).not.toContain('After the decision gate validates the options');
     expect(format).not.toContain('per-issue AskUserQuestion');
   });
 
@@ -265,29 +300,29 @@ describe('Eng approved-work decision gate', () => {
   // decision oracle. It proves the instructions expose the observed two-axis
   // option pattern; only native evaluation can prove the model follows them.
   test('worked comparison exposes two independently selectable option values', () => {
-    const worked = gate.split('For example, this menu contains two choices:')[1]!.split('A question must resolve')[0]!;
+    const worked = gate.split('split the menu. For example:')[1]!.split('**4.')[0]!;
     const rows = [...worked.matchAll(/^- `([^`]+) \[pending\]: current=([^;]+); A=([^;]+); B=([^;]+); C=([^`]+)`$/gm)]
       .map(([, commitment, current, A, B, C]) => ({ commitment, current, A, B, C }));
     expect(rows).toEqual([
-      { commitment: 'retry mode', current: 'off', A: 'on', B: 'off', C: 'on' },
-      { commitment: 'request key', current: 'absent', A: 'present', B: 'absent', C: 'absent' },
+      { commitment: 'R1 retry mode', current: 'off', A: 'on', B: 'off', C: 'on' },
+      { commitment: 'R2 request key', current: 'absent', A: 'present', B: 'absent', C: 'absent' },
     ]);
     expect(rows[0]!.A).toBe(rows[0]!.C);
     expect(rows[1]!.A).not.toBe(rows[1]!.C);
-    expect(worked).toContain('ask about retry mode with the key pending in every option');
-    expect(worked).toContain('Hold the chosen mode fixed, then ask about the key only if it remains relevant and pending');
+    expect(worked).toContain('Ask about R1 with R2 pending in every option');
+    expect(worked).toContain('Hold the chosen mode fixed, then ask about R2 only if it remains relevant and pending');
     expect(worked).toContain('Record why an irrelevant choice needs no question');
     expect(worked).toContain('Resolve any still-needed risk or safety choice before declaring the plan ready');
   });
 
   test('common new defaults still need approval while necessary contract proof carries forward', () => {
-    const compare = gate.split('**3. Compare values, not packages.**')[1]!.split('**4.')[0]!;
-    expect(compare).toContain('a shared new value still needs approval, even when it does not vary between options');
-    expect(compare).toContain('This includes an unapproved default introduced in every option');
-    expect(compare).toContain('Required implementation and proof of one approved contract stay common work, not extra commitments');
-    expect(gate).toContain('Carry required proof of an exact approved contract into every option, citing that answer');
-    expect(gate).toContain('A later-discovered scenario necessary to prove that contract belongs to this common work');
-    expect(compare).toContain('With no pending choice, carry approved work forward and report the finding without asking again');
+    const compare = gate.split('**3. Build and audit the complete question for one row.**')[1]!.split('**4.')[0]!;
+    expect(compare).toContain('A shared new value still needs approval');
+    expect(compare).toContain('values shared by all options');
+    expect(compare).toContain('Distinguish common necessary implementation and proof from new runtime effects or optional work');
+    expect(gate).toContain('Required proof of an exact approved contract stays in every option, citing that answer');
+    expect(gate).toContain('including later-discovered scenarios needed to prove it');
+    expect(gate).toContain('With no pending choice, carry approved work forward and report the finding without asking again');
   });
 
   test('exact prior answers authorize follow-through while new risk and optional depth stay pending', () => {
@@ -299,7 +334,7 @@ describe('Eng approved-work decision gate', () => {
     expect(normalized).toContain('A different guarantee or policy needs its own decision');
     expect(normalized).toContain('Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption');
     expect(normalized).toContain('An uncertain risk can still need a decision; state what is unknown');
-    expect(normalized).toContain('Keep other approved choices fixed and unresolved choices pending');
+    expect(normalized).toContain('Keep other approved rows fixed and other pending rows undecided');
     expect(normalized).toContain('with its tests conditional on approval');
     expect(normalized).toContain('retain unresolved risks and required verification');
     expect(normalized).toContain('A number in your draft is not a user answer; leave unknown values unknown');
@@ -385,7 +420,7 @@ describe('outside-voice commitment queue', () => {
           expect(queue).toContain('Follow 0D Step 4');
           expect(queue).toContain('Update the working rows and comparisons under 0D Step 3 before asking');
           const skeleton = readFileSync('plan-ceo-review/SKILL.md.tmpl', 'utf8');
-          expect(skeleton).toContain('apply only approved amendments before the next row');
+          expect(skeleton).toContain('apply only the authorized amendments before the next row');
           expect(queue).toContain('Keep preserves the current disposition; investigation and deferral do not authorize implementation');
           expect(queue).toContain('preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate');
           expect(queue).toContain('One answer does not resolve other pending rows');
@@ -404,7 +439,7 @@ describe('outside-voice commitment queue', () => {
           // answers to the one procedure already checked above, not a second gate.
           const procedure = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
           expect(procedure).toContain('Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption');
-          expect(procedure).toContain('Save the rows and options with Write or Edit before calling AskUserQuestion');
+          expect(procedure).toContain('save its row, rebuilt comparison and exact question brief with Write or Edit');
           expect(procedure).toContain('Record the actual selected option and answer, their reference and exact accepted scope');
           expect(procedure).toContain('Then apply only those amendments with a scoped Edit before taking the next row');
           expect(queue).toContain("A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only");

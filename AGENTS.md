@@ -159,6 +159,8 @@ When fixing failures or preparing `/ship`, follow this order:
    Verify required tool execution with a no-cost smoke check under that launch
    environment; versions and authentication alone do not prove it works. Set
    private artifact modes explicitly and preserve normal fixture permissions.
+   Put standalone Git fixtures outside another checkout; verify their resolved
+   project slug and state root before interpreting a failure.
    Preserve exit status through logging. Use the documented detached runner and
    eval lock. Review the final launcher after edits; preparation and `--list`
    modes must not start monitors, retainers, or test processes. Verify this with

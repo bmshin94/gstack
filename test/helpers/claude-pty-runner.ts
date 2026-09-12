@@ -31,7 +31,7 @@ import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { buildSeedConfig, getHermeticDirs, hermeticChildEnv, hermeticSkillsConfigDir, hermeticCeoPlanReadArgs, isHermeticEnabled } from './hermetic-env';
+import { buildSeedConfig, getHermeticDirs, hermeticChildEnv, hermeticSkillsConfigDir, hermeticCeoPlanReadArgs, hermeticDesignReadArgs, isHermeticEnabled } from './hermetic-env';
 import { PtyCurrentScreen, type PtyScreenSnapshot } from './pty-current-screen';
 import { setupQuestionEventSource, type QuestionEventSource } from './plan-skill-question-events';
 
@@ -110,6 +110,8 @@ export interface ClaudePtyOptions {
   captureQuestionsForSession?: string;
   /** Read-only access to this split fixture's generated CEO review artifacts. */
   readCeoPlanArtifacts?: boolean;
+  /** Read-only access to the two Design fixtures' own generated PNG mockups. */
+  readDesignArtifacts?: boolean;
 }
 
 export interface ClaudePtySession {
@@ -1454,6 +1456,13 @@ export async function launchClaudePty(
     args.push(...hermeticCeoPlanReadArgs(cwd, childEnv));
   }
 
+  if (opts.readDesignArtifacts) {
+    if (!hermetic || !opts.seedSkills || opts.env?.CLAUDE_CONFIG_DIR || opts.env?.GSTACK_HOME || opts.env?.GSTACK_PROJECT_SLUG) {
+      throw new Error('Design artifact Read requires the unmodified hermetic launch context');
+    }
+    args.push(...hermeticDesignReadArgs(cwd, childEnv));
+  }
+
   // Launch-bound native invocation → current screen match → input → owned
   // transcript tool_result. Capturing a hook event never supplies an answer.
   let nativeQuestionEvents: QuestionEventSource | undefined;
@@ -2232,6 +2241,8 @@ export async function runPlanSkillCounting(opts: {
   cwd?: string;
   /** Opt-in only for the split fixture's generated spec-review inputs. */
   readCeoPlanArtifacts?: boolean;
+  /** Read-only access to the two Design fixtures' own generated PNG mockups. */
+  readDesignArtifacts?: boolean;
   /** Remaining case work budget, measured from helper entry including boot. Default 25 min. */
   timeoutMs?: number;
   /** Extra env merged into the spawned `claude` process. */
@@ -2318,6 +2329,7 @@ export async function runPlanSkillCounting(opts: {
     cols: 240,
     cwd: opts.cwd,
     readCeoPlanArtifacts: opts.readCeoPlanArtifacts,
+    readDesignArtifacts: opts.readDesignArtifacts,
     timeoutMs: Math.max(1, deadlineAt - Date.now()),
     env: opts.env,
     model: opts.model,

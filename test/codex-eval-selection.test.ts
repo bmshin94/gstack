@@ -28,4 +28,11 @@ describe('Codex eval selection', () => {
     expect(selectedBy('test/codex-e2e-plan-format.test.ts').length).toBe(4);
   });
 
+  test('Sol fixture generation changes select its periodic case', () => {
+    for (const file of ['test/helpers/sol-skill-fixture.ts', 'test/sol-skill-fixture.test.ts']) {
+      expect(selectedBy(file)).toEqual(['codex-sol-scope-termination']);
+    }
+    expect(E2E_TIERS['codex-sol-scope-termination']).toBe('periodic');
+  });
+
 });

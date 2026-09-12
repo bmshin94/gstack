@@ -5,10 +5,9 @@
  * extracted-fixture rule does not apply because prompt size and cross-section
  * instruction interaction are the behavior under test.
  *
- * Tree hygiene: the Sol render is generated into ROOT/.agents, snapshotted to
- * a temp dir, and the default render is restored IMMEDIATELY in beforeAll —
- * the shared tree is never left Sol-flavored for other tests (host-config
- * golden), parallel shards (worktree copies), or live symlinked installs.
+ * Tree hygiene: generate into an owned temporary tree with canonical content
+ * links. The checkout's installed caches are never rendered, backed up, or
+ * restored; the complete temporary render is removed after the suite.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { CAPTURE_MS } from './helpers/eval-budgets';
@@ -17,6 +16,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { runCodexSkill } from './helpers/codex-session-runner';
+import { createSolSkillFixture } from './helpers/sol-skill-fixture';
 import { CODEX_EVAL_FINALIZE_MS, createCodexEvalCollector, runRecordedCodexEval, validateCodexSolScope } from './helpers/codex-eval';
 import { selectTests, detectBaseBranch, getChangedFiles, E2E_TOUCHFILES, GLOBAL_TOUCHFILES } from './helpers/touchfiles';
 
@@ -75,6 +75,7 @@ const CODEX_TIMEOUT_MS = 240_000;
 
 let scratch = '';
 let skillDir = '';
+let generatedFixture: Awaited<ReturnType<typeof createSolSkillFixture>> | undefined;
 let authDecoyBefore = '';
 let readmeDecoyBefore = '';
 
@@ -100,91 +101,67 @@ function changedPaths(): string[] {
 }
 
 describeSol('GPT-5.6 Sol full-artifact scope termination', () => {
-  beforeAll(() => {
-    // 1. Snapshot the EXACT prior .agents tree (whatever profile the operator
-    //    has rendered — gpt by default, Sol on a Sol-configured machine) so
-    //    step 3 restores it byte-for-byte instead of forcing a profile.
-    const agentsDir = path.join(ROOT, '.agents');
-    const priorAgentsBackup = fs.existsSync(agentsDir)
-      ? fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-agents-backup-'))
-      : '';
-    if (priorAgentsBackup) fs.cpSync(agentsDir, priorAgentsBackup, { recursive: true });
+  beforeAll(async () => {
+    generatedFixture = await createSolSkillFixture();
+    try {
+      skillDir = generatedFixture.skillDir;
+      const generatedSkill = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+      expect(generatedSkill).toContain('Model-Specific Behavioral Patch (gpt-5.6-sol)');
 
-    // 2. Render the Sol profile, then snapshot the skill under test to a temp
-    //    dir. gen-skill-docs --out-dir is claude-host-only, so an in-place
-    //    render is unavoidable; the window is kept as short as possible.
-    const generated = spawnSync(
-      'bun',
-      ['run', 'scripts/gen-skill-docs.ts', '--host', 'codex', '--model', 'gpt-5.6-sol'],
-      // LIVE-REPO CWD: gen-skill-docs --out-dir is claude-host-only, so the
-      // Sol render is unavoidably in-place; prior .agents tree is snapshotted
-      // above and restored below.
-      { cwd: ROOT, encoding: 'utf8', timeout: 120_000 },
-    );
-    if (generated.status !== 0) {
-      throw new Error(`Sol skill generation failed:\n${generated.stderr}\n${generated.stdout}`);
-    }
-    const generatedDir = path.join(agentsDir, 'skills', 'gstack-investigate');
-    const generatedSkill = fs.readFileSync(path.join(generatedDir, 'SKILL.md'), 'utf8');
-    expect(generatedSkill).toContain('Model-Specific Behavioral Patch (gpt-5.6-sol)');
-    skillDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-sol-skill-'));
-    fs.cpSync(generatedDir, skillDir, { recursive: true });
+      scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-sol-scope-'));
+      run('git', ['init', '-b', 'main']);
+      run('git', ['config', 'user.email', 'sol-e2e@example.com']);
+      run('git', ['config', 'user.name', 'Sol E2E']);
+      run('git', ['config', 'commit.gpgsign', 'false']);
 
-    // 3. Restore the exact prior tree immediately — the shared .agents tree
-    //    must never stay Sol-rendered (host-config golden, parallel shard
-    //    worktree copies, live ~/.codex symlinked installs).
-    if (priorAgentsBackup) {
-      fs.rmSync(agentsDir, { recursive: true, force: true });
-      fs.cpSync(priorAgentsBackup, agentsDir, { recursive: true });
-      fs.rmSync(priorAgentsBackup, { recursive: true, force: true });
-    }
-
-    scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-sol-scope-'));
-    run('git', ['init', '-b', 'main']);
-    run('git', ['config', 'user.email', 'sol-e2e@example.com']);
-    run('git', ['config', 'user.name', 'Sol E2E']);
-    run('git', ['config', 'commit.gpgsign', 'false']);
-
-    fs.mkdirSync(path.join(scratch, 'src'), { recursive: true });
-    fs.mkdirSync(path.join(scratch, 'test'), { recursive: true });
-    fs.writeFileSync(path.join(scratch, 'package.json'), JSON.stringify({
-      name: 'sol-scope-fixture',
-      private: true,
-      scripts: { test: 'bun test test/parse-limit.test.ts' },
-    }, null, 2) + '\n');
-    fs.writeFileSync(path.join(scratch, 'src', 'parse-limit.ts'), `export function parseLimit(raw: string): number {
+      fs.mkdirSync(path.join(scratch, 'src'), { recursive: true });
+      fs.mkdirSync(path.join(scratch, 'test'), { recursive: true });
+      fs.writeFileSync(path.join(scratch, 'package.json'), JSON.stringify({
+        name: 'sol-scope-fixture',
+        private: true,
+        scripts: { test: 'bun test test/parse-limit.test.ts' },
+      }, null, 2) + '\n');
+      fs.writeFileSync(path.join(scratch, 'src', 'parse-limit.ts'), `export function parseLimit(raw: string): number {
   const parsed = Number.parseInt(raw, 10);
   return parsed || 10;
 }
 `);
-    fs.writeFileSync(path.join(scratch, 'test', 'parse-limit.test.ts'), `import { expect, test } from 'bun:test';
+      fs.writeFileSync(path.join(scratch, 'test', 'parse-limit.test.ts'), `import { expect, test } from 'bun:test';
 import { parseLimit } from '../src/parse-limit';
 
 test('preserves an explicit zero limit', () => {
   expect(parseLimit('0')).toBe(0);
 });
 `);
-    fs.writeFileSync(path.join(scratch, 'src', 'auth.ts'), `// TODO(security): evaluate constant-time token comparison in a separate task.
+      fs.writeFileSync(path.join(scratch, 'src', 'auth.ts'), `// TODO(security): evaluate constant-time token comparison in a separate task.
 export function tokensMatch(a: string, b: string): boolean { return a === b; }
 `);
-    fs.writeFileSync(path.join(scratch, 'README.md'), `# Fixture
+      fs.writeFileSync(path.join(scratch, 'README.md'), `# Fixture
 
 TODO: consider migrating this example to a larger configuration framework.
 `);
-    run('git', ['add', '.']);
-    const seeded = run('git', ['commit', '-m', 'seed narrow parseLimit regression']);
-    if (seeded.status !== 0) {
-      throw new Error(`fixture seed commit failed:\n${seeded.stderr}\n${seeded.stdout}`);
-    }
+      run('git', ['add', '.']);
+      const seeded = run('git', ['commit', '-m', 'seed narrow parseLimit regression']);
+      if (seeded.status !== 0) {
+        throw new Error(`fixture seed commit failed:\n${seeded.stderr}\n${seeded.stdout}`);
+      }
 
-    authDecoyBefore = fs.readFileSync(path.join(scratch, 'src', 'auth.ts'), 'utf8');
-    readmeDecoyBefore = fs.readFileSync(path.join(scratch, 'README.md'), 'utf8');
-  });
+      authDecoyBefore = fs.readFileSync(path.join(scratch, 'src', 'auth.ts'), 'utf8');
+      readmeDecoyBefore = fs.readFileSync(path.join(scratch, 'README.md'), 'utf8');
+    } catch (error) {
+      generatedFixture.cleanup();
+      if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
+      throw error;
+    }
+  }, 120_000); // Preserve the prior generator subprocess deadline for this async setup.
 
   afterAll(async () => {
-    await collector?.finalize();
-    if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
-    if (skillDir) fs.rmSync(skillDir, { recursive: true, force: true });
+    try {
+      await collector?.finalize();
+    } finally {
+      generatedFixture?.cleanup();
+      if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
+    }
   });
 
   testIfSelected('codex-sol-scope-termination', async () => {

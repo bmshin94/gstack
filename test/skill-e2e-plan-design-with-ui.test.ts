@@ -55,6 +55,7 @@ describeE2E('/plan-design-review with UI scope (gate)', () => {
         seedPlanReviewProject(project, fs.readFileSync(FIXTURE, 'utf8'), 'plan-design-review');
         seedDesignBoardActorProtocol(project);
         const obs = await runPlanSkillCounting({
+          readDesignArtifacts: true,
           skillName: 'plan-design-review', slashCommand: '/plan-design-review',
           followUpPrompt: '', cwd: project,
           isLastStep0AUQ: designFocusBoundary,

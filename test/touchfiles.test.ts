@@ -63,6 +63,19 @@ describe('matchGlob', () => {
 // --- selectTests ---
 
 describe('selectTests', () => {
+  test.each(['bin/gstack-paths', 'bin/gstack-slug', 'scripts/resolvers/design.ts'])(
+    'Design artifact dependencies select their native consumers: %s', (file) => {
+      const result = selectTests([file], E2E_TOUCHFILES);
+      expect(result.reason).toBe('diff');
+      expect(result.selected).toContain('plan-design-finding-count');
+      expect(result.selected).toContain('plan-design-with-ui-scope');
+      if (file !== 'bin/gstack-slug') expect(result.selected).toContain('autoplan-chain-pty');
+      expect(E2E_TIERS['plan-design-finding-count']).toBe('periodic');
+      expect(E2E_TIERS['plan-design-with-ui-scope']).toBe('gate');
+      expect(E2E_TIERS['autoplan-chain-pty']).toBe('periodic');
+    },
+  );
+
   test.each(['test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts'])(
     'native completion changes select the Design UI gate: %s', (file) => {
       const result = selectTests([file], E2E_TOUCHFILES);

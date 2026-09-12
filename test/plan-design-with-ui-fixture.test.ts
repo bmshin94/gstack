@@ -89,6 +89,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(path.dirname(opts.cwd)).toBe(${JSON.stringify(directory)});
     expect(opts.cwd).not.toBe(${JSON.stringify(ROOT)});
     expect(opts.skillName).toBe('plan-design-review');
+    expect(opts.readDesignArtifacts).toBe(true);
     expect(opts.slashCommand).toBe('/plan-design-review');
     expect(opts.followUpPrompt).toBe('');
     expect(opts.reviewCountCeiling).toBe(1);
