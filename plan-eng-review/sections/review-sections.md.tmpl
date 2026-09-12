@@ -16,42 +16,55 @@ A bounded probe answers a named uncertainty about current behavior or an existin
 
 ## Decision procedure
 
-**Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. Keep one table for the whole review. One row means one choice the user can accept or reject separately. Use these five steps for every new or reopened question.
+**Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. For each finding, use the five steps below. Keep one decision table for the whole review: one row is one choice the user can approve separately. Reuse its ID when reopening it.
 
-**1. Check the source and prior answers.** Read the original request, relevant source and actual user answers. In `Current value and verification`, distinguish observed runtime from the accepted plan; an approved plan is not implemented behavior. Compare against the latest accepted plan value and its selected option, answer reference and exact scope. If none was approved, use the original proposal. Retain earlier values as history; reopening does not reset an approval to the original proposal. A draft value, including a number, is not a user answer; leave unknown values unknown.
+**1. Check the source and prior answers.**
+- Read the original request, relevant source and actual user answers.
+- In `Current value and verification`, distinguish observed runtime from the accepted plan; an approved plan is not implemented behavior. Use the latest accepted plan value and its selected option, answer reference and exact scope. If none was approved, use the original proposal. Retain earlier values as history; reopening does not reset an approval to the original proposal.
+- Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption. Explain what changed. An uncertain risk can still need a decision; state what is unknown.
+- Correct factual mistakes against source evidence and disclose the correction; do not change behavior as part of that correction.
+- A draft value, recommendation or reviewer agreement is not a user answer. Only the exact accepted scope authorizes work; leave unknown values unknown.
 
-Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, your recommendation or agreement between reviewers does not approve other work. Correct factual mistakes against source evidence and disclose the correction; do not change behavior as part of that correction. Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption, and explain what changed. An uncertain risk can still need a decision; state what is unknown.
+**2. Identify the rows before drafting a menu.**
+List the remedy's behaviors, implementation approaches, guarantees and measured bounds as current → proposed value. Include when results return, resource use and lifetimes. For a bound, name what it measures and its unit; for optional verification, name the method and depth.
 
-**2. Identify the rows before drafting a menu.** Break each remedy into the user-visible behaviors, guarantees and measured bounds it would change, including when results return, resource use and lifetimes. List each as current → proposed value. Could the user choose one while another keeps its approved value or stays pending? Consider mixed choices even if your menu omits them. If yes, use separate rows, even within one function, issue or patch. Match existing IDs or assign new ones; record the source or reviewer and mark undecided rows `pending`; their remedies are not accepted work.
+Check each proposed change:
+- Could the user choose one while another keeps its approved value or stays pending? Consider mixed choices even if your menu omits them. If yes, use separate rows, even within one function, issue or patch.
+- Before calling a mechanism required, hold the exact contract fixed and check for a valid alternative. If both preserve the contract but differ in another selectable runtime effect, that effect needs its own choice. Interchangeable implementation details need no separate approval.
+- Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof of an exact approved contract stays in every option, citing that answer, including later-discovered scenarios needed to prove it. Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice.
+- Separately selectable instrumentation, follow-up work, guarantees or policies need their own rows, with their tests conditional on approval.
+
+Match existing IDs or assign new ones. Record the source or reviewer and mark undecided rows `pending`; their remedies are not accepted work.
 
 | Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |
 |-----|-------------------|--------------------------------|---------------------------------|-----------------------------|--------|--------------------|
 
-A row can concern behavior, an implementation approach, a bound or optional verification depth. For a bound, name what it measures and its unit; for verification, name the method and depth. Leave unknown values unknown. Before calling a mechanism required, hold the exact contract fixed and check for a valid alternative. If both preserve that contract but differ in another selectable runtime effect, that effect is a pending choice, not proof of the contract. Resolve it separately from the broader approach. Interchangeable implementation details need no separate approval.
+With no pending choice, carry approved work forward and report the finding without asking again. This includes required code, tests and docs discovered after the Tests section; cite the exact approval.
 
-Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof of an exact approved contract stays in every option, citing that answer, including later-discovered scenarios needed to prove it. Separately selectable instrumentation or follow-up work needs its own row. Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice. A different guarantee or policy needs its own decision, with its tests conditional on approval.
+**3. Build and audit the complete question for one row.**
+Draft the question text, recommendation and every option's label, description and tradeoffs. Apply the preamble's tool, prose, preference and session rules and the question-format rules below now, before saving.
 
-With no pending choice, carry approved work forward and report the finding without asking again.
-
-**3. Build and audit the complete question for one row.** Draft the question text, recommendation and every option's label, description and tradeoffs. Follow the preamble's tool, prose, preference and session rules and the question-format rules below now, before saving. An obvious fix still needs approval unless an exact prior answer already covers it.
-
-In this row's `Option comparisons`, state its latest accepted value and the resulting value under EVERY offered option:
+In `Option comparisons`, state the latest accepted value and the resulting value under EVERY offered option. State values and resulting work, not package names:
 
 `row ID [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`
 
-Use only the options offered. State values and resulting work, not package names. Distinguish common necessary implementation and proof from new runtime effects or optional work. For Investigate and Defer, name the bounded investigation, if any, and which plan value stays unchanged or pending; neither approves implementation. Keep other approved rows fixed and other pending rows undecided.
+Use only the options offered. For Investigate and Defer, name any bounded investigation and which value stays unchanged or pending; neither approves implementation. Keep other approved rows fixed and other pending rows undecided.
 
-Read the entire brief against this row's comparison, including recommendations and values shared by all options. A shared new value still needs approval. If any option adds or resolves another independent commitment, return to Step 2 and split. For example:
+Read the entire brief against this comparison, including recommendations and values shared by all options. A shared new value still needs approval. If any option adds or resolves another independent commitment, return to Step 2 and split. For example:
 - `R1 jitter [pending]: current=unspecified; A=on; B=off`
 - `R2 delay cap [pending]: current=unspecified; A=on; B=off`
 
-Jitter without a cap and a cap without jitter are meaningful choices even though this menu omits them. Ask about R1 with R2 pending in every option. Hold the chosen value fixed, then ask about R2 if still relevant and pending. Record why an irrelevant choice needs no question. Resolve remaining risk or safety choices before declaring the plan ready. Never remove an established contract or required proof to make an option smaller; changing that contract needs its own decision.
+Jitter without a cap and a cap without jitter are meaningful choices even though this menu omits them. Ask about R1 with R2 pending in every option. Hold the chosen value fixed, then ask about R2 if still relevant and pending. Record why an irrelevant choice needs no question. Never remove an established contract or required proof to make an option smaller; changing that contract needs its own decision.
 
-**4. Save the audited question and comparison.** Before every new or reopened question, save its row, rebuilt comparison and exact question brief with Write or Edit. A previous comparison or the critic's recommendation cannot replace this audit. Use the explicitly requested report file, otherwise the reviewed plan, preserving its content, other rows and approvals. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present them instead. If saving fails, report the error and stop before asking. If the question's proposed outcomes, work or meaning change, return to Step 3 and save the revised brief before sending it.
+**4. Save the audited question and comparison.**
+Before asking, save its row, rebuilt comparison and exact question brief with Write or Edit. Use the explicitly requested report file, otherwise the reviewed plan; preserve its other content and approvals. A previous comparison or critic's recommendation cannot replace this audit.
 
-**5. Send, record the answer, then edit.** Send that audited brief without adding work or changing scope. Each AskUserQuestion call contains exactly one question for one row.
+Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present them instead. If saving fails, report the error and stop before asking. If proposed outcomes, work or meaning change, return to Step 3 and save the revised brief before sending it.
 
-While waiting for the answer, stop. Do not apply the remedy, enter the next section or call ExitPlanMode. Record the actual selected option and answer, their reference and exact accepted scope separately from your draft options. Then apply only those amendments with a scoped Edit before taking the next row. In read-only mode, present the amendments instead. Leave other rows unchanged. Investigation or deferral does not approve implementation; retain unresolved risks and required verification. The table does not replace updating the working plan.
+**5. Send, record the answer, then edit.**
+Send that audited brief without adding work or changing scope. Each AskUserQuestion call contains exactly one question for one row. An obvious fix still needs approval unless an exact prior answer already covers it.
+
+While waiting, stop: do not apply the remedy, enter the next section or call ExitPlanMode. Record the actual selected option and answer, their reference and exact accepted scope separately from your draft options. Apply only those amendments with a scoped Edit before taking the next row; present them instead in read-only mode. Leave other rows unchanged. Investigation or deferral does not approve implementation; retain unresolved risks and required verification. Update the working plan as well as the table. Resolve remaining risk or safety choices before declaring the plan ready.
 
 In /autoplan, use its authorized auto-decisions and audit trail. Keep User Challenges pending for its final gate.
 

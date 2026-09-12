@@ -16,7 +16,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { callJudge, judge } from './helpers/llm-judge';
-import { readWorkflowExcerpt } from './helpers/workflow-excerpt';
+import { ENG_REVIEW_EXCERPT, readWorkflowExcerpt } from './helpers/workflow-excerpt';
 import type { JudgeScore } from './helpers/llm-judge';
 import { LLM_JUDGE_TOUCHFILES } from './helpers/touchfiles';
 // Runs when EVALS=1 is set (requires ANTHROPIC_API_KEY in env) — the EVALS
@@ -673,9 +673,7 @@ describeIfSelected('Plan Review skill evals', [
     await runWorkflowJudge({
       testName: 'plan-eng-review/SKILL.md sections',
       suite: 'Plan Review skill evals',
-      skillPath: 'plan-eng-review/SKILL.md',
-      startMarker: '## BEFORE YOU START:',
-      endMarker: '## CRITICAL RULE',
+      ...ENG_REVIEW_EXCERPT,
       judgeContext: 'an engineering plan review framework with 4 review sections',
       judgeGoal: 'how to review a plan for architecture quality, code quality, test coverage, and performance — walking through each section interactively with AskUserQuestion',
     });

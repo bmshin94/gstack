@@ -150,6 +150,9 @@ When fixing failures or preparing `/ship`, follow this order:
    Also run adjacent cheap checks: generated-content freshness, prompt-size/parity
    limits, source assertions, fixture checks, and dependency selection as
    applicable. A changed prompt must clear these before its eval.
+   Run its selected quality judge before long behavioral evaluations that read
+   the same changed prompt. If a repair supersedes an active run's inputs, cancel
+   that run, preserve completed outcomes, and label unfinished cases as cancelled.
    Check each edit or setup command’s result before running dependent checks. A
    failed edit is not a reason to test the unchanged input again.
 6. Declare a fixture actor’s supported interactions before the model starts.

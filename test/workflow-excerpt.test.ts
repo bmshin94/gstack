@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readWorkflowExcerpt } from './helpers/workflow-excerpt';
+import { ENG_REVIEW_EXCERPT, readWorkflowExcerpt } from './helpers/workflow-excerpt';
 import { LLM_JUDGE_TOUCHFILES, selectTests } from './helpers/touchfiles';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -95,7 +95,8 @@ describe('workflow judge excerpts', () => {
   });
 
   test('Eng preparation and decision procedure precede the four review sections', () => {
-    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## CRITICAL RULE');
+    const { skillPath, startMarker, endMarker } = ENG_REVIEW_EXCERPT;
+    const eng = readWorkflowExcerpt(skillPath, startMarker, endMarker);
     const stages = ['## Review preparation', '## Confidence Calibration', '## Decision procedure',
       '**Decision gate (all sections and outside voice):**', '## Review Sections',
       '### 1. Architecture review', '### 2. Code quality review', '### 3. Test review', '### 4. Performance review']
@@ -104,6 +105,10 @@ describe('workflow judge excerpts', () => {
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     expect(eng.match(/^## Decision procedure$/gm)).toHaveLength(1);
     expect(eng.slice(stages[2], stages[4]).match(/^\*\*[1-5]\. /gm)).toHaveLength(5);
+    const outputs = ['## Required outputs', '### Completion summary', '## Plan File Review Report',
+      '### Write to the plan file', '## Review Log', '## Unresolved decisions'].map(heading => eng.indexOf(heading));
+    expect(outputs.every(index => index > stages[stages.length - 1]!)).toBe(true);
+    expect(outputs).toEqual([...outputs].sort((a, b) => a - b));
   });
 
   test('CEO mode handoff precedes its route and spec review stays within persistence', () => {
