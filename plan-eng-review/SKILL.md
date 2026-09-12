@@ -677,7 +677,7 @@ Before reviewing, answer:
    _aside_exec "Search the web for {framework} {pattern} built-in, {pattern} best practice {current year}, and {framework} {pattern} pitfalls. Read-only: do not sign in, submit, or change anything. Reply with up to 8 bullets, each with its source URL, then stop."
    ```
 
-   If the Aside check did not print `READY`, run the same searches with the WebSearch tool when the host provides it; with neither, skip this check and note: "Search unavailable — proceeding with in-distribution knowledge only."
+   Use the readiness result from **Web research runs in Aside**, above. If Aside is unavailable, run the same searches with the WebSearch tool when the host provides it; with neither, skip this check and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
    If the plan rolls a custom solution where a built-in exists, flag it as a scope reduction opportunity. Annotate recommendations with **[Layer 1]**, **[Layer 2]**, **[Layer 3]**, or **[EUREKA]** (see preamble's Search Before Building section). If you find a eureka moment — a reason the standard approach is wrong for this case — present it as an architectural insight.
 5. **TODOS cross-reference:** Read `TODOS.md` if it exists. Are any deferred items blocking this plan? Can any deferred items be bundled into this PR without expanding scope? Does this plan create new work that should be captured as a TODO?
@@ -690,15 +690,15 @@ Before reviewing, answer:
    - How will users download or install it (GitHub Releases, package manager, container registry)?
    If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
 
-At 8+ files or 2+ new classes/services, STOP before section work. Follow preamble question rules:
+At 8+ files or 2+ new classes/services, STOP before section work. Use the preamble's question rules:
 
-1. Name overbuilding; ask about each needed feature cut separately first. Class/module arrangements are structure choices when they preserve the same behavior and contracts.
-2. Compare smaller/original structures with identical include/drop/defer feature dispositions (approved or pending). Preserve contracts and approved security/error/test/performance fixes; pending fixes stay pending.
-3. Ask which structure to use; its answer never approves/drops/defers another fix. Ask each fix separately before changing it.
+1. Explain the excess complexity. Ask about each needed feature cut or deferral separately first.
+2. Compare original and smaller class/module arrangements with the same feature choices. Preserve contracts and approved security, error handling, test and performance fixes in both; leave unapproved fixes pending.
+3. Ask which arrangement to use. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
 
-**STOP.** Before user/prior approval or an authorized auto-decision: no Section 1, ExitPlanMode, or Step 0 findings/revised approaches/proposed fixes in any plan file (new files/appendices included). Only unchanged copies of the user's original plan, without review content, are allowed.
+**STOP while a Step 0 question awaits an answer.** Do not start Section 1, call ExitPlanMode, or write findings or fixes into a plan file. An unchanged copy of the original plan is allowed. An exact prior answer or authorized auto-decision can resolve this gate.
 
-If the complexity check does not trigger, present your Step 0 findings and enter Review Sections: run Prior Learnings and Confidence Calibration, then Section 1.
+After the gate resolves, apply only accepted scope changes. Present Step 0 findings, run Prior Learnings and Confidence Calibration, and enter Section 1. Take the same route if complexity did not trigger the gate.
 
 Always work through the full interactive review: one section at a time (Architecture → Code Quality → Tests → Performance) with at most 8 top issues per section.
 

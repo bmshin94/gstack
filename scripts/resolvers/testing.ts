@@ -222,7 +222,7 @@ function generateTestCoverageAuditInner(mode: CoverageAuditMode, part: 'audit' |
   if (mode === 'ship') {
     sections.push(`100% coverage is the goal — every untested path is a path where bugs hide and vibe coding becomes yolo coding. Evaluate what was ACTUALLY coded (from the diff), not what was planned.`);
   } else if (mode === 'plan') {
-    sections.push(`100% coverage is the goal. Evaluate every codepath in the plan and ensure the plan includes tests for each one. If the plan is missing tests, add them — the plan should be complete enough that implementation includes full test coverage from the start.`);
+    sections.push(`100% coverage is the goal. Identify the tests each planned codepath needs. Add required proof for an exact approved behavior without asking again; take new policies or optional verification depth through the decision gate before treating their tests as accepted work. Review the requirements here; do not build the proposed tests.`);
   } else {
     sections.push(`100% coverage is the goal. Evaluate every codepath changed in the diff and identify test gaps. Gaps become INFORMATIONAL findings that follow the Fix-First flow.`);
   }
@@ -363,7 +363,7 @@ When checking each branch, also determine whether a unit test or E2E/integration
   sections.push(mode === 'plan' ? `
 ### REGRESSION RULE (mandatory)
 
-**IRON RULE:** When a planned change puts existing behavior at risk without regression coverage, that coverage is a critical requirement. Use one dedicated AskUserQuestion to settle the regression test contract — behavior to preserve, intentional changes, and acceptance assertions — before adding the approved contract to the plan. Ask how to cover it, not whether to skip it. Do not silently include it under a different test-depth question.
+**IRON RULE:** When a planned change puts existing behavior at risk without regression coverage, that coverage is a critical requirement. Carry forward an exact approved regression contract; otherwise use one dedicated AskUserQuestion to settle it — behavior to preserve, intentional changes, and acceptance assertions — before adding the approved contract to the plan. Ask how to cover it, not whether to skip it. Do not silently include it under a different test-depth question.
 
 A proposed rewrite is a regression risk, not proof that running code already broke. Name the existing callers and behavior at risk; preserve unchanged behavior and explicitly identify intended differences. No skipping regression coverage.` : `
 ### REGRESSION RULE (mandatory)
@@ -410,7 +410,7 @@ Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke ch
     sections.push(`
 **Step 5. Add missing tests to the plan:**
 
-For each GAP identified in the diagram, present its test contract in a dedicated AskUserQuestion, then add the approved requirement to the plan. Carry forward an already approved contract without asking it again. Be specific:
+For each GAP in the diagram, use the decision gate to determine whether its test contract is already approved or still needs a choice. Carry forward required proof of approved behavior; ask separately about each new contract or optional depth choice before adding it as accepted work. Be specific:
 - What test file to create (match existing naming conventions)
 - What the test should assert (specific inputs → expected outputs/behavior)
 - Whether it's a unit test, E2E test, or eval (use the decision matrix)
@@ -422,13 +422,15 @@ The plan should be complete enough that when implementation begins, every test i
     sections.push(`
 ### Test Plan Artifact
 
-After producing the coverage diagram, write a test plan artifact to the project directory so \`/qa\` and \`/qa-only\` can consume it as primary test input:
+After resolving the Test review decisions, record the approved test requirements in an artifact for \`/qa\` and \`/qa-only\`. List any unresolved choices separately as pending, not required implementation. Update this artifact if later approved decisions change the tests. Use the ledger's write/read-only rules.
 
 \`\`\`bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
-USER=$(whoami)
+TEST_PLAN_USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 \`\`\`
+
+Use \`SLUG\` and the sanitized \`BRANCH\` from gstack-slug, \`TEST_PLAN_USER\` for {user}, and \`DATETIME\` for {datetime}. Set {date} to today. Read the local origin URL with \`git remote get-url origin\` and use its owner/repo; without an origin, write \`local-only\`. No network request is needed.
 
 Write to \`~/.gstack/projects/{slug}/{user}-{branch}-eng-review-test-plan-{datetime}.md\`:
 
@@ -449,6 +451,9 @@ Repo: {owner/repo}
 
 ## Critical Paths
 - {end-to-end flow that must work}
+
+## Pending Decisions
+- {unapproved test requirement and its ledger row, or none}
 \`\`\`
 
 This file is consumed by \`/qa\` and \`/qa-only\` as primary test input. Include only the information that helps a QA tester know **what to test and where** — not implementation details.`);

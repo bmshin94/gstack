@@ -868,7 +868,7 @@ Section labels are stable references; follow this execution order:
 
 | Order | Phase | Sections |
 |---|---|---|
-| 1 | Challenge the plan and present your findings to the user. | 0A–0C |
+| 1 | Challenge the plan and present findings to the user without implying approval. | 0A–0C |
 | 2 | Resolve each pending approach decision. | 0C-bis |
 | 3 | Select and announce the review mode. | 0F |
 | 4 | Follow that mode's route, then complete Review Sections. | Route table below |
@@ -878,7 +878,7 @@ Keep a decision ledger from input reading onward:
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
 
-Retain conventions, existing test coverage and actual code risks with evidence. Mark rows unresolved, approved, reopened, deferred or declined; cite the instruction or answer authorizing each resolved choice. Continue this table through the Spec Review Loop below and the later Outside Voice review. Reopen only for a concrete contradiction or changed assumption, never speculation or reviewer agreement.
+Record conventions, existing test coverage and code risks with evidence. Mark rows unresolved, approved, reopened, deferred or declined. Cite the instruction or answer for each resolved row. Keep the ledger through the Spec Review Loop and later Outside Voice. Reopen only for a concrete contradiction or changed assumption, never speculation or reviewer agreement.
 
 ### 0A. Premise Challenge
 1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
@@ -900,42 +900,38 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0C-bis. Alternatives (MANDATORY)
 
-Present the 0A–0C findings without implying approval.
-
 **1. Establish authority.**
-Current contracts come from original input, inspected source and actual approvals, never your draft. Correct source-disproven draft claims before options; surface conflicts with approvals. Retain unknowns; reuse exact approvals without broadening or re-asking.
+Check the original input, inspected source and actual approvals. Your draft cannot establish facts or consent. Correct false factual claims; surface approval conflicts. Keep unknowns explicit and reuse exact approvals without broadening or asking again.
 
-**2. Define decision units.**
-Derive units from requested deliverables and exact approvals, not topics or methods. Independently proposed commitments stay separate if one can be accepted while another stays unchanged. Mixed adoption exposes separability; sharing a helper or test suite does not remove it.
+**2. Record the decision.**
+A row is one separately selectable change in the requested or approved work. If one proposed change can be accepted while another stays unchanged, use separate rows, even within one helper or test suite. Explain why any changes cannot be separated.
 
-One accepted delivery can have one verification-depth choice across its cases, with policies fixed. Keep necessary code and regression proof together. Verification of a pending policy stays conditional or waits for that policy's answer.
+Keep a change's necessary code and regression tests together. Once a feature's behavior is approved, one question can decide how thoroughly to test its required cases. Tests cannot approve undecided behavior; keep them pending.
 
-Before drafting A/B/C, record current and proposed values, verification method and depth, and other commitments fixed or pending. Stay at the requested review depth. Combine only inseparable changes; explain why.
+Record current and proposed behavior, limits and verification method and depth. Keep other commitments fixed or pending and honor the requested review depth.
 
-When authorized, Write/Edit pending rows to the requested output, reviewed plan or host active plan, in that order; create from supplied input if absent. Do not prewrite conclusions. If writing fails, report it and stop before asking. If edits are forbidden, present the table.
+Honor user and host restrictions on plan edits. Otherwise use Write/Edit for pending notes within the requested scope. Use the requested output file, or else the reviewed plan, or else the host's active plan. Create it from supplied input if absent. Do not prewrite conclusions. If writing fails, report it and stop before asking. If edits are forbidden, show the table in chat.
 
-**3. Compare options for one recorded row.**
-Compare 2-3 approaches (prefer 3 for non-trivial plans); justify a lone option.
-- Give a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reuse and verification coverage.
-- Weigh "minimal viable" (smallest diff) and "ideal architecture" (long-term fit) equally; a rewrite may be better.
+**3. Compare one row's options.**
+Compare 2-3 approaches; prefer 3 for non-trivial plans and explain a lone option. Give each a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reuse and verification coverage. Weigh "minimal viable" (smallest diff) and "ideal architecture" (long-term fit) equally; a rewrite may be better.
 
-Check every option against the unit; split independent add-ons. Preserve accepted requirements, contracts, behavior, tests and fixes.
+Each option must fit its row. Separate independent additions; preserve accepted requirements, contracts, behavior, tests and fixes.
 
 **4. Ask and record the answer.**
-Use the preamble's AskUserQuestion format. Score only differing coverage of this row; 10 includes all its edge cases. Use the kind note for differences in kind.
+Use the preamble's AskUserQuestion format, recommendation and preference/session rules. If options differ in coverage, score only this row: 10 covers all its edge cases, 7 the happy path, 3 a shortcut. Otherwise write: "Note: options differ in kind, not coverage — no completeness score."
 
 **STOP:** Before 0F, get user approval for each new or reopened choice, even a lone option. Recommendations are not approval. Ask one row per call, cite its ID, then record the exact answer and scope before the next row. Do not edit code.
 
-Repeat this process before later questions, even for obvious fixes. Honor preamble preference/session rules. Report settled findings; say "No issues, moving on." only when none remain.
+Repeat this process before later questions, even for obvious fixes. Report settled findings; say "No issues, moving on." only when none remain.
 
 ### 0F. Mode Selection
-The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport, not permission to choose.
+The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport only.
 
 1. An explicit user mode choice outranks every default below. "Go big", "ambitious" or "cathedral" selects SCOPE EXPANSION; "hold scope but tempt me", "show me options" or "cherry-pick" selects SELECTIVE EXPANSION. Do not ask again.
 2. Otherwise recommend SCOPE EXPANSION for greenfield work, SELECTIVE EXPANSION for enhancements/iterations, or HOLD SCOPE for bug fixes/hotfixes/refactors. For plans touching >15 files, recommend SCOPE REDUCTION even for greenfield work, unless the user pushes back.
-3. For an unresolved selection, if `QUESTION_TUNING: true`, check `plan-ceo-review-mode` via `gstack-question-preference --check` before choosing or asking. `AUTO_DECIDE` permits the recommended mode; `ASK_NORMALLY` requires a mode question. If `QUESTION_TUNING: false`, skip the lookup and ask normally. Preamble session rules still take precedence.
+3. If no mode is chosen, check `plan-ceo-review-mode` with `gstack-question-preference --check` when `QUESTION_TUNING: true`. Follow the result: `AUTO_DECIDE` selects the recommended mode; `ASK_NORMALLY` requires a mode question. If `QUESTION_TUNING: false`, skip the lookup and ask normally.
 
-Selecting a mode never approves a scope change. The >8-file complexity check below applies to HOLD SCOPE and SELECTIVE EXPANSION. Mode questions use the preamble format, RECOMMENDATION and the kind-difference note above.
+Selecting a mode never approves a scope change. The >8-file check applies to HOLD SCOPE and SELECTIVE EXPANSION. Mode questions use 0C-bis's question format and note for differences in kind.
 
 **Mode handoff before 0D:** Announce the exact selected mode name, then its rationale and approved approach, in normal chat before analysis, edits, tools or questions:
 - `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected mode> (your preference). Change with /plan-tune. Approach: <approved 0C-bis approach>.`
@@ -943,7 +939,7 @@ Selecting a mode never approves a scope change. The >8-file complexity check bel
 
 Ask before changing mode or approved approach.
 
-After handoff, follow this mode route:
+Follow the selected mode's route:
 
 | Mode | Remaining Step 0 work |
 |------|----------------------|
@@ -992,7 +988,7 @@ For both expansion modes, present each proposal as its own AskUserQuestion: **A)
 
 Present each proposed cut as its own AskUserQuestion: **A)** Defer this item to TODOS.md **B)** Keep it in scope. Review only the agreed reduced scope.
 
-Use 0C-bis for each deferral, including in HOLD SCOPE; reuse its existing menu answer. Add each approved item and its context to TODOS.md.
+Record approved deferrals and their context in TODOS.md. Reuse answered scope menus without another question or alternatives comparison. In HOLD SCOPE, use REDUCTION's defer/keep menu for each new deferral.
 
 ### 0D-POST. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
 
@@ -1044,8 +1040,6 @@ Repo: {owner/repo}
 Derive the feature slug from the reviewed plan; use a YYYY-MM-DD date.
 
 "Plan under review" must point to the complete amended plan, including accepted changes. If the plan exists only in chat, save it to its own file before writing the CEO summary. The summary cannot replace or point to itself as the full plan.
-
-Run the Spec Review Loop below.
 
 ## Spec Review Loop
 
@@ -1104,7 +1098,7 @@ echo '{"skill":"plan-ceo-review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterat
 ```
 Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.
 
-After the loop completes or reports unavailable, give the user links to both files. Continue to 0E.
+After the loop completes or reports unavailable, give the user links to both files for approval. Wait as required by the preamble's session rules; use 0C-bis for requested changes. Then continue to 0E.
 
 ### 0E. Temporal Interrogation (EXPANSION, SELECTIVE EXPANSION, and HOLD modes)
 For scope prioritization, resolve scope and feasibility blockers now. Keep other design choices pending unless the user requested implementation planning; ask before expanding the review to that depth.

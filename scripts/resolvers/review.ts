@@ -224,7 +224,9 @@ export function generateAntiShortcutClause(_ctx: TemplateContext): string {
 - **Factual correction:** Correct descriptions against source evidence without authorizing behavior changes.
 
 Never skip sections or the terminal report. Do not invent a question merely because a finding came from another section or reviewer.`;
-  if (_ctx.skillName === 'plan-eng-review' || _ctx.skillName === 'plan-devex-review') return `**Anti-shortcut clause:** Evaluate every section and outside voice finding through the decision gate below. The plan records the interactive review; writing findings into it never substitutes for approval. Ask once per new or reopened independent decision, wait for the actual answer, and apply only its accepted scope. Necessary code, tests and docs for an exact previously selected contract do not reopen it: cite that selected answer and scope, retain the finding and proof, and disclose the follow-through. Correct factual descriptions against source evidence without authorizing behavior changes. A broad approach or recommendation does not approve independent remedies or optional verification depth. Concrete new risks or changed assumptions may reopen a decision and must be presented. Never skip sections or the terminal report, or invent a question merely because a finding came from another section or reviewer.`;
+  if (_ctx.skillName === 'plan-eng-review') return `**Anti-shortcut clause:** Use the decision gate for all four sections and outside voice. Retain findings and evidence. Ask only for new or reopened choices and apply their exact answers. Never prewrite unapproved remedies or skip sections or the terminal report.`;
+
+  if (_ctx.skillName === 'plan-devex-review') return `**Anti-shortcut clause:** Evaluate every section and outside voice finding through the decision gate below. The plan records the interactive review; writing findings into it never substitutes for approval. Ask once per new or reopened independent decision, wait for the actual answer, and apply only its accepted scope. Necessary code, tests and docs for an exact previously selected contract do not reopen it: cite that selected answer and scope, retain the finding and proof, and disclose the follow-through. Correct factual descriptions against source evidence without authorizing behavior changes. A broad approach or recommendation does not approve independent remedies or optional verification depth. Concrete new risks or changed assumptions may reopen a decision and must be presented. Never skip sections or the terminal report, or invent a question merely because a finding came from another section or reviewer.`;
   return `**Anti-shortcut clause:** The plan file is the OUTPUT of the interactive review, not a substitute for it. Writing every finding into one plan write and calling ExitPlanMode without firing AskUserQuestion is the precise failure mode of the May 2026 transcript bug — the model explored, found issues, and dumped them into a deliverable rather than walking the user through them. If you have ANY non-trivial finding in any review section, the path from finding to ExitPlanMode goes THROUGH AskUserQuestion. Zero findings in every section is the only path to ExitPlanMode that bypasses AskUserQuestion. If you find yourself wanting to write a plan with findings before asking, stop and call AskUserQuestion now — that's the bug, recognize it.`;
 }
 
@@ -879,7 +881,20 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 (On \`CODEX_MODE: disabled\` you already skipped this section per the preflight — do not reach here.)
 
-**Cross-model tension:**
+${ctx.skillName === 'plan-eng-review' ? `**Cross-model tension:**
+
+Use the same seven-column decision ledger and the five-step decision gate above; do not start a second table. Match each outside finding to an existing row or add a pending row for each new choice. Record the reviewer and its evidence in \`Evidence and exact approval\`. Exact confirmations and factual corrections update evidence; a new proposal still needs approval even when both reviewers agree. Reopening an approved choice requires new evidence or a changed assumption.
+
+Save or present the pending rows under gate Step 3. Then compare one of these menus against each row's current values and record every option in \`Option comparisons\`:
+
+- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Keep other approved choices fixed and other pending choices undecided. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those are separate rows.
+- **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After the individual answers, check the assembled set's capacity and dependencies. If they conflict, return to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck the set before confirming it. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
+
+Save or present the completed comparisons, then finish gate Step 5: ask one question for one row, record its actual answer and exact accepted scope, and apply only those amendments before the next row. Keep necessary code, tests and docs for one approved behavior together. Investigation or deferral does not authorize implementation. In /autoplan, preserve its authorized auto-decisions, audit trail and User Challenge rules; challenges wait for the final gate.
+
+Report all findings, dispositions and remaining disagreements after the queue is resolved. An answer to one row does not resolve the finding's other pending rows.
+
+` : `**Cross-model tension:**
 
 **1. Queue one changed commitment per row.** Reuse the working ledger. An issue,
 candidate or reviewer bullet may contain several independently selectable changes;
@@ -926,7 +941,7 @@ Retain other rows and risks; one answer does not clear the finding's remaining c
 
 After processing the queue, report findings, dispositions and remaining disagreements.
 
-**Persist the result:**
+`}**Persist the result:**
 \`\`\`bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 \`\`\`

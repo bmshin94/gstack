@@ -923,7 +923,7 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
   test('planned regression coverage gets its own approved contract without making coverage optional', () => {
     const regression = planSkill.split('### REGRESSION RULE (mandatory)')[1]!.split('**Step 4.')[0]!;
     expect(regression).toContain('critical requirement');
-    expect(regression).toContain('one dedicated AskUserQuestion');
+    expect(regression).toContain('Carry forward an exact approved regression contract; otherwise use one dedicated AskUserQuestion');
     expect(regression).toContain('behavior to preserve, intentional changes, and acceptance assertions');
     expect(regression).toContain('Ask how to cover it, not whether to skip it');
     expect(regression).toContain('before adding the approved contract to the plan');
@@ -934,8 +934,9 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
 
   test('plan gap additions wait for their test-contract decision', () => {
     const action = planSkill.split('**Step 5. Add missing tests to the plan:**')[1]!.split('### Test Plan Artifact')[0]!;
-    expect(action).toContain('present its test contract in a dedicated AskUserQuestion');
-    expect(action).toContain('then add the approved requirement to the plan');
+    expect(action).toContain('use the decision gate to determine whether its test contract is already approved or still needs a choice');
+    expect(action).toContain('Carry forward required proof of approved behavior');
+    expect(action).toContain('ask separately about each new contract or optional depth choice before adding it as accepted work');
     expect(action).not.toContain('For each GAP identified in the diagram, add a test requirement');
     expect(action).not.toContain('explain what broke');
   });
@@ -959,6 +960,14 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
     expect(planSkill).toContain('Add missing tests to the plan');
     expect(planSkill).toContain('eng-review-test-plan');
     expect(planSkill).toContain('Test Plan Artifact');
+    const artifact = planSkill.split('### Test Plan Artifact')[1]!;
+    expect(artifact).toContain('After resolving the Test review decisions');
+    expect(artifact).toContain('List any unresolved choices separately as pending, not required implementation');
+    expect(artifact).toContain('Update this artifact if later approved decisions change the tests');
+    expect(artifact).toContain("Use the ledger's write/read-only rules");
+    expect(artifact).toContain('TEST_PLAN_USER=$(whoami)');
+    expect(artifact).toContain('sanitized `BRANCH` from gstack-slug');
+    expect(artifact).toContain('without an origin, write `local-only`');
   });
 
   test('ship mode auto-generates tests + includes before/after count', () => {
@@ -4000,9 +4009,9 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions.every(position => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
-    expect(approach).toContain('actual approvals, never your draft');
-    expect(approach).toContain('reuse exact approvals without broadening or re-asking');
-    expect(content).toContain('cite the instruction or answer authorizing each resolved choice');
+    expect(approach).toContain('actual approvals. Your draft cannot establish facts or consent');
+    expect(approach).toContain('reuse exact approvals without broadening or asking again');
+    expect(content).toContain('Cite the instruction or answer for each resolved row');
     const reopenRule = 'Reopen only for a concrete contradiction or changed assumption';
     expect(content).toContain(reopenRule);
     expect(content.indexOf(reopenRule)).toBeLessThan(approachIdx);

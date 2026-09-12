@@ -4,7 +4,7 @@
 
 **Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-4) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
-**Anti-shortcut clause:** Evaluate every section and outside voice finding through the decision gate below. The plan records the interactive review; writing findings into it never substitutes for approval. Ask once per new or reopened independent decision, wait for the actual answer, and apply only its accepted scope. Necessary code, tests and docs for an exact previously selected contract do not reopen it: cite that selected answer and scope, retain the finding and proof, and disclose the follow-through. Correct factual descriptions against source evidence without authorizing behavior changes. A broad approach or recommendation does not approve independent remedies or optional verification depth. Concrete new risks or changed assumptions may reopen a decision and must be presented. Never skip sections or the terminal report, or invent a question merely because a finding came from another section or reviewer.
+**Anti-shortcut clause:** Use the decision gate for all four sections and outside voice. Retain findings and evidence. Ask only for new or reopened choices and apply their exact answers. Never prewrite unapproved remedies or skip sections or the terminal report.
 
 ## Prior Learnings
 
@@ -110,28 +110,30 @@ confirms it IS a real issue, that is a calibration event. Your initial confidenc
 too low. Log the corrected pattern as a learning so future reviews catch it with
 higher confidence.
 
-**Decision gate (all sections and outside voice):** Repeat this process before each menu, including outside voice.
+**Decision gate (all sections and outside voice):** Use this one ledger throughout the review. Start it after Step 0 resolves scope. Each row tracks one choice, from the evidence through the answer and resulting plan edit.
 
-**1. Establish current contracts.** Use the original request, inspected source and actual answers as authority. Your review draft cannot establish a fact or approval by itself. Keep every finding and its evidence. Enumerate the affected behaviors and bounds. Cite the actual selected option, its question/answer reference and the exact approved scope. Unknown values stay unknown. Correct factual descriptions when source evidence shows they are wrong, and disclose the correction. This does not authorize a behavior change. Before deriving another finding from your draft, reconcile its claimed behavior and proof with those sources; leave unsupported policies pending.
+**1. Establish current contracts.** Read the original request, relevant source and prior answers. For each finding, record what happens now, what the user has already chosen, and the evidence for both. Cite the selected option, question/answer reference and exact approved scope. Keep unknown values unknown. Correct a factual mistake against source evidence and disclose it; that correction does not approve a behavior change. Check these sources before treating your own draft as evidence for another finding.
 
-For that approved behavior, add its required implementation work, tests and docs to the plan without asking again, even after the Tests section. A broad approach, recommendation or cross-model agreement is not approval. If the prior answer does not cover the proposed work, leave it undecided.
+Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, recommendation or agreement between reviewers does not approve other work. Keep work outside the prior answer pending. Reopen a choice only for a concrete new risk, contradictory evidence or changed assumption; explain what changed.
 
-**2. Separate proposed changes.** Identify what the answer would change: an observable behavior, an implementation choice preserving that behavior, an individual bound, or optional verification depth. If one proposed change can be adopted while another is rejected, they need separate decisions. A problem heading is not the unit of approval. Use the working ledger below. Record current and proposed values, including each bound's meaning and unit, and its verification method and depth. For each, record exactly what was approved and what is still undecided.
+**2. Separate proposed changes.** Ask: could the user accept one change and reject another? If yes, give them separate rows, even if they share an issue heading, helper or patch. A row can decide a behavior, an implementation approach, one bound, or optional verification depth. Record each bound's meaning and unit, and the current and proposed verification method and depth.
 
 | Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |
 |-----|-------------------|--------------------------------|---------------------------------|-----------------------------|--------|--------------------|
 
-Give each independently selectable value change its own row. Sharing a helper, a reviewer item or a cheap patch does not make separate policies one choice. Keep a chosen behavior and the code, tests and docs needed to establish it together. Tests proving that same chosen behavior belong with its implementation. Choosing unit, integration or smoke-test depth for that fixed behavior is one verification decision; tests that introduce distinct guarantees or policies are separate changes. Do not offer required proof of an exact approved contract as an optional extra, or prescribe unconditional tests for a policy still pending. Never hide a risk or omit required proof.
+Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof is part of that approved work, not an optional extra. For a fixed behavior, choosing unit, integration or smoke-test depth is one verification choice. A test that introduces a different guarantee or policy needs its own decision. Keep tests for pending policies conditional on approval; retain their risks and required proof.
 
-**3. Save the provisional ledger.** When edits are authorized, use Write or Edit to save these rows in the explicitly requested output plan, otherwise the reviewed plan, before drafting options or calling AskUserQuestion. Preserve existing content and approvals. Record proposed changes as pending; do not apply their remedies or prescribe them as accepted implementation or tests. If writing fails, report the error and stop before asking; an attempted write is not a saved ledger. If no plan file is in scope or the user requires read-only work, present the table instead. Follow the preamble's user, preference and session rules.
+**3. Save the provisional ledger.** After Step 0, this review records notes in the explicitly requested output/report file, otherwise the reviewed plan. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present the table instead. Use Write or Edit to save the rows before drafting options or calling AskUserQuestion. Preserve the plan's existing content and approvals. Mark undecided rows `pending` and their option comparisons `not drafted`; do not insert their remedies as accepted work. If saving fails, report the error and stop before asking.
 
-**4. Compare options for one row.** Compare EVERY option against the recorded current values. Record each option's changed values, preserved approvals and still-pending choices in the same ledger. Fill `Option comparisons` with `label: changes; preserves; pending` for each option; leave it `not drafted` until this step. Include commitments in descriptions and pros/cons, not just the option label.
+**4. Compare options for one row.** In `Option comparisons`, record `label: changes; preserves; pending` for EVERY option, including commitments in descriptions and pros/cons. Compare it with the row's current values. Keep all other approved choices fixed and unresolved choices undecided.
 
-If accepting it could change two independently selectable values, return to Step 2 and save or present the separate rows before asking. A partial option can expose separate choices hidden inside a "complete" package; a thinner proving test alone does not separate a fix from its proof. In every offered option, keep all other approved choices fixed and all unresolved choices undecided. Preserve established contracts; ask separately before changing one. Never make an option smaller by dropping settled behavior.
+If any option changes two independently selectable values, split the rows and compare again. A partial option can reveal two separate choices inside a "complete" package; simply testing the same chosen behavior less thoroughly does not separate the fix from its proof. Do not make an option smaller by dropping an established contract or an earlier accepted choice. Changing either needs its own decision.
 
-Save or present the corrected rows and option comparisons before AskUserQuestion, using Step 3's write-failure and read-only rules. A row ID alone does not establish that its options passed this comparison.
+Save or present the corrected rows and option comparisons before asking, using Step 3's write and failure rules. A row ID alone is not an option comparison.
 
-**5. Ask and record the answer.** Each AskUserQuestion invocation contains exactly one question for one recorded row; never pack independent rows into its questions array. Name the behavior policy, implementation choice or optional verification depth the answer will decide. Ask separately about scope changes and concrete new risks that invalidate a prior choice. Wait for the answer, then record its exact accepted scope in the same ledger and apply only that scope. Outside voice uses its scoped Edit rule before the next row; decision logging does not replace the working plan. Preserve other rows' dispositions.
+**5. Ask and record the answer.** Follow the preamble's tool, prose, preference and session rules. Each AskUserQuestion call contains exactly one question for one row. Name the behavior, approach, bound or verification depth it decides; recommend an option and explain why. While the question awaits an answer, stop: do not apply the remedy, enter the next section or call ExitPlanMode. An obvious fix still needs approval when it is not already covered by an exact prior answer.
+
+Record the answer reference and exact accepted scope in that row. Apply only those amendments with a scoped Edit before taking the next row; in read-only mode, present the amendments instead. Leave other rows unchanged. Record investigation, deferral and unresolved risks explicitly. A decision log does not replace the working plan. In /autoplan, follow its authorized auto-decisions and keep User Challenges pending for its final gate.
 
 ### 1. Architecture review
 Evaluate:
@@ -144,9 +146,7 @@ Evaluate:
 * For each new codepath or integration point, describe one realistic production failure scenario and whether the plan accounts for it.
 * **Distribution architecture:** If this introduces a new artifact (binary, package, container), how does it get built, published, and updated? Is the CI/CD pipeline part of the plan or deferred?
 
-For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
-
-**STOP for each pending decision.** Do NOT proceed to the next review section, apply the proposed fix to the plan, or call ExitPlanMode until the user responds. Provisional ledger notes are allowed; applying an unapproved remedy is not. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+Run the decision gate for this section's new or reopened choices. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode. When no decision remains, report the findings and their dispositions and continue.
 
 ### 2. Code quality review
 Evaluate:
@@ -154,16 +154,14 @@ Evaluate:
 * DRY violations—be aggressive here.
 * Error handling patterns and missing edge cases (call these out explicitly).
 * Technical debt hotspots.
-* Areas that are over-engineered or under-engineered relative to my preferences.
+* Areas that are fragile or unnecessarily complex, using the engineering preferences above.
 * Existing ASCII diagrams in touched files — are they still accurate after this change?
 
-For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
-
-**STOP for each pending decision.** Do NOT proceed to the next review section, apply the proposed fix to the plan, or call ExitPlanMode until the user responds. Provisional ledger notes are allowed; applying an unapproved remedy is not. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+Run the decision gate for this section's new or reopened choices. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode. When no decision remains, report the findings and their dispositions and continue.
 
 ### 3. Test review
 
-100% coverage is the goal. Evaluate every codepath in the plan and ensure the plan includes tests for each one. If the plan is missing tests, add them — the plan should be complete enough that implementation includes full test coverage from the start.
+100% coverage is the goal. Identify the tests each planned codepath needs. Add required proof for an exact approved behavior without asking again; take new policies or optional verification depth through the decision gate before treating their tests as accepted work. Review the requirements here; do not build the proposed tests.
 
 ### Test Framework Detection
 
@@ -266,7 +264,7 @@ When checking each branch, also determine whether a unit test or E2E/integration
 
 ### REGRESSION RULE (mandatory)
 
-**IRON RULE:** When a planned change puts existing behavior at risk without regression coverage, that coverage is a critical requirement. Use one dedicated AskUserQuestion to settle the regression test contract — behavior to preserve, intentional changes, and acceptance assertions — before adding the approved contract to the plan. Ask how to cover it, not whether to skip it. Do not silently include it under a different test-depth question.
+**IRON RULE:** When a planned change puts existing behavior at risk without regression coverage, that coverage is a critical requirement. Carry forward an exact approved regression contract; otherwise use one dedicated AskUserQuestion to settle it — behavior to preserve, intentional changes, and acceptance assertions — before adding the approved contract to the plan. Ask how to cover it, not whether to skip it. Do not silently include it under a different test-depth question.
 
 A proposed rewrite is a regression risk, not proof that running code already broke. Name the existing callers and behavior at risk; preserve unchanged behavior and explicitly identify intended differences. No skipping regression coverage.
 
@@ -298,7 +296,7 @@ Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke ch
 
 **Step 5. Add missing tests to the plan:**
 
-For each GAP identified in the diagram, present its test contract in a dedicated AskUserQuestion, then add the approved requirement to the plan. Carry forward an already approved contract without asking it again. Be specific:
+For each GAP in the diagram, use the decision gate to determine whether its test contract is already approved or still needs a choice. Carry forward required proof of approved behavior; ask separately about each new contract or optional depth choice before adding it as accepted work. Be specific:
 - What test file to create (match existing naming conventions)
 - What the test should assert (specific inputs → expected outputs/behavior)
 - Whether it's a unit test, E2E test, or eval (use the decision matrix)
@@ -308,13 +306,15 @@ The plan should be complete enough that when implementation begins, every test i
 
 ### Test Plan Artifact
 
-After producing the coverage diagram, write a test plan artifact to the project directory so `/qa` and `/qa-only` can consume it as primary test input:
+After resolving the Test review decisions, record the approved test requirements in an artifact for `/qa` and `/qa-only`. List any unresolved choices separately as pending, not required implementation. Update this artifact if later approved decisions change the tests. Use the ledger's write/read-only rules.
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
-USER=$(whoami)
+TEST_PLAN_USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
+
+Use `SLUG` and the sanitized `BRANCH` from gstack-slug, `TEST_PLAN_USER` for {user}, and `DATETIME` for {datetime}. Set {date} to today. Read the local origin URL with `git remote get-url origin` and use its owner/repo; without an origin, write `local-only`. No network request is needed.
 
 Write to `~/.gstack/projects/{slug}/{user}-{branch}-eng-review-test-plan-{datetime}.md`:
 
@@ -335,15 +335,16 @@ Repo: {owner/repo}
 
 ## Critical Paths
 - {end-to-end flow that must work}
+
+## Pending Decisions
+- {unapproved test requirement and its ledger row, or none}
 ```
 
 This file is consumed by `/qa` and `/qa-only` as primary test input. Include only the information that helps a QA tester know **what to test and where** — not implementation details.
 
-For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Then use AskUserQuestion to confirm the eval scope with the user.
+For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Use the decision gate for any eval scope not already approved.
 
-For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
-
-**STOP for each pending decision.** Do NOT proceed to the next review section, apply the proposed fix to the plan, or call ExitPlanMode until the user responds. Provisional ledger notes are allowed; applying an unapproved remedy is not. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+Run the decision gate for this section's new or reopened choices. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode. When no decision remains, report the findings and their dispositions and continue.
 
 ### 4. Performance review
 Evaluate:
@@ -352,9 +353,7 @@ Evaluate:
 * Caching opportunities.
 * Slow or high-complexity code paths.
 
-For each new or reopened decision identified by the decision gate, call AskUserQuestion individually. One independent decision per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
-
-**STOP for each pending decision.** Do NOT proceed to the next review section, apply the proposed fix to the plan, or call ExitPlanMode until the user responds. Provisional ledger notes are allowed; applying an unapproved remedy is not. An unapproved remedy with an "obvious fix" still needs explicit user approval before it lands in the plan. Loading the AskUserQuestion schema via ToolSearch and then writing the recommendation as chat prose is the failure mode this gate exists to prevent.
+Run the decision gate for this section's new or reopened choices. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode. When no decision remains, report the findings and their dispositions and continue.
 
 ## Outside Voice — Independent Plan Challenge (default-on)
 
@@ -518,50 +517,16 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-**1. Queue one changed commitment per row.** Reuse the working ledger. An issue,
-candidate or reviewer bullet may contain several independently selectable changes;
-its reference is not the unit of approval:
+Use the same seven-column decision ledger and the five-step decision gate above; do not start a second table. Match each outside finding to an existing row or add a pending row for each new choice. Record the reviewer and its evidence in `Evidence and exact approval`. Exact confirmations and factual corrections update evidence; a new proposal still needs approval even when both reviewers agree. Reopening an approved choice requires new evidence or a changed assumption.
 
-reference | commitment | current value + approval reference | proposed value | changed evidence/assumption | other commitments fixed or pending
+Save or present the pending rows under gate Step 3. Then compare one of these menus against each row's current values and record every option in `Option comparisons`:
 
-For example, an exhausted-job destination, an optional alert and a replay facility
-are separate commitments. Once dead-lettering is approved, keep it fixed while
-deciding the alert or replay facility. Code, tests and docs establishing that same
-chosen behavior stay together. Exact confirmations and source-proven corrections
-update evidence without authorizing behavior changes. Reopening requires concrete
-contradictory evidence or a changed assumption. Retain unresolved risks and proof.
+- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Keep other approved choices fixed and other pending choices undecided. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those are separate rows.
+- **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After the individual answers, check the assembled set's capacity and dependencies. If they conflict, return to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck the set before confirming it. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-**2. Draft from one row.** Cite the reference, current approved value (or unresolved
-status), proposed value and new evidence. Hold every other commitment fixed or
-pending in EVERY option. If an option changes another commitment, split it first.
-Use AskUserQuestion. Recommend + WHY; compare completeness only within this
-commitment's coverage.
+Save or present the completed comparisons, then finish gate Step 5: ask one question for one row, record its actual answer and exact accepted scope, and apply only those amendments before the next row. Keep necessary code, tests and docs for one approved behavior together. Investigation or deferral does not authorize implementation. In /autoplan, preserve its authorized auto-decisions, audit trail and User Challenge rules; challenges wait for the final gate.
 
-- **Policy or implementation:** A) Apply this change; B) Keep this commitment's
-  current value; C) Investigate before choosing; D) Defer this proposed change only.
-  Deferring a stack change, for example, does not defer its entire candidate or
-  approve a new schedule gate. Those require their own rows.
-- **Whole-candidate scope:** use A) Include; B) Defer; C) Cut; D) Hold, naming the
-  candidate and its current approved disposition. Revising two candidates takes
-  two rows, never a swap package. Hold stops for discussion; it is not a final
-  disposition; preserve prior answers and report any blocking conflict unresolved.
-  After individual answers, validate the assembled set's
-  capacity and dependencies. For these revisions, a conflict returns to a named
-  candidate's Include/Defer/Cut/Hold row; never silently trim or replace another
-  candidate. Revalidate before confirming the set. Scope actions differ in kind,
-  so omit completeness scores.
-
-**3. Obtain the answer.** Wait for the user; model agreement is evidence, not consent.
-In /autoplan, preserve its authorized auto-decision and User Challenge rules, audit
-trail and final gate.
-
-**4. Apply the answered row.** Record its answer reference and exact accepted scope,
-then use a scoped Edit for those amendments before taking the next row. Keep means
-its current disposition stands. Record investigation or deferral explicitly without
-authorizing implementation; User Challenges stay pending for /autoplan's final gate.
-Retain other rows and risks; one answer does not clear the finding's remaining changes.
-
-After processing the queue, report findings, dispositions and remaining disagreements.
+Report all findings, dispositions and remaining disagreements after the queue is resolved. An answer to one row does not resolve the finding's other pending rows.
 
 **Persist the result:**
 ```bash
@@ -575,11 +540,7 @@ SOURCE = "codex" if Codex ran, "claude" if subagent ran.
 
 ### Outside Voice Integration Rule
 
-Assess every outside voice finding through the same decision gate. Record its
-evidence and any exact prior selected answer that authorizes the follow-through.
-New or reopened decisions remain INFORMATIONAL until individually presented via
-AskUserQuestion and explicitly approved, even when you agree with the outside
-voice. Cross-model consensus is evidence, never approval.
+Use the same decision gate and ledger for outside voice findings. Agreement between reviewers is evidence, not approval. Carry forward exact approved work; keep new or reopened choices pending until their own answers resolve them.
 
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
@@ -746,8 +707,8 @@ Check the git log for this branch. If there are prior commits suggesting a previ
 ## Formatting rules
 * NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).
 * Label with NUMBER + LETTER (e.g., "3A", "3B").
-* One sentence max per option. Pick in under 5 seconds.
-* After each review section, pause and ask for feedback before moving on.
+* Keep option labels short; include the full decision brief required by the preamble.
+* After each section, report findings and dispositions. Pause only for a pending decision; otherwise continue.
 
 ## Plan File Review Report
 
