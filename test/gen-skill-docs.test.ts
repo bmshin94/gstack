@@ -2156,7 +2156,7 @@ describe('DESIGN_DETECTOR resolver', () => {
     expect(c).toContain('DOM_DUMP_OK');
     expect(c).toContain('DOM_DUMP_REDACTION_BLOCKED');
     expect(c).toContain('DOM_DUMP_TOO_LARGE');
-    expect(c).toContain('REPORT_DIR="${GSTACK_HOME:-$HOME/.gstack}/projects/$SLUG/designs/design-audit-$(date +%Y%m%d)"');
+    expect(c).toContain('REPORT_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/designs/design-audit-$(date +%Y%m%d)"');
     expect(c).toContain('RUN_ID="$(date +%H%M%S)-$$"');
     expect(c).toContain('"schemaVersion": 2');
     expect(c).toContain('engine changed X → Y; rule set may differ');
