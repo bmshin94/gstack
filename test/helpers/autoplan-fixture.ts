@@ -19,6 +19,16 @@ export function seedAutoplanProject(projectDir: string, scenario: 'dashboard' | 
   // Both scenarios extend this existing React/Tailwind app with PostgreSQL-backed
   // authentication. Supply its source, leaving the proposed UI unimplemented.
   fs.cpSync(APP_FIXTURE, projectDir, { recursive: true, errorOnExist: true, force: false });
+  if (scenario === 'password-visibility') {
+    const manifestPath = path.join(projectDir, 'package.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.scripts.test = 'bun run css && bun test tests/sign-in.test.ts';
+    manifest.devDependencies.playwright = '1.62.1';
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    fs.mkdirSync(path.join(projectDir, 'tests'));
+    fs.copyFileSync(path.resolve(import.meta.dir, '../fixtures/autoplan-password-ui/sign-in.test.ts.fixture'),
+      path.join(projectDir, 'tests/sign-in.test.ts'));
+  }
   fs.writeFileSync(path.join(projectDir, 'README.md'), [
     '# Workspace app', '',
     'Current behavior: password sign-in issues a one-hour server session; the',
@@ -32,6 +42,19 @@ export function seedAutoplanProject(projectDir: string, scenario: 'dashboard' | 
     'APP_ORIGIN to the public HTTPS origin,',
     'run `bun run css`, then `bun start` behind HTTPS (session cookies are Secure).',
     'This source fixture does not install dependencies or provision a live database.', '',
+    ...(scenario === 'password-visibility' ? [
+      '## Existing UI regression tests', '',
+      'After `bun install` and `bunx playwright install chromium`, run `bun run test`.',
+      'The existing Bun + Playwright harness builds the actual React entry and Tailwind CSS.',
+      'It checks the masked sign-in form, Enter-to-submit payload and success navigation,',
+      'and the current wrong-password behavior: the form disappears into the generic error.',
+      'Tests intercept `/api/session` and `/api/login` with explicit responses. They do not',
+      'exercise PostgreSQL, credential validation, cookies or password-manager autofill.',
+      'Reuse this harness for proposed UI verification. The current no-visibility-control',
+      'assertion records the unimplemented baseline; replace it with the approved toggle',
+      'checks when implementing that feature. Password-manager autofill still needs the',
+      'manual browser check required by the plan. No feature decision is pre-approved.', '',
+    ] : []),
   ].join('\n'));
   // The chain exercises review phases in an already configured project.
   // Use skill-start's canonical project marker, preserving user-state defaults.

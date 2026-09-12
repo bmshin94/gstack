@@ -127,6 +127,36 @@ describe('autoplan project fixture preamble', () => {
     } finally { db.close(); fs.rmSync(project, { recursive: true, force: true }); }
   });
 
+  test('only the password chain seeds a reusable browser test baseline, leaving its feature proposed', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-ui-baseline-'));
+    try {
+      for (const scenario of ['dashboard', 'password-visibility'] as const) {
+        const project = path.join(dir, scenario);
+        fs.mkdirSync(project);
+        seedAutoplanProject(project, scenario);
+        const original = JSON.parse(fs.readFileSync(path.join(ROOT, 'test/fixtures/autoplan-existing-app/package.json'), 'utf8'));
+        const manifest = JSON.parse(fs.readFileSync(path.join(project, 'package.json'), 'utf8'));
+        const harness = path.join(project, 'tests/sign-in.test.ts');
+        if (scenario === 'password-visibility') {
+          expect(manifest.scripts.test).toBe('bun run css && bun test tests/sign-in.test.ts');
+          expect(manifest.dependencies).toEqual(original.dependencies);
+          expect(manifest.devDependencies).toEqual({ ...original.devDependencies, playwright: '1.62.1' });
+          expect(fs.readFileSync(harness, 'utf8')).toBe(fs.readFileSync(path.join(ROOT, 'test/fixtures/autoplan-password-ui/sign-in.test.ts.fixture'), 'utf8'));
+          for (const [target, source] of [
+            ['.claude/plans/autoplan-password-visibility.md', 'autoplan-password-visibility.md'],
+            ['DESIGN.md', 'autoplan-password-visibility-design.md'],
+          ]) expect(fs.readFileSync(path.join(project, target), 'utf8')).toBe(fs.readFileSync(path.join(ROOT, 'test/fixtures/plans', source), 'utf8'));
+        } else {
+          expect(manifest).toEqual(original);
+          expect(fs.existsSync(harness)).toBe(false);
+        }
+        for (const file of ['src/main.tsx', 'src/pages/Workspace.tsx', 'src/server.ts', 'src/auth.ts']) {
+          expect(fs.readFileSync(path.join(project, file), 'utf8')).toBe(fs.readFileSync(path.join(ROOT, 'test/fixtures/autoplan-existing-app', file), 'utf8'));
+        }
+      }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   test('the actual restore block respects private state instead of operator HOME', () => {
     withFixture((project, _runStart, state, home) => {
       const template = fs.readFileSync(path.join(ROOT, 'autoplan/SKILL.md.tmpl'), 'utf8');

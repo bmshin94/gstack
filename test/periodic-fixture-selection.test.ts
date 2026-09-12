@@ -15,6 +15,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/autoplan-permission-viewport.test.ts', ['autoplan-chain-pty']],
     ['test/fixtures/autoplan-existing-app/src/auth.ts', ['autoplan-chain-pty']],
     ['test/fixtures/autoplan-existing-app/db/schema.sql', ['autoplan-chain-pty']],
+    ['test/fixtures/autoplan-password-ui/sign-in.test.ts.fixture', ['autoplan-chain-pty']],
     ['test/fixtures/plans/ui-heavy-feature-design.md', ['autoplan-chain-pty']],
     ['test/fixtures/plans/autoplan-password-visibility.md', ['autoplan-chain-pty']],
     ['test/fixtures/plans/autoplan-password-visibility-design.md', ['autoplan-chain-pty']],
