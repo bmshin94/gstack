@@ -250,7 +250,7 @@ test('the committed current invoice fixture is runnable without implementing the
     });
     expect(child.error, child.stdout + child.stderr).toBeUndefined();
     expect(child.status, child.stdout + child.stderr).toBe(0);
-    expect(child.stderr).toContain('2 pass');
+    expect(child.stderr).toContain('3 pass');
     expect(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: 30_000 })).toBe('');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

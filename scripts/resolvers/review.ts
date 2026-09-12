@@ -356,7 +356,9 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-${ceo ? `Launch one reviewer with both inputs below. If the tool exposes \`run_in_background\`, set it to boolean \`false\`. If it returns a task handle, wait with the host's wait tool; without one, end this response and resume on the completion notification. Do not advance, edit either input or launch another reviewer while waiting.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
+${ceo ? `Launch one reviewer with both inputs below. Set \`run_in_background: false\` when supported; the host may return a task handle.
+
+Consume a completed review when it arrives. For a pending task, use the host's wait tool; if none is available, end this response and resume on its completion notification. Do not advance, edit either input or launch another reviewer while waiting. A reported launch failure follows Step 2's unavailable branch.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
 Subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}. Async launch metadata
 is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
 The reviewer has fresh context: only the document, not the conversation.`}
@@ -382,34 +384,35 @@ The subagent should return:
 - A quality score (1-10)${ceo ? " across all dimensions" : ""}
 ${ceo ? '- For each dimension, return PASS or numbered issues with descriptions and suggested fixes. Return overall PASS if all dimensions pass.' : '- PASS if no issues, or a numbered list of issues with dimension, description, and fix'}
 
-**Step 2: Fix and re-dispatch**
+${ceo ? `**Step 2: Process the result**
+
+- **Unavailable:** If launch or review fails, times out, or cannot review both complete inputs, stop the loop. Say "Spec review unavailable — presenting unreviewed doc." Preserve the failure and all prior findings. Continue to Step 3; this review is a quality bonus, not a gate.
+- **PASS:** Stop the loop.
+- **Issues:** Stop after the third review, or when consecutive reviews repeat the same unresolved issues (the same requirements and problems). Otherwise use 0D for new or reopened choices, then amend the working plan's behavior/requirements and the CEO summary's scope decisions under the storage policy. Keep both consistent and re-dispatch with both updated inputs and the same instructions.
+
+Make at most three reviewer launches. A missing score alone does not require another review.` : `**Step 2: Fix and re-dispatch**
 
 If the reviewer returns issues:
-1. ${ceo ? 'Use 0D for new or reopened choices; carry exact approvals forward. Amend behavior and requirements in the working plan and scope decisions in the CEO document, using the storage policy. Keep both consistent without copying the full plan into the summary.' : 'Fix each issue in the document on disk (use Edit tool)'}
-2. Re-dispatch the reviewer subagent with ${ceo ? 'both updated inputs and the same instructions' : 'the updated document'}
+1. Fix each issue in the document on disk (use Edit tool)
+2. Re-dispatch the reviewer subagent with the updated document
 3. Maximum 3 iterations total
 
-${ceo ? `**Convergence guard:** If consecutive reviews return the same issues, stop the loop:
-the fix did not resolve them or the reviewer disagrees. Record them as "Reviewer Concerns"
-in the CEO document in Step 3.` : `**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
+**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
 (the fix didn't resolve them or the reviewer disagrees with the fix), stop the loop
 and persist those issues as "Reviewer Concerns" in the document rather than looping
-further.`}
+further.
 
-${ceo ? `If the reviewer fails, times out or is unavailable, stop the loop and tell the user:
-"Spec review unavailable — presenting unreviewed doc." Preserve the actual failure
-and any prior findings; do not invent a score. Review is a quality bonus, not a gate.` : `If the subagent fails, times out, or is unavailable — skip the review loop entirely.
+If the subagent fails, times out, or is unavailable — skip the review loop entirely.
 Tell the user: "Spec review unavailable — presenting unreviewed doc." The document is
 already written to disk; the review is a quality bonus, not a gate.`}
 
 **Step 3: Report and persist metrics**
 
-${ceo ? `After PASS, max iterations or convergence, report the actual rounds, issues found,
-reviewer-confirmed fixes, unresolved issues and latest quality score. Do not call
-unresolved issues fixed. Show the full reviewer output on request. List unresolved
-issues under "## Reviewer Concerns" in the CEO document, citing the owning input.
-Follow the storage policy for concerns and metrics. Run this append only if metadata
-writes are permitted; otherwise report the metrics as not persisted:` : `After the loop completes (PASS, max iterations, or convergence guard):
+${ceo ? `Report the outcome and the fields below. Show full reviewer output on request. List unresolved issues under "## Reviewer Concerns" in the CEO summary, citing the owning input.
+
+SCORE is the latest attempt's reported 1–10 grade after reviewing both full inputs. For an unavailable review or missing/invalid grade, use JSON \`null\` ("score unavailable"). Label earlier grades "prior review score".
+
+Follow the storage policy for concerns and metrics. Append only when metadata writes are permitted; otherwise show these fields as not persisted:` : `After the loop completes (PASS, max iterations, or convergence guard):
 
 1. Tell the user the result — summary by default:
    "Your doc survived N rounds of adversarial review. M issues caught and fixed.
@@ -421,10 +424,10 @@ writes are permitted; otherwise report the metrics as not persisted:` : `After t
 
 3. Append metrics:`}
 \`\`\`bash
-mkdir -p ~/.gstack/analytics
-echo '{"skill":"${_ctx.skillName}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.gstack/analytics/spec-review.jsonl 2>/dev/null || true
+mkdir -p ~/.gstack/analytics${ceo ? ' || exit 1' : ''}
+echo '{"skill":"${_ctx.skillName}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.gstack/analytics/spec-review.jsonl${ceo ? ' || exit 1' : ' 2>/dev/null || true'}
 \`\`\`
-Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.`;
+${ceo ? 'ITERATIONS counts actual reviewer launches. FOUND, FIXED and REMAINING count reported issues, reviewer-confirmed fixes and reported unresolved issues. Use actual counts, never estimates.' : 'Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.'}`;
 }
 
 export function generateBenefitsFrom(ctx: TemplateContext): string {

@@ -1472,34 +1472,49 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
 
   test('CEO keeps its loop limits, scoring, failure handling, and reporting', () => {
     const ceo = render('plan-ceo-review');
+    const report = ceo.split('**Step 3:')[1]!;
+    expect(report).toContain('For an unavailable review or missing/invalid grade, use JSON `null`');
     expect(ceo).toContain('Could an engineer implement this without asking questions? Ambiguous language?');
     expect(ceo).not.toContain('design and coaching document');
     expect(ceo).not.toContain('gstack-office-hours-review');
+    const dispatch = ceo.slice(ceo.indexOf('**Step 1:'), ceo.indexOf('**Step 2:'));
+    expect(dispatch).toContain('run_in_background: false');
+    expect(dispatch).toContain('host may return a task handle');
+    expect(dispatch).toContain("use the host's wait tool");
+    expect(dispatch).toContain('end this response and resume on its completion notification');
+    expect(dispatch).toContain('Do not advance, edit either input or launch another reviewer while waiting');
+    expect(dispatch).toContain('both complete labeled texts');
+    expect(dispatch).toContain('all five dimensions');
     const fixes = ceo.slice(ceo.indexOf('**Step 2:'), ceo.indexOf('**Step 3:'));
-    const stages = ['Use 0D for new or reopened choices', 'Amend behavior and requirements',
-      'Re-dispatch the reviewer subagent with both updated inputs'].map(text => fixes.indexOf(text));
+    const stages = ['use 0D for new or reopened choices', 'amend the working plan',
+      're-dispatch with both updated inputs and the same instructions'].map(text => fixes.indexOf(text));
     expect(stages.every(index => index >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
-    expect(fixes).toContain('carry exact approvals forward');
-    expect(fixes).toContain('behavior and requirements in the working plan and scope decisions in the CEO document');
-    expect(fixes).toContain('Keep both consistent without copying the full plan into the summary');
-    expect(fixes).toContain('same instructions');
-    expect(fixes).toContain('Maximum 3 iterations total');
-    expect(fixes).toContain('If consecutive reviews return the same issues, stop the loop');
-    expect(fixes).toContain('the fix did not resolve them or the reviewer disagrees');
-    expect(fixes).toContain('in the CEO document in Step 3');
-    expect(fixes).toContain('If the reviewer fails, times out or is unavailable, stop the loop');
+    expect(fixes).toContain('Keep both consistent');
+    expect(fixes).toContain('Make at most three reviewer launches');
+    expect(fixes).toContain('Stop after the third review, or when consecutive reviews repeat the same unresolved issues');
+    expect(fixes).toContain('If launch or review fails, times out, or cannot review both complete inputs, stop the loop');
+    expect(fixes).toContain('Preserve the failure and all prior findings');
     expect(fixes).toContain('quality bonus, not a gate');
+    expect(fixes).toContain('A missing score alone does not require another review');
     expect(ceo).toContain('Spec review unavailable — presenting unreviewed doc.');
-    expect(ceo.split('**Step 3:')[1]).toContain('After PASS, max iterations or convergence');
-    expect(ceo).toContain('latest quality score');
-    expect(ceo).toContain('spec-review.jsonl');
+    expect(report).toContain('List unresolved issues under "## Reviewer Concerns"');
+    expect(report).toContain('citing the owning input');
+    expect(report).toContain("SCORE is the latest attempt's reported 1–10 grade after reviewing both full inputs");
+    expect(report).toContain('Label earlier grades "prior review score"');
+    expect(report).toContain('reviewer-confirmed fixes');
+    expect(report).toContain('Use actual counts, never estimates');
+    expect(report).toContain('otherwise show these fields as not persisted');
+    expect(report).toContain('mkdir -p ~/.gstack/analytics || exit 1');
+    expect(report).toContain('>> ~/.gstack/analytics/spec-review.jsonl || exit 1');
+    expect(report).not.toContain('Your doc survived');
   });
 
   test('CEO spec report separates findings, confirmed fixes, and unresolved concerns', () => {
     const report = render('plan-ceo-review').split('**Step 3: Report and persist metrics**')[1]!.replace(/\s+/g, ' ');
-    expect(report).toContain('actual rounds, issues found, reviewer-confirmed fixes, unresolved issues and latest quality score');
-    expect(report).toContain('Do not call unresolved issues fixed');
+    expect(report).toContain('ITERATIONS counts actual reviewer launches');
+    expect(report).toContain('FOUND, FIXED and REMAINING count reported issues, reviewer-confirmed fixes and reported unresolved issues');
+    expect(report).toContain('Use actual counts, never estimates');
     expect(report).not.toContain('M issues caught and fixed');
     expect(report).toContain('List unresolved issues under "## Reviewer Concerns"');
   });
@@ -1515,9 +1530,9 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     }
     const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
     expect(template).toContain('## Plan under review\n{working plan path, or');
-    expect(template).toContain('complete working plan with accepted amendments');
-    expect(template).toContain('Keep behavior and requirements in the plan, scope decisions in the summary, and both consistent');
-    expect(template).toContain('The summary cannot replace or reference itself as the full plan');
+    expect(template).toContain('the complete amended working plan');
+    expect(template).toContain('Behavior and requirements belong in the plan; scope decisions belong in the summary. Keep them consistent');
+    expect(template).toContain('The summary cannot replace or reference itself as the plan');
   });
 
   test('CEO shares both inputs after spec review and owns unresolved concerns in its scope document', () => {
@@ -1528,12 +1543,12 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     expect(review).toBeGreaterThanOrEqual(0);
     expect(sharing).toBeGreaterThan(review);
     const output = render('plan-ceo-review');
-    const convergence = output.split('**Convergence guard:**')[1]?.split('If the reviewer fails')[0] ?? '';
+    const processing = output.split('**Step 2:')[1]!.split('**Step 3:')[0]!;
     const report = output.split('**Step 3:')[1] ?? '';
-    for (const instruction of [convergence, report]) {
-      expect(instruction).toContain('CEO document');
-      expect(instruction).toContain('Reviewer Concerns');
-    }
+    expect(processing).toContain('consecutive reviews repeat the same unresolved issues');
+    expect(processing).toContain('Preserve the failure and all prior findings');
+    expect(report).toContain('CEO summary');
+    expect(report).toContain('Reviewer Concerns');
     expect(report).toMatch(/owning\s+input/);
   });
 

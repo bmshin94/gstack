@@ -1,7 +1,41 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { NativeQuestion } from './plan-skill-questions';
 import { pickPlanReviewQuestion } from './plan-review-cases';
+
+// A declared fixture-actor interface, not a parser for arbitrary user prose.
+// The same records are seeded before the first model turn and checked below.
+export const DESIGN_BOARD_WAIT_OPTIONS = [
+  { label: 'Submitted', description: 'I submitted feedback on the comparison board. Read its final feedback and continue.' },
+  { label: 'Regenerate / Remix', description: 'I requested another round on the comparison board. Read that request and regenerate.' },
+  { label: 'Type preferences', description: 'I will provide my preferences in chat instead of using the comparison board.' },
+] as const;
+
+export const DESIGN_BOARD_ACTOR_PROTOCOL = [
+  '## Fixture user: comparison-board acknowledgment',
+  '',
+  'For the comparison-board wait only, ask one single-select question containing',
+  'the current board URL and exactly these options, with these labels and descriptions:',
+  ...DESIGN_BOARD_WAIT_OPTIONS.map(option => `- ${option.label}: ${option.description}`),
+  'Option order, a letter prefix, and a trailing (recommended) marker may vary.',
+  'Do not paraphrase these options or attach other approvals, choices, or previews.',
+  'A question containing a board URL uses this interface. Keep other review',
+  'decisions in separate questions without that URL.',
+  'This interface does not mean feedback has already been submitted. Wait for the',
+  'actual answer and read the board feedback as the skill requires. All design',
+  'decisions, visual verification, and the remaining review still apply.',
+  '',
+].join('\n');
+
+/** Declare the fixture user's interface before launch, without changing its plan. */
+export function seedDesignBoardActorProtocol(cwd: string): void {
+  fs.appendFileSync(path.join(cwd, 'CLAUDE.md'), `\n${DESIGN_BOARD_ACTOR_PROTOCOL}`);
+  const git = (args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe', timeout: 10_000 });
+  git(['add', 'CLAUDE.md']);
+  git(['-c', 'user.name=Finding fixture', '-c', 'user.email=fixture@gstack.test', 'commit', '-m', 'Declare Design board fixture actor interface']);
+  git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+}
 
 // The native picker is synchronous. Keep identity checks and the real board
 // submission together in a bounded child; the counting driver still owns the
@@ -51,20 +85,16 @@ export function createDesignReviewPicker({ cwd, deadlineAt }: { cwd: string; dea
     const labels = question.options.map(option => option.label.trim()
       .replace(/^(?:[A-E][).:]?|\([A-E]\)|\[[A-E]\])\s+/i, '')
       .replace(/\s*\(recommended\)\s*$/i, '').trim());
-    // Bind the one completed action we perform, allowing its subject/aspect
-    // and feedback object to vary. Full anchoring excludes negation, future
-    // intent, another target, and additional commitments. Unchosen prose does
-    // not grant another action; competing submission claims still fail below.
-    const submittedAction = /^(?:I(?:['’]ve| have)?\s+)?(?:already\s+)?submitted\s+(?:(?:(?:my\s+)?feedback\s+)?(?:on|to) the (?:comparison )?board|(?:the |my )?(?:comparison )?board feedback)[.!]?$/i;
-    const submittedIndex = labels.findIndex(label => submittedAction.test(label));
-    const submissionClaims = labels.filter(label => /\bsubmit(?:ted|ting)?\b/i.test(label));
+    const actions = question.options.map((option, index) => DESIGN_BOARD_WAIT_OPTIONS.findIndex(expected =>
+      labels[index] === expected.label && option.description === expected.description && option.preview === undefined));
+    const submittedIndex = actions.indexOf(0);
+    const boardUrl = /https?:\/\/[^\s<>\[\]()]*\/boards\//.test(question.question);
     const boardContext = /\bcomparison board\b/i.test(question.question);
-    const claimsAction = submittedIndex >= 0 || boardContext
-      && (submissionClaims.length > 0 || labels.some(label => /\bclicked\b/i.test(label)));
+    const claimsAction = boardUrl || labels.some(label => DESIGN_BOARD_WAIT_OPTIONS.some(option => label === option.label))
+      || boardContext && labels.some(label => /\b(?:submit(?:ted|ting)?|clicked)\b/i.test(label));
     if (!claimsAction) return pickPlanReviewQuestion(question);
-    if (!boardContext || question.multiSelect || labels.length !== 3
-      || labels.some(label => !label) || new Set(labels.map(label => label.toLowerCase())).size !== 3
-      || submittedIndex < 0 || submissionClaims.length !== 1) {
+    if (question.multiSelect || actions.length !== 3
+      || actions.includes(-1) || new Set(actions).size !== 3) {
       throw new Error('Design board submission has no unambiguous offered action');
     }
     const urls = [...new Set(question.question.match(/https?:\/\/[^\s<>\[\]()]+/g) ?? [])];

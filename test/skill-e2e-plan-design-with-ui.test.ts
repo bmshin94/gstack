@@ -12,7 +12,7 @@ import { test } from 'bun:test';
 import { PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
-import { createDesignReviewPicker } from './helpers/plan-review-board-feedback';
+import { createDesignReviewPicker, seedDesignBoardActorProtocol } from './helpers/plan-review-board-feedback';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -53,6 +53,7 @@ describeE2E('/plan-design-review with UI scope (gate)', () => {
       const project = fs.mkdtempSync(path.join(os.tmpdir(), 'design-ui-project-'));
       try {
         seedPlanReviewProject(project, fs.readFileSync(FIXTURE, 'utf8'), 'plan-design-review');
+        seedDesignBoardActorProtocol(project);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-design-review', slashCommand: '/plan-design-review',
           followUpPrompt: '', cwd: project,

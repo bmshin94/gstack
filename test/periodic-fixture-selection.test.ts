@@ -56,6 +56,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/section-capture-native-tools.test.ts', ['ship-section-loading', 'plan-ceo-section-loading', 'office-hours-section-loading', 'carve-section-loading']],
     ['test/helpers/ceo-paired-fixture.ts', ['plan-ceo-finding-count']],
     ['test/ceo-paired-payment-fixture.test.ts', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-paired-option-values.json', ['plan-ceo-finding-count']],
     ['test/fixtures/paired-payment/src/payment.ts', ['plan-ceo-finding-count']],
     ['test/fixtures/paired-payment/contract.test.ts.fixture', ['plan-ceo-finding-count']],
     ['test/fixtures/paired-payment/README.md', ['plan-ceo-finding-count']],

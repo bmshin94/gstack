@@ -5,7 +5,7 @@
 import { test } from 'bun:test';
 import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
 import { DESIGN_FINDINGS } from './helpers/plan-review-cases';
-import { createDesignReviewPicker } from './helpers/plan-review-board-feedback';
+import { createDesignReviewPicker, seedDesignBoardActorProtocol } from './helpers/plan-review-board-feedback';
 import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
@@ -163,6 +163,7 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
       try {
         const planText = planDesign5Findings(planPath);
         seedPlanReviewProject(tmpDir, planText, 'plan-design-review', existingSettingsDesign);
+        seedDesignBoardActorProtocol(tmpDir);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-design-review',
           slashCommand: '/plan-design-review',

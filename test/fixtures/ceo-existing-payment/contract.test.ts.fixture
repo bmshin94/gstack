@@ -42,3 +42,18 @@ test('the current invoice route rejects mismatched customers and foreign orders 
     expect(db.query("SELECT COUNT(*) AS n FROM users WHERE payment_status = 'paid'").get()).toEqual({ n: 0 });
   } finally { db.close(); }
 });
+
+test('the current invoice route rolls back already-written status and receipt when the audit insert fails', async () => {
+  const db = database();
+  try {
+    // This is the third write: pre-write validation cannot prove atomicity.
+    db.exec(`CREATE TRIGGER fail_invoice_audit BEFORE INSERT ON payment_audit
+      BEGIN SELECT RAISE(ABORT, 'fixture audit failure'); END`);
+    await expect(existingDispatcher(db).dispatch('invoice.paid', request()))
+      .rejects.toThrow('fixture audit failure');
+    expect(db.query('SELECT payment_status FROM users WHERE id = ?').get('user'))
+      .toEqual({ payment_status: 'unpaid' });
+    expect(db.query('SELECT COUNT(*) AS n FROM event_receipts').get()).toEqual({ n: 0 });
+    expect(db.query('SELECT COUNT(*) AS n FROM payment_audit').get()).toEqual({ n: 0 });
+  } finally { db.close(); }
+});

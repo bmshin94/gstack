@@ -157,6 +157,26 @@ describe('autoplan project fixture preamble', () => {
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 
+  test('both Autoplan seeds declare the existing native review-artifact interface', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-artifact-interface-'));
+    try {
+      for (const scenario of ['dashboard', 'password-visibility'] as const) {
+        const project = path.join(dir, scenario);
+        fs.mkdirSync(project);
+        seedAutoplanProject(project, scenario);
+        const instructions = fs.readFileSync(path.join(project, 'CLAUDE.md'), 'utf8').replace(/\s+/g, ' ');
+        expect(instructions).toContain('do not edit application source');
+        expect(instructions).toMatch(/review plan and report documents, including the CEO scope summary, inside this project \(including `\.gstack`\) or the current session's private plan directory/);
+        expect(instructions).toContain('Use native Write/Edit with absolute paths');
+        expect(instructions).toContain('wait for actual permission and a successful tool result before claiming a save');
+        expect(instructions).toContain('cannot approve Bash permission prompts');
+        expect(instructions).toMatch(/Do not rewrite these review documents through Python, sed, shell redirection or another Bash command/);
+        expect(instructions).toContain('Other required artifacts retain the writers specified by the skill');
+        expect(instructions).toMatch(/Host restrictions still apply\. If a native save is denied or fails, report it and stop; do not bypass the restriction through the shell/);
+      }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   test('the actual restore block respects private state instead of operator HOME', () => {
     withFixture((project, _runStart, state, home) => {
       const template = fs.readFileSync(path.join(ROOT, 'autoplan/SKILL.md.tmpl'), 'utf8');
@@ -246,6 +266,10 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
   isNumberedOptionListVisible, isPermissionDialogVisible, isPlanReadyVisible: () => false,
   launchClaudePty: async opts => {
     cwd = fs.realpathSync(opts.cwd); file = path.join(cwd, '.gstack', 'projects', 'fixture', 'restore.md');
+    const instructions = fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf8');
+    expect(execFileSync('git', ['show', 'HEAD:CLAUDE.md'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(instructions);
+    expect(instructions).toContain('## Review artifact editing');
+    expect(instructions).toContain('The actor cannot approve Bash permission prompts.');
     const design = fs.readFileSync(path.join(root, 'test/fixtures/plans/autoplan-password-visibility-design.md'), 'utf8');
     expect(fs.readFileSync(path.join(cwd, 'DESIGN.md'), 'utf8')).toBe(design);
     expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(design);

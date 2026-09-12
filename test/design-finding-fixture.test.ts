@@ -19,9 +19,11 @@ import { execFileSync } from 'node:child_process';
 import { assertReviewReportAtBottom, designStep0Boundary, PLAN_SKILL_COUNT_FINALIZE_MS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
 import { DESIGN_FINDINGS, pickPlanReviewQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
 const report = assertReviewReportAtBottom, boundary = designStep0Boundary, finalize = PLAN_SKILL_COUNT_FINALIZE_MS;
+const { seedDesignBoardActorProtocol, DESIGN_BOARD_ACTOR_PROTOCOL } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))});
 let pickerScope;
 const designPicker = question => pickPlanReviewQuestion(question);
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))}, () => ({
+  seedDesignBoardActorProtocol,
   createDesignReviewPicker: scope => { pickerScope = scope; return designPicker; },
 }));
 let project = '', plan = '', observations = 0;
@@ -34,6 +36,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     observations++; project = opts.cwd;
     plan = fs.readFileSync(path.join(project, 'review-input.md'), 'utf8');
     const design = fs.readFileSync(path.join(project, 'DESIGN.md'), 'utf8');
+    expect(fs.readFileSync(path.join(project, 'CLAUDE.md'), 'utf8')).toContain(DESIGN_BOARD_ACTOR_PROTOCOL);
     expect(design).toContain('disabled-opacity token to every visual');
     expect(design).toContain('values already use named CSS custom properties');
     expect(design).toContain('unchanged FormStack uses 16px between fields');
@@ -44,7 +47,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(design).toContain('wrap in their existing order, with intrinsic widths');
     expect(design).toContain('No new storyboard or onboarding flow is required.');
     expect(design).toContain('choosing the five proposed visual treatments remains open.');
-    for (const file of ['DESIGN.md', 'review-input.md']) {
+    for (const file of ['DESIGN.md', 'review-input.md', 'CLAUDE.md']) {
       expect(execFileSync('git', ['show', 'HEAD:' + file], { cwd: project, encoding: 'utf8', timeout: 5000 }))
         .toBe(fs.readFileSync(path.join(project, file), 'utf8'));
     }

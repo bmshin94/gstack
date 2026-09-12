@@ -1,7 +1,8 @@
+import retainedCeoValues from './fixtures/ceo-paired-option-values.json';
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import type { AskUserQuestionFingerprint } from './helpers/claude-pty-runner';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
-import { DEVEX_FINDINGS, ENG_BATCHING_FINDINGS } from './helpers/plan-review-cases';
+import { CEO_PAIRED_FINDINGS, DEVEX_FINDINGS, ENG_BATCHING_FINDINGS } from './helpers/plan-review-cases';
 import {
   buildPlanReviewDecisionPrompt, evaluatePlanReviewDecisions, validatePlanReviewDecisionResponse,
   type PlanReviewDecision, type PlanReviewDecisionInput, type PlanReviewDecisionJudgment,
@@ -555,11 +556,76 @@ test('DX artifact judging shares cancellation and cannot accept a late response'
   expect(logged('plan-review-decisions-raw-judgment')).toHaveLength(0);
 }, 1000);
 
-// Retained public 1a127f10 Eng batching menus. These deterministic controls
+// Retained public Eng batching menus (1a127f10 and a1395656). These deterministic controls
 // preserve the recorded verdicts; they do not rejudge model behavior. The
 // source-order control is separate because a free validator cannot prove that
 // the next native review will follow the revised option-to-row instructions.
 const RETAINED_ENG_OPTIONS: Array<{ call: string; question: NativeQuestion; selectedOptions: number[]; judgment: PlanReviewDecision }> = [
+  // Exact public a139 c10/q1 and original rejection; native tool ID
+  // toolu_012X5dt2Mh9qJPCQTMxQREck. Evidence: eng-batching-outcome-public.json
+  // SHA256 ff331d2d98f4ae5ace47ba347a6bcb3dd38ad73deb028f304d2e5803f2e431b9.
+  {
+    "call": "a139 c10",
+    "question": {
+      "header": "Graph cache",
+      "multiSelect": false,
+      "options": [
+        {
+          "description": "✅ No stored graph, no invalidation rule, no concurrency question in the retry PR. ✅ Measurement task: log payload-fetch time and graph-walk time per attempt for one week; TODO fires if walk exceeds a threshold the owner sets (human: ~2h / CC: ~10 min). ✅ T-k/T-l are dropped; nothing to test that does not exist. ❌ Retries pay the full walk cost until measured; bounded by 2A.",
+          "label": "9A: Revert to recompute; measure; cache only on evidence (recommended)"
+        },
+        {
+          "description": "✅ Attempts 2..N skip the graph walk; payload still fetched (or read from an immutable job snapshot). ✅ Version comes from the job row read alongside the payload, so the version-check path is now specified. ❌ Adds persisted state and invalidation for a benefit with no baseline; T-k/T-l stay required.",
+          "label": "9B: Keep 6A with the corrected scope"
+        },
+        {
+          "description": "✅ Decision waits for one number instead of two opinions. ✅ Cheap: add two timers to attempt 1 and read a week of logs. ❌ Row 4 stays open in the plan until the measurement lands; same work as 9A's measurement step without settling the default.",
+          "label": "9C: Investigate: measure walk vs fetch before choosing"
+        },
+        {
+          "description": "✅ Retry PR ships without any caching question attached. ✅ Can revisit once retry volume is observed in production. ❌ Without a measurement task, 'later' has no trigger, same failure as the plan's original refactor-later.",
+          "label": "9D: Defer caching decision only"
+        }
+      ],
+      "question": "D10 — Issue 9 (outside voice, P1+P2): Reopening row 4. Keep the persisted graph cache (6A, corrected), or revert to recompute and measure first?\nProject/branch/task: main; retry framework plan, ledger row 4. I recommended 6A in D7. Codex found two problems and I agree with both: (1) the hit path as I drew it was wrong. Dispatch still needs the payload, so attempts 2..N still fetch it; the cache saves only the graph walk. (2) There is no baseline; nobody has measured what the walk costs versus the fetch. I am explicitly reversing my earlier recommendation.\nELI10: I claimed the cache would let retries skip the expensive database read. It cannot, because the retry still needs the payload to do its job. What it skips is the loop over the payload that builds the dependency graph, and nobody knows if that loop is slow. Adding stored state, an invalidation rule and tests for a win nobody has measured is the kind of premature optimization the plan review is supposed to catch. Recomputing is boring and correct; measure it, then cache if the numbers say so.\nStakes if we pick wrong: keeping 6A adds a stored blob, an invalidation rule and concurrency questions to a retry PR for an unmeasured benefit; reverting means retries pay the full graph walk until someone measures, which with 2A's bound is a small, known cost.\nRecommendation: 9A (revert to recompute, measure first, cache as a TODO with a numeric trigger) because the corrected analysis removed the main benefit I cited, and boring by default wins when the win is unmeasured. Maps to engineered enough, not over-engineered.\nNote: options differ in kind, not coverage — no completeness score.\nNet: an unmeasured optimization with real state-management cost vs a measurement task and a TODO that fires on evidence."
+    },
+    "selectedOptions": [
+      1
+    ],
+    "judgment": {
+      "toolUseId": "c10",
+      "questionIndex": 1,
+      "kind": "finding",
+      "targetIds": [
+        "dependency-cache"
+      ],
+      "independentDecisions": 2,
+      "evidence": [
+        {
+          "field": "question",
+          "optionIndex": null,
+          "quote": "D10 — Issue 9 (outside voice, P1+P2): Reopening row 4. Keep the persisted graph cache (6A, corrected), or revert to recompute and measure first?"
+        },
+        {
+          "field": "optionLabel",
+          "optionIndex": 1,
+          "quote": "9A: Revert to recompute; measure; cache only on evidence (recommended)"
+        },
+        {
+          "field": "optionDescription",
+          "optionIndex": 1,
+          "quote": "✅ Measurement task: log payload-fetch time and graph-walk time per attempt for one week; TODO fires if walk exceeds a threshold the owner sets (human: ~2h / CC: ~10 min)."
+        },
+        {
+          "field": "optionLabel",
+          "optionIndex": 4,
+          "quote": "9D: Defer caching decision only"
+        }
+      ],
+      "reason": "Repeated substantive decision on the dependency-cache target: explicitly reverses D7 and decides to recompute the graph each attempt for now. The chosen option also packages a separate measurement/instrumentation task with a numeric trigger; options 9C/9D show the default and the measurement vary independently, so two independent decisions.",
+      "optionActions": []
+    }
+  },
   {
     "call": "c3",
     "question": {
@@ -788,4 +854,23 @@ test.each(RETAINED_ENG_OPTIONS)('retained Eng $call keeps complete option conten
     expect(() => validatePlanReviewDecisionResponse(input, judgment)).toThrow('bundled independent decisions');
   }
   expect(captured).toEqual(original);
+});
+
+// Actual c1/q3 and its original verdict remain a failure. Replaying validation
+// makes no new semantic judgment and does not claim the source fixes the native case.
+test('retained CEO method menu preserves its partial package and bundled rejection', () => {
+  const original = clone(retainedCeoValues);
+  const fp = fingerprint(retainedCeoValues.callId, clone(retainedCeoValues.questions));
+  fp.selectedOptions = [...retainedCeoValues.selectedOptions];
+  const input: PlanReviewDecisionInput = { plan: retainedCeoValues.plan, kind: 'findings',
+    targets: clone(CEO_PAIRED_FINDINGS), fingerprints: [fp], floor: 2, ceiling: 4,
+    deadlineAt: Date.now() + 60_000 };
+  const supplied = suppliedCalls(buildPlanReviewDecisionPrompt(input))[0]!;
+  expect(supplied.questions).toEqual(retainedCeoValues.questions);
+  expect(supplied.selectedOptions).toEqual(retainedCeoValues.selectedOptions);
+  expect(supplied.questions[2]!.options[2]!.label).toBe('C) Test the failure path only, manual happy path');
+  const judgment = clone(retainedCeoValues.judgment) as PlanReviewDecisionJudgment;
+  expect(judgment.questions[2]!.independentDecisions).toBe(2);
+  expect(() => validatePlanReviewDecisionResponse(input, judgment)).toThrow('bundled independent decisions');
+  expect(retainedCeoValues).toEqual(original);
 });

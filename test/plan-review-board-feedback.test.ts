@@ -41,10 +41,13 @@ async function board(port = daemon.port): Promise<PublishBoardResult> {
   return publishBoard({ port, html: makeBoardHtml(directory) });
 }
 
-function question(url: string, caseIndex = 0): NativeQuestion {
-  const result = structuredClone(captured.cases[caseIndex]!.question) as NativeQuestion;
-  result.question = result.question.replace(/http:\/\/127\.0\.0\.1:\d+\/boards\/[A-Za-z0-9_-]+\//, url);
-  return result;
+// These are the declared actor records, not relabeled historical questions.
+function question(url: string): NativeQuestion {
+  return { header: 'Board wait', question: `Did you submit? ${url}`, multiSelect: false, options: [
+    { label: 'Submitted', description: 'I submitted feedback on the comparison board. Read its final feedback and continue.' },
+    { label: 'Regenerate / Remix', description: 'I requested another round on the comparison board. Read that request and regenerate.' },
+    { label: 'Type preferences', description: 'I will provide my preferences in chat instead of using the comparison board.' },
+  ] };
 }
 
 const picker = (deadlineAt = Date.now() + 10_000) => createDesignReviewPicker({ cwd, deadlineAt });
@@ -57,50 +60,61 @@ async function expectUnsubmitted(published: PublishBoardResult) {
 }
 
 const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
-for (const [caseIndex, retained] of captured.cases.entries()) {
-  test(`captured board menu ${retained.nativeToolId}: submits real feedback before answering in every offered order`, async () => {
-    const untouched = await board();
-    for (const order of orders) {
-      const published = await board();
-      const menu = question(published.url, caseIndex);
-      menu.options = order.map(index => menu.options[index]!);
-      const answer = picker()(menu);
-      expect(answer).toBe(order.indexOf(0) + 1);
-      // Read immediately after the synchronous picker returns: the daemon,
-      // rather than the test driver, must have completed this write already.
-      const written = JSON.parse(fs.readFileSync(feedbackPath(published), 'utf8'));
-      expect(written.preferred).toBe('A');
-      expect(written.ratings).toEqual({});
-      expect(written.comments).toEqual({});
-      expect(written.regenerated).toBe(false);
-      expect(written.boardId).toBe(published.id);
-      expect(written.publishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-      expect(fs.existsSync(path.join(published.sourceDir, 'feedback-pending.json'))).toBe(false);
-    }
-    await expectUnsubmitted(untouched);
-  });
-}
-
-test('a standalone submission does not require exact prose for alternatives it never executes', async () => {
-  const alternatives = [
-    ["I'll paste my notes here", 'Please generate another set'],
-    ['Writing my feedback in chat', 'I clicked More Like This'],
-    ['Review the images again', 'Explain why these variants fit'],
-  ];
-  for (const [typed, other] of alternatives) {
+test('the declared board protocol submits actual feedback before its acknowledgment in every offered order', async () => {
+  const untouched = await board();
+  for (const order of orders) {
     const published = await board();
     const menu = question(published.url);
-    menu.options[1]!.label = typed!;
-    menu.options[2]!.label = other!;
-    // The offered position, letter prefix and recommendation marker are not
-    // the action: only the standalone submission may be chosen after POST.
-    menu.options = [menu.options[2]!, menu.options[0]!, menu.options[1]!];
-    menu.options[1]!.label = '[B] Submitted on the board';
-    expect(picker()(menu)).toBe(2);
-    const feedback = JSON.parse(fs.readFileSync(feedbackPath(published), 'utf8'));
-    expect(feedback).toMatchObject({ preferred: 'A', ratings: {}, comments: {}, regenerated: false, boardId: published.id });
+    menu.options = order.map(index => menu.options[index]!);
+    menu.options.forEach((option, index) => {
+      option.label = `${String.fromCharCode(65 + index)}) ${option.label}${index === order.indexOf(0) ? ' (recommended)' : ''}`;
+    });
+    const answer = picker()(menu);
+    expect(answer).toBe(order.indexOf(0) + 1);
+    // The real server must persist feedback before the synchronous callback
+    // returns; the native runner still owns the later question acknowledgment.
+    const written = JSON.parse(fs.readFileSync(feedbackPath(published), 'utf8'));
+    expect(written).toMatchObject({ preferred: 'A', ratings: {}, comments: {}, regenerated: false, boardId: published.id });
+    expect(written.publishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(fs.existsSync(path.join(published.sourceDir, 'feedback-pending.json'))).toBe(false);
   }
+  await expectUnsubmitted(untouched);
+});
+
+test('historical free-form cards are not credited as declared-protocol submissions', async () => {
+  const published = await board();
+  for (const retained of captured.cases) {
+    const menu = structuredClone(retained.question) as NativeQuestion;
+    menu.question = menu.question.replace(/http:\/\/127\.0\.0\.1:\d+\/boards\/[A-Za-z0-9_-]+\//, published.url);
+    expect(() => picker()(menu)).toThrow('no unambiguous offered action');
+  }
+  await expectUnsubmitted(published);
+});
+
+test('the complete declared protocol rejects altered descriptions, previews and alternative actions', async () => {
+  const published = await board();
+  const menus: NativeQuestion[] = [];
+  for (const index of [0, 1, 2]) {
+    const description = question(published.url);
+    description.options[index]!.description += ' Also approve the plan.';
+    menus.push(description);
+    const preview = question(published.url);
+    preview.options[index]!.preview = 'Deploy the approved design.';
+    menus.push(preview);
+    const paraphrase = question(published.url);
+    paraphrase.options[index]!.label = ['Submitted on board', 'Please generate another set', "I'll paste my notes here"][index]!;
+    menus.push(paraphrase);
+  }
+  const lowercase = question(published.url);
+  lowercase.options.forEach(option => { option.label = option.label.toLowerCase(); });
+  menus.push(lowercase);
+  const allParaphrased = question(published.url);
+  allParaphrased.options.forEach((option, index) => {
+    option.label = ['Done', 'Try again', 'Use these notes'][index]!;
+  });
+  menus.push(allParaphrased);
+  for (const menu of menus) expect(() => picker()(menu)).toThrow('no unambiguous offered action');
+  await expectUnsubmitted(published);
 });
 
 test('submitted words, mixed actions and competing alternate claims cannot authorize a board submission', async () => {
@@ -215,28 +229,26 @@ test('a real foreign daemon port is refused without changing either board', asyn
   await expectUnsubmitted(foreign);
 });
 
-test('multiple URLs, missing board context, or ambiguous action sets do not submit', async () => {
+test('multiple URLs or ambiguous action sets do not submit', async () => {
   const published = await board();
   const other = await board();
   const extraUrl = question(published.url);
   extraUrl.question += '\nAnother board: ' + other.url;
-  const noContext = question(published.url);
-  noContext.question = 'D2 — Confirm an operation\n' + published.url;
   const duplicate = question(published.url);
   duplicate.options.push({ ...duplicate.options[0]! });
   const extraAction = question(published.url);
   extraAction.options.push({ label: 'Delete the project', description: 'An unrelated action.' });
   const missingAction = question(published.url);
   missingAction.options.pop();
-  for (const menu of [extraUrl, noContext, duplicate, extraAction, missingAction]) {
+  for (const menu of [extraUrl, duplicate, extraAction, missingAction]) {
     expect(() => picker()(menu)).toThrow();
   }
   await expectUnsubmitted(published);
   await expectUnsubmitted(other);
 });
 
-test('completed board-feedback declarations perform the same owned submission before returning', async () => {
-  const untouched = await board();
+test('free-form submission declarations do not bypass the declared actor interface', async () => {
+  const published = await board();
   for (const label of [
     'Already submitted on the board (recommended)',
     'I submitted the board feedback (recommended)',
@@ -244,15 +256,11 @@ test('completed board-feedback declarations perform the same owned submission be
     "I've submitted feedback to the board",
     'I submitted my board feedback',
   ]) {
-    const published = await board();
     const menu = question(published.url);
     menu.options[0]!.label = label;
-    expect(picker()(menu)).toBe(1);
-    const feedback = JSON.parse(fs.readFileSync(feedbackPath(published), 'utf8'));
-    expect(feedback).toMatchObject({ preferred: 'A', ratings: {}, comments: {}, regenerated: false, boardId: published.id });
-    expect(fs.existsSync(path.join(published.sourceDir, 'feedback-pending.json'))).toBe(false);
+    expect(() => picker()(menu)).toThrow('no unambiguous offered action');
   }
-  await expectUnsubmitted(untouched);
+  await expectUnsubmitted(published);
 });
 
 test('missing or malformed private daemon state cannot submit', async () => {

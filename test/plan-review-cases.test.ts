@@ -180,6 +180,26 @@ describe('Eng approved-work decision gate', () => {
       '**5. Ask, record the answer, then edit.**'].map(stage => gate.indexOf(stage));
     expect(stages.every(position => position >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
+    // A reopened row must use its latest accepted plan, not the seed/runtime
+    // value, and rebuild all option states before the existing save/ask gate.
+    const baseline = gate.slice(stages[0], stages[1]);
+    expect(baseline).toContain('distinguish observed runtime from the accepted plan');
+    expect(baseline).toContain('an approved plan is not implemented behavior');
+    expect(baseline).toContain('the latest accepted plan value and its selected option, answer reference and exact scope');
+    expect(baseline).toContain('If none was approved, use the original proposal');
+    expect(baseline).toContain('Retain earlier values as history; reopening does not reset an approval to the original proposal');
+    const options = gate.slice(stages[2], stages[3]);
+    expect(options).toContain('Each cell states the resulting value for that commitment, not an option label or a package of remedies');
+    expect(options).toContain('For Investigate and Defer, show which plan value stays unchanged or pending');
+    expect(options).toContain('Put any separately selectable measurement, implementation or follow-up work on its own comparison line');
+    const record = gate.slice(stages[3], stages[4]);
+    expect(record).toContain("using Step 1's latest accepted plan value");
+    expect(record).toContain("A previous comparison or the critic's recommendation cannot replace this one");
+    const commitments = gate.slice(stages[1], stages[2]);
+    expect(commitments).toContain('Carry required proof of an exact approved contract into every option, citing that answer');
+    expect(commitments).toContain('A later-discovered scenario necessary to prove that contract belongs to this common work');
+    expect(commitments).toContain('Beyond that required proof, compare proposed instrumentation or follow-up work separately when the behavior can be chosen with or without it');
+    expect(commitments).toContain('Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice');
     expect(gate).toContain("For a bound, name what it measures and its unit");
     expect(gate).toContain('for verification, name the method and depth');
     expect(gate).toContain('For EVERY option, read its label, description and pros/cons');
@@ -189,8 +209,8 @@ describe('Eng approved-work decision gate', () => {
     expect(gate).toContain("Respect the user's read-only request and the host's file-write limits");
     expect(gate).toContain('when no writable plan is in scope, present the table instead');
     expect(gate).toContain('Each AskUserQuestion call contains exactly one question for one row');
-    expect(gate).toContain('Mark undecided rows `pending`');
-    expect(gate).toContain('do not add their remedies as accepted work');
+    expect(gate).toContain('mark undecided rows `pending`');
+    expect(gate).toContain('their remedies are not accepted work');
   });
 
   test('all four section gates and outside voice distinguish pending choices from findings', () => {
@@ -226,14 +246,14 @@ describe('Eng approved-work decision gate', () => {
   test('every option is recorded against one decision before asking or scoring coverage', () => {
     const compare = gate.indexOf('**3. Compare values, not packages.**');
     const rows = gate.indexOf('**4. Save the comparison with its decision.**');
-    const record = gate.indexOf('Copy the current and offered-option values from Step 3 into `Option comparisons`');
+    const record = gate.indexOf('Before every new or reopened question, rebuild `Option comparisons` from all offered options in Step 3');
     const save = gate.indexOf('Save the rows and options with Write or Edit before calling AskUserQuestion');
     const ask = gate.indexOf('**5. Ask, record the answer, then edit.**');
     expect(0 <= compare && compare < rows && rows < record && record < save && save < ask).toBe(true);
     expect(gate.slice(rows, record)).toContain('| Option comparisons |');
     expect(gate.slice(compare, rows)).toContain('`commitment [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`');
     expect(gate.slice(compare, rows)).toContain('Use only the options offered');
-    expect(gate.slice(record, save)).toContain('including the approved values held fixed, common required work and other pending choices');
+    expect(gate.slice(record, save)).toContain('Include values held fixed, common required work and other pending choices');
     expect(gate).not.toContain('`label: changes; preserves; pending`');
     const format = template.split('## CRITICAL RULE — How to ask questions')[1]!.split('## Required outputs')[0]!;
     expect(format).toContain('After the decision gate validates the options');
@@ -274,7 +294,7 @@ describe('Eng approved-work decision gate', () => {
     const normalized = gate.replace(/\s+/g, ' ');
     expect(normalized).toContain('Correct factual mistakes against source evidence and disclose the correction');
     expect(normalized).toContain('do not change behavior as part of that correction');
-    expect(normalized).toContain('An approval needs its selected option, answer reference and exact scope');
+    expect(normalized).toContain('the latest accepted plan value and its selected option, answer reference and exact scope');
     expect(normalized).toContain('A broad approach, your recommendation or agreement between reviewers does not approve other work');
     expect(normalized).toContain('A different guarantee or policy needs its own decision');
     expect(normalized).toContain('Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption');

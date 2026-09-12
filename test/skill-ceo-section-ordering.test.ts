@@ -40,11 +40,11 @@ test('CEO handoff allows no pending choice without inventing an approval', () =>
   const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   const approach = source.split('### 0D.')[1]!.split('### 0E.')[0]!;
   const handoff = source.split('**Mode handoff:**')[1]!.split('### 0F.')[0]!;
-  const noChoice = approach.indexOf('If no pending approach choice remains');
+  const noChoice = approach.indexOf('If no pending approach remains');
   expect(noChoice).toBeGreaterThan(0);
   expect(noChoice).toBeLessThan(approach.indexOf('**2. Record the pending choice.**'));
-  expect(approach).toContain('continue to 0E with the existing decisions');
-  expect(approach).toContain('Do not invent an alternative or an approval to fill the handoff');
+  expect(approach).toContain('continue to 0E');
+  expect(approach).toContain('Do not invent alternatives or approval to fill the handoff');
   expect(handoff).toContain('No new approach decision was needed');
   expect(handoff).toContain('carry prior approvals forward');
   expect(handoff).toContain('<rows or none>');
@@ -71,21 +71,21 @@ test('SELECTIVE baseline cuts preserve prior answers until their own scope decis
   const cuts = modeWork.split('**Deferring current scope:**')[1]!;
   expect(cuts).toContain('In REDUCTION, HOLD, and the HOLD checks performed by SELECTIVE');
   expect(cuts).toContain('**A)** Defer this item to TODOS.md **B)** Keep it in scope');
-  expect(cuts).toContain('cite contradictory evidence, a changed assumption or an explicit new user instruction');
-  expect(cuts).toContain('Selecting a mode never approves the cut');
-  const answer = cuts.indexOf("Wait for the item's actual answer before changing its disposition");
+  expect(cuts).toContain("use 0D's prior-approval/reopening checks");
+  expect(source).toContain('Selecting a mode never approves a scope change');
+  const answer = cuts.indexOf("Wait for its actual answer");
   const apply = cuts.indexOf('An approved cut changes only its delivery scope');
   expect(answer).toBeGreaterThan(0);
   expect(apply).toBeGreaterThan(answer);
-  expect(cuts).toContain('retain the earlier answer as history, record the new answer and reopening reason');
-  expect(cuts).toContain('leave other approvals and limits unchanged');
+  expect(cuts).toContain('record the new answer and reason beside the earlier answer');
+  expect(cuts).toContain('Leave other approvals and limits unchanged');
 });
 
 // These check the storage branches and their order, not model compliance.
 test('CEO defines pending choices and storage before its first decision procedure', () => {
   const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   const step0 = source.split('## Step 0:')[1]!;
-  const policy = step0.indexOf('**Storage policy (entire review).**');
+  const policy = step0.indexOf('**Storage policy: choose before writing.**');
   const choice = step0.indexOf('A pending choice is');
   const firstDecision = step0.indexOf('### 0D.');
   expect(policy).toBeGreaterThan(0);
@@ -93,9 +93,9 @@ test('CEO defines pending choices and storage before its first decision procedur
   expect(policy).toBeLessThan(firstDecision);
   expect(choice).toBeLessThan(firstDecision);
   const compare = step0.split('**3. Compare and save')[1]!.split('**4. Ask, record')[0]!;
-  expect(compare).toContain('0D Step 2');
+  expect(compare).toContain('Save or present the complete updated plan again before asking');
   const persistence = step0.split('### 0H.')[1]!.split('### 0I.')[0]!;
-  expect(persistence.indexOf('**When writing is permitted:**')).toBeLessThan(persistence.indexOf('mkdir -p'));
+  expect(persistence.indexOf('**Save each input under the storage policy.**')).toBeLessThan(persistence.indexOf('mkdir -p'));
   expect(persistence).toContain('**Otherwise:**');
   expect(persistence.indexOf('**Otherwise:**')).toBeLessThan(persistence.indexOf('{{SPEC_REVIEW_LOOP}}'));
   expect(persistence).not.toContain('Save a chat-only plan');
@@ -109,8 +109,8 @@ test('CEO chat storage still supplies both spec inputs and the full report witho
     const gate = generateExitPlanModeGate(ctx);
     expect(spec).toContain('both complete labeled texts');
     expect(spec).toContain('all five dimensions');
-    expect(spec).toContain('Maximum 3 iterations total');
-    expect(spec).toContain('If the reviewer fails, times out or is unavailable');
+    expect(spec).toContain('Make at most three reviewer launches');
+    expect(spec).toContain('If launch or review fails, times out, or cannot review both complete inputs');
     expect(report.indexOf('### Generate the report')).toBeLessThan(report.indexOf('### Write to the plan file'));
     expect(report).not.toContain('If no file is in scope, skip this section');
     expect(report).toContain('not persisted');
@@ -130,16 +130,36 @@ test('CEO saves compared proposals before recording an actual answer in its sepa
   const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   const procedure = source.split('### 0D.')[1]!.split('### 0E. Mode Selection')[0]!;
   const compare = procedure.indexOf('**3. Compare and save');
-  const save = procedure.indexOf("Update Proposed with the comparisons before asking");
+  const save = procedure.indexOf("In Proposed, record each commitment");
   const ask = procedure.indexOf('**4. Ask, record');
-  const actualAnswer = procedure.indexOf('Record the actual answer reference and scope in Exact approval and scope');
-  const amend = procedure.indexOf('Update Status and apply only approved amendments');
+  const actualAnswer = procedure.indexOf('Record its reference and scope in Exact approval and scope');
+  const amend = procedure.indexOf('update Status, and apply only the authorized amendments');
   expect(0 <= compare && compare < save && save < ask && ask < actualAnswer && actualAnswer < amend).toBe(true);
-  expect(procedure.slice(compare, ask)).toContain("Save or present the updated row as in 0D Step 2");
-  expect(procedure.slice(compare, ask)).toContain('including unselected options and changes shared by all options');
-  expect(procedure.slice(0, compare)).toContain('A failed save stops before the question');
-  expect(procedure.slice(0, compare)).toContain('or present it in the complete chat plan under the storage policy');
+  expect(procedure.slice(compare, ask)).toContain("Save or present the complete updated plan again before asking");
+  expect(procedure.slice(compare, ask)).toContain('include unchanged, pending and shared values');
+  expect(source).toContain('If an attempted save fails, report it and stop');
+  expect(procedure.slice(0, compare)).toContain('present the complete updated chat plan before comparing options');
   expect(procedure.slice(ask)).toContain('before the next row');
+});
+
+// A topic row alone did not expose the independently selectable test additions.
+// This guards the executable representation/order, not the model's compliance.
+test('CEO value comparisons and decline-all outcomes stay explicit before approval', () => {
+  const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
+  const procedure = source.split('### 0D.')[1]!.split('### 0E.')[0]!;
+  const pendingSave = procedure.indexOf('save this pending row or present the complete updated chat plan');
+  const values = procedure.indexOf('commitment [source/approval or pending]: current=value; A=value; B=value; C=value');
+  expect(values).toBeGreaterThan(-1);
+  const comparedSave = procedure.indexOf('Save or present the complete updated plan again before asking');
+  const ask = procedure.indexOf('**4. Ask, record');
+  expect(pendingSave >= 0 && pendingSave < values && values < comparedSave && comparedSave < ask).toBe(true);
+  const comparison = procedure.slice(values, ask);
+  expect(comparison).toContain('include unchanged, pending and shared values');
+  expect(comparison).toContain('test additions that can be accepted separately');
+  expect(comparison).toContain('Each option may resolve only one pending choice');
+  expect(comparison).toContain('Preserve accepted requirements and their required tests and fixes in every option');
+  expect(procedure).toContain('If all alternatives are declined, continue only when the actual answer keeps a viable current approach');
+  expect(procedure).toContain('Otherwise leave the row unresolved and stop for new direction');
 });
 
 // The paid paired-control skipped its provisional ledger and treated two
@@ -158,22 +178,22 @@ test('CEO Step 0 records provisional contracts before drafting any menu on every
       const source = fs.readFileSync(file, 'utf8');
       const approach = source.split('### 0D.')[1]?.split('### 0E. Mode Selection')[0] ?? '';
       const positions = ['**1. Check sources and prior answers.**', '**2. Record the pending choice.**',
-        'Record existing and proposed behavior', 'Save the pending row in the working plan using Write/Edit',
+        'Fill Current and Proposed with behavior', 'save this pending row or present the complete updated chat plan',
         "**3. Compare and save that row's options.**", '**4. Ask, record the answer, and amend.**',
         'Ask one row per call and cite its ID'].map(stage => approach.indexOf(stage));
       expect(positions.every(position => position >= 0), file).toBe(true);
       expect(positions, file).toEqual([...positions].sort((a, b) => a - b));
       expect(source).toContain('| ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |');
       expect(source.indexOf('| ID and owner |')).toBeLessThan(source.indexOf('**2. Record the pending choice.**'));
-      expect(approach).toContain('existing and proposed behavior, limits, test method and coverage');
+      expect(approach).toContain('behavior, limits, test method and coverage');
       expect(approach).toContain('other commitments fixed or pending');
-      expect(approach).toContain('one change can be selected while another stays unchanged');
-      expect(approach.indexOf('Record existing and proposed behavior')).toBeLessThan(approach.indexOf('Compare 2–3 approaches'));
-      expect(approach).toContain('Split independent additions');
-      expect(approach).toContain('A failed save stops before the question');
-      expect(approach).toContain('or present it in the complete chat plan under the storage policy');
-      expect(approach).toContain('Never prewrite approval or implementation tasks');
-      expect(approach).toContain('Record the actual answer reference and scope in Exact approval and scope');
+      expect(approach).toContain('one can be selected while another stays unchanged');
+      expect(approach.indexOf('Fill Current and Proposed with behavior')).toBeLessThan(approach.indexOf('Compare 2–3 approaches'));
+      expect(approach).toContain('Split independently varying commitments into separate rows');
+      expect(source).toContain('If an attempted save fails, report it and stop');
+      expect(approach).toContain('present the complete updated chat plan before comparing options');
+      expect(approach).toContain('Do not prewrite approval or implementation tasks');
+      expect(approach).toContain('Record its reference and scope in Exact approval and scope');
       expect(source.indexOf('### 0D.')).toBeLessThan(source.indexOf('### 0E. Mode Selection'));
     }
   } finally { fs.rmSync(outputRoot, { recursive: true, force: true }); }
@@ -188,7 +208,7 @@ test('CEO decision units and factual reconciliation precede menu synthesis', () 
   const section = fs.readFileSync(`${SECTION}.tmpl`, 'utf8');
   const alternatives = skeleton.split('### 0D.')[1]?.split('### 0E.')[0] ?? '';
   const stages = ['**1. Check sources and prior answers.**', '**2. Record the pending choice.**',
-    'Save the pending row in the working plan using Write/Edit',
+    'save this pending row or present the complete updated chat plan',
     "**3. Compare and save that row's options.**", '**4. Ask, record the answer, and amend.**'];
   const positions = stages.map(stage => alternatives.indexOf(stage));
   expect(positions.every(position => position >= 0)).toBe(true);
@@ -230,17 +250,17 @@ test('CEO Step 0 defines the decision record, execution order, and mode approval
   const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   const step0 = source.split('## Step 0:')[1]?.split('### 0F.')[0] ?? '';
   expect(step0).toContain('Complete 0A–0E in order');
-  expect(step0).toContain('Summarize the 0A–0C observations and evidence once in the working plan; they do not imply approval');
+  expect(step0).toContain('Put the 0A–0C observations and evidence in the working plan; observations do not approve changes');
   expect(step0).toContain('| ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |');
-  expect(step0).toContain('Retain this ledger through Spec Review Loop and Outside Voice');
-  expect(step0).toContain('conventions, test coverage and code risks with their evidence');
-  expect(step0).toContain('cheaper implementation does not turn two allowed deliverables into three');
+  expect(step0).toContain('Keep one decision ledger through Step 0, Spec Review Loop and Outside Voice');
+  expect(step0).toContain('Cite evidence, conventions and test coverage; mark unknowns');
+  expect(step0).toContain('Reuse may lower effort; two allowed deliverables still means two');
   expect(step0).toContain('reuse and verification coverage');
-  expect(step0).toContain('give them separate rows, even in one helper or suite');
-  expect(step0).toContain('they do not imply approval');
+  expect(step0).toContain('Give changes separate rows if one can be selected while another stays unchanged');
+  expect(step0).toContain('observations do not approve changes');
   expect(step0).toContain('The preamble\'s session rules govern whether and how to ask');
   expect(step0).toContain('Use an explicit user mode choice and skip steps 2–3');
-  expect(step0).toContain('SCOPE REDUCTION for >15 files; else SCOPE EXPANSION for greenfield work');
+  expect(step0).toContain('SCOPE REDUCTION for >15 planned changed files; else SCOPE EXPANSION for greenfield work');
   expect(step0).toContain('When `QUESTION_TUNING: false`, skip the lookup and ask normally');
   expect(step0).toContain('`ASK_NORMALLY` asks the user to choose');
   expect(step0).toContain('Selecting a mode never approves a scope change');
@@ -272,45 +292,47 @@ describe('CEO review decision boundaries contract', () => {
   const apply = section.split('**Apply.**')[1]?.split('### Section 1:')[0] ?? '';
 
   test('every approach comparison preserves approvals and separates independent changes', () => {
-    expect(alternatives).toContain('preserve accepted requirements, contracts, tests and fixes');
-    expect(alternatives).toContain('existing and proposed behavior, limits, test method and coverage');
-    expect(alternatives).toContain('requested review depth');
+    expect(alternatives).toContain('Preserve accepted requirements and their required tests and fixes in every option');
+    expect(alternatives).toContain('behavior, limits, test method and coverage');
+    expect(skeleton).toContain('Review depth');
+    expect(skeleton).toContain('Ask before expanding that depth');
     expect(alternatives).toContain('preserve unknowns');
-    expect(alternatives).toContain('give them separate rows, even in one helper or suite');
-    expect(alternatives).toContain("If an approved change still needs a test-method or coverage decision, ask once about that choice");
-    expect(alternatives).toContain('Every option must preserve its required behavior and approved test requirements');
+    expect(alternatives).toContain('Give changes separate rows if one can be selected while another stays unchanged');
+    expect(alternatives).toContain("If an approved change's test method or coverage remains open, decide that once");
+    expect(alternatives).toContain('Every option preserves required behavior and approved test requirements');
     expect(section).toContain('Apply the three test rules in Step 0D');
     expect(section).toContain('carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending');
-    expect(alternatives).toContain('Separately proposed tests for existing behavior stay separate if one can be selected without the other');
-    expect(alternatives).toContain('Tests for undecided behavior stay pending');
+    expect(alternatives).toContain('For existing behavior, separate proposed tests if either can be selected alone');
+    expect(alternatives).toContain('Keep tests for undecided behavior pending');
     expect(alternatives).toContain('other commitments fixed or pending');
     expect(alternatives).toContain('reuse and verification coverage');
     expect(alternatives).not.toContain('for architecture choices');
-    expect(alternatives.indexOf('Record existing and proposed behavior')).toBeLessThan(alternatives.indexOf('Compare 2–3 approaches'));
-    expect(alternatives).toContain('Explain why inseparable changes must stay together');
-    expect(alternatives).toContain('Carry exact approvals forward without broadening or asking again');
-    expect(alternatives).toContain("Keep a code change and its required regression tests together; carry their approval forward");
-    expect(alternatives).toContain('Separately proposed tests for existing behavior stay separate if one can be selected without the other');
-    expect(skeleton).toContain("the actual instruction or answer reference and precisely what it authorized");
-    expect(alternatives).toContain('Weigh the smallest diff and long-term architecture equally');
+    expect(alternatives.indexOf('Fill Current and Proposed with behavior')).toBeLessThan(alternatives.indexOf('Compare 2–3 approaches'));
+    expect(alternatives).toContain('If they must stay together, explain why');
+    expect(alternatives).toContain('Carry exact approvals forward');
+    expect(alternatives).toContain("Keep a code change with its required regression tests. Carry that pair forward once approved");
+    expect(alternatives).toContain('For existing behavior, separate proposed tests if either can be selected alone');
+    expect(skeleton).toContain("the actual instruction or answer reference and its exact scope");
+    expect(alternatives).toContain('Weigh diff size and long-term architecture equally');
     expect(alternatives).toContain('a rewrite may be better');
-    expect(alternatives).toContain('Resolve each pending approach before 0E');
+    expect(alternatives).toContain('Resolve required approaches before 0E');
   });
 
   test('settled approach authority resolves the gate while new choices still require approval', () => {
     const approach = alternatives.split('### 0E. Mode Selection')[0]!;
     const reuse = approach.split('**2. Record the pending choice.**')[0]!;
-    const gate = approach.split('**STOP:**')[1] ?? '';
-    expect(reuse).toContain('Check the original input, inspected source and actual answers');
-    expect(reuse).toContain('Carry exact approvals forward without broadening or asking again');
+    const gate = approach.split('**STOP for the actual answer, even for a lone option.**')[1] ?? '';
+    expect(reuse).toContain('Read the original input, inspected source and actual answers');
+    expect(reuse).toContain('Carry exact approvals forward');
     const reopenRule = 'Reopen only for a concrete contradiction, changed assumption or explicit new user instruction';
     expect(skeleton).toContain(reopenRule);
-    expect(skeleton.indexOf(reopenRule)).toBeLessThan(skeleton.indexOf('### 0D.'));
-    expect(gate).toContain('Resolve each pending approach before 0E, even a lone option');
+    expect(skeleton.indexOf(reopenRule)).toBeLessThan(skeleton.indexOf('**2. Record the pending choice.**'));
+    expect(approach).toContain('STOP for the actual answer, even for a lone option');
+    expect(gate).toContain('Resolve required approaches before 0E');
     expect(approach).toContain('Recommendations are not approval');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
     expect(approach).toContain('Ask one row per call and cite its ID');
-    expect(gate).toContain('Use these four steps for later new or reopened choices, including Outside Voice');
+    expect(gate).toContain('Use this procedure for later new or reopened choices, including Outside Voice');
     expect(section).toContain('An obvious recommendation still needs approval if not already accepted');
     expect(approach).toContain("Use the preamble's question format, recommendation and preference/session rules");
     expect(gate).toContain('Report settled findings');
@@ -319,7 +341,7 @@ describe('CEO review decision boundaries contract', () => {
 
   test('coverage scoring is conditional and legitimate early decisions retain their exact approval', () => {
     expect(alternatives).toContain('If options differ in coverage, score this row only');
-    const currentAndProposed = alternatives.indexOf('existing and proposed behavior');
+    const currentAndProposed = alternatives.indexOf('Fill Current and Proposed with behavior');
     expect(currentAndProposed).toBeGreaterThan(0);
     expect(currentAndProposed).toBeLessThan(alternatives.indexOf('If options differ in coverage'));
     expect(alternatives).toContain("Use the preamble's question format");
@@ -331,11 +353,10 @@ describe('CEO review decision boundaries contract', () => {
     expect(generated).toContain('Recommendation is ALWAYS present');
     expect(generated).toContain('Note: options differ in kind, not coverage — no completeness score.');
     expect(alternatives).not.toContain('These approaches differ in coverage (minimal viable vs ideal architecture)');
-    expect(temporal).toContain('Ask urgent decisions separately, one commitment per call');
+    expect(temporal).toContain('Use 0D for urgent decisions');
     expect(temporal).toContain('never defer critical risks');
-    expect(temporal).toContain('Carry each Step 0 answer\'s exact choice/scope in the ledger across sections');
-    expect(temporal).toContain('Re-ask only for new material tradeoffs or changed assumptions');
-    expect(temporal).toContain('get approval before changing the choice');
+    expect(temporal).toContain('Carry the ledger and each answer\'s exact scope into the review sections');
+    expect(alternatives).toContain('Reopen only for a concrete contradiction, changed assumption or explicit new user instruction');
   });
 
   test('an unresolved section decision is answered before its scoped plan amendment', () => {
@@ -413,18 +434,18 @@ describe('CEO review decision continuity contract', () => {
     expect(start).toBeGreaterThan(skeleton.indexOf('## Step 0:'));
     expect(start).toBeLessThan(skeleton.indexOf('### 0D.'));
     const earlyLedger = skeleton.slice(start, skeleton.indexOf('### 0A.'));
-    expect(earlyLedger).toContain('conventions, test coverage and code risks with their evidence');
-    expect(earlyLedger).toContain('Reopen only for a concrete contradiction, changed assumption or explicit new user instruction');
-    expect(earlyLedger).toContain('not speculation or reviewer agreement');
-    expect(earlyLedger).toContain('code risks with their evidence');
-    const existingCode = skeleton.split('### 0B.')[1]?.split('### 0C.')[0] ?? '';
-    expect(existingCode).toContain('Record what each limit counts, its unit and prerequisites');
-    expect(existingCode).toContain('Changing the limit needs evidence and user approval');
-    expect(existingCode).toContain('cheaper implementation does not turn two allowed deliverables into three');
-    expect(skeleton.indexOf('Record what each limit counts')).toBeLessThan(skeleton.indexOf('### 0D.'));
+    expect(earlyLedger).toContain('Cite evidence, conventions and test coverage; mark unknowns');
+    const sources = skeleton.split('**1. Check sources and prior answers.**')[1]!.split('**2. Record the pending choice.**')[0]!;
+    expect(sources).toContain('Reopen only for a concrete contradiction, changed assumption or explicit new user instruction');
+    expect(sources).toContain('speculation or reviewer agreement is not enough');
+    const limits = skeleton.split('**Keep the stated limits.**')[1]!.split('**Storage policy:')[0]!;
+    expect(limits).toContain('Record what each limit measures, its value, unit and prerequisites');
+    expect(limits).toContain('Changing a limit needs evidence and user approval');
+    expect(limits).toContain('Reuse may lower effort; two allowed deliverables still means two');
+    expect(skeleton.indexOf('Record what each limit measures')).toBeLessThan(skeleton.indexOf('### 0D.'));
     const temporal = skeleton.split('### 0I.')[1]?.split('{{SECTION:review-sections}}')[0] ?? '';
-    expect(temporal).toContain('For scope prioritization, resolve scope and feasibility blockers now');
-    expect(temporal).toContain('Keep other design choices pending unless the user requested implementation planning; ask before expanding the review to that depth');
+    expect(temporal).toContain('Resolve scope and feasibility blockers now');
+    expect(temporal).toContain('Keep other design choices pending unless the user requested implementation planning');
     expect(template).toContain('each required diagram, map, and output describes the candidate boundaries');
     expect(template).toContain('Preserve non-blocking implementation choices as pending with an owner and required verification');
     expect(template).toContain('resolve or reopen any that change the scope decision or expose a material blocker');
@@ -504,7 +525,7 @@ describe('plan-ceo-review carve — static ordering', () => {
     expect(skeleton).toContain('| SCOPE REDUCTION | 0G |');
     expect(skeleton).toContain('ask separately for each proposed cut');
     expect(skeleton).toContain('complete all 11 sections, required outputs and terminal review report');
-    expect(skeleton).toContain('SCOPE REDUCTION for >15 files; else SCOPE EXPANSION for greenfield work');
+    expect(skeleton).toContain('SCOPE REDUCTION for >15 planned changed files; else SCOPE EXPANSION for greenfield work');
     expect(skeleton).toContain('The >8-file check applies to HOLD SCOPE and SELECTIVE EXPANSION');
     const persist = skeleton.split('### 0H. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)')[1]?.split('### 0I.')[0] ?? '';
     expect(persist).toMatch(/^#### Spec Review Loop$/m);

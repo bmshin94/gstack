@@ -18,19 +18,19 @@ A bounded probe answers a named uncertainty about current behavior or an existin
 
 **Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. Keep one table for the whole review. One row means one choice the user can accept or reject separately. For each finding, follow these five steps before sending a question.
 
-**1. Check the source and prior answers.** Read the original request, relevant source and actual user answers. Record the current behavior, what was approved, and the evidence for each. An approval needs its selected option, answer reference and exact scope. A number in your draft is not a user answer; leave unknown values unknown.
+**1. Check the source and prior answers.** Read the original request, relevant source and actual user answers. In `Current value and verification`, distinguish observed runtime from the accepted plan; an approved plan is not implemented behavior. Compare against the latest accepted plan value and its selected option, answer reference and exact scope. If none was approved, use the original proposal. Retain earlier values as history; reopening does not reset an approval to the original proposal. A number in your draft is not a user answer; leave unknown values unknown.
 
 Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, your recommendation or agreement between reviewers does not approve other work. Correct factual mistakes against source evidence and disclose the correction; do not change behavior as part of that correction. Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption, and explain what changed. An uncertain risk can still need a decision; state what is unknown.
 
 **2. Name the commitments before writing options.** Use Step 1 to list each new or reopened change as current value → proposed value. Could the user accept one change and reject another? If yes, these are separate commitments, even within one issue, helper or patch. A commitment can be a behavior, implementation approach, bound or optional verification depth. For a bound, name what it measures and its unit; for verification, name the method and depth. Leave unknown values unknown.
 
-Keep a chosen behavior together with the code, tests and docs required to establish it. Carry required proof of an exact approved contract into every option, citing that answer. A later-discovered scenario necessary to prove that contract belongs to this common work. Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice. A different guarantee or policy needs its own decision, with its tests conditional on approval.
+Keep a chosen behavior together with the code, tests and docs required to establish it. Carry required proof of an exact approved contract into every option, citing that answer. A later-discovered scenario necessary to prove that contract belongs to this common work. Beyond that required proof, compare proposed instrumentation or follow-up work separately when the behavior can be chosen with or without it. Calling it evidence-gathering does not make it common required work. Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice. A different guarantee or policy needs its own decision, with its tests conditional on approval.
 
 **3. Compare values, not packages.** For EVERY option, read its label, description and pros/cons. Write one comparison line per independently selectable commitment, including values shared by all options:
 
 `commitment [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`
 
-Use only the options offered. Show unchanged values and `pending` explicitly. Check each value against Step 1: a shared new value still needs approval, even when it does not vary between options. Required implementation and proof of one approved contract stay common work, not extra commitments.
+Use only the options offered. Each cell states the resulting value for that commitment, not an option label or a package of remedies. For Investigate and Defer, show which plan value stays unchanged or pending. Put any separately selectable measurement, implementation or follow-up work on its own comparison line. Check each value against Step 1: a shared new value still needs approval, even when it does not vary between options. Required implementation and proof of one approved contract stay common work, not extra commitments.
 
 For example, this menu contains two choices:
 - `retry mode [pending]: current=off; A=on; B=off; C=on`
@@ -45,7 +45,7 @@ A question must resolve exactly one new or reopened commitment. If accepting an 
 | Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |
 |-----|-------------------|--------------------------------|---------------------------------|-----------------------------|--------|--------------------|
 
-Copy the current and offered-option values from Step 3 into `Option comparisons`, including the approved values held fixed, common required work and other pending choices. Include the source or reviewer behind the finding. Mark undecided rows `pending`; do not add their remedies as accepted work.
+Before every new or reopened question, rebuild `Option comparisons` from all offered options in Step 3, using Step 1's latest accepted plan value. Include values held fixed, common required work and other pending choices. A previous comparison or the critic's recommendation cannot replace this one. Record the source or reviewer and mark undecided rows `pending`; their remedies are not accepted work.
 
 Save the rows and options with Write or Edit before calling AskUserQuestion. Use the explicitly requested report file, otherwise the reviewed plan, and preserve its existing content and approvals. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present the table instead. If saving fails, report the error and stop before asking.
 

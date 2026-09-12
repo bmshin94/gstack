@@ -58,7 +58,23 @@ export function seedAutoplanProject(projectDir: string, scenario: 'dashboard' | 
   ].join('\n'));
   // The chain exercises review phases in an already configured project.
   // Use skill-start's canonical project marker, preserving user-state defaults.
-  fs.writeFileSync(path.join(projectDir, 'CLAUDE.md'), '# Autoplan chain fixture\n\n## Skill routing\n\n- Full review pipeline → invoke /autoplan.\n');
+  fs.writeFileSync(path.join(projectDir, 'CLAUDE.md'), [
+    '# Autoplan chain fixture', '',
+    '## Skill routing', '',
+    '- Full review pipeline → invoke /autoplan.', '',
+    '## Review artifact editing', '',
+    'Review the proposal; do not edit application source.',
+    'You may create or update review plan and report documents, including the CEO',
+    'scope summary, inside this project (including `.gstack`) or the current',
+    "session's private plan directory. Use native Write/Edit with absolute paths",
+    'for these documents. The fixture actor can approve those native file requests;',
+    'wait for actual permission and a successful tool result before claiming a save.', '',
+    'The actor cannot approve Bash permission prompts. Do not rewrite these review',
+    'documents through Python, sed, shell redirection or another Bash command.',
+    'Other required artifacts retain the writers specified by the skill.', '',
+    'Host restrictions still apply. If a native save is denied or fails, report it',
+    'and stop; do not bypass the restriction through the shell.', '',
+  ].join('\n'));
   // Keep artifact writes in this fixture's workspace, not the operator HOME.
   const stateDir = path.join(projectDir, '.gstack');
   fs.mkdirSync(stateDir);

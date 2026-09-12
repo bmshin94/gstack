@@ -152,7 +152,9 @@ When fixing failures or preparing `/ship`, follow this order:
    applicable. A changed prompt must clear these before its eval.
    Check each edit or setup command’s result before running dependent checks. A
    failed edit is not a reason to test the unchanged input again.
-6. Preflight the actual launcher: required binaries, isolated state, display when
+6. Declare a fixture actor’s supported interactions before the model starts.
+   Keep its answers and permission handling within that declared interface.
+   Preflight the actual launcher: required binaries, isolated state, display when
    needed, explicit test tier, selection, and expected executed-case counts.
    Verify required tool execution with a no-cost smoke check under that launch
    environment; versions and authentication alone do not prove it works. Set
@@ -171,6 +173,8 @@ When fixing failures or preparing `/ship`, follow this order:
    and dependencies; a different commit alone does not invalidate the result.
    Do not resample an unchanged passing judge to simplify launcher configuration.
    Preserve its original source and label the result as reused evidence.
+   Use actual prompt builders and compare complete bytes when proving model-input
+   identity; preserve literal text in excerpts and record the consumed inputs.
 8. Finish review fixes, generation, release metadata, and build before final
    acceptance. Freeze the code, then run `bun run test` once at the end. During
    repair, focused checks replace a full-suite run before every commit. If final

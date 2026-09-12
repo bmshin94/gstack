@@ -15,6 +15,9 @@ back this transaction; ordinary request-error handling stays outside the handler
 It orders the distinct requested line items by ID for the existing mail template.
 Notifications run after commit, with no catch, outbox or retry provided by the
 facade. A notification failure cannot undo the database commit.
+The existing invoice tests exercise atomicity by aborting the audit insert after
+the user-status update and receipt insert, then checking that all three writes
+rolled back. This covers the shared transaction, not the proposed handler.
 
 `src/existing-invoice-handler.ts` registers only the current `invoice.paid` path. That
 path updates the local projection and audit without sending notification mail.

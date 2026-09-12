@@ -22,9 +22,11 @@ const template = fs.readFileSync(${JSON.stringify(path.join(ROOT, 'plan-design-r
 const focus = template.match(/### 0D\\. Focus Areas\\nAskUserQuestion: "([^\\n]+)"/)![1]
   .replace('{N}', '4').replace('{X, Y, Z}', 'hierarchy, spacing, contrast');
 const { pickPlanReviewQuestion } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))});
+const { seedDesignBoardActorProtocol, DESIGN_BOARD_ACTOR_PROTOCOL } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))});
 let pickerScope;
 const designPicker = question => pickPlanReviewQuestion(question);
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))}, () => ({
+  seedDesignBoardActorProtocol,
   createDesignReviewPicker: scope => { pickerScope = scope; return designPicker; },
 }));
 const fp = (id, question, preReview = true) => ({
@@ -98,6 +100,10 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.timeoutMs).toBeGreaterThan(0);
     expect(opts.timeoutMs).toBeLessThanOrEqual(600_000);
     expect(fs.readFileSync(path.join(opts.cwd, 'review-input.md'), 'utf8')).toBe(fs.readFileSync(fixture, 'utf8'));
+    const instructions = fs.readFileSync(path.join(opts.cwd, 'CLAUDE.md'), 'utf8');
+    expect(instructions).toContain(DESIGN_BOARD_ACTOR_PROTOCOL);
+    expect(execFileSync('git', ['show', 'HEAD:CLAUDE.md'], { cwd: opts.cwd, encoding: 'utf8', timeout: 5000 })).toBe(instructions);
+    expect(execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd: opts.cwd, encoding: 'utf8', timeout: 5000 })).toBe('');
     expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: opts.cwd, encoding: 'utf8', timeout: 5000 })).toBe(fs.readFileSync(fixture, 'utf8'));
     expect(fs.readFileSync(path.join(opts.cwd, 'CLAUDE.md'), 'utf8')).toContain('Read it before\\nchoosing review scope.');
     expect(opts.isLastStep0AUQ(target)).toBe(false);
