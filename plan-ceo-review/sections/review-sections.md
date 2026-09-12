@@ -22,9 +22,9 @@ Carry forward declared contracts and mitigated concerns with evidence. A later s
 
 Check every offered option against its unit. Independently proposed commitments require separate rows when one can be adopted while another stays unchanged, including an unselected partial-package option. Do not invent independent add-ons to fill a third option. Apply the three test rules in Step 0D: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Reuse is evidence, not consent to other changes. Trace each amendment to its exact accepted option.
 
-**Apply.** Use this plan-write procedure before advancing to the next section. If no plan file exists, first create it from the provided input and explicitly accepted Step 0 decisions.
+**Apply.** Update the complete working plan before advancing, using Step 0's storage policy: scoped Edit when permitted, otherwise full updated chat text marked not persisted. Begin with the supplied input and explicitly accepted decisions.
 1. If the current section has an unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**. Before the answer, you may record only the pending issue, evidence, and alternatives in the ledger. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
-2. After the actual answer, check each new or changed commitment in the proposed amendment against the selected option or an explicit earlier approval. Details found only in pending proposals or surrounding analysis remain pending. Preserve unsupported premises as unknown: choosing a remedy does not verify its factual premise. Carry unchanged contracts through the amendment's success and failure paths. Keep independent remedies and additional verification depth pending. Then use a scoped Edit to record the choice and its authorized amendments, including explicit deferrals. Preserve existing content and approvals, including direct implementation and verification of the accepted behavior; carrying a constraint forward does not claim a later section has been reviewed.
+2. After the actual answer, check each new or changed commitment in the proposed amendment against the selected option or an explicit earlier approval. Details found only in pending proposals or surrounding analysis remain pending. Preserve unsupported premises as unknown: choosing a remedy does not verify its factual premise. Carry unchanged contracts through the amendment's success and failure paths. Keep independent remedies and additional verification depth pending. Record the choice and only its authorized amendments, including explicit deferrals, in the permitted medium. Preserve existing content and approvals, including direct implementation and verification of the accepted behavior; carrying a constraint forward does not claim a later section has been reviewed.
 3. Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Assemble the required outputs and terminal report after all 11 sections have been evaluated.
 
 Approval settles the planning choice; it does not prove the mitigation is implemented or verified. In later sections, cross-reference an exact settled decision instead of asking it again. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
@@ -349,9 +349,7 @@ For all other non-disabled modes (`ready`, `not_installed`, `not_authed`, `broke
 stays discoverable: "Running the outside voice automatically (standard step). Disable: `gstack-config set codex_reviews disabled`."
 
 **Construct the plan review prompt** for every remaining mode, including all Claude fallback modes (skip on `disabled` or `under_codex`).
-Read the plan file being reviewed (the file the user pointed this review at, or the branch
-diff scope). If a CEO scope document from an earlier `/plan-ceo-review` is available, read that too — it contains
-the scope decisions and vision.
+Use the current complete working plan, whether saved or in chat under the storage policy. Include the CEO scope summary when available for this mode; do not substitute stale file content.
 
 Construct this prompt (substitute the actual plan content — if plan content exceeds 30KB,
 truncate to the first 30KB and note "Plan truncated for size"). **Always start with the
@@ -458,7 +456,7 @@ Use the same six-column decision ledger and the four steps of 0D; do not start a
 
 **2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0D's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0D Step 2.
 
-**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the saved rows and comparisons under 0D Step 3 before asking. Use the applicable menu:
+**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the working rows and comparisons under 0D Step 3 before asking. Use the applicable menu:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
@@ -468,6 +466,7 @@ Use the same six-column decision ledger and the four steps of 0D; do not start a
 Report every finding, its disposition, required verification and remaining disagreement, including findings that needed only factual correction.
 
 **Persist the result:**
+Only run this metadata write when permitted by the storage policy; otherwise report the actual result in chat as not persisted.
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
@@ -527,7 +526,7 @@ For each TODO, describe:
 Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
 
 ### Scope Expansion Decisions (EXPANSION and SELECTIVE EXPANSION only)
-For EXPANSION and SELECTIVE EXPANSION modes: expansion opportunities and delight items were surfaced and decided in Step 0G (opt-in/cherry-pick ceremony). The decisions are persisted in the CEO plan document. Reference the CEO plan for the full record. Do not re-surface them here — list the accepted expansions for completeness:
+For EXPANSION and SELECTIVE EXPANSION modes: expansion opportunities and delight items were surfaced and decided in Step 0G (opt-in/cherry-pick ceremony). The CEO plan records those decisions under the storage policy. Reference the CEO plan for the full record. Do not re-surface them here — list the accepted expansions for completeness:
 * Accepted: {list items added to scope}
 * Deferred: {list items sent to TODOS.md}
 * Skipped: {list items rejected}
@@ -547,8 +546,7 @@ List every ASCII diagram in files this plan touches. Still accurate?
 
 Before closing this review, synthesize the findings above into a flat list of
 build-actionable tasks. Each task derives from a specific finding — no padding.
-Emit the markdown section AND write a JSONL artifact that `/autoplan` can
-aggregate across phases.
+Always emit the markdown section. Write its JSONL artifact for `/autoplan` only when the Step 0 storage policy permits it; otherwise label the complete task output not persisted and do not claim an aggregation artifact exists.
 
 ### Markdown section (always emit)
 
@@ -570,7 +568,7 @@ Rules:
 - If a section had zero findings, emit `_No new tasks from <section>._`
 - Effort uses the AI-compression table from CLAUDE.md.
 
-### JSONL artifact (always write, even if zero tasks)
+### JSONL artifact (write when permitted, including zero tasks)
 
 `/autoplan` reads this file to aggregate across phases. Build each line with
 `jq -nc` so titles and source findings containing quotes, newlines, or
@@ -610,13 +608,13 @@ jq -nc \
 If `jq` is not installed, fall back to skipping the JSONL write and warn
 the user to install jq for autoplan aggregation. Never hand-roll JSONL.
 
-If zero tasks were identified in this review, still touch the JSONL file
+When writes are permitted and zero tasks were identified, touch the JSONL file
 (`: > "$TASKS_FILE"`) so the aggregator sees that the phase produced output
 this run (an empty file means "ran, no findings" — distinct from "didn't run").
 
 
 ### Completion Summary
-Prepare this for the saved review; announce completion after the Read-back gate below.
+Prepare this for the complete review. Announce file completion only after the Read-back gate; label chat-only outputs not persisted, including TODOs and the CEO plan below.
 ```
   +====================================================================+
   |            MEGA PLAN REVIEW — COMPLETION SUMMARY                   |
@@ -657,11 +655,11 @@ If any AskUserQuestion goes unanswered, note it here. Never silently default.
 
 ## Plan File Review Report
 
-Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.
+Produce the complete accepted plan and review output, including this report, under the Step 0 storage policy before announcing completion.
 
 ### Detect the plan file
 
-Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. If no file is in scope, skip this section; ordinary no-file review logging still applies.
+Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. Apply the Step 0 storage policy. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.
 
 ### Generate the report
 
@@ -686,7 +684,7 @@ Each skill logs different fields:
 - **codex-review**: \`status\`, \`gate\`, \`findings\`, \`findings_fixed\`
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 
-The current row and its later log must describe the same saved review.
+The current row describes this actual review. Mark an unlogged current run as not persisted; do not present it as a saved dashboard entry.
 
 Produce this markdown table:
 
@@ -722,7 +720,7 @@ DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
 
-**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.
+If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Otherwise save only accepted changes, keeping unresolved choices pending:
 
 The report must always be the LAST section of the plan file — never mid-file.
 Use a single delete-then-append flow:
@@ -734,8 +732,7 @@ Use a single delete-then-append flow:
    \`## GSTACK REVIEW REPORT\` through either the next \`## \` heading or end of
    file, whichever comes first. Replace with the empty string. This applies
    regardless of where the section currently lives — mid-file deletion is
-   intentional, not a special case. If the Edit fails (e.g., concurrent edit
-   changed the content), re-read the plan file and retry once.
+   intentional, not a special case. If the Edit fails, report the error and stop before Review Log or decision logging.
 3. If a report was deleted, Read the updated file. Append the new
    \`## GSTACK REVIEW REPORT\` at EOF. Use Edit to match the suffix
    confirmed by the latest Read, or Write the full file with the report last. Append whether or not a prior report existed.
@@ -752,8 +749,7 @@ there — the user then sees a plan whose review report is not at the bottom and
 
 ## Handoff Note Cleanup
 
-After producing the Completion Summary, clean up any handoff notes for this branch —
-the review is complete and the context is no longer needed.
+After producing the Completion Summary, remove this branch's handoff notes only if the storage policy permits cleanup. Otherwise retain them and report that cleanup was not performed.
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
@@ -763,10 +759,11 @@ rm -f ~/.gstack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 
 ## Review Log
 
-When a plan/report file is in scope, persist only after its successful write and Read-back
+When a plan/report file is to be saved, log only after its successful write and Read-back
 above. On failure, report the error and stop; do not log completion or an accepted decision.
-**PLAN MODE EXCEPTION — ALWAYS RUN after verification:** these commands write review
-metadata to `~/.gstack/`; the following dashboard reads the saved result.
+Run the commands below only when the reviewed output is persisted and metadata writes
+are permitted. Otherwise show their actual fields in chat as not persisted. The dashboard
+contains saved history; it must not be presented as recording this unlogged run.
 
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
@@ -862,7 +859,7 @@ At the end of the review, if the vision produced a compelling feature direction,
 - **B)** Keep in `~/.gstack/projects/` only (local, personal reference)
 - **C)** Skip
 
-If promoted, copy the CEO plan content to `docs/designs/{FEATURE}.md` (create the directory if needed) and update the `status` field in the original CEO plan from `ACTIVE` to `PROMOTED`.
+If promoted and those writes are permitted, copy the CEO plan content to `docs/designs/{FEATURE}.md` (create the directory if needed) and update the original CEO plan's `status` from `ACTIVE` to `PROMOTED`. Otherwise present the proposed design document in chat, marked not persisted; do not claim promotion occurred.
 
 ## Formatting Rules
 * NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).

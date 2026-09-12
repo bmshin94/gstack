@@ -7,14 +7,15 @@
 - Skill generation awaits every artifact across all hosts. Freshness checks detect missing output, validate generated content, preserve files and directories during dry runs, and report generation errors instead of accepting partial output.
 - Evaluation records follow the runner result and assertions. Timeouts, failed validations, inherited output pipes, and interrupted attempts retain their actual outcomes, captured usage, and bounded cleanup.
 - `gstack-decision-log --help` explains the accepted payload and safe shell quoting without creating state.
-- Plan reviews preserve the selected mode and prior approvals, compare each option against independent changes, and require complete saved reports. Engineering reviews keep proposed implementation separate from review evidence. DX reviews use the same onboarding milestone for benchmarks, targets, examples, and measurement. Outside-review suggestions use explicit approval menus; a dependency conflict returns to the affected decision before the plan is declared ready.
+- Plan reviews preserve the selected mode and prior approvals, compare each option against independent changes, and verify complete reports before recording completion. Engineering reviews keep proposed implementation separate from review evidence. DX reviews use the same onboarding milestone for benchmarks, targets, examples, and measurement. Outside-review suggestions use explicit approval menus; a dependency conflict returns to the affected decision before the plan is declared ready.
+- `/plan-ceo-review` follows ordered phases and applies file permissions consistently to plans, reports, tasks, and review metadata. When writes are forbidden, it carries complete review inputs in chat and labels them not persisted. A failed save stops completion.
 - `/autoplan` loads each review's complete instructions, waits for asynchronous reviewers to finish, carries approved decisions between phases, and verifies phase order and completion. Native review drivers acknowledge current questions and permissions promptly, reject stale frames and late completions, and recognize the offered manual handoff.
 - `/office-hours` preserves structured review evidence through completion and develops distinct builder ideas. `/setup-gbrain` handles fresh state, remote-only sharing declines, and interrupted attempts without leaking fixture state.
 - Browser shutdown drains terminal output and cleans up only the configured server instance. Setup tolerates disappearing process entries; pairing fixtures use checked ports and bounded cleanup. Deprecated-flag scans exclude workspace caches before searching and propagate command and filesystem failures.
 
 ### Changed
 - Review fixtures provide the application context and independent contracts their assertions require. Design evaluations submit real board feedback before acknowledging it. Shared helper and source-template dependencies select the affected evaluations; overlay tests distinguish correctness from performance measurements.
-- Contributor instructions require focused reproductions and adjacent checks before paid evaluations, launcher preflight with executed-case counts, and one full free-suite acceptance run after the code is frozen.
+- Contributor instructions require focused reproductions and adjacent checks before paid evaluations, launcher preflight with executed-case counts, reuse of passing checks with unchanged inputs, and one full free-suite acceptance run after the code is frozen.
 
 ## [1.84.1.0] - 2026-09-09
 

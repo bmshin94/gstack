@@ -1476,14 +1476,14 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     expect(ceo).not.toContain('design and coaching document');
     expect(ceo).not.toContain('gstack-office-hours-review');
     const fixes = ceo.slice(ceo.indexOf('**Step 2:'), ceo.indexOf('**Step 3:'));
-    const stages = ['0D approval/session rules for new or reopened choices', 'Use scoped Edit',
-      'Re-dispatch the reviewer subagent with BOTH updated file paths'].map(text => fixes.indexOf(text));
+    const stages = ['Use 0D for new or reopened choices', 'Amend behavior and requirements',
+      'Re-dispatch the reviewer subagent with both updated inputs'].map(text => fixes.indexOf(text));
     expect(stages.every(index => index >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
-    expect(fixes).toContain('exact approved changes may proceed');
-    expect(fixes).toContain('behavior and requirements in the source plan and scope decisions in the CEO document');
-    expect(fixes).toContain('Keep both consistent; do not copy the full plan into the summary');
-    expect(fixes).toContain('same two-document instructions');
+    expect(fixes).toContain('carry exact approvals forward');
+    expect(fixes).toContain('behavior and requirements in the working plan and scope decisions in the CEO document');
+    expect(fixes).toContain('Keep both consistent without copying the full plan into the summary');
+    expect(fixes).toContain('same instructions');
     expect(fixes).toContain('Maximum 3 iterations total');
     expect(fixes).toContain('If consecutive reviews return the same issues, stop the loop');
     expect(fixes).toContain('the fix did not resolve them or the reviewer disagrees');
@@ -1507,24 +1507,24 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
   test('CEO spec review receives the full source plan as well as the scope artifact on every host', () => {
     for (const host of Object.keys(HOST_PATHS)) {
       const output = render('plan-ceo-review', host).replace(/\s+/g, ' ');
-      expect(output).toContain('absolute paths of BOTH the CEO scope document just written and the current amended plan it references');
-      expect(output).toContain('Read both files in full');
+      expect(output).toContain('Both saved absolute paths, or both complete labeled texts if either input is not persisted: CEO scope summary and current amended working plan');
+      expect(output).toContain('Read both inputs in full');
       expect(output).toContain('Evaluate them together on all five dimensions');
-      expect(output).toContain('contradictions between the files, unsupported accepted expansions, and required behavior missing from both');
+      expect(output).toContain('Flag contradictions, unsupported accepted expansions, and required behavior missing from both');
       expect(output).toContain('report that failure instead of grading a partial input');
     }
     const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
-    expect(template).toContain('## Plan under review\n{absolute path to the current amended plan}');
-    expect(template).toContain('Save a chat-only plan at Step 0D\'s working-plan path first');
-    expect(template).toContain('Amend behavior and requirements in that plan and scope decisions in the CEO summary; keep both consistent');
-    expect(template).toContain('The summary cannot replace or point to itself as the full plan');
+    expect(template).toContain('## Plan under review\n{working plan path, or');
+    expect(template).toContain('complete working plan with accepted amendments');
+    expect(template).toContain('Keep behavior and requirements in the plan, scope decisions in the summary, and both consistent');
+    expect(template).toContain('The summary cannot replace or reference itself as the full plan');
   });
 
-  test('CEO shares both files after spec review and owns unresolved concerns in its scope document', () => {
+  test('CEO shares both inputs after spec review and owns unresolved concerns in its scope document', () => {
     const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
     const persist = template.split('### 0H.')[1]?.split('### 0I.')[0] ?? '';
     const review = persist.indexOf('{{SPEC_REVIEW_LOOP}}');
-    const sharing = persist.indexOf('give the user links to both files');
+    const sharing = persist.indexOf('present both inputs for approval');
     expect(review).toBeGreaterThanOrEqual(0);
     expect(sharing).toBeGreaterThan(review);
     const output = render('plan-ceo-review');
@@ -1534,19 +1534,19 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
       expect(instruction).toContain('CEO document');
       expect(instruction).toContain('Reviewer Concerns');
     }
-    expect(report).toMatch(/owning\s+file/);
+    expect(report).toMatch(/owning\s+input/);
   });
 
   test('CEO reviewer receives one complete prompt without duplicate scoring instructions', () => {
     const output = render('plan-ceo-review');
     const dispatch = output.split('**Step 1: Dispatch reviewer subagent**')[1]?.split('**Step 2:')[0] ?? '';
-    expect(dispatch.match(/Read both files in full/g)).toHaveLength(1);
+    expect(dispatch.match(/Read both inputs in full/g)).toHaveLength(1);
     expect(dispatch).not.toContain('Read these documents and review them');
     expect(dispatch.match(/quality score/g)).toHaveLength(1);
     expect(dispatch).toContain('A quality score (1-10) across all dimensions');
     expect(dispatch).toContain('Return overall PASS if all dimensions pass');
     expect(dispatch).toContain('For each dimension, return PASS or numbered issues with descriptions and suggested fixes');
-    expect(dispatch).toContain('Cite file and requirement for each finding');
+    expect(dispatch).toContain('Cite\n  the input and requirement for each finding');
     expect(dispatch).toContain('report that failure instead of grading a partial input');
   });
 
@@ -4157,7 +4157,9 @@ describe('EXIT PLAN MODE GATE placement', () => {
       const headings = [...stripped.matchAll(/^## .+$/gm)].map(m => m[0]);
       const lastH2 = headings.at(-1);
       expect(lastH2, `${skill}/SKILL.md last ## heading (fences stripped)`).toBe('## EXIT PLAN MODE GATE (BLOCKING)');
-      expect(md, `${skill}/SKILL.md gate body`).toContain('Failing this gate and calling ExitPlanMode anyway is a contract violation');
+      expect(md, `${skill}/SKILL.md gate body`).toContain(skill === 'plan-ceo-review'
+        ? 'If any check fails, report the missing work and do not call ExitPlanMode'
+        : 'Failing this gate and calling ExitPlanMode anyway is a contract violation');
     }
   });
 
@@ -4267,8 +4269,16 @@ describe('GSTACK REVIEW REPORT mandatory unresolved-decisions status', () => {
       const md = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
       // Gate check #4 — present, sentinel named, and explicitly blocking (no escape).
       expect(md).toContain('NO UNRESOLVED DECISIONS');
-      expect(md).toContain('FINAL non-whitespace line is the unresolved-decisions');
-      expect(md).toContain('FAILS the gate');
+      if (skill === 'plan-ceo-review') {
+        const gate = md.split('## EXIT PLAN MODE GATE (BLOCKING)')[1]!.replace(/\s+/g, ' ');
+        expect(gate).toContain('final non-whitespace line is the exact unbolded `NO UNRESOLVED DECISIONS`');
+        expect(gate).toContain('or the last bullet under `**UNRESOLVED DECISIONS:**`');
+        expect(gate).toContain('A bolded sentinel, missing status or any trailing prose fails this check');
+        expect(gate).toContain('If any check fails, report the missing work and do not call ExitPlanMode');
+      } else {
+        expect(md).toContain('FINAL non-whitespace line is the unresolved-decisions');
+        expect(md).toContain('FAILS the gate');
+      }
     });
   }
 

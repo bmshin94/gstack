@@ -76,14 +76,15 @@ Display:
 
 export function generatePlanFileReviewReport(ctx: TemplateContext): string {
   const beforeLog = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'plan-devex-review'].includes(ctx.skillName);
+  const ceo = ctx.skillName === 'plan-ceo-review';
   return `## Plan File Review Report
 
-${beforeLog ? 'Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.' : `After displaying the Review Readiness Dashboard in conversation output, also update the
+${beforeLog ? (ceo ? 'Produce the complete accepted plan and review output, including this report, under the Step 0 storage policy before announcing completion.' : 'Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.') : `After displaying the Review Readiness Dashboard in conversation output, also update the
 **plan file** itself so review status is visible to anyone reading the plan.`}
 
 ### Detect the plan file
 
-${beforeLog ? 'Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. If no file is in scope, skip this section; ordinary no-file review logging still applies.' : `1. Check if there is an active plan file in this conversation (the host provides plan file
+${beforeLog ? `Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. ${ceo ? 'Apply the Step 0 storage policy. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.' : 'If no file is in scope, skip this section; ordinary no-file review logging still applies.'}` : `1. Check if there is an active plan file in this conversation (the host provides plan file
    paths in system messages — look for plan file references in the conversation context).
 2. If not found, skip this section silently — not every review runs in plan mode.`}
 
@@ -111,7 +112,7 @@ Parse each JSONL entry. Each skill logs different fields:`}
 - **codex-review**: \\\`status\\\`, \\\`gate\\\`, \\\`findings\\\`, \\\`findings_fixed\\\`
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 
-${beforeLog ? 'The current row and its later log must describe the same saved review.' : `All fields needed for the Findings column are now present in the JSONL entries.
+${beforeLog ? (ceo ? 'The current row describes this actual review. Mark an unlogged current run as not persisted; do not present it as a saved dashboard entry.' : 'The current row and its later log must describe the same saved review.') : `All fields needed for the Findings column are now present in the JSONL entries.
 For the review you just completed, you may use richer details from your own Completion
 Summary. For prior reviews, use the JSONL fields directly — they contain all required data.`}
 
@@ -149,7 +150,7 @@ DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
 
-${beforeLog ? '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.' : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
+${beforeLog ? (ceo ? 'If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Otherwise save only accepted changes, keeping unresolved choices pending:' : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.`}
 
@@ -164,8 +165,7 @@ ${beforeLog ? `1. Read the existing plan/report, if present. Preserve its conten
    \\\`## GSTACK REVIEW REPORT\\\` through either the next \\\`## \\\` heading or end of
    file, whichever comes first. Replace with the empty string. This applies
    regardless of where the section currently lives — mid-file deletion is
-   intentional, not a special case. If the Edit fails (e.g., concurrent edit
-   changed the content), re-read the plan file and retry once.
+   intentional, not a special case. ${ceo ? 'If the Edit fails, report the error and stop before Review Log or decision logging.' : 'If the Edit fails (e.g., concurrent edit\n   changed the content), re-read the plan file and retry once.'}
 3. If a report was deleted, Read the updated file. Append the new
    \\\`## GSTACK REVIEW REPORT\\\` at EOF. Use Edit to match the suffix
    confirmed by the latest Read, or Write the full file with the report last.${beforeLog ? ' Append whether or not a prior report existed.' : ''}
@@ -184,6 +184,25 @@ there — the user then sees a plan whose review report is not at the bottom and
 }
 
 export function generateExitPlanModeGate(_ctx: TemplateContext): string {
+  if (_ctx.skillName === 'plan-ceo-review') return `## EXIT PLAN MODE GATE (BLOCKING)
+
+If storage restrictions prevented the plan/report or completion log, present the
+full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
+An attempted artifact save that failed still stops the review.
+
+Before calling ExitPlanMode, verify all five checks:
+1. Read the plan file after your most recent write.
+2. Its LAST \`## \` heading is exactly \`## GSTACK REVIEW REPORT\`.
+3. The report contains a Runs / Status / Findings table and VERDICT; include
+   CODEX / CROSS-MODEL when applicable.
+4. Its final non-whitespace line is the exact unbolded \`NO UNRESOLVED DECISIONS\`,
+   or the last bullet under \`**UNRESOLVED DECISIONS:**\`. A bolded sentinel,
+   missing status or any trailing prose fails this check.
+5. Confirm \`gstack-review-log\` was called and \`gstack-review-read\` ran at
+   least once. Do not substitute an unlogged chat review for saved completion.
+
+If any check fails, report the missing work and do not call ExitPlanMode. Review
+prose in the plan body cannot replace its separate, terminal structured report.`;
   return `## EXIT PLAN MODE GATE (BLOCKING)
 
 Before calling ExitPlanMode, run this self-check. If any item fails, do the
@@ -337,19 +356,18 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-${ceo ? `Launch one reviewer with the two paths and instructions below. If the tool exposes \`run_in_background\`, set it to boolean \`false\`. If it returns a task handle, wait for that task with the host's wait tool. When no wait tool exists, end this response and resume on the completion notification. Do not advance, edit either input or launch another reviewer while waiting.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
+${ceo ? `Launch one reviewer with both inputs below. If the tool exposes \`run_in_background\`, set it to boolean \`false\`. If it returns a task handle, wait with the host's wait tool; without one, end this response and resume on the completion notification. Do not advance, edit either input or launch another reviewer while waiting.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
 Subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}. Async launch metadata
 is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
 The reviewer has fresh context: only the document, not the conversation.`}
 
 Prompt the subagent with:
-- ${ceo ? 'The absolute paths of BOTH the CEO scope document just written and the current amended plan it references' : 'The file path of the document just written'}
-${ceo ? `- "Read both files in full: CEO scope decisions plus source-plan requirements and
-  implementation context. Evaluate them together on all five dimensions below.
-  Source-plan requirements need not be repeated in the scope summary. Flag contradictions
-  between the files, unsupported accepted expansions, and required behavior missing
-  from both. Cite file and requirement for each finding. If either file cannot be
-  read, report that failure instead of grading a partial input."` : `- "Read this document and review it on 5 dimensions. For each dimension, note PASS or
+- ${ceo ? 'Both saved absolute paths, or both complete labeled texts if either input is not persisted: CEO scope summary and current amended working plan. Supply no other conversation context.' : 'The file path of the document just written'}
+${ceo ? `- "Read both inputs in full. Evaluate them together on all five dimensions below.
+  Plan requirements need not be repeated in the scope summary. Flag contradictions,
+  unsupported accepted expansions, and required behavior missing from both. Cite
+  the input and requirement for each finding. If either input is unavailable or
+  incomplete, report that failure instead of grading a partial input."` : `- "Read this document and review it on 5 dimensions. For each dimension, note PASS or
   list specific issues with suggested fixes. At the end, output a quality score (1-10)
   across all dimensions."`}
 
@@ -367,8 +385,8 @@ ${ceo ? '- For each dimension, return PASS or numbered issues with descriptions 
 **Step 2: Fix and re-dispatch**
 
 If the reviewer returns issues:
-1. ${ceo ? 'Use the 0D approval/session rules for new or reopened choices; exact approved changes may proceed. Use scoped Edit for behavior and requirements in the source plan and scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the summary.' : 'Fix each issue in the document on disk (use Edit tool)'}
-2. Re-dispatch the reviewer subagent with ${ceo ? 'BOTH updated file paths and the same two-document instructions' : 'the updated document'}
+1. ${ceo ? 'Use 0D for new or reopened choices; carry exact approvals forward. Amend behavior and requirements in the working plan and scope decisions in the CEO document, using the storage policy. Keep both consistent without copying the full plan into the summary.' : 'Fix each issue in the document on disk (use Edit tool)'}
+2. Re-dispatch the reviewer subagent with ${ceo ? 'both updated inputs and the same instructions' : 'the updated document'}
 3. Maximum 3 iterations total
 
 ${ceo ? `**Convergence guard:** If consecutive reviews return the same issues, stop the loop:
@@ -379,8 +397,8 @@ and persist those issues as "Reviewer Concerns" in the document rather than loop
 further.`}
 
 ${ceo ? `If the reviewer fails, times out or is unavailable, stop the loop and tell the user:
-"Spec review unavailable — presenting unreviewed doc." The files are saved; review
-is a quality bonus, not a gate.` : `If the subagent fails, times out, or is unavailable — skip the review loop entirely.
+"Spec review unavailable — presenting unreviewed doc." Preserve the actual failure
+and any prior findings; do not invent a score. Review is a quality bonus, not a gate.` : `If the subagent fails, times out, or is unavailable — skip the review loop entirely.
 Tell the user: "Spec review unavailable — presenting unreviewed doc." The document is
 already written to disk; the review is a quality bonus, not a gate.`}
 
@@ -389,8 +407,9 @@ already written to disk; the review is a quality bonus, not a gate.`}
 ${ceo ? `After PASS, max iterations or convergence, report the actual rounds, issues found,
 reviewer-confirmed fixes, unresolved issues and latest quality score. Do not call
 unresolved issues fixed. Show the full reviewer output on request. List unresolved
-issues under "## Reviewer Concerns" in the CEO document, citing each issue's owning
-file for downstream skills. Then append metrics:` : `After the loop completes (PASS, max iterations, or convergence guard):
+issues under "## Reviewer Concerns" in the CEO document, citing the owning input.
+Follow the storage policy for concerns and metrics. Run this append only if metadata
+writes are permitted; otherwise report the metrics as not persisted:` : `After the loop completes (PASS, max iterations, or convergence guard):
 
 1. Tell the user the result — summary by default:
    "Your doc survived N rounds of adversarial review. M issues caught and fixed.
@@ -777,9 +796,9 @@ For all other non-disabled modes (\`ready\`, \`not_installed\`, \`not_authed\`, 
 stays discoverable: "Running the outside voice automatically (standard step). Disable: \`gstack-config set codex_reviews disabled\`."
 
 **Construct the plan review prompt** for every remaining mode, including all Claude fallback modes (skip on \`disabled\` or \`under_codex\`).
-Read the plan file being reviewed (the file the user pointed this review at, or the branch
+${ctx.skillName === 'plan-ceo-review' ? 'Use the current complete working plan, whether saved or in chat under the storage policy. Include the CEO scope summary when available for this mode; do not substitute stale file content.' : `Read the plan file being reviewed (the file the user pointed this review at, or the branch
 diff scope). If a CEO scope document from an earlier \`/plan-ceo-review\` is available, read that too — it contains
-the scope decisions and vision.
+the scope decisions and vision.`}
 
 Construct this prompt (substitute the actual plan content — if plan content exceeds 30KB,
 truncate to the first 30KB and note "Plan truncated for size"). **Always start with the
@@ -910,7 +929,7 @@ Use the same six-column decision ledger and the four steps of 0D; do not start a
 
 **2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0D's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0D Step 2.
 
-**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the saved rows and comparisons under 0D Step 3 before asking. Use the applicable menu:
+**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the working rows and comparisons under 0D Step 3 before asking. Use the applicable menu:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
@@ -982,7 +1001,7 @@ Retain other rows and risks; one answer does not clear the finding's remaining c
 
 After processing the queue, report findings, dispositions and remaining disagreements.
 
-`}**Persist the result:**
+`}**Persist the result:**${ctx.skillName === 'plan-ceo-review' ? '\nOnly run this metadata write when permitted by the storage policy; otherwise report the actual result in chat as not persisted.' : ''}
 \`\`\`bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 \`\`\`

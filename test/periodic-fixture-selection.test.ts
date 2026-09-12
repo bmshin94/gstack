@@ -129,6 +129,16 @@ test('seed submission dependencies select every seeded caller with its existing 
   expect(expected.map(id => E2E_TIERS[id])).toEqual(['periodic', 'periodic', 'periodic', 'gate']);
 });
 
+test('task emission source selects CEO completion consumers', () => {
+  const selected = selectTests(['scripts/resolvers/tasks-section.ts'], E2E_TOUCHFILES);
+  expect(selected.reason).toBe('diff');
+  for (const id of [
+    'plan-ceo-finding-count', 'plan-ceo-finding-floor', 'plan-ceo-split-overflow',
+    'plan-ceo-section-loading', 'plan-ceo-review-plan-mode', 'autoplan-chain-pty',
+  ]) expect(selected.selected).toContain(id);
+  expect(selectTests(['scripts/resolvers/tasks-section.ts'], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+});
+
 test('review report resolver selects every periodic completion consumer', () => {
   const required = [
     'plan-ceo-finding-count', 'plan-eng-finding-count', 'plan-design-finding-count',

@@ -320,10 +320,10 @@ describe('run_in_background guidance (#2440)', () => {
     const ceo = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/SKILL.md'), 'utf8');
     const dispatch = ceo.split('**Step 1: Dispatch reviewer subagent**')[1]?.split('**Step 2:')[0] ?? '';
     expect(dispatch).toContain(CEO_FOREGROUND_BRANCH);
-    expect(dispatch).toContain("If it returns a task handle, wait for that task with the host's wait tool");
-    expect(dispatch).toContain('When no wait tool exists, end this response and resume on the completion notification');
+    expect(dispatch).toContain("If it returns a task handle, wait with the host's wait tool");
+    expect(dispatch).toContain('without one, end this response and resume on the completion notification');
     expect(dispatch).toContain('Do not advance, edit either input or launch another reviewer while waiting');
-    expect(dispatch).toContain('Launch one reviewer with the two paths and instructions below');
+    expect(dispatch).toContain('Launch one reviewer with both inputs below');
     const phase = fs.readFileSync(path.join(ROOT, 'autoplan/sections/ceo-phase.md'), 'utf8').replace(/\s+/g, ' ');
     expect(phase).toContain('Step 0 (including its completed Spec Review Loop) → Claude CEO voice → Codex CEO voice → consensus → Review Sections → saved summary → phase announcement');
     expect(phase).toContain('Some hosts always launch agents asynchronously');

@@ -39,7 +39,12 @@ describe('plan report persistence precedes completion logging', () => {
         const target = report.slice(report.indexOf('### Detect the plan file'), report.indexOf('### Generate the report'));
         expect(target).toContain('Use an explicitly requested output/report file first.');
         expect(target).toContain('Otherwise use the reviewed plan named by the user, then the host active plan.');
-        expect(target).toContain('If no file is in scope, skip this section');
+        if (skillName === 'plan-ceo-review') {
+          expect(target).toContain('Without a permitted file, produce the complete reviewed plan and report in chat');
+          expect(target).not.toContain('skip this section');
+        } else {
+          expect(target).toContain('If no file is in scope, skip this section');
+        }
         expect(report).toContain('prior review entries');
         expect(report).toContain('current Completion Summary or DX Scorecard');
         expect(report).toContain('add exactly one to its prior run count');
@@ -326,7 +331,7 @@ describe('outside-voice commitment queue', () => {
           expect(queue).toContain('one row per call, record its actual answer and scope');
           expect(queue).toContain('then amend only that approved scope');
           expect(queue).toContain('Follow 0D Step 4');
-          expect(queue).toContain('Update the saved rows and comparisons under 0D Step 3 before asking');
+          expect(queue).toContain('Update the working rows and comparisons under 0D Step 3 before asking');
           const skeleton = readFileSync('plan-ceo-review/SKILL.md.tmpl', 'utf8');
           expect(skeleton).toContain('apply only approved amendments to the working plan before the next row');
           expect(queue).toContain('Keep preserves the current disposition; investigation and deferral do not authorize implementation');

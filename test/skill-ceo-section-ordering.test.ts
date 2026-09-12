@@ -25,14 +25,60 @@ import * as path from 'path';
 import * as os from 'os';
 import { createHash } from 'node:crypto';
 import { validateCeoReviewCompletion } from './helpers/auq-sdk-capture';
-import { generateAntiShortcutClause } from '../scripts/resolvers/review';
-import type { TemplateContext } from '../scripts/resolvers/types';
+import { generateAntiShortcutClause, generateSpecReviewLoop, generatePlanFileReviewReport, generateExitPlanModeGate, generateCodexPlanReview } from '../scripts/resolvers/review';
+import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';
+import { generateTasksSectionEmit } from '../scripts/resolvers/tasks-section';
 import { runGeneration } from '../scripts/gen-skill-docs';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const SKELETON = path.join(ROOT, 'plan-ceo-review', 'SKILL.md');
 const SECTION = path.join(ROOT, 'plan-ceo-review', 'sections', 'review-sections.md');
+
+// These check the storage branches and their order, not model compliance.
+test('CEO defines pending choices and storage before its first decision procedure', () => {
+  const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
+  const step0 = source.split('## Step 0:')[1]!;
+  const policy = step0.indexOf('**Storage policy (entire review).**');
+  const choice = step0.indexOf('A pending choice is');
+  const firstDecision = step0.indexOf('### 0D.');
+  expect(policy).toBeGreaterThan(0);
+  expect(choice).toBeGreaterThan(0);
+  expect(policy).toBeLessThan(firstDecision);
+  expect(choice).toBeLessThan(firstDecision);
+  const compare = step0.split('**3. Compare and save')[1]!.split('**4. Ask, record')[0]!;
+  expect(compare).toContain('0D Step 2');
+  const persistence = step0.split('### 0H.')[1]!.split('### 0I.')[0]!;
+  expect(persistence.indexOf('**When writing is permitted:**')).toBeLessThan(persistence.indexOf('mkdir -p'));
+  expect(persistence).toContain('**Otherwise:**');
+  expect(persistence.indexOf('**Otherwise:**')).toBeLessThan(persistence.indexOf('{{SPEC_REVIEW_LOOP}}'));
+  expect(persistence).not.toContain('Save a chat-only plan');
+});
+
+test('CEO chat storage still supplies both spec inputs and the full report without claiming file completion', () => {
+  for (const host of ALL_HOST_CONFIGS) {
+    const ctx = { skillName: 'plan-ceo-review', host: host.name, paths: HOST_PATHS[host.name]! } as TemplateContext;
+    const spec = generateSpecReviewLoop(ctx);
+    const report = generatePlanFileReviewReport(ctx);
+    const gate = generateExitPlanModeGate(ctx);
+    expect(spec).toContain('both complete labeled texts');
+    expect(spec).toContain('all five dimensions');
+    expect(spec).toContain('Maximum 3 iterations total');
+    expect(spec).toContain('If the reviewer fails, times out or is unavailable');
+    expect(report.indexOf('### Generate the report')).toBeLessThan(report.indexOf('### Write to the plan file'));
+    expect(report).not.toContain('If no file is in scope, skip this section');
+    expect(report).toContain('not persisted');
+    expect(report).toContain('**Read-back gate:**');
+    expect(report).not.toContain('retry once');
+    const tasks = generateTasksSectionEmit(ctx, ['ceo-review']);
+    expect(tasks).toContain('write when permitted, including zero tasks');
+    expect(tasks).not.toContain('always write');
+    const outside = generateCodexPlanReview(ctx);
+    if (outside) expect(outside).toContain('Include the CEO scope summary when available for this mode');
+    expect(gate).toContain('do not call ExitPlanMode');
+    expect(gate.indexOf('not persisted')).toBeLessThan(gate.indexOf('1. Read the plan file'));
+  }
+});
 
 test('CEO saves compared proposals before recording an actual answer in its separate field', () => {
   const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
@@ -43,10 +89,10 @@ test('CEO saves compared proposals before recording an actual answer in its sepa
   const actualAnswer = procedure.indexOf('record the actual answer reference and scope in Exact approval and scope');
   const amend = procedure.indexOf('Update Status and apply only approved amendments');
   expect(0 <= compare && compare < save && save < ask && ask < actualAnswer && actualAnswer < amend).toBe(true);
-  expect(procedure.slice(compare, ask)).toContain("using Step 2's save/chat rules");
+  expect(procedure.slice(compare, ask)).toContain("using 0D Step 2's storage rules");
   expect(procedure.slice(compare, ask)).toContain('including unselected options and changes shared by all options');
   expect(procedure.slice(0, compare)).toContain('A failed save stops the review');
-  expect(procedure.slice(0, compare)).toContain('If edits are forbidden, show rows in chat');
+  expect(procedure.slice(0, compare)).toContain('Otherwise show them in the complete chat plan under the storage policy');
   expect(procedure.slice(ask)).toContain('before the next row');
 });
 
@@ -78,8 +124,8 @@ test('CEO Step 0 records provisional contracts before drafting any menu on every
       expect(approach).toContain('one change can be selected while another stays unchanged');
       expect(approach.indexOf('Record the existing and proposed behavior')).toBeLessThan(approach.indexOf('Compare 2-3 approaches'));
       expect(approach).toContain('Split independent additions into separate rows');
-      expect(approach).toContain('A failed save stops the review: report the error and do not ask the decision question');
-      expect(approach).toContain('If edits are forbidden, show rows in chat');
+      expect(approach).toContain('A failed save stops the review before the question');
+      expect(approach).toContain('Otherwise show them in the complete chat plan under the storage policy');
       expect(approach).toContain('Do not prewrite approval or implementation tasks');
       expect(approach).toContain('record the actual answer reference and scope in Exact approval and scope');
       expect(source.indexOf('### 0D.')).toBeLessThan(source.indexOf('### 0E. Mode Selection'));
@@ -124,8 +170,8 @@ test('CEO outside findings reuse authority-first decisions without turning unkno
   expect(tension).toContain("Save or present pending rows under 0D Step 2");
   const skeleton = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   expect(skeleton).toContain('A failed save stops the review');
-  expect(skeleton).toContain('Respect user/host edit restrictions');
-  expect(tension).toContain('Update the saved rows and comparisons under 0D Step 3 before asking');
+  expect(skeleton).toContain('User/host edit restrictions govern artifacts, metadata and cleanup');
+  expect(tension).toContain('Update the working rows and comparisons under 0D Step 3 before asking');
   expect(skeleton).toContain('apply only approved amendments to the working plan before the next row');
   expect(tension).toContain('one row per call, record its actual answer and scope');
   expect(tension).toContain('challenges wait for the final gate');
@@ -142,7 +188,7 @@ test('CEO Step 0 defines the decision record, execution order, and mode approval
   expect(step0).toContain('| ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |');
   expect(step0).toContain('Keep this ledger through Spec Review Loop and Outside Voice');
   expect(step0).toContain('conventions, test coverage and code risks with evidence');
-  expect(step0).toContain('A two-deliverable limit stays two deliverables even if reuse halves the work');
+  expect(step0).toContain('a two-deliverable limit stays two deliverables even if reuse halves the work');
   expect(step0).toContain('reuse and verification coverage');
   expect(step0).toContain('give them separate rows, even in one helper or suite');
   expect(step0).toContain('they do not imply approval');
@@ -167,7 +213,7 @@ test('CEO Step 0 defines the decision record, execution order, and mode approval
   expect(source).toContain('Record approved deferrals and their context in TODOS.md');
   expect(source).toContain('Reuse answered scope menus without another question or alternatives comparison');
   expect(source).toContain("In HOLD SCOPE, use REDUCTION's defer/keep menu for each new deferral");
-  expect(source).toContain('give the user links to both files');
+  expect(source).toContain('present both inputs for approval: link saved files and show unsaved text');
 });
 
 // Boundary checks stay on source templates: generated carriers remain the
@@ -250,22 +296,22 @@ describe('CEO review decision boundaries contract', () => {
     const steps = [
       'If the current section has an unresolved or reopened decision, call AskUserQuestion',
       'After the actual answer, check each new or changed commitment',
-      'Then use a scoped Edit',
+      'Record the choice and only its authorized amendments',
       'Once the current section\'s decisions have answers, record its review conclusions',
     ].map(step => apply.indexOf(step));
     expect(steps.every(position => position >= 0)).toBe(true);
     expect(steps).toEqual([...steps].sort((a, b) => a - b));
     expect(apply).toContain('STOP until the user responds');
-    expect(apply).toContain('If no plan file exists, first create it from the provided input and explicitly accepted Step 0 decisions');
+    expect(apply).toContain('Begin with the supplied input and explicitly accepted decisions');
     expect(apply).toContain('against the selected option or an explicit earlier approval');
     expect(apply).toContain('Preserve existing content and approvals, including direct implementation and verification of the accepted behavior');
-    expect(apply).toContain('before advancing to the next section');
+    expect(apply).toContain("before advancing, using Step 0's storage policy");
   });
 
   test('pending labels authorize only unresolved notes, not an outcome or future review conclusions', () => {
     expect(apply).toContain('only the pending issue, evidence, and alternatives in the ledger');
     expect(apply).toContain('A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome');
-    expect(apply).toContain('record the choice and its authorized amendments, including explicit deferrals');
+    expect(apply).toContain('Record the choice and only its authorized amendments, including explicit deferrals');
     expect(apply).toContain('Details found only in pending proposals or surrounding analysis remain pending');
     expect(apply).toContain('Preserve unsupported premises as unknown: choosing a remedy does not verify its factual premise');
     expect(apply).toContain('Add later sections\' review conclusions and implementation tasks only after evaluating those sections');
@@ -289,7 +335,7 @@ describe('CEO review decision continuity contract', () => {
     const positions = ['**Analyze.**', '**Resolve.**', '**Apply.**'].map(step => continuity.indexOf(step));
     expect(positions.every(position => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
-    expect(continuity).toContain('before advancing to the next section');
+    expect(continuity).toContain("before advancing, using Step 0's storage policy");
     for (const clause of clauses) {
       expect(clause).toContain('Analyze → resolve → apply');
       expect(clause).toContain('Do not prewrite the remaining sections');
@@ -317,7 +363,7 @@ describe('CEO review decision continuity contract', () => {
 
   test('the ledger carries exact approvals and declared contracts without claiming implementation', () => {
     const skeleton = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
-    const start = skeleton.indexOf('Keep a decision ledger from input reading onward');
+    const start = skeleton.indexOf('Keep one decision ledger');
     expect(start).toBeGreaterThan(skeleton.indexOf('## Step 0:'));
     expect(start).toBeLessThan(skeleton.indexOf('### 0D.'));
     const earlyLedger = skeleton.slice(start, skeleton.indexOf('### 0A.'));
@@ -326,10 +372,10 @@ describe('CEO review decision continuity contract', () => {
     expect(earlyLedger).toContain('never speculation or reviewer agreement');
     expect(earlyLedger).toContain('code risks with evidence');
     const existingCode = skeleton.split('### 0B.')[1]?.split('### 0C.')[0] ?? '';
-    expect(existingCode).toContain('Keep what each limit measures, its unit and prerequisites');
-    expect(existingCode).toContain('Changing that limit needs evidence and user approval');
-    expect(existingCode).toContain('A two-deliverable limit stays two deliverables even if reuse halves the work');
-    expect(skeleton.indexOf('Keep what each limit')).toBeLessThan(skeleton.indexOf('### 0D.'));
+    expect(existingCode).toContain('Keep the quantity, unit and prerequisites of each limit');
+    expect(existingCode).toContain('Changing it needs evidence and user approval');
+    expect(existingCode).toContain('a two-deliverable limit stays two deliverables even if reuse halves the work');
+    expect(skeleton.indexOf('Keep the quantity, unit and prerequisites')).toBeLessThan(skeleton.indexOf('### 0D.'));
     const temporal = skeleton.split('### 0I.')[1]?.split('{{SECTION:review-sections}}')[0] ?? '';
     expect(temporal).toContain('For scope prioritization, resolve scope and feasibility blockers now');
     expect(temporal).toContain('Keep other design choices pending unless the user requested implementation planning; ask before expanding the review to that depth');
@@ -418,7 +464,7 @@ describe('plan-ceo-review carve — static ordering', () => {
     expect(persist).toMatch(/^#### Spec Review Loop$/m);
     expect(persist).toContain('After the loop completes or reports unavailable');
     const handoff = persist.slice(persist.indexOf('After the loop completes or reports unavailable'));
-    const wait = handoff.indexOf("Wait as required by the preamble's session rules");
+    const wait = handoff.indexOf("Follow the preamble's session rules");
     expect(wait).toBeGreaterThan(handoff.indexOf('for approval'));
     expect(handoff.indexOf('Then continue to 0I')).toBeGreaterThan(wait);
   });

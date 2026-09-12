@@ -504,7 +504,7 @@ Do NOT make any code changes. Do NOT start implementation. Review only, with max
 4. Interactions have edge cases. Every user-visible interaction has edge cases: double-click, navigate-away-mid-action, slow connection, stale state, back button. Map them.
 5. Observability is scope, not afterthought. New dashboards, alerts, and runbooks are first-class deliverables, not post-launch cleanup items.
 6. Diagrams are mandatory. No non-trivial flow goes undiagrammed. ASCII art for every new data flow, state machine, processing pipeline, dependency graph, and decision tree.
-7. Everything deferred must be written down. Vague intentions are lies. TODOS.md or it doesn't exist.
+7. Record every deferral in TODOS.md or complete chat output under the storage policy.
 8. Optimize for the 6-month future, not just today. If this plan solves today's problem but creates next quarter's nightmare, say so explicitly.
 9. You have permission to say "scrap it and do this instead." If there's a fundamentally better approach, table it. I'd rather hear it now.
 
@@ -866,12 +866,14 @@ sections. Read a section in full before doing its step; do not work from memory.
 
 Complete 0A–0E in order. Present findings from 0A–0C as brief observations with evidence; they do not imply approval. Then follow the selected mode's route below before Review Sections.
 
-Keep a decision ledger from input reading onward:
+A pending choice is an unanswered decision needed for the requested goal, identified in 0A–0C or later review. Facts and already approved work are evidence, not new choices. Keep one decision ledger:
 
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
 
 Record conventions, test coverage and code risks with evidence. Status is unresolved, approved, reopened, deferred or declined. Cite each resolved row's instruction or answer. Keep this ledger through Spec Review Loop and Outside Voice. Reopen only for a concrete contradiction or changed assumption, never speculation or reviewer agreement.
+
+**Storage policy (entire review).** User/host edit restrictions govern artifacts, metadata and cleanup, including tasks, TODOs and logs. The **working plan** is the requested output file, otherwise the reviewed plan, otherwise the host's active plan. For each output without a permitted path, keep its complete text in chat, labeled **not persisted**. Never claim a file, read-back or log that did not happen. Report a failed artifact save and stop; a known write restriction does not skip review or approval.
 
 ### 0A. Premise Challenge
 1. Is this the right problem? Would another framing be simpler or more impactful?
@@ -882,7 +884,7 @@ Record conventions, test coverage and code risks with evidence. Status is unreso
 1. What existing code already partially or fully solves each sub-problem? Map every sub-problem to existing code. Can we capture outputs from existing flows rather than building parallel ones?
 2. Is this plan rebuilding anything that already exists? If yes, explain why rebuilding is better than refactoring.
 
-Keep what each limit measures, its unit and prerequisites. A two-deliverable limit stays two deliverables even if reuse halves the work. Changing that limit needs evidence and user approval.
+Keep the quantity, unit and prerequisites of each limit: a two-deliverable limit stays two deliverables even if reuse halves the work. Changing it needs evidence and user approval.
 
 ### 0C. Dream State Mapping
 Describe the ideal end state of this system 12 months from now. Does this plan move toward that state or away from it?
@@ -905,12 +907,12 @@ If one change can be selected while another stays unchanged, give them separate 
 
 Record the existing and proposed behavior, limits, test method and coverage. Keep other commitments fixed or pending; honor the requested review depth.
 
-The **working plan** is the requested output file, otherwise the reviewed plan, otherwise the host's active plan. Respect user/host edit restrictions. When allowed, use Write/Edit to save pending rows there; create it from supplied input if absent. If edits are forbidden, show rows in chat. A failed save stops the review: report the error and do not ask the decision question. Do not prewrite approval or implementation tasks.
+When allowed, use Write/Edit to save pending rows in the working plan; create it from supplied input if absent. Otherwise show them in the complete chat plan under the storage policy. A failed save stops the review before the question. Do not prewrite approval or implementation tasks.
 
 **3. Compare and save that row's options.**
 Only new or reopened choices need alternatives. Compare 2-3 approaches; prefer 3 for non-trivial plans and explain a lone option. Give each a name, 1-2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2-3 pros/cons, reuse and verification coverage. Weigh the smallest diff and long-term architecture equally; a rewrite may be better.
 
-Check every option, including unselected options and changes shared by all options. Split independent additions into separate rows; preserve accepted requirements, contracts, tests and fixes. Update the rows and comparisons in the ledger's Proposed field before asking, using Step 2's save/chat rules.
+Check every option, including unselected options and changes shared by all options. Split independent additions into separate rows; preserve accepted requirements, contracts, tests and fixes. Update the rows and comparisons in the ledger's Proposed field before asking, using 0D Step 2's storage rules.
 
 **4. Ask, record the answer, and amend.**
 Use the preamble's AskUserQuestion format, recommendation and preference/session rules. If options differ in coverage, score only this row: 10 covers all its edge cases, 7 the happy path, 3 a shortcut. Otherwise write: "Note: options differ in kind, not coverage — no completeness score."
@@ -983,9 +985,13 @@ For both expansion modes, present each proposal as its own AskUserQuestion: **A)
 
 Present each proposed cut as its own AskUserQuestion: **A)** Defer this item to TODOS.md **B)** Keep it in scope. Review only the agreed reduced scope.
 
-Record approved deferrals and their context in TODOS.md. Reuse answered scope menus without another question or alternatives comparison. In HOLD SCOPE, use REDUCTION's defer/keep menu for each new deferral.
+Record approved deferrals and their context in TODOS.md under the storage policy. Reuse answered scope menus without another question or alternatives comparison. In HOLD SCOPE, use REDUCTION's defer/keep menu for each new deferral.
 
 ### 0H. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
+
+Prepare two distinct inputs: the complete working plan with accepted amendments, and the CEO scope summary below. Keep behavior and requirements in the plan, scope decisions in the summary, and both consistent. The summary cannot replace or reference itself as the full plan.
+
+**When writing is permitted:** Use native Write/Edit (host editor if unavailable) only for each input's own permitted destination. For a permitted CEO summary directory, prepare:
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
@@ -995,9 +1001,9 @@ mkdir -p "$CEO_PLANS"
 echo "CEO_PLANS=$CEO_PLANS"
 ```
 
-Use the printed `CEO_PLANS` absolute path below. Before writing, offer to archive existing plans >30 days old or from merged/deleted branches. If approved, create its `archive/` subdirectory and move each stale plan there.
+Use `{printed CEO_PLANS}/{YYYY-MM-DD}-{feature-slug}.md`, deriving the slug from the plan. Offer to archive plans >30 days old or from merged/deleted branches; only with approval move them into `archive/`.
 
-Use native Write/Edit (host file editor if unavailable) to create the CEO summary at `{printed CEO_PLANS}/{date}-{feature-slug}.md`. Keep content in file-tool input; the shell above only prepares the directory. Format:
+**Otherwise:** Present each unsaved input's complete labeled text in chat as **not persisted**. Never create a path to evade a restriction. Summary format:
 
 ```markdown
 ---
@@ -1009,7 +1015,7 @@ Branch: {branch} | Mode: {EXPANSION / SELECTIVE EXPANSION}
 Repo: {owner/repo}
 
 ## Plan under review
-{absolute path to the current amended plan}
+{working plan path, or "Working plan — complete text in chat; not persisted"}
 
 ## Vision
 
@@ -1032,26 +1038,21 @@ Repo: {owner/repo}
 - {items with context}
 ```
 
-Derive the feature slug from the reviewed plan; use a YYYY-MM-DD date.
-
-"Plan under review" must link to the complete working plan, including accepted changes. Save a chat-only plan at Step 0D's working-plan path first. Amend behavior and requirements in that plan and scope decisions in the CEO summary; keep both consistent. The summary cannot replace or point to itself as the full plan.
-
 #### Spec Review Loop
 
 Before presenting the document to the user for approval, run an adversarial review.
 
 **Step 1: Dispatch reviewer subagent**
 
-Launch one reviewer with the two paths and instructions below. If the tool exposes `run_in_background`, set it to boolean `false`. If it returns a task handle, wait for that task with the host's wait tool. When no wait tool exists, end this response and resume on the completion notification. Do not advance, edit either input or launch another reviewer while waiting.
+Launch one reviewer with both inputs below. If the tool exposes `run_in_background`, set it to boolean `false`. If it returns a task handle, wait with the host's wait tool; without one, end this response and resume on the completion notification. Do not advance, edit either input or launch another reviewer while waiting.
 
 Prompt the subagent with:
-- The absolute paths of BOTH the CEO scope document just written and the current amended plan it references
-- "Read both files in full: CEO scope decisions plus source-plan requirements and
-  implementation context. Evaluate them together on all five dimensions below.
-  Source-plan requirements need not be repeated in the scope summary. Flag contradictions
-  between the files, unsupported accepted expansions, and required behavior missing
-  from both. Cite file and requirement for each finding. If either file cannot be
-  read, report that failure instead of grading a partial input."
+- Both saved absolute paths, or both complete labeled texts if either input is not persisted: CEO scope summary and current amended working plan. Supply no other conversation context.
+- "Read both inputs in full. Evaluate them together on all five dimensions below.
+  Plan requirements need not be repeated in the scope summary. Flag contradictions,
+  unsupported accepted expansions, and required behavior missing from both. Cite
+  the input and requirement for each finding. If either input is unavailable or
+  incomplete, report that failure instead of grading a partial input."
 
 **Dimensions:**
 1. **Completeness** — Are all requirements addressed? Missing edge cases?
@@ -1067,8 +1068,8 @@ The subagent should return:
 **Step 2: Fix and re-dispatch**
 
 If the reviewer returns issues:
-1. Use the 0D approval/session rules for new or reopened choices; exact approved changes may proceed. Use scoped Edit for behavior and requirements in the source plan and scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the summary.
-2. Re-dispatch the reviewer subagent with BOTH updated file paths and the same two-document instructions
+1. Use 0D for new or reopened choices; carry exact approvals forward. Amend behavior and requirements in the working plan and scope decisions in the CEO document, using the storage policy. Keep both consistent without copying the full plan into the summary.
+2. Re-dispatch the reviewer subagent with both updated inputs and the same instructions
 3. Maximum 3 iterations total
 
 **Convergence guard:** If consecutive reviews return the same issues, stop the loop:
@@ -1076,23 +1077,24 @@ the fix did not resolve them or the reviewer disagrees. Record them as "Reviewer
 in the CEO document in Step 3.
 
 If the reviewer fails, times out or is unavailable, stop the loop and tell the user:
-"Spec review unavailable — presenting unreviewed doc." The files are saved; review
-is a quality bonus, not a gate.
+"Spec review unavailable — presenting unreviewed doc." Preserve the actual failure
+and any prior findings; do not invent a score. Review is a quality bonus, not a gate.
 
 **Step 3: Report and persist metrics**
 
 After PASS, max iterations or convergence, report the actual rounds, issues found,
 reviewer-confirmed fixes, unresolved issues and latest quality score. Do not call
 unresolved issues fixed. Show the full reviewer output on request. List unresolved
-issues under "## Reviewer Concerns" in the CEO document, citing each issue's owning
-file for downstream skills. Then append metrics:
+issues under "## Reviewer Concerns" in the CEO document, citing the owning input.
+Follow the storage policy for concerns and metrics. Run this append only if metadata
+writes are permitted; otherwise report the metrics as not persisted:
 ```bash
 mkdir -p ~/.gstack/analytics
 echo '{"skill":"plan-ceo-review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.gstack/analytics/spec-review.jsonl 2>/dev/null || true
 ```
 Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.
 
-After the loop completes or reports unavailable, give the user links to both files for approval. Wait as required by the preamble's session rules; use 0D for requested changes. Then continue to 0I.
+After the loop completes or reports unavailable, present both inputs for approval: link saved files and show unsaved text. Follow the preamble's session rules; use 0D for requested changes. Then continue to 0I.
 
 ### 0I. Temporal Interrogation (EXPANSION, SELECTIVE EXPANSION, and HOLD modes)
 For scope prioritization, resolve scope and feasibility blockers now. Keep other design choices pending unless the user requested implementation planning; ask before expanding the review to that depth.
@@ -1119,30 +1121,20 @@ it now and redo the review from the source of truth.
 
 ## EXIT PLAN MODE GATE (BLOCKING)
 
-Before calling ExitPlanMode, run this self-check. If any item fails, do the
-missing work — do NOT call ExitPlanMode:
+If storage restrictions prevented the plan/report or completion log, present the
+full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
+An attempted artifact save that failed still stops the review.
 
-1. Read the plan file with the Read tool (after your most recent write to it).
-2. Confirm the LAST `## ` heading in the file is `## GSTACK REVIEW REPORT`.
-   In-body prose that mentions "outside voice", "codex findings", or similar
-   does NOT count — only the structured `## GSTACK REVIEW REPORT` section
-   satisfies this check.
-3. Confirm the report has a Runs / Status / Findings table and a VERDICT line
-   (CODEX / CROSS-MODEL absorbed if applicable).
-4. Confirm the report's FINAL non-whitespace line is the unresolved-decisions
-   status: the exact unbolded `NO UNRESOLVED DECISIONS`, or a bullet of a final
-   `**UNRESOLVED DECISIONS:**` block. BLOCKING, no "if applicable" escape — a
-   bolded sentinel, any trailing CODEX/CROSS-MODEL/VERDICT/prose, or a missing
-   status each FAILS the gate.
-5. If a plan file is in context for this skill invocation: confirm
-   `gstack-review-log` was called and `gstack-review-read` was run at least
-   once. If no plan file is in context (e.g. `/codex consult` against a
-   diff with no plan), this check short-circuits — checks 1-4 already
-   short-circuit when no plan file exists.
+Before calling ExitPlanMode, verify all five checks:
+1. Read the plan file after your most recent write.
+2. Its LAST `## ` heading is exactly `## GSTACK REVIEW REPORT`.
+3. The report contains a Runs / Status / Findings table and VERDICT; include
+   CODEX / CROSS-MODEL when applicable.
+4. Its final non-whitespace line is the exact unbolded `NO UNRESOLVED DECISIONS`,
+   or the last bullet under `**UNRESOLVED DECISIONS:**`. A bolded sentinel,
+   missing status or any trailing prose fails this check.
+5. Confirm `gstack-review-log` was called and `gstack-review-read` ran at
+   least once. Do not substitute an unlogged chat review for saved completion.
 
-Failing this gate and calling ExitPlanMode anyway is a contract violation —
-the user will see a plan whose review report is missing or stale, and will
-(correctly) reject it. Self-deception failure mode to watch for: feeling
-"done" after writing review prose into the plan body. The body prose is not
-the report. The report is a separate, structured, table-bearing section that
-must be the file's terminal heading.
+If any check fails, report the missing work and do not call ExitPlanMode. Review
+prose in the plan body cannot replace its separate, terminal structured report.
