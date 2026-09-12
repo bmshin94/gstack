@@ -97,16 +97,17 @@ describe('workflow judge excerpts', () => {
   test('Eng preparation and decision procedure precede the four review sections', () => {
     const { skillPath, startMarker, endMarker } = ENG_REVIEW_EXCERPT;
     const eng = readWorkflowExcerpt(skillPath, startMarker, endMarker);
-    const stages = ['## Review preparation', '## Confidence Calibration', '## Decision procedure',
+    const stages = ['## Review preparation', '## Retrospective learning', '## Confidence Calibration', '## Decision procedure',
       '**Decision gate (all sections and outside voice):**', '## Review Sections',
       '### 1. Architecture review', '### 2. Code quality review', '### 3. Test review', '### 4. Performance review']
       .map(heading => eng.indexOf(heading));
     expect(stages.every(index => index >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     expect(eng.match(/^## Decision procedure$/gm)).toHaveLength(1);
-    expect(eng.slice(stages[2], stages[4]).match(/^\*\*[1-5]\. /gm)).toHaveLength(5);
-    const outputs = ['## Required outputs', '### Completion summary', '## Plan File Review Report',
-      '### Write to the plan file', '## Review Log', '## Unresolved decisions'].map(heading => eng.indexOf(heading));
+    expect(eng.slice(eng.indexOf('## Decision procedure'), eng.indexOf('## Review Sections')).match(/^\*\*[1-5]\. /gm)).toHaveLength(5);
+    const outputs = ['## Required outputs', '### TODOS.md updates', '## Implementation Tasks',
+      '### Unresolved decisions', '### Completion summary', '## Plan File Review Report',
+      '### Write to the plan file', '## Review Log'].map(heading => eng.indexOf(heading));
     expect(outputs.every(index => index > stages[stages.length - 1]!)).toBe(true);
     expect(outputs).toEqual([...outputs].sort((a, b) => a - b));
   });

@@ -915,7 +915,7 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 ${ctx.skillName === 'plan-eng-review' ? `**Cross-model tension:**
 
-Run every outside finding through the same Decision procedure and seven-column ledger above. Record the reviewer and evidence. Agreement between reviewers is evidence, not approval: confirmations and factual corrections update the record; new or reopened choices still need their own answers. Keep necessary code, tests and docs for one approved behavior together.
+Run every outside finding through the same Decision procedure and decision records above. Record the reviewer and evidence. Agreement between reviewers is evidence, not approval: confirmations and factual corrections update the record; new or reopened choices still need their own answers. Keep necessary code, tests and docs for one approved behavior together.
 
 For these questions, use the following four-option menus instead of the ordinary 2-3 options. Identify one independently answerable change before building its alternatives, then compare and save them as the Decision procedure requires.
 
