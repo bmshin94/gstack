@@ -215,7 +215,7 @@ describe('Eng approved-work decision gate', () => {
     expect(gate).toContain("For a bound, name what it measures and its unit");
     expect(gate).toContain('for optional verification, name the method and depth');
     expect(options).toContain("Draft the question text, recommendation and every option's label, description and tradeoffs");
-    expect(options).toContain('Read the entire brief against this comparison');
+    expect(options).toContain('Read the entire brief against these lines');
     expect(gate).toContain('save its row, rebuilt comparison and exact question brief with Write or Edit');
     expect(gate).toContain('If saving fails, report the error and stop before asking');
     expect(gate).toContain("Respect the user's read-only request and the host's file-write limits");
@@ -236,7 +236,7 @@ describe('Eng approved-work decision gate', () => {
     expect(identify).toContain('| Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |');
     const audit = gate.slice(gate.indexOf('**3.'), gate.indexOf('**4.'));
     expect(audit).toContain("Draft the question text, recommendation and every option's label, description and tradeoffs");
-    expect(audit).toContain('Read the entire brief against this comparison');
+    expect(audit).toContain('Read the entire brief against these lines');
     expect(audit).toContain('If any option adds or resolves another independent commitment, return to Step 2');
     expect(identify).toContain('Before calling a mechanism required, hold the exact contract fixed and check for a valid alternative');
     expect(identify).toContain('If both preserve the contract but differ in another selectable runtime effect, that effect needs its own choice');
@@ -308,22 +308,27 @@ describe('Eng approved-work decision gate', () => {
   // decision oracle. It proves the instructions expose the observed two-axis
   // option pattern; only native evaluation can prove the model follows them.
   test('worked comparison exposes two independently selectable option values', () => {
-    const worked = gate.split('split. For example:')[1]!.split('**4.')[0]!;
-    const rows = [...worked.matchAll(/^- `([^`]+) \[pending\]: current=([^;]+); A=([^;]+); B=([^`]+)`$/gm)]
-      .map(([, commitment, current, A, B]) => ({ commitment, current, A, B }));
+    const worked = gate.split('split. For example, this menu is bundled:')[1]?.split('**4.')[0] ?? '';
+    const [bundled = '', split = ''] = worked.split('Split before asking about R1:');
+    const rows = [...bundled.matchAll(/^- `([^`]+) \[pending\]: current=([^;]+); A=([^;]+); B=([^;]+); C=([^`]+)`$/gm)]
+      .map(([, commitment, current, A, B, C]) => ({ commitment, current, A, B, C }));
     expect(rows).toEqual([
-      { commitment: 'R1 jitter', current: 'unspecified', A: 'on', B: 'off' },
-      { commitment: 'R2 delay cap', current: 'unspecified', A: 'on', B: 'off' },
+      { commitment: 'R1 jitter', current: 'unspecified', A: 'on', B: 'off', C: 'off' },
+      { commitment: 'R2 delay cap', current: 'unspecified', A: 'on', B: 'on', C: 'off' },
     ]);
-    // Both offered packages move both values together. The instruction must
-    // still expose mixed choices omitted by that menu; co-variation is not
-    // evidence that the two runtime guarantees are inseparable.
-    const offered = ['A', 'B'].map(option => rows.map(row => row[option as 'A' | 'B']));
-    expect(offered).toEqual([['on', 'on'], ['off', 'off']]);
+    // The bad menu exposes cap-only but omits jitter-only. Neither packaging
+    // nor omitted mixed choices establishes that the guarantees are inseparable.
+    const offered = ['A', 'B', 'C'].map(option => rows.map(row => row[option as 'A' | 'B' | 'C']));
+    expect(offered).toEqual([['on', 'on'], ['off', 'on'], ['off', 'off']]);
     expect(offered).not.toContainEqual(['on', 'off']);
-    expect(offered).not.toContainEqual(['off', 'on']);
-    expect(worked).toContain('Jitter without a cap and a cap without jitter are meaningful choices even though this menu omits them');
-    expect(worked).toContain('Ask about R1 with R2 pending in every option');
+    expect(offered).toContainEqual(['off', 'on']);
+    expect(worked).toContain('Jitter without a cap is meaningful even though this menu omits it');
+    const separated = [...split.matchAll(/^- `([^`]+) \[pending\]: current=([^;]+); A=([^;]+); B=([^`]+)`$/gm)]
+      .map(([, commitment, current, A, B]) => ({ commitment, current, A, B }));
+    expect(separated).toEqual([
+      { commitment: 'R1 jitter', current: 'unspecified', A: 'on', B: 'off' },
+      { commitment: 'R2 delay cap', current: 'unspecified', A: 'unspecified (pending)', B: 'unspecified (pending)' },
+    ]);
     expect(worked).toContain('Hold the chosen value fixed, then ask about R2 if still relevant and pending');
     expect(worked).toContain('Record why an irrelevant choice needs no question');
     expect(gate.slice(gate.indexOf('**5.'))).toContain('Resolve remaining risk or safety choices before declaring the plan ready');

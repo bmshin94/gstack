@@ -142,17 +142,21 @@ With no pending choice, carry approved work forward and report the finding witho
 **3. Build and audit the complete question for one row.**
 Draft the question text, recommendation and every option's label, description and tradeoffs. Apply the preamble's tool, prose, preference and session rules and the question-format rules below now, before saving.
 
-In `Option comparisons`, state the latest accepted value and the resulting value under EVERY offered option. State values and resulting work, not package names:
+In `Option comparisons`, give EVERY independently selectable behavior, implementation approach, guarantee or bound affected anywhere in the brief its own line, including rows that stay fixed or pending. For each, state the latest accepted value and the resulting value under EVERY offered option. State values and resulting work, not package names:
 
 `row ID [source or approval reference, otherwise pending]: current=value; A=value; B=value; C=value; D=value`
 
-Use only the options offered. For Investigate and Defer, name any bounded investigation and which value stays unchanged or pending; neither approves implementation. Keep other approved rows fixed and other pending rows undecided.
+Use only the options offered. Only one independently selectable line may change its current value or resolve a pending choice. Keep other approved rows fixed and other pending rows undecided, explicitly in every option. Carry required implementation/proof of an already approved contract as common work, citing its approval; do not add approval rows for it. For Investigate and Defer, name any bounded investigation and which value stays unchanged or pending; neither approves implementation.
 
-Read the entire brief against this comparison, including recommendations and values shared by all options. A shared new value still needs approval. If any option adds or resolves another independent commitment, return to Step 2 and split. For example:
+Read the entire brief against these lines, including recommendations and values shared by all options. A shared new value still needs approval. If any option adds or resolves another independent commitment, return to Step 2 and split. For example, this menu is bundled:
+- `R1 jitter [pending]: current=unspecified; A=on; B=off; C=off`
+- `R2 delay cap [pending]: current=unspecified; A=on; B=on; C=off`
+
+Jitter without a cap is meaningful even though this menu omits it. Split before asking about R1:
 - `R1 jitter [pending]: current=unspecified; A=on; B=off`
-- `R2 delay cap [pending]: current=unspecified; A=on; B=off`
+- `R2 delay cap [pending]: current=unspecified; A=unspecified (pending); B=unspecified (pending)`
 
-Jitter without a cap and a cap without jitter are meaningful choices even though this menu omits them. Ask about R1 with R2 pending in every option. Hold the chosen value fixed, then ask about R2 if still relevant and pending. Record why an irrelevant choice needs no question. Never remove an established contract or required proof to make an option smaller; changing that contract needs its own decision.
+Hold the chosen value fixed, then ask about R2 if still relevant and pending. Record why an irrelevant choice needs no question. Never remove an established contract or required proof to make an option smaller; changing that contract needs its own decision.
 
 **4. Save the audited question and comparison.**
 Before asking, save its row, rebuilt comparison and exact question brief with Write or Edit. Use the explicitly requested report file, otherwise the reviewed plan; preserve its other content and approvals. A previous comparison or critic's recommendation cannot replace this audit.
