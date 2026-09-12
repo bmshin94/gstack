@@ -2409,6 +2409,7 @@ export async function runPlanSkillCounting(opts: {
         questionWindowPlanReady: isPlanReadyVisible(questionWindow), visiblePlanReady: isPlanReadyVisible(visible),
         nativeStable: null, frame: null, questionMatch: 'not-evaluated', permissionMenu: null,
       };
+      if (native.calls.some(call => call.validation && call.result === 'pending')) { lastLoopStage = 'awaiting-native-question-validation'; continue; }
       if (native.pendingBytes) { lastLoopStage = 'pending-native-bytes'; continue; }
       // Bracket the async frame with native reads. Newly captured work or an
       // ACK during sampling must wait for a consistent source/frame pair.

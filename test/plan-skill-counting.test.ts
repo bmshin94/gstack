@@ -1357,3 +1357,30 @@ describe('owned captured Read permission in the real counting driver', () => {
       expect(result.closed).toBe(true);
     }, 15_000);
 });
+
+
+test.each(['same', 'split'])('counting retains captured native schema failure and answers only the hypothetical correction (%s)', async variant => {
+  const result = await runFakeCounting('**DONE**', `validation-${variant}`);
+  expect(result.error).toBeUndefined();
+  expect(result.observation.outcome).toBe('completion_summary');
+  expect(result.sends).toEqual(['/plan-ceo-review\r', '1']);
+  expect(result.validationStages[0]).toEqual({ stage: 'before-rejection', sends: ['/plan-ceo-review\r'] });
+  expect(result.observation.fingerprints).toHaveLength(1);
+  expect(result.observation.fingerprints[0].toolUseId).not.toBe('toolu_01Pi5YPbAGWX2EGnF8T86e6R');
+  expect(result.observation.fingerprints[0].questions).toHaveLength(1);
+  expect(result.observation.step0Count + result.observation.reviewCount).toBe(1);
+  expect(result.persistedQuestionResults).toBe(1);
+  expect(result.closed && result.nativeRemoved).toBe(true);
+}, 15_000);
+
+test.each(['no-result', 'wrong-result', 'no-corrected-ack'])('counting schema-validation waiting cannot send or complete without native resolution (%s)', async variant => {
+  const result = await runFakeCounting('**DONE**', `validation-${variant}`);
+  expect(result.error).toBeUndefined();
+  expect(result.observation.outcome).toBe('timeout');
+  expect(result.caseElapsedMs).toBe(result.caseBudgetMs);
+  expect(result.sends).toEqual(variant === 'no-corrected-ack' ? ['/plan-ceo-review\r', '1'] : ['/plan-ceo-review\r']);
+  expect(result.observation.fingerprints).toEqual([]);
+  expect(result.observation.step0Count + result.observation.reviewCount).toBe(0);
+  expect(result.closed && result.nativeRemoved && result.retainedBeforeClose).toBe(true);
+  if (variant !== 'no-corrected-ack') expect(result.observation.diagnostics.lastLoopStage).toBe('awaiting-native-question-validation');
+}, 15_000);

@@ -16,6 +16,9 @@ export interface NativeQuestionCall {
   result: 'pending' | 'answered' | 'error';
   /** Exact offered labels from a validated native PostToolUse response. */
   answerLabels?: string[];
+  /** Not an offered card: preserve a pre-execution request until native schema
+   * validation rejects it. No defaults, choices or answers are inferred here. */
+  validation?: { input: unknown; rejection?: { content: string; toolUseResult: string } };
 }
 export interface NativePermissionTool {
   id: string; name: string; input: Record<string, unknown>; cwd?: string;
@@ -104,6 +107,39 @@ function questionInputShape(input: any): string {
   });
 }
 
+/** Pinned Claude 2.1.263 Nue/hSn formatter over the native Zod issue list.
+ * Require both native error representations; a failure-looking prefix alone
+ * cannot retire an invocation or supply an answer. */
+function nativeQuestionSchemaRejection(row: any, block: any): { content: string; toolUseResult: string } | null {
+  const prefix = 'InputValidationError: ';
+  if (block.is_error !== true || typeof block.content !== 'string'
+    || typeof row.toolUseResult !== 'string' || !row.toolUseResult.startsWith(prefix)) return null;
+  const serialized = row.toolUseResult.slice(prefix.length);
+  let issues: any[];
+  try { issues = JSON.parse(serialized); } catch { return null; }
+  if (!Array.isArray(issues) || issues.length === 0 || JSON.stringify(issues, null, 2) !== serialized
+    || issues.some(issue => !issue || typeof issue !== 'object' || Array.isArray(issue)
+      || typeof issue.code !== 'string' || !issue.code || typeof issue.message !== 'string'
+      || !Array.isArray(issue.path) || issue.path.some((part: unknown) => typeof part !== 'string'
+        && !(typeof part === 'number' && Number.isSafeInteger(part) && part >= 0))
+      || issue.code === 'invalid_type' && typeof issue.expected !== 'string'
+      || issue.code === 'unrecognized_keys' && (!Array.isArray(issue.keys)
+        || issue.keys.some((key: unknown) => typeof key !== 'string')))) return null;
+  const field = (parts: Array<string | number>) => parts.reduce<string>((text, part, index) =>
+    typeof part === 'number' ? `${text}[${part}]` : index === 0 ? part : `${text}.${part}`, '');
+  const messages = [
+    ...issues.filter(issue => issue.code === 'invalid_type' && issue.message.includes('received undefined'))
+      .map(issue => `The required parameter \`${field(issue.path)}\` is missing`),
+    ...issues.filter(issue => issue.code === 'unrecognized_keys').flatMap(issue => issue.keys)
+      .map(key => `An unexpected parameter \`${key}\` was provided`),
+    ...issues.filter(issue => issue.code === 'invalid_type' && !issue.message.includes('received undefined'))
+      .map(issue => `The parameter \`${field(issue.path)}\` type is expected as \`${issue.expected}\` but provided as \`${issue.message.match(/received (\w+)/)?.[1] ?? 'unknown'}\``),
+  ];
+  const detail = messages.length ? `AskUserQuestion failed due to the following ${messages.length > 1 ? 'issues' : 'issue'}:\n${messages.join('\n')}` : serialized;
+  return block.content === `<tool_use_error>${prefix}${detail}</tool_use_error>`
+    ? { content: block.content, toolUseResult: row.toolUseResult } : null;
+}
+
 /** The launch's native PreToolUse event can precede transcript persistence.
  * Both sources must agree. Exact owned successful PostToolUse data can retire
  * an answered AUQ or file request, or resolve a Bash invocation, before transcript persistence.
@@ -146,18 +182,65 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
   const fetchInvocationTimes = new Map<string, number>();
   const earlyCompletions = new Map<string, FileCompletionEventCall>();
   const questionCompletions = new Map<string, QuestionCompletionEventCall>();
+  const ownedQuestionCompletionIds = new Set<string>();
   const bashInvocations = new Map<string, BashEventCall>();
   const bashCompletions = new Map<string, BashCompletionEventCall>();
+  const validationAttempt = (id: string, rawInput: unknown): NativeQuestionCall => {
+    // Only a launch with complete hook capture can prove this request has not
+    // reached execution. Active forms/choices retain the existing strict parser.
+    if (!events || executionQuestionInputs.has(id) || ownedQuestionCompletionIds.has(id)) {
+      throw new Error('Unsupported native AskUserQuestion reached execution or lacks hook capture');
+    }
+    const invocations: Array<{ row: any; index: number; block: any }> = [];
+    const completions: Array<{ row: any; index: number; block: any }> = [];
+    transcript.rows.forEach((row, index) => {
+      if (!Array.isArray(row.message?.content)) return;
+      for (const block of row.message.content) {
+        if (row.type === 'assistant' && row.message.role === 'assistant' && block?.type === 'tool_use' && block.id === id) {
+          invocations.push({ row, index, block });
+        }
+        if (row.type === 'user' && row.message.role === 'user' && block?.type === 'tool_result' && block.tool_use_id === id) {
+          completions.push({ row, index, block });
+        }
+      }
+    });
+    const invoked = invocations[0];
+    if (invocations.length !== 1 || !invoked || invoked.block.name !== 'AskUserQuestion'
+      || invoked.row.message.stop_reason !== 'tool_use' || invoked.row.cwd !== events.cwd
+      || !isDeepStrictEqual(invoked.block.input, rawInput)) throw new Error('Native question validation changed input or owner');
+    const validation: NonNullable<NativeQuestionCall['validation']> = { input: rawInput };
+    if (completions.length) {
+      const completed = completions[0]!;
+      const invocationTime = Date.parse(invoked.row.timestamp);
+      const completionTime = Date.parse(completed.row.timestamp);
+      const rejection = nativeQuestionSchemaRejection(completed.row, completed.block);
+      if (completions.length !== 1 || completed.index <= invoked.index || completed.row.cwd !== invoked.row.cwd
+        || !Number.isFinite(invocationTime) || !Number.isFinite(completionTime) || completionTime < invocationTime
+        || !rejection) throw new Error('Native question validation has an incompatible result');
+      validation.rejection = rejection;
+    }
+    return { id, questions: [], result: validation.rejection ? 'error' : 'pending', validation };
+  };
   const addQuestion = (id: unknown, input: any, fromExecution = false) => {
     if (typeof id !== 'string' || !id) throw new Error('Native AskUserQuestion is missing its tool ID');
     if (permissionInputs.has(id)) throw new Error('Native tool changed input or name for an existing tool ID');
+    const rawInput = input;
     input = fromExecution ? questionInputWithDefaults(input) : comparisonQuestionInput(id, input);
     const questions = input?.questions;
     if (!Array.isArray(questions) || questions.length < 1 || questions.length > 4 || questions.some(q =>
       typeof q?.question !== 'string' || !q.question.trim() || typeof q.header !== 'string' || !q.header.trim()
       || typeof q.multiSelect !== 'boolean' || !Array.isArray(q.options) || q.options.length < 2 || q.options.length > 4
       || q.options.some((o: any) => typeof o?.label !== 'string' || !o.label.trim() || typeof o.description !== 'string')
-    )) throw new Error(`Unsupported native AskUserQuestion input shape: toolId=${JSON.stringify(id.slice(0, 128))}${id.length > 128 ? ' (truncated)' : ''} shape=${questionInputShape(input)}`);
+    )) {
+      if (!fromExecution && events) {
+        const attempt = validationAttempt(id, rawInput);
+        if (inputs.has(id) && !isDeepStrictEqual(inputs.get(id), input)) throw new Error('Native AskUserQuestion changed input for an existing tool ID');
+        inputs.set(id, input);
+        calls.set(id, attempt);
+        return;
+      }
+      throw new Error(`Unsupported native AskUserQuestion input shape: toolId=${JSON.stringify(id.slice(0, 128))}${id.length > 128 ? ' (truncated)' : ''} shape=${questionInputShape(input)}`);
+    }
     if (inputs.has(id) && !isDeepStrictEqual(inputs.get(id), input)) {
       throw new Error('Native AskUserQuestion changed input for an existing tool ID');
     }
@@ -193,6 +276,7 @@ export function readPlanSkillQuestions(configDir: string | null, sessionId: stri
       executionQuestionInputs.set(event.id, questionInputWithDefaults(event.input));
     }
     for (const event of readQuestionCompletionEvents(events, { configDir, sessionId, transcriptFile: transcript.file })) {
+      ownedQuestionCompletionIds.add(event.id);
       const invoked = executionQuestionInputs.get(event.id);
       // A post-hook alone cannot introduce a question or authorize its answer.
       if (invoked === undefined) continue;

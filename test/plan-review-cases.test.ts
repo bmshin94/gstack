@@ -236,7 +236,9 @@ describe('Eng approved-work decision gate', () => {
     expect(audit).toContain("Draft the question text, recommendation and every option's label, description and tradeoffs");
     expect(audit).toContain("Read the entire brief against this row's comparison");
     expect(audit).toContain('If any option adds or resolves another independent commitment, return to Step 2');
-    expect(identify).toContain('calling a new runtime effect "proof" does not make it a required test');
+    expect(identify).toContain('Before calling a mechanism required, hold the exact contract fixed and check for a valid alternative');
+    expect(identify).toContain('that effect is a pending choice, not proof of the contract');
+    expect(identify).toContain('Interchangeable implementation details need no separate approval');
   });
 
   test('saves the final brief and re-audits substantive revisions before sending', () => {

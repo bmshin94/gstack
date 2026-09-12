@@ -667,6 +667,7 @@ export async function runCeoModePreferenceObservation(opts: {
       if (frame.rawEnd !== session.mark() || !isDeepStrictEqual(transcript, afterFrame)
         || nativeBeforeFrame !== undefined && !isDeepStrictEqual(nativeBeforeFrame,
           readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents))) continue;
+      if (nativeBeforeFrame?.calls.some(call => call.validation && call.result === 'pending')) continue;
       const currentInput = () => now() < deadline && !session!.exited()
         && frame.rawEnd > lastScreenInputMark && frame.rawEnd === session!.mark()
         && isDeepStrictEqual(transcript, readOwnedClaudeTranscript(session!.hermeticConfigDir, sessionId))

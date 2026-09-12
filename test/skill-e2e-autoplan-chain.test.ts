@@ -48,7 +48,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
   test(
     'completion markers follow CEO, optional Design, optional DX, then Eng',
     async () => {
-      // A dedicated UI change exercises the full chain, including Phase 2.
+      // A proposed focus-appearance change keeps Design applicable to the full chain.
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-autoplan-chain-'));
       try {
         const gitRun = (args: string[]) =>
@@ -57,9 +57,9 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         gitRun(['config', 'user.email', 'test@test.com']);
         gitRun(['config', 'user.name', 'Test']);
 
-        const stateDir = seedAutoplanProject(tempDir, 'password-visibility');
+        const stateDir = seedAutoplanProject(tempDir, 'focus-appearance');
         gitRun(['add', '.']);
-        gitRun(['commit', '-m', 'init password-visibility fixture']);
+        gitRun(['commit', '-m', 'init focus-appearance fixture']);
 
         const sessionId = randomUUID();
         const session = await launchClaudePty({
@@ -130,6 +130,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
             lastPermissionCheck = { mark: session.mark(), nativeStable: isDeepStrictEqual(native, afterFrame), lastInputMark: lastPermissionInputMark };
             if (Date.now() >= deadlineAt) break;
             if (frame.rawEnd !== lastPermissionCheck.mark || !lastPermissionCheck.nativeStable) continue;
+            if (native.calls.some(call => call.validation && call.result === 'pending')) continue;
             if (permissionViewport.active) {
               const wait = await permissionViewport.advance(native, frame);
               lastPermissionInputMark = Math.max(lastPermissionInputMark, permissionViewport.inputMark);

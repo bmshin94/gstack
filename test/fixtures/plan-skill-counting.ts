@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { seedCeoFindingProject } from '../helpers/ceo-finding-fixture';
 import { ceoStep0Boundary, runPlanSkillCounting } from '../helpers/claude-pty-runner';
 import { PtyCurrentScreen } from '../helpers/pty-current-screen';
+import retainedQuestionValidation from './eng-auq-validation-error.json';
 import retainedFetch from './webfetch-permission.json';
 import retainedRead from './read-permission.json';
 import retainedBashDirectory from './bash-directory-permission.json';
@@ -70,6 +71,8 @@ const RETAINED_PARENTHESIZED_MODE_INPUT = {
 async function main() {
   const completion = process.argv[2];
   const scenario = process.argv[3] ?? 'normal';
+  const validationCase = scenario.startsWith('validation-');
+  const validationStages: Array<{ stage: string; sends: string[] }> = [];
   const hookAckLag = scenario.startsWith('hook-ack-lag');
   const lateHookCompletion = scenario.startsWith('hook-ack-lag-late-');
   let publishLateQuestionCompletion: (() => void) | null = null;
@@ -99,7 +102,7 @@ async function main() {
   const previewCase = scenario.startsWith('preview-menu-');
   const viewportCase = scenario.startsWith('viewport-');
   const exitConfirmationCase = scenario.startsWith('exit-confirmation-');
-  const timing = reviewFilterCase || nativeBashCase || nativeFetchCase || nativeReadCase || longPermissionCase || scenario.startsWith('retention-timeout-') || ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
+  const timing = validationCase || reviewFilterCase || nativeBashCase || nativeFetchCase || nativeReadCase || longPermissionCase || scenario.startsWith('retention-timeout-') || ceilingCase || multiQuestionCase && scenario.endsWith("no-ack") || terminalDiagnosticCase || exitConfirmationCase || scenario === 'parenthesized-mode-no-ack' || scenario === 'letter-prefixed-mode-no-ack' || viewportCase || previewCase || filePermissionCase || ['setup-exhausted', 'setup-budget', 'launch-budget', 'late-completion', 'timeout-after-question', 'preview-only', 'no-ack', 'hook-no-ack', 'screen-only-plan-ready'].includes(scenario);
   const caseBudgetMs = scenario === 'retention-timeout-boot' ? 4_000 : ceilingCase || viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = multiQuestionCase || ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'question-picker-redraw'].includes(scenario);
@@ -108,7 +111,7 @@ async function main() {
   const project = fs.realpathSync(fs.mkdtempSync(path.join(capturedFileRepaintCase ? '/tmp' : os.tmpdir(), 'counting-pty-fixture-')));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
   const evalDir = path.join(project, 'evals');
-  if (retentionCase || hookAckLag || bashHookLag || nativeFetchCase) process.env.GSTACK_EVAL_DIR = evalDir;
+  if (validationCase || retentionCase || hookAckLag || bashHookLag || nativeFetchCase) process.env.GSTACK_EVAL_DIR = evalDir;
   let nativeFile = '';
   let retainedBeforeClose = false;
   const sends: string[] = [];
@@ -617,6 +620,35 @@ async function main() {
           }
           if (data.startsWith('/')) {
             seededBeforeSlash = fs.readFileSync(path.join(options.cwd, 'review-input.md'), 'utf8') === plan;
+            if (validationCase) {
+              const invalid = JSON.parse(retainedQuestionValidation.toolUseJson);
+              append({ type: 'assistant', cwd: options.cwd, timestamp: retainedQuestionValidation.invokedAt,
+                message: { role: 'assistant', stop_reason: 'tool_use', content: [invalid] } });
+              const resolve = () => {
+                validationStages.push({ stage: 'before-rejection', sends: [...sends] });
+                const result = JSON.parse(retainedQuestionValidation.toolResultJson);
+                if (scenario === 'validation-wrong-result') result.tool_use_id = 'foreign-error';
+                append({ type: 'user', cwd: options.cwd, timestamp: retainedQuestionValidation.rejectedAt,
+                  toolUseResult: JSON.parse(retainedQuestionValidation.toolUseResultJson),
+                  message: { role: 'user', content: [result] } });
+                if (scenario === 'validation-wrong-result') return;
+                // Hypothetical model correction under a new ID, using the
+                // captured complete second question; never merge the old call.
+                const corrected = invalid.input.questions[1];
+                pendingId = tool('AskUserQuestion', { questions: [corrected] });
+                emit('\x1b[2J\x1b[H☐ ' + corrected.header + '\n' + corrected.question + '\n'
+                  + corrected.options.map((o: any, i: number) => `${i === 0 ? '❯' : ' '}${i + 1}.${o.label}`).join('\n') + '\n');
+              };
+              if (scenario === 'validation-same') resolve();
+              else if (scenario === 'validation-no-result') {
+                // Even an owned ready marker plus its visible screen cannot
+                // complete while native schema validation remains unresolved.
+                tool('ExitPlanMode', {});
+                emit('\x1b[2J\x1b[HReady to code?\nHere is Claude\'s plan:\nClaude has written up a plan and is ready to execute. Would you like to proceed?\n❯ 1. Yes, and use auto mode\n  2. Yes, manually approve edits\n  3. Tell Claude what to change\n');
+              } else { pendingRedrawSleeps = 4; delayedRender = resolve; emit('VALIDATING_NATIVE_REQUEST\n'); }
+              return;
+            }
+
             if (terminalDiagnosticCase) {
               // The existing full-plan predicate matches this observed footer;
               // only owned native state may authorize a read-only terminal.
@@ -984,6 +1016,12 @@ async function main() {
             if (data.endsWith('\r')) throw new Error('Native question digit already advances; Enter would act on the next tab');
             if (scenario === 'wrong-question' && pendingRedrawSleeps > 0) prematureAnswers.push(data);
             if (!pendingId) { unsolicitedWrites.push(data); return; }
+            if (validationCase) {
+              validationStages.push({ stage: 'corrected-question-input', sends: [...sends] });
+              if (scenario === 'validation-no-corrected-ack') { emit('WAITING_FOR_NATIVE_ACK\n'); return; }
+              acknowledge(); finish(); return;
+            }
+
             if (nativeReadCase) {
               if (!permissionAckIds.length || clock >= caseBudgetMs) prematureAnswers.push(data);
               readQuestionAckIds.push(pendingId);
@@ -1063,7 +1101,7 @@ async function main() {
         } },
         kill() {
           if (bashHookLag) persistedBashUses = fs.readFileSync(file, 'utf8').split('\n').filter(line => line && JSON.parse(line).message?.content?.some?.((block: any) => block.type === 'tool_use' && block.name === 'Bash')).length;
-          if (retentionCase || hookAckLag || bashHookLag || nativeFetchCase) {
+          if (validationCase || retentionCase || hookAckLag || bashHookLag || nativeFetchCase) {
             retainedBeforeClose = fs.existsSync(path.join(evalDir, 'plan-counting', `${sessionId}.json`));
             fs.rmSync(file, { force: true });
           }
@@ -1115,7 +1153,7 @@ async function main() {
         return 1;
       } : undefined,
     }); } catch (cause) {
-      if (!hookAckLag && !nativeBashCase && !nativeFetchCase && !nativeReadCase && !longPermissionCase && !retentionCase && !viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
+      if (!validationCase && !hookAckLag && !nativeBashCase && !nativeFetchCase && !nativeReadCase && !longPermissionCase && !retentionCase && !viewportCase && !filePermissionCase && !scenario.startsWith('invalid-') && !['multi-select', 'permission-ambiguous', 'permission-owner-change', 'permission-current-create-mismatch', 'repeated-native'].includes(scenario)) throw cause;
       error = String(cause);
       sameError = cause === injectedError;
     }
@@ -1123,7 +1161,7 @@ async function main() {
     const diagnosticDirectory = path.join(evalDir, 'plan-counting');
     const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
     const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
-    console.log(JSON.stringify({ observation, error, persistedBashUses, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, capturedRepaintFrames, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, reviewFilterCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fetchQuestionAckIds, readQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, validationStages, persistedBashUses, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, capturedRepaintFrames, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, reviewFilterCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fetchQuestionAckIds, readQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

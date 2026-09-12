@@ -181,7 +181,7 @@ async function driveModeQuestions(
     // A new permission or ACK during the async screen barrier invalidates
     // this pair for counting, completion and input alike.
     if (!isDeepStrictEqual(native, afterFrame)) continue;
-    if (native.pendingBytes) continue;
+    if (native.pendingBytes || native.calls.some(call => call.validation && call.result === 'pending')) continue;
     if (viewport) {
       const owner = native.calls.find(call => call.id === viewport!.id);
       if (!owner || !isDeepStrictEqual(owner.questions, viewport.questions)) throw new Error('Expanded native question changed ownership or input');

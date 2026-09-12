@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { readPlanSkillQuestions, matchesNativeQuestion, nativeQuestionSelection, isNativeQuestionSubmitVisible, currentFilePermissionTarget, matchesClippedBashPermission, nativePermissionKey, reserveNativePermissionGrant, type NativeQuestion, type NativePermissionGrant } from './helpers/plan-skill-questions';
 import { isPermissionDialogVisible, parseNumberedOptions, stripAnsi } from './helpers/claude-pty-runner';
 import { setupQuestionEventSource, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
+import retainedQuestionValidation from './fixtures/eng-auq-validation-error.json';
 import retainedBashDirectory from './fixtures/bash-directory-permission.json';
 import retainedDesignTasksPermission from './fixtures/design-tasks-bash-permission.json';
 import { E2E_TOUCHFILES, selectTests } from './helpers/touchfiles';
@@ -2351,4 +2352,88 @@ test.each(['command', 'description'] as const)('captured Design tasks refuses ch
   const granted = new Set<string>();
   expect(reserveNativePermissionGrant(s.read(), frame, granted, new Map())).toBe(false);
   expect(granted.size).toBe(0);
+});
+
+
+function capturedQuestionValidation() {
+  const block = JSON.parse(retainedQuestionValidation.toolUseJson);
+  const invoked = { type: 'assistant', sessionId, cwd: config, timestamp: retainedQuestionValidation.invokedAt,
+    message: { role: 'assistant', stop_reason: 'tool_use', content: [block] } };
+  const rejected = { type: 'user', sessionId, cwd: config, timestamp: retainedQuestionValidation.rejectedAt,
+    toolUseResult: JSON.parse(retainedQuestionValidation.toolUseResultJson),
+    message: { role: 'user', content: [JSON.parse(retainedQuestionValidation.toolResultJson)] } };
+  return { block, invoked, rejected };
+}
+
+test.each(['same-snapshot', 'split-snapshots'])('captured native schema rejection stays unoffered and permits a new corrected invocation (%s)', variant => {
+  const { block, invoked, rejected } = capturedQuestionValidation();
+  write(invoked, ...(variant === 'same-snapshot' ? [rejected] : []));
+  const early = earlyQuestions();
+  const initial = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(initial.pendingBytes).toBe(0);
+  expect(initial.calls).toEqual([{ id: block.id, questions: [], result: variant === 'same-snapshot' ? 'error' : 'pending',
+    validation: { input: block.input, ...(variant === 'same-snapshot' ? { rejection: {
+      content: rejected.message.content[0].content, toolUseResult: rejected.toolUseResult,
+    } } : {}) } }]);
+  expect(initial.calls[0].answerLabels).toBeUndefined();
+  // No defaulted copy is mislabeled as the original rejected input.
+  expect(Object.hasOwn((initial.calls[0].validation!.input as typeof block.input).questions[0], 'multiSelect')).toBe(false);
+  if (variant === 'split-snapshots') fs.appendFileSync(file, JSON.stringify(rejected) + '\n');
+  const terminal = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(terminal.calls[0]).toMatchObject({ result: 'error', questions: [], validation: { input: block.input } });
+  const corrected = { questions: [structuredClone(block.input.questions[1])] };
+  early.emit('corrected-new-id', corrected);
+  const pending = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(pending.calls.find(c => c.id === block.id)).toEqual(terminal.calls[0]);
+  expect(pending.calls.filter(c => c.result === 'pending')).toEqual([{ id: 'corrected-new-id', questions: corrected.questions, result: 'pending' }]);
+  fs.appendFileSync(file, JSON.stringify({ type: 'user', sessionId, message: { role: 'user', content: [
+    { type: 'tool_result', tool_use_id: 'corrected-new-id', content: 'Answer accepted' },
+  ] } }) + '\n');
+  const answered = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(answered.calls.find(c => c.id === 'corrected-new-id')?.result).toBe('answered');
+  expect(answered.calls.find(c => c.id === block.id)).toEqual(terminal.calls[0]);
+});
+
+test.each(['no-result', 'wrong-result-id', 'foreign-result', 'sidechain-result'])('native schema validation stays pending without its own result (%s)', variant => {
+  const { block, invoked, rejected } = capturedQuestionValidation();
+  if (variant === 'wrong-result-id') rejected.message.content[0].tool_use_id = 'another-id';
+  if (variant === 'foreign-result') rejected.sessionId = '00000000-0000-4000-8000-000000000099';
+  if (variant === 'sidechain-result') (rejected as any).isSidechain = true;
+  write(invoked, ...(variant === 'no-result' ? [] : [rejected]));
+  const early = earlyQuestions();
+  const native = readPlanSkillQuestions(config, sessionId, early.source);
+  expect(native.calls).toEqual([{ id: block.id, questions: [], result: 'pending', validation: { input: block.input } }]);
+  expect(native.ready).toBe(false);
+  expect(native.pendingBytes).toBe(0);
+});
+
+test.each(['before-invocation', 'earlier-time', 'wrong-cwd', 'success', 'generic-error', 'changed-content',
+  'changed-structured', 'duplicate-result', 'changed-input', 'changed-tool', 'executed-hook', 'no-hook-capture'])
+('native schema rejection refuses incompatible ownership or resolution (%s)', variant => {
+  const { block, invoked, rejected } = capturedQuestionValidation();
+  if (variant === 'earlier-time') rejected.timestamp = '2026-09-12T09:44:53.655Z';
+  if (variant === 'wrong-cwd') rejected.cwd += '/foreign';
+  if (variant === 'success') rejected.message.content[0].is_error = false;
+  if (variant === 'generic-error') { rejected.toolUseResult = 'Request cancelled'; rejected.message.content[0].content = 'Request cancelled'; }
+  if (variant === 'changed-content') rejected.message.content[0].content += ' amended';
+  if (variant === 'changed-structured') rejected.toolUseResult = rejected.toolUseResult.replace('header', 'otherField');
+  const extra = structuredClone(invoked);
+  if (variant === 'changed-input') extra.message.content[0].input.questions[0].question += ' changed';
+  if (variant === 'changed-tool') extra.message.content[0].name = 'Write';
+  write(...(variant === 'before-invocation' ? [rejected, invoked] : [invoked, rejected]),
+    ...(['changed-input', 'changed-tool'].includes(variant) ? [extra] : []),
+    ...(variant === 'duplicate-result' ? [rejected] : []));
+  const early = earlyQuestions();
+  if (variant === 'executed-hook') early.emit(block.id, block.input);
+  expect(() => readPlanSkillQuestions(config, sessionId, variant === 'no-hook-capture' ? undefined : early.source))
+    .toThrow(/Unsupported native AskUserQuestion|Native question validation/);
+});
+
+
+test('native schema rejection refuses an owned orphan completion hook', () => {
+  const s = completedQuestionHook();
+  const { block, invoked, rejected } = capturedQuestionValidation();
+  write(invoked, rejected);
+  s.emit('PostToolUse', block.id, { ...s.input, answers: s.response.answers }, { tool_response: s.response });
+  expect(() => s.read()).toThrow('Unsupported native AskUserQuestion reached execution or lacks hook capture');
 });

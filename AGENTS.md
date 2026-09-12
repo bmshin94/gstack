@@ -161,6 +161,8 @@ When fixing failures or preparing `/ship`, follow this order:
    private artifact modes explicitly and preserve normal fixture permissions.
    Put standalone Git fixtures outside another checkout; verify their resolved
    project slug and state root before interpreting a failure.
+   Reject missing explicit test files before invoking Bun; it can silently ignore
+   a nonexistent file selector and pass the remaining files.
    Preserve exit status through logging. Use the documented detached runner and
    eval lock. Review the final launcher after edits; preparation and `--list`
    modes must not start monitors, retainers, or test processes. Verify this with

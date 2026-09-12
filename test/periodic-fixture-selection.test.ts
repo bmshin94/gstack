@@ -16,10 +16,10 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/eng-file-permission-repaint.json', ['plan-eng-multi-finding-batching']],
     ['test/fixtures/autoplan-existing-app/src/auth.ts', ['autoplan-chain-pty']],
     ['test/fixtures/autoplan-existing-app/db/schema.sql', ['autoplan-chain-pty']],
-    ['test/fixtures/autoplan-password-ui/sign-in.test.ts.fixture', ['autoplan-chain-pty']],
+    ['test/fixtures/autoplan-sign-in-ui/sign-in.test.ts.fixture', ['autoplan-chain-pty']],
     ['test/fixtures/plans/ui-heavy-feature-design.md', ['autoplan-chain-pty']],
-    ['test/fixtures/plans/autoplan-password-visibility.md', ['autoplan-chain-pty']],
-    ['test/fixtures/plans/autoplan-password-visibility-design.md', ['autoplan-chain-pty']],
+    ['test/fixtures/plans/autoplan-focus-appearance.md', ['autoplan-chain-pty']],
+    ['test/fixtures/plans/autoplan-focus-appearance-design.md', ['autoplan-chain-pty']],
     ['test/helpers/ceo-mode-preference.ts', ['auto-decide-preserved']],
     ['test/helpers/ceo-mode-evidence.ts', ['auto-decide-preserved']],
     ['test/ceo-mode-evidence.test.ts', ['auto-decide-preserved']],
@@ -112,7 +112,7 @@ test('shared native input dependencies select every PTY consumer without changin
   expect(expected.filter(id => E2E_TIERS[id] === 'gate')).toHaveLength(7);
   expect(expected.filter(id => E2E_TIERS[id] === 'periodic')).toHaveLength(15);
   for (const file of ['test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
-    'test/helpers/plan-skill-questions.ts', 'test/plan-skill-questions.test.ts', 'test/fixtures/design-tasks-bash-permission.json',
+    'test/helpers/plan-skill-questions.ts', 'test/plan-skill-questions.test.ts', 'test/fixtures/design-tasks-bash-permission.json', 'test/fixtures/eng-auq-validation-error.json',
     'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts',
     'test/helpers/plan-skill-question-hook-scope.ts', 'test/plan-skill-question-hook-scope.test.ts']) {
     const result = selectTests([file], E2E_TOUCHFILES);

@@ -127,24 +127,24 @@ describe('autoplan project fixture preamble', () => {
     } finally { db.close(); fs.rmSync(project, { recursive: true, force: true }); }
   });
 
-  test('only the password chain seeds a reusable browser test baseline, leaving its feature proposed', () => {
+  test('only the focus-appearance chain seeds a reusable browser test baseline, leaving its feature proposed', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-ui-baseline-'));
     try {
-      for (const scenario of ['dashboard', 'password-visibility'] as const) {
+      for (const scenario of ['dashboard', 'focus-appearance'] as const) {
         const project = path.join(dir, scenario);
         fs.mkdirSync(project);
         seedAutoplanProject(project, scenario);
         const original = JSON.parse(fs.readFileSync(path.join(ROOT, 'test/fixtures/autoplan-existing-app/package.json'), 'utf8'));
         const manifest = JSON.parse(fs.readFileSync(path.join(project, 'package.json'), 'utf8'));
         const harness = path.join(project, 'tests/sign-in.test.ts');
-        if (scenario === 'password-visibility') {
+        if (scenario === 'focus-appearance') {
           expect(manifest.scripts.test).toBe('bun run css && bun test tests/sign-in.test.ts');
           expect(manifest.dependencies).toEqual(original.dependencies);
           expect(manifest.devDependencies).toEqual({ ...original.devDependencies, playwright: '1.62.1' });
-          expect(fs.readFileSync(harness, 'utf8')).toBe(fs.readFileSync(path.join(ROOT, 'test/fixtures/autoplan-password-ui/sign-in.test.ts.fixture'), 'utf8'));
+          expect(fs.readFileSync(harness, 'utf8')).toBe(fs.readFileSync(path.join(ROOT, 'test/fixtures/autoplan-sign-in-ui/sign-in.test.ts.fixture'), 'utf8'));
           for (const [target, source] of [
-            ['.claude/plans/autoplan-password-visibility.md', 'autoplan-password-visibility.md'],
-            ['DESIGN.md', 'autoplan-password-visibility-design.md'],
+            ['.claude/plans/autoplan-focus-appearance.md', 'autoplan-focus-appearance.md'],
+            ['DESIGN.md', 'autoplan-focus-appearance-design.md'],
           ]) expect(fs.readFileSync(path.join(project, target), 'utf8')).toBe(fs.readFileSync(path.join(ROOT, 'test/fixtures/plans', source), 'utf8'));
         } else {
           expect(manifest).toEqual(original);
@@ -160,7 +160,7 @@ describe('autoplan project fixture preamble', () => {
   test('both Autoplan seeds declare the existing native review-artifact interface', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-artifact-interface-'));
     try {
-      for (const scenario of ['dashboard', 'password-visibility'] as const) {
+      for (const scenario of ['dashboard', 'focus-appearance'] as const) {
         const project = path.join(dir, scenario);
         fs.mkdirSync(project);
         seedAutoplanProject(project, scenario);
@@ -270,13 +270,13 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
     expect(execFileSync('git', ['show', 'HEAD:CLAUDE.md'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(instructions);
     expect(instructions).toContain('## Review artifact editing');
     expect(instructions).toContain('The actor cannot approve Bash permission prompts.');
-    const design = fs.readFileSync(path.join(root, 'test/fixtures/plans/autoplan-password-visibility-design.md'), 'utf8');
+    const design = fs.readFileSync(path.join(root, 'test/fixtures/plans/autoplan-focus-appearance-design.md'), 'utf8');
     expect(fs.readFileSync(path.join(cwd, 'DESIGN.md'), 'utf8')).toBe(design);
     expect(execFileSync('git', ['show', 'HEAD:DESIGN.md'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(design);
-    const proposedPlan = fs.readFileSync(path.join(root, 'test/fixtures/plans/autoplan-password-visibility.md'), 'utf8');
-    expect(execFileSync('git', ['show', 'HEAD:.claude/plans/autoplan-password-visibility.md'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(proposedPlan);
+    const proposedPlan = fs.readFileSync(path.join(root, 'test/fixtures/plans/autoplan-focus-appearance.md'), 'utf8');
+    expect(execFileSync('git', ['show', 'HEAD:.claude/plans/autoplan-focus-appearance.md'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(proposedPlan);
     expect(execFileSync('git', ['ls-files', '.claude/plans'], { cwd, encoding: 'utf8', timeout: 5000 }))
-      .toBe('.claude/plans/autoplan-password-visibility.md\\n');
+      .toBe('.claude/plans/autoplan-focus-appearance.md\\n');
     const currentForm = fs.readFileSync(path.join(root, 'test/fixtures/autoplan-existing-app/src/main.tsx'), 'utf8');
     expect(execFileSync('git', ['show', 'HEAD:src/main.tsx'], { cwd, encoding: 'utf8', timeout: 5000 })).toBe(currentForm);
     const discovery = execFileSync('bash', ['-c', ${JSON.stringify('SLUG=fixture; BRANCH=main; ' + DESIGN_DOC_DISCOVERY_BLOCK)}], {
