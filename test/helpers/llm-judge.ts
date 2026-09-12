@@ -10,6 +10,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import type { JSONOutputFormat } from '@anthropic-ai/sdk/resources/messages';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { CLAUDE_FRONTIER_EVAL_MODEL, resolveEvalModel } from '../../lib/eval-model';
@@ -64,10 +65,18 @@ export interface RecommendationScore {
 // with GSTACK_EVAL_MODEL_JUDGE; Haiku remains the right default for
 // classifier-grade duties (pty hung/working, warmup, distill — see
 // lib/eval-model.ts).
+export interface CallJudgeOptions {
+  temperature?: number;
+  max_tokens?: number;
+  signal?: AbortSignal;
+  /** Opt-in serialization contract; callers still validate the judgment locally. */
+  jsonSchema?: JSONOutputFormat['schema'];
+}
+
 export async function callJudge<T>(
   prompt: string,
   model?: string,
-  opts?: { temperature?: number; max_tokens?: number; signal?: AbortSignal },
+  opts?: CallJudgeOptions,
 ): Promise<T> {
   const signal = opts?.signal;
   signal?.throwIfAborted();
@@ -87,6 +96,7 @@ export async function callJudge<T>(
     model: resolvedModel,
     max_tokens: maxTokens,
     ...(opts?.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    ...(opts?.jsonSchema === undefined ? {} : { output_config: { format: { type: 'json_schema' as const, schema: opts.jsonSchema } } }),
     messages: [{ role: 'user', content: prompt }],
   }, signal ? { signal } : undefined);
 
@@ -123,9 +133,32 @@ export async function callJudge<T>(
     .filter(block => block.type === 'text')
     .map(block => block.text)
     .join('\n');
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error(`Judge returned non-JSON: ${text.slice(0, 200)}`);
-  return JSON.parse(jsonMatch[0]) as T;
+  try {
+    if (opts?.jsonSchema !== undefined) {
+      if (response.stop_reason !== 'end_turn') throw new Error(`Structured judge did not complete: stop_reason=${response.stop_reason}`);
+      return JSON.parse(text) as T;
+    }
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error(`Judge returned non-JSON: ${text.slice(0, 200)}`);
+    return JSON.parse(jsonMatch[0]) as T;
+  } catch (error) {
+    // The canonical full stderr spool retains this public response even when
+    // parsing fails before a caller can record a judgment. Never copy content
+    // blocks wholesale: thinking, signatures and nested metadata stay omitted.
+    const scalar = (value: unknown) => value === null || ['string', 'number', 'boolean'].includes(typeof value) ? value : null;
+    console.error(JSON.stringify({
+      type: 'llm-judge-response-parse-error',
+      responseId: scalar(response.id),
+      requestId: scalar((response as typeof response & { _request_id?: string })._request_id),
+      model: scalar(response.model),
+      stopReason: scalar(response.stop_reason),
+      usage: Object.fromEntries(['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']
+        .map(key => [key, scalar(response.usage?.[key as keyof typeof response.usage])])),
+      textBlocks: response.content.filter(block => block.type === 'text').map(block => block.text),
+      error: { name: error instanceof Error ? error.name : typeof error, message: error instanceof Error ? error.message : String(error) },
+    }));
+    throw error;
+  }
 }
 
 /**

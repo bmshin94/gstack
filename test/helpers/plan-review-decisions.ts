@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { AskUserQuestionFingerprint } from './claude-pty-runner';
 import type { NativeQuestion } from './plan-skill-questions';
-import { callJudge } from './llm-judge';
+import { callJudge, type CallJudgeOptions } from './llm-judge';
 
 export interface PlanReviewDecisionInput {
   plan: string;
@@ -43,7 +43,52 @@ export interface PlanReviewDecisionJudgment {
   questions: PlanReviewDecision[];
   devexPeerComparison?: DevexPeerComparisonJudgment;
 }
-export type PlanReviewJudge = (prompt: string, model?: string, opts?: { signal?: AbortSignal; max_tokens?: number }) => Promise<unknown>;
+export type PlanReviewJudge = (prompt: string, model?: string, opts?: Pick<CallJudgeOptions, 'signal' | 'max_tokens' | 'jsonSchema'>) => Promise<unknown>;
+// Only response structure is constrained. Identity, exact quotes, enum casing,
+// uncertainty, target coverage, independence and count checks remain local.
+function planReviewDecisionSchema(withPeerComparison: boolean): NonNullable<CallJudgeOptions['jsonSchema']> {
+  return {
+    type: 'object', additionalProperties: false,
+    required: withPeerComparison ? ['questions', 'devexPeerComparison'] : ['questions'],
+    properties: {
+      questions: { type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['toolUseId', 'questionIndex', 'kind', 'targetIds', 'independentDecisions', 'evidence', 'reason', 'optionActions'],
+        properties: {
+          toolUseId: { type: 'string' }, questionIndex: { type: 'integer' },
+          kind: { type: 'string', enum: ['finding', 'scope', 'workflow', 'backlog', 'uncertain'] },
+          targetIds: { type: 'array', items: { type: 'string' } },
+          independentDecisions: { type: 'integer' }, reason: { type: 'string' },
+          evidence: { type: 'array', items: {
+            type: 'object', additionalProperties: false, required: ['field', 'optionIndex', 'quote'],
+            properties: {
+              field: { type: 'string', enum: ['question', 'optionLabel', 'optionDescription', 'optionPreview'] },
+              optionIndex: { type: ['integer', 'null'] }, quote: { type: 'string' },
+            },
+          } },
+          optionActions: { type: 'array', items: {
+            type: 'object', additionalProperties: false, required: ['optionIndex', 'action'],
+            properties: { optionIndex: { type: 'integer' }, action: { type: 'string', enum: ['include', 'defer', 'cut', 'hold', 'other'] } },
+          } },
+        },
+      } },
+      ...(withPeerComparison ? { devexPeerComparison: {
+        type: 'object', additionalProperties: false,
+        required: ['status', 'peers', 'productQuote', 'groundingQuote', 'implicationQuote', 'reason'],
+        properties: {
+          status: { type: 'string', enum: ['complete', 'missing', 'uncertain'] },
+          peers: { type: 'array', items: {
+            type: 'object', additionalProperties: false, required: ['name', 'quote'],
+            properties: { name: { type: 'string' }, quote: { type: 'string' } },
+          } },
+          productQuote: { type: 'string' }, groundingQuote: { type: 'string' },
+          implicationQuote: { type: 'string' }, reason: { type: 'string' },
+        },
+      } } : {}),
+    },
+  };
+}
+
 const MAX_INPUT_BYTES = 8 * 1024 * 1024;
 const text = (value: unknown, max: number): value is string => typeof value === 'string' && !!value.trim() && value.length <= max;
 const record = (value: unknown): value is Record<string, any> => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -264,7 +309,8 @@ export async function evaluatePlanReviewDecisions(input: PlanReviewDecisionInput
       // allow the classifier to finish its complete JSON inventory.
       console.log(JSON.stringify({ type: 'plan-review-decisions-call-ids', mapping }));
       remaining(snapshot);
-      return judge(prompt, undefined, { signal: controller.signal, max_tokens: 16_384 });
+      return judge(prompt, undefined, { signal: controller.signal, max_tokens: 16_384,
+        jsonSchema: planReviewDecisionSchema(snapshot.devexPeerComparison !== undefined) });
     })]);
     remaining(snapshot);
     console.log(JSON.stringify({ type: 'plan-review-decisions-raw-judgment', validated: false, judgment: raw }));

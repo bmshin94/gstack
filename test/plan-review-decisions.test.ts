@@ -1,4 +1,6 @@
 import retainedCeoValues from './fixtures/ceo-paired-option-values.json';
+import Anthropic from '@anthropic-ai/sdk';
+import { resolveEvalModel } from '../lib/eval-model';
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import type { AskUserQuestionFingerprint } from './helpers/claude-pty-runner';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
@@ -54,6 +56,75 @@ function responseForPrompt(input: PlanReviewDecisionInput, judgment: PlanReviewD
   return { questions: judgment.questions.map(r => ({ ...clone(r), toolUseId: calls[nativeIds.indexOf(r.toolUseId)]!.toolUseId })) };
 }
 const logged = (type: string) => log.mock.calls.map(args => JSON.parse(args[0])).filter(row => row.type === type);
+
+test.each(['findings', 'scope', 'DX'] as const)('actual %s classifier transport requests only the existing response structure', async kind => {
+  const { input, judgment } = kind === 'DX' ? devexComparisonFixture() : fixture(kind);
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'test-only-key';
+  const create = spyOn(Anthropic.Messages.prototype, 'create').mockImplementation(async (request: any) => ({
+    stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({
+      ...responseForPrompt(input, judgment, request.messages[0].content),
+      ...(judgment.devexPeerComparison ? { devexPeerComparison: judgment.devexPeerComparison } : {}),
+    }) }],
+  }) as never);
+  try {
+    const result = await evaluatePlanReviewDecisions(input);
+    expect(result.judgment).toEqual(judgment);
+    expect(create).toHaveBeenCalledTimes(1);
+    const [request, options] = create.mock.calls[0];
+    expect(request.model).toBe(resolveEvalModel('judge'));
+    expect(request.max_tokens).toBe(16_384);
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(request).not.toHaveProperty('temperature');
+    expect(request.output_config.format.type).toBe('json_schema');
+    const schema = request.output_config.format.schema;
+    expect(schema.type).toBe('object'); expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(Object.keys(judgment));
+    expect(Object.keys(schema.properties).sort()).toEqual(Object.keys(judgment).sort());
+    const row = schema.properties.questions.items;
+    expect(row.additionalProperties).toBe(false);
+    expect([...row.required].sort()).toEqual(Object.keys(judgment.questions[0]!).sort());
+    expect(row.properties.kind.enum).toEqual(['finding', 'scope', 'workflow', 'backlog', 'uncertain']);
+    expect(row.properties.evidence.items.properties.optionIndex.type).toEqual(['integer', 'null']);
+    expect(row.properties.optionActions.items.properties.action.enum).toEqual(['include', 'defer', 'cut', 'hold', 'other']);
+    if (kind === 'DX') {
+      expect(schema.properties.devexPeerComparison.required).toEqual(Object.keys(judgment.devexPeerComparison!));
+      expect(schema.properties.devexPeerComparison.properties.status.enum).toEqual(['complete', 'missing', 'uncertain']);
+    }
+    expect(schema).not.toHaveProperty('count'); expect(schema).not.toHaveProperty('passed');
+    expect(request.messages).toHaveLength(1);
+    expect(suppliedCalls(request.messages[0].content).map(call => call.selectedOptions))
+      .toEqual(input.fingerprints.map(fp => fp.selectedOptions));
+  } finally {
+    create.mockRestore();
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalKey;
+  }
+});
+
+test('structured transport still rejects uncertainty and differently cased semantic enums', async () => {
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'test-only-key';
+  const create = spyOn(Anthropic.Messages.prototype, 'create');
+  try {
+    for (const invalid of ['uncertain', 'Finding', 'Include']) {
+      const { input, judgment } = fixture(invalid === 'Include' ? 'scope' : 'findings');
+      if (invalid === 'uncertain') Object.assign(judgment.questions[0]!, { kind: 'uncertain', targetIds: [], independentDecisions: 0, optionActions: [] });
+      else if (invalid === 'Finding') judgment.questions[0]!.kind = invalid as never;
+      else judgment.questions[0]!.optionActions[0]!.action = invalid as never;
+      create.mockClear();
+      create.mockImplementation(async (request: any) => ({ stop_reason: 'end_turn', content: [{ type: 'text',
+        text: JSON.stringify(responseForPrompt(input, judgment, request.messages[0].content)),
+      }] }) as never);
+      await expect(evaluatePlanReviewDecisions(input)).rejects.toThrow(invalid === 'uncertain' ? 'uncertain classification' : invalid === 'Finding' ? 'invalid judgment row' : 'invalid scope option mapping');
+      expect(create).toHaveBeenCalledTimes(1);
+    }
+  } finally {
+    create.mockRestore();
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalKey;
+  }
+});
 
 test('uses full ACK-backed briefs across phases, with no qid or sentence grammar requirement', async () => {
   const { input, judgment } = fixture();
