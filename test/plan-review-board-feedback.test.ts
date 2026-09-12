@@ -81,6 +81,67 @@ for (const [caseIndex, retained] of captured.cases.entries()) {
   });
 }
 
+test('a standalone submission does not require exact prose for alternatives it never executes', async () => {
+  const alternatives = [
+    ["I'll paste my notes here", 'Please generate another set'],
+    ['Writing my feedback in chat', 'I clicked More Like This'],
+    ['Review the images again', 'Explain why these variants fit'],
+  ];
+  for (const [typed, other] of alternatives) {
+    const published = await board();
+    const menu = question(published.url);
+    menu.options[1]!.label = typed!;
+    menu.options[2]!.label = other!;
+    // The offered position, letter prefix and recommendation marker are not
+    // the action: only the standalone submission may be chosen after POST.
+    menu.options = [menu.options[2]!, menu.options[0]!, menu.options[1]!];
+    menu.options[1]!.label = '[B] Submitted on the board';
+    expect(picker()(menu)).toBe(2);
+    const feedback = JSON.parse(fs.readFileSync(feedbackPath(published), 'utf8'));
+    expect(feedback).toMatchObject({ preferred: 'A', ratings: {}, comments: {}, regenerated: false, boardId: published.id });
+    expect(fs.existsSync(path.join(published.sourceDir, 'feedback-pending.json'))).toBe(false);
+  }
+});
+
+test('submitted words, mixed actions and competing alternate claims cannot authorize a board submission', async () => {
+  const published = await board();
+  const menus: NativeQuestion[] = [];
+  for (const label of [
+    'Not submitted on the board',
+    'Submitted on the board?',
+    'Submitted on the board and approve the plan',
+    'Submitted on another board',
+    'Submit on the board',
+    'Submitting on the board',
+    "I haven't submitted feedback on the board",
+    'I have not submitted feedback on the board',
+    'I will submit feedback on the board',
+    'I submitted feedback on another board',
+    'I submitted feedback on the board if everyone agrees',
+    'I submitted feedback on the board and approve the plan',
+    'I submitted feedback',
+  ]) {
+    const menu = question(published.url);
+    menu.options[0]!.label = label;
+    menus.push(menu);
+  }
+  for (const label of [
+    'I submitted my preferences here',
+    'Regenerate then submit the new variants',
+    'Not submitted yet; I will type here',
+    'Submitted on the board and deploy the result',
+  ]) {
+    const menu = question(published.url);
+    menu.options[2]!.label = label;
+    menus.push(menu);
+  }
+  const multi = question(published.url); multi.multiSelect = true; menus.push(multi);
+  const empty = question(published.url); empty.options[2]!.label = ''; menus.push(empty);
+  const duplicate = question(published.url); duplicate.options[2] = { ...duplicate.options[1]! }; menus.push(duplicate);
+  for (const menu of menus) expect(() => picker()(menu)).toThrow('no unambiguous offered action');
+  await expectUnsubmitted(published);
+});
+
 test('a repeated owned board question does not POST a second time', async () => {
   const published = await board();
   const menu = question(published.url);
@@ -174,14 +235,24 @@ test('multiple URLs, missing board context, or ambiguous action sets do not subm
   await expectUnsubmitted(other);
 });
 
-test('an unrecognized past-submission label fails instead of claiming feedback was sent', async () => {
-  const published = await board();
-  for (const label of ['Already submitted on the board (recommended)', 'I submitted the board feedback (recommended)']) {
+test('completed board-feedback declarations perform the same owned submission before returning', async () => {
+  const untouched = await board();
+  for (const label of [
+    'Already submitted on the board (recommended)',
+    'I submitted the board feedback (recommended)',
+    'I have already submitted my feedback on the comparison board.',
+    "I've submitted feedback to the board",
+    'I submitted my board feedback',
+  ]) {
+    const published = await board();
     const menu = question(published.url);
     menu.options[0]!.label = label;
-    expect(() => picker()(menu)).toThrow();
+    expect(picker()(menu)).toBe(1);
+    const feedback = JSON.parse(fs.readFileSync(feedbackPath(published), 'utf8'));
+    expect(feedback).toMatchObject({ preferred: 'A', ratings: {}, comments: {}, regenerated: false, boardId: published.id });
+    expect(fs.existsSync(path.join(published.sourceDir, 'feedback-pending.json'))).toBe(false);
   }
-  await expectUnsubmitted(published);
+  await expectUnsubmitted(untouched);
 });
 
 test('missing or malformed private daemon state cannot submit', async () => {

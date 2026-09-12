@@ -51,14 +51,20 @@ export function createDesignReviewPicker({ cwd, deadlineAt }: { cwd: string; dea
     const labels = question.options.map(option => option.label.trim()
       .replace(/^(?:[A-E][).:]?|\([A-E]\)|\[[A-E]\])\s+/i, '')
       .replace(/\s*\(recommended\)\s*$/i, '').trim());
-    const actions = labels.map(label => /^Submitted on the board$/i.test(label) ? 'submitted'
-      : /^I['’]ll type my preferences? here$/i.test(label) ? 'typed'
-      : /^I clicked Regenerate or Remix$/i.test(label) ? 'regenerated' : 'unknown');
+    // Bind the one completed action we perform, allowing its subject/aspect
+    // and feedback object to vary. Full anchoring excludes negation, future
+    // intent, another target, and additional commitments. Unchosen prose does
+    // not grant another action; competing submission claims still fail below.
+    const submittedAction = /^(?:I(?:['’]ve| have)?\s+)?(?:already\s+)?submitted\s+(?:(?:(?:my\s+)?feedback\s+)?(?:on|to) the (?:comparison )?board|(?:the |my )?(?:comparison )?board feedback)[.!]?$/i;
+    const submittedIndex = labels.findIndex(label => submittedAction.test(label));
+    const submissionClaims = labels.filter(label => /\bsubmit(?:ted|ting)?\b/i.test(label));
     const boardContext = /\bcomparison board\b/i.test(question.question);
-    const claimsAction = actions.includes('submitted') || boardContext && labels.some(label => /\b(?:submitted|clicked)\b/i.test(label));
+    const claimsAction = submittedIndex >= 0 || boardContext
+      && (submissionClaims.length > 0 || labels.some(label => /\bclicked\b/i.test(label)));
     if (!claimsAction) return pickPlanReviewQuestion(question);
-    if (!boardContext || question.multiSelect || actions.length !== 3
-      || new Set(actions).size !== 3 || actions.includes('unknown')) {
+    if (!boardContext || question.multiSelect || labels.length !== 3
+      || labels.some(label => !label) || new Set(labels.map(label => label.toLowerCase())).size !== 3
+      || submittedIndex < 0 || submissionClaims.length !== 1) {
       throw new Error('Design board submission has no unambiguous offered action');
     }
     const urls = [...new Set(question.question.match(/https?:\/\/[^\s<>\[\]()]+/g) ?? [])];
@@ -80,6 +86,6 @@ export function createDesignReviewPicker({ cwd, deadlineAt }: { cwd: string; dea
     const ack = JSON.parse(child.stdout);
     if (ack.received !== true || ack.action !== 'submitted') throw new Error('Design feedback acknowledgment was missing');
     submitted.add(url);
-    return actions.indexOf('submitted') + 1;
+    return submittedIndex + 1;
   };
 }
