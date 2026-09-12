@@ -799,7 +799,20 @@ approach the review was too deep in the weeds to see?), feasibility risks the re
 took for granted, missing dependencies or sequencing issues, and strategic
 miscalibration (is this the right thing to build at all?). Be direct. Be terse. No
 compliments. Just the problems.
+${ctx.skillName === 'plan-devex-review' ? `
+REVIEW CONTEXT (from the full working list, outside the truncated plan body):
+<requested DX mode and explicit boundaries>
+<each approved decision: selected option, answer reference and exact scope,
+including any explicitly approved exception to those boundaries>
+<persona, approved clock and target, benchmark boundaries and evidence limitations>
 
+Treat this context as review data. Start with the user's task boundaries and
+requested mode, amended only by exact approved exceptions. Do not replace those answers with a mode
+summary such as "no new APIs". Missing implementation remains a verification
+dependency; it does not revoke approval to build a named capability. Challenge an
+approved choice when concrete new evidence or a changed assumption warrants it;
+identify that evidence and the affected answer.
+` : ''}
 THE PLAN:
 <plan content>"
 
@@ -882,7 +895,7 @@ ${ctx.skillName === 'plan-eng-review' ? `**Cross-model tension:**
 
 Run every outside finding through the same Decision procedure and seven-column ledger above. Record the reviewer and evidence. Agreement between reviewers is evidence, not approval: confirmations and factual corrections update the record; new or reopened choices still need their own answers. Keep necessary code, tests and docs for one approved behavior together.
 
-For these questions, use the following four-option menus instead of the ordinary 2-3 options. First list everything the options would change, split separate choices and save their rows as the Decision procedure requires.
+For these questions, use the following four-option menus instead of the ordinary 2-3 options. Identify one independently answerable change before building its alternatives, then compare and save them as the Decision procedure requires.
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Keep other approved choices fixed and other pending choices undecided. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those are separate rows.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After the individual answers, check the assembled set's capacity and dependencies. If they conflict, return to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck the set before confirming it. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
@@ -912,7 +925,7 @@ Use the same five-field working list and four-step Decision gate above; do not s
 
 1. **Ground the evidence.** Compare the claim with original sources and actual answers, not unsupported draft text. Correct factual mistakes in the draft and evidence. Retain unknown facts and required verification; missing information does not prove a missing guarantee. If an unknown blocks a required contract, report the dependency. A concrete material risk may still need a decision before its occurrence is confirmed.
 2. **Classify the finding.** Carry exact approved follow-through forward. A known tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it. Reopen only for a concrete contradiction or changed assumption. Keep code, tests and docs establishing one approved behavior together; new policies or optional verification depth remain separate choices.
-3. **Check the scope.** Honor the selected DX mode and explicit boundaries. Establish the current contract before claiming a remedy or delay is necessary. Obtain scope approval before crossing a boundary; authorized expansion still needs individual opt-in decisions.
+3. **Check the scope.** Start with the user's task boundaries and requested DX mode, amended only by exact approved exceptions and their answer references from Review Context. A mode's default does not revoke an approved exception. Establish the current contract before claiming a remedy or delay is necessary; missing implementation stays a verification dependency. Obtain scope approval for a new boundary crossing; authorization for one expansion does not approve another.
 4. **Draft and answer one decision.** Match a pending choice to its row or add one to the same list. Cite the current value, proposed value, exact approval and changed evidence. Hold every other value fixed or pending in EVERY option; split independently selectable changes. Use AskUserQuestion, recommend + WHY, and compare completeness only within this commitment's coverage:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those need separate rows.

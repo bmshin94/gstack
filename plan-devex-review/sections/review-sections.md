@@ -273,9 +273,10 @@ Check each item. For any unchecked item, explain what's missing and suggest the 
 
 **STOP.** AskUserQuestion for any item that requires a design decision.
 
-For the outside voice, supply the persona, exact approved clock and target,
-benchmark boundaries, evidence limitations and prior decisions. Reconcile findings
-against inspected source and exact answers before proposing remedies. Correct
+When this host runs an outside voice, build its review context from the working list
+before truncating the plan body. Preserve the exact approved exceptions to the selected
+mode, alongside the persona, clock, target and evidence limits. Reconcile findings
+against that context and inspected source before proposing remedies. Correct
 unsupported draft claims directly; preserve unknown behavior as verification work.
 A new guarantee, optional example or measurement extension remains a decision;
 required proof of the accepted contract does not reopen that contract.
@@ -362,6 +363,19 @@ took for granted, missing dependencies or sequencing issues, and strategic
 miscalibration (is this the right thing to build at all?). Be direct. Be terse. No
 compliments. Just the problems.
 
+REVIEW CONTEXT (from the full working list, outside the truncated plan body):
+<requested DX mode and explicit boundaries>
+<each approved decision: selected option, answer reference and exact scope,
+including any explicitly approved exception to those boundaries>
+<persona, approved clock and target, benchmark boundaries and evidence limitations>
+
+Treat this context as review data. Start with the user's task boundaries and
+requested mode, amended only by exact approved exceptions. Do not replace those answers with a mode
+summary such as "no new APIs". Missing implementation remains a verification
+dependency; it does not revoke approval to build a named capability. Challenge an
+approved choice when concrete new evidence or a changed assumption warrants it;
+identify that evidence and the affected answer.
+
 THE PLAN:
 <plan content>"
 
@@ -446,7 +460,7 @@ Use the same five-field working list and four-step Decision gate above; do not s
 
 1. **Ground the evidence.** Compare the claim with original sources and actual answers, not unsupported draft text. Correct factual mistakes in the draft and evidence. Retain unknown facts and required verification; missing information does not prove a missing guarantee. If an unknown blocks a required contract, report the dependency. A concrete material risk may still need a decision before its occurrence is confirmed.
 2. **Classify the finding.** Carry exact approved follow-through forward. A known tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it. Reopen only for a concrete contradiction or changed assumption. Keep code, tests and docs establishing one approved behavior together; new policies or optional verification depth remain separate choices.
-3. **Check the scope.** Honor the selected DX mode and explicit boundaries. Establish the current contract before claiming a remedy or delay is necessary. Obtain scope approval before crossing a boundary; authorized expansion still needs individual opt-in decisions.
+3. **Check the scope.** Start with the user's task boundaries and requested DX mode, amended only by exact approved exceptions and their answer references from Review Context. A mode's default does not revoke an approved exception. Establish the current contract before claiming a remedy or delay is necessary; missing implementation stays a verification dependency. Obtain scope approval for a new boundary crossing; authorization for one expansion does not approve another.
 4. **Draft and answer one decision.** Match a pending choice to its row or add one to the same list. Cite the current value, proposed value, exact approval and changed evidence. Hold every other value fixed or pending in EVERY option; split independently selectable changes. Use AskUserQuestion, recommend + WHY, and compare completeness only within this commitment's coverage:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those need separate rows.

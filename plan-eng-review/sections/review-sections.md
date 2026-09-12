@@ -120,25 +120,25 @@ higher confidence.
 
 Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, your recommendation or agreement between reviewers does not approve other work. Correct factual mistakes against source evidence and disclose the correction; do not change behavior as part of that correction. Reopen an approved choice only for a concrete new risk, contradictory evidence or changed assumption, and explain what changed. An uncertain risk can still need a decision; state what is unknown.
 
-**2. List what each option changes.** Draft the options before assigning row IDs. For EVERY option, read its label, description and pros/cons and list:
-- Each proposed change: current value → proposed value. For a bound, include what it measures and its unit. For verification, include the method and depth.
+**2. Identify one independently answerable change.** Before writing options, list the new or reopened changes supported by Step 1 as current value → proposed value. For a bound, include what it measures and its unit. For verification, include the method and depth. Could the user accept one change and reject another? If yes, separate them now. Sharing an issue heading, helper or patch does not make two changes one choice. Select one behavior, implementation approach, bound or optional verification depth for the next question. Keep other approved choices fixed and unresolved choices pending.
+
+Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof is part of that approved work. Choosing unit, integration or smoke-test depth for a fixed behavior is one verification choice. A test that adds a different guarantee or policy needs its own decision; keep tests for an unapproved policy conditional on its approval.
+
+**3. Build alternatives for that change.** Each option must answer the choice selected in Step 2. For EVERY option, read its label, description and pros/cons and list:
+- Which value it changes and how.
 - Which other approved choices it preserves.
 - Which other choices remain pending.
 
 Include values shared by all options. A value is not approved just because every option contains it. Compare each item with the source and actual answers from Step 1, not with an assumption in your draft.
 
-**3. Split choices that can be answered separately.** Could the user accept one change and reject another? If yes, split them and rebuild the options. Sharing an issue heading, helper or patch does not make two changes one choice. Repeat until every option decides only one behavior, implementation approach, bound or optional verification depth. Keep other approved choices fixed and unresolved choices pending.
-
-Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof is part of that approved work. Choosing unit, integration or smoke-test depth for a fixed behavior is one verification choice. A test that adds a different guarantee or policy needs its own decision; keep tests for an unapproved policy conditional on its approval.
-
-If an option keeps one proposed change but drops another, you have two choices. If it only checks the same chosen behavior less thoroughly, you have one depth choice. Never shrink an option by dropping an established contract or earlier accepted choice; changing that contract needs its own decision.
+If an option keeps one proposed change but drops another, you have two choices: return to Step 2, separate them and rebuild the options. Do the same if any option adds another independently selectable change. If it only checks the same chosen behavior less thoroughly, you have one depth choice. Never shrink an option by dropping an established contract or earlier accepted choice; changing that contract needs its own decision.
 
 **4. Assign and save rows.** Now match each separate choice to an existing row or give it a new ID. Use this table:
 
 | Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |
 |-----|-------------------|--------------------------------|---------------------------------|-----------------------------|--------|--------------------|
 
-For each option, fill `Option comparisons` as `label: changes; preserves; pending`, using the concrete values from Step 2. For example: `A: cache lifetime 1 minute → 5 minutes; preserves access rules; deployment date pending`. Include the source or reviewer behind the finding. Mark undecided rows `pending`; do not add their remedies as accepted work.
+For each option, fill `Option comparisons` as `label: changes; preserves; pending`, using the comparisons from Step 3. For example: `A: cache lifetime 1 minute → 5 minutes; preserves access rules; deployment date pending`. Include the source or reviewer behind the finding. Mark undecided rows `pending`; do not add their remedies as accepted work.
 
 Save the rows and options with Write or Edit before calling AskUserQuestion. Use the explicitly requested report file, otherwise the reviewed plan, and preserve its existing content and approvals. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present the table instead. If saving fails, report the error and stop before asking.
 
@@ -536,7 +536,7 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 Run every outside finding through the same Decision procedure and seven-column ledger above. Record the reviewer and evidence. Agreement between reviewers is evidence, not approval: confirmations and factual corrections update the record; new or reopened choices still need their own answers. Keep necessary code, tests and docs for one approved behavior together.
 
-For these questions, use the following four-option menus instead of the ordinary 2-3 options. First list everything the options would change, split separate choices and save their rows as the Decision procedure requires.
+For these questions, use the following four-option menus instead of the ordinary 2-3 options. Identify one independently answerable change before building its alternatives, then compare and save them as the Decision procedure requires.
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Keep other approved choices fixed and other pending choices undecided. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those are separate rows.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After the individual answers, check the assembled set's capacity and dependencies. If they conflict, return to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck the set before confirming it. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.

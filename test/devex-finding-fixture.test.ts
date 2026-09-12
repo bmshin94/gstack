@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { runGeneration } from '../scripts/gen-skill-docs';
-import { ALL_HOST_NAMES } from '../hosts';
+import { ALL_HOST_NAMES, getHostConfig } from '../hosts';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
@@ -27,6 +27,12 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       const earlyEvidence = beforeAudit.replace(/\s+/g, ' ');
       expect(earlyEvidence).toContain('A description of what a reporter includes does not establish its exact words');
       expect(earlyEvidence).toContain('Confirmation of an empathy narrative is not runtime observation');
+      // The retained DX run reopened an approved CLI/library entrypoint after
+      // its outside prompt reduced the mode to "no new APIs". These are source
+      // propagation checks; the native eval still owns behavioral acceptance.
+      expect(earlyEvidence).toContain('selected option, answer reference and approved scope');
+      expect(earlyEvidence).toContain("user's task boundaries and requested mode, amended only by exact approved exceptions");
+      expect(earlyEvidence).toContain("A mode's default does not cancel an explicitly approved exception");
       const journey = content.slice(content.indexOf('### 0F.'), content.indexOf('### 0G.'));
       const wholeGate = journey.indexOf('Run all four Decision gate steps');
       expect(wholeGate).toBeGreaterThanOrEqual(0);
@@ -77,6 +83,19 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       expect(allContent).toContain('If a necessary remedy crosses an explicit scope boundary, name that boundary');
       expect(allContent).toContain('obtain scope approval before choosing or applying the remedy');
       expect(allContent).toContain('Implementation details and proof of one chosen behavior\nstay together; independent policies each need their own decision');
+      if (!getHostConfig(artifact.host!).suppressedResolvers.includes('CODEX_PLAN_REVIEW')) {
+        const outside = allContent.slice(allContent.indexOf('## Outside Voice — Independent Plan Challenge'));
+        const context = outside.indexOf('REVIEW CONTEXT (from the full working list, outside the truncated plan body)');
+        const planBody = outside.indexOf('THE PLAN:\n<plan content>');
+        expect(context).toBeGreaterThan(0);
+        expect(planBody).toBeGreaterThan(context);
+        expect(outside.slice(context, planBody)).toContain('selected option, answer reference and exact scope');
+        expect(outside.slice(context, planBody)).toContain('including any explicitly approved exception');
+        expect(outside.slice(context, planBody)).toContain('Missing implementation remains a verification');
+        expect(outside.slice(context, planBody)).toContain('concrete new evidence or a changed assumption');
+      } else {
+        expect(allContent).not.toContain('REVIEW CONTEXT (from the full working list, outside the truncated plan body)');
+      }
 
     }
   } finally { fs.rmSync(outputRoot, { recursive: true, force: true }); }

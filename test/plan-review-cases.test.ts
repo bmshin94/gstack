@@ -122,7 +122,7 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
     expect(boundary).toContain('Start this after Step 0 resolves scope');
     expect(boundary).toContain('Could the user accept one change and reject another?');
-    expect(boundary).toContain('If yes, split them and rebuild the options. Sharing an issue heading, helper or patch does not make two changes one choice');
+    expect(boundary).toContain('If yes, separate them now. Sharing an issue heading, helper or patch does not make two changes one choice');
     expect(boundary).toContain('one behavior, implementation approach, bound or optional verification depth');
     expect(boundary).toContain("For a bound, include what it measures and its unit");
     expect(boundary).toContain('Keep other approved choices fixed and unresolved choices pending');
@@ -131,7 +131,8 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(boundary).toContain('Never shrink an option by dropping an established contract or earlier accepted choice');
     expect(boundary).toContain('changing that contract needs its own decision');
     expect(boundary).toContain('Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section');
-    expect(boundary).toContain('Repeat until every option decides only one');
+    expect(boundary).toContain('Each option must answer the choice selected in Step 2');
+    expect(boundary).toContain('Do the same if any option adds another independently selectable change');
     expect(boundary).toContain('Required proof is part of that approved work');
     expect(boundary).toContain('do not change behavior as part of that correction');
     expect(sections).toContain('Use the same decision gate and ledger for outside voice findings');
@@ -147,22 +148,30 @@ describe('Eng approved-work decision gate', () => {
   const template = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
   const gate = template.split('**Decision gate (all sections and outside voice):**')[1]?.split('### 1. Architecture review')[0] ?? '';
 
-  test('full option commitments are separated before row IDs, then saved before the question', () => {
-    const enumerate = gate.indexOf('**2. List what each option changes.**');
-    const separate = gate.indexOf('**3. Split choices that can be answered separately.**');
+  test('identifies the question before drafting alternatives, then saves before asking', () => {
+    const identify = gate.indexOf('**2. Identify one independently answerable change.**');
+    const alternatives = gate.indexOf('**3. Build alternatives for that change.**');
     const save = gate.indexOf('**4. Assign and save rows.**');
     const ask = gate.indexOf('**5. Ask, record the answer, then edit.**');
-    expect(0 <= enumerate && enumerate < separate && separate < save && save < ask).toBe(true);
-    expect(gate.slice(enumerate, separate)).toContain('Include values shared by all options');
-    expect(gate.slice(separate, save)).toContain('rebuild the options');
+    expect(0 <= identify && identify < alternatives && alternatives < save && save < ask).toBe(true);
+    const choice = gate.slice(identify, alternatives);
+    expect(choice).toContain('Before writing options');
+    expect(choice).toContain('Could the user accept one change and reject another?');
+    expect(choice).toContain('Keep other approved choices fixed and unresolved choices pending');
+    expect(choice).toContain('Keep a chosen behavior together with the code, tests and docs required to establish it');
+    expect(choice).toContain('Choosing unit, integration or smoke-test depth for a fixed behavior is one verification choice');
+    const options = gate.slice(alternatives, save);
+    expect(options).toContain('If an option keeps one proposed change but drops another, you have two choices');
+    expect(options).toContain('return to Step 2');
+    expect(options).toContain('Include values shared by all options');
     expect(gate.slice(save, ask)).toContain('Save the rows and options with Write or Edit before calling AskUserQuestion');
     expect(gate.slice(ask)).toContain('Record the actual selected option and answer');
     expect(gate.slice(ask)).toContain('separately from your draft options');
   });
 
   test('current contracts and completed comparisons precede saved questions without approving a fix', () => {
-    const stages = ['**1. Check the source and prior answers.**', '**2. List what each option changes.**',
-      '**3. Split choices that can be answered separately.**', '**4. Assign and save rows.**',
+    const stages = ['**1. Check the source and prior answers.**', '**2. Identify one independently answerable change.**',
+      '**3. Build alternatives for that change.**', '**4. Assign and save rows.**',
       '**5. Ask, record the answer, then edit.**'].map(stage => gate.indexOf(stage));
     expect(stages.every(position => position >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
@@ -210,7 +219,7 @@ describe('Eng approved-work decision gate', () => {
   });
 
   test('every option is recorded against one decision before asking or scoring coverage', () => {
-    const compare = gate.indexOf('**2. List what each option changes.**');
+    const compare = gate.indexOf('**3. Build alternatives for that change.**');
     const rows = gate.indexOf('**4. Assign and save rows.**');
     const record = gate.indexOf('For each option, fill `Option comparisons`');
     const save = gate.indexOf('Save the rows and options with Write or Edit before calling AskUserQuestion');
@@ -333,7 +342,7 @@ describe('outside-voice commitment queue', () => {
           expect(queue).toContain('Agreement between reviewers is evidence, not approval');
           expect(queue).toContain('new or reopened choices still need their own answers');
           expect(queue).toContain('four-option menus instead of the ordinary 2-3 options');
-          expect(queue).toContain('First list everything the options would change, split separate choices and save their rows as the Decision procedure requires');
+          expect(queue).toContain('Identify one independently answerable change before building its alternatives, then compare and save them as the Decision procedure requires');
           // The outside step delegates authority, saved comparisons and actual
           // answers to the one procedure already checked above, not a second gate.
           const procedure = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
