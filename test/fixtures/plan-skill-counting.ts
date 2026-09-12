@@ -81,6 +81,9 @@ async function main() {
   const multiQuestionCase = scenario === 'multi-question' || scenario.startsWith('question-picker-multi');
   const terminalDiagnosticCase = scenario.startsWith('terminal-diagnostic-');
   const permissionRepaintCase = scenario.startsWith('permission-repaint-');
+  const capturedFileRepaintCase = scenario.startsWith('permission-repaint-captured-');
+  const capturedFileRepaint = capturedFileRepaintCase
+    ? JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'eng-file-permission-repaint.json'), 'utf8')) : null;
   const longPermissionCase = scenario.startsWith('permission-long-frame') || permissionRepaintCase;
   const editPermissionCase = scenario.startsWith('permission-edit-');
   const consecutiveFileCase = scenario.startsWith('permission-edit-consecutive-');
@@ -100,7 +103,9 @@ async function main() {
   const caseBudgetMs = scenario === 'retention-timeout-boot' ? 4_000 : ceilingCase || viewportCase || previewCase || filePermissionCase ? 60_000 : scenario === 'launch-budget' ? 9_000 : scenario === 'late-completion' ? 12_000 : timing ? 30_000 : 1_500_000;
   const setupMs = scenario === 'setup-exhausted' ? caseBudgetMs + 5_000 : scenario === 'setup-budget' ? 5_000 : 0;
   const reusedOptions = multiQuestionCase || ['reused-options', 'redraw', 'stale-redraw', 'wrong-question', 'question-picker-redraw'].includes(scenario);
-  const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'counting-pty-fixture-')));
+  // The captured POSIX header climbs four parents to /home. A shallow owned
+  // fixture preserves that exact display without reusing the historical cwd.
+  const project = fs.realpathSync(fs.mkdtempSync(path.join(capturedFileRepaintCase ? '/tmp' : os.tmpdir(), 'counting-pty-fixture-')));
   const plan = '# Payment Processing\nReview the two independent test gaps.\n';
   const evalDir = path.join(project, 'evals');
   if (retentionCase || hookAckLag || bashHookLag || nativeFetchCase) process.env.GSTACK_EVAL_DIR = evalDir;
@@ -135,6 +140,7 @@ async function main() {
   let persistedQuestionResults = 0;
   const fileNativeBeforeGrant: boolean[] = [];
   let longPermissionFrame = '';
+  const capturedRepaintFrames: string[] = [];
   let publishDuringScreen: (() => void) | null = null;
   let publishResizeRace: (() => void) | null = null;
   let raceInjected = false;
@@ -152,6 +158,10 @@ async function main() {
   if (nativeReadCase || nativeFetchCase || bashRepaintCase || longPermissionCase || scenario.endsWith('arrival-race') || scenario === 'terminal-diagnostic-frame-race' || scenario === 'permission-final-input-race' || scenario === 'viewport-flush-deadline') PtyCurrentScreen.prototype.snapshot = async function () {
     if (scenario === 'exit-confirmation-early-owner-arrival-race' && raceInjected) postExitOwnerRaceScreens++;
     const frame = await originalScreenSnapshot.call(this);
+    if (capturedFileRepaintCase && frame.rows === 120) {
+      capturedRepaintFrames.push(frame.text);
+      if (scenario.endsWith('stale')) return { ...frame, text: capturedFileRepaint.frame.text.replace('3. Nohift+tab)', '3. No') };
+    }
     if (bashRepaintCase && !longPermissionFrame) longPermissionFrame = frame.text;
     if (scenario === 'native-bash-repaint-decoder-race' && frame.text.includes('TASKS_DIR') && ++viewportSnapshots === 2) {
       raceInjected = true; const publish = publishResizeRace; publishResizeRace = null; publish?.();
@@ -549,6 +559,29 @@ async function main() {
               return;
             }
             if (permissionRepaintCase) {
+              if (capturedFileRepaintCase) {
+                if (rows === 40) { emit('\x1b[2J\x1b[H' + latestPaint); return; }
+                if (scenario.endsWith('stale')) return; // Complete-looking text, no post-resize output epoch.
+                emit('\x1b[2J\x1b[H' + capturedFileRepaint.frame.text);
+                if (scenario.endsWith('owner-change')) append({ type: 'assistant', cwd: options.cwd,
+                  message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: permissionId,
+                    name: 'Edit', input: { ...permissionInput, new_string: 'Changed owner input' } }] } });
+                if (!scenario.endsWith('never') && !scenario.endsWith('owner-change')) {
+                  // Hypothetical recovery, not a later frame observed in the paid failure.
+                  const complete = capturedFileRepaint.frame.text.replace('3. Nohift+tab)', '3. No');
+                  const next = scenario.endsWith('wrong-path')
+                    ? complete.replaceAll(path.basename(permissionInput!.file_path as string), 'foreign-plan.md') : complete;
+                  pendingRedrawSleeps = 3;
+                  delayedRender = () => {
+                    emit('\x1b[2J\x1b[H' + next);
+                    if (scenario.endsWith('not-settled')) publishDuringScreen = () => {
+                      raceInjected = true; raceJustInjected = true;
+                      emit('\x1b[2J\x1b[H' + next); // Output after the sampled barrier must withhold this grant.
+                    };
+                  };
+                }
+                return;
+              }
               if (scenario === 'permission-repaint-failure') throw new Error('controlled permission resize failure');
               if (scenario === 'permission-repaint-no-output') return;
               if (rows === 40) { emit('\x1b[2J\x1b[H' + latestPaint); return; }
@@ -623,6 +656,16 @@ async function main() {
             // /./ keeps competing raw inputs distinct until normalized target
             // ambiguity is checked, instead of the earlier input-change guard.
             if (longPermissionCase) {
+              if (capturedFileRepaintCase) {
+                // The public diagnostic retained the exact path/cwd and full-input hash,
+                // but not old/new strings. These owner contents are explicitly controlled.
+                permissionInput = { file_path: capturedFileRepaint.pendingRequest.input.filePath,
+                  old_string: 'Controlled before', new_string: 'Controlled after', replace_all: false };
+                permissionId = `tool-${++sequence}`;
+                recordFilePermission(permissionInput, 'Edit');
+                emit('\x1b[2J\x1b[H' + capturedFileRepaint.frame.text);
+                return;
+              }
               permissionInput = { file_path: longPermissionPath + (scenario.endsWith('mismatch') ? '.other' : ''), content: plan };
               permissionId = tool('Write', permissionInput);
               recordFilePermission(permissionInput);
@@ -847,6 +890,15 @@ async function main() {
                 return;
               }
               if (longPermissionCase) {
+                if (capturedFileRepaintCase) {
+                  if (raceJustInjected || pendingRedrawSleeps > 0 || latestPaint.includes('Nohift+tab)')) prematureAnswers.push(data);
+                  permissionGrantIds.push(permissionId);
+                  append({ type: 'assistant', cwd: options.cwd,
+                    message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: permissionId, name: 'Edit', input: permissionInput }] } });
+                  append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Controlled Edit complete' }] } });
+                  permissionAckIds.push(permissionId); permissionWrites.push('edit'); permissionId = null;
+                  finish(); return;
+                }
                 if (scenario === 'permission-repaint-no-ack') { permissionWrites.push('create'); permissionId = null; emit('WORK_IN_PROGRESS\n'); return; }
                 append({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: permissionId, content: 'Write complete' }] } });
                 permissionWrites.push('create'); permissionId = null;
@@ -1071,7 +1123,7 @@ async function main() {
     const diagnosticDirectory = path.join(evalDir, 'plan-counting');
     const diagnosticFiles = fs.existsSync(diagnosticDirectory) ? fs.readdirSync(diagnosticDirectory) : [];
     const diagnostic = diagnosticFiles.length ? JSON.parse(fs.readFileSync(path.join(diagnosticDirectory, diagnosticFiles[0]), 'utf8')) : null;
-    console.log(JSON.stringify({ observation, error, persistedBashUses, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, reviewFilterCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fetchQuestionAckIds, readQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
+    console.log(JSON.stringify({ observation, error, persistedBashUses, hookCompletionIds, persistedQuestionResults, lateCompletionPickedQuestion, longPermissionFrame, capturedRepaintFrames, lastFixtureFrame, diagnostic, diagnosticFiles, retainedBeforeClose, sameError, nativeRemoved: !fs.existsSync(nativeFile), pickerCalls, reviewFilterCalls, resizes, terminalCloseCount, sends, sendTimes, seededBeforeSlash, closed, launches, redraws, unsolicitedWrites, prematureAnswers, permissionWrites, permissionGrantIds, permissionAckIds, bashQuestionAckIds, fetchQuestionAckIds, readQuestionAckIds, fileNativeBeforeGrant, raceInjected, postExitOwnerRaceScreens,
       writtenPlanLines: writtenPlan ? writtenPlan.split('\n').length : 0, writtenPlanTail: writtenPlan.slice(-100),
       caseBudgetMs, setupMs, helperTimeoutMs, caseElapsedMs: Date.now() - caseStartedAt, lateCompletionSent }));
   } finally {

@@ -2461,6 +2461,7 @@ export async function runPlanSkillCounting(opts: {
           throw new Error('Expanded native file permission changed ownership or input');
         }
         if (owner.result === 'error') throw new Error('Expanded native file permission returned an error');
+        if (!frame || frame.rawEnd !== session.mark()) { lastLoopStage = 'file-permission-frame-changed'; continue; }
         if (owner.result === 'completed') {
           if (!owner.nativeToolId || !Number.isFinite(owner.nativeResultAtMs)) throw new Error('Expanded native file permission lacks its successful native ACK');
           lastLoopStage = 'restoring-permission-viewport';
@@ -2468,6 +2469,9 @@ export async function runPlanSkillCounting(opts: {
           if (restored !== null) { viewportInputSince = restored; permissionViewport = null; }
           continue;
         }
+        // A resize can produce an incomplete paint before its final controls.
+        // Wait within the original deadline; only the complete card can bind.
+        if (!currentFilePermissionTarget(questionVisible)) { lastLoopStage = 'awaiting-complete-file-permission'; continue; }
       }
       if (viewport) {
         const owner = native.calls.find(call => call.id === viewport!.id);

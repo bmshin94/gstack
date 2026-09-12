@@ -43,7 +43,11 @@ describeE2E('/office-hours full section-loading workflow (periodic)', () => {
     fs.chmodSync(formatter, 0o755);
     const capture = await captureSectionReads({
       planDir, skillName: guard.skill, scenario: guard.scenario,
-      artifactCommands: `Use ${formatter} for prepare/check/finalize; Bash is only for those commands and creating the local review directory. Use Read for skills, sections, reviewer prompts and designs, never Bash. Reviewers must save verdicts with Write as the prepared contract requires. Use targeted Edit for local design revisions, preserving every finding and remedy. Do not inspect formatter source unless its command fails. Keep all artifacts inside this fixture.`,
+      artifactCommands: `Use ${formatter} for prepare/check/finalize; Bash is only for those commands and creating the local review directory. Use Read for skills, sections, reviewer prompts and designs, never Bash. Reviewers must save verdicts with Write as the prepared contract requires. Use targeted Edit for local design revisions, preserving every finding and remedy. Do not inspect formatter source unless its command fails. Keep all artifacts inside this fixture.
+Completion delivery, after the full workflow and design approval:
+1. Compose REPORT.md as a completion record: summarize each phase's outcome and actual decisions with their rationale, and link the approved design and saved review evidence. The design retains the detailed diagnostic, alternatives, and independent opinion; do not replay those as a second transcript. Include the full actual Assignment, coaching/relationship closing, approval outcome, and Handoff, including the user's declined downstream launch. This changes delivery only; complete every required phase and preserve all findings.
+2. Run the same formatter finalize with --design docs/designs/roster-check.md and --report REPORT.md, supplying the completed round files and any actual unreviewed failure exactly as the skill requires. Wait for its successful result: it must persist the complete managed Spec Review section, all problems/remedies, Disposition, and computed metrics. Do not write or paraphrase that section yourself, or replace it afterward.
+3. Only after the report finalization succeeds, finish with the brief native acknowledgement naming the report path and verdict. A failed command remains a failure, not a completed report.`,
       reportMarker: /report|review|summary|design doc|handoff/i,
       testName: 'office-hours-section-loading', runId, timeout: OFFICE_HOURS_CAPTURE_MS,
       maxTurns: 40,

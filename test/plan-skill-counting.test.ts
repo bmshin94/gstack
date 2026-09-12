@@ -474,12 +474,53 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.terminalCloseCount).toBe(1);
     expect(result.closed).toBe(true);
   });
+  test.skipIf(process.platform === 'win32').each(['complete', 'not-settled'])('captured damaged Edit repaint waits for a later complete settled frame before one grant (%s)', async variant => {
+    const captured = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures', 'eng-file-permission-repaint.json'), 'utf8'));
+    const result = await runFakeCounting('**DONE**', 'permission-repaint-captured-' + variant);
+    expect(result.error).toBeUndefined();
+    expect(result.capturedRepaintFrames).toContain(captured.frame.text);
+    expect(result.resizes).toEqual([[240, 120], [240, 40]]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+    expect(result.prematureAnswers).toEqual([]);
+    expect(result.permissionWrites).toEqual(['edit']);
+    expect(result.permissionGrantIds).toHaveLength(1);
+    expect(result.permissionAckIds).toEqual(result.permissionGrantIds);
+    expect(result.observation).toMatchObject({ outcome: 'completion_summary', step0Count: 0, reviewCount: 0 });
+    if (variant === 'not-settled') expect(result.raceInjected).toBe(true);
+    expect(result.terminalCloseCount).toBe(1);
+    expect(result.closed).toBe(true);
+  });
+  test.skipIf(process.platform === 'win32').each(['never', 'stale'])('captured Edit repaint without a fresh complete frame exhausts the original deadline with no grant (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', 'permission-repaint-captured-' + variant);
+    expect(result.error).toBeUndefined();
+    expect(result.resizes).toEqual([[240, 120]]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.permissionGrantIds).toEqual([]);
+    expect(result.observation.outcome).toBe('timeout');
+    expect(result.caseElapsedMs).toBe(result.caseBudgetMs);
+    expect(result.terminalCloseCount).toBe(1);
+    expect(result.closed).toBe(true);
+  });
+  test.skipIf(process.platform === 'win32').each(['wrong-path', 'owner-change'])('captured Edit repaint still rejects a complete wrong path or changed owner (%s)', async variant => {
+    const result = await runFakeCounting('**DONE**', 'permission-repaint-captured-' + variant);
+    expect(result.error).toMatch(variant === 'wrong-path' ? /cannot be bound/ : /changed (input|ownership)|does not match/);
+    expect(result.resizes).toEqual([[240, 120]]);
+    expect(result.sends).toEqual(['/plan-ceo-review\r']);
+    expect(result.permissionWrites).toEqual([]);
+    expect(result.permissionGrantIds).toEqual([]);
+    expect(result.terminalCloseCount).toBe(1);
+    expect(result.closed).toBe(true);
+  });
   test.each(['malformed', 'mismatch'])('malformed permission controls remain refused after one repaint (%s)', async variant => {
     const result = await runFakeCounting('**DONE**', 'permission-repaint-controls-' + variant);
     expect(result.resizes).toEqual([[240, 120]]);
     expect(result.sends).toEqual(['/plan-ceo-review\r']);
     expect(result.permissionWrites).toEqual([]);
-    expect(result.error).toContain('cannot be bound');
+    if (variant === 'malformed') {
+      expect(result.error).toBeUndefined();
+      expect(result.observation.outcome).toBe('timeout');
+    } else expect(result.error).toContain('cannot be bound');
     expect(result.terminalCloseCount).toBe(1);
     expect(result.closed).toBe(true);
   });

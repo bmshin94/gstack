@@ -12,6 +12,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/helpers/setup-gbrain-fixture-command.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['test/gstack-paths.test.ts', ['autoplan-chain-pty']],
     ['test/autoplan-permission-viewport.test.ts', ['autoplan-chain-pty']],
+    ['test/fixtures/autoplan-settings-overwrite.json', ['autoplan-chain-pty']],
+    ['test/fixtures/eng-file-permission-repaint.json', ['plan-eng-multi-finding-batching']],
     ['test/fixtures/autoplan-existing-app/src/auth.ts', ['autoplan-chain-pty']],
     ['test/fixtures/autoplan-existing-app/db/schema.sql', ['autoplan-chain-pty']],
     ['test/fixtures/autoplan-password-ui/sign-in.test.ts.fixture', ['autoplan-chain-pty']],

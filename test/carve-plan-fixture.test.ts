@@ -12,12 +12,13 @@ test.each(['plan-eng-review', 'plan-devex-review'] as const)('%s fixture supplie
   const fixtures = repositoryPlanFixtures(plan, skill);
   const dir = setupSkillDir({ skillName: skill, skillMd: '# Review', fixtures });
   try {
-    expect(fs.readFileSync(path.join(dir, 'PLAN.md'), 'utf8').startsWith(plan + '\n')).toBe(true);
+    expect(fs.readFileSync(path.join(dir, 'PLAN.md'), 'utf8')).toBe(fixtures['PLAN.md']);
     const example = Bun.spawnSync([process.execPath, 'run', 'example.ts'], { cwd: dir, timeout: 5000 });
     expect(example.exitCode, example.stderr.toString()).toBe(0);
     expect(example.stdout.toString()).toBe('2 2 undefined\n');
     expect(fixtures['README.md']).toContain('Both known-key reads currently query SQLite');
     expect(fixtures['src/repository.ts']).not.toMatch(/new Map|LRU|cache\./);
+    expect(fixtures['src/repository.ts']).not.toContain('getMany(');
     const companion = skill === 'plan-devex-review' ? 'plan-devex-review/dx-hall-of-fame.md' : 'review/TODOS-format.md';
     expect(fs.readFileSync(path.join(dir, companion), 'utf8')).toBe(fs.readFileSync(path.resolve(import.meta.dir, '..', companion), 'utf8'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -40,27 +41,44 @@ test('existing point reads always see committed writes and preserve missing/erro
 });
 
 
-test('engineering plan appends an unapproved implementation proposal without changing the DX fixture or existing code', () => {
+test('engineering scenario proposes ordered batch reads without changing the DX fixture or existing code', () => {
   const plan = '# Proposed cache\nStore 1000 keys and invalidate on write.\n';
   const dir = path.resolve(import.meta.dir, 'fixtures/carve-existing-repository');
   const existing = '\n## Existing project\nRead `README.md` and `src/repository.ts` for the current API and runtime.\nThe change adds the cache to that repository; the existing example must keep working.\n';
   const eng = repositoryPlanFixtures(plan, 'plan-eng-review');
   const dx = repositoryPlanFixtures(plan, 'plan-devex-review');
-  const appendix = fs.readFileSync(path.join(dir, 'engineering-cache-plan.md'), 'utf8');
   const baseline = Object.fromEntries(['README.md', 'src/repository.ts', 'example.ts'].map(file => [file, fs.readFileSync(path.join(dir, file), 'utf8')]));
   expect(dx).toEqual({
     'PLAN.md': plan + existing,
     ...baseline,
     'plan-devex-review/dx-hall-of-fame.md': fs.readFileSync(path.resolve(import.meta.dir, '../plan-devex-review/dx-hall-of-fame.md'), 'utf8'),
   });
+  // Intentional new scenario contract: this fails on the previous cache fixture,
+  // not a reproduction of the native timeout or a claim about model behavior.
+  const proposal = eng['PLAN.md'];
+  expect(proposal).toContain('getMany(keys: readonly string[]): Array<number | undefined>');
+  expect(proposal).toContain('not implemented or approved');
+  expect(proposal).toContain('once for each input key, in input order');
+  expect(proposal).toContain('retaining duplicate keys');
+  expect(proposal).toContain('`undefined` results for absent counters');
+  expect(proposal).toContain('empty input returns an empty array');
+  expect(proposal).toContain('Propagate the first validation or database error unchanged');
+  expect(proposal).toContain('after the database closes must still fail');
+  expect(proposal).toContain('not tests\nalready implemented or passing');
+  expect(proposal).toContain('do not claim a measured speedup');
+  expect(proposal).not.toMatch(/module-wide write token|1000 entries|LRU/);
   expect(eng).toEqual({
-    'PLAN.md': plan + existing + '\n' + appendix,
+    'PLAN.md': fs.readFileSync(path.join(dir, 'engineering-batch-read-plan.md'), 'utf8'),
     ...baseline,
+    'README.md': baseline['README.md'].replace('The cache in PLAN.md is proposed work.', 'The batch-read method in PLAN.md is proposed work.'),
     'review/TODOS-format.md': fs.readFileSync(path.resolve(import.meta.dir, '../review/TODOS-format.md'), 'utf8'),
   });
-  expect(appendix).toContain('subject to this review');
-  expect(appendix).toContain('not implemented or approved');
-  expect(appendix).toContain('Do not claim these tests already exist or pass');
+  expect(eng['src/repository.ts']).toBe(dx['src/repository.ts']);
+  expect(eng['example.ts']).toBe(dx['example.ts']);
+  for (const file of ['README.md', 'src/repository.ts', 'example.ts']) {
+    expect(proposal).toContain('`' + file + '`');
+    expect(eng[file]).toBeDefined();
+  }
 });
 
 test('existing repository objects and separate SQLite handles observe each other’s committed writes', () => {

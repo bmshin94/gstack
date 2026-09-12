@@ -45,8 +45,8 @@ const planEng5Findings = (planPath: string) => [
   'parallelized via Promise.all trivially (calls are independent).',
   '',
   '## Architecture (scope smell)',
-  'This touches 12 files and introduces 4 new classes (TokenStore,',
-  'SessionMint, AuthCache, RequestPolicy). Worth flagging the complexity check.',
+  'This touches 12 files and introduces 4 new classes (AuthBroker,',
+  'SessionMint, TokenStore, RequestPolicy). Worth flagging the complexity check.',
 ].join('\n');
 
 describeE2E('/plan-eng-review per-finding AskUserQuestion count (periodic)', () => {

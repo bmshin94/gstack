@@ -1,5 +1,8 @@
-import { renderOfficeHoursReviewerPrompt, renderOfficeHoursReview, type OfficeHoursReview } from '../lib/office-hours-review';
+import { renderOfficeHoursReviewerPrompt, renderOfficeHoursReview, extractOfficeHoursReviewBlock, type OfficeHoursReview } from '../lib/office-hours-review';
 import { describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { validateOfficeHoursCompletion, validateOfficeHoursReviewerHandoffs, validateOfficeHoursReviewArtifacts, validateOfficeHoursReviewPreservation, validateOfficeHoursSpecSummary, type OfficeHoursCompletionEvidence } from './helpers/office-hours-completion';
 import { E2E_TOUCHFILES, E2E_TIERS } from './helpers/touchfiles-data';
 import { selectTests } from './helpers/test-selection';
@@ -48,6 +51,24 @@ function completed(): OfficeHoursCompletionEvidence {
 }
 
 describe('office-hours fixture completion', () => {
+  test('the fixture composes completion outcomes before mechanical report finalization and native acknowledgement', () => {
+    const caller = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-office-hours-section-loading.test.ts'), 'utf8');
+    const instructions = /artifactCommands: `([\s\S]*?)`,\n\s*reportMarker:/.exec(caller)?.[1] ?? '';
+    const compose = instructions.indexOf('Compose REPORT.md as a completion record');
+    const finalize = instructions.indexOf('--report REPORT.md');
+    const finish = instructions.indexOf('Only after the report finalization succeeds');
+    expect(compose).toBeGreaterThan(-1);
+    expect(finalize).toBeGreaterThan(compose);
+    expect(finish).toBeGreaterThan(finalize);
+    expect(instructions).toContain('summarize each phase\'s outcome and actual decisions with their rationale');
+    expect(instructions).toContain('link the approved design and saved review evidence');
+    expect(instructions).toContain('full actual Assignment, coaching/relationship closing, approval outcome, and Handoff');
+    expect(instructions).toContain('complete every required phase and preserve all findings');
+    expect(instructions).toContain('completed round files and any actual unreviewed failure');
+    expect(instructions).toContain('persist the complete managed Spec Review section');
+    expect(instructions).toContain('A failed command remains a failure');
+  });
+
   test('accepts a completed approved design with unresolved reviewer concerns', () => {
     const review = validateOfficeHoursCompletion(completed());
     expect(review?.report).toBe(report);
@@ -854,6 +875,59 @@ describe('office-hours mechanical review evidence', () => {
   test('accepts a complete, reviewer-owned six-finding report without a judge', () => {
     const { evidence, artifacts } = structured();
     expect(() => validateOfficeHoursReviewArtifacts(evidence, artifacts)).not.toThrow();
+  });
+
+  test('the real formatter completes a linked closing report without replaying the design or losing reviewer evidence', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-hours-delivery-'));
+    try {
+      // Existing synthetic review history exercises the real writer and validators;
+      // this is not a replay of a successful native/model completion.
+      const { evidence, artifacts, rounds } = JSON.parse(JSON.stringify(handoffs())
+        .replaceAll('/tmp/office-hours-fixture', dir.replaceAll('\\', '/')));
+      const reportPath = path.join(dir, 'REPORT.md');
+      const closing = `# Office-hours completion report
+## Phase Outcomes
+The diagnostic identified Lee's missing-booking problem; the premise challenge and independent opinion led to local CSV reconciliation. The selected approach and its rationale remain in [the approved design](docs/designs/roster-check.md), with the full alternatives and independent opinion. Review evidence is in the saved review directory.
+## Assignment
+Observe Lee reconcile an event unaided and time the existing workflow.
+## Relationship Closing
+You prioritize accounting for missing bookings over adding features; observe Lee next to test that assumption.
+## Approval
+The actual selected approval is APPROVED with reviewer concerns recorded, not claimed fixed.
+## Handoff
+Next: /plan-eng-review after observing the workflow. The user declined launching it now and will run a review later.
+`;
+      fs.mkdirSync(path.dirname(evidence.designPath), { recursive: true });
+      fs.writeFileSync(evidence.designPath, evidence.designContent);
+      fs.writeFileSync(reportPath, closing);
+      for (const artifact of artifacts) {
+        fs.mkdirSync(path.dirname(artifact.path), { recursive: true });
+        fs.writeFileSync(artifact.path, artifact.content);
+      }
+      const beforeDesign = fs.readFileSync(evidence.designPath);
+      expect(() => validateOfficeHoursReviewArtifacts({ ...evidence, output: closing }, artifacts)).toThrow('Disposition');
+      const result = Bun.spawnSync([process.execPath, path.resolve(import.meta.dir, '../bin/gstack-office-hours-review'),
+        'finalize', '--design', evidence.designPath, '--report', reportPath, ...artifacts.map((artifact: { path: string }) => artifact.path)],
+      { cwd: dir, timeout: 5000 });
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+      const rendered = renderOfficeHoursReview(rounds);
+      const output = fs.readFileSync(reportPath, 'utf8');
+      expect(fs.readFileSync(evidence.designPath).equals(beforeDesign)).toBe(true);
+      expect(output).toContain(closing.trim());
+      expect(extractOfficeHoursReviewBlock(output, 'report')).toBe(rendered.report);
+      expect(JSON.parse(result.stdout.toString()).metrics).toEqual(rendered.metrics);
+      for (const finding of rounds.at(-1).findings) {
+        expect(output).toContain(finding.problem);
+        expect(output).toContain(finding.remedy);
+      }
+      evidence.output = output;
+      expect(() => validateOfficeHoursCompletion(evidence)).not.toThrow();
+      expect(() => validateOfficeHoursReviewArtifacts(evidence, artifacts)).not.toThrow();
+      expect(() => validateOfficeHoursReviewerHandoffs(evidence, artifacts)).not.toThrow();
+      expect(() => validateOfficeHoursCompletion({ ...evidence, exitReason: 'timeout' })).toThrow('execution failed: timeout');
+      const changed = output.replace(rounds.at(-1).findings[0].remedy, 'A shorter different remedy.');
+      expect(() => validateOfficeHoursReviewArtifacts({ ...evidence, output: changed }, artifacts)).toThrow();
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 
   test('allows a Markdown separator after the exact block, without hiding extra outcome prose', () => {

@@ -105,8 +105,8 @@ export class AutoplanFilePermissionViewport {
 
   private clipped(owner: NativeFilePermissionRequest, visible: string): boolean {
     const target = currentFilePermissionTarget(visible), file = owner.input.file_path;
-    return owner.name === 'Edit' && typeof file === 'string' && path.isAbsolute(file) && target !== null
-      && target.operation === 'edit'
+    return target !== null && owner.name === (target.operation === 'edit' ? 'Edit' : 'Write')
+      && typeof file === 'string' && path.isAbsolute(file)
       && path.basename(target.filePath) === target.filePath && path.basename(file) === target.filePath
       && !/^ (?:Create|Edit|Overwrite) file$/m.test(visible);
   }

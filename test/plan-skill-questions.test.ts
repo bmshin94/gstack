@@ -590,36 +590,49 @@ const nestedFileDialog = (operation: 'create' | 'edit' | 'overwrite', subtitle: 
   '\n' + '╌'.repeat(120) + '\n  1 Plan content\n' + '╌'.repeat(120) + '\n ' +
   createDialog(basename).replace('create', operation === 'edit' ? 'make this edit to' : operation);
 
-// Retained Autoplan terminal wording; no decoded final viewport was saved.
-const settingsEditDialog = () => nestedFileDialog('edit', '.claude/plans/plan.md').replace(
+// Pinned MEt/Z0o use this exact standing row for every non-read operation.
+const settingsFileDialog = (operation: 'create' | 'edit' | 'overwrite' = 'edit') => nestedFileDialog(operation, '.claude/plans/plan.md').replace(
   'Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)',
   'Yes, and allow Claude to edit its own settings for this session');
 
-test('settings Edit controls bind only their exact owned path and reserve once', () => {
-  const frame = settingsEditDialog();
-  const owner = { id: 'settings-edit', name: 'Edit', cwd: config,
-    input: { file_path: path.join(config, '.claude/plans/plan.md'), old_string: 'Draft', new_string: 'Reviewed' } };
+test.each(['create', 'edit', 'overwrite'] as const)('settings file controls bind only their exact owned path and reserve once (%s)', operation => {
+  const frame = settingsFileDialog(operation);
+  const name = operation === 'edit' ? 'Edit' : 'Write';
+  const owner = { id: 'settings-file', name, cwd: config,
+    input: { file_path: path.join(config, '.claude/plans/plan.md'), ...(name === 'Edit'
+      ? { old_string: 'Draft', new_string: 'Reviewed' } : { content: 'Reviewed' }) } };
   expect(isPermissionDialogVisible(frame)).toBe(true);
-  expect(currentFilePermissionTarget(frame)).toEqual({ operation: 'edit', filePath: '.claude/plans/plan.md' });
-  expect(nativePermissionKey(owner, frame)).toBe('Edit:' + owner.input.file_path);
-  const request = { requestId: 'settings-request', nativeToolId: owner.id, name: 'Edit' as const,
+  expect(currentFilePermissionTarget(frame)).toEqual({ operation, filePath: '.claude/plans/plan.md' });
+  expect(nativePermissionKey(owner, frame)).toBe(name + ':' + owner.input.file_path);
+  const request = { requestId: 'settings-request', nativeToolId: owner.id, name,
     cwd: config, input: owner.input, capturedAtMs: 1, result: 'pending' as const };
   const native = { permissionTools: [owner], permissionResults: [], permissionRequests: [request], permissionRequestCapture: true };
   const granted = new Set<string>(); const requests = new Map<string, NativePermissionGrant>();
   expect(reserveNativePermissionGrant(native, frame, granted, requests)).toBe(true);
   expect(reserveNativePermissionGrant(native, frame, granted, requests)).toBe(false);
-  expect([...requests.values()]).toEqual([{ requestId: request.requestId, operation: 'edit' }]);
+  expect([...requests.values()]).toEqual([{ requestId: request.requestId, operation }]);
   expect(() => nativePermissionKey({ ...owner, input: { ...owner.input, file_path: owner.input.file_path + '.other' } }, frame)).toThrow('cannot be bound');
+  expect(() => nativePermissionKey({ ...owner, name: name === 'Edit' ? 'Write' : 'Edit' }, frame)).toThrow('cannot be bound');
 });
 
-test.each(['different-label', 'persistent-focus', 'clipped-path', 'create'])('settings Edit controls refuse %s', variant => {
-  let frame = settingsEditDialog();
+test.each(['different-label', 'persistent-focus', 'clipped-path', 'wrong-title'])('settings file controls refuse %s', variant => {
+  let frame = settingsFileDialog();
   if (variant === 'different-label') frame = frame.replace('for this session', 'forever');
   if (variant === 'persistent-focus') frame = frame.replace('❯1.Yes', '1.Yes').replace('2. Yes', '❯2. Yes');
   if (variant === 'clipped-path') frame = frame.replace('.claude/plans/plan.md', '.claude/…/plan.md');
-  if (variant === 'create') frame = frame.replace('Edit file', 'Create file').replace('make this edit to', 'create');
+  if (variant === 'wrong-title') frame = frame.replace('Edit file', 'Create file');
   expect(currentFilePermissionTarget(frame)).toBeNull();
   expect(isPermissionDialogVisible(frame)).toBe(false);
+});
+
+test('captured settings overwrite is recognizable but its clipped basename cannot grant the owned nested Write', () => {
+  const captured = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures', 'autoplan-settings-overwrite.json'), 'utf8'));
+  const frame = captured.frame.text;
+  expect(isPermissionDialogVisible(frame)).toBe(true);
+  expect(currentFilePermissionTarget(frame)).toEqual({ operation: 'overwrite', filePath: 'autoplan-password-visibility.md' });
+  expect(() => nativePermissionKey(captured.pendingRequest, frame)).toThrow('cannot be bound');
+  // Paths mentioned in the diff cannot supply the missing current header.
+  expect(() => nativePermissionKey(captured.pendingRequest, captured.pendingRequest.input.file_path + '\n' + frame)).toThrow('cannot be bound');
 });
 
 test('old Bash history cannot block an independently bound current file card', () => {
