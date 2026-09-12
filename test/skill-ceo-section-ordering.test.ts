@@ -551,7 +551,11 @@ describe('plan-ceo-review carve — static ordering', () => {
       expect(step0).toContain('order required by the loaded CEO skill');
       expect(step0).toContain('Spec Review Loop in 0H before 0I and Review Sections');
       expect(step0).not.toMatch(/^- 0[A-I](?:-bis)?:/m);
+      // The headings alone can be ordered while executable reviewer payloads
+      // still run ahead of Step 0, or Codex is presented ahead of Claude.
       const positions = ['**Required execution checklist (CEO):**', 'Step 0.5 (Dual Voices):',
+        '"Read the plan file at <plan_path>. You are an independent CEO/strategist',
+        '_gstack_codex_timeout_wrapper 600 codex exec', 'CEO DUAL VOICES — CONSENSUS TABLE:',
         'Sections 1-10 —', '**Mandatory outputs from Phase 1:**', '**PHASE 1 COMPLETE.**']
         .map(stage => phase.indexOf(stage));
       expect(positions.every(position => position >= 0)).toBe(true);

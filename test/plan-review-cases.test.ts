@@ -136,8 +136,8 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(inventory).toBeLessThan(sections.indexOf('### 1. Architecture review'));
     const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
     expect(boundary).toContain('Start this after Step 0 resolves scope');
-    expect(boundary).toContain('Could the user accept one change and reject another?');
-    expect(boundary).toContain('If yes, give them separate rows, even within one issue, helper or patch');
+    expect(boundary).toContain('Could the user choose one while another keeps its approved value or stays pending?');
+    expect(boundary).toContain('If yes, use separate rows, even within one function, issue or patch');
     expect(boundary).toContain('A row can concern behavior, an implementation approach, a bound or optional verification depth');
     expect(boundary).toContain("For a bound, name what it measures and its unit");
     expect(boundary).toContain('Keep other approved rows fixed and other pending rows undecided');
@@ -171,7 +171,7 @@ describe('Eng approved-work decision gate', () => {
     expect(0 <= identify && identify < alternatives && alternatives < save && save < ask).toBe(true);
     const choice = gate.slice(identify, alternatives);
     expect(choice).toContain('before drafting a menu');
-    expect(choice).toContain('Could the user accept one change and reject another?');
+    expect(choice).toContain('Could the user choose one while another keeps its approved value or stays pending?');
     expect(gate.slice(alternatives, save)).toContain('Keep other approved rows fixed and other pending rows undecided');
     expect(choice).toContain('Keep a chosen behavior together with the code, tests and docs required to establish it');
     expect(choice).toContain('Choosing optional unit, integration or smoke-test depth for one fixed behavior is one verification choice');
@@ -225,7 +225,11 @@ describe('Eng approved-work decision gate', () => {
 
   test('assigns independent row IDs before constructing the final question', () => {
     const identify = gate.slice(gate.indexOf('**2.'), gate.indexOf('**3.'));
-    expect(identify).toContain('Match each to its existing ID or assign a new one now');
+    const decompose = identify.indexOf('Break each remedy into the user-visible behaviors, guarantees and measured bounds it would change');
+    const mixed = identify.indexOf('Consider mixed choices even if your menu omits them');
+    const assign = identify.indexOf('Match existing IDs or assign new ones');
+    expect(decompose >= 0 && decompose < mixed && mixed < assign).toBe(true);
+    expect(identify).toContain('List each as current → proposed value');
     expect(identify).toContain('mark undecided rows `pending`');
     expect(identify).toContain('| Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |');
     const audit = gate.slice(gate.indexOf('**3.'), gate.indexOf('**4.'));
@@ -300,19 +304,25 @@ describe('Eng approved-work decision gate', () => {
   // decision oracle. It proves the instructions expose the observed two-axis
   // option pattern; only native evaluation can prove the model follows them.
   test('worked comparison exposes two independently selectable option values', () => {
-    const worked = gate.split('split the menu. For example:')[1]!.split('**4.')[0]!;
-    const rows = [...worked.matchAll(/^- `([^`]+) \[pending\]: current=([^;]+); A=([^;]+); B=([^;]+); C=([^`]+)`$/gm)]
-      .map(([, commitment, current, A, B, C]) => ({ commitment, current, A, B, C }));
+    const worked = gate.split('split. For example:')[1]!.split('**4.')[0]!;
+    const rows = [...worked.matchAll(/^- `([^`]+) \[pending\]: current=([^;]+); A=([^;]+); B=([^`]+)`$/gm)]
+      .map(([, commitment, current, A, B]) => ({ commitment, current, A, B }));
     expect(rows).toEqual([
-      { commitment: 'R1 retry mode', current: 'off', A: 'on', B: 'off', C: 'on' },
-      { commitment: 'R2 request key', current: 'absent', A: 'present', B: 'absent', C: 'absent' },
+      { commitment: 'R1 jitter', current: 'unspecified', A: 'on', B: 'off' },
+      { commitment: 'R2 delay cap', current: 'unspecified', A: 'on', B: 'off' },
     ]);
-    expect(rows[0]!.A).toBe(rows[0]!.C);
-    expect(rows[1]!.A).not.toBe(rows[1]!.C);
+    // Both offered packages move both values together. The instruction must
+    // still expose mixed choices omitted by that menu; co-variation is not
+    // evidence that the two runtime guarantees are inseparable.
+    const offered = ['A', 'B'].map(option => rows.map(row => row[option as 'A' | 'B']));
+    expect(offered).toEqual([['on', 'on'], ['off', 'off']]);
+    expect(offered).not.toContainEqual(['on', 'off']);
+    expect(offered).not.toContainEqual(['off', 'on']);
+    expect(worked).toContain('Jitter without a cap and a cap without jitter are meaningful choices even though this menu omits them');
     expect(worked).toContain('Ask about R1 with R2 pending in every option');
-    expect(worked).toContain('Hold the chosen mode fixed, then ask about R2 only if it remains relevant and pending');
+    expect(worked).toContain('Hold the chosen value fixed, then ask about R2 if still relevant and pending');
     expect(worked).toContain('Record why an irrelevant choice needs no question');
-    expect(worked).toContain('Resolve any still-needed risk or safety choice before declaring the plan ready');
+    expect(worked).toContain('Resolve remaining risk or safety choices before declaring the plan ready');
   });
 
   test('common new defaults still need approval while necessary contract proof carries forward', () => {
@@ -337,7 +347,7 @@ describe('Eng approved-work decision gate', () => {
     expect(normalized).toContain('Keep other approved rows fixed and other pending rows undecided');
     expect(normalized).toContain('with its tests conditional on approval');
     expect(normalized).toContain('retain unresolved risks and required verification');
-    expect(normalized).toContain('A number in your draft is not a user answer; leave unknown values unknown');
+    expect(normalized).toContain('A draft value, including a number, is not a user answer; leave unknown values unknown');
   });
 
   test('every host resolves the Eng gate without the conflicting generic shortcut clause', () => {

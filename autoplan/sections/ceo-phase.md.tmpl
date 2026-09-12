@@ -17,6 +17,37 @@ announcement. Dispatching a reviewer does not complete its step.
 - Scope expansion: in blast radius + <1d CC → approve (P2). Outside → defer to TODOS.md (P3).
   Duplicates → reject (P4). Borderline (3-5 files) → mark TASTE DECISION.
 - All 10 review sections: run fully, auto-decide each issue, log every decision.
+
+**Required execution checklist (CEO):**
+
+Execute Step 0 in the order required by the loaded CEO skill, applying the overrides
+above. Follow its SELECTIVE EXPANSION route, including the CEO scope document and
+Spec Review Loop in 0H before 0I and Review Sections. Preserve every Step 0
+analysis and output.
+
+**At 0H, construct and reconcile both review inputs.** Define the behavior, planned
+tests and manual checklists in their owning working-plan sections before citing
+them from the ledger or CEO scope summary. Cite those actual headings and test
+names; leave later review records pending until they exist.
+
+Preserve explicit source-plan and DESIGN.md requirements. Route proposed changes
+through the existing User Challenge rules; keep the original requirement while
+a challenge awaits the gate. Use the existing Decision Audit Trail for each
+choice's current disposition: Taste recommendations are working auto-decisions
+subject to the final gate; queued User Challenges are not accepted scope. An
+accepted expansion must work without assuming a queued change is approved.
+
+Carry these dispositions into the working plan and CEO scope summary. Derive each
+required scope count and proposal-ID list from that same record, and reconcile
+both files before spec review. Link each deferred item to its actual TODO entry
+or recorded pending write. Correct summary drift without changing decisions or
+omitting findings. The summary retains every required field; it cites the plan's
+requirement and verification sections rather than inventing future references.
+
+Step 0.5 (Dual Voices): After Step 0 and its Spec Review Loop finish, run the
+Claude CEO subagent below and consume its final review, then run Codex. Present
+the results under their respective headers before constructing the consensus.
+
 - Dual voices: run BOTH Claude subagent AND Codex if available (P6), in that order.
   Dispatch Agent once with JSON boolean `run_in_background: false` if the tool
   offers it. Some hosts always launch agents asynchronously. Launch metadata is
@@ -27,7 +58,19 @@ announcement. Dispatching a reviewer does not complete its step.
   or announce completion while waiting. Apply this lifecycle to every phase's
   reviewers, including spec review. Both voices must finish before consensus.
 
+  **Claude CEO subagent** (via Agent tool):
+  Present its completed output under CLAUDE SUBAGENT (CEO — strategic independence).
+  "Read the plan file at <plan_path>. You are an independent CEO/strategist
+  reviewing this plan. You have NOT seen any prior review. Evaluate:
+  1. Is this the right problem to solve? Could a reframing yield 10x impact?
+  2. Are the premises stated or just assumed? Which ones could be wrong?
+  3. What's the 6-month regret scenario — what will look foolish?
+  4. What alternatives were dismissed without sufficient analysis?
+  5. What's the competitive risk — could someone else solve this first/better?
+  For each finding: what's wrong, severity (critical/high/medium), and the fix."
+
   **Codex CEO voice** (via Bash):
+  Present its completed output under CODEX SAYS (CEO — strategy challenge).
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
   _gstack_codex_timeout_wrapper 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills/gstack). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
@@ -48,16 +91,6 @@ announcement. Dispatching a reviewer does not complete its step.
   ```
   Timeout: 10 minutes (shell-wrapper) + 12 minutes (Bash outer gate). On hang, auto-degrades this phase's Codex voice.
 
-  **Claude CEO subagent** (via Agent tool):
-  "Read the plan file at <plan_path>. You are an independent CEO/strategist
-  reviewing this plan. You have NOT seen any prior review. Evaluate:
-  1. Is this the right problem to solve? Could a reframing yield 10x impact?
-  2. Are the premises stated or just assumed? Which ones could be wrong?
-  3. What's the 6-month regret scenario — what will look foolish?
-  4. What alternatives were dismissed without sufficient analysis?
-  5. What's the competitive risk — could someone else solve this first/better?
-  For each finding: what's wrong, severity (critical/high/medium), and the fix."
-
   **Error handling:** Consume each final result before the next call. Codex auth/timeout/empty → proceed with
   Claude subagent only, tagged `[single-model]`. If Claude subagent also fails →
   "Outside voices unavailable — continuing with primary review."
@@ -69,19 +102,7 @@ announcement. Dispatching a reviewer does not complete its step.
   strategic reason → TASTE DECISION. If both models agree the user's stated structure
   should change (merge, split, add, remove) → USER CHALLENGE (never auto-decided).
 
-**Carry decisions forward:** Preserve explicit source-plan and DESIGN.md requirements; route proposed changes through the existing User Challenge rules instead of reopening them as undecided defaults. Keep the original requirement while a challenge awaits the gate. Use the existing Decision Audit Trail to track each choice's current disposition: Taste recommendations are working auto-decisions still subject to the final gate; queued User Challenges are not accepted scope. Carry the same dispositions into the amended plan and CEO scope summary. An accepted expansion must work without assuming a queued change is approved. Before spec review, reconcile both files against this record, derive scope counts from the same proposal IDs, and link each deferred item to its actual TODO entry or recorded pending write. Correct summary drift without silently changing decisions or omitting genuine findings.
-
-**Required execution checklist (CEO):**
-
-Execute Step 0 in the order required by the loaded CEO skill, applying the overrides
-above. Follow its SELECTIVE EXPANSION route, including the CEO scope document and
-Spec Review Loop in 0H before 0I and Review Sections. Preserve every Step 0
-analysis and output.
-
-Step 0.5 (Dual Voices): Wait for the Claude subagent's final review first, then run
-Codex (Bash). Present Codex output under CODEX SAYS (CEO — strategy challenge)
-header. Present subagent output under CLAUDE SUBAGENT (CEO — strategic independence)
-header. Produce CEO consensus table:
+Produce the CEO consensus table from the completed results:
 
 ```
 CEO DUAL VOICES — CONSENSUS TABLE:
