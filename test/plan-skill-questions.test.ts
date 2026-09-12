@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import { readPlanSkillQuestions, matchesNativeQuestion, nativeQuestionSelection, isNativeQuestionSubmitVisible, currentFilePermissionTarget, matchesClippedBashPermission, nativePermissionKey, reserveNativePermissionGrant, type NativeQuestion, type NativePermissionGrant } from './helpers/plan-skill-questions';
 import { isPermissionDialogVisible, parseNumberedOptions, stripAnsi } from './helpers/claude-pty-runner';
 import { setupQuestionEventSource, readPermissionRequestEvents } from './helpers/plan-skill-question-events';
+import retainedBashDirectory from './fixtures/bash-directory-permission.json';
+import { E2E_TOUCHFILES, selectTests } from './helpers/touchfiles';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
 const question: NativeQuestion = { question: 'D1 — Which approach?\nMake it reliable. Enforce the delivery policy.', header: 'Approach', multiSelect: false,
@@ -1840,6 +1842,59 @@ function bashHooks() {
   const post = (output: unknown = response, extra: Record<string, unknown> = {}) => emit('PostToolUse', 'bash-1', input, { tool_response: output, ...extra });
   return { source, input, response, emit, post, read };
 }
+
+test('captured directory Bash permission fixture selects every existing permission-helper consumer', () => {
+  const selected = selectTests(['test/fixtures/bash-directory-permission.json'], E2E_TOUCHFILES);
+  expect(selected.reason).toBe('diff');
+  expect(selected.selected.sort()).toEqual(selectTests(['test/helpers/plan-skill-questions.ts'], E2E_TOUCHFILES).selected.sort());
+});
+
+test('captured directory Bash card requires its exact owned request and permits only one grant', () => {
+  const { input, card, nativeId } = retainedBashDirectory;
+  const s = bashHooks(); s.emit('PreToolUse', nativeId, input);
+  const granted = new Set<string>(); const requests = new Map<string, NativePermissionGrant>();
+  // Legacy callers have no native binding. Only the bound driver opts in.
+  expect(isPermissionDialogVisible(card)).toBe(false);
+  expect(isPermissionDialogVisible(card, true)).toBe(true);
+  expect(nativePermissionKey({ id: nativeId, name: 'Bash', input }, card)).toBe('Bash:' + input.command);
+  expect(reserveNativePermissionGrant(s.read(), card, granted, requests)).toBe(false);
+  s.emit('PermissionRequest', nativeId, input);
+  expect(reserveNativePermissionGrant(s.read(), card, granted, requests)).toBe(true);
+  expect(reserveNativePermissionGrant(s.read(), card, granted, requests)).toBe(false);
+  expect([...granted]).toEqual([nativeId]);
+  s.emit('PostToolUse', nativeId, input, { tool_response: s.response });
+  expect(s.read().permissionResults).toEqual([{ id: nativeId, result: 'completed' }]);
+  expect(s.read().permissionTools).toEqual([]);
+  s.emit('PreToolUse', 'next', input); s.emit('PermissionRequest', 'next', input);
+  expect(() => reserveNativePermissionGrant(s.read(), card, granted, requests)).toThrow('stale rendering');
+});
+
+const damagedDirectoryBashCards = {
+  missingPath: retainedBashDirectory.card.replace(' and /home/vercel-sandbox/.gstack from this project', ' and from this project'),
+  relativePath: retainedBashDirectory.card.replace(' and /home/vercel-sandbox/.gstack', ' and ../.gstack'),
+  ellipsis: retainedBashDirectory.card.replace(' and /home/vercel-sandbox/.gstack', ' and /home/…/.gstack'),
+  trailingPermission: retainedBashDirectory.card.replace(' from this project', ' from this project and allow all commands'),
+  wrappedPath: retainedBashDirectory.card.replace(' and /home/vercel-sandbox/.gstack', '\n      and /home/vercel-sandbox/.gstack'),
+  appendedContinuation: retainedBashDirectory.card.replace(' from this project', ' from this project\n      Always allow all commands'),
+  wrongFocus: retainedBashDirectory.card.replace(' ❯ 1. Yes', '   1. Yes').replace('   2. Yes', ' ❯ 2. Yes'),
+  missingNo: retainedBashDirectory.card.replace('   3. No\n', ''),
+  history: retainedBashDirectory.card + '\n❯ New unrelated draft',
+};
+test.each(Object.entries(damagedDirectoryBashCards))('captured directory Bash card refuses %s controls', (_name, card) => {
+  expect(isPermissionDialogVisible(card, true)).toBe(false);
+  expect(() => nativePermissionKey({ id: 'captured', name: 'Bash', input: retainedBashDirectory.input }, card)).toThrow('cannot be bound');
+});
+
+test.each(['command', 'cwd'])('captured directory Bash request cannot change native %s authority', variant => {
+  const s = bashHooks(); const { input, card, nativeId } = retainedBashDirectory;
+  s.emit('PreToolUse', nativeId, input);
+  s.emit('PermissionRequest', nativeId, variant === 'command' ? { ...input, command: input.command + '\nprintf changed' } : input,
+    variant === 'cwd' ? { cwd: '/different-owner' } : {});
+  const granted = new Set<string>();
+  if (variant === 'cwd') expect(() => s.read()).toThrow();
+  else expect(reserveNativePermissionGrant(s.read(), card, granted, new Map())).toBe(false);
+  expect([...granted]).toEqual([]);
+});
 
 test('owned Bash hooks authorize one exact current command and retire it before transcript persistence', () => {
   const s = bashHooks(); s.emit('PreToolUse');

@@ -1,0 +1,51 @@
+{
+  "source": "Public Claude Code2.1.263 Design UI attempts,2026-09-12; no board feedback was submitted by the original picker.",
+  "cases": [
+    {
+      "at": "2026-09-12T01:17:10.444Z",
+      "nativeToolId": "toolu_013G9oqzSc2MdfhD94MCzhhQ",
+      "question": {
+        "header": "Mockup board",
+        "question": "D2 \u2014 Comparison board is open: review the three dashboard mockups and submit feedback.\nProject/branch/task: design-ui-project on `main`, User Dashboard plan; mockups saved under ~/.gstack/projects/design-ui-project-97jhEm/designs/user-dashboard-20260912/.\nBoard URL: http://127.0.0.1:36281/boards/b-20260912-011653-w7si95/\nELI10: I generated three visual directions for the dashboard (activity feed primary, notifications secondary, quick actions under the heading) and all three passed the cross-model quality check. Rate them on the board, leave comments, remix elements you like, and click Submit. The variant you pick becomes the visual reference every review pass calibrates against.\nStakes if we pick wrong: the plan gets written around a look you do not actually want, and the implementer builds to it.\nRecommendation: Submit on the board because it captures ratings, comments and remix specs in a structured file I read directly.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: board feedback is richer; typed feedback is faster; regenerate costs about 90 seconds per round.",
+        "options": [
+          {
+            "label": "Submitted on the board (recommended)",
+            "description": "\u2705 Ratings, per-variant comments and an overall direction land in feedback.json for me to read.\n\u2705 Remix lets you combine the layout of one with the type or color of another.\n\u274c Requires the local browser tab; if you cannot open the URL, pick another option."
+          },
+          {
+            "label": "I'll type my preferences here",
+            "description": "\u2705 Fastest path if you already know which direction you want.\n\u2705 Works when the board URL is not reachable from your machine.\n\u274c Less structure: I infer ratings and constraints from prose instead of a form."
+          },
+          {
+            "label": "I clicked Regenerate or Remix",
+            "description": "\u2705 I read feedback-pending.json and generate a fresh round from your remix spec or action.\n\u2705 Board reloads in the same tab so you keep your place.\n\u274c Adds about 90 seconds and another round of review before passes begin."
+          }
+        ],
+        "multiSelect": false
+      }
+    },
+    {
+      "at": "2026-09-12T01:26:51.785Z",
+      "nativeToolId": "toolu_01VBXEkCYnyH3EeNY4RVF1Uh",
+      "question": {
+        "question": "D2 \u2014 Dashboard mockups are on the comparison board\nProject/branch/task: design-ui-project on main, /dashboard plan mockups.\nELI10: I've opened a comparison board with three design variants of the dashboard:\nhttp://127.0.0.1:38671/boards/b-20260912-012630-0rdsyt/\nRate them, leave comments, remix elements you like, and click Submit when you're done. All three passed the cross-model quality check. If you clicked Regenerate or Remix on the board, tell me and I'll generate new variants. You can also paste your preferences here instead of using the board.\nStakes if we pick wrong: the approved variant becomes the visual reference every later pass and the implementer build from.\nRecommendation: A because the board captures ratings and comments in a structured file I read directly.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: board feedback is richer; typed feedback is faster.",
+        "header": "Mockups",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "A) Submitted on the board (recommended)",
+            "description": "\u2705 Your ratings, comments and preferred variant land in feedback.json, which I read verbatim. \u2705 Remix and regenerate requests are captured with their spec. \u274c Needs the browser tab open at the URL above."
+          },
+          {
+            "label": "B) I clicked Regenerate or Remix",
+            "description": "\u2705 I generate a new set from your remix spec or direction and reload the same board. \u2705 Keeps the loop going until a variant fits. \u274c Each round takes about 90 seconds."
+          },
+          {
+            "label": "C) I'll type my preference here",
+            "description": "\u2705 Fastest path, no browser needed. \u2705 Free-form notes still become the visual direction for the review. \u274c No per-variant ratings, so I record only what you type."
+          }
+        ]
+      }
+    }
+  ]
+}

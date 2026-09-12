@@ -22,6 +22,16 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
       const beforeAudit = content.slice(0, audit);
       expect(beforeAudit).toContain('including Step 0 and outside voice');
       expect(beforeAudit).toContain('One independent choice per AskUserQuestion call, never separate tabs');
+      // Claude loads the review section later; these evidence limits must also
+      // govern Step 0's first journey questions on every host.
+      const earlyEvidence = beforeAudit.replace(/\s+/g, ' ');
+      expect(earlyEvidence).toContain('A description of what a reporter includes does not establish its exact words');
+      expect(earlyEvidence).toContain('Confirmation of an empathy narrative is not runtime observation');
+      const journey = content.slice(content.indexOf('### 0F.'), content.indexOf('### 0G.'));
+      const wholeGate = journey.indexOf('Run all four Decision gate steps');
+      expect(wholeGate).toBeGreaterThanOrEqual(0);
+      expect(wholeGate).toBeLessThan(journey.indexOf('> "Journey Stage: INSTALL'));
+      expect(journey).not.toContain('AskUserQuestion per friction point');
       const mode = content.slice(content.indexOf('### 0E. Mode Selection'), content.indexOf('Context-dependent defaults:'));
       expect(mode).toContain('Use the mode the user explicitly requested for this review.');
       expect(mode).toContain('skip the mode question and continue to 0F. Otherwise, ask below.');

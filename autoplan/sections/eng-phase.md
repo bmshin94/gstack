@@ -30,7 +30,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   ```
   Timeout: 10 minutes (shell-wrapper) + 12 minutes (Bash outer gate). On hang, auto-degrades this phase's Codex voice.
 
-  **Claude eng subagent** (via Agent tool, `run_in_background: false` — same foreground contract as Phase 1):
+  **Claude eng subagent** (via Agent tool, `run_in_background: false` if offered — use Phase 1's dispatch and completion lifecycle):
   "Read the plan file at <plan_path>. You are an independent senior engineer
   reviewing this plan. You have NOT seen any prior review. Evaluate:
   1. Architecture: Is the component structure sound? Coupling concerns?
@@ -41,7 +41,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   For each finding: what's wrong, severity, and the fix."
   NO prior-phase context — subagent must be truly independent.
 
-  Error handling: same as Phase 1 (both foreground/blocking, degradation matrix applies).
+  Error handling: same as Phase 1 (consume final results in order; degradation matrix applies).
 
 - Architecture choices: explicit over clever (P5). If codex disagrees with valid reason → TASTE DECISION. Scope changes both models agree on → USER CHALLENGE.
 - Evals: always include all relevant suites (P1)
@@ -53,7 +53,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 1. Step 0 (Scope Challenge): Read actual code referenced by the plan. Map each
    sub-problem to existing code. Run the complexity check. Produce concrete findings.
 
-2. Step 0.5 (Dual Voices): Run Claude subagent (foreground) first, then Codex. Present
+2. Step 0.5 (Dual Voices): Wait for the Claude subagent's final review first, then run Codex. Present
    Codex output under CODEX SAYS (eng — architecture challenge) header. Present subagent
    output under CLAUDE SUBAGENT (eng — independent review) header. Produce eng consensus
    table:

@@ -4,7 +4,8 @@
 
 import { test } from 'bun:test';
 import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
-import { DESIGN_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
+import { DESIGN_FINDINGS } from './helpers/plan-review-cases';
+import { createDesignReviewPicker } from './helpers/plan-review-board-feedback';
 import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
@@ -168,7 +169,7 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
           followUpPrompt: '', // plan already committed before the first model turn
           isLastStep0AUQ: designStep0Boundary,
           reviewCountCeiling: null, // classify findings after actual workflow completion
-          questionPick: pickPlanReviewQuestion,
+          questionPick: createDesignReviewPicker({ cwd: tmpDir, deadlineAt: caseStartedAt + 1_500_000 }),
           // The review target is present before scope selection.
           cwd: tmpDir,
           timeoutMs: 1_500_000 - (Date.now() - caseStartedAt),

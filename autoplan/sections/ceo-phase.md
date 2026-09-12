@@ -3,6 +3,10 @@
 Follow plan-ceo-review/SKILL.md — all sections, full depth.
 Override: every AskUserQuestion → auto-decide using the 6 principles.
 
+Execute in this order: Step 0 (including its completed Spec Review Loop) → Claude
+CEO voice → Codex CEO voice → consensus → Review Sections → saved summary → phase
+announcement. Dispatching a reviewer does not complete its step.
+
 **Override rules:**
 - Mode selection: SELECTIVE EXPANSION
 - Premises: accept reasonable ones (P6). Clearly-wrong or challenged premises are
@@ -15,12 +19,15 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 - Scope expansion: in blast radius + <1d CC → approve (P2). Outside → defer to TODOS.md (P3).
   Duplicates → reject (P4). Borderline (3-5 files) → mark TASTE DECISION.
 - All 10 review sections: run fully, auto-decide each issue, log every decision.
-- Dual voices: always run BOTH Claude subagent AND Codex if available (P6).
-  Run them sequentially in foreground: Claude subagent, then Codex (Bash).
-  Call Agent with JSON boolean `run_in_background: false`, never string `"false"`
-  (background is the default since Claude Code v2.1.198). Async launch metadata
-  is not a review: wait for that same agent's final findings; do not launch a duplicate.
-  Both must complete before building the consensus table.
+- Dual voices: run BOTH Claude subagent AND Codex if available (P6), in that order.
+  Dispatch Agent once with JSON boolean `run_in_background: false` if the tool
+  offers it. Some hosts always launch agents asynchronously. Launch metadata is
+  not findings: retain that agent's ID and wait for its final review before
+  dispatching Codex, editing its inputs or advancing the phase. Use a supported
+  wait tool; if completion arrives by notification, end this response to receive
+  it, then resume this same step. Do not poll raw transcripts, start a duplicate,
+  or announce completion while waiting. Apply this lifecycle to every phase's
+  reviewers, including spec review. Both voices must finish before consensus.
 
   **Codex CEO voice** (via Bash):
   ```bash
@@ -53,7 +60,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   5. What's the competitive risk — could someone else solve this first/better?
   For each finding: what's wrong, severity (critical/high/medium), and the fix."
 
-  **Error handling:** Both calls block in foreground. Codex auth/timeout/empty → proceed with
+  **Error handling:** Consume each final result before the next call. Codex auth/timeout/empty → proceed with
   Claude subagent only, tagged `[single-model]`. If Claude subagent also fails →
   "Outside voices unavailable — continuing with primary review."
 
@@ -73,7 +80,7 @@ above. Follow its SELECTIVE EXPANSION route, including the CEO scope document an
 Spec Review Loop in 0D-POST before 0E and Review Sections. Preserve every Step 0
 analysis and output.
 
-Step 0.5 (Dual Voices): Run Claude subagent (foreground Agent tool) first, then
+Step 0.5 (Dual Voices): Wait for the Claude subagent's final review first, then run
 Codex (Bash). Present Codex output under CODEX SAYS (CEO — strategy challenge)
 header. Present subagent output under CLAUDE SUBAGENT (CEO — strategic independence)
 header. Produce CEO consensus table:

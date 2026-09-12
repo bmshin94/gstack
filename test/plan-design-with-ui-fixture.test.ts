@@ -5,8 +5,8 @@ import * as path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
-// Execute the real paid registration with only native observation replaced.
-// Exact input seeding, case assertions, and cleanup still execute.
+// Execute the real paid registration with native observation and the board
+// picker mocked. Exact seeding, picker binding, assertions and cleanup execute.
 function exercise(mode: string) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'design-ui-free-'));
   const script = path.join(directory, 'registration.test.ts');
@@ -22,6 +22,11 @@ const template = fs.readFileSync(${JSON.stringify(path.join(ROOT, 'plan-design-r
 const focus = template.match(/### 0D\\. Focus Areas\\nAskUserQuestion: "([^\\n]+)"/)![1]
   .replace('{N}', '4').replace('{X, Y, Z}', 'hierarchy, spacing, contrast');
 const { pickPlanReviewQuestion } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))});
+let pickerScope;
+const designPicker = question => pickPlanReviewQuestion(question);
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))}, () => ({
+  createDesignReviewPicker: scope => { pickerScope = scope; return designPicker; },
+}));
 const fp = (id, question, preReview = true) => ({
   signature: id, toolUseId: id, promptSnippet: question.slice(0, 240),
   questions: [{ header: 'Review', question, multiSelect: false, options: [
@@ -45,7 +50,9 @@ const paraphrase = fp('focus', 'D1 — Review all 7 design dimensions, or focus 
 // Public titles/options projected from the retained Sep 11 native PostToolUse
 // events: focus toolu_01XJZk6qbs3Fj3VRbm6sCNv2, setup toolu_01WkR4juMdcMxCTJe8FfRMVY,
 // finding toolu_012EsyqshgBk2Ap7CfuzwhwQ. No transcript paths or private content.
-const nativeFocus = fp('native-focus', 'D1 — Review all 7 design dimensions, or focus?');
+const nativeFocus = fp('native-focus', mode === 'native-passes'
+  ? 'D1 — Review all 7 design passes, or focus?'
+  : 'D1 — Review all 7 design dimensions, or focus?');
 nativeFocus.questions[0].options = [
   { label: 'All 7 dimensions (recommended)', description: 'Full review: hierarchy, states, journey, specificity, AI slop, responsive, accessibility. Completeness 10/10.' },
   { label: 'States + hierarchy + a11y', description: 'Focus on the three weakest areas only. Completeness 7/10.' },
@@ -83,7 +90,10 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.slashCommand).toBe('/plan-design-review');
     expect(opts.followUpPrompt).toBe('');
     expect(opts.reviewCountCeiling).toBe(1);
-    expect(opts.questionPick).toBe(pickPlanReviewQuestion);
+    expect(opts.questionPick).toBe(designPicker);
+    expect(pickerScope.cwd).toBe(opts.cwd);
+    expect(pickerScope.deadlineAt).toBeGreaterThan(Date.now());
+    expect(pickerScope.deadlineAt).toBeLessThanOrEqual(Date.now() + 600_000);
     expect(opts).not.toHaveProperty('model');
     expect(opts.timeoutMs).toBeGreaterThan(0);
     expect(opts.timeoutMs).toBeLessThanOrEqual(600_000);
@@ -94,6 +104,11 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.isLastStep0AUQ(fp('focus', focus))).toBe(true);
     expect(opts.isLastStep0AUQ(paraphrase)).toBe(true);
     if (mode.startsWith('native-')) expect(opts.isLastStep0AUQ(nativeFocus)).toBe(true);
+    for (const unrelated of ['Review all 4 design passes, or focus?',
+      'Review all 7 engineering passes, or focus?', 'Review all 7 passes, or focus?',
+      'Which plan should receive all 7 design passes?']) {
+      expect(opts.isLastStep0AUQ(fp('unrelated', unrelated))).toBe(false);
+    }
     expect(opts.isReviewAUQ(target)).toBe(false);
     expect(opts.isReviewAUQ(nativeFocus)).toBe(false);
     expect(opts.isReviewAUQ(nativeSetup)).toBe(false);
@@ -142,7 +157,7 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-design-with-u
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }
 
-test.each(['source', 'paraphrase', 'native-sequence', 'native-unnumbered'])('UI gate seeds the exact target and accepts Design progress with an unselected no-UI alternative (%s)', mode => {
+test.each(['source', 'paraphrase', 'native-sequence', 'native-unnumbered', 'native-passes'])('UI gate seeds the exact target and accepts Design progress with an unselected no-UI alternative (%s)', mode => {
   const result = exercise(mode);
   expect(result.code, result.output).toBe(0);
 }, 20_000);

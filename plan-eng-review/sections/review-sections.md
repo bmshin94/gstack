@@ -110,30 +110,30 @@ confirms it IS a real issue, that is a calibration event. Your initial confidenc
 too low. Log the corrected pattern as a learning so future reviews catch it with
 higher confidence.
 
-**Decision gate (all sections and outside voice):** Use this one ledger throughout the review. Start it after Step 0 resolves scope. Each row tracks one choice, from the evidence through the answer and resulting plan edit.
+**Decision gate (all sections and outside voice):** Use this one ledger throughout the review. Start it after Step 0 resolves scope. For each new or reopened choice, follow these five steps. Each row tracks one separately selectable change through its answer and resulting plan edit.
 
 **1. Establish current contracts.** Read the original request, relevant source and prior answers. For each finding, record what happens now, what the user has already chosen, and the evidence for both. Cite the selected option, question/answer reference and exact approved scope. Keep unknown values unknown. Correct a factual mistake against source evidence and disclose it; that correction does not approve a behavior change. Check these sources before treating your own draft as evidence for another finding.
 
-Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, recommendation or agreement between reviewers does not approve other work. Keep work outside the prior answer pending. Reopen a choice only for a concrete new risk, contradictory evidence or changed assumption; explain what changed.
+Carry forward the code, tests and docs needed for an exact approved behavior, even when discovered after the Tests section. Cite its approval instead of asking again. A broad approach, recommendation or agreement between reviewers does not approve other work. Keep work outside the prior answer pending. Reopen a choice only for a concrete new risk, contradictory evidence or changed assumption; explain what changed. A risk may need a response before it is confirmed; disclose that uncertainty rather than inventing a current value.
 
-**2. Separate proposed changes.** Ask: could the user accept one change and reject another? If yes, give them separate rows, even if they share an issue heading, helper or patch. A row can decide a behavior, an implementation approach, one bound, or optional verification depth. Record each bound's meaning and unit, and the current and proposed verification method and depth.
+**2. Enumerate option commitments.** Before assigning row IDs, list what EVERY provisional option would authorize, including commitments in its label, description and pros/cons. Compare each commitment with the current values and actual answers from Step 1. Include commitments shared by all options; sharing a value does not make it approved. Record each bound's meaning and unit, and the current and proposed verification method and depth. Keep all other approved choices fixed and unresolved choices undecided. These are provisional comparisons, not questions to send yet.
+
+**3. Separate independent choices.** Ask: could the user accept one change and reject another? If yes, split them and rebuild the options, even if they share an issue heading, helper or patch. A choice can concern a behavior, an implementation approach, one bound, or optional verification depth. Repeat the comparison until every option changes only that choice. Do not use the finding's topic or a draft row name to define what the answer approves.
+
+Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof is part of that approved work, not an optional extra. For a fixed behavior, choosing unit, integration or smoke-test depth is one verification choice. A test that introduces a different guarantee or policy needs its own decision. Keep tests for pending policies conditional on approval; retain their risks and required proof.
+
+A partial option can reveal two separate choices inside a "complete" package; simply testing the same chosen behavior less thoroughly does not separate the fix from its proof. Do not make an option smaller by dropping an established contract or an earlier accepted choice. Changing either needs its own decision.
+
+**4. Assign and save rows.** Match each separated choice to an existing row or assign it a new ID. Record the comparisons from Steps 2-3 in the same ledger:
 
 | Row | Behavior or bound | Current value and verification | Proposed value and verification | Evidence and exact approval | Status | Option comparisons |
 |-----|-------------------|--------------------------------|---------------------------------|-----------------------------|--------|--------------------|
 
-Keep a chosen behavior together with the code, tests and docs required to establish it. Required proof is part of that approved work, not an optional extra. For a fixed behavior, choosing unit, integration or smoke-test depth is one verification choice. A test that introduces a different guarantee or policy needs its own decision. Keep tests for pending policies conditional on approval; retain their risks and required proof.
-
-**3. Save the provisional ledger.** After Step 0, this review records notes in the explicitly requested output/report file, otherwise the reviewed plan. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present the table instead. Use Write or Edit to save the rows before drafting options or calling AskUserQuestion. Preserve the plan's existing content and approvals. Mark undecided rows `pending` and their option comparisons `not drafted`; do not insert their remedies as accepted work. If saving fails, report the error and stop before asking.
-
-**4. Compare options for one row.** In `Option comparisons`, record `label: changes; preserves; pending` for EVERY option, including commitments in descriptions and pros/cons. Compare it with the row's current values. Keep all other approved choices fixed and unresolved choices undecided.
-
-If any option changes two independently selectable values, split the rows and compare again. A partial option can reveal two separate choices inside a "complete" package; simply testing the same chosen behavior less thoroughly does not separate the fix from its proof. Do not make an option smaller by dropping an established contract or an earlier accepted choice. Changing either needs its own decision.
-
-Save or present the corrected rows and option comparisons before asking, using Step 3's write and failure rules. A row ID alone is not an option comparison.
+In `Option comparisons`, record `label: changes; preserves; pending` with the concrete values for every option. A row ID alone is not an option comparison. This review records notes in the explicitly requested output/report file, otherwise the reviewed plan. Respect the user's read-only request and the host's file-write limits: when no writable plan is in scope, present the table instead. Use Write or Edit to save the rows and option comparisons before calling AskUserQuestion. Preserve the plan's existing content and approvals. Mark undecided rows `pending`; do not insert their remedies as accepted work. If saving fails, report the error and stop before asking.
 
 **5. Ask and record the answer.** Follow the preamble's tool, prose, preference and session rules. Each AskUserQuestion call contains exactly one question for one row. Name the behavior, approach, bound or verification depth it decides; recommend an option and explain why. While the question awaits an answer, stop: do not apply the remedy, enter the next section or call ExitPlanMode. An obvious fix still needs approval when it is not already covered by an exact prior answer.
 
-Record the answer reference and exact accepted scope in that row. Apply only those amendments with a scoped Edit before taking the next row; in read-only mode, present the amendments instead. Leave other rows unchanged. Record investigation, deferral and unresolved risks explicitly. A decision log does not replace the working plan. In /autoplan, follow its authorized auto-decisions and keep User Challenges pending for its final gate.
+Record the actual selected option and answer, their reference and exact accepted scope, separately from the provisional comparisons. A value appearing only in your draft is not an accepted value. Apply only those amendments with a scoped Edit before taking the next row; in read-only mode, present the amendments instead. Leave other rows unchanged. Record investigation, deferral and unresolved risks explicitly. A decision log does not replace the working plan. In /autoplan, follow its authorized auto-decisions and keep User Challenges pending for its final gate.
 
 ### 1. Architecture review
 Evaluate:
@@ -517,14 +517,14 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-Use the same seven-column decision ledger and the five-step decision gate above; do not start a second table. Match each outside finding to an existing row or add a pending row for each new choice. Record the reviewer and its evidence in `Evidence and exact approval`. Exact confirmations and factual corrections update evidence; a new proposal still needs approval even when both reviewers agree. Reopening an approved choice requires new evidence or a changed assumption.
+Use the same seven-column decision ledger and the five-step decision gate above; do not start a second table. Check the original sources and actual answers under Step 1. Exact confirmations and factual corrections update evidence; a new proposal still needs approval even when both reviewers agree. Reopening an approved choice requires a concrete new risk, contradictory evidence or a changed assumption.
 
-Save or present the pending rows under gate Step 3. Then compare one of these menus against each row's current values and record every option in `Option comparisons`:
+Under Steps 2-3, enumerate each menu's full commitments against current values, then separate independent choices before assigning rows. These four-option menus take precedence over the ordinary 2-3 option format:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Keep other approved choices fixed and other pending choices undecided. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those are separate rows.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After the individual answers, check the assembled set's capacity and dependencies. If they conflict, return to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck the set before confirming it. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-Save or present the completed comparisons, then finish gate Step 5: ask one question for one row, record its actual answer and exact accepted scope, and apply only those amendments before the next row. Keep necessary code, tests and docs for one approved behavior together. Investigation or deferral does not authorize implementation. In /autoplan, preserve its authorized auto-decisions, audit trail and User Challenge rules; challenges wait for the final gate.
+Under Step 4, match the separated choices to existing rows or assign new IDs. Record the reviewer and its evidence in `Evidence and exact approval`, and record every option in `Option comparisons`. Save or present those rows and comparisons before asking. Finish Step 5: ask one question for one row, record its actual selected option and answer with the exact accepted scope, and apply only those amendments before the next row. Keep necessary code, tests and docs for one approved behavior together. Investigation or deferral does not authorize implementation. In /autoplan, preserve its authorized auto-decisions, audit trail and User Challenge rules; challenges wait for the final gate.
 
 Report all findings, dispositions and remaining disagreements after the queue is resolved. An answer to one row does not resolve the finding's other pending rows.
 
@@ -546,7 +546,7 @@ Use the same decision gate and ledger for outside voice findings. Agreement betw
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
 * **One new or reopened decision = one AskUserQuestion call.** Never combine independent decisions into one question.
 * Describe the problem concretely, with file and line references.
-* Present 2-3 options, including "do nothing" where that's reasonable.
+* Present 2-3 options, including "do nothing" where that's reasonable. The four-option outside-voice menus above take precedence for those findings.
 * After the decision gate validates the options, specify each option's effort (human: ~X / CC: ~Y), risk and maintenance burden in one line. Within that decision, recommend the complete option when it costs only marginally more with CC.
 * **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference (DRY, explicit > clever, minimal diff, etc.).
 * Label with issue NUMBER + option LETTER (e.g., "3A", "3B").

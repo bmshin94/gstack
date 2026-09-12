@@ -345,11 +345,11 @@ export const TAIL_SCAN_BYTES = 1500;
  * `allow all edits`, `always allow access to`, `Bash command requires permission`)
  * remain unconditional.
  */
-// Modern Read is opt-in: callers must bind native ownership before replying.
-export function isPermissionDialogVisible(visible: string, includeBoundRead = false): boolean {
-  if (includeBoundRead && hasCurrentReadPermissionHeading(visible)) return currentReadPermissionCard(visible) !== null;
+// Modern Read and Bash directory labels are opt-in: bind native ownership before replying.
+export function isPermissionDialogVisible(visible: string, includeBoundPermission = false): boolean {
+  if (includeBoundPermission && hasCurrentReadPermissionHeading(visible)) return currentReadPermissionCard(visible) !== null;
   if (hasCurrentWebFetchPermissionHeading(visible)) return currentWebFetchPermissionCard(visible) !== null;
-  if (hasCurrentBashPermissionHeading(visible)) return currentBashPermissionCard(visible) !== null;
+  if (hasCurrentBashPermissionHeading(visible)) return currentBashPermissionCard(visible, includeBoundPermission) !== null;
   if (currentFilePermissionTarget(visible)) return true;
   // Standalone signatures — high specificity, never appear in skill questions.
   if (/requested\s+permissions?\s+to/i.test(visible)) return true;

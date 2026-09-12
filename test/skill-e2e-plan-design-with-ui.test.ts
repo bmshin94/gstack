@@ -12,7 +12,7 @@ import { test } from 'bun:test';
 import { PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
-import { pickPlanReviewQuestion } from './helpers/plan-review-cases';
+import { createDesignReviewPicker } from './helpers/plan-review-board-feedback';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -31,7 +31,7 @@ const designFocusBoundary = (fp: AskUserQuestionFingerprint): boolean =>
     // Require the source Step 0D question or its retained native paraphrase.
     // A target menu can mention a design system without reviewing this plan.
     return /^I(?:['’]ve| have) rated this plan (?:10(?:\.0+)?|[0-9](?:\.\d+)?)\/10 on design completeness\.[\s\S]*\bWant me to focus on specific areas instead of all 7\?/i.test(text)
-      || /^Review all 7 design dimensions, or focus(?: on specific areas)?\?$/i.test(text.split(/\r?\n/, 1)[0]!);
+      || /^Review all 7 design (?:dimensions|passes), or focus(?: on specific areas)?\?$/i.test(text.split(/\r?\n/, 1)[0]!);
   });
 
 // Require a choice about the supplied UI, not a workflow offer after focus.
@@ -59,7 +59,7 @@ describeE2E('/plan-design-review with UI scope (gate)', () => {
           isLastStep0AUQ: designFocusBoundary,
           isReviewAUQ: designReviewFinding,
           reviewCountCeiling: 1,
-          questionPick: pickPlanReviewQuestion,
+          questionPick: createDesignReviewPicker({ cwd: project, deadlineAt: startedAt + 600_000 }),
           timeoutMs: 600_000 - (Date.now() - startedAt),
         });
         const focus = obs.fingerprints.findIndex(designFocusBoundary);

@@ -731,7 +731,7 @@ export function currentWebFetchPermissionCard(visible: string): { columns: numbe
 /** Pinned CLI 2.1.263 gs/$At/jAt controls. The current card must be complete:
  * the first choice is a one-time Yes, and neither a history example nor a
  * clipped command can supply authority. Payload identity is checked below. */
-export function currentBashPermissionCard(visible: string): { columns: number; payload: string[] } | null {
+export function currentBashPermissionCard(visible: string, includeReadDirectories = true): { columns: number; payload: string[] } | null {
   const lines = visible.split('\n').map(line => line.replace(/ +$/, ''));
   while (lines.at(-1) === '') lines.pop();
   const footer = lines.length - 1;
@@ -764,6 +764,15 @@ export function currentBashPermissionCard(visible: string): { columns: number; p
     if (!option || Number(option[1]) !== number) return null;
     if (option[2] === 'No') {
       return index === footer - 2 ? { columns, payload: lines.slice(start, end) } : null;
+    }
+    // Jxt/Nae also render a Read-only standing rule for one or two directories.
+    // Admit only complete, single-line absolute paths followed by No. This is
+    // an unselected label; authority still comes from the exact native command.
+    const readDirectories = /^Yes, allow reading from (\/[A-Za-z0-9_./-]+(?: and \/[A-Za-z0-9_./-]+)?) from this project$/.exec(option[2]!);
+    if (readDirectories) {
+      if (!includeReadDirectories || number !== 2 || readDirectories[1]!.split(' and ').some(dir => dir.includes('..') || path.posix.normalize(dir) !== dir)
+        || lines[index + 1] !== '   3. No' || index + 1 !== footer - 2) return null;
+      return { columns, payload: lines.slice(start, end) };
     }
     // The CLI puts a long standing-permission prefix entirely on continuation
     // rows. Its label alone is incomplete; the selected Yes stays one-time.

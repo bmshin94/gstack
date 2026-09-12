@@ -11,9 +11,6 @@ declared baseline. Continue the same working list from Step 0, retaining unresol
 gaps and required verification. Run the Decision gate before drafting options in
 any pass or responding to outside findings; a new pass does not reset approvals.
 
-- **Evidence:** A description of what a reporter includes does not establish its
-  exact words. Confirmation of an empathy narrative is not runtime observation.
-  Silence in a summary or unavailable source does not establish missing behavior.
 - **Prior approval:** For a later or outside proposal, compare its evidence with the prior decision and options already considered.
   A disclosed tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it;
   identify a concrete contradiction or changed assumption before reopening.
@@ -445,50 +442,19 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-**1. Queue one changed commitment per row.** Reuse the working ledger. An issue,
-candidate or reviewer bullet may contain several independently selectable changes;
-its reference is not the unit of approval:
+Use the same five-field working list and four-step Decision gate above; do not start a second table. Record the reviewer and its evidence in `source/evidence`. Process each finding in this order before offering a menu:
 
-reference | commitment | current value + approval reference | proposed value | changed evidence/assumption | other commitments fixed or pending
+1. **Ground the evidence.** Compare the claim with original sources and actual answers, not unsupported draft text. Correct factual mistakes in the draft and evidence. Retain unknown facts and required verification; missing information does not prove a missing guarantee. If an unknown blocks a required contract, report the dependency. A concrete material risk may still need a decision before its occurrence is confirmed.
+2. **Classify the finding.** Carry exact approved follow-through forward. A known tradeoff or rejected alternative is not new evidence merely because a reviewer prefers it. Reopen only for a concrete contradiction or changed assumption. Keep code, tests and docs establishing one approved behavior together; new policies or optional verification depth remain separate choices.
+3. **Check the scope.** Honor the selected DX mode and explicit boundaries. Establish the current contract before claiming a remedy or delay is necessary. Obtain scope approval before crossing a boundary; authorized expansion still needs individual opt-in decisions.
+4. **Draft and answer one decision.** Match a pending choice to its row or add one to the same list. Cite the current value, proposed value, exact approval and changed evidence. Hold every other value fixed or pending in EVERY option; split independently selectable changes. Use AskUserQuestion, recommend + WHY, and compare completeness only within this commitment's coverage:
 
-For example, an exhausted-job destination, an optional alert and a replay facility
-are separate commitments. Once dead-lettering is approved, keep it fixed while
-deciding the alert or replay facility. Code, tests and docs establishing that same
-chosen behavior stay together. Exact confirmations and source-proven corrections
-update evidence without authorizing behavior changes. Reopening requires concrete
-contradictory evidence or a changed assumption. Retain unresolved risks and proof.
+- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those need separate rows.
+- **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-**2. Draft from one row.** Cite the reference, current approved value (or unresolved
-status), proposed value and new evidence. Hold every other commitment fixed or
-pending in EVERY option. If an option changes another commitment, split it first.
-Use AskUserQuestion. Recommend + WHY; compare completeness only within this
-commitment's coverage.
+Wait for the actual answer; model agreement is evidence, not consent. Record its answer reference and exact accepted scope, then use a scoped Edit for those amendments before taking the next row. Keep leaves the current value unchanged; investigation or deferral does not authorize implementation. In /autoplan, preserve its authorized auto-decisions, audit trail and User Challenge rules; challenges stay pending for the final gate.
 
-- **Policy or implementation:** A) Apply this change; B) Keep this commitment's
-  current value; C) Investigate before choosing; D) Defer this proposed change only.
-  Deferring a stack change, for example, does not defer its entire candidate or
-  approve a new schedule gate. Those require their own rows.
-- **Whole-candidate scope:** use A) Include; B) Defer; C) Cut; D) Hold, naming the
-  candidate and its current approved disposition. Revising two candidates takes
-  two rows, never a swap package. Hold stops for discussion; it is not a final
-  disposition; preserve prior answers and report any blocking conflict unresolved.
-  After individual answers, validate the assembled set's
-  capacity and dependencies. For these revisions, a conflict returns to a named
-  candidate's Include/Defer/Cut/Hold row; never silently trim or replace another
-  candidate. Revalidate before confirming the set. Scope actions differ in kind,
-  so omit completeness scores.
-
-**3. Obtain the answer.** Wait for the user; model agreement is evidence, not consent.
-In /autoplan, preserve its authorized auto-decision and User Challenge rules, audit
-trail and final gate.
-
-**4. Apply the answered row.** Record its answer reference and exact accepted scope,
-then use a scoped Edit for those amendments before taking the next row. Keep means
-its current disposition stands. Record investigation or deferral explicitly without
-authorizing implementation; User Challenges stay pending for /autoplan's final gate.
-Retain other rows and risks; one answer does not clear the finding's remaining changes.
-
-After processing the queue, report findings, dispositions and remaining disagreements.
+Report all findings, dispositions, remaining disagreements and verification gaps, including those needing no question. An answer to one row does not resolve the finding's other pending rows.
 
 **Persist the result:**
 ```bash

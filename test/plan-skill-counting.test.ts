@@ -782,6 +782,26 @@ describe('real plan counting loop with an isolated fake PTY', () => {
     expect(result.observation.outcome).toBe('completion_summary');
     expect(result.closed).toBe(true);
   }, 15_000);
+  test('captured directory Bash card sends only one-time Yes and requires its owned native ACK', async () => {
+    for (const variant of ['valid', 'no-ack']) {
+      const result = await runFakeCounting('**DONE**', `native-bash-directory-${variant}`);
+      expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);
+      expect(result.permissionGrantIds).toEqual(['tool-1']);
+      expect(result.permissionAckIds).toEqual(variant === 'valid' ? ['tool-1'] : []);
+      expect(result.observation.outcome).toBe(variant === 'valid' ? 'completion_summary' : 'timeout');
+      expect(result.closed && result.nativeRemoved).toBe(true);
+    }
+  }, 15_000);
+  test.each(['stale', 'command-mismatch', 'wrong-focus', 'truncated', 'wrapped', 'foreign'])(
+    'captured directory Bash card cannot grant from %s evidence', async variant => {
+      const result = await runFakeCounting('**DONE**', `native-bash-directory-${variant}`);
+      expect(result.sends).toEqual(['/plan-ceo-review\r']);
+      expect(result.permissionGrantIds).toEqual([]);
+      expect(result.permissionAckIds).toEqual([]);
+      expect(result.closed && result.nativeRemoved).toBe(true);
+      if (variant === 'command-mismatch') expect(result.error).toContain('cannot be bound');
+      else expect(result.observation.outcome).toBe('timeout');
+    }, 15_000);
   test('native Bash card cannot complete from a sent grant without its native acknowledgment', async () => {
     const result = await runFakeCounting('**DONE**', 'native-bash-no-ack');
     expect(result.sends).toEqual(['/plan-ceo-review\r', '1\r']);

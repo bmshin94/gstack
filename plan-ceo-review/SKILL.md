@@ -904,9 +904,9 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 Check the original input, inspected source and actual approvals. Your draft cannot establish facts or consent. Correct false factual claims; surface approval conflicts. Keep unknowns explicit and reuse exact approvals without broadening or asking again.
 
 **2. Record the decision.**
-A row is one separately selectable change in the requested or approved work. If one proposed change can be accepted while another stays unchanged, use separate rows, even within one helper or test suite. Explain why any changes cannot be separated.
+If one proposed change can be accepted while another stays unchanged, give them separate rows, even in one helper or suite. This includes proposed test additions for fixed runtime. Explain inseparable changes.
 
-Keep a change's necessary code and regression tests together. Once a feature's behavior is approved, one question can decide how thoroughly to test its required cases. Tests cannot approve undecided behavior; keep them pending.
+Keep a change's code and required regression proof together; don't re-ask once approved. One uniform depth/method choice may span an accepted delivery's fixed obligations. Runtime contracts do not approve new tests. Tests for undecided behavior stay pending.
 
 Record current and proposed behavior, limits and verification method and depth. Keep other commitments fixed or pending and honor the requested review depth.
 
@@ -1047,9 +1047,7 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-Use Agent with JSON boolean `run_in_background: false`, never the string `"false"`;
-agents default to background. Wait for its final review, not launch metadata, and
-do not launch a duplicate. The reviewer receives only the two files, not the conversation.
+Dispatch once; set JSON boolean `run_in_background: false` if offered. On async launch, use a supported wait tool or end this response for that agent's completion notification. Do not advance or edit its inputs before its final review. Supply only the two files.
 
 Prompt the subagent with:
 - The absolute paths of BOTH the CEO scope document just written and the current amended plan it references

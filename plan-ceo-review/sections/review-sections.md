@@ -20,7 +20,7 @@ Carry forward declared contracts and mitigated concerns with evidence. A later s
 
 **Resolve.** Resolve each decision unit in its natural owner section; earlier sections cross-reference the pending row. Do not defer a newly discovered critical risk to reach its owner section: resolve it now and carry the decision forward. Topic names alone never establish equivalence. A materially different remedy, scope, or risk needs its own explicit decision. Correcting test wording does not choose test depth; email recovery does not settle request instrumentation. An obvious recommendation still needs approval if not already accepted.
 
-Check every offered option against its unit. Independently proposed commitments require separate rows when one can be adopted while another stays unchanged, including an unselected partial-package option. Do not invent independent add-ons to fill a third option. One overall verification-depth choice for an accepted delivery may span its cases without changing its policies; necessary code and regression proof stay together. Verification of pending policy remains conditional or waits for its own answer. Reuse is evidence, not consent to other changes. Trace each amendment to its exact accepted option.
+Check every offered option against its unit. Independently proposed commitments require separate rows when one can be adopted while another stays unchanged, including an unselected partial-package option. Do not invent independent add-ons to fill a third option. Use 0C-bis's verification rule: fixed runtime does not approve new test additions, and a menu selecting only one of those additions must split. One uniform depth/method choice may span an accepted delivery's fixed obligations. Keep a change's code and required regression proof together; carry it forward without re-asking once approved. Verification of pending policy remains conditional or waits for its own answer. Reuse is evidence, not consent to other changes. Trace each amendment to its exact accepted option.
 
 **Apply.** Use this plan-write procedure before advancing to the next section. If no plan file exists, first create it from the provided input and explicitly accepted Step 0 decisions.
 1. If the current section has an unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**. Before the answer, you may record only the pending issue, evidence, and alternatives in the ledger. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
@@ -452,50 +452,20 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-**1. Queue one changed commitment per row.** Reuse the working ledger. An issue,
-candidate or reviewer bullet may contain several independently selectable changes;
-its reference is not the unit of approval:
+Use the same six-column decision ledger and the four steps of 0C-bis; do not start a second table.
 
-reference | commitment | current value + approval reference | proposed value | changed evidence/assumption | other commitments fixed or pending
+**1. Establish authority.** Reconcile each outside finding with the original input, inspected source and exact approvals. Correct false premises in the draft and its evidence without changing accepted behavior. Keep factual uncertainty explicit, with its owner and required verification; it does not itself create a new policy requirement. If that uncertainty threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before its occurrence is confirmed. Merely imagining an alternative behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
 
-For example, an exhausted-job destination, an optional alert and a replay facility
-are separate commitments. Once dead-lettering is approved, keep it fixed while
-deciding the alert or replay facility. Code, tests and docs establishing that same
-chosen behavior stay together. Exact confirmations and source-proven corrections
-update evidence without authorizing behavior changes. Reopening requires concrete
-contradictory evidence or a changed assumption. Retain unresolved risks and proof.
+**2. Record the decision.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0C-bis's decision-unit and approval rules, including its distinction between required proof and new verification deliverables. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0C-bis Step 2, preserving its write restrictions and failure handling.
 
-**2. Draft from one row.** Cite the reference, current approved value (or unresolved
-status), proposed value and new evidence. Hold every other commitment fixed or
-pending in EVERY option. If an option changes another commitment, split it first.
-Use AskUserQuestion. Recommend + WHY; compare completeness only within this
-commitment's coverage.
+**3. Compare one row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Use the applicable menu:
 
-- **Policy or implementation:** A) Apply this change; B) Keep this commitment's
-  current value; C) Investigate before choosing; D) Defer this proposed change only.
-  Deferring a stack change, for example, does not defer its entire candidate or
-  approve a new schedule gate. Those require their own rows.
-- **Whole-candidate scope:** use A) Include; B) Defer; C) Cut; D) Hold, naming the
-  candidate and its current approved disposition. Revising two candidates takes
-  two rows, never a swap package. Hold stops for discussion; it is not a final
-  disposition; preserve prior answers and report any blocking conflict unresolved.
-  After individual answers, validate the assembled set's
-  capacity and dependencies. For these revisions, a conflict returns to a named
-  candidate's Include/Defer/Cut/Hold row; never silently trim or replace another
-  candidate. Revalidate before confirming the set. Scope actions differ in kind,
-  so omit completeness scores.
+- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
+- **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-**3. Obtain the answer.** Wait for the user; model agreement is evidence, not consent.
-In /autoplan, preserve its authorized auto-decision and User Challenge rules, audit
-trail and final gate.
+**4. Ask and record the answer.** Follow 0C-bis's question and session rules: one row per call, its actual answer and exact accepted scope, then a scoped Edit for only those amendments before the next row. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
 
-**4. Apply the answered row.** Record its answer reference and exact accepted scope,
-then use a scoped Edit for those amendments before taking the next row. Keep means
-its current disposition stands. Record investigation or deferral explicitly without
-authorizing implementation; User Challenges stay pending for /autoplan's final gate.
-Retain other rows and risks; one answer does not clear the finding's remaining changes.
-
-After processing the queue, report findings, dispositions and remaining disagreements.
+Report every finding, its disposition, required verification and remaining disagreement, including findings that needed only factual correction.
 
 **Persist the result:**
 ```bash

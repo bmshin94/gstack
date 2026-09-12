@@ -90,6 +90,27 @@ test('CEO decision units and factual reconciliation precede menu synthesis', () 
   expect(section.indexOf('### Outside Voice Integration Rule')).toBeLessThan(section.indexOf('{{CODEX_PLAN_REVIEW}}'));
 });
 
+test('CEO outside findings reuse authority-first decisions without turning unknown facts into policies', () => {
+  const section = fs.readFileSync(SECTION, 'utf8');
+  const tension = section.split('**Cross-model tension:**')[1]?.split('**Persist the result:**')[0] ?? '';
+  const positions = ['**1. Establish authority.**', '**2. Record the decision.**',
+    "**3. Compare one row's options.**", '**4. Ask and record the answer.**'].map(step => tension.indexOf(step));
+  expect(positions.every(position => position >= 0)).toBe(true);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  expect(tension).toContain('same six-column decision ledger and the four steps of 0C-bis');
+  expect(tension).not.toContain('reference | commitment | current value');
+  expect(tension).toContain('Correct false premises in the draft and its evidence without changing accepted behavior');
+  expect(tension).toContain('Keep factual uncertainty explicit, with its owner and required verification');
+  expect(tension).toContain('A credible material risk can require action before its occurrence is confirmed');
+  expect(tension).toContain('they need no behavior-change menu');
+  expect(tension).toContain('A) Apply this change; B) Keep');
+  expect(tension).toContain('A) Include; B) Defer; C) Cut; D) Hold');
+  expect(tension).toContain("preserving its write restrictions and failure handling");
+  expect(tension).toContain('one row per call, its actual answer and exact accepted scope');
+  expect(tension).toContain('challenges wait for the final gate');
+  expect(tension).toContain('including findings that needed only factual correction');
+});
+
 // Repeated public quality feedback identified these missing execution instructions.
 // This guard checks the source contract; native clarity still requires paid evidence.
 test('CEO Step 0 defines the decision record, execution order, and mode approval precedence', () => {
@@ -102,7 +123,7 @@ test('CEO Step 0 defines the decision record, execution order, and mode approval
   expect(step0).toContain('conventions, existing test coverage and code risks with evidence');
   expect(step0).toContain('A limit of two deliverables stays two deliverables even if reuse halves the work');
   expect(step0).toContain('reuse and verification coverage');
-  expect(step0).toContain('use separate rows, even within one helper or test suite');
+  expect(step0).toContain('give them separate rows, even in one helper or suite');
   expect(step0).toContain('present findings to the user without implying approval');
   expect(step0).toContain('without implying approval');
   expect(step0).toContain('The preamble\'s session rules govern whether and how to ask');
@@ -142,17 +163,18 @@ describe('CEO review decision boundaries contract', () => {
     expect(alternatives).toContain('current and proposed behavior, limits and verification method and depth');
     expect(alternatives).toContain('requested review depth');
     expect(alternatives).toContain('Keep unknowns explicit');
-    expect(alternatives).toContain('A row is one separately selectable change in the requested or approved work');
-    expect(alternatives).toContain("Once a feature's behavior is approved, one question can decide how thoroughly to test its required cases");
-    expect(alternatives).toContain('Tests cannot approve undecided behavior; keep them pending');
+    expect(alternatives).toContain('give them separate rows, even in one helper or suite');
+    expect(alternatives).toContain("One uniform depth/method choice may span an accepted delivery's fixed obligations");
+    expect(alternatives).toContain('Runtime contracts do not approve new tests');
+    expect(alternatives).toContain('Tests for undecided behavior stay pending');
     expect(alternatives).toContain('other commitments fixed or pending');
     expect(alternatives).toContain('reuse and verification coverage');
     expect(alternatives).not.toContain('for architecture choices');
     expect(alternatives.indexOf('Record current and proposed behavior')).toBeLessThan(alternatives.indexOf('Compare 2-3 approaches'));
-    expect(alternatives).toContain('Explain why any changes cannot be separated');
+    expect(alternatives).toContain('Explain inseparable changes');
     expect(alternatives).toContain('reuse exact approvals without broadening or asking again');
-    expect(alternatives).toContain("Keep a change's necessary code and regression tests together");
-    expect(alternatives).toContain('use separate rows, even within one helper or test suite');
+    expect(alternatives).toContain("Keep a change's code and required regression proof together; don't re-ask once approved");
+    expect(alternatives).toContain('This includes proposed test additions for fixed runtime');
     expect(skeleton).toContain('Cite the instruction or answer for each resolved row');
     expect(alternatives).toContain('"minimal viable"');
     expect(alternatives).toContain('"ideal architecture"');

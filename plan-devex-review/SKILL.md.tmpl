@@ -77,8 +77,11 @@ Keep one list for every phase, including Step 0 and outside voice:
 source/evidence | current value | proposed value | exact approval + scope | other values fixed/pending.
 
 1. **Ground the evidence.** Distinguish observed output, docs and predictions.
-   Check predictions against source examples before options.
-   Quote runtime text only from captured output or implementation. Retain unknowns and required verification.
+   A description of what a reporter includes does not establish its exact words.
+   Confirmation of an empathy narrative is not runtime observation.
+   Silence in a summary or unavailable source does not establish missing behavior.
+   Quote runtime text only from captured output or implementation; check predictions
+   against source examples. Retain unknowns and required verification.
 2. **Classify the finding.** Carry exact approvals and factual corrections forward.
    New choices need approval; reopen only for concrete contradiction or changed assumptions.
 3. **Check the scope.** Honor actual guarantees. Risk is not proof a new policy is needed.
@@ -350,20 +353,13 @@ Once selected, commit fully. Do not silently drift toward a different mode.
 
 ### 0F. Developer Journey Trace with Friction-Point Questions
 
-Trace each journey stage below using actual files, commands and output.
-
 For each stage (Discover, Install, Hello World, Real Usage, Debug, Upgrade):
 
-1. **Trace the actual path.** Read the README, docs, package.json, CLI help, or
-   whatever the developer would encounter at this stage. Reference specific files
-   and line numbers.
-
-2. **Identify friction points with evidence.** Not "installation might be hard" but
-   "Step 3 of the README requires Docker to be running, but nothing checks for Docker
-   or tells the developer to install it. A [persona] without Docker will see [specific
-   error or nothing]."
-
-3. **AskUserQuestion per friction point.** Follow the one-decision rules above.
+1. **Trace the actual path.** Inspect its docs, commands and output; cite files and lines.
+2. **Identify evidenced friction.** E.g., the README requires Docker but neither
+   checks for it nor explains installation. Label predicted consequences.
+3. **Run all four Decision gate steps** before options. Ask only for an admitted
+   new or reopened choice, using this menu:
 
    > "Journey Stage: INSTALL
    >

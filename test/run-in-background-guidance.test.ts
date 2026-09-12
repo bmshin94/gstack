@@ -14,8 +14,9 @@ import { ALL_HOST_CONFIGS } from '../hosts';
 // Guidance written before that ("do NOT use run_in_background") stopped
 // producing a foreground run — the review army and autoplan dual-voice
 // steps silently launched specialists in the background and merged before
-// they completed. The only guidance that works post-2.1.198 is an explicit
-// `run_in_background: false` on the Agent call.
+// they completed. Use `run_in_background: false` when offered. Some interactive
+// hosts remove that field and force async dispatch; final-result consumption,
+// including its notification handoff, remains the completion contract.
 //
 // This tripwire pins the corrected phrasing in the generated skill output
 // and fails if the inverted form ever comes back through a template or
@@ -314,6 +315,26 @@ function allGeneratedSkillFiles(): string[] {
 }
 
 describe('run_in_background guidance (#2440)', () => {
+  test('CEO and autoplan wait for actual reviews when the foreground field is unavailable', () => {
+    const ceo = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/SKILL.md'), 'utf8');
+    const dispatch = ceo.split('**Step 1: Dispatch reviewer subagent**')[1]?.split('**Step 2:')[0] ?? '';
+    expect(dispatch).toContain('`run_in_background: false` if offered');
+    expect(dispatch).toContain("end this response for that agent's completion notification");
+    expect(dispatch).toContain('Do not advance or edit its inputs before its final review');
+    expect(dispatch).toContain('Dispatch once');
+    const phase = fs.readFileSync(path.join(ROOT, 'autoplan/sections/ceo-phase.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(phase).toContain('Step 0 (including its completed Spec Review Loop) → Claude CEO voice → Codex CEO voice → consensus → Review Sections → saved summary → phase announcement');
+    expect(phase).toContain('Some hosts always launch agents asynchronously');
+    expect(phase).toContain("retain that agent's ID and wait for its final review before dispatching Codex, editing its inputs or advancing the phase");
+    expect(phase).toContain('end this response to receive it, then resume this same step');
+    expect(phase).toContain('Do not poll raw transcripts, start a duplicate, or announce completion while waiting');
+    for (const name of ['design', 'eng', 'dx']) {
+      const next = fs.readFileSync(path.join(ROOT, `autoplan/sections/${name}-phase.md`), 'utf8');
+      expect(next, name).toContain("use Phase 1's dispatch and completion lifecycle");
+      expect(next, name).toContain("Wait for the Claude subagent's final review first, then run Codex");
+    }
+  });
+
   test('foreground-required skills instruct run_in_background: false explicitly', () => {
     for (const rel of GENERATED_WITH_GUIDANCE) {
       const content = fs.readFileSync(path.join(ROOT, rel), 'utf-8');

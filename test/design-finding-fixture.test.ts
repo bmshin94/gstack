@@ -19,6 +19,11 @@ import { execFileSync } from 'node:child_process';
 import { assertReviewReportAtBottom, designStep0Boundary, PLAN_SKILL_COUNT_FINALIZE_MS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
 import { DESIGN_FINDINGS, pickPlanReviewQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
 const report = assertReviewReportAtBottom, boundary = designStep0Boundary, finalize = PLAN_SKILL_COUNT_FINALIZE_MS;
+let pickerScope;
+const designPicker = question => pickPlanReviewQuestion(question);
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))}, () => ({
+  createDesignReviewPicker: scope => { pickerScope = scope; return designPicker; },
+}));
 let project = '', plan = '', observations = 0;
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
   describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
@@ -50,9 +55,12 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(plan).toContain('14px, 16px, and 18px font sizes');
     expect(plan).toContain('2-5 seconds with no loading indicator');
     expect(opts).toEqual({ skillName: 'plan-design-review', slashCommand: '/plan-design-review',
-      followUpPrompt: '', isLastStep0AUQ: boundary, reviewCountCeiling: null, questionPick: pickPlanReviewQuestion,
+      followUpPrompt: '', isLastStep0AUQ: boundary, reviewCountCeiling: null, questionPick: designPicker,
       cwd: project, timeoutMs: expect.any(Number), env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' } });
     expect(opts.timeoutMs).toBeGreaterThan(0); expect(opts.timeoutMs).toBeLessThanOrEqual(1500000);
+    expect(pickerScope.cwd).toBe(project);
+    expect(pickerScope.deadlineAt).toBeGreaterThan(Date.now());
+    expect(pickerScope.deadlineAt).toBeLessThanOrEqual(Date.now() + 1500000);
     expect(finalize).toBe(10000);
     fs.writeFileSync(path.join(project, 'gstack-test-plan-design.md'), '# Reviewed plan\\n\\n## GSTACK REVIEW REPORT\\nVERDICT: APPROVED\\n');
     return { outcome: 'plan_ready', fingerprints: [], diagnostics: {}, step0Count: 2, reviewCount: 5, elapsedMs: 1000 };
@@ -62,6 +70,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions
   evaluatePlanReviewDecisions: async input => {
     expect(input).toEqual({ plan, targets: DESIGN_FINDINGS, fingerprints: [], kind: 'findings', floor: 4, ceiling: 7, deadlineAt: expect.any(Number) });
     expect(input.deadlineAt).toBeGreaterThan(Date.now());
+    expect(input.deadlineAt).toBe(pickerScope.deadlineAt);
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ observations, project, targetIds: input.targets.map(t => t.id) }));
     return { count: 5, coveredTargetIds: DESIGN_FINDINGS.map(t => t.id) };
   },

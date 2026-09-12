@@ -37,7 +37,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   ```
   Timeout: 10 minutes (shell-wrapper) + 12 minutes (Bash outer gate). On hang, auto-degrades this phase's Codex voice.
 
-  **Claude design subagent** (via Agent tool, `run_in_background: false` — same foreground contract as Phase 1):
+  **Claude design subagent** (via Agent tool, `run_in_background: false` if offered — use Phase 1's dispatch and completion lifecycle):
   "Read the plan file at <plan_path>. You are an independent senior product designer
   reviewing this plan. You have NOT seen any prior review. Evaluate:
   1. Information hierarchy: what does the user see first, second, third? Is it right?
@@ -48,7 +48,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   For each finding: what's wrong, severity (critical/high/medium), and the fix."
   NO prior-phase context — subagent must be truly independent.
 
-  Error handling: same as Phase 1 (both foreground/blocking, degradation matrix applies).
+  Error handling: same as Phase 1 (consume final results in order; degradation matrix applies).
 
 - Design choices: if codex disagrees with a design decision with valid UX reasoning
   → TASTE DECISION. Scope changes both models agree on → USER CHALLENGE.
@@ -57,7 +57,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 
 1. Step 0 (Design Scope): Rate completeness 0-10. Check DESIGN.md. Map existing patterns.
 
-2. Step 0.5 (Dual Voices): Run Claude subagent (foreground) first, then Codex. Present under
+2. Step 0.5 (Dual Voices): Wait for the Claude subagent's final review first, then run Codex. Present under
    CODEX SAYS (design — UX challenge) and CLAUDE SUBAGENT (design — independent review)
    headers. Produce design litmus scorecard (consensus table). Use the litmus scorecard
    format from plan-design-review. Include CEO phase findings in Codex prompt ONLY
