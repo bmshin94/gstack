@@ -108,9 +108,9 @@ describe('workflow judge excerpts', () => {
 
   test('CEO mode handoff precedes its route and spec review stays within persistence', () => {
     const ceo = readWorkflowExcerpt('plan-ceo-review/SKILL.md', '## Step 0: Nuclear Scope Challenge', '## Review Sections');
-    const positions = ['### 0C-bis.', '### 0F. Mode Selection', '**Mode handoff before 0D:**',
-      'Follow the selected mode\'s route:', '### 0D-prelude.', '### 0D. Mode-Specific Analysis',
-      '### 0D-POST.', '#### Spec Review Loop', '### 0E. Temporal Interrogation']
+    const positions = ['### 0D.', '### 0E. Mode Selection', '**Mode handoff:**',
+      'Follow the selected mode\'s route:', '### 0F.', '### 0G. Mode-Specific Analysis',
+      '### 0H.', '#### Spec Review Loop', '### 0I. Temporal Interrogation']
       .map(heading => ceo.indexOf(heading));
     expect(positions.every(index => index >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
@@ -118,7 +118,58 @@ describe('workflow judge excerpts', () => {
     expect(persistence.match(/^#### Spec Review Loop$/gm)).toHaveLength(1);
     expect(persistence).not.toMatch(/^## Spec Review Loop$/m);
     expect(ceo.slice(positions[2], positions[3])).toContain('Auto-decided review mode → <selected mode> (your preference)');
-    expect(ceo.slice(positions[2], positions[3])).toContain('Mode: <selected mode>; approach: <approved 0C-bis approach>');
+    expect(ceo.slice(positions[2], positions[3])).toContain('Mode: <selected mode>; approach: <approved 0D approach>');
+  });
+
+  test('CEO Step 0 headings follow their sequential execution labels', () => {
+    const ceo = readWorkflowExcerpt('plan-ceo-review/SKILL.md', '## Step 0: Nuclear Scope Challenge', '## Review Sections');
+    const labels = [...ceo.matchAll(/^### (0[A-Z](?:-[A-Za-z]+)?)\. /gm)].map(match => match[1]);
+    expect(labels).toEqual(['0A', '0B', '0C', '0D', '0E', '0F', '0G', '0H', '0I']);
+  });
+
+  test('CEO capture locates Mode Selection by name for current and frozen skill copies', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ceo-semantic-capture-'));
+    const helper = join(import.meta.dir, 'helpers', 'auq-sdk-capture.ts');
+    const runner = join(import.meta.dir, 'helpers', 'session-runner.ts');
+    const script = join(dir, 'capture.ts');
+    writeFileSync(script, `import { mock } from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+const calls = [];
+mock.module(${JSON.stringify(runner)}, () => ({runSkillTest: async options => {
+  calls.push(options);
+  fs.writeFileSync(path.join(options.workingDirectory, 'ask-capture.md'), 'captured mode choice');
+}}));
+const {captureModeSelectionAuq, verboseSkill} = await import(${JSON.stringify(helper)});
+const current = fs.readFileSync(${JSON.stringify(join(import.meta.dir, '..', 'plan-ceo-review', 'SKILL.md'))}, 'utf8');
+const results = [];
+for (const [variant, skill] of [['current', current], ['frozen', verboseSkill()]]) {
+  const planDir = path.join(${JSON.stringify(dir)}, variant);
+  fs.mkdirSync(path.join(planDir, 'plan-ceo-review'), {recursive:true});
+  fs.writeFileSync(path.join(planDir, 'plan-ceo-review', 'SKILL.md'), skill);
+  fs.writeFileSync(path.join(planDir, 'plan.md'), 'Review this plan.');
+  results.push({variant, heading:skill.match(/^### (0[A-Z])\\. Mode Selection/m)?.[1],
+    captured:await captureModeSelectionAuq({planDir, testName:'free-semantic-capture', model:'fake-model'})});
+}
+console.log(JSON.stringify({calls, results}));
+`);
+    try {
+      const child = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 10_000 });
+      expect(child.status, `${child.error ?? ''}\n${child.stderr}`).toBe(0);
+      const { calls, results } = JSON.parse(child.stdout.trim().split('\n').at(-1)!);
+      expect(results).toEqual([
+        { variant: 'current', heading: expect.stringMatching(/^0[A-Z]$/), captured: 'captured mode choice' },
+        { variant: 'frozen', heading: '0F', captured: 'captured mode choice' },
+      ]);
+      expect(calls).toHaveLength(2);
+      for (const call of calls) {
+        expect(call.prompt).toContain('Proceed to Mode Selection,');
+        expect(call.prompt).not.toMatch(/Step 0[A-Z]/);
+        expect(call.prompt).toContain(join(call.workingDirectory, 'plan-ceo-review', 'SKILL.md'));
+        expect(call.prompt).toContain('Do NOT search for, Glob, find, or read any OTHER SKILL.md');
+        expect(call).toMatchObject({ allowedTools: ['Read', 'Write'], maxTurns: 12, timeout: 240_000, model: 'fake-model' });
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test('Eng LLM scope and pending decisions precede the test artifact', () => {

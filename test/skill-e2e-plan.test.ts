@@ -237,7 +237,7 @@ describeIfSelected('Plan CEO Review Expansion Energy E2E', ['plan-ceo-review-exp
 
 Read plan.md — that's the plan to review. This is a standalone plan document, not a codebase — skip any codebase exploration or system audit steps.
 
-Choose SCOPE EXPANSION mode. Skip any AskUserQuestion calls — this is non-interactive. Auto-approve the ideal-architecture approach in 0C-bis. For 0D, run all three analyses (10x check, platonic ideal, delight opportunities), then emit exactly 2 concrete expansion proposals in the opt-in ceremony.
+Choose SCOPE EXPANSION mode. Skip any AskUserQuestion calls — this is non-interactive. Auto-approve the ideal-architecture approach in Alternatives. For Mode-Specific Analysis, run all three analyses (10x check, platonic ideal, delight opportunities), then emit exactly 2 concrete expansion proposals in the opt-in ceremony.
 
 Write your expansion proposals to ${planDir}/proposals.md with ONLY the proposal text — no conversational wrapper, no review summary, no mode analysis. Each proposal separated by "---".`,
       workingDirectory: planDir,

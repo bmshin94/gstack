@@ -23,6 +23,7 @@ import { ALL_HOST_CONFIGS } from '../hosts';
 // resolver edit.
 
 const ROOT = path.resolve(import.meta.dir, '..');
+const CEO_FOREGROUND_BRANCH = 'If the tool exposes `run_in_background`, set it to boolean `false`';
 
 describe('generated Codex plan-review shell invocation', () => {
   const rendered = generateCodexPlanReview({ host: 'claude' } as TemplateContext);
@@ -318,10 +319,11 @@ describe('run_in_background guidance (#2440)', () => {
   test('CEO and autoplan wait for actual reviews when the foreground field is unavailable', () => {
     const ceo = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/SKILL.md'), 'utf8');
     const dispatch = ceo.split('**Step 1: Dispatch reviewer subagent**')[1]?.split('**Step 2:')[0] ?? '';
-    expect(dispatch).toContain('`run_in_background: false` if offered');
-    expect(dispatch).toContain("end this response for that agent's completion notification");
-    expect(dispatch).toContain('Do not advance or edit its inputs before its final review');
-    expect(dispatch).toContain('Dispatch once');
+    expect(dispatch).toContain(CEO_FOREGROUND_BRANCH);
+    expect(dispatch).toContain("If it returns a task handle, wait for that task with the host's wait tool");
+    expect(dispatch).toContain('When no wait tool exists, end this response and resume on the completion notification');
+    expect(dispatch).toContain('Do not advance, edit either input or launch another reviewer while waiting');
+    expect(dispatch).toContain('Launch one reviewer with the two paths and instructions below');
     const phase = fs.readFileSync(path.join(ROOT, 'autoplan/sections/ceo-phase.md'), 'utf8').replace(/\s+/g, ' ');
     expect(phase).toContain('Step 0 (including its completed Spec Review Loop) → Claude CEO voice → Codex CEO voice → consensus → Review Sections → saved summary → phase announcement');
     expect(phase).toContain('Some hosts always launch agents asynchronously');
@@ -340,6 +342,8 @@ describe('run_in_background guidance (#2440)', () => {
       const content = fs.readFileSync(path.join(ROOT, rel), 'utf-8');
       if (BOUNDED_OUTSIDE_VOICE_SITES.has(rel) && content.includes('Bounded outside-voice wait')) {
         expect(hasBoundedOutsideVoiceWait(content), rel).toBe(true);
+      } else if (rel === 'plan-ceo-review/SKILL.md') {
+        expect(content).toContain(CEO_FOREGROUND_BRANCH);
       } else expect(content).toContain('run_in_background: false');
     }
   });
@@ -414,7 +418,8 @@ describe('run_in_background guidance (#2440)', () => {
       if (BACKGROUND_OK[rel]) continue;
       const content = fs.readFileSync(file, 'utf-8');
       const boundedOutsideVoice = BOUNDED_OUTSIDE_VOICE_SITES.has(rel) && hasBoundedOutsideVoiceWait(content);
-      if (DISPATCH_IMPERATIVE.test(content) && !content.includes('run_in_background: false') && !boundedOutsideVoice) {
+      const ceoForeground = rel === 'plan-ceo-review/SKILL.md' && content.includes(CEO_FOREGROUND_BRANCH);
+      if (DISPATCH_IMPERATIVE.test(content) && !content.includes('run_in_background: false') && !boundedOutsideVoice && !ceoForeground) {
         throw new Error(
           `${rel} contains an Agent-dispatch imperative (or bare "foreground" prose) but never states ` +
           '`run_in_background: false` — pin the flag at the dispatch site or add a reasoned BACKGROUND_OK ' +

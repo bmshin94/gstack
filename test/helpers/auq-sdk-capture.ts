@@ -370,7 +370,7 @@ function execGit(args: string[]): string {
 }
 
 /**
- * Drive plan-ceo-review to its Step 0F mode-selection AskUserQuestion in the
+ * Drive plan-ceo-review to its Mode Selection AskUserQuestion in the
  * given plan dir and capture the verbatim question text the model generates.
  * Returns the captured text ('' if the agent never wrote the file).
  */
@@ -397,7 +397,7 @@ Read ${skillPath} for the review workflow. Do NOT search for, Glob, find, or rea
 
 Read ${planPath} — that is the plan to review. It is a standalone plan document, not a codebase. Skip any codebase exploration or system-audit steps.
 
-Proceed to Step 0F (Mode Selection), where the skill presents the 4 review-mode options to the user via AskUserQuestion.
+Proceed to Mode Selection, where the skill presents the 4 review-mode options to the user via AskUserQuestion.
 
 Write the verbatim text of that AskUserQuestion (the full decision brief: title, ELI10, stakes, recommendation, every option with its pros/cons bullets, and the Net line) to ${outFile}. Do NOT call any tool to ask the user. Do NOT paraphrase. After writing the file, stop.`;
 

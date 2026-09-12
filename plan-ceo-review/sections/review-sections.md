@@ -12,7 +12,7 @@
 
 Continue the ledger from input reading and Step 0 in the plan: issue ID, owner section, evidence, exact accepted choice and scope, decision reference, and status (unresolved, approved, or reopened). Retain declared unchanged contracts, declared conventions and existing test coverage, and actual earlier decisions. Keep proposed findings separate from accepted amendments. Selecting an approach is not blanket approval of every implementation choice: carry its explicit commitments forward, then resolve the remaining tradeoffs.
 
-Use the decision units from Step 0C-bis: requested deliverables and exact approvals define the boundaries, not an issue, method or helper name. Each row records one commitment's current and proposed value, with other commitments fixed or pending. For example, parameterizing a user lookup and batching a per-order loop remain separate decisions even when one helper can implement both.
+Use the decision units from Step 0D: requested deliverables and exact approvals define the boundaries, not an issue, method or helper name. Each row records one commitment's current and proposed value, with other commitments fixed or pending. For example, parameterizing a user lookup and batching a per-order loop remain separate decisions even when one helper can implement both.
 
 **Analyze.** Reconcile each finding with the original input, inspected source and actual approvals before drafting options. Correct source-disproven draft claims and their dependent test/runbook text first; the draft supplies no authority to change baseline behavior. If a correction conflicts with an accepted requirement, surface that conflict. Preserve unsupported premises as unknown, including external dependencies whose implementation is unavailable; neither failure nor safety is established by that absence.
 
@@ -20,7 +20,7 @@ Carry forward declared contracts and mitigated concerns with evidence. A later s
 
 **Resolve.** Resolve each decision unit in its natural owner section; earlier sections cross-reference the pending row. Do not defer a newly discovered critical risk to reach its owner section: resolve it now and carry the decision forward. Topic names alone never establish equivalence. A materially different remedy, scope, or risk needs its own explicit decision. Correcting test wording does not choose test depth; email recovery does not settle request instrumentation. An obvious recommendation still needs approval if not already accepted.
 
-Check every offered option against its unit. Independently proposed commitments require separate rows when one can be adopted while another stays unchanged, including an unselected partial-package option. Do not invent independent add-ons to fill a third option. Use 0C-bis's verification rule: fixed runtime does not approve new test additions, and a menu selecting only one of those additions must split. One uniform depth/method choice may span an accepted delivery's fixed obligations. Keep a change's code and required regression proof together; carry it forward without re-asking once approved. Verification of pending policy remains conditional or waits for its own answer. Reuse is evidence, not consent to other changes. Trace each amendment to its exact accepted option.
+Check every offered option against its unit. Independently proposed commitments require separate rows when one can be adopted while another stays unchanged, including an unselected partial-package option. Do not invent independent add-ons to fill a third option. Apply the three test rules in Step 0D: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Reuse is evidence, not consent to other changes. Trace each amendment to its exact accepted option.
 
 **Apply.** Use this plan-write procedure before advancing to the next section. If no plan file exists, first create it from the provided input and explicitly accepted Step 0 decisions.
 1. If the current section has an unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**. Before the answer, you may record only the pending issue, evidence, and alternatives in the ledger. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
@@ -30,7 +30,7 @@ Check every offered option against its unit. Independently proposed commitments 
 Approval settles the planning choice; it does not prove the mitigation is implemented or verified. In later sections, cross-reference an exact settled decision instead of asking it again. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
 
 ### Section 1: Architecture Review
-Open this section in your own chat with the complete Step 0F mode-handoff line, retaining the approved approach and saved-preference attribution when applicable, then `Section 1: Architecture Review`. This repeats the agreement; it does not replace the earlier handoff.
+Open this section in your own chat with the complete Step 0E mode-handoff line, retaining the approved approach and saved-preference attribution when applicable, then `Section 1: Architecture Review`. This repeats the agreement; it does not replace the earlier handoff.
 
 Evaluate and diagram:
 * Overall system design and component boundaries. Draw the dependency graph.
@@ -51,7 +51,7 @@ Evaluate and diagram:
 * What would make this architecture beautiful? Not just correct — elegant. Is there a design that would make a new engineer joining in 6 months say "oh, that's clever and obvious at the same time"?
 * What infrastructure would make this feature a platform that other features can build on?
 
-**SELECTIVE EXPANSION:** If any accepted cherry-picks from Step 0D affect the architecture, evaluate their architectural fit here. Flag any that create coupling concerns or don't integrate cleanly — this is a chance to revisit the decision with new information.
+**SELECTIVE EXPANSION:** If any accepted cherry-picks from Step 0G affect the architecture, evaluate their architectural fit here. Flag any that create coupling concerns or don't integrate cleanly — this is a chance to revisit the decision with new information.
 
 Required ASCII diagram: full system architecture showing new components and their relationships to existing ones.
 **Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
@@ -350,7 +350,7 @@ stays discoverable: "Running the outside voice automatically (standard step). Di
 
 **Construct the plan review prompt** for every remaining mode, including all Claude fallback modes (skip on `disabled` or `under_codex`).
 Read the plan file being reviewed (the file the user pointed this review at, or the branch
-diff scope). If a CEO plan document from an earlier `/plan-ceo-review` Step 0D-POST is available, read that too — it contains
+diff scope). If a CEO scope document from an earlier `/plan-ceo-review` is available, read that too — it contains
 the scope decisions and vision.
 
 Construct this prompt (substitute the actual plan content — if plan content exceeds 30KB,
@@ -452,18 +452,18 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-Use the same six-column decision ledger and the four steps of 0C-bis; do not start a second table.
+Use the same six-column decision ledger and the four steps of 0D; do not start a second table.
 
 **1. Check sources and prior answers.** Reconcile each outside finding with the original input, inspected source and exact approvals. Correct false premises in the draft and its evidence without changing accepted behavior. Keep factual uncertainty explicit, with its owner and required verification; it does not itself create a new policy requirement. If that uncertainty threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before its occurrence is confirmed. Merely imagining an alternative behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
 
-**2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0C-bis's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0C-bis Step 2.
+**2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0D's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0D Step 2.
 
-**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the saved rows and comparisons under 0C-bis Step 3 before asking. Use the applicable menu:
+**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the saved rows and comparisons under 0D Step 3 before asking. Use the applicable menu:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-**4. Ask, record the answer, and amend.** Follow 0C-bis Step 4: one row per call, record its actual answer and scope, then amend only that approved scope. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
+**4. Ask, record the answer, and amend.** Follow 0D Step 4: one row per call, record its actual answer and scope, then amend only that approved scope. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
 
 Report every finding, its disposition, required verification and remaining disagreement, including findings that needed only factual correction.
 
@@ -482,7 +482,7 @@ After implementation, run `/design-review` on the live site to catch visual issu
 
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
-* **One decision unit = one AskUserQuestion call.** Use Step 0C-bis boundaries, not topic labels.
+* **One decision unit = one AskUserQuestion call.** Use Step 0D boundaries, not topic labels.
 * Describe the problem concretely, with file and line references.
 * Present 2-3 options, including "do nothing" where reasonable.
 * For each option: effort, risk, and maintenance burden in one line.
@@ -527,7 +527,7 @@ For each TODO, describe:
 Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
 
 ### Scope Expansion Decisions (EXPANSION and SELECTIVE EXPANSION only)
-For EXPANSION and SELECTIVE EXPANSION modes: expansion opportunities and delight items were surfaced and decided in Step 0D (opt-in/cherry-pick ceremony). The decisions are persisted in the CEO plan document. Reference the CEO plan for the full record. Do not re-surface them here — list the accepted expansions for completeness:
+For EXPANSION and SELECTIVE EXPANSION modes: expansion opportunities and delight items were surfaced and decided in Step 0G (opt-in/cherry-pick ceremony). The decisions are persisted in the CEO plan document. Reference the CEO plan for the full record. Do not re-surface them here — list the accepted expansions for completeness:
 * Accepted: {list items added to scope}
 * Deferred: {list items sent to TODOS.md}
 * Skipped: {list items rejected}

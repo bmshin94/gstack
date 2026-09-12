@@ -136,7 +136,7 @@ describeIfSelected('Plan Format — CEO Mode Selection', ['plan-ceo-review-forma
 
 Read plan.md — that's the plan to review. This is a standalone plan document, not a codebase — skip any codebase exploration or system audit steps.
 
-Proceed to Step 0F (Mode Selection). This is where the skill presents 4 mode options (SCOPE EXPANSION, SELECTIVE EXPANSION, HOLD SCOPE, SCOPE REDUCTION) to the user via AskUserQuestion. These options differ in kind (review posture), not in coverage.
+Proceed to Mode Selection. This is where the skill presents 4 mode options (SCOPE EXPANSION, SELECTIVE EXPANSION, HOLD SCOPE, SCOPE REDUCTION) to the user via AskUserQuestion. These options differ in kind (review posture), not in coverage.
 
 ${captureInstruction(outFile)}
 
@@ -203,7 +203,7 @@ describeIfSelected('Plan Format — CEO Approach Menu', ['plan-ceo-review-format
 
 Read plan.md — that's the plan to review. This is a standalone plan document, not a codebase — skip any codebase exploration or system audit steps.
 
-Proceed to Step 0C-bis (Implementation Alternatives / Approach Menu). This is where the skill generates 2-3 approaches (minimal viable vs ideal architecture) and presents them via AskUserQuestion. These options differ in coverage (complete vs shortcut), so Completeness: N/10 applies.
+Proceed to Alternatives (the implementation approach menu). This is where the skill generates 2-3 approaches (minimal viable vs ideal architecture) and presents them via AskUserQuestion. These options differ in coverage (complete vs shortcut), so Completeness: N/10 applies.
 
 ${captureInstruction(outFile)}
 

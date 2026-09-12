@@ -340,7 +340,7 @@ stays discoverable: "Running the outside voice automatically (standard step). Di
 
 **Construct the plan review prompt** for every remaining mode, including all Claude fallback modes (skip on `disabled` or `under_codex`).
 Read the plan file being reviewed (the file the user pointed this review at, or the branch
-diff scope). If a CEO plan document from an earlier `/plan-ceo-review` Step 0D-POST is available, read that too — it contains
+diff scope). If a CEO scope document from an earlier `/plan-ceo-review` is available, read that too — it contains
 the scope decisions and vision.
 
 Construct this prompt (substitute the actual plan content — if plan content exceeds 30KB,

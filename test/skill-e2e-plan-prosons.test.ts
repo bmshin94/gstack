@@ -160,7 +160,7 @@ describeIfSelected('Plan Prosons — Format Positive', ['plan-review-prosons-for
         signal,
         prompt: `Read plan-ceo-review/SKILL.md for the review workflow.
 
-Read plan.md — two cache approaches with real tradeoffs. Pick the architectural approach via AskUserQuestion (Step 0C-bis / Implementation Alternatives). These options differ in coverage.
+Read plan.md — two cache approaches with real tradeoffs. Pick the architectural approach via AskUserQuestion (Alternatives / implementation approach menu). These options differ in coverage.
 
 ${captureInstruction(outFile)}
 
@@ -275,7 +275,7 @@ describeIfSelected('Plan Prosons — Neutral-posture Negative', ['plan-review-pr
         signal,
         prompt: `Read plan-ceo-review/SKILL.md.
 
-Read plan.md — Option A dominates Option B on coverage. This is NOT a taste call. Pick the approach via AskUserQuestion (Step 0C-bis / Implementation Alternatives — coverage-differentiated, so Completeness: N/10 applies).
+Read plan.md — Option A dominates Option B on coverage. This is NOT a taste call. Pick the approach via AskUserQuestion (Alternatives / implementation approach menu — coverage-differentiated, so Completeness: N/10 applies).
 
 ${captureInstruction(outFile)}
 

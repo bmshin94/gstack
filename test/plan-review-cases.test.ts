@@ -296,13 +296,13 @@ describe('outside-voice commitment queue', () => {
             .map(stage => queue.indexOf(stage));
           expect(order.every(position => position >= 0)).toBe(true);
           expect(order).toEqual([...order].sort((a, b) => a - b));
-          expect(queue).toContain('same six-column decision ledger and the four steps of 0C-bis');
+          expect(queue).toContain('same six-column decision ledger and the four steps of 0D');
           expect(queue).not.toContain('reference | commitment | current value');
           expect(queue).toContain('original input, inspected source and exact approvals');
           expect(queue).toContain('Correct false premises in the draft and its evidence without changing accepted behavior');
           expect(queue).toContain('Keep factual uncertainty explicit, with its owner and required verification');
           expect(queue).toContain('A credible material risk can require action before its occurrence is confirmed');
-          expect(queue).toContain("Apply 0C-bis's separation and approval rules");
+          expect(queue).toContain("Apply 0D's separation and approval rules");
           expect(queue).toContain('distinction between required proof and new test additions');
           expect(queue).toContain('Hold every other commitment fixed or pending in every option; split independently selectable changes');
           expect(queue).toContain("A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only");
@@ -316,8 +316,8 @@ describe('outside-voice commitment queue', () => {
           expect(queue).toContain('Never silently trim or replace another candidate');
           expect(queue).toContain('one row per call, record its actual answer and scope');
           expect(queue).toContain('then amend only that approved scope');
-          expect(queue).toContain('Follow 0C-bis Step 4');
-          expect(queue).toContain('Update the saved rows and comparisons under 0C-bis Step 3 before asking');
+          expect(queue).toContain('Follow 0D Step 4');
+          expect(queue).toContain('Update the saved rows and comparisons under 0D Step 3 before asking');
           const skeleton = readFileSync('plan-ceo-review/SKILL.md.tmpl', 'utf8');
           expect(skeleton).toContain('apply only approved amendments to the working plan before the next row');
           expect(queue).toContain('Keep preserves the current disposition; investigation and deferral do not authorize implementation');

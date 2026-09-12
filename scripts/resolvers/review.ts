@@ -337,7 +337,7 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-${ceo ? `Dispatch once; set JSON boolean \`run_in_background: false\` if offered. On async launch, use a supported wait tool or end this response for that agent's completion notification. Do not advance or edit its inputs before its final review. Supply only the two files.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
+${ceo ? `Launch one reviewer with the two paths and instructions below. If the tool exposes \`run_in_background\`, set it to boolean \`false\`. If it returns a task handle, wait for that task with the host's wait tool. When no wait tool exists, end this response and resume on the completion notification. Do not advance, edit either input or launch another reviewer while waiting.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
 Subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}. Async launch metadata
 is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
 The reviewer has fresh context: only the document, not the conversation.`}
@@ -367,7 +367,7 @@ ${ceo ? '- For each dimension, return PASS or numbered issues with descriptions 
 **Step 2: Fix and re-dispatch**
 
 If the reviewer returns issues:
-1. ${ceo ? 'Use the 0C-bis approval/session rules for new or reopened choices; exact approved changes may proceed. Use scoped Edit for behavior and requirements in the source plan and scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the summary.' : 'Fix each issue in the document on disk (use Edit tool)'}
+1. ${ceo ? 'Use the 0D approval/session rules for new or reopened choices; exact approved changes may proceed. Use scoped Edit for behavior and requirements in the source plan and scope decisions in the CEO document. Keep both consistent; do not copy the full plan into the summary.' : 'Fix each issue in the document on disk (use Edit tool)'}
 2. Re-dispatch the reviewer subagent with ${ceo ? 'BOTH updated file paths and the same two-document instructions' : 'the updated document'}
 3. Maximum 3 iterations total
 
@@ -386,10 +386,11 @@ already written to disk; the review is a quality bonus, not a gate.`}
 
 **Step 3: Report and persist metrics**
 
-${ceo ? `After PASS, max iterations or convergence, tell the user: "Your doc survived N rounds
-of adversarial review. M issues caught and fixed. Quality score: X/10."
-Show the full reviewer output on request. List every unresolved issue under
-"## Reviewer Concerns" in the CEO document, citing each issue's owning file for downstream skills. Then append metrics:` : `After the loop completes (PASS, max iterations, or convergence guard):
+${ceo ? `After PASS, max iterations or convergence, report the actual rounds, issues found,
+reviewer-confirmed fixes, unresolved issues and latest quality score. Do not call
+unresolved issues fixed. Show the full reviewer output on request. List unresolved
+issues under "## Reviewer Concerns" in the CEO document, citing each issue's owning
+file for downstream skills. Then append metrics:` : `After the loop completes (PASS, max iterations, or convergence guard):
 
 1. Tell the user the result — summary by default:
    "Your doc survived N rounds of adversarial review. M issues caught and fixed.
@@ -777,7 +778,7 @@ stays discoverable: "Running the outside voice automatically (standard step). Di
 
 **Construct the plan review prompt** for every remaining mode, including all Claude fallback modes (skip on \`disabled\` or \`under_codex\`).
 Read the plan file being reviewed (the file the user pointed this review at, or the branch
-diff scope). If a CEO plan document from an earlier \`/plan-ceo-review\` Step 0D-POST is available, read that too — it contains
+diff scope). If a CEO scope document from an earlier \`/plan-ceo-review\` is available, read that too — it contains
 the scope decisions and vision.
 
 Construct this prompt (substitute the actual plan content — if plan content exceeds 30KB,
@@ -890,18 +891,18 @@ Report all findings, dispositions and remaining disagreements after resolving th
 
 ` : ctx.skillName === 'plan-ceo-review' ? `**Cross-model tension:**
 
-Use the same six-column decision ledger and the four steps of 0C-bis; do not start a second table.
+Use the same six-column decision ledger and the four steps of 0D; do not start a second table.
 
 **1. Check sources and prior answers.** Reconcile each outside finding with the original input, inspected source and exact approvals. Correct false premises in the draft and its evidence without changing accepted behavior. Keep factual uncertainty explicit, with its owner and required verification; it does not itself create a new policy requirement. If that uncertainty threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before its occurrence is confirmed. Merely imagining an alternative behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
 
-**2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0C-bis's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0C-bis Step 2.
+**2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0D's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0D Step 2.
 
-**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the saved rows and comparisons under 0C-bis Step 3 before asking. Use the applicable menu:
+**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the saved rows and comparisons under 0D Step 3 before asking. Use the applicable menu:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-**4. Ask, record the answer, and amend.** Follow 0C-bis Step 4: one row per call, record its actual answer and scope, then amend only that approved scope. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
+**4. Ask, record the answer, and amend.** Follow 0D Step 4: one row per call, record its actual answer and scope, then amend only that approved scope. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
 
 Report every finding, its disposition, required verification and remaining disagreement, including findings that needed only factual correction.
 

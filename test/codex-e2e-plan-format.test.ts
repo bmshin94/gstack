@@ -165,7 +165,7 @@ describeCodex('Codex Plan Format — CEO Mode Selection', () => {
         capture.reset();
         return runCodexSkill({
           skillDir,
-          prompt: `Read the plan-ceo-review skill. Read plan.md (the plan to review). Proceed to Step 0F (Mode Selection) where the skill presents 4 mode options (SCOPE EXPANSION, SELECTIVE EXPANSION, HOLD SCOPE, SCOPE REDUCTION) via AskUserQuestion. These options differ in kind (review posture), not coverage. ${captureInstruction(outFile)}`,
+          prompt: `Read the plan-ceo-review skill. Read plan.md (the plan to review). Proceed to Mode Selection where the skill presents 4 mode options (SCOPE EXPANSION, SELECTIVE EXPANSION, HOLD SCOPE, SCOPE REDUCTION) via AskUserQuestion. These options differ in kind (review posture), not coverage. ${captureInstruction(outFile)}`,
           timeoutMs: CAPTURE_MS,
           cwd: planDir,
           skillName: 'gstack-plan-ceo-review',
@@ -201,7 +201,7 @@ describeCodex('Codex Plan Format — CEO Approach Menu', () => {
         capture.reset();
         return runCodexSkill({
           skillDir,
-          prompt: `Read the plan-ceo-review skill. Read plan.md. Proceed to Step 0C-bis (Implementation Alternatives / Approach Menu) where the skill generates 2-3 approaches (minimal viable vs ideal architecture) and presents them via AskUserQuestion. These options differ in coverage so Completeness: N/10 applies. ${captureInstruction(outFile)}`,
+          prompt: `Read the plan-ceo-review skill. Read plan.md. Proceed to Alternatives (the implementation approach menu) where the skill generates 2-3 approaches (minimal viable vs ideal architecture) and presents them via AskUserQuestion. These options differ in coverage so Completeness: N/10 applies. ${captureInstruction(outFile)}`,
           timeoutMs: CAPTURE_MS,
           cwd: planDir,
           skillName: 'gstack-plan-ceo-review',

@@ -187,7 +187,7 @@ describe('CEO plan persistence uses the selected state root', () => {
           const document = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', source), 'utf8');
           // Only the directory-preparation commands precede the plan-format fence.
           // Later review-loop Bash blocks are outside this path-resolution contract.
-          const section = document.split('### 0D-POST. Persist CEO Plan')[1]!.split('\n```markdown\n')[0]!;
+          const section = document.split('### 0H. Persist CEO Plan')[1]!.split('\n```markdown\n')[0]!;
           // Execute the shipped commands with only their installation paths
           // rebound, as the hermetic skill runtime does. No copied save logic.
           const blocks = [...section.matchAll(/```bash\n([\s\S]*?)```/g)].map(match => match[1]!
