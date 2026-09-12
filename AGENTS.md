@@ -155,6 +155,11 @@ When fixing failures or preparing `/ship`, follow this order:
    Rerun a failed case only after a concrete repair or a demonstrated launch
    correction. Run the remaining required selected evaluations on the integrated
    code. Do not use the full free suite to discover predictable adjacent failures.
+   Reuse a passing check when its consumed inputs and relevant environment are
+   unchanged. For model judges, compare the expanded prompt, rubric, parameters
+   and dependencies; a different commit alone does not invalidate the result.
+   Do not resample an unchanged passing judge to simplify launcher configuration.
+   Preserve its original source and label the result as reused evidence.
 8. Finish review fixes, generation, release metadata, and build before final
    acceptance. Freeze the code, then run `bun run test` once at the end. During
    repair, focused checks replace a full-suite run before every commit. If final
