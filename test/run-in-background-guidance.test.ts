@@ -350,14 +350,21 @@ describe('run_in_background guidance (#2440)', () => {
     expect(dispatch).toContain('Launch one reviewer with both inputs below');
     const phase = fs.readFileSync(path.join(ROOT, 'autoplan/sections/ceo-phase.md'), 'utf8').replace(/\s+/g, ' ');
     expect(phase).toContain('Step 0 (including its completed Spec Review Loop) → Claude CEO voice → Codex CEO voice → consensus → Review Sections → saved summary → phase announcement');
-    expect(phase).toContain('Some hosts always launch agents asynchronously');
-    expect(phase).toContain("retain that agent's ID and wait for its final review before dispatching Codex, editing its inputs or advancing the phase");
-    expect(phase).toContain('end this response to receive it, then resume this same step');
-    expect(phase).toContain('Do not poll raw transcripts, start a duplicate, or announce completion while waiting');
-    for (const name of ['design', 'eng', 'dx']) {
+    for (const name of ['ceo', 'design', 'eng', 'dx']) {
       const next = fs.readFileSync(path.join(ROOT, `autoplan/sections/${name}-phase.md`), 'utf8');
-      expect(next, name).toContain("use Phase 1's dispatch and completion lifecycle");
-      expect(next, name).toContain("Wait for the Claude subagent's final review first, then run Codex");
+      const native = next.indexOf('Send `nativeDispatchPrompt` verbatim: ONLY/FINAL tool call this response');
+      const barrier = next.indexOf('**Native completion barrier:**', native);
+      const outside = next.indexOf('voice** (via Bash)', barrier);
+      expect(native, name).toBeGreaterThan(0);
+      expect(barrier, name).toBeGreaterThan(native);
+      expect(outside, name).toBeGreaterThan(barrier);
+      const wait = next.slice(barrier, outside);
+      expect(wait, name).toContain('isAsync: true');
+      expect(wait, name).toContain('end response immediately: "Waiting for <agent ID>."');
+      expect(wait, name).toContain("No further tool calls/review until that ID's terminal notification is delivered");
+      expect(wait, name).toContain('Other hosts await that ID');
+      expect(wait, name).toContain('Completed-native INPUT must match snapshot phase/hash');
+      expect(wait, name).toContain('No inline substitute; apply failure policy');
     }
   });
 

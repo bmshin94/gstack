@@ -4,41 +4,27 @@
 
 **Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-11) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
-**Match the requested deliverable.** For scope prioritization, evaluate all 11 sections against include/defer/cut and material feasibility under the accepted constraints. Use architecture, failure paths, security, dependencies, cost and verification requirements as evidence for those choices. Keep open implementation details and risks explicit; unchosen mitigations are not approved or verified. Resolve material blockers now, and reopen priorities when new evidence warrants it. Do not silently turn prioritization into full implementation-design approval: ask before expanding that deliverable. Preserve actual earlier approvals. Evaluating every section does not authorize inventing endpoint, method or state-machine contracts on the user's behalf. For prioritization, each required diagram, map, and output describes the candidate boundaries, known failure mechanisms, feasibility conditions, and unresolved risks at that level. Preserve non-blocking implementation choices as pending with an owner and required verification; resolve or reopen any that change the scope decision or expose a material blocker. The final report must distinguish a completed prioritization review from implementation readiness.
+**Match the requested deliverable.** In scope prioritization, evaluate all 11 sections for include/defer/cut and feasibility under accepted constraints. Architecture, failure paths, security, dependencies, cost and verification inform these choices; required diagrams and maps show candidate boundaries, failure mechanisms, feasibility conditions and unresolved risks. Resolve material blockers now; reopen priorities on new evidence. Keep non-blocking implementation choices pending with owners and required verification. Ask before expanding into implementation design; do not invent endpoint, method or state-machine contracts. Preserve prior approvals, distinguish unchosen mitigations from approved/verified ones, and report prioritization completion separately from implementation readiness.
 
-
-**Preserve accepted requirements.** Compare the implementation with the stated
-invariants and acceptance criteria. If they conflict, report an implementation
-gap and propose a remedy that meets the requirement. In HOLD SCOPE, that work is
-in scope even when the sketch omits the necessary mechanism. A sketch describes
-what is proposed; it does not authorize weakening the required behavior.
-Do not resolve the gap by rewriting the guarantee, calling the violation
-acceptable, or changing a test to expect the prohibited result. Low frequency,
-bounded impact, and documentation do not satisfy a stricter requirement.
-Changing a requirement needs an explicit decision under the existing approval
-rules; until approved, keep that proposal pending and the original gap unresolved.
-Earlier explicitly approved requirement changes and explicit authority to change
-that scope remain valid. Routine auto-decide permission alone cannot override an
-explicit user constraint or non-goal. Preserve the distinction in findings, tasks,
-and the completion report.
+**Preserve accepted requirements.** Compare the implementation with stated invariants and acceptance criteria. Report gaps and propose remedies that satisfy them, including in HOLD SCOPE when the sketch omits a mechanism. Never close a gap by weakening its guarantee, accepting the violation, or changing a test to expect it. Low frequency, bounded impact and documentation do not satisfy stricter requirements. Requirement changes need explicit authority under the approval rules; until approved, keep the proposal pending and original gap unresolved. Preserve earlier approved changes and explicit authority, but routine auto-decide cannot override user constraints or non-goals. Carry this distinction into findings, tasks and the report.
 
 ### Working review decisions
 
-Continue the ledger from input reading and Step 0 in the plan: issue ID, owner section, evidence, exact accepted choice and scope, decision reference, and status (unresolved, approved, or reopened). Retain declared unchanged contracts, declared conventions and existing test coverage, and actual earlier decisions. Keep proposed findings separate from accepted amendments. Selecting an approach is not blanket approval of every implementation choice: carry its explicit commitments forward, then resolve the remaining tradeoffs.
+Continue Step 0's ledger: ID, owner section, evidence, exact choice/scope, answer reference and status. Retain unchanged contracts, conventions, test coverage and actual earlier decisions. Separate proposed findings from accepted amendments. An approach approves its explicit commitments, not every implementation choice.
 
-Use the decision units from Step 0D: requested deliverables and exact approvals define the boundaries, not an issue, method or helper name. Each row records one commitment's current and proposed value, with other commitments fixed or pending. For example, parameterizing a user lookup and batching a per-order loop remain separate decisions even when one helper can implement both.
+Use Step 0D's units: deliverables and exact approvals define boundaries, not issue, method or helper names. Record each commitment's current/proposed value, leaving others fixed or pending. Parameterizing a lookup and batching a per-order loop remain separate decisions even if one helper implements both.
 
-**Analyze.** Reconcile each finding with the original input, inspected source and actual approvals before drafting options. Correct source-disproven draft claims and their dependent test/runbook text first; the draft supplies no authority to change baseline behavior. If a correction conflicts with an accepted requirement, surface that conflict. Preserve unsupported premises as unknown, including external dependencies whose implementation is unavailable; neither failure nor safety is established by that absence.
+**Analyze.** Check original input, inspected source and actual approvals before drafting options. Correct source-disproven claims and dependent test/runbook text; the draft cannot authorize baseline changes. Surface conflicts with accepted requirements. Unsupported premises stay unknown; unavailable external implementation proves neither failure nor safety.
 
-Carry forward declared contracts and mitigated concerns with evidence. A later subsection's silence does not invalidate them. Reopen only with concrete new evidence or a changed assumption: cite the earlier decision and what changed. Reviewer agreement or a premise introduced by your own draft is not new evidence. Keep unknown risks, their owners and required verification visible; approval does not verify them.
+Carry contracts and mitigations forward with evidence; later silence does not invalidate them. Reopen only on concrete new evidence or changed assumptions, citing the prior decision and change. Reviewer agreement or your draft's premise is not new evidence. Keep unknown risks, owners and required verification visible; approval does not verify them.
 
-**Resolve.** Resolve each decision unit in its natural owner section; earlier sections cross-reference the pending row. Do not defer a newly discovered critical risk to reach its owner section: resolve it now and carry the decision forward. Topic names alone never establish equivalence. A materially different remedy, scope, or risk needs its own explicit decision. Correcting test wording does not choose test depth; email recovery does not settle request instrumentation. An obvious recommendation still needs approval if not already accepted.
+**Resolve.** Resolve each unit in its owner section; earlier sections cross-reference pending rows. Resolve newly discovered critical risks immediately. Topic names do not establish equivalence: different remedies, scope or risks need explicit decisions. Correcting test wording does not choose test depth; email recovery does not settle instrumentation. Obvious recommendations still need approval unless already accepted.
 
 Check every offered option against its unit. Independently proposed commitments require separate rows when one can be adopted while another stays unchanged, including an unselected partial-package option. Do not invent independent add-ons to fill a third option. Apply the three test rules in Step 0D: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Reuse is evidence, not consent to other changes. Trace each amendment to its exact accepted option.
 
 **Apply.** Update the complete working plan before advancing, using Step 0's storage policy: scoped Edit when permitted, otherwise full updated chat text marked not persisted. Begin with the supplied input and explicitly accepted decisions.
 1. If the current section has an unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**. Before the answer, you may record only the pending issue, evidence, and alternatives in the ledger. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
-2. After the actual answer, check each new or changed commitment in the proposed amendment against the selected option or an explicit earlier approval. Details found only in pending proposals or surrounding analysis remain pending. Preserve unsupported premises as unknown: choosing a remedy does not verify its factual premise. Carry unchanged contracts through the amendment's success and failure paths. Keep independent remedies and additional verification depth pending. Record the choice and only its authorized amendments, including explicit deferrals, in the permitted medium. Preserve existing content and approvals, including direct implementation and verification of the accepted behavior; carrying a constraint forward does not claim a later section has been reviewed.
+2. Check every amended commitment against the actual answer or explicit earlier approval. Surrounding analysis, independent remedies and extra verification depth stay pending; choosing a remedy does not verify its premise. Preserve existing content, approved behavior and its direct implementation/verification, including unchanged success/failure contracts. Record only authorized amendments and deferrals in the permitted medium. Carrying a constraint forward does not mean its later section was reviewed.
 3. Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Assemble the required outputs and terminal report after all 11 sections have been evaluated.
 
 Approval settles the planning choice; it does not prove the mitigation is implemented or verified. In later sections, cross-reference an exact settled decision instead of asking it again. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
@@ -447,7 +433,7 @@ Run the selected backend in one foreground Bash invocation (`run_in_background: 
 `timeout: 300000`). Finish a failed attempt's termination before fallback;
 consume only its completed output. No background jobs or shared temporary paths.
 
-Use Write to save the **complete prompt and context** in a private file. Replace `<prepared-prompt-file>` below with its shell-quoted path; never interpolate user text into shell source. Include actual plan/spec/source content. Request a final Recommendation: <action> because <specific reason> line, including an explicit no-findings rationale. A refusal is never completion.
+Write the **complete prompt and context**, including actual plan/spec/source, to a private file. Substitute its shell-quoted path for `<prepared-prompt-file>`; never interpolate user text into shell source. Request a final Recommendation: <action> because <specific reason> line, including an explicit no-findings rationale.
 
 ```bash
 # GSTACK_ACTIVE_HOST names the harness, never the model.
@@ -472,9 +458,9 @@ _OUTSIDE_PROMPT=$(cat "$_OUTSIDE_INPUT") || exit 1
 _OUTSIDE_EXIT=0
 _gstack_codex_timeout_wrapper 300 codex exec "$_OUTSIDE_PROMPT" -C "$_REPO_ROOT" -s read-only -c "model=\"${GSTACK_CODEX_MODEL:-gpt-6-astra}\"" -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null >"$_OUTSIDE_TMP/text" 2>"$_OUTSIDE_TMP/stderr" || _OUTSIDE_EXIT=$?
 # Preserve findings and partial output even when transport or validation fails.
-cat "$_OUTSIDE_TMP/text" || { echo 'ERROR: cannot display outside review output' >&2; [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
+cat "$_OUTSIDE_TMP/text" || { [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
 
-cat "$_OUTSIDE_TMP/stderr" >&2 || { echo 'ERROR: cannot display outside review stderr' >&2; [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
+cat "$_OUTSIDE_TMP/stderr" >&2 || { [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
 if [ "$_OUTSIDE_EXIT" -ne 0 ]; then
   echo 'Codex outside review unavailable: execution failed; missing coverage. Check the provider diagnosis above.' >&2
   exit "$_OUTSIDE_EXIT"
@@ -484,7 +470,7 @@ bun "$HOME/.claude/skills/gstack/lib/outside-review-result.ts" review "$_OUTSIDE
 echo 'OUTSIDE_STATUS: completed provider=codex host=claude'
 ```
 
-Show the full response in a `tool-output` fence. Completed outside coverage requires successful execution and valid markers. Refusal, empty/malformed output, missing score/severity/completion markers, timeout, or CLI failure means `outside_status: unavailable`. Follow this caller's fallback; missing coverage is never clean/PASS. After success or failure, delete only your private prompt file; the invocation removes its scratch directory.
+Show the full response in a `tool-output` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing score/severity/completion markers, timeout or CLI failure means `outside_status: unavailable`. Use the caller's fallback; missing coverage is never clean/PASS. After either outcome, delete only your private prompt; scratch cleanup is automatic.
 
 Present the full output verbatim:
 
@@ -577,7 +563,7 @@ Only run this metadata write when permitted by the storage policy; otherwise rep
 ```
 
 Substitute: STATUS = "clean" only if a reviewer completed and found no issues; "issues_found" if findings exist, or "unavailable" if neither reviewer completed. Never count missing coverage as a clean review.
-For this phase (plan-review), retain the historical review-log skill identifier. Add `"host":"claude","outside_provider":"codex","outside_status":"completed|unavailable|disabled|skipped","phase":"plan-review"`. Record each attempted pass separately when outcomes differ. Use `source:"codex"` only for completed external CLI output, and `source:"in-host"` for a native pass. Historical `source:"claude"` continues to mean a native Claude subagent. CLI availability or a native fallback does not count as outside completion. Preserve reported modelUsage, including multiple models; unknown model identity stays unknown.
+Retain the historical review-log skill ID; add `"host":"claude","outside_provider":"codex","outside_status":"completed|unavailable|disabled|skipped","phase":"plan-review"`. Record differing attempt outcomes separately. `source:"codex"` requires completed CLI output; native uses `source:"in-host"` (historical `source:"claude"`: native Claude). Availability/native fallback is not outside completion. Preserve all reported modelUsage; unknown model identity stays unknown.
 
 
 

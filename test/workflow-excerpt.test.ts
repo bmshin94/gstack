@@ -25,7 +25,7 @@ function expectOutsideReviewControlFlow(text: string, promptHeading: string): vo
   expect(recheck).toContain('Immediately before dispatching, check the preflight result again.');
   expect(recheck).toContain('`CODEX_MODE: disabled`, finish this section with `outside_status: disabled`;');
   expect(recheck).toContain('do not dispatch.');
-  expect(fallback).toContain('CLI availability or a native fallback does not count as outside completion.');
+  expect(fallback).toContain('Availability/native fallback is not outside completion.');
 }
 
 describe('workflow judge excerpts', () => {
@@ -225,8 +225,10 @@ console.log(JSON.stringify({calls, results}));
     expect(eng.indexOf('## Confidence Calibration')).toBeLessThan(eng.indexOf('### 1. Architecture review'));
     expect(eng).toContain('quote the motivating plan requirement');
     expectOutsideReviewControlFlow(eng, '**Construct the plan review prompt**');
-    expect(eng).toContain('Do NOT auto-incorporate outside voice recommendations into the plan.');
-    expect(eng).toContain('MUST NOT apply the change without\nexplicit user approval.');
+    expect(eng).toContain('Agreement between reviewers is evidence, not approval');
+    expect(eng).toContain('new or reopened choices still need their own answers');
+    expect(eng).toContain('While waiting, do not apply the remedy, enter the next section or call ExitPlanMode.');
+    expect(eng).toContain('Apply only those amendments to the working plan with a scoped Edit');
     const design = readWorkflowExcerpt('plan-design-review/SKILL.md', '## Review Sections', '## CRITICAL RULE');
     expect(design).toContain('wait for approval, then edit the plan and re-rate');
     const pass4 = design.slice(design.indexOf('### Pass 4:'), design.indexOf('### Pass 5:'));

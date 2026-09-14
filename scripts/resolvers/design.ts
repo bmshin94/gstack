@@ -761,12 +761,12 @@ End with Recommendation: <direction> because <product-specific reason>.`;
 
     subagentPrompt = `Read the complete product brief at [the absolute DESIGN_BRIEF path printed above].
 
-Propose a design direction that would SURPRISE. What would the cool indie studio do that the enterprise UI team wouldn't?
+Propose a surprising indie-studio direction beyond conventional enterprise UI.
 - Propose an aesthetic direction, typography stack (specific font names), color palette (hex values)
 - 2 deliberate departures from category norms
 - What emotional reaction should the user have in the first 3 seconds?
 
-Be bold. Be specific. No hedging.`;
+Be bold and specific.`;
   } else {
     // Unknown skill — return empty
     return '';
@@ -827,7 +827,7 @@ ${optInSection}${isDesignConsultation ? `
 _DESIGN_BRIEF=$(mktemp /tmp/gstack-design-brief-XXXXXXXX) || exit 1
 printf 'DESIGN_BRIEF=%s\\n' "$_DESIGN_BRIEF"
 \`\`\`
-Write the confirmed product, users, project type, memorable-thing answer, constraints, and research findings (or skipped/unavailable) to the printed path. Both voices receive the same brief; neither inherits this conversation. Include its complete contents in the outside prompt file below; the native Agent reads the absolute brief path. Rebind \`$_DESIGN_BRIEF\` to that path in each Bash call. Keep your draft direction out of both prompts. Never paste brief contents into shell source.` : ''}
+Write confirmed product/users, project type, memorable-thing answer, constraints and research (or skipped/unavailable) to that path. Neither voice inherits context: give both the same brief. Include its complete contents in the outside prompt file; give the native Agent its absolute path. Rebind \`$_DESIGN_BRIEF\` per Bash call. Keep your draft direction out of both prompts. Never paste brief text into shell source.` : ''}
 
 **Check ${outsideVoiceFor(ctx).label} availability:**
 ${outsideVoicePreflight(ctx, { disabledBehavior: 'opt-in' })}

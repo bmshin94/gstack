@@ -55,10 +55,9 @@ describe('autoplan phase order (Eng always last)', () => {
 
   test.each(phases)('carved child completion and handoff IDs match the pipeline: %j', ({ child, id, next }) => {
     const section = read(`autoplan/sections/${child}-phase.md.tmpl`);
-    const declared = [...section.matchAll(/\*\*PHASE (\d+(?:\.\d+)?) COMPLETE\.\*\*/g)].map(m => m[1]);
-    const announced = [...section.matchAll(/^> \*\*Phase (\d+(?:\.\d+)?) complete\.\*\*/gm)].map(m => m[1]);
-    const handoff = section.match(/^> Passing to .+$/m)?.[0] ?? '';
-    expect(declared).toEqual([id]);
+    const announced = [...section.matchAll(/^\*\*Phase (\d+(?:\.\d+)?) complete\.\*\*$/gm)].map(m => m[1]);
+    const handoff = section.match(/^Passing to .+$/m)?.[0] ?? '';
+    expect(section).toContain('Only then send this completion summary as a standalone user-facing message');
     expect(announced).toEqual([id]);
     expect([...handoff.matchAll(/Phase (\d+(?:\.\d+)?)/g)].map(m => m[1])).toEqual(next);
     // Catch obsolete Phase 3.5 references anywhere in any carved child,
@@ -79,21 +78,26 @@ describe('autoplan phase order (Eng always last)', () => {
   });
 
   test('single final gate: premises queue for the gate, never a mid-run stop', () => {
-    expect(tmpl).toContain('One exception class — never auto-decided');
+    expect(tmpl).toContain('Never auto-decide User Challenges');
+    expect(tmpl.replace(/\s+/g, ' ')).toContain('or a premise is clearly wrong. Queue them for the Final Approval Gate, never mid-run stops');
     expect(tmpl).not.toContain('Premise gate passed (user confirmed)');
     const ceo = read('autoplan/sections/ceo-phase.md.tmpl');
     expect(ceo).not.toContain('GATE: Present premises to user for confirmation');
-    expect(ceo).toContain('Final');
+    expect(ceo).toContain('Queue clearly-wrong/challenged premises');
+    expect(ceo).toContain('as User Challenges for Phase 4');
+    expect(ceo).toContain('The user decides there; never stop mid-pipeline');
   });
 
   test('generated workflow loads each complete skill at its own phase boundary', () => {
     const skill = read('autoplan/SKILL.md');
     const phase0 = skill.slice(skill.indexOf('### Step 3:'), skill.indexOf('## Phase 1:'));
     const setup = phase0.split('**Section skip list')[0]!;
-    expect(setup).toContain('test -r');
-    expect(setup).toContain('Do not preload');
-    expect(setup).not.toContain('/SKILL.md');
-    expect(setup).toContain('Read its skill in full before\nanalysis or reviewer dispatch');
+    expect(setup).toContain('Resolve this phase');
+    expect(setup).toContain('Do not prefetch future phase sections or review skills');
+    expect(setup).toContain('Missing skill: report the\nmissing phase and setup repair');
+    expect(setup).toContain('Read each at its trigger');
+    // Locating paths at intake does not load or execute their future phases.
+    expect(setup).not.toMatch(/^Read `[^`]+\/SKILL\.md` in full now/gm);
 
     const owners = [
       { id: '1', name: 'ceo', next: '## Phase 2:' },
@@ -186,8 +190,9 @@ describe('autoplan phase execution checkpoints', () => {
     expect(contract).toContain('Never draft future-phase reviews or outputs');
     expect(contract).toContain('After compaction, reload current phase instructions/skill/sections; reconcile disk progress before resuming');
     expect(contract).toContain('Load its phase instructions and full skill/sections');
-    expect(contract).toContain('Create the fresh snapshot and dispatch its nativeDispatchPrompt unchanged');
-    expect(contract).toContain('Consume native completion, then enabled outside results; only then do the full primary review');
+    expect(contract).toContain("Complete the phase's required preliminary work (CEO: all Step 0");
+    expect(contract).toContain('then create the fresh snapshot and dispatch its nativeDispatchPrompt unchanged');
+    expect(contract.replace(/\s+/g, ' ')).toContain("Consume native completion, then enabled outside results; only then complete the phase's remaining primary review sections");
     expect(contract).toContain("Persist outputs/amendments and run the phase's implementation check/readback");
     expect(contract).toContain('Send the phase completion summary as a standalone user-facing message');
     expect(contract).toContain("Only then make the next phase's tool calls");

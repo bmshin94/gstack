@@ -6,11 +6,9 @@ announcement. Dispatching a reviewer does not complete its step.
 
 **Override rules:**
 - Mode selection: SELECTIVE EXPANSION
-- Premises: accept reasonable ones (P6). Clearly-wrong or challenged premises are
-  NOT a mid-run stop — queue each as a User-Challenge-shaped item for the Final
-  Approval Gate (Phase 4): what the plan assumes, why it looks wrong, and the cost
-  of proceeding anyway. Premises still require human judgment — the human exercises
-  it at the gate, exactly once, not mid-pipeline.
+- Premises: accept reasonable ones (P6). Queue clearly-wrong/challenged premises
+  as User Challenges for Phase 4: assumption, reason and cost of proceeding.
+  The user decides there; never stop mid-pipeline.
 - Alternatives: pick highest completeness (P1). If tied, pick simplest (P5).
   If top 2 are close → mark TASTE DECISION.
 - Scope expansion: in blast radius + <1d CC → approve (P2). Outside → defer to TODOS.md (P3).
@@ -19,37 +17,24 @@ announcement. Dispatching a reviewer does not complete its step.
 
 **Required execution checklist (CEO):**
 
-Execute Step 0 in the order required by the loaded CEO skill, applying the overrides
-above. Follow its SELECTIVE EXPANSION route, including the CEO scope document and
-Spec Review Loop in 0H before 0I and Review Sections. Preserve every Step 0
-analysis and output.
+Complete every Step 0 analysis/output on the loaded skill's SELECTIVE EXPANSION
+route with the overrides above: CEO scope document and 0H Spec Review Loop before
+0I and Review Sections.
 
-**At 0H, construct and reconcile both review inputs.** Define the behavior, planned
-tests and manual checklists in their owning working-plan sections before citing
-them from the ledger or CEO scope summary. Cite those actual headings and test
-names; leave later review records pending until they exist.
+**At 0H, reconcile both inputs.** Define behavior, tests and manual checklists in
+their owning working-plan sections before citing actual headings/test names in
+the ledger or CEO scope summary; future review records stay pending.
+Preserve source-plan and DESIGN.md requirements. Proposed changes follow User
+Challenge rules; keep original requirements pending the gate. In the Decision
+Audit Trail, Taste is provisional auto-decision; User Challenges are unapproved.
+Accepted expansions must work without assuming queued changes are approved.
+Carry these dispositions, scope counts and proposal IDs into both files before
+spec review. Link deferrals to actual TODOs or pending writes. Fix summary drift
+without changing decisions, dropping findings/required fields or inventing references.
 
-Preserve explicit source-plan and DESIGN.md requirements. Route proposed changes
-through the existing User Challenge rules; keep the original requirement while
-a challenge awaits the gate. Use the existing Decision Audit Trail for each
-choice's current disposition: Taste recommendations are working auto-decisions
-subject to the final gate; queued User Challenges are not accepted scope. An
-accepted expansion must work without assuming a queued change is approved.
-
-Carry these dispositions into the working plan and CEO scope summary. Derive each
-required scope count and proposal-ID list from that same record, and reconcile
-both files before spec review. Link each deferred item to its actual TODO entry
-or recorded pending write. Correct summary drift without changing decisions or
-omitting findings. The summary retains every required field; it cites the plan's
-requirement and verification sections rather than inventing future references.
-
-Step 0.5 (Dual Voices): After Step 0 and its Spec Review Loop finish, run the
-native CEO subagent below and consume its final review, then run the outside voice.
-Present both completed results before constructing consensus.
-
-- Dual voices: always run BOTH {{NATIVE_LABEL}} subagent AND {{OUTSIDE_LABEL}} if available (P6).
-  Run {{NATIVE_LABEL}} first, then {{OUTSIDE_LABEL}}, sequentially;
-  both must complete before consensus.
+Step 0.5 (Dual Voices): After Step 0's Spec Review Loop, consume the native CEO
+review, then the available outside voice (P6). Present both completed results
+before consensus; always run the native pass.
 
   **Bind phase input:** Run; use `snapshotPath` as `<CEO_INPUT>` for both voices:
 ```bash
@@ -148,7 +133,3 @@ After sending it, load/create/dispatch the next phase:
 {{OUTSIDE_LABEL}}: [completed: N concerns / unavailable / disabled]. {{NATIVE_LABEL}} subagent: [completed: N issues / unavailable].
 Consensus: [N/A (outside disabled/unavailable) | X/6 native+outside confirmed; Y disagreements → gate].
 Passing to Phase 2.
-
-Do NOT begin Phase 2 until all Phase 1 outputs are written to the plan file,
-including the premise assessment (queued premise challenges travel to the
-Final Gate — they never pause the pipeline here).

@@ -121,11 +121,11 @@ export function outsideVoiceCommand(ctx: TemplateContext, opts: OutsideCommandOp
 ${opts.structuredBase ? '' : '_OUTSIDE_PROMPT=$(cat "$_OUTSIDE_INPUT") || exit 1\n'}_OUTSIDE_EXIT=0
 _gstack_codex_timeout_wrapper ${Math.ceil(opts.timeoutMs / 1000)} ${codex} >"$_OUTSIDE_TMP/text" 2>"$_OUTSIDE_TMP/stderr" || _OUTSIDE_EXIT=$?
 # Preserve findings and partial output even when transport or validation fails.
-cat "$_OUTSIDE_TMP/text" || { echo 'ERROR: cannot display outside review output' >&2; [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }`
+cat "$_OUTSIDE_TMP/text" || { [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }`
     : `_OUTSIDE_EXIT=0
 "${bin}/gstack-claude-code" --cwd "$_REPO_ROOT" --access ${opts.access ?? 'none'} --timeout-ms ${opts.timeoutMs} <"$_OUTSIDE_INPUT" >"$_OUTSIDE_TMP/result.json" 2>"$_OUTSIDE_TMP/stderr" || _OUTSIDE_EXIT=$?
 # Preserve session/usage/modelUsage from this JSON; multiple models have no invented primary.
-cat "$_OUTSIDE_TMP/result.json" || { echo 'ERROR: cannot display outside review result' >&2; [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
+cat "$_OUTSIDE_TMP/result.json" || { [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
 if [ "$_OUTSIDE_EXIT" -eq 0 ]; then
   bun -e 'const r=await Bun.file(process.argv[1]).json(); if(r.status!=="completed" || typeof r.result!=="string" || !r.result.trim()) process.exit(1); await Bun.write(process.argv[2],r.result)' "$_OUTSIDE_TMP/result.json" "$_OUTSIDE_TMP/text" || _OUTSIDE_EXIT=1
 fi`;
@@ -144,7 +144,7 @@ ${v.id === 'codex' && ctx.skillName === 'autoplan' ? `if [ "$_OUTSIDE_EXIT" -eq 
   _gstack_codex_log_event "codex_timeout" "${Math.ceil(opts.timeoutMs / 1000)}" || true
   _gstack_codex_log_hang "autoplan" "0" || true
 fi` : ''}
-cat "$_OUTSIDE_TMP/stderr" >&2 || { echo 'ERROR: cannot display outside review stderr' >&2; [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
+cat "$_OUTSIDE_TMP/stderr" >&2 || { [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
 if [ "$_OUTSIDE_EXIT" -ne 0 ]; then
   echo '${v.label} outside review unavailable: execution failed; missing coverage. Check the provider diagnosis above.' >&2
   exit "$_OUTSIDE_EXIT"
@@ -165,19 +165,19 @@ export function outsideVoiceInvocation(ctx: TemplateContext, opts: OutsideComman
         : 'Request a final Recommendation: <action> because <specific reason> line, including an explicit no-findings rationale.';
   const preparation = nativeStructured
     ? 'Run Codex’s built-in structured review with the selected base. It supplies its own prompt and accepts no custom prompt file with --base. Require severity-tagged findings (including native P1:/P2: labels) or an explicit no-findings conclusion; arbitrary prose or a refusal is missing coverage.'
-    : `Use Write to save the **complete prompt and context** in a private file. Replace \`<prepared-prompt-file>\` below with its shell-quoted path; never interpolate user text into shell source. Include actual plan/spec/source content${outsideVoiceFor(ctx).id === 'claude-code' ? ': Claude Code review/challenge has no tools, git, or path access' : ''}. ${completion} A refusal is never completion.`;
+    : `Write the **complete prompt and context**, including actual plan/spec/source, to a private file${outsideVoiceFor(ctx).id === 'claude-code' ? ' (Claude Code has no tools, git or path access)' : ''}. Substitute its shell-quoted path for \`<prepared-prompt-file>\`; never interpolate user text into shell source. ${completion}`;
   return `${preparation}
 
 \`\`\`bash
 ${outsideVoiceCommand(ctx, opts)}
 \`\`\`
 
-Show the full response in a \`tool-output\` fence. Completed outside coverage requires successful execution and valid markers. Refusal, empty/malformed output, ${opts.purpose === 'design-direction' ? 'missing Recommendation marker' : 'missing score/severity/completion markers'}, timeout, or CLI failure means \`outside_status: unavailable\`. ${opts.purpose === 'design-direction' ? 'Continue with the proposals that completed; a native proposal does not complete outside coverage.' : "Follow this caller's fallback; missing coverage is never clean/PASS."} ${nativeStructured ? 'The invocation removes its own scratch directory.' : 'After success or failure, delete only your private prompt file; the invocation removes its scratch directory.'}`;
+Show the full response in a \`tool-output\` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing ${opts.purpose === 'design-direction' ? 'Recommendation' : 'score/severity/completion'} markers, timeout or CLI failure means \`outside_status: unavailable\`. ${opts.purpose === 'design-direction' ? 'Continue completed proposals; native completion does not count as outside coverage.' : "Use the caller's fallback; missing coverage is never clean/PASS."} ${nativeStructured ? 'Scratch cleanup is automatic.' : 'After either outcome, delete only your private prompt; scratch cleanup is automatic.'}`;
 }
 
 export function outsideVoiceProvenance(ctx: TemplateContext, phase: string): string {
   const v = outsideVoiceFor(ctx);
-  return `For this phase (${phase}), retain the historical review-log skill identifier. Add \`"host":"${ctx.host}","outside_provider":"${v.id}","outside_status":"completed|unavailable|disabled|skipped","phase":"${phase}"\`. Record each attempted pass separately when outcomes differ. Use \`source:"${v.id}"\` only for completed external CLI output, and \`source:"in-host"\` for a native pass. Historical \`source:"claude"\` continues to mean a native Claude subagent. CLI availability or a native fallback does not count as outside completion. Preserve reported modelUsage, including multiple models; unknown model identity stays unknown.`;
+  return `Retain the historical review-log skill ID; add \`"host":"${ctx.host}","outside_provider":"${v.id}","outside_status":"completed|unavailable|disabled|skipped","phase":"${phase}"\`. Record differing attempt outcomes separately. \`source:"${v.id}"\` requires completed CLI output; native uses \`source:"in-host"\` (historical \`source:"claude"\`: native Claude). Availability/native fallback is not outside completion. Preserve all reported modelUsage; unknown model identity stays unknown.`;
 }
 
 export function generateOutsideVoiceRouting(ctx: TemplateContext): string {

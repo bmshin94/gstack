@@ -620,13 +620,9 @@ Examples: run the outside reviewer when enabled (always yes), run evals (always 
 2. **Borderline scope** — in blast radius but 3-5 files, or ambiguous radius.
 3. **Codex disagreements** — the outside reviewer recommends differently and has a valid point.
 
-**User Challenge** — both models agree the user's stated direction should change.
-This is qualitatively different from taste decisions. When Claude and Codex both
-recommend merging, splitting, adding, or removing features/skills/workflows that
-the user specified, this is a User Challenge. It is NEVER auto-decided.
-
-User Challenges go to the final approval gate with richer context than taste
-decisions:
+**User Challenge** — Claude and Codex both recommend changing the
+user's stated direction: merge, split, add or remove features/skills/workflows.
+NEVER auto-decide these. At the final approval gate, give:
 - **What the user said:** (their original direction)
 - **What both models recommend:** (the change)
 - **Why:** (the models' reasoning)
@@ -636,10 +632,9 @@ decisions:
 
 Default to the user's original direction. The models must justify changing it.
 
-**Exception:** If both models flag the change as a security vulnerability or
-feasibility blocker (not a preference), the AskUserQuestion framing explicitly
-warns: "Both models believe this is a security/feasibility risk, not just a
-preference." The user still decides, but the framing is appropriately urgent.
+For agreed security vulnerabilities or feasibility blockers, explicitly warn:
+"Both models believe this is a security/feasibility risk, not just a preference."
+The user still decides.
 
 ---
 
@@ -673,18 +668,15 @@ native completion; report status accurately. Never read raw agent transcripts.
 Auto-decide replaces the USER'S answer, not the ANALYSIS. Execute every loaded
 section at full interactive depth; answer its AskUserQuestion using the 6 principles.
 
-**Default resolution: the recommended option.** Every AskUserQuestion in the loaded
-skills resolves to its `(recommended)` option; mode selections take the skill's
-context-dependent default. The 6 principles guide cases with no recommendation and
-break ties; when a principle argues AGAINST the recommended option, that is a Taste
-decision — take the recommendation and surface the disagreement at the final gate.
+**Default resolution: the recommended option.** Take `(recommended)`; modes use
+the skill's context default. Use the 6 principles when no recommendation exists
+or to break ties. If a principle disagrees, take the recommendation and surface
+the disagreement as Taste at the final gate.
 
-**One exception class — never auto-decided:** User Challenges — when both models
-agree the user's stated direction should change (merge, split, add, remove
-features/workflows; reinterpret a settled decision), or a premise looks clearly
-wrong. These queue and surface at the Final Approval Gate — never as mid-run
-stops. The user is interrupted exactly once, at the gate. The user always has
-context models lack. See Decision Classification above.
+**Never auto-decide User Challenges:** both models agree to change the user's
+direction or reinterpret settled decisions, or a premise is clearly wrong. Queue them
+for the Final Approval Gate, never mid-run stops. Interrupt the user once, there;
+they have context models lack. Use Decision Classification above.
 
 **You MUST still:**
 - READ the actual code, diffs, and files each section references
@@ -696,7 +688,6 @@ context models lack. See Decision Classification above.
 
 **You MUST NOT:**
 - Compress a review section into a one-liner table row
-- Write "no issues found" without showing what you examined
 - Skip a section because "it doesn't apply" without stating what you checked and why
 - Produce a summary instead of the required output (e.g., "architecture looks good"
   instead of the ASCII dependency graph the section requires)
@@ -925,7 +916,7 @@ Read `~/.claude/skills/gstack/plan-eng-review/SKILL.md` in full now.
 
 ## Decision Audit Trail
 
-After each auto-decision, append a row to the plan file using Edit:
+Immediately after each auto-decision, append one row to the plan file using Edit:
 
 ```markdown
 <!-- AUTONOMOUS DECISION LOG -->
@@ -934,8 +925,6 @@ After each auto-decision, append a row to the plan file using Edit:
 | # | Phase | Decision | Classification | Principle | Rationale | Rejected |
 |---|-------|----------|-----------|-----------|----------|
 ```
-
-Write one row per decision immediately via Edit, keeping the audit on disk.
 
 ---
 
@@ -1124,7 +1113,7 @@ Always log the DX phase. If it had no developer-facing scope, use status and out
 
 Generate one unique AUTOPLAN_RUN_ID at run start and substitute the same value in all four records. SOURCE = "codex" only for completed external output; use separate "in-host" records for native results. OUTSIDE_STATUS is phase-specific: completed, unavailable, disabled, or skipped. Never reuse one phase's success for another phase. Keep unknown model identity unknown; preserve multi-model usage when reported.
 
-For this phase (autoplan), retain the historical review-log skill identifier. Add `"host":"claude","outside_provider":"codex","outside_status":"completed|unavailable|disabled|skipped","phase":"autoplan"`. Record each attempted pass separately when outcomes differ. Use `source:"codex"` only for completed external CLI output, and `source:"in-host"` for a native pass. Historical `source:"claude"` continues to mean a native Claude subagent. CLI availability or a native fallback does not count as outside completion. Preserve reported modelUsage, including multiple models; unknown model identity stays unknown.
+Retain the historical review-log skill ID; add `"host":"claude","outside_provider":"codex","outside_status":"completed|unavailable|disabled|skipped","phase":"autoplan"`. Record differing attempt outcomes separately. `source:"codex"` requires completed CLI output; native uses `source:"in-host"` (historical `source:"claude"`: native Claude). Availability/native fallback is not outside completion. Preserve all reported modelUsage; unknown model identity stays unknown.
 
 Present a phase-by-phase coverage table (CEO, design, DX, eng) with host, outside provider, outside status, native completion, and findings. Report partial coverage explicitly.
 Replace N values with actual consensus counts from the tables.

@@ -38,8 +38,8 @@ describe('generator artifact and dry-run contract', () => {
   test('all host artifacts validate, with canonical links and host exclusions', () => {
     expect([...new Set(generated.artifacts.filter(a => a.host).map(a => a.host))].sort()).toEqual([...ALL_HOST_NAMES].sort());
     expect([...new Set(generated.artifacts.map(a => a.kind))].sort()).toEqual(['asset', 'digest', 'index', 'metadata', 'openclaw', 'section', 'skill']);
-    expect(generated.artifacts.some(a => a.relativePath === 'claude/SKILL.md')).toBe(false);
-    expect(generated.artifacts.some(a => a.relativePath === '.agents/skills/gstack-claude/SKILL.md')).toBe(true);
+    expect(generated.artifacts.some(a => a.relativePath === 'claude-code/SKILL.md')).toBe(false);
+    expect(generated.artifacts.some(a => a.relativePath === '.agents/skills/gstack-claude-code/SKILL.md')).toBe(true);
     expect(generated.artifacts.some(a => a.relativePath === '.agents/skills/gstack-codex/SKILL.md')).toBe(false);
     expect(fs.readFileSync(path.join(render, 'ship/SKILL.md'), 'utf-8')).toContain('~/.claude/skills/gstack/ship/sections/');
     expect(generated.artifacts.flatMap(a => validateGeneratedArtifact(render, a))).toEqual([]);
@@ -51,11 +51,11 @@ describe('generator artifact and dry-run contract', () => {
 
   test('include-minus-skip semantics share one predicate', () => {
     const host = getHostConfig('claude');
-    expect(includesSkill(host, 'claude')).toBe(false);
+    expect(includesSkill(host, 'claude-code')).toBe(false);
     expect(includesSkill(host, '.')).toBe(true);
-    const filtered = { ...host, generation: { ...host.generation, includeSkills: ['ship', 'claude'] } };
+    const filtered = { ...host, generation: { ...host.generation, includeSkills: ['ship', 'claude-code'] } };
     expect(includesSkill(filtered, 'ship')).toBe(true);
-    expect(includesSkill(filtered, 'claude')).toBe(false);
+    expect(includesSkill(filtered, 'claude-code')).toBe(false);
     expect(includesSkill(filtered, 'review')).toBe(false);
   });
 

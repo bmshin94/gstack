@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { readWorkflowJudgeInput } from './helpers/workflow-judge-input';
+import { ENG_REVIEW_EXCERPT } from './helpers/workflow-excerpt';
 
 const ROOT = resolve(import.meta.dir, '..');
 const scratchRoots: string[] = [];
@@ -190,10 +191,9 @@ describe('workflow judge file bundle', () => {
   test('generated engineering review includes the scope choices and readiness probe its steps reference', () => {
     const skillPath = 'plan-eng-review/SKILL.md';
     const caller = readFileSync(join(ROOT, 'test/skill-llm-eval.test.ts'), 'utf8');
-    const markers = caller.match(/skillPath: 'plan-eng-review\/SKILL\.md',\s+startMarker: '([^']+)',\s+endMarker: '([^']+)'/);
-    expect(markers).not.toBeNull();
-    const [, startMarker, endMarker] = markers!;
-    const input = readWorkflowJudgeInput({ root: ROOT, skillPath, startMarker, endMarker });
+    expect(caller).toContain('...ENG_REVIEW_EXCERPT');
+    expect(ENG_REVIEW_EXCERPT.skillPath).toBe(skillPath);
+    const input = readWorkflowJudgeInput({ root: ROOT, ...ENG_REVIEW_EXCERPT });
     const entrypoint = input.files.find(file => file.kind === 'entrypoint')!;
     expect(entrypoint.content).toContain('B) A plan or design doc');
     expect(entrypoint.content).toContain('## Scope gate');

@@ -1983,39 +1983,42 @@ describe('DESIGN_OUTSIDE_VOICES resolver', () => {
     expect(content).toContain('design direction');
   });
 
-  test('consultation dispatch shares a verified brief path without executing product text', () => {
+  test('consultation dispatch shares the complete brief without executing product text', () => {
     const content = readSkillUnion('design-consultation');
     const command = [...content.matchAll(/```bash\n([\s\S]*?)```/g)]
       .map(match => match[1]).find(block => block.includes('codex exec'))!;
-    const guardedCommand = `trap 'rm -f -- "\${TMPERR_DESIGN:-}"' EXIT\n${command}`;
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'design-brief-contract-'));
+    const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
     try {
       const brief = path.join(dir, 'product.md');
       const capture = path.join(dir, 'argv.json');
       const marker = path.join(dir, 'must-not-execute');
       const product = `A product with $(touch ${marker}), \`touch ${marker}\`, and "quotes".\nUsers: builders.\n`;
       fs.writeFileSync(brief, product);
-      fs.writeFileSync(path.join(dir, 'codex'), `#!${process.execPath}\nrequire('fs').writeFileSync(process.env.CAPTURE, JSON.stringify(process.argv.slice(2)));\n`, { mode: 0o700 });
-      const env = { ...process.env, PATH: dir + path.delimiter + process.env.PATH, CAPTURE: capture, _DESIGN_BRIEF: brief };
-      const result = spawnSync('bash', ['-c', guardedCommand], { cwd: ROOT, env, encoding: 'utf8', timeout: 5_000 });
-      expect(result.status).toBe(0);
+      fs.writeFileSync(path.join(dir, 'codex'), `#!${process.execPath}\nrequire('fs').writeFileSync(process.env.CAPTURE, JSON.stringify(process.argv.slice(2)));\nconsole.log('Recommendation: choose a clear hierarchy because builders need to find their work.');\n`, { mode: 0o700 });
+      const prepare = (file: string) => command.replace("'<prepared-prompt-file>'", quote(file))
+        .replaceAll('$HOME/.claude/skills/gstack', ROOT);
+      const env = { ...process.env, PATH: dir + path.delimiter + process.env.PATH, CAPTURE: capture,
+        CODEX_THREAD_ID: '', CODEX_SANDBOX: '', CLAUDECODE: '1', GSTACK_ACTIVE_HOST: 'claude' };
+      const result = spawnSync('bash', ['-c', prepare(brief)], { cwd: ROOT, env, encoding: 'utf8', timeout: 5_000 });
+      expect(result.status, result.stderr).toBe(0);
       const args = JSON.parse(fs.readFileSync(capture, 'utf8'));
       expect(args[0]).toBe('exec');
-      expect(args[1]).toContain(`Read the complete product brief at "${brief}"`);
-      expect(args[1]).not.toContain(product);
+      expect(args[1]).toBe(product.trimEnd());
       expect(args).toContain('read-only');
       expect(fs.readFileSync(brief, 'utf8')).toBe(product);
       expect(fs.existsSync(marker)).toBe(false);
       fs.unlinkSync(capture);
-      const missing = spawnSync('bash', ['-c', guardedCommand], { cwd: ROOT, env: { ...env, _DESIGN_BRIEF: path.join(dir, 'absent') }, encoding: 'utf8', timeout: 5_000 });
+      const missing = spawnSync('bash', ['-c', prepare(path.join(dir, 'absent'))], { cwd: ROOT, env, encoding: 'utf8', timeout: 5_000 });
       expect(missing.status).not.toBe(0);
-      expect(missing.stderr).toContain('missing product brief');
+      expect(missing.stderr).toContain('No such file');
       expect(fs.existsSync(capture)).toBe(false);
-      expect(content).toContain('same brief; neither inherits this conversation');
-      expect(content).toContain('await both actual results before the Phase 3 synthesis');
-      expect(content).toContain('If it is unavailable, run the Agent alone');
+      expect(content).toContain('Neither voice inherits context: give both the same brief');
+      expect(content).toContain('await both before synthesis');
+      expect(content).toContain('use only the native voice');
+      expect(content).toContain('give the native Agent its absolute path');
       expect(content).toContain('Read the complete product brief at [the absolute DESIGN_BRIEF path printed above]');
-      expect(content).toContain('before finalizing typography');
+      expect(content).toContain('Verify via WebSearch/Aside on Google Fonts/Fontshare, or local files/licenses; omit unverified faces');
       expect(content).toContain('a face may serve multiple roles');
       expect(content).not.toContain('a single question that covers everything');
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -2194,8 +2197,9 @@ describe('Design approval reconciliation', () => {
     expect(gate).toContain('record why. Deferrals remain unresolved.');
     expect(gate).toContain('If missing, reset drafts to pending, ask and wait.');
     expect(gate).toContain('refresh the plan, report and review log; rerun this gate.');
-    expect(check).toContain('Read and execute every section and output');
-    expect(check).toContain('STOP, Read it and redo the review');
+    expect(check).toContain('Confirm you Read `sections/review-sections.md` and executed its 11-section deep');
+    expect(check).toContain('review, required outputs and review report from the file, not memory.');
+    expect(check).toContain('STOP, Read\nit now and redo the review from the source of truth.');
     expect(main).toContain('one tool_use per issue, no batching');
     expect(main).toContain('even obvious fixes');
     expect(main).toContain('wait for approval before changing the plan');
@@ -4075,13 +4079,13 @@ describe('CEO accepted requirement preservation', () => {
   test('loaded sections keep requirement conflicts unresolved until an authorized decision', () => {
     const section = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/sections/review-sections.md'), 'utf8');
     const policy = section.slice(section.indexOf('**Preserve accepted requirements.**'), section.indexOf('### Section 1:'));
-    expect(policy).toContain('report an implementation\ngap and propose a remedy that meets the requirement');
-    expect(policy).toContain('it does not authorize weakening the required behavior');
-    expect(policy).toContain('changing a test to expect the prohibited result');
-    expect(policy).toContain('keep that proposal pending and the original gap unresolved');
-    expect(policy).toContain('Earlier explicitly approved requirement changes and explicit authority to change\nthat scope remain valid');
-    expect(policy).toContain('Routine auto-decide permission alone cannot override an\nexplicit user constraint or non-goal');
-    expect(policy).toContain('Preserve the distinction in findings, tasks,\nand the completion report');
+    expect(policy).toContain('Report gaps and propose remedies that satisfy them');
+    expect(policy).toContain('Never close a gap by weakening its guarantee, accepting the violation, or changing a test to expect it');
+    expect(policy).toContain('Low frequency, bounded impact and documentation do not satisfy stricter requirements');
+    expect(policy).toContain('keep the proposal pending and original gap unresolved');
+    expect(policy).toContain('Preserve earlier approved changes and explicit authority');
+    expect(policy).toContain('routine auto-decide cannot override user constraints or non-goals');
+    expect(policy).toContain('Carry this distinction into findings, tasks and the report');
   });
 });
 
@@ -4173,26 +4177,28 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
     const approachIdx = content.indexOf('### 0D.');
     const presentIdx = content.indexOf("Use the preamble's question format", approachIdx);
-    const stopIdx = content.indexOf('**STOP:**', presentIdx);
+    const stopIdx = content.indexOf('**STOP for the actual answer, even for a lone option.**', presentIdx);
     const modeIdx = content.indexOf('### 0E. Mode Selection');
     const preludeIdx = content.indexOf('### 0F');
     const positions = [approachIdx, presentIdx, stopIdx, modeIdx, preludeIdx];
     expect(positions.every(position => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
-    expect(approach).toContain('Check the original input, inspected source and actual answers');
+    expect(approach).toContain('Read the original input, inspected source and actual answers');
     expect(approach).toContain('Correct factual errors in the working plan; flag conflicts with approvals');
-    expect(approach).toContain('Carry exact approvals forward without broadening or asking again');
-    expect(content).toContain("the actual instruction or answer reference and precisely what it authorized");
+    expect(approach).toContain('Carry exact approvals forward.');
+    expect(content).toContain("the actual instruction or answer reference and its exact scope");
     const reopenRule = 'Reopen only for a concrete contradiction, changed assumption or explicit new user instruction';
     expect(content).toContain(reopenRule);
-    expect(content.indexOf(reopenRule)).toBeLessThan(approachIdx);
+    expect(content.indexOf(reopenRule)).toBeGreaterThan(approachIdx);
+    expect(content.indexOf(reopenRule)).toBeLessThan(presentIdx);
     const gate = content.slice(stopIdx, modeIdx);
-    expect(gate).toContain('Resolve each pending approach before 0E, even a lone option');
+    expect(gate).toContain('Resolve required approaches before 0E');
+    expect(gate).toContain('even for a lone option');
     expect(approach).toContain('Recommendations are not approval');
     expect(approach).toContain('Ask one row per call and cite its ID');
-    expect(gate).toContain('Record the actual answer reference and scope in Exact approval and scope');
-    expect(gate).toContain('Update Status and apply only approved amendments before the next row');
+    expect(gate).toContain('Record its reference and scope in Exact approval and scope');
+    expect(gate).toContain('update Status, and apply only the authorized amendments before the next row');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
   });
 });

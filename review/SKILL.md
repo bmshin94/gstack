@@ -2,7 +2,7 @@
 name: review
 preamble-tier: 4
 version: 1.0.0
-description: Pre-merge code review of the current branch diff to catch structural risks before landing changes. (gstack)
+description: Pre-landing PR review. (gstack)
 allowed-tools:
   - Bash
   - Read

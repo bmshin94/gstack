@@ -387,22 +387,22 @@ describe('Eng approved-work decision gate', () => {
 
 // These checks cover generated instructions, not native model compliance.
 describe('outside-voice commitment queue', () => {
-  test('Eng under-Codex preflight has one explicit skip route on every host', () => {
+  test('Eng selects the other provider and preserves explicit native fallback on every host', () => {
     for (const host of ALL_HOST_CONFIGS) {
-      const context = { host: host.name, paths: HOST_PATHS[host.name]! };
-      const eng = generateCodexPlanReview({ ...context, skillName: 'plan-eng-review' } as TemplateContext);
+      const eng = generateCodexPlanReview({ host: host.name, paths: HOST_PATHS[host.name]!, skillName: 'plan-eng-review' } as TemplateContext);
+      const provider = host.name === 'codex' ? 'Claude Code' : 'Codex';
+      const mismatch = host.name === 'codex' ? 'under_current_harness' : 'under_codex';
+      expect(eng).toContain(`**If \`CODEX_MODE: ready\` — run ${provider}:**`);
+      const fallback = eng.slice(eng.indexOf('**Native fallback'), eng.indexOf('**Bounded outside-voice wait'));
+      expect(fallback).toContain(`On \`CODEX_MODE: ${mismatch}\``);
+      expect(fallback).toContain('run no outside CLI, and use the native subagent below');
+      expect(fallback).toContain('A native result never supplies outside coverage.');
+      expect(fallback).toContain('The disabled branch never reaches this fallback.');
+      expect(eng).not.toContain('No in-host substitute is defined here');
       if (host.name === 'codex') {
-        expect(eng).toBe('');
-        continue;
-      }
-      const underCodex = eng.split('- **`under_codex`**')[1]!.split('\n- **')[0]!;
-      expect(underCodex).toContain('skip this outside-voice section and continue to the required outputs');
-      expect(underCodex).toContain('No in-host substitute is defined here');
-      expect(eng).not.toContain("run the section's free in-host pass instead if it defines one");
-      expect(eng).not.toContain('On `under_codex`,');
-      const other = generateCodexPlanReview({ ...context, skillName: 'plan-design-review' } as TemplateContext);
-      expect(other).toContain("run the section's free in-host pass instead if it defines one");
-      expect(other).toContain('On `under_codex`, no in-host substitute is defined here');
+        expect(eng).toContain('gstack-claude-code');
+        expect(eng).not.toContain('codex exec');
+      } else expect(eng).toContain('codex exec');
     }
   });
 
@@ -413,10 +413,6 @@ describe('outside-voice commitment queue', () => {
         const tmplPath = `${skillName}/sections/review-sections.md.tmpl`;
         expect(readFileSync(tmplPath, 'utf8')).toContain('{{CODEX_PLAN_REVIEW}}');
         const generated = generateCodexPlanReview({ skillName, tmplPath, host: host.name, paths: HOST_PATHS[host.name]! });
-        if (host.name === 'codex') {
-          expect(generated).toBe('');
-          continue;
-        }
         const start = generated.indexOf('**Cross-model tension:**');
         const end = generated.indexOf('**Persist the result:**', start);
         expect(start).toBeGreaterThan(0);
@@ -648,8 +644,9 @@ describe('plan-review manual handoff selection', () => {
     ['ceo', 3], ['design', 5], ['devex', 4], ['eng', 3],
   ] as const)('supports every current %s review source handoff option', (skill, selected) => {
     const source = readFileSync(`plan-${skill}-review/sections/review-sections.md.tmpl`, 'utf8');
-    const block = source.match(/Use AskUserQuestion (?:to present the next step\. Include only applicable options:|with (?:only the )?applicable options:)\n((?:- \*\*[A-E]\)\*\* .+\n)+)/)![1]!;
-    const labels = block.trim().split('\n').map(line => line.replace(/^- \*\*([A-E]\))\*\* /, '$1 '));
+    const handoff = source.split('## Next Steps — Review Chaining')[1]?.split('\n## ')[0] ?? '';
+    const labels = [...handoff.matchAll(/^- \*\*([A-E]\))\*\* (.+)$/gm)].map(match => `${match[1]} ${match[2]}`);
+    expect(labels).toHaveLength(selected);
     expect(pickPlanReviewQuestion(menu(labels, 'Next steps'))).toBe(selected);
     // Native dialogs allow at most four choices. Each applicable source subset
     // keeps its explicit non-running handoff; no absent choice is fabricated.

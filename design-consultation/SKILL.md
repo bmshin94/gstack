@@ -453,7 +453,7 @@ Skills that run plan reviews (`/plan-*-review`, `/codex review`) include the EXI
 
 # /design-consultation: Your Design System, Built Together
 
-Act as a senior product designer: listen, research, and propose a coherent visual system with reasons. Welcome adjustments and conversation at any point; avoid form-like menus.
+As a senior product designer, listen, research and propose a coherent system with reasons. Welcome conversation and adjustments; avoid rigid menus.
 
 ---
 
@@ -683,7 +683,7 @@ sections. Read a section in full before doing its step; do not work from memory.
 
 ## Phase 1: Product Context
 
-Gather and confirm the product context in Q1, then ask the memorable-thing question below. Pre-fill what you can infer from the codebase.
+Confirm product context in Q1, pre-filled from the codebase; then ask the memorable-thing question.
 
 **AskUserQuestion Q1 — include ALL of these:**
 1. Confirm what the product is, who it's for, what space/industry
@@ -737,7 +737,7 @@ as a one-off?"
 the legacy approved.json aggregate — `~/.claude/skills/gstack/bin/gstack-taste-update`
 will migrate it to schema v1 on the next write.
 
-Factor an existing taste profile into Phase 3 as demonstrated preference, not a constraint. Explain any product-driven departure and connect it to the memorable-thing answer.
+Treat prior taste as preference, not constraint. Explain product-driven departures through the memorable-thing answer.
 
 ---
 
@@ -808,7 +808,7 @@ Then `cp "<ASIDE_DIR>/design-research-<site>.jpg" /tmp/` and Read it.
 
 If Aside is not `READY` but the Browser fallback resolved `$B`, run the same pass with `$B goto <url>`, `$B screenshot <path>`, `$B snapshot -i` (translation table above); the AskUserQuestion URL confirmation still applies.
 
-For each site, analyze fonts, palette, layout, spacing density, and aesthetic direction using its screenshot and structural snapshot.
+Use each site's screenshot and snapshot to assess fonts, palette, layout, density and aesthetic direction.
 
 If a site shows a sign-in wall or a bot check, skip it and note why — never ask the user to sign in to a competitor's site for research.
 
@@ -852,7 +852,7 @@ If user chooses B, record one declined result as described below, skip both voic
 _DESIGN_BRIEF=$(mktemp /tmp/gstack-design-brief-XXXXXXXX) || exit 1
 printf 'DESIGN_BRIEF=%s\n' "$_DESIGN_BRIEF"
 ```
-Write the confirmed product, users, project type, memorable-thing answer, constraints, and research findings (or skipped/unavailable) to the printed path. Both voices receive the same brief; neither inherits this conversation. Include its complete contents in the outside prompt file below; the native Agent reads the absolute brief path. Rebind `$_DESIGN_BRIEF` to that path in each Bash call. Keep your draft direction out of both prompts. Never paste brief contents into shell source.
+Write confirmed product/users, project type, memorable-thing answer, constraints and research (or skipped/unavailable) to that path. Neither voice inherits context: give both the same brief. Include its complete contents in the outside prompt file; give the native Agent its absolute path. Rebind `$_DESIGN_BRIEF` per Bash call. Keep your draft direction out of both prompts. Never paste brief text into shell source.
 
 **Check Codex availability:**
 ```bash
@@ -899,7 +899,7 @@ Be opinionated. Be specific. Do not hedge. This is YOUR design direction — own
 
 End with Recommendation: <direction> because <product-specific reason>."
 
-Use Write to save the **complete prompt and context** in a private file. Replace `<prepared-prompt-file>` below with its shell-quoted path; never interpolate user text into shell source. Include actual plan/spec/source content. Request a complete design proposal ending with Recommendation: <direction> because <product-specific reason>. A refusal is never completion.
+Write the **complete prompt and context**, including actual plan/spec/source, to a private file. Substitute its shell-quoted path for `<prepared-prompt-file>`; never interpolate user text into shell source. Request a complete design proposal ending with Recommendation: <direction> because <product-specific reason>.
 
 ```bash
 # GSTACK_ACTIVE_HOST names the harness, never the model.
@@ -924,9 +924,9 @@ _OUTSIDE_PROMPT=$(cat "$_OUTSIDE_INPUT") || exit 1
 _OUTSIDE_EXIT=0
 _gstack_codex_timeout_wrapper 300 codex exec "$_OUTSIDE_PROMPT" -C "$_REPO_ROOT" -s read-only -c "model=\"${GSTACK_CODEX_MODEL:-gpt-6-astra}\"" -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' < /dev/null >"$_OUTSIDE_TMP/text" 2>"$_OUTSIDE_TMP/stderr" || _OUTSIDE_EXIT=$?
 # Preserve findings and partial output even when transport or validation fails.
-cat "$_OUTSIDE_TMP/text" || { echo 'ERROR: cannot display outside review output' >&2; [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
+cat "$_OUTSIDE_TMP/text" || { [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
 
-cat "$_OUTSIDE_TMP/stderr" >&2 || { echo 'ERROR: cannot display outside review stderr' >&2; [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
+cat "$_OUTSIDE_TMP/stderr" >&2 || { [ "$_OUTSIDE_EXIT" -ne 0 ] || _OUTSIDE_EXIT=1; }
 if [ "$_OUTSIDE_EXIT" -ne 0 ]; then
   echo 'Codex outside review unavailable: execution failed; missing coverage. Check the provider diagnosis above.' >&2
   exit "$_OUTSIDE_EXIT"
@@ -936,17 +936,17 @@ bun "$HOME/.claude/skills/gstack/lib/outside-review-result.ts" review "$_OUTSIDE
 echo 'OUTSIDE_STATUS: completed provider=codex host=claude'
 ```
 
-Show the full response in a `tool-output` fence. Completed outside coverage requires successful execution and valid markers. Refusal, empty/malformed output, missing Recommendation marker, timeout, or CLI failure means `outside_status: unavailable`. Continue with the proposals that completed; a native proposal does not complete outside coverage. After success or failure, delete only your private prompt file; the invocation removes its scratch directory.
+Show the full response in a `tool-output` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing Recommendation markers, timeout or CLI failure means `outside_status: unavailable`. Continue completed proposals; native completion does not count as outside coverage. After either outcome, delete only your private prompt; scratch cleanup is automatic.
 
 2. **Claude design subagent** (Agent tool, `run_in_background: false`; await its result):
 "Read the complete product brief at [the absolute DESIGN_BRIEF path printed above].
 
-Propose a design direction that would SURPRISE. What would the cool indie studio do that the enterprise UI team wouldn't?
+Propose a surprising indie-studio direction beyond conventional enterprise UI.
 - Propose an aesthetic direction, typography stack (specific font names), color palette (hex values)
 - 2 deliberate departures from category norms
 - What emotional reaction should the user have in the first 3 seconds?
 
-Be bold. Be specific. No hedging."
+Be bold and specific."
 
 **Error handling (all non-blocking):**
 - **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run `codex login` to authenticate."

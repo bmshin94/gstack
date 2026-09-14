@@ -8,7 +8,11 @@ import {E2E_TOUCHFILES} from './helpers/touchfiles-data';
 import {CARVE_GUARDS} from './helpers/carve-guards';
 const root=path.resolve(import.meta.dir,'..');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'gstack-ceo-mode-preference-'));
-const section=(s:string)=>s.split('### 0F. Mode Selection\n')[1]!.split('\n### 0D-prelude.')[0]!;
+function section(s:string){
+ const match=s.match(/^### 0[A-Z]\. Mode Selection\n([\s\S]*?)(?=^### |$(?![\s\S]))/m);
+ if(!match)throw new Error('CEO Mode Selection section missing');
+ return match[1]!;
+}
 const rendered=new Map<string,string>();
 const env=(state:string)=>({...process.env,GSTACK_HOME:state,GSTACK_STATE_ROOT:state});
 beforeAll(()=>{
@@ -83,13 +87,14 @@ test('only an explicit user selection or enabled successful mode check bypasses 
   expect(q).toContain('Auto-decided [summary] → [option] (your preference). Change with /plan-tune.');
   expect(q).toContain('`ASK_NORMALLY` means ask.');
   expect(s).toContain('This settles only the mode, not approach or scope approval.');
-  expect(document).toContain('Do NOT proceed to mode selection (0F) without user approval of the chosen approach.');
+  expect(document).toContain('Resolve required approaches before 0E.');
   expect(s).toContain('Every mode requires explicit user approval for scope changes.');
-  expect(s).toContain('Keep the approved 0C-bis approach; explain and obtain approval for any mode-required change.');
+  expect(s).toContain('Preserve approved 0D decisions; obtain approval for any mode-required change.');
   expect(s).toContain('offer all four modes in one AskUserQuestion');
   expect(s).toContain('context defaults for RECOMMENDATION');
   expect(s).toContain('Do NOT emit `Completeness: N/10` per option');
-  expect(s).toContain('Note: options differ in kind, not coverage — no completeness score.');
+  expect(s).toContain("use 0D's differences-in-kind note");
+  expect(document).toContain('Note: options differ in kind, not coverage — no completeness score.');
  }
 });
 test('the new render/runtime regression belongs to the existing auto-decide owner',()=>{

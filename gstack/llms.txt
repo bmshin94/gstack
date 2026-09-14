@@ -55,7 +55,7 @@ Conventions:
 - [/qa](qa/SKILL.md): Systematically QA test a web application and fix bugs found.
 - [/qa-only](qa-only/SKILL.md): Report-only QA testing.
 - [/retro](retro/SKILL.md): Weekly engineering retrospective.
-- [/review](review/SKILL.md): Pre-merge code review of the current branch diff to catch structural risks before landing changes.
+- [/review](review/SKILL.md): Pre-landing PR review.
 - [/scrape](scrape/SKILL.md): Pull data from a web page through the Aside browser — your real, already signed-in sessions.
 - [/setup-browser-cookies](setup-browser-cookies/SKILL.md): Import cookies from your real Chromium browser into the headless browse session.
 - [/setup-deploy](setup-deploy/SKILL.md): Configure deployment settings for /land-and-deploy.

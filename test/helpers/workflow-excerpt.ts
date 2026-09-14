@@ -3,10 +3,10 @@ import * as path from 'path';
 
 const ROOT = path.resolve(import.meta.dir, '..', '..');
 
-// Judge the complete Eng review section, including its required report outputs.
+// Include the scope/Aside prerequisites used by Step 0, through report outputs.
 export const ENG_REVIEW_EXCERPT = {
   skillPath: 'plan-eng-review/SKILL.md',
-  startMarker: '## BEFORE YOU START:',
+  startMarker: '## Scope gate',
   endMarker: '## Section self-check (before you finish)',
 } as const;
 
