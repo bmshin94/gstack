@@ -367,7 +367,12 @@ function isNativeEditPermissionVisible(visible: string): boolean {
   if (fence) return false;
   const tail = text.slice(panel.index + panel[0].length);
   const prompt = [...tail.matchAll(/^ {0,3}Do you want to make this edit to ([^\n?]+)\?[ \t]*\n([\s\S]*)$/gm)].at(-1);
-  if (!prompt || prompt[1]!.trim() !== panel[1]!.trim()) return false;
+  const target = currentFilePermissionTarget(text);
+  const currentPanel = target?.operation === 'edit' && target.filePath === panel[1]!.trim();
+  if (!prompt || prompt[1]!.trim() !== panel[1]!.trim() && !currentPanel) return false;
+  // Current nested/settings cards show the basename in the question. Their
+  // parsed full header still needs this pane's provenance and complete footer.
+  if (currentPanel && /3\.NoEsctocancel[·•]Tabtoamend$/.test(prompt[2]!.replace(/\s+/g, ''))) return true;
   return /^ {0,3}❯[ \t]*1\.[ \t]*Yes[ \t]*\n {0,3}2\.[ \t]*Yes, and switch to accept edits[^\n]*\n {0,3}3\.[ \t]*No[ \t]*\n\s*Esc to cancel [·•] Tab to amend\s*$/.test(prompt[2]!);
 }
 
@@ -377,10 +382,17 @@ export function isPermissionDialogVisible(visible: string, includeBoundPermissio
   if (includeBoundPermission && hasCurrentReadPermissionHeading(visible)) return currentReadPermissionCard(visible) !== null;
   if (hasCurrentWebFetchPermissionHeading(visible)) return currentWebFetchPermissionCard(visible) !== null;
   if (hasCurrentBashPermissionHeading(visible)) return currentBashPermissionCard(visible, includeBoundPermission) !== null;
-  if (currentFilePermissionTarget(visible)) return true;
   // Cursor-positioning escapes supply spaces visually, but stripping those
   // escapes leaves labels such as "alwaysallowaccessto" in captured frames.
   const compact = visible.replace(/\s+/g, '');
+  const file = currentFilePermissionTarget(visible);
+  const cursor = [...visible.matchAll(/❯\s*1\./g)].at(-1);
+  const bareEdit = cursor && /^Do\s*you\s*want\s*to\s*(?:edit|make\s+this\s+edit\s+to)\s+[^\r\n?]+\?\s*$/.test(visible.slice(0, cursor.index).trim());
+  // A scoped target parser may recover only an Edit basename below a cropped
+  // preview. Generic callers need the full native pane, or a bare current
+  // menu with no preview/history prefix; ownership remains the scoped caller's.
+  if (file && /3\.NoEsctocancel[·•]Tabtoamend$/.test(compact) &&
+      (file.operation !== 'edit' || bareEdit)) return true;
   if (isNativeEditPermissionVisible(visible)) return true;
   if (/requestedpermissions?to|allowalledits|alwaysallowaccessto|Bashcommand.*requirespermission/i.test(compact)) {
     return true;
@@ -1346,7 +1358,12 @@ function planCountPermissionMenu(visible: string): {
   // the preceding menu's footer must not change a permission signature.
   const prompt = [...before.matchAll(/^[^\n]*\?[^\n]*$/gm)].at(-1)?.[0].trim()
     ?? parseQuestionPrompt(normalized);
-  if (!prompt || !(isPermissionDialogVisible(prompt + '\n' + menu) || isNativeEditPermissionVisible(before + menu))) return null;
+  const selected = prompt + '\n' + menu;
+  // An Edit's preview/header belongs to its current identity. Reducing that
+  // pane to a bare question would erase a crop, mismatch, or quoted prefix.
+  // Other legacy permissions stay prompt-local so old labels cannot grant.
+  const context = currentFilePermissionTarget(selected)?.operation === 'edit' ? before + menu : selected;
+  if (!prompt || !(isPermissionDialogVisible(context) || isNativeEditPermissionVisible(before + menu))) return null;
   return { normalized, cursorAt, prompt, menu };
 }
 

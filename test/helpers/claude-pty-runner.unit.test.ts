@@ -2841,7 +2841,7 @@ describe('native question identity outranks permission wording', () => {
       frame.replace('Should we create a file', 'Should we delete the file'),
       frame.replace('2.Keep current policy', '2.Allow all edits'),
       frame.replace(question.question, 'A different question with the same header?'),
-      frame + '\nDo you want to create actual.md?\n❯1.Yes\n2.Yes, and switch to accept edits\n3.No\nEsc to cancel · Tab to amend',
+      frame + '\nDo you want to create actual.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend',
     ]) expect(matchesNativePlanQuestion(different, pending)).toBe(false);
     expect(capturePlanCountQuestion(frame, new Set(), 0, false, { ...pending, failed: true })).toBeNull();
     expect(capturePlanCountQuestion(frame, new Set(), 0, false)).toBeNull();

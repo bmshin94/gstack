@@ -60,7 +60,7 @@ describe('native repeated report permission identity',()=>{
    }
    fs.writeFileSync(f.recorder.file,valid);
    expect(currentFilePermissionEpoch(f.recorder.file,f.expected,f.cwd,f.config,f.startedAt,f.transcript,'Do you want to create OTHER.md?')).toBeUndefined();
-   const guard=createPlanCountPermissionGuard();expect(guard('Do you want to create OTHER.md?\n❯1.Yes\n2.Yes, and switch to accept edits\n3.No\nEsc to cancel · Tab to amend')).toBe('grant');
+   const guard=createPlanCountPermissionGuard();expect(guard('Do you want to create OTHER.md?\n❯1.Yes\n2.Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)\n3.No\nEsc to cancel · Tab to amend')).toBe('grant');
    fs.unlinkSync(f.recorder.file);fs.symlinkSync(f.expected,f.recorder.file);expect(f.read()).toBeNull();
    expect(createFilePermissionRecorder(f.cwd,f.config,path.parse(f.dir).root+'not-disposable.md')).toBeUndefined();
   }finally{f.close();}
