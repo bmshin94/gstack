@@ -1,7 +1,7 @@
 import { test, expect, afterAll } from 'bun:test';
 import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { runSkillTest } from './helpers/session-runner';
-import { ROOT, describeIfSelected, logCost, recordE2E, createEvalCollector, finalizeEvalCollector } from './helpers/e2e-helpers';
+import { ROOT, runId, describeIfSelected, logCost, recordE2E, createEvalCollector, finalizeEvalCollector } from './helpers/e2e-helpers';
 import { validateCoverage, validateFinding, completeness, type RunReportV3 } from '../lib/cso/contracts';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -9,6 +9,10 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 const evalCollector = createEvalCollector('e2e-cso');
+// runSkillTest can drain stderr for 5s after its unchanged CLI deadline.
+// Let cleanup and failure recording finish before Bun starts a retry.
+const CAPTURE_CLEANUP_MS = 6_000;
+let captureSequence = 0;
 afterAll(() => finalizeEvalCollector(evalCollector));
 
 // Synthetic credential-shaped canary: its bytes must never appear in agent output or saved reports.
@@ -115,22 +119,32 @@ http.createServer((req, res) => {
 }).listen(3000);
 `,
     },undefined,async f=>{
-      const result = await runSkillTest({ prompt: prompt(f, ''), workingDirectory: f.repo,
-      env: { GSTACK_HOME: f.state }, maxTurns: 40, allowedTools: ['Bash', 'Read', 'Write', 'Grep', 'Glob'], timeout: CAPTURE_LONG_MS });
+      const result = await runSkillTest({
+        testName: 'cso-full-audit',
+        runId: `cso-full-audit-${process.env.EVALS_RUN_ID ?? runId}-${process.pid}-${++captureSequence}`,
+        publicStreamDiagnostics: true,
+        prompt: prompt(f, ''), workingDirectory: f.repo,
+        env: { GSTACK_HOME: f.state }, maxTurns: 40, allowedTools: ['Bash', 'Read', 'Write', 'Grep', 'Glob'], timeout: CAPTURE_LONG_MS,
+      });
       logCost('cso', result);
-      expect(result.exitReason).toBe('success');
-      expect(result.output).not.toContain(CANARY);
-      expect(JSON.stringify(result.transcript)).not.toContain(CANARY);
-      // Dedicated carve behavioral guard: a real audit must actually load its domain section.
-      expect(result.toolCalls.some(call => /Read|Bash/.test(call.tool)
-        && JSON.stringify(call.input).includes('sections/audit-phases.md'))).toBe(true);
-      const report = requireReport(f);
-      const tenant = report.findings.filter(item => item.location.path === 'server.js' && /tenant|owner|authoriz|access control/i.test(`${item.rootCause} ${item.impact}`));
-      expect(tenant.length).toBeGreaterThan(0);
-      expect(tenant.every(item => item.trace.length > 0 && item.challenge.controls.length > 0)).toBe(true);
-      recordE2E(evalCollector, 'cso-full-audit', 'e2e-cso', result);
+      let passed = false;
+      try {
+        expect(result.exitReason).toBe('success');
+        expect(result.output).not.toContain(CANARY);
+        expect(JSON.stringify(result.transcript)).not.toContain(CANARY);
+        // Dedicated carve behavioral guard: a real audit must actually load its domain section.
+        expect(result.toolCalls.some(call => /Read|Bash/.test(call.tool)
+          && JSON.stringify(call.input).includes('sections/audit-phases.md'))).toBe(true);
+        const report = requireReport(f);
+        const tenant = report.findings.filter(item => item.location.path === 'server.js' && /tenant|owner|authoriz|access control/i.test(`${item.rootCause} ${item.impact}`));
+        expect(tenant.length).toBeGreaterThan(0);
+        expect(tenant.every(item => item.trace.length > 0 && item.challenge.controls.length > 0)).toBe(true);
+        passed = result.browseErrors.length === 0;
+      } finally {
+        recordE2E(evalCollector, 'cso-full-audit', 'e2e-cso', result, { passed });
+      }
     });
-  }, CAPTURE_LONG_MS);
+  }, CAPTURE_LONG_MS + CAPTURE_CLEANUP_MS);
 });
 
 describeIfSelected('CSO v3 — diff mode', ['cso-diff-mode'], () => {
@@ -149,19 +163,29 @@ http.createServer((req, res) => {
 }).listen(3000);
 `,
     },async f=>{
-      const result = await runSkillTest({ prompt: prompt(f, '--diff'), workingDirectory: f.repo,
-      env: { GSTACK_HOME: f.state }, maxTurns: 40, allowedTools: ['Bash', 'Read', 'Write', 'Grep', 'Glob'], timeout: CAPTURE_LONG_MS });
+      const result = await runSkillTest({
+        testName: 'cso-diff-mode',
+        runId: `cso-diff-mode-${process.env.EVALS_RUN_ID ?? runId}-${process.pid}-${++captureSequence}`,
+        publicStreamDiagnostics: true,
+        prompt: prompt(f, '--diff'), workingDirectory: f.repo,
+        env: { GSTACK_HOME: f.state }, maxTurns: 40, allowedTools: ['Bash', 'Read', 'Write', 'Grep', 'Glob'], timeout: CAPTURE_LONG_MS,
+      });
       logCost('cso', result);
-      expect(result.exitReason).toBe('success');
-      const report = requireReport(f);
-      expect(report.policy.diff).toBe(true);
-      expect(report.policy.base).toBe('main');
-      expect(report.source.baseCommit).toBe(git(f.repo, 'rev-parse', 'main').trim());
-      expect(report.findings.some(item => item.location.path === 'webhook.js' && /signature|authenticat|forg/i.test(`${item.rootCause} ${item.impact}`))).toBe(true);
-      expect(report.findings.every(item => item.location.path === 'webhook.js')).toBe(true);
-      recordE2E(evalCollector, 'cso-diff-mode', 'e2e-cso', result);
+      let passed = false;
+      try {
+        expect(result.exitReason).toBe('success');
+        const report = requireReport(f);
+        expect(report.policy.diff).toBe(true);
+        expect(report.policy.base).toBe('main');
+        expect(report.source.baseCommit).toBe(git(f.repo, 'rev-parse', 'main').trim());
+        expect(report.findings.some(item => item.location.path === 'webhook.js' && /signature|authenticat|forg/i.test(`${item.rootCause} ${item.impact}`))).toBe(true);
+        expect(report.findings.every(item => item.location.path === 'webhook.js')).toBe(true);
+        passed = result.browseErrors.length === 0;
+      } finally {
+        recordE2E(evalCollector, 'cso-diff-mode', 'e2e-cso', result, { passed });
+      }
     });
-  }, CAPTURE_LONG_MS);
+  }, CAPTURE_LONG_MS + CAPTURE_CLEANUP_MS);
 });
 
 describeIfSelected('CSO v3 — infra scope', ['cso-infra-scope'], () => {
@@ -184,21 +208,31 @@ jobs:
 `,
       'Dockerfile': 'FROM node:22\nWORKDIR /app\nCOPY . .\nCMD ["node", "server.js"]\n',
     },undefined,async f=>{
-      const result = await runSkillTest({ prompt: prompt(f, '--infra'), workingDirectory: f.repo,
-      env: { GSTACK_HOME: f.state }, maxTurns: 40, allowedTools: ['Bash', 'Read', 'Write', 'Grep', 'Glob'], timeout: CAPTURE_LONG_MS });
+      const result = await runSkillTest({
+        testName: 'cso-infra-scope',
+        runId: `cso-infra-scope-${process.env.EVALS_RUN_ID ?? runId}-${process.pid}-${++captureSequence}`,
+        publicStreamDiagnostics: true,
+        prompt: prompt(f, '--infra'), workingDirectory: f.repo,
+        env: { GSTACK_HOME: f.state }, maxTurns: 40, allowedTools: ['Bash', 'Read', 'Write', 'Grep', 'Glob'], timeout: CAPTURE_LONG_MS,
+      });
       logCost('cso', result);
-      expect(result.exitReason).toBe('success');
-      const report = requireReport(f);
-      expect(report.policy.scope).toBe('infra');
-      const workflow=report.findings.find(item=>item.location.path==='.github/workflows/comment.yml');
-      expect(workflow).toBeDefined();
-      const chain=[workflow!.title,workflow!.rootCause,workflow!.attackerControl,workflow!.impact,workflow!.scenario,...workflow!.trace].join(' ');
-      expect(chain).toMatch(/github\.event\.comment\.body|issue comment body|comment body/i);
-      expect(chain).toMatch(/run(?: step|:)|shell|bash/i);
-      expect(chain).toMatch(/GITHUB_TOKEN|contents:\s*write|repository write/i);
-      // A missing USER directive is only a hardening lead without demonstrated attacker impact.
-      expect(report.findings.some(item => item.location.path === 'Dockerfile' && /critical|high/.test(item.severity))).toBe(false);
-      recordE2E(evalCollector, 'cso-infra-scope', 'e2e-cso', result);
+      let passed = false;
+      try {
+        expect(result.exitReason).toBe('success');
+        const report = requireReport(f);
+        expect(report.policy.scope).toBe('infra');
+        const workflow=report.findings.find(item=>item.location.path==='.github/workflows/comment.yml');
+        expect(workflow).toBeDefined();
+        const chain=[workflow!.title,workflow!.rootCause,workflow!.attackerControl,workflow!.impact,workflow!.scenario,...workflow!.trace].join(' ');
+        expect(chain).toMatch(/github\.event\.comment\.body|issue comment body|comment body/i);
+        expect(chain).toMatch(/run(?: step|:)|shell|bash/i);
+        expect(chain).toMatch(/GITHUB_TOKEN|contents:\s*write|repository write/i);
+        // A missing USER directive is only a hardening lead without demonstrated attacker impact.
+        expect(report.findings.some(item => item.location.path === 'Dockerfile' && /critical|high/.test(item.severity))).toBe(false);
+        passed = result.browseErrors.length === 0;
+      } finally {
+        recordE2E(evalCollector, 'cso-infra-scope', 'e2e-cso', result, { passed });
+      }
     });
-  }, CAPTURE_LONG_MS);
+  }, CAPTURE_LONG_MS + CAPTURE_CLEANUP_MS);
 });
