@@ -113,112 +113,91 @@ test('every host exposes the DX per-call rule before the pre-review audit and St
   } finally { fs.rmSync(outputRoot, { recursive: true, force: true }); }
 }, 20_000);
 
-test('the actual DX finding registration commits its mode, unchanged defects, and existing contracts before launch', () => {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'devex-count-free-')));
+// Import the actual paid registration in a child with only its process boundary
+// mocked. Coverage and report validation remain the production predicates.
+function runDxRegistration(scenario: string) {
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'devex-registration-free-')));
   const script = path.join(directory, 'registration.test.ts');
   const facts = path.join(directory, 'facts.json');
-  const originalPlan = [
-    '# Plan: First-Run Onboarding Polish for the Public SDK Beta', '',
-    'This is a decision-planning checkpoint for the five first-run obligations below,',
-    'not a beta-launch readiness review. All five remain unresolved, including the',
-    'mandatory first-run gate in both the API and CLI. Evaluate all eight DX passes',
-    'and the required peer comparison. Include the code, documentation and regression',
-    'proof necessary for the chosen remedies; no obligation may be deferred as a TODO.',
-    'Unknown SDK or repository facts remain verification requirements or blockers,',
-    'not assumptions that the product is complete. Surface any real incompatibility',
-    'that affects a chosen remedy, even if it prevents completing this checkpoint.',
-    'Independent roadmap, baseline-documentation, packaging and release additions',
-    'belong in separate planning; this session does not authorize scope expansion.',
-    'Report those opportunities without adding them to this delivery. If offered an',
-    'optional TODO disposition, keep it for later planning in TODOS.md, not Build it now.',
-    '', '## Persona',
-    "The plan doesn't specify which developer persona is the target — we're",
-    'shipping for "everyone," which means we tune for nobody.', '',
-    '## TTHW (time to hello world)',
-    'Time-to-hello-world is not measured. No benchmark data referenced. We',
-    "don't know if first-run takes 5 minutes or 50.", '', '## Friction Point',
-    'First-run currently requires a 5-minute mandatory CI step before the',
-    'developer can run their first eval. There is no way to skip it.', '', '## Magical Moment',
-    'Getting-started flow has no delight beat. Pure documentation, no',
-    'interactive demo, no "ah-ha" moment that makes the developer trust us.', '',
-    '## Competitive Blind Spot',
-    "The plan doesn't reference how peer SDKs (LangChain, Semantic Kernel,",
-    'OpenAI) handle this DX surface. We may be reinventing worse versions',
-    'of solved problems.',
-  ].join('\n');
   fs.writeFileSync(script, `
 import { describe, expect, mock } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { DEVEX_COUNT_FILES, planDevexCountFixture, isDevexReviewIssue, devexReviewModePick }
+  from ${JSON.stringify(path.join(ROOT, 'test/helpers/devex-count-fixture.ts'))};
+import captured from ${JSON.stringify(path.join(ROOT, 'test/fixtures/devex-seed-coverage-ad-v3.json'))};
+const { assertReviewReportAtBottom: actualReport, devexStep0Boundary } =
+  await import(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))});
+const scenario = ${JSON.stringify(scenario)};
+const factsPath = ${JSON.stringify(facts)};
+const finalPlan = '# Reviewed DX plan\\n\\nThe five seeded gaps each have a recorded decision.\\n\\n## GSTACK REVIEW REPORT\\n\\nDX review complete.\\n';
+const facts = { checked: false, runnerCalls: 0, reportCalls: 0, judgeCalls: 0, planPath: '', finalPlan: '' };
+const save = () => fs.writeFileSync(factsPath, JSON.stringify(facts));
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
   describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
 }));
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))}, () => ({
-  PLAN_SKILL_COUNT_FINALIZE_MS: 10000,
-  devexStep0Boundary: () => false,
-  assertReviewReportAtBottom: () => { throw new Error('must not bypass the failed runner'); },
+  devexStep0Boundary,
+  assertReviewReportAtBottom: content => {
+    facts.reportCalls++;
+    facts.finalPlan = content;
+    save();
+    expect(content).toBe(fs.readFileSync(facts.planPath, 'utf8'));
+    return actualReport(content);
+  },
   runPlanSkillCounting: async opts => {
-    fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ cwd: opts.cwd, checked: false }));
-    expect(path.dirname(opts.cwd)).toBe(${JSON.stringify(directory)});
+    facts.runnerCalls++;
+    facts.planPath = opts.expectedPlanPath;
+    save();
+    expect(path.dirname(path.dirname(opts.expectedPlanPath))).toBe(${JSON.stringify(directory)});
+    expect(fs.existsSync(path.dirname(opts.expectedPlanPath))).toBe(true);
+    // The runner owns the seeded Git project. The caller owns only its report.
+    expect(opts.cwd).toBeUndefined();
     expect(opts.skillName).toBe('plan-devex-review');
     expect(opts.slashCommand).toBe('/plan-devex-review');
-    expect(opts.timeoutMs).toBeGreaterThan(1400000);
-    expect(opts.timeoutMs).toBeLessThanOrEqual(1500000);
-    expect(opts.reviewCountCeiling).toBeNull();
-    const { pickDevexCheckpointQuestion } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))});
-    expect(opts.questionPick).toBe(pickDevexCheckpointQuestion);
+    expect(opts.timeoutMs).toBe(1500000);
+    expect(opts.reviewCountCeiling).toBe(Infinity);
+    expect(opts.pickAUQ).toBe(devexReviewModePick);
+    expect(opts.isReviewAUQ).toBe(isDevexReviewIssue);
+    expect(opts.isLastStep0AUQ).toBe(devexStep0Boundary);
     expect(opts.env).toEqual({ QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' });
-    const expected = [
-      'Please review this plan thoroughly. As you go, write your plan-mode plan to ' + path.join(opts.cwd, 'gstack-test-plan-devex.md') + ' (use Edit/Write to that exact path).',
-      'Use DX POLISH mode for this review; examine the current plan with full rigor.',
-      '', ${JSON.stringify(originalPlan)},
-    ].join('\\n');
-    const input = fs.readFileSync(path.join(opts.cwd, 'review-input.md'), 'utf8');
-    expect(input.startsWith(expected + '\\n\\n')).toBe(true);
-    const baseline = input.slice(expected.length + 2);
-    expect(baseline.startsWith('## Existing SDK contracts (synthetic fixture assumptions)')).toBe(true);
-    expect(baseline).toContain('are materialized product');
-    expect(baseline).toContain('not runnable against an implementation in this review fixture.');
-    expect(baseline).toContain("evaluate(target, cases, metric) accepts the developer's application callable");
-    expect(baseline).toContain('caller supplies the metric');
-    expect(baseline).toContain('Both the CLI and library enforce the mandatory first-run CI prerequisite');
-    expect(baseline).toContain('without a\\n  separate scaffold/configuration language or an interactive demo');
-    expect(baseline).toContain('no onboarding-duration measurement or peer-DX benchmark');
-    expect(baseline).toContain('Cost ceilings remain enforced in\\n  noninteractive mode');
-    expect(baseline).toContain('Releases preserve the\\n  published API/configuration contract during beta');
-    for (const contract of [
-      'five-line caller-owned exact-match metric for structured outputs',
-      'neither is a bundled metric or an implicit default',
-      'Result/Failure str/repr already show readable per-case scores',
-      'structured fields retain full values',
-      'maintainer compatibility/conformance checking using',
-      'Evaluation does not\\n  consume that report or prerequisite state',
-      'full five-minute step with no skip',
-      'same configured ceilings/deadlines apply locally',
-      'the library reports them when stderr is a TTY',
-      'Library output never touches stdout',
-      'code/anchor coverage',
-      'snippets and shown output come from offline examples run in release checks',
-      'runtime DeprecationWarning at\\n  the call site names the replacement',
-      'Removal requires two minor releases of notice and a breaking release',
-      'type hints and py.typed already ship',
-    ]) expect(baseline).toContain(contract);
-
-    for (const file of ['README.md', 'docs/getting-started.md', 'docs/feedback.md', 'docs/reference-v1.md']) {
-      const body = fs.readFileSync(path.join(opts.cwd, file), 'utf8');
-      expect(execFileSync('git', ['show', 'HEAD:' + file], { cwd: opts.cwd, encoding: 'utf8' })).toBe(body);
-      expect(body).toBe(fs.readFileSync(path.join(${JSON.stringify(ROOT)}, 'test/fixtures/devex-existing-sdk', file), 'utf8'));
+    expect(opts.followUpPrompt).toBe(planDevexCountFixture(opts.expectedPlanPath) +
+      '\\nFinish this DX review; I will handle subsequent reviews manually.');
+    expect(opts.fixtureFiles).toEqual(DEVEX_COUNT_FILES);
+    expect(opts.followUpPrompt).toContain('Use DX POLISH');
+    // These are the five unresolved contracts in the current native fixture.
+    expect(opts.fixtureFiles['docs/current-contracts.md']).toContain('There is no skip flag or offline first-run path.');
+    expect(opts.fixtureFiles['docs/package-contents.txt']).toContain('that file is absent');
+    expect(opts.fixtureFiles['docs/api.md']).toContain('run_eval(dataset, evaluator)');
+    expect(opts.fixtureFiles['docs/api.md']).toContain('run_batch(evaluator, dataset)');
+    expect(opts.fixtureFiles['docs/api.md']).toContain('AuthError("request failed")');
+    expect(opts.fixtureFiles['docs/api.md']).toContain('removes the old name immediately');
+    facts.checked = true;
+    save();
+    if (scenario === 'throw') throw new Error('controlled DX runner failure');
+    // Replay public question/reply evidence only. Its historical run did not
+    // complete; the terminal/report below are controlled caller-boundary inputs.
+    const transcript = { status: 'ready', calls: structuredClone(captured.attempts[0].calls), assistantMessages: [] };
+    if (scenario.startsWith('missing-seed-')) transcript.calls.splice(Number(scenario.slice(-1)), 1);
+    if (scenario === 'missing-native') transcript.status = 'missing';
+    if (scenario === 'repeated-seed') transcript.calls = Array.from({length: 5}, (_, i) =>
+      ({ ...structuredClone(transcript.calls[0]), toolUseId: 'repeated-' + i }));
+    if (scenario === 'batched') {
+      const call = structuredClone(transcript.calls[0]);
+      call.questions = transcript.calls.flatMap(item => item.questions);
+      call.answers = Object.fromEntries(transcript.calls.flatMap(item => Object.entries(item.answers)));
+      transcript.calls = [call];
     }
-    expect(execFileSync('git', ['status', '--porcelain'], { cwd: opts.cwd, encoding: 'utf8' })).toBe('');
-    expect(execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd: opts.cwd, encoding: 'utf8' })).toBe('');
-    expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: opts.cwd, encoding: 'utf8' })).toBe(input);
-    fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ cwd: opts.cwd, checked: true }));
-    throw new Error('controlled DX runner failure');
+    if (scenario === 'pending') transcript.calls[0].answered = false;
+    if (scenario !== 'missing-report') fs.writeFileSync(opts.expectedPlanPath,
+      finalPlan + (scenario === 'trailing-report' ? '\\n## Unexpected follow-up\\n' : ''));
+    return { outcome: scenario === 'timeout' ? 'timeout' : scenario === 'summary' ? 'completion_summary' : 'plan_ready',
+      transcript, fingerprints: [], step0Count: 2, reviewCount: scenario.startsWith('missing-seed-') ? 100 : 5,
+      elapsedMs: 100, evidence: 'controlled DX observation' };
   },
 }));
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
-  evaluatePlanReviewDecisions: () => { throw new Error('must not judge a failed runner'); },
+  evaluatePlanReviewDecisions: () => { facts.judgeCalls++; save(); throw new Error('unexpected paid judge'); },
 }));
 await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-devex-finding-count.test.ts'))});
 `);
@@ -233,71 +212,43 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-devex-finding
     expect(fs.existsSync(facts), output).toBe(true);
     const observed = JSON.parse(fs.readFileSync(facts, 'utf8'));
     expect(observed.checked, output).toBe(true);
-    expect(fs.existsSync(observed.cwd), 'actual paid finally must remove its owned fixture').toBe(false);
-    expect(child.exitCode, output).toBe(1);
-    expect(output).toContain('controlled DX runner failure');
+    expect(observed.runnerCalls, output).toBe(1);
+    expect(observed.judgeCalls, output).toBe(0);
+    expect(fs.existsSync(path.dirname(observed.planPath)), 'actual paid finally must remove its owned report directory').toBe(false);
+    return { output, exitCode: child.exitCode, observed };
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+}
+
+test('the actual DX registration supplies its complete native fixture and preserves runner failure', () => {
+  const result = runDxRegistration('throw');
+  expect(result.exitCode, result.output).toBe(1);
+  expect(result.output).toContain('controlled DX runner failure');
+  expect(result.observed.reportCalls).toBe(0);
 });
 
-test('DX comparison registration passes and retains the exact owned final plan without another judge', () => {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'devex-comparison-free-')));
-  const script = path.join(directory, 'registration.test.ts');
-  const facts = path.join(directory, 'facts.json');
-  const finalPlan = '# Reviewed plan\n\nExact completed comparison bytes, separate from the original review input.\n';
-  fs.writeFileSync(script, `
-import { describe, expect, mock } from 'bun:test';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-const finalPlan = ${JSON.stringify(finalPlan)};
-const factsPath = ${JSON.stringify(facts)};
-let cwd, judgeCalls = 0;
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
-  describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
-}));
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))}, () => ({
-  PLAN_SKILL_COUNT_FINALIZE_MS: 10000,
-  devexStep0Boundary: () => false,
-  assertReviewReportAtBottom: content => { expect(content).toBe(finalPlan); return { ok: true }; },
-  runPlanSkillCounting: async opts => {
-    cwd = opts.cwd;
-    expect(path.dirname(cwd)).toBe(${JSON.stringify(directory)});
-    fs.writeFileSync(path.join(cwd, 'gstack-test-plan-devex.md'), finalPlan);
-    return { outcome: 'plan_ready', fingerprints: [], diagnostics: {}, elapsedMs: 100 };
-  },
-}));
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
-  evaluatePlanReviewDecisions: async input => {
-    judgeCalls++;
-    expect(judgeCalls).toBe(1);
-    expect(input.devexPeerComparison).toEqual({ finalPlan });
-    expect(input.plan).toBe(fs.readFileSync(path.join(cwd, 'review-input.md'), 'utf8'));
-    expect(input.plan).not.toBe(finalPlan);
-    expect(input.targets.map(target => target.id)).toEqual(['persona', 'first-run-benchmark', 'mandatory-ci', 'aha', 'peer-comparison']);
-    expect(input.kind).toBe('findings'); expect(input.floor).toBe(4); expect(input.ceiling).toBe(7);
-    expect(input.deadlineAt).toBeGreaterThan(Date.now() + 1400000);
-    expect(input.deadlineAt).toBeLessThanOrEqual(Date.now() + 1500000);
-    fs.writeFileSync(factsPath, JSON.stringify({ cwd, judgeCalls, finalPlan: input.devexPeerComparison.finalPlan }));
-    return { count: 4, coveredTargetIds: input.targets.map(target => target.id) };
-  },
-}));
-await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-devex-finding-count.test.ts'))});
-`);
-  try {
-    const child = Bun.spawnSync([process.execPath, 'test', script], {
-      cwd: ROOT, timeout: 10_000,
-      env: { PATH: process.env.PATH ?? '', HOME: directory, TMPDIR: directory, TMP: directory, TEMP: directory,
-        GIT_CONFIG_NOSYSTEM: '1', ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
-    });
-    const output = child.stdout.toString() + child.stderr.toString();
-    expect(child.signalCode ?? null, output).toBeNull(); expect(child.exitCode, output).toBe(0);
-    const observed = JSON.parse(fs.readFileSync(facts, 'utf8'));
-    expect(observed.judgeCalls).toBe(1); expect(observed.finalPlan).toBe(finalPlan);
-    expect(fs.existsSync(observed.cwd), 'actual paid finally must remove its owned fixture').toBe(false);
-    const artifact = output.split('\n').find(line => line.startsWith('Plan review peer comparison artifact: '));
-    expect(JSON.parse(artifact!.slice('Plan review peer comparison artifact: '.length))).toEqual({ finalPlan });
-  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+for (const outcome of ['success', 'summary']) test(`DX registration accepts completed seed decisions and the owned final report: ${outcome}`, () => {
+  const result = runDxRegistration(outcome);
+  expect(result.exitCode, result.output).toBe(0);
+  expect(result.observed.reportCalls).toBe(1);
+  expect(result.observed.finalPlan).toContain('## GSTACK REVIEW REPORT');
 });
 
+for (const scenario of [
+  ...Array.from({ length: 5 }, (_, index) => 'missing-seed-' + index),
+  'missing-native', 'repeated-seed', 'batched', 'pending',
+]) test(`DX registration requires complete distinct native coverage: ${scenario}`, () => {
+  const result = runDxRegistration(scenario);
+  expect(result.exitCode, result.output).toBe(1);
+  expect(result.output).toContain('SEEDED COVERAGE FAIL');
+  expect(result.observed.reportCalls).toBe(0);
+});
+
+for (const scenario of ['missing-report', 'trailing-report', 'timeout']) test(`DX registration rejects incomplete delivery: ${scenario}`, () => {
+  const result = runDxRegistration(scenario);
+  expect(result.exitCode, result.output).toBe(1);
+  expect(result.output).toContain(scenario === 'timeout' ? 'outcome=timeout' : 'D19 FAIL');
+  expect(result.observed.reportCalls).toBe(scenario === 'trailing-report' ? 1 : 0);
+});
 
 test('materialized DX references have working local links without inventing completed launch work', () => {
   const fixture = path.join(ROOT, 'test/fixtures/devex-existing-sdk');

@@ -2095,12 +2095,17 @@ describe('Step0BoundaryPredicate per-skill', () => {
       .match(/### 0D\. Focus Areas\nAskUserQuestion: "([^\n]+)"/)?.[1] ?? '';
     const focusQuestion = (gaps: string) => focusTemplate.replace('{N}', '4').replace('{X, Y, Z}', gaps);
     const focusOptions = ['Review all 7 dimensions', 'Focus on specific areas'];
-    const nativeFocus = (question: string): AskUserQuestionFingerprint => ({
-      ...fp(question.slice(0, 240), focusOptions),
-      toolUseId: 'toolu-design-focus',
-      questions: [{ question, header: 'Focus areas', multiSelect: false,
-        options: focusOptions.map(label => ({ label, description: label })) }],
-    });
+    const nativeFocus = (question: string): AskUserQuestionFingerprint => {
+      const fingerprint = nativePlanCallFingerprint({
+        sessionId: 'design-focus-session', toolUseId: 'toolu-design-focus',
+        answered: true, failed: false, answers: { [question]: focusOptions[0]! },
+        unansweredQuestionIndices: [],
+        questions: [{ question, header: 'Focus areas', multiSelect: false,
+          options: focusOptions.map(label => ({ label, description: label })) }],
+      }, 0, true);
+      fingerprint.promptSnippet = question.slice(0, 240);
+      return fingerprint;
+    };
 
     test('FIRES on the current template Step 0D focus-area question', () => {
       expect(focusTemplate).toContain('Want me to focus on specific areas instead of all 7?');
@@ -2128,7 +2133,10 @@ describe('Step0BoundaryPredicate per-skill', () => {
 
     test('does NOT combine partial focus matches across separate native question tabs', () => {
       const fingerprint = nativeFocus("I've rated this plan 4/10 on design completeness. Should we add a loading state?");
-      fingerprint.questions!.push({ ...fingerprint.questions![0], question: 'Want me to focus on specific areas instead of all 7?' });
+      const call = fingerprint.nativeCall!;
+      const secondQuestion = 'Want me to focus on specific areas instead of all 7?';
+      call.questions.push({ ...call.questions[0]!, question: secondQuestion });
+      call.answers![secondQuestion] = focusOptions[0]!;
       expect(designStep0Boundary(fingerprint)).toBe(false);
     });
 

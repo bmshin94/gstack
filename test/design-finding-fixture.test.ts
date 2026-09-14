@@ -9,89 +9,68 @@ import { HOST_PATHS } from '../scripts/resolvers/types';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
-test('the actual Design count caller commits neutral existing contracts before observation', async () => {
+// The current count driver owns fixture creation; this control materializes
+// its exact inputs with that same helper and keeps the paid report/band gates.
+test.each(['success', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw', 'native-error'])('native Design count registration: %s', async scenario => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'design-count-fixture-')));
   const facts = path.join(dir, 'facts.json');
   const child = path.join(dir, 'caller.test.ts');
   try {
-    fs.writeFileSync(child, `import { describe, expect, mock } from 'bun:test';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { assertReviewReportAtBottom, designStep0Boundary, PLAN_SKILL_COUNT_FINALIZE_MS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
-import { DESIGN_FINDINGS, pickPlanReviewQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
-const report = assertReviewReportAtBottom, boundary = designStep0Boundary, finalize = PLAN_SKILL_COUNT_FINALIZE_MS;
-const { seedDesignBoardActorProtocol, DESIGN_BOARD_ACTOR_PROTOCOL } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))});
-let pickerScope;
-const designPicker = question => pickPlanReviewQuestion(question);
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))}, () => ({
-  seedDesignBoardActorProtocol,
-  createDesignReviewPicker: scope => { pickerScope = scope; return designPicker; },
+    fs.writeFileSync(child, `
+import {describe,expect,mock} from 'bun:test';
+import * as fs from 'node:fs';import * as path from 'node:path';
+import {execFileSync} from 'node:child_process';
+import * as runner from ${JSON.stringify(path.join(ROOT,'test/helpers/claude-pty-runner.ts'))};
+import {createPlanCountFixture} from ${JSON.stringify(path.join(ROOT,'test/helpers/plan-count-fixture.ts'))};
+const original={...runner},scenario=${JSON.stringify(scenario)};
+let calls=0;
+mock.module(${JSON.stringify(path.join(ROOT,'test/helpers/e2e-gate.ts'))},()=>({describeE2ETier:tier=>{expect(tier).toBe('periodic');return describe;}}));
+mock.module(${JSON.stringify(path.join(ROOT,'test/helpers/claude-pty-runner.ts'))},()=>({...original,
+ runPlanSkillCounting:async opts=>{
+  calls++;const target=opts.expectedPlanPath;
+  fs.writeFileSync(${JSON.stringify(facts)},JSON.stringify({calls,target,validated:false}));
+  expect(opts.cwd).toBeUndefined();
+  expect(opts.followUpPrompt).toContain(target);
+  expect(opts.followUpPrompt).toContain('Text-only review; skip mockups. Review all seven design dimensions.');
+  expect(opts).toMatchObject({skillName:'plan-design-review',slashCommand:'/plan-design-review',reviewCountCeiling:8,
+   timeoutMs:1500000,env:{QUESTION_TUNING:'false',EXPLAIN_LEVEL:'default'}});
+  for(const key of ['isLastStep0AUQ','isFirstReviewAUQ','isSetupAUQ','isCompletionHandoffAUQ','isArtifactGenerationAUQ','pickAUQ'])expect(typeof opts[key]).toBe('function');
+  for(const finding of ['same size, weight, and color as','24px in some places, 32px in others, and 16px',
+   'approximately 3:1 (below WCAG AA)','14px, 16px, and 18px font sizes','2-5 seconds with no loading indicator'])expect(opts.followUpPrompt).toContain(finding);
+  const fixture=createPlanCountFixture(opts.followUpPrompt,{files:opts.fixtureFiles});
+  try {
+   for(const [file,content] of Object.entries({'PLAN.md':opts.followUpPrompt,...opts.fixtureFiles}))
+    expect(execFileSync('git',['show','HEAD:'+file],{cwd:fixture.cwd,encoding:'utf8',timeout:5000})).toBe(content);
+   const design=fs.readFileSync(path.join(fixture.cwd,'DESIGN.md'),'utf8');
+   for(const contract of ['640px maximum width','Save is the only filled primary action','Spacing uses an 8px base',
+    'Typography has two roles','All text must meet WCAG AA contrast','pending-action pattern is an inline spinner'])expect(design).toContain(contract);
+  } finally {fixture.cleanup();}
+  fs.writeFileSync(${JSON.stringify(facts)},JSON.stringify({calls,target,validated:true}));
+  if(scenario==='throw')throw new Error('controlled count observation failure');
+  if(scenario!=='missing-report')fs.writeFileSync(target,'# Reviewed plan\\n\\n## GSTACK REVIEW REPORT\\nVERDICT: APPROVED\\n'+(scenario==='trailing-report'?'\\n## Unreviewed tail\\n':''));
+  return {outcome:scenario==='timeout'?'timeout':scenario==='native-error'?'transcript_unavailable':'plan_ready',
+   reviewCount:scenario==='below'?3:scenario==='above'?8:5,step0Count:2,elapsedMs:1000,fingerprints:[],evidence:'controlled native observation'};
+ },
 }));
-let project = '', plan = '', observations = 0;
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
-  describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
-}));
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))}, () => ({
-  assertReviewReportAtBottom: report, designStep0Boundary: boundary, PLAN_SKILL_COUNT_FINALIZE_MS: finalize,
-  runPlanSkillCounting: async opts => {
-    observations++; project = opts.cwd;
-    plan = fs.readFileSync(path.join(project, 'review-input.md'), 'utf8');
-    const design = fs.readFileSync(path.join(project, 'DESIGN.md'), 'utf8');
-    expect(fs.readFileSync(path.join(project, 'CLAUDE.md'), 'utf8')).toContain(DESIGN_BOARD_ACTOR_PROTOCOL);
-    expect(design).toContain('disabled-opacity token to every visual');
-    expect(design).toContain('values already use named CSS custom properties');
-    expect(design).toContain('unchanged FormStack uses 16px between fields');
-    expect(design).toContain('8px between a label and its input');
-    expect(design).toContain('Reset and Export are\\ndisabled, Cancel remains available');
-    expect(design).toContain('two-pixel offset on all Button variants');
-    expect(design).toContain('Settings role values are scoped to the Settings page.');
-    expect(design).toContain('wrap in their existing order, with intrinsic widths');
-    expect(design).toContain('No new storyboard or onboarding flow is required.');
-    expect(design).toContain('choosing the five proposed visual treatments remains open.');
-    for (const file of ['DESIGN.md', 'review-input.md', 'CLAUDE.md']) {
-      expect(execFileSync('git', ['show', 'HEAD:' + file], { cwd: project, encoding: 'utf8', timeout: 5000 }))
-        .toBe(fs.readFileSync(path.join(project, file), 'utf8'));
-    }
-    expect(execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd: project, encoding: 'utf8', timeout: 5000 })).toBe('');
-    expect(plan).toContain('same size, weight, and color as');
-    expect(plan).toContain('24px in some places, 32px in others, and 16px');
-    expect(plan).toContain('approximately 3:1 (below WCAG AA)');
-    expect(plan).toContain('14px, 16px, and 18px font sizes');
-    expect(plan).toContain('2-5 seconds with no loading indicator');
-    expect(opts).toEqual({ readDesignArtifacts: true, skillName: 'plan-design-review', slashCommand: '/plan-design-review',
-      followUpPrompt: '', isLastStep0AUQ: boundary, reviewCountCeiling: null, questionPick: designPicker,
-      cwd: project, timeoutMs: expect.any(Number), env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' } });
-    expect(opts.timeoutMs).toBeGreaterThan(0); expect(opts.timeoutMs).toBeLessThanOrEqual(1500000);
-    expect(pickerScope.cwd).toBe(project);
-    expect(pickerScope.deadlineAt).toBeGreaterThan(Date.now());
-    expect(pickerScope.deadlineAt).toBeLessThanOrEqual(Date.now() + 1500000);
-    expect(finalize).toBe(10000);
-    fs.writeFileSync(path.join(project, 'gstack-test-plan-design.md'), '# Reviewed plan\\n\\n## GSTACK REVIEW REPORT\\nVERDICT: APPROVED\\n');
-    return { outcome: 'plan_ready', fingerprints: [], diagnostics: {}, step0Count: 2, reviewCount: 5, elapsedMs: 1000 };
-  },
-}));
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
-  evaluatePlanReviewDecisions: async input => {
-    expect(input).toEqual({ plan, targets: DESIGN_FINDINGS, fingerprints: [], kind: 'findings', floor: 4, ceiling: 7, deadlineAt: expect.any(Number) });
-    expect(input.deadlineAt).toBeGreaterThan(Date.now());
-    expect(input.deadlineAt).toBe(pickerScope.deadlineAt);
-    fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ observations, project, targetIds: input.targets.map(t => t.id) }));
-    return { count: 5, coveredTargetIds: DESIGN_FINDINGS.map(t => t.id) };
-  },
-}));
-await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-design-finding-count.test.ts'))});
+await import(${JSON.stringify(path.join(ROOT,'test/skill-e2e-plan-design-finding-count.test.ts'))});
 `);
-    await promisify(execFile)(process.execPath, ['test', child], {
-      cwd: ROOT, env: { ...process.env, TMPDIR: dir }, timeout: 10_000, maxBuffer: 1024 * 1024,
+    const result = Bun.spawnSync([process.execPath,'test',child], {
+      cwd:ROOT,timeout:10_000,env:{PATH:process.env.PATH??'',HOME:dir,TMPDIR:dir,TMP:dir,TEMP:dir,GIT_CONFIG_NOSYSTEM:'1',
+        ...(process.env.SystemRoot?{SystemRoot:process.env.SystemRoot}:{})},
     });
-    const result = JSON.parse(fs.readFileSync(facts, 'utf8'));
-    expect(result.observations).toBe(1);
-    expect(result.targetIds).toEqual(['primary-action', 'spacing', 'contrast', 'typography', 'save-feedback']);
-    expect(fs.existsSync(result.project)).toBe(false);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-}, 15_000);
-
+    const output=result.stdout.toString()+result.stderr.toString();
+    expect(result.signalCode??null,output).toBeNull();
+    expect(fs.existsSync(facts),output).toBe(true);
+    const observed=JSON.parse(fs.readFileSync(facts,'utf8'));
+    expect(observed.calls).toBe(1);expect(observed.validated,output).toBe(true);
+    expect(fs.existsSync(path.dirname(observed.target))).toBe(false);
+    expect(result.exitCode,output).toBe(scenario==='success'?0:1);
+    const failure:Record<string,string>={below:'BAND FAIL (below floor)',above:'BAND FAIL (above ceiling)',
+      'missing-report':'D19 FAIL: agent did not produce expected plan file','trailing-report':'trailing ## heading(s) after GSTACK REVIEW REPORT',
+      timeout:'finding-count FAILED: outcome=timeout',throw:'controlled count observation failure','native-error':'finding-count FAILED: outcome=transcript_unavailable'};
+    if(failure[scenario])expect(output).toContain(failure[scenario]);
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+},15_000);
 
 // Execute the documented setup, not a duplicate implementation of its path choice.
 // The designer and provider are never invoked; mkdir is the observed side effect.

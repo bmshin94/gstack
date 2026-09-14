@@ -415,52 +415,69 @@ export function seedHermeticRuntimeView(root: string, destination: string): void
  * this registration helper itself does not change their environment.
  */
 export function hermeticSkillsConfigDir(): string {
-  if (cachedSkillsConfigDir) return cachedSkillsConfigDir;
+  if (cachedSkillsConfigDir) {
+    let intact = false;
+    try {
+      const stat = fs.lstatSync(cachedSkillsConfigDir);
+      intact = stat.isDirectory() && !stat.isSymbolicLink();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (intact) return cachedSkillsConfigDir;
+    // A substituted config must never redirect seeding into operator state.
+    safeUnlink(cachedSkillsConfigDir);
+    cachedSkillsConfigDir = null;
+  }
   const { runRoot } = getHermeticDirs();
   const configDir = path.join(runRoot, 'with-skills', '.claude');
   const skillsDir = path.join(configDir, 'skills');
-  fs.mkdirSync(skillsDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(configDir, '.claude.json'),
-    JSON.stringify(buildSeedConfig({
-      apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
-      trustedDirs: [repoRoot()],
-    }), null, 2),
-  );
-  const root = repoRoot();
-  for (const rel of skillCensus(root).physicalSkillFiles) {
-    const skillMd = path.join(root, rel);
-    const skillDir = path.dirname(rel);
-    const registryName = rel === 'SKILL.md'
-      ? '_gstack-command'
-      : frontmatterName(skillMd) || skillDir;
-    const target = path.join(skillsDir, registryName);
-    // Idempotent overwrite mirrors setup's re-link: connect-chrome (a dir
-    // symlink to open-gstack-browser) shares its target's frontmatter name,
-    // so the two walk entries collapse to one registry dir.
-    fs.mkdirSync(target, { recursive: true });
-    safeUnlink(path.join(target, 'SKILL.md'));
-    fs.symlinkSync(skillMd, path.join(target, 'SKILL.md'));
-    if (rel !== 'SKILL.md') {
-      // Mirror setup's _link_skill_runtime_assets, including references and
-      // helpers beside sections. Missing assets can send a live agent looking
-      // outside its installed fixture and into the operator's stale checkout.
-      const source = path.join(root, skillDir);
-      for (const name of fs.readdirSync(source)) {
-        if (name.startsWith('.') || ['SKILL.md', 'node_modules', 'dist', 'test'].includes(name) || name.endsWith('.tmpl')) continue;
-        const asset = path.join(source, name);
-        if (!fs.existsSync(asset)) continue;
-        const destination = path.join(target, name);
-        safeUnlink(destination);
-        fs.symlinkSync(asset, destination, fs.statSync(asset).isDirectory() ? 'dir' : 'file');
+  try {
+    fs.mkdirSync(skillsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, '.claude.json'),
+      JSON.stringify(buildSeedConfig({
+        apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
+        trustedDirs: [repoRoot()],
+      }), null, 2),
+    );
+    const root = repoRoot();
+    for (const rel of skillCensus(root).physicalSkillFiles) {
+      const skillMd = path.join(root, rel);
+      const skillDir = path.dirname(rel);
+      const registryName = rel === 'SKILL.md'
+        ? '_gstack-command'
+        : frontmatterName(skillMd) || skillDir;
+      const target = path.join(skillsDir, registryName);
+      // Idempotent overwrite mirrors setup's re-link: connect-chrome (a dir
+      // symlink to open-gstack-browser) shares its target's frontmatter name,
+      // so the two walk entries collapse to one registry dir.
+      fs.mkdirSync(target, { recursive: true });
+      safeUnlink(path.join(target, 'SKILL.md'));
+      fs.symlinkSync(skillMd, path.join(target, 'SKILL.md'));
+      if (rel !== 'SKILL.md') {
+        // Mirror setup's _link_skill_runtime_assets, including references and
+        // helpers beside sections. Missing assets can send a live agent looking
+        // outside its installed fixture and into the operator's stale checkout.
+        const source = path.join(root, skillDir);
+        for (const name of fs.readdirSync(source)) {
+          if (name.startsWith('.') || ['SKILL.md', 'node_modules', 'dist', 'test'].includes(name) || name.endsWith('.tmpl')) continue;
+          const asset = path.join(source, name);
+          if (!fs.existsSync(asset)) continue;
+          const destination = path.join(target, name);
+          safeUnlink(destination);
+          fs.symlinkSync(asset, destination, fs.statSync(asset).isDirectory() ? 'dir' : 'file');
+        }
       }
     }
+    // Canonical lazy paths remain available without letting native file-index
+    // discovery recursively read the source checkout's historical artifacts.
+    seedHermeticRuntimeView(root, path.join(skillsDir, 'gstack'));
+    cachedSkillsConfigDir = configDir;
+    return configDir;
+  } catch (error) {
+    try { fs.rmSync(path.join(runRoot, 'with-skills'), { recursive: true, force: true }); } catch { /* preserve the original seeding error */ }
+    throw error;
   }
-  // Canonical lazy paths remain available without letting native file-index
-  // discovery recursively read the source checkout's historical artifacts.
-  seedHermeticRuntimeView(root, path.join(skillsDir, 'gstack'));
-  cachedSkillsConfigDir = configDir;
-  return configDir;
 }
 
 /** A dir younger than this is never GC'd even if its pid looks dead — guards

@@ -241,18 +241,19 @@ test('registering a handler leaves per-order versus batch reading as a separate 
 
 test('the committed current invoice fixture is runnable without implementing the proposed route', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-current-invoice-'));
+  const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-current-runtime-'));
   try {
     ceoFixture.seedCeoPaymentProject(root, '# Proposed PaymentService\n');
     const child = spawnSync(process.execPath, ['test', 'contract.test.ts'], {
       cwd: root, encoding: 'utf8', timeout: 10_000,
-      env: { PATH: process.env.PATH ?? '', HOME: root, TMPDIR: root, TEMP: root, TMP: root,
+      env: { PATH: process.env.PATH ?? '', HOME: runtime, TMPDIR: runtime, TEMP: runtime, TMP: runtime,
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
     });
     expect(child.error, child.stdout + child.stderr).toBeUndefined();
     expect(child.status, child.stdout + child.stderr).toBe(0);
     expect(child.stderr).toContain('3 pass');
     expect(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: 30_000 })).toBe('');
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(runtime, { recursive: true, force: true }); }
 });
 
 const reviewStartLead = 'D1 — Run /office-hours before this review?';
@@ -361,7 +362,7 @@ describe('CEO finding fixture establishes scope before launch', () => {
       const committed = execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: root, encoding: 'utf8', timeout: 10_000 });
       expect(committed).toBe(input);
       expect(committed).toContain(target);
-      expect(committed).toContain('Use HOLD SCOPE for this review of the five integration candidates.');
+      expect(committed).toContain('Proceed directly to the requested CEO review; skip the optional /office-hours prerequisite.');
       expect(committed.match(/^## E[1-5]\)/gm)).toHaveLength(5);
       expect(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8')).not.toContain('Payment processing');
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -378,215 +379,80 @@ describe('CEO finding fixture establishes scope before launch', () => {
   });
 });
 
-// Import the actual paid registration only after replacing its observation
-// and semantic-judge boundaries. Real seeding, outcome/report checks, and cleanup stay in use.
-test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw', 'judge-error'])('count registration: %s', scenario => {
+// Main owns both distinct and paired registrations in this file. Select the
+// actual case and replace only its native count boundary; report/band checks
+// and the output-directory finally stay live.
+test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw', 'native-error'])('native count registration: %s', scenario => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-count-body-')));
   const script = path.join(root, 'registration.test.ts');
   const factsPath = path.join(root, 'facts.json');
-  const established = [
-    "## Revised synthetic integration baseline",
-    "",
-    "This is a synthetic backend application for handling an already-settled Stripe",
-    "payment, not charging a card. Read the existing source in `src/`: it contains a",
-    "small payment projection boundary, WebhookDispatcher and the current invoice.paid",
-    "handler. The proposed payment_intent.succeeded PaymentService is not implemented.",
-    "",
-    "The existing ingress adapter verifies Stripe signatures/accounts and envelopes.",
-    "It passes event metadata userId unchanged: that string is untrusted. The shared",
-    "facade owns receipt deduplication, account/customer authorization, scoped order",
-    "reads, and the atomic user-status/receipt/audit transaction. The callback interface",
-    "leaves user lookup and order access strategy to the handler. Dispatcher registration",
-    "only invokes that handler and supplies none of those choices automatically.",
-    "The invoice handler uses independently reusable createBoundUserLookup and",
-    "readOrdersInBatch callbacks from platform.ts; neither is a default for new handlers.",
-    "",
-    "Events have at most 100 distinct order IDs. The existing confirmation renderer",
-    "uses the returned set sorted by ID; an empty set is valid. Missing orders or",
-    "database failure leaves the transaction uncommitted. Existing request adaptation",
-    "logs these failures and returns 503; authorization rejection remains 403, and",
-    "unknown users are acknowledged without work.",
-    "The local status is an idempotent projection; the financial ledger is upstream.",
-    "",
-    "Confirmation email runs after this transaction. Its existing client uses the",
-    "current template/recipient, aborts after five seconds with MailTimeoutError, and",
-    "reports provider rejection as MailDeliveryError. It supplies no retry, outbox or",
-    "handler error policy. Ordinary database requests have the existing one-second",
-    "statement deadline. The request adapter's scoped logs/metrics and application",
-    "release/rollback procedure stay in place. No new schema, migration, quarantine",
-    "service, customer-facing UI or handler-routing flag is proposed.",
-    "",
-    "application.ts materializes the existing request adapter and composition API:",
-    "its services expose db, mail, logger and metrics alongside the current dispatcher.",
-    "Request metrics and failure logs already include the supplied eventType.",
-    "NEW synthetic assumptions in this revision: an unregistered event returns 503",
-    "without projection/mail work (no external retry guarantee); the bounded mail",
-    "client records each send outcome before any handler catch and rethrows the same",
-    "error. Telemetry is best effort and preserves the transport outcome. This adds",
-    "no handler recovery, retry/outbox, alert rule or new-path regression coverage.",
-    "",
-    "Existing tests cover only the shared boundary and current invoice.paid handler.",
-    "They do not execute the proposed PaymentService. Review its five sections below",
-    "and any actual additional defect; none of its remedies has been approved.",
-  ].join('\n');
-  const originalDefects = [
-    '## Architecture',
-    "We're adding a new `PaymentService` class that will handle Stripe webhooks.",
-    'This bypasses the existing `WebhookDispatcher` module — we want a clean',
-    'namespace separation.', '',
-    '## Database access',
-    'The new endpoint reads `request.params.userId` directly into a raw SQL',
-    'fragment for the lookup query.', '',
-    '## Webhook fan-out',
-    'On payment success we update the user record AND fire a notification email.',
-    'Both happen inline; no error handling on the email leg.', '',
-    '## Tests',
-    "None planned. We'll rely on the existing integration suite catching regressions.", '',
-    '## Performance',
-    'Each webhook lookup hits the database for the user, then fetches each',
-    'order in a loop.',
-  ].join('\n');
-  const pairedPlan = [
-    '# Plan: Payment Processing — Test Coverage', '',
-    '## Existing implementation',
-    'Read README.md, src/payment.ts and contract.test.ts for the unchanged function',
-    'and existing coverage. The runtime behavior stays fixed.', '',
-    '## Proposed verification',
-    'For now, manually check `processPayment()` for:',
-    '1. The happy path (Stripe succeeds on the first charge — confirm the correct receipt is returned).',
-    '2. The error/timeout path (Stripe returns 502 or times out — confirm one retry after the 100 ms wait, then clean failure).', '',
-    'Neither path has a dedicated unit test. This proposal relies on manual checks',
-    'for both; whether and what dedicated unit coverage to add is unresolved.',
-    'The success path is correctness; the failure path is graceful degradation.',
-  ].join('\n');
   fs.writeFileSync(script, `
-import { describe, expect, mock } from 'bun:test';
+import {describe, expect, mock} from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { assertReviewReportAtBottom, ceoStep0Boundary, PLAN_SKILL_COUNT_FINALIZE_MS } from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
-import { pickSuppliedCeoPlanStart } from ${JSON.stringify(path.join(ROOT, 'test/helpers/ceo-finding-fixture.ts'))};
-import { CEO_FINDINGS, CEO_PAIRED_FINDINGS, pickPlanReviewQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
-const reportAssertion = assertReviewReportAtBottom;
-const step0Boundary = ceoStep0Boundary;
-const finalizeMs = PLAN_SKILL_COUNT_FINALIZE_MS;
-const scenario = ${JSON.stringify(scenario)};
-const paired = scenario === 'success-paired';
+import {execFileSync} from 'node:child_process';
+import * as runner from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
+import {createPlanCountFixture} from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-count-fixture.ts'))};
+const original = {...runner}, scenario = ${JSON.stringify(scenario)}, paired = scenario === 'success-paired';
 let calls = 0;
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
-  describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
-}));
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))}, () => ({
-  assertReviewReportAtBottom: reportAssertion,
-  ceoStep0Boundary: step0Boundary,
-  PLAN_SKILL_COUNT_FINALIZE_MS: finalizeMs,
-  runPlanSkillCounting: async opts => {
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({describeE2ETier:tier=>{expect(tier).toBe('periodic');return describe;}}));
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))}, () => ({...original,
+  runPlanSkillCounting:async opts=>{
     calls++;
-    const facts = { calls, cwd: opts.cwd, validated: false };
-    fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify(facts));
-    expect(path.dirname(opts.cwd)).toBe(${JSON.stringify(root)});
-    const input = fs.readFileSync(path.join(opts.cwd, 'review-input.md'), 'utf8');
-    const target = path.join(opts.cwd, paired ? 'gstack-test-plan-ceo-paired.md' : 'gstack-test-plan-ceo.md');
-    expect(input).toBe([
-      'Please review this plan thoroughly. As you go, write your plan-mode plan to ' + target + ' (use Edit/Write to that exact path).',
-      'Use HOLD SCOPE mode for this review; examine the current plan with full rigor.', '',
-      ...(paired ? [${JSON.stringify(pairedPlan)}] : [
-        '# Plan: Payment Processing Integration', '',
-        ${JSON.stringify(established)}, '', ${JSON.stringify(originalDefects)},
-      ]),
-    ].join('\\n'));
-    expect(execFileSync('git', ['show', 'HEAD:review-input.md'], {
-      cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
-    })).toBe(input);
-    expect(execFileSync('git', ['diff', 'origin/main...HEAD'], {
-      cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
-    })).toBe('');
-    if (!paired) {
-      expect(fs.readdirSync(path.join(opts.cwd, 'src')).sort()).toEqual(['application-services.ts', 'application.ts', 'existing-invoice-handler.ts', 'platform.ts']);
-      for (const file of ['README.md', 'src/platform.ts', 'src/existing-invoice-handler.ts', 'src/application.ts', 'src/application-services.ts', 'schema.sql', 'contract.test.ts']) {
-        expect(execFileSync('git', ['show', 'HEAD:' + file], {
-          cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
-        })).toBe(fs.readFileSync(path.join(opts.cwd, file), 'utf8'));
-      }
-    }
-    if (paired) {
-      for (const file of ['README.md', 'src/payment.ts', 'contract.test.ts']) {
-        expect(execFileSync('git', ['show', 'HEAD:' + file], {
-          cwd: opts.cwd, encoding: 'utf8', timeout: 5000,
-        })).toBe(fs.readFileSync(path.join(opts.cwd, file), 'utf8'));
-      }
-    }
-    expect(opts).toEqual({
-      skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '',
-      firstAUQPick: pickSuppliedCeoPlanStart,
-      isLastStep0AUQ: step0Boundary, reviewCountCeiling: null, questionPick: pickPlanReviewQuestion, cwd: opts.cwd,
-      timeoutMs: expect.any(Number), env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
-    });
-    expect(opts.timeoutMs).toBeGreaterThan(0);
-    expect(opts.timeoutMs).toBeLessThanOrEqual(1_500_000);
-    expect(finalizeMs).toBe(10_000);
-    facts.validated = true;
-    fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify(facts));
-    if (scenario === 'throw') throw new Error('controlled count observation failure');
-    if (scenario !== 'missing-report') fs.writeFileSync(target,
-      '# Reviewed plan\\n\\n## GSTACK REVIEW REPORT\\nVERDICT: APPROVED\\n' +
-      (scenario === 'trailing-report' ? '\\n## Unreviewed tail\\n' : ''));
-    return {
-      outcome: scenario === 'timeout' ? 'timeout' : 'plan_ready',
-      reviewCount: { success5: 5, success7: 7, 'success-paired': 2, below: 3, above: 8 }[scenario] ?? 5,
-      step0Count: 2, elapsedMs: 1000, fingerprints: [], evidence: 'controlled observation',
-    };
+    const target=opts.expectedPlanPath;
+    const facts={calls,target,validated:false};
+    fs.writeFileSync(${JSON.stringify(factsPath)},JSON.stringify(facts));
+    expect(path.dirname(path.dirname(target))).toBe(${JSON.stringify(root)});
+    expect(opts.cwd).toBeUndefined();
+    expect(opts.followUpPrompt).toContain(target);
+    expect(opts.followUpPrompt).toContain('in HOLD SCOPE mode');
+    expect(opts.followUpPrompt).toContain('skip the optional /office-hours prerequisite');
+    expect(opts).toMatchObject({skillName:'plan-ceo-review',slashCommand:'/plan-ceo-review',
+      reviewCountCeiling:paired?5:8,timeoutMs:1500000,env:{QUESTION_TUNING:'false',EXPLAIN_LEVEL:'default'}});
+    for(const key of ['isLastStep0AUQ','isFirstReviewAUQ','isCompletionHandoffAUQ','pickAUQ'])expect(typeof opts[key]).toBe('function');
+    const required=paired?[
+      'assert only','that the returned receipt is truthy','No assertion about the mock call history or virtual sleeper record',
+      'max_retries=1 means two total charge attempts',
+    ]:[
+      'bypasses the existing \\x60WebhookDispatcher\\x60','directly into a raw SQL','no error handling on the email leg',
+      "None planned. We'll rely on the existing integration suite catching regressions.",'order in a loop',
+    ];
+    for(const finding of required)expect(opts.followUpPrompt).toContain(finding);
+    if(!paired)expect(opts.firstAUQPick({options:[{index:1,label:'Branch diff vs main'},{index:7,label:'Skip interview and plan immediately'}]})).toBe(7);
+    const fixture=createPlanCountFixture(opts.followUpPrompt,{files:opts.fixtureFiles});
+    try {
+      const committed=execFileSync('git',['show','HEAD:PLAN.md'],{cwd:fixture.cwd,encoding:'utf8',timeout:5000});
+      expect(committed).toBe(opts.followUpPrompt);
+      expect(fs.readFileSync(path.join(fixture.cwd,'CLAUDE.md'),'utf8')).toContain(committed);
+    } finally {fixture.cleanup();}
+    facts.validated=true;fs.writeFileSync(${JSON.stringify(factsPath)},JSON.stringify(facts));
+    if(scenario==='throw')throw new Error('controlled count observation failure');
+    if(scenario!=='missing-report')fs.writeFileSync(target,'# Reviewed plan\\n\\n## GSTACK REVIEW REPORT\\nVERDICT: APPROVED\\n'+(scenario==='trailing-report'?'\\n## Unreviewed tail\\n':''));
+    return {outcome:scenario==='timeout'?'timeout':scenario==='native-error'?'transcript_unavailable':'plan_ready',
+      reviewCount:{success5:5,success7:7,'success-paired':2,below:3,above:8}[scenario]??5,
+      step0Count:2,elapsedMs:1000,fingerprints:[],evidence:'controlled native observation'};
   },
 }));
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
-  evaluatePlanReviewDecisions: async input => {
-    const facts = JSON.parse(fs.readFileSync(${JSON.stringify(factsPath)}, 'utf8'));
-    facts.judgeCalls = (facts.judgeCalls ?? 0) + 1;
-    fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify(facts));
-    expect(input).toEqual({
-      plan: fs.readFileSync(path.join(facts.cwd, 'review-input.md'), 'utf8'),
-      targets: paired ? CEO_PAIRED_FINDINGS : CEO_FINDINGS, fingerprints: [], kind: 'findings',
-      floor: paired ? 2 : 4, ceiling: paired ? 4 : 7,
-      deadlineAt: expect.any(Number),
-    });
-    expect(input.deadlineAt).toBeGreaterThan(Date.now());
-    expect(input.deadlineAt).toBeLessThanOrEqual(Date.now() + 1_500_000);
-    if (scenario === 'below') throw new Error('controlled finding floor failure');
-    if (scenario === 'above') throw new Error('controlled finding ceiling failure');
-    if (scenario === 'judge-error') throw new Error('controlled classification failure');
-    return { count: paired ? 2 : scenario === 'success7' ? 7 : 5,
-      coveredTargetIds: (paired ? CEO_PAIRED_FINDINGS : CEO_FINDINGS).map(target => target.id) };
-  },
-}));
-await import(${JSON.stringify(path.join(ROOT, scenario === 'success-paired'
-  ? 'test/skill-e2e-plan-ceo-paired-control.test.ts' : 'test/skill-e2e-plan-ceo-finding-count.test.ts'))});
+await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-finding-count.test.ts'))});
 `);
   try {
-    const child = spawnSync(process.execPath, ['test', script], {
+    const child = spawnSync(process.execPath, ['test', script, '--test-name-pattern', scenario === 'success-paired' ? 'paired-finding positive control' : '5-finding plan'], {
       cwd: ROOT, encoding: 'utf8', timeout: 10_000,
-      env: {
-        PATH: process.env.PATH ?? '', HOME: root, TMPDIR: root, TEMP: root, TMP: root,
-        GIT_CONFIG_NOSYSTEM: '1', EVALS_HERMETIC: '1',
-        ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      },
+      env: {PATH:process.env.PATH ?? '', HOME:root,TMPDIR:root,TEMP:root,TMP:root,GIT_CONFIG_NOSYSTEM:'1',
+        ...(process.env.SystemRoot ? {SystemRoot:process.env.SystemRoot} : {})},
     });
-    const output = child.stdout + child.stderr;
-    expect(child.error, output).toBeUndefined();
-    const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'));
+    const output=child.stdout+child.stderr;
+    expect(child.error,output).toBeUndefined();
+    const facts=JSON.parse(fs.readFileSync(factsPath,'utf8'));
     expect(facts.calls).toBe(1);
-    expect(facts.validated, output).toBe(true);
-    expect(facts.judgeCalls ?? 0).toBe(['success5', 'success7', 'success-paired', 'below', 'above', 'judge-error'].includes(scenario) ? 1 : 0);
-    expect(fs.existsSync(facts.cwd), 'actual paid finally must remove its owned fixture').toBe(false);
-    expect(child.status, output).toBe(scenario.startsWith('success') ? 0 : 1);
-    const failures: Record<string, string> = {
-      below: 'controlled finding floor failure',
-      above: 'controlled finding ceiling failure',
-      'judge-error': 'controlled classification failure',
-      'missing-report': 'D19 FAIL: agent did not produce expected plan file',
-      'trailing-report': 'trailing ## heading(s) after GSTACK REVIEW REPORT',
-      timeout: 'finding-count FAILED: outcome=timeout',
-      throw: 'controlled count observation failure',
-    };
-    if (failures[scenario]) expect(output).toContain(failures[scenario]);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
-}, 20_000);
+    expect(facts.validated,output).toBe(true);
+    expect(fs.existsSync(path.dirname(facts.target)),'actual paid finally removes its owned output directory').toBe(false);
+    expect(child.status,output).toBe(scenario.startsWith('success')?0:1);
+    const failures:Record<string,string>={below:'BAND FAIL (below floor)',above:'BAND FAIL (above ceiling)',
+      'missing-report':'D19 FAIL: agent did not produce expected plan file',
+      'trailing-report':'trailing ## heading(s) after GSTACK REVIEW REPORT',
+      timeout:'finding-count FAILED: outcome=timeout',throw:'controlled count observation failure',
+      'native-error':'finding-count FAILED: outcome=transcript_unavailable'};
+    if(failures[scenario])expect(output).toContain(failures[scenario]);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+},20_000);

@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { OVERLAY_CASE_FILES, OVERLAY_MIN_FILE_WALL_MS } from './helpers/overlay-case-policy';
+import { AUTOPLAN_CHAIN_BUDGET } from './helpers/eval-budgets';
 import {
   applyHollowShardGuard, buildPaidShardArgs, buildRunManifest,
   DEFAULT_SHARD_TIMEOUT_MS, isOverlayTestFile, OVERLAY_MAX_ACTIVE_SHARDS,
@@ -123,7 +124,7 @@ describe('overlay manifest affinity and CI capacity', () => {
       expect(buildRunManifest({ ...opts, discovered: [...discovered].reverse() })).toEqual(manifest);
       expect(parseRunManifest(JSON.stringify(manifest))).toEqual(manifest);
       const stale = { ...manifest, entries: manifest.entries.map(e => isOverlayTestFile(e.file) ? { ...e, slice: 1 } : e) };
-      expect(() => parseRunManifest(JSON.stringify(stale))).toThrow('final slice');
+      expect(() => parseRunManifest(JSON.stringify(stale))).toThrow('final ordinary slice');
 
       const workflow = Bun.YAML.parse(fs.readFileSync(path.join(ROOT, '.github/workflows/evals-periodic.yml'), 'utf8')) as {
         jobs: Record<string, {
@@ -137,13 +138,14 @@ describe('overlay manifest affinity and CI capacity', () => {
       const jobs = parseCliOptions([], step.env).jobs;
       expect(jobs).toBe(2);
       expect(parseCliOptions([], step.env).withinShardConcurrency).toBe(2);
-      expect(job.strategy.matrix.slice).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(job.strategy.matrix.slice).toEqual([1, 2, 3, 4, 5, 6, 7]);
       const normalMinutes = Math.ceil(18 / jobs) * resolvePaidShardTimeoutMs([normalFiles[0]]) / 60_000;
       const overlayMinutes = Math.ceil(overlayFiles.length / OVERLAY_MAX_ACTIVE_SHARDS)
         * Math.max(...overlayFiles.map(file => resolvePaidShardTimeoutMs([file]))) / 60_000;
       expect(normalMinutes).toBe(270);
       expect(overlayMinutes).toBe(183);
       expect(job['timeout-minutes']).toBeGreaterThanOrEqual(Math.max(normalMinutes, overlayMinutes) + 20);
+      expect(job['timeout-minutes'] * 60_000).toBeGreaterThanOrEqual(AUTOPLAN_CHAIN_BUDGET.ciJobMs);
 
       // Gate selection keeps its original periodic exclusion and all six
       // ordinary slices; reservation does not spend an empty slot in gate.

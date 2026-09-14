@@ -404,7 +404,7 @@ export function resolvePaidShardBudget(files: string[], overrideMs?: number): Pa
   }
   const overlay = files.some(isOverlayTestFile);
   if (overlay && overrideMs !== undefined && overrideMs < OVERLAY_MIN_FILE_WALL_MS) {
-    throw new Error(`Overlay shard requires at least ${OVERLAY_MIN_FILE_WALL_MS}ms; explicit wall cannot preserve its work and finalization budget`);
+    throw new Error(`Overlay shard requires at least ${OVERLAY_MIN_FILE_WALL_MS}ms; explicit wall ${overrideMs}ms cannot preserve its work and finalization budget`);
   }
   return {
     timeoutMs: overrideMs ?? (autoplan ? AUTOPLAN_CHAIN_BUDGET.shardMs : overlay ? OVERLAY_MIN_FILE_WALL_MS : DEFAULT_SHARD_TIMEOUT_MS),

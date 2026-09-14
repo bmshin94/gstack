@@ -147,9 +147,13 @@ describeE2E('/autoplan native chain ordering (periodic)', () => {
           let lastCheckpointAt = start;
           const seenSetupQuestions = new Set<string>();
           while (Date.now() - start < budgetMs) {
-            await Bun.sleep(5000);
+            await Bun.sleep(Math.min(5000, budgetMs - (Date.now() - start)));
+            if (Date.now() - start >= budgetMs) break;
             viewportCapturedAt = Date.now();
             viewport = await session.currentScreen();
+            // Wait → current screen → deadline → evidence/input. A screen read
+            // that finishes late cannot authorize an action or a passing result.
+            if (Date.now() - start >= budgetMs) break;
             observe();
             if (Date.now() - lastCheckpointAt >= 30_000) {
               capture('in_progress');

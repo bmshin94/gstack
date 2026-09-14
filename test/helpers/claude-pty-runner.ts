@@ -232,11 +232,16 @@ export function isPlanReadyVisible(visible: string): boolean {
  * isPlanReadyVisible.
  */
 export function isAutoDecidedVisible(visible: string): boolean {
+  const collapsed = visible.replace(/\s+/g, '');
+  // The public CLI transcript can attribute the completed choice inside
+  // parentheses instead of repeating the canonical template annotation.
+  // Keep the complete attribution so negated/future choices do not match.
+  if (/\(auto-decidedfromplan-tunepreference\)/i.test(collapsed)) return true;
   const stemMatch =
-    /Auto-decided\b/i.test(visible) || /Auto-decided/i.test(visible.replace(/\s+/g, ''));
+    /Auto-decided\b/i.test(visible) || /Auto-decided/i.test(collapsed);
   if (!stemMatch) return false;
   if (/\(your preference\)/i.test(visible)) return true;
-  return /\(yourpreference\)/i.test(visible.replace(/\s+/g, ''));
+  return /\(yourpreference\)/i.test(collapsed);
 }
 
 /**
@@ -921,7 +926,9 @@ export function parseNumberedOptions(
  */
 // Cursor-positioning escapes render inter-word spaces that stripAnsi removes.
 // Recognize both the spaced labels and their captured HOLDSCOPE-style forms.
-export const MODE_RE = /HOLD\s*SCOPE|SCOPE\s*EXPANSION|SELECTIVE\s*EXPANSION|SCOPE\s*REDUCTION/i;
+// Match the leading option title; a description or prose mention of a mode
+// cannot establish the Step-0 boundary or supply a missing mode choice.
+export const MODE_RE = /^\s*(?:\*\*)?(?:[A-D]\s*[—)]\s*)?(HOLD\s*SCOPE|SCOPE\s*EXPANSION|SELECTIVE\s*EXPANSION|SCOPE\s*REDUCTION)\b/i;
 
 /**
  * Stable signature for a parsed numbered-option list — used by tests to detect
@@ -937,7 +944,7 @@ export function findModeOption(
 ): { index: number; label: string } | undefined {
   const target = targetMode.replace(/\s+/g, '').toUpperCase();
   return options.find(option =>
-    /^\s*(?:\*\*)?(?:[A-D]\s*[—)]\s*)?(HOLD\s*SCOPE|SCOPE\s*EXPANSION|SELECTIVE\s*EXPANSION|SCOPE\s*REDUCTION)\b/i.exec(option.label)?.[1]?.replace(/\s+/g, '').toUpperCase() === target,
+    MODE_RE.exec(option.label)?.[1]?.replace(/\s+/g, '').toUpperCase() === target,
   );
 }
 
@@ -3636,10 +3643,20 @@ export const engStep0Boundary: Step0BoundaryPredicate = (fp) =>
   // plan-eng-review-idempotency, plan-eng-review-todos-e2e-concurrent.
   /gstack-qid:\s*(?:plan-)?eng-review-/i.test(fp.promptSnippet);
 
-export const designStep0Boundary: Step0BoundaryPredicate = (fp) =>
-  /design\s*(?:system|posture|score|completeness)|first\s*dimension/i.test(
-    fp.promptSnippet,
-  );
+export const designStep0Boundary: Step0BoundaryPredicate = (fp) => {
+  const call = fp.nativeCall;
+  const questions = call
+    ? call.questions.filter(q => !call.answered || call.answers?.[q.question]).map(q => q.question)
+    : [fp.promptSnippet];
+  return questions.some(question => {
+    if (/design\s*(?:system|posture|score)|first\s*dimension/i.test(question)) return true;
+    // A plan-wide initial rating and the scope choice must belong to the
+    // same complete question. A later finding can mention completeness,
+    // and separate native tabs must not lend each other missing clauses.
+    return /I['’]ve\s*rated\s*this\s+(?:[^.!?\n]*\s+)?plan\s*(?:10|[0-9])\/10\s*on\s*design\s*completeness\./i.test(question) &&
+      /(?:Want\s*me\s*to\s*focus\s*on\s*specific\s*areas(?:\s*instead\s*of\s*all\s*7)?|Review\s*all\s*7\s*dimensions)\?/i.test(question);
+  });
+};
 
 /** Positive review identity when a design run goes directly to findings without a focus AUQ. */
 export const designFirstReviewAUQ: Step0BoundaryPredicate = (fp) => {

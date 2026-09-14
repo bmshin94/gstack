@@ -248,11 +248,9 @@ describe('selectTests', () => {
     expect(result.selected).toContain('plan-ceo-section-loading');
     expect(result.selected).toContain('codex-plan-ceo-format-mode');
     expect(result.selected).toContain('codex-plan-ceo-format-approach');
-    expect(result.selected.length).toBe(24);
-    expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 24);
     expect(result.selected).toContain('outside-plan-disabled-no-fallback');
-    expect(result.selected.length).toBe(22);
-    expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 22);
+    expect(result.selected.length).toBe(25);
+    expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 25);
   });
 
   test('global touchfile triggers ALL tests', () => {

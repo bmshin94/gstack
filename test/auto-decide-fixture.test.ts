@@ -73,8 +73,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 const root = ${JSON.stringify(ROOT)};
 mock.module(path.join(root, 'test/helpers/e2e-gate.ts'), () => ({ describeE2ETier: () => describe }));
-mock.module(path.join(root, 'test/helpers/ceo-mode-preference.ts'), () => ({
-  runCeoModePreferenceObservation: async opts => {
+mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
+  runPlanSkillObservation: async opts => {
+    expect(typeof opts.cwd).toBe('string');
+    expect(opts.cwd).not.toBe(root);
     const run = (bin, args) => execFileSync(path.join(root, 'bin', bin), args, {
       cwd: opts.cwd, env: { ...process.env, ...opts.env }, encoding: 'utf8', timeout: 10000,
     }).trim();

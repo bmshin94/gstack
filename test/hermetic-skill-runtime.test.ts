@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { getHermeticDirs, hermeticSkillsConfigDir } from './helpers/hermetic-env';
-import { refreshHermeticSkillRuntime, questionCompanionReadSettings } from './helpers/hermetic-skill-runtime';
+import { refreshHermeticSkillRuntime, questionCompanionReadSettings, hermeticSkillRuntime } from './helpers/hermetic-skill-runtime';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { E2E_TOUCHFILES, selectTests } from './helpers/touchfiles';
@@ -335,14 +335,19 @@ describe('hermetic skill runtime', () => {
     });
   });
 
-  test('cached seeding refreshes derived bytes before returning without resetting Claude config', () => {
+  test('cached registration retains live source links without resetting Claude config', () => {
     const config = hermeticSkillsConfigDir();
     const skill = path.join(config, 'skills', 'autoplan', 'SKILL.md');
-    const expected = read(skill);
+    const source = path.join(ROOT, 'autoplan', 'SKILL.md');
+    const before = digest(source);
     const seed = read(path.join(config, '.claude.json'));
-    write(fs.realpathSync(skill), 'stale derived document');
+    // Main uses live links. Never write through realpath here: that would
+    // corrupt the source being read by other test processes.
+    expect(fs.lstatSync(skill).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(skill)).toBe(fs.realpathSync(source));
     expect(hermeticSkillsConfigDir()).toBe(config);
-    expect(read(skill) === expected).toBe(true);
+    expect(read(skill)).toBe(read(source));
+    expect(digest(source)).toBe(before);
     expect(read(path.join(config, '.claude.json'))).toBe(seed);
   });
 
@@ -363,7 +368,7 @@ describe('hermetic skill runtime', () => {
   test('real runtime preamble and update helper resolve current bins, VERSION, and git metadata', () => {
     fixture((_source, _privateDir, home) => {
       const config = hermeticSkillsConfigDir();
-      const runtime = path.join(path.dirname(config), 'runtime');
+      const { root: runtime, home: runtimeHome } = hermeticSkillRuntime();
       const state = path.join(home, '.gstack');
       const commands = path.join(home, 'commands');
       const old = path.join(home, '.claude', 'skills', 'gstack', 'bin', 'gstack-skill-start');
@@ -372,7 +377,7 @@ describe('hermetic skill runtime', () => {
       write(path.join(commands, 'curl'), '#!/usr/bin/env bash\nprintf blocked > "$HOME/network-attempt"\nexit 1\n');
       fs.chmodSync(path.join(commands, 'curl'), 0o755);
       write(path.join(state, 'config.yaml'), 'update_check: false\nartifacts_sync_mode_prompted: true\n');
-      const env = { PATH: `${commands}${path.delimiter}${process.env.PATH!}`, HOME: home, GSTACK_HOME: state };
+      const env = { PATH: `${commands}${path.delimiter}${process.env.PATH!}`, HOME: runtimeHome, GSTACK_HOME: state };
       const preamble = read(path.join(config, 'skills', 'autoplan', 'SKILL.md'))
         .match(/## Preamble \(run first\)\n\n```bash\n([\s\S]*?)\n```/)![1];
       const output = execFileSync('bash', ['-c', preamble], { cwd: home, env, encoding: 'utf8', timeout: 20_000 });
@@ -383,9 +388,9 @@ describe('hermetic skill runtime', () => {
       write(path.join(state, '.codex-desc-healed'), '');
       write(path.join(state, 'last-update-check'), `UP_TO_DATE ${version}\n`);
       write(path.join(state, 'just-upgraded-from'), 'TEST_OLD\n');
-      expect(execFileSync(path.join(runtime, 'bin', 'gstack-update-check'), [], { cwd: home, env, encoding: 'utf8', timeout: 10_000 }))
+      expect(execFileSync(path.join(runtime, 'bin', 'gstack-update-check'), [], { cwd: home, env: { ...env, GSTACK_STATE_DIR: state }, encoding: 'utf8', timeout: 10_000 }))
         .toBe(`JUST_UPGRADED TEST_OLD ${version}\n`);
-      expect(fs.existsSync(path.join(home, 'network-attempt'))).toBe(false);
+      expect(fs.existsSync(path.join(runtimeHome, 'network-attempt'))).toBe(false);
       const gitDir = (cwd: string) => fs.realpathSync(path.resolve(cwd,
         execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf8', timeout: 5000 }).trim()));
       expect(gitDir(runtime)).toBe(gitDir(ROOT));

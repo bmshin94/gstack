@@ -174,10 +174,6 @@ export const KNOWN_WINDOWS_INCOMPATIBLE: Array<{ file: string; reason: string }>
     reason: 'launches the POSIX PTY harness with a fake executable and bound skill runtime',
   },
   {
-    file: 'test/plan-skill-counting.test.ts',
-    reason: 'launches the POSIX PTY harness with a fake executable and bound skill runtime',
-  },
-  {
     file: 'test/host-config.test.ts',
     reason: 'asserts "claude" binary on PATH (only true when running inside Claude Code, not on bare CI runner)',
   },

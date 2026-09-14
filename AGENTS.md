@@ -123,6 +123,9 @@ When fixing failures or preparing `/ship`, follow this order:
    list in `.context/`; update it instead of starting overlapping repair plans.
 2. Resolve base-branch integration and assign one owner per shared file before
    editing. Keep repairs within the observed failures and the user's scope.
+   Before a fixture writes through a link, resolve its target and verify it stays
+   inside that fixture's temporary root; live skill registrations can point back
+   into this checkout.
    Schedule independent checks independently. Gate a check only on inputs or
    prerequisites it actually needs; an unrelated failure must not serialize the
    whole validation plan. Keep source fixed while tests live-link its files.
