@@ -30,7 +30,7 @@ gbrain:
   context_queries:
     - id: prior-ceo-plans
       kind: filesystem
-      glob: "~/.gstack/projects/{repo_slug}/ceo-plans/*.md"
+      glob: "{gstack_state_root}/projects/{repo_slug}/ceo-plans/*.md"
       sort: mtime_desc
       limit: 5
       render_as: "## Prior CEO plans for this project"
@@ -121,6 +121,8 @@ Step 0 > System audit > Error/rescue map > Test diagram > Failure modes > Opinio
 Never skip Step 0, the system audit, the error/rescue map, or the failure modes section. These are the highest-leverage outputs.
 
 {{ASIDE_RESEARCH}}
+
+{{ANTI_SHORTCUT_CLAUSE}}
 
 ## PRE-REVIEW SYSTEM AUDIT (before Step 0)
 Before anything else, audit the system for review context. Run:
@@ -347,10 +349,11 @@ For both expansion modes, ask separately for each proposed addition: **A)** Add 
 **For HOLD SCOPE** — run this:
 1. Complexity check: If the plan changes more than 8 files or introduces more than 2 new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
 2. What is the minimum set of changes that achieves the stated goal? Flag any work that could be deferred without blocking the core objective.
+3. Keep stated invariants and acceptance criteria; repairs needed to meet them are in scope.
 
 **For SCOPE REDUCTION** — run this:
-1. Ruthless cut: Identify the minimum that ships value to a user. Propose everything else for deferral.
-2. What can be a follow-up PR? Separate "must ship together" from "nice to ship together."
+1. Propose minimum scope for the core goal and work to defer.
+2. Explain each cut via AskUserQuestion; **STOP** for approval. Put approved cuts in "NOT in scope" and retain the rest.
 
 **Deferring current scope:** In REDUCTION, HOLD, and the HOLD checks performed by SELECTIVE, ask separately for each proposed cut: **A)** Defer this item to TODOS.md **B)** Keep it in scope. Review only the agreed scope.
 
@@ -425,6 +428,8 @@ Add this sequence, feasibility blockers and remaining choices to the working pla
 
 Use 0D for urgent decisions; never defer critical risks. Carry the ledger and each answer's exact scope into the review sections.
 
+**STOP.** AskUserQuestion: one tool_use per issue, no batching, even obvious fixes. Recommend + WHY; wait for approval before changing the plan. Zero findings: state "No issues, moving on" and proceed. No code changes; review only.
+
 {{SECTION:review-sections}}
 
 ## Section self-check (before you finish)
@@ -434,5 +439,6 @@ review, required outputs and review report from the file, not memory. If you
 produced the Completion Summary or review report without that Read, STOP, Read
 it now and redo the review from the source of truth.
 
+Before summaries, review logs or next-step menus, run approval check 0 below.
 
 {{EXIT_PLAN_MODE_GATE}}

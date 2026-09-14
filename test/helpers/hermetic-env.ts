@@ -35,11 +35,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { execFileSync } from 'node:child_process';
 import { promotedEnv } from '../../lib/conductor-env-shim';
-import { isProcessAlive } from '../../lib/error-handling';
-import { refreshHermeticSkillRuntime, questionCompanionReadSettings } from './hermetic-skill-runtime';
-import { atomicWriteSync } from '../../lib/fs-atomic';
+import { execFileSync } from 'node:child_process';
+import { isProcessAlive, safeUnlink } from '../../lib/error-handling';
+import { skillCensus, frontmatterName } from './skill-census';
 
 /** Exact env names a hermetic child keeps. Everything not listed (or matched
  * by a prefix rule below) is dropped. */
@@ -146,8 +145,6 @@ export interface SeedConfigOpts {
  *   real ~/.claude.json)
  * - projects[dir].hasTrustDialogAccepted: pre-trusts repo-cwd PTY sessions
  *   (the pty-runner's 15s trust-watcher remains as fallback for temp cwds)
- * - diffSidebarOpen: keeps the permission card at the full terminal width;
- *   the CLI otherwise auto-opens its git diff sidebar at 144+ columns.
  * bypassPermissionsModeAccepted was considered and dropped: absent from a
  * real config even though --dangerously-skip-permissions is in daily use.
  */
@@ -270,7 +267,6 @@ export function getHermeticDirs(): HermeticDirs {
   return cachedDirs;
 }
 
-
 /** The caller owns a private fixture and its generated artifact subtree.
  * Only the two fixed wrappers below choose the admitted fixture and file types. */
 function hermeticArtifactReadArgs(cwd: string, childEnv: Record<string, string>, scopeSpec: {
@@ -333,11 +329,72 @@ export function hermeticDesignReadArgs(cwd: string, childEnv: Record<string, str
 let cachedSkillsConfigDir: string | null = null;
 
 /**
+ * Canonical paths without exposing the checkout to Claude's recursive markdown
+ * file index. Directory links would also expose .context, dependencies, and
+ * generated host registries. Expand owned runtime directories and link files
+ * individually, preserving their source realpaths and executable bits.
+ */
+export function seedHermeticRuntimeView(root: string, destination: string): void {
+  const sourceRoot = fs.realpathSync(root);
+  const excluded = new Set(['node_modules', 'test', 'tests']);
+  const roots = new Set([
+    'SKILL.md', 'ETHOS.md', 'VERSION', 'package.json', 'bin', 'lib', 'scripts',
+    'browse', 'browser-skills', 'design', 'extension', 'model-overlays', 'agents',
+    // On-demand protocol/reference files explicitly read by shipped skills.
+    'docs/askuserquestion-split.md', 'docs/askuserquestion-cjk.md',
+    'docs/designs/PLAN_TUNING_V0.md', 'docs/designs/PLAN_TUNING_V1.md',
+    ...skillCensus(root).physicalSkillFiles.filter(file => file !== 'SKILL.md').map(file => path.dirname(file)),
+  ]);
+  const allowed = [...roots].filter(name => fs.existsSync(path.join(root, name))).map(name => ({
+    path: fs.realpathSync(path.join(root, name)), directory: fs.statSync(path.join(root, name)).isDirectory(),
+  }));
+  function link(source: string, target: string, ancestors: Set<string>): void {
+    const real = fs.realpathSync(source);
+    if (real !== sourceRoot && !real.startsWith(sourceRoot + path.sep))
+      throw new Error(`Runtime asset leaves the owned checkout: ${source}`);
+    if (path.relative(sourceRoot, real).split(path.sep).some(name =>
+      name.startsWith('.') || excluded.has(name) || name.endsWith('.tmpl')))
+      throw new Error(`Runtime asset resolves into an excluded tree: ${source}`);
+    if (real !== sourceRoot && !allowed.some(asset => real === asset.path ||
+      asset.directory && real.startsWith(asset.path + path.sep)))
+      throw new Error(`Runtime asset resolves into an excluded tree: ${source}`);
+    const stat = fs.statSync(source);
+    if (stat.isDirectory()) {
+      if (ancestors.has(real)) throw new Error(`Circular runtime asset: ${source}`);
+      fs.mkdirSync(target);
+      const next = new Set([...ancestors, real]);
+      for (const name of fs.readdirSync(source)) {
+        if (name.startsWith('.') || excluded.has(name) || name.endsWith('.tmpl')) continue;
+        link(path.join(source, name), path.join(target, name), next);
+      }
+    } else if (stat.isFile()) {
+      fs.symlinkSync(source, target, 'file');
+    }
+  }
+  fs.mkdirSync(destination);
+  try {
+    for (const name of roots) {
+      const source = path.join(root, name);
+      if (fs.existsSync(source)) {
+        const target = path.join(destination, name);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        link(source, target, new Set([sourceRoot]));
+      }
+    }
+  } catch (error) {
+    fs.rmSync(destination, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/**
  * A hermetic CLAUDE_CONFIG_DIR with the repo's shipped skills REGISTERED in
  * user scope, mirroring ./setup's registration exactly: each discovered skill
  * gets a REAL directory `<configDir>/skills/<registryName>/` containing a
- * SYMLINK to that skill's bound SKILL.md (absolute path), plus a `sections/`
- * symlink when the skill has one. registryName is the frontmatter `name:`
+ * SYMLINK to that skill's SKILL.md (absolute path), plus symlinks to its
+ * runtime assets using setup's exclusions. An owned runtime view also
+ * lives at `<configDir>/skills/gstack`, so canonical
+ * lazy-section paths work alongside flattened discovery. registryName is the frontmatter `name:`
  * (dir-name fallback), NO gstack- prefix; the root SKILL.md router registers
  * as `_gstack-command`. skillCensus().registryEntries is the authoritative
  * set of what must appear here.
@@ -351,42 +408,59 @@ let cachedSkillsConfigDir: string | null = null;
  * cover it. Ends in `/.claude` for the same plan-path anchoring reason as
  * HermeticDirs.configDir.
  *
- * Every call refreshes instructions from the LIVE repo tree — no per-process
- * document snapshot. Global install references bind to a private runtime tree
- * whose bins/assets link to this checkout, so nested reads cannot drift into
- * an older operator install. HOME stays real for auth and browser caches.
+ * Seeding reads the live repo tree: the skills are the subject under test.
+ * For default seeded PTY sessions, launchClaudePty also supplies an owned HOME
+ * via hermetic-skill-runtime so literal runtime and lazy-section paths reach
+ * this same checkout. Explicit HOME/config overrides remain caller-owned;
+ * this registration helper itself does not change their environment.
  */
 export function hermeticSkillsConfigDir(): string {
+  if (cachedSkillsConfigDir) return cachedSkillsConfigDir;
   const { runRoot } = getHermeticDirs();
-  const privateDir = path.join(runRoot, 'with-skills');
-  try {
-    const configDir = refreshHermeticSkillRuntime(repoRoot(), privateDir);
-    const seedFile = path.join(configDir, '.claude.json');
-    const seedStat = fs.lstatSync(seedFile, { throwIfNoEntry: false });
-    if (!cachedSkillsConfigDir || !seedStat?.isFile()) {
-      if (seedStat && !seedStat.isFile()) fs.rmSync(seedFile, { recursive: true, force: true });
-      fs.writeFileSync(
-        seedFile,
-        JSON.stringify(buildSeedConfig({
-          apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
-          trustedDirs: [repoRoot()],
-        }), null, 2),
-      );
+  const configDir = path.join(runRoot, 'with-skills', '.claude');
+  const skillsDir = path.join(configDir, 'skills');
+  fs.mkdirSync(skillsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(configDir, '.claude.json'),
+    JSON.stringify(buildSeedConfig({
+      apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
+      trustedDirs: [repoRoot()],
+    }), null, 2),
+  );
+  const root = repoRoot();
+  for (const rel of skillCensus(root).physicalSkillFiles) {
+    const skillMd = path.join(root, rel);
+    const skillDir = path.dirname(rel);
+    const registryName = rel === 'SKILL.md'
+      ? '_gstack-command'
+      : frontmatterName(skillMd) || skillDir;
+    const target = path.join(skillsDir, registryName);
+    // Idempotent overwrite mirrors setup's re-link: connect-chrome (a dir
+    // symlink to open-gstack-browser) shares its target's frontmatter name,
+    // so the two walk entries collapse to one registry dir.
+    fs.mkdirSync(target, { recursive: true });
+    safeUnlink(path.join(target, 'SKILL.md'));
+    fs.symlinkSync(skillMd, path.join(target, 'SKILL.md'));
+    if (rel !== 'SKILL.md') {
+      // Mirror setup's _link_skill_runtime_assets, including references and
+      // helpers beside sections. Missing assets can send a live agent looking
+      // outside its installed fixture and into the operator's stale checkout.
+      const source = path.join(root, skillDir);
+      for (const name of fs.readdirSync(source)) {
+        if (name.startsWith('.') || ['SKILL.md', 'node_modules', 'dist', 'test'].includes(name) || name.endsWith('.tmpl')) continue;
+        const asset = path.join(source, name);
+        if (!fs.existsSync(asset)) continue;
+        const destination = path.join(target, name);
+        safeUnlink(destination);
+        fs.symlinkSync(asset, destination, fs.statSync(asset).isDirectory() ? 'dir' : 'file');
+      }
     }
-    // Explicit plan-mode evals use native manual permission checks, without
-    // silently adding the CLI's default auto safety-classifier dependency.
-    atomicWriteSync(path.join(configDir, 'settings.json'),
-      JSON.stringify({ useAutoModeDuringPlan: false,
-        ...questionCompanionReadSettings(repoRoot(), path.join(privateDir, 'runtime')),
-      }, null, 2), { mode: 0o600 });
-    cachedSkillsConfigDir = configDir;
-    return configDir;
-  } catch (error) {
-    if (!cachedSkillsConfigDir) {
-      try { fs.rmSync(privateDir, { recursive: true, force: true }); } catch { /* retain original error */ }
-    }
-    throw error;
   }
+  // Canonical lazy paths remain available without letting native file-index
+  // discovery recursively read the source checkout's historical artifacts.
+  seedHermeticRuntimeView(root, path.join(skillsDir, 'gstack'));
+  cachedSkillsConfigDir = configDir;
+  return configDir;
 }
 
 /** A dir younger than this is never GC'd even if its pid looks dead — guards

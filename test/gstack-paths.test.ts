@@ -175,7 +175,7 @@ describe('gstack-paths', () => {
 describe('CEO plan persistence uses the selected state root', () => {
   for (const source of ['SKILL.md.tmpl', 'SKILL.md']) {
     for (const route of ['explicit', 'plugin', 'home'] as const) {
-      test(`${source}: emitted save path follows ${route} state across shells`, () => {
+      test(`${source}: saved plan is discovered only in ${route} state across shells`, () => {
         const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-state-path-'));
         try {
           const home = path.join(temporary, 'home');
@@ -222,6 +222,50 @@ describe('CEO plan persistence uses the selected state root', () => {
           expect(later.status).toBe(0);
           if (route !== 'home') expect(fs.existsSync(path.join(home, '.gstack', 'projects', 'ceo-state-fixture', 'ceo-plans'))).toBe(false);
           if (route === 'explicit') expect(fs.existsSync(path.join(plugin, 'projects', 'ceo-state-fixture', 'ceo-plans'))).toBe(false);
+
+          const selectedPlan = path.join(expected, '2026-09-14-selected.md');
+          fs.writeFileSync(selectedPlan, '# Selected CEO plan\n');
+          // A more recent plan in a different root must not supersede the
+          // selected root. Other projects cannot satisfy an empty lookup.
+          const otherProject = path.join(selected, 'projects', 'another-project', 'ceo-plans');
+          fs.mkdirSync(otherProject, { recursive: true });
+          fs.writeFileSync(path.join(otherProject, '2099-other-project.md'), '# Other project\n');
+          if (route !== 'home') {
+            const legacy = path.join(home, '.gstack', 'projects', 'ceo-state-fixture', 'ceo-plans');
+            fs.mkdirSync(legacy, { recursive: true });
+            const decoy = path.join(legacy, '2099-wrong-root.md');
+            fs.writeFileSync(decoy, '# Wrong root\n');
+            fs.utimesSync(decoy, new Date('2099-01-01'), new Date('2099-01-01'));
+          }
+          const design = fs.readFileSync(path.join(ROOT, 'design-html', source), 'utf8')
+            .split('## Step 0: Input Detection')[1]!.split('### Case A:')[0]!;
+          const detectionBlocks = [...design.matchAll(/```bash\n([\s\S]*?)```/g)].map(match => match[1]!);
+          const ceoBlock = detectionBlocks.findIndex(block => block.includes('_CEO='));
+          expect(ceoBlock).toBeGreaterThanOrEqual(0);
+          // Execute actual input-detection commands through the CEO lookup,
+          // including its existing slug setup, in a new Bash process.
+          const reader = detectionBlocks.slice(0, ceoBlock + 1).join('\n')
+            .replaceAll('~/.claude/skills/gstack/bin/gstack-slug', 'bash "$GSTACK_TEST_BIN/gstack-slug"')
+            .replaceAll('~/.claude/skills/gstack/bin/gstack-paths', 'bash "$GSTACK_TEST_BIN/gstack-paths"');
+          const readPlan = () => spawnSync('bash', ['-c', 'set -eu\n' + reader], {
+            cwd: temporary,
+            env: { PATH: process.env.PATH, USERPROFILE: '', HOME: home,
+              GSTACK_TEST_BIN: path.join(ROOT, 'bin'), GSTACK_PROJECT_SLUG: 'ceo-state-fixture',
+              GSTACK_HOME: route === 'explicit' ? explicit : '',
+              CLAUDE_PLUGIN_DATA: route === 'home' ? '' : plugin,
+              CLAUDE_PLUGIN_ROOT: route === 'home' ? '' : '/plugins/gstack',
+              TMPDIR: path.join(temporary, 'tmp') },
+            encoding: 'utf8', timeout: 10_000,
+          });
+          const discovered = readPlan();
+          expect(discovered.error).toBeUndefined();
+          expect(discovered.status).toBe(0);
+          expect(discovered.stdout.trim()).toBe(`CEO_PLAN: ${selectedPlan}`);
+          fs.unlinkSync(selectedPlan);
+          const empty = readPlan();
+          expect(empty.error).toBeUndefined();
+          expect(empty.status).toBe(0);
+          expect(empty.stdout.trim()).toBe('NO_CEO_PLAN');
         } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
       });
     }

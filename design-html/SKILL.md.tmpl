@@ -55,15 +55,13 @@ around obstacles.
 
 ## Step 0: Input Detection
 
-```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-```
-
 Detect context with the CEO-plan check and the design-artifact checks below:
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
 setopt +o nomatch 2>/dev/null || true
-_CEO=$(ls -t ~/.gstack/projects/$SLUG/ceo-plans/*.md 2>/dev/null | head -1)
+_CEO=$(ls -t "$GSTACK_STATE_ROOT/projects/$SLUG/ceo-plans/"*.md 2>/dev/null | head -1)
 [ -n "$_CEO" ] && echo "CEO_PLAN: $_CEO" || echo "NO_CEO_PLAN"
 ```
 

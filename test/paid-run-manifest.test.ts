@@ -22,7 +22,6 @@ import {
   parseRunManifest,
   retriesForFiles,
   RETRY_OVERRIDES,
-  SINGLE_ATTEMPT_FILES,
   summarize,
   summaryExitCode,
   verifySliceResults,
@@ -249,22 +248,13 @@ describe('hollow-shard guard', () => {
 });
 
 describe('retry parity', () => {
-  test('a long case gets one complete attempt instead of an inevitably truncated retry', () => {
-    expect(SINGLE_ATTEMPT_FILES.size).toBe(8);
-    for (const file of SINGLE_ATTEMPT_FILES) {
-      expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
-      expect(retriesForFiles([file])).toBe(0);
-      expect(retriesForFiles([file.replaceAll('/', '\\')])).toBe(0);
-      expect(buildPaidShardArgs([file], 1_800_000, 1, retriesForFiles([file])).join(' ')).toContain('--retry 0');
-    }
-  });
-  test('autoplan retains one full workflow attempt inside its unchanged file wall', () => {
-    const file = 'test/skill-e2e-autoplan-chain.test.ts';
-    // Two 15-minute work windows already fill the 30-minute file wall,
-    // leaving no time for either attempt's boot, setup, or finalization.
-    expect(retriesForFiles([file])).toBe(0);
-    expect(retriesForFiles(['test/skill-e2e-retro.test.ts', file])).toBe(0);
-    expect(buildPaidShardArgs([file], 1_800_000, 2, retriesForFiles([file])).join(' ')).toContain('--retry 0');
+  test('registered native workflows preserve main retry policy while overlay attempts stay isolated', () => {
+    const native = 'test/skill-e2e-autoplan-chain.test.ts';
+    expect(retriesForFiles([native])).toBe(1);
+    expect(retriesForFiles([native.replaceAll('/', '\\')])).toBe(1);
+    expect(buildPaidShardArgs([native], 1_800_000, 2, retriesForFiles([native])).join(' ')).toContain('--retry 1');
+    const overlay = 'test/skill-e2e-overlay-harness-claude-dedicated-tools-vs-bash.test.ts';
+    expect(retriesForFiles([overlay])).toBe(0);
   });
   test('overrides exist only for the files whose matrix rows earned them, and each names a real file', () => {
     expect(Object.keys(RETRY_OVERRIDES).sort()).toEqual([

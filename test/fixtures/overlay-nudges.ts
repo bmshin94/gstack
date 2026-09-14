@@ -122,6 +122,28 @@ function mean(xs: number[]): number {
   return xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
+/** SDK events may split one response across blocks, with tool results in between. */
+function firstMessageParallelism(result: AgentSdkResult): number {
+  const init = result.events.find(event => event.type === 'system' && event.subtype === 'init');
+  const session = init?.session_id;
+  if (typeof session !== 'string' || !session) return 0;
+  const parent = (event: AgentSdkResult['assistantTurns'][number]) =>
+    event.type === 'assistant' && event.parent_tool_use_id === null &&
+    event.session_id === session && event.message?.role === 'assistant';
+  const first = result.assistantTurns.find(parent);
+  const messageId = first?.message.id;
+  if (typeof messageId !== 'string' || !messageId) return 0;
+  const tools = new Set<string>();
+  for (const event of result.assistantTurns) {
+    if (!parent(event) || event.message.id !== messageId || !Array.isArray(event.message.content)) continue;
+    for (const block of event.message.content) {
+      if (block.type === 'tool_use' && typeof block.id === 'string' && block.id &&
+          typeof block.name === 'string' && block.name) tools.add(block.id);
+    }
+  }
+  return tools.size;
+}
+
 /**
  * Retired paid fanout predicate, retained for free regressions: overlay mean
  * beats OFF by at least 0.5 tool_use blocks in the first complete assistant
@@ -178,6 +200,54 @@ export function bashToolCallCount(r: AgentSdkResult): number {
 // ---------------------------------------------------------------------------
 
 export const OVERLAY_FIXTURES: OverlayFixture[] = [
+  {
+    id: 'opus-4-7-fanout-toy',
+    overlayPath: 'model-overlays/opus-4-7.md',
+    model: 'claude-opus-4-7',
+    trials: 10,
+    concurrency: 3,
+    setupWorkspace: (dir) => {
+      fs.writeFileSync(path.join(dir, 'alpha.txt'), 'Alpha file: used in module A.\n');
+      fs.writeFileSync(path.join(dir, 'beta.txt'), 'Beta file: used in module B.\n');
+      fs.writeFileSync(path.join(dir, 'gamma.txt'), 'Gamma file: used in module C.\n');
+    },
+    userPrompt:
+      'Read alpha.txt, beta.txt, and gamma.txt and summarize each in one line.',
+    metric: firstMessageParallelism,
+    pass: fanoutPass,
+  },
+  {
+    id: 'opus-4-7-fanout-realistic',
+    overlayPath: 'model-overlays/opus-4-7.md',
+    model: 'claude-opus-4-7',
+    trials: 10,
+    concurrency: 3,
+    setupWorkspace: (dir) => {
+      fs.writeFileSync(
+        path.join(dir, 'app.ts'),
+        "import { config } from './config';\nimport { util } from './src/util';\n\nexport function main() { return config.name + ':' + util(); }\n",
+      );
+      fs.writeFileSync(
+        path.join(dir, 'config.ts'),
+        "export const config = { name: 'demo', version: 1 };\n",
+      );
+      fs.writeFileSync(
+        path.join(dir, 'README.md'),
+        '# demo project\n\nA small demo. Entry: `app.ts`. Config: `config.ts`.\n',
+      );
+      fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'src', 'util.ts'),
+        "export function util() { return 'util-result'; }\n",
+      );
+    },
+    userPrompt:
+      'Audit this project: read app.ts, config.ts, and README.md, and glob for ' +
+      'every .ts file under src/. Summarize what you find in 3 bullet points.',
+    metric: firstMessageParallelism,
+    pass: fanoutPass,
+  },
+
   // -------------------------------------------------------------------------
   // claude.md / "Dedicated tools over Bash"
   // -------------------------------------------------------------------------
@@ -275,6 +345,55 @@ export const OVERLAY_FIXTURES: OverlayFixture[] = [
   // Same overlays, prompts, metrics and trial counts; different pinned model.
   // Model effects remain separate instead of pooling their observations.
   // =========================================================================
+
+  {
+    id: 'opus-4-7-fanout-toy-sonnet',
+    overlayPath: 'model-overlays/opus-4-7.md',
+    model: 'claude-sonnet-4-6',
+    trials: 10,
+    concurrency: 3,
+    setupWorkspace: (dir) => {
+      fs.writeFileSync(path.join(dir, 'alpha.txt'), 'Alpha file: used in module A.\n');
+      fs.writeFileSync(path.join(dir, 'beta.txt'), 'Beta file: used in module B.\n');
+      fs.writeFileSync(path.join(dir, 'gamma.txt'), 'Gamma file: used in module C.\n');
+    },
+    userPrompt:
+      'Read alpha.txt, beta.txt, and gamma.txt and summarize each in one line.',
+    metric: firstMessageParallelism,
+    pass: fanoutPass,
+  },
+
+  {
+    id: 'opus-4-7-fanout-realistic-sonnet',
+    overlayPath: 'model-overlays/opus-4-7.md',
+    model: 'claude-sonnet-4-6',
+    trials: 10,
+    concurrency: 3,
+    setupWorkspace: (dir) => {
+      fs.writeFileSync(
+        path.join(dir, 'app.ts'),
+        "import { config } from './config';\nimport { util } from './src/util';\n\nexport function main() { return config.name + ':' + util(); }\n",
+      );
+      fs.writeFileSync(
+        path.join(dir, 'config.ts'),
+        "export const config = { name: 'demo', version: 1 };\n",
+      );
+      fs.writeFileSync(
+        path.join(dir, 'README.md'),
+        '# demo project\n\nA small demo. Entry: `app.ts`. Config: `config.ts`.\n',
+      );
+      fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'src', 'util.ts'),
+        "export function util() { return 'util-result'; }\n",
+      );
+    },
+    userPrompt:
+      'Audit this project: read app.ts, config.ts, and README.md, and glob for ' +
+      'every .ts file under src/. Summarize what you find in 3 bullet points.',
+    metric: firstMessageParallelism,
+    pass: fanoutPass,
+  },
 
   {
     id: 'claude-dedicated-tools-vs-bash-sonnet',

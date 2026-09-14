@@ -246,6 +246,9 @@ describeIfSelected('QA Fix Loop E2E', ['qa-fix-loop'], () => {
         },
       });
 
+      const initial = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: qaFixDir, stdio: 'pipe', timeout: 5000 });
+      if (initial.status !== 0) throw new Error('QA fixture initial commit failed');
+      const initialCommit = initial.stdout.toString().trim();
       const qaFixUrl = `http://127.0.0.1:${qaFixServer!.port}`;
 
       result = await runSkillTest({
@@ -282,9 +285,12 @@ This is a test+fix loop: find bugs, fix them in the source code, commit each fix
       console.log(`/qa fix loop: ${commits.length} commits total (1 initial + ${commits.length - 1} fixes)`);
       expect(commits.length).toBeGreaterThan(1);
 
-      // Verify Edit tool was used (agent actually modified source code)
-      const editCalls = result.toolCalls.filter(tc => tc.tool === 'Edit');
-      expect(editCalls.length).toBeGreaterThan(0);
+      // Require a committed change to the seeded source, independent of tool.
+      const sourceDiff = spawnSync('git', ['diff', '--exit-code', initialCommit, 'HEAD', '--', 'index.html'], {
+        cwd: qaFixDir, stdio: 'pipe', timeout: 30_000,
+      });
+      expect(sourceDiff.status).toBe(1);
+      expect(sourceDiff.stdout.toString().trim().length).toBeGreaterThan(0);
       passed = true;
     } catch (error) {
       failure = error;

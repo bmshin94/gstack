@@ -1,21 +1,42 @@
-/** Periodic real-PTY review: validate every seeded decision across all phases,
- * count substantive calls within the existing band, and reject bundled issues.
- * The 25-minute work budget includes the final semantic judgment. */
+/**
+ * /plan-eng-review multi-finding batching regression (periodic, paid, real-PTY).
+ *
+ * Catches the specific shape of the May 2026 transcript bug that the
+ * single-finding gate-tier floor test cannot detect: a model that fires
+ * one AskUserQuestion and then batches the remaining findings into a
+ * single "## Decisions to confirm" plan write + ExitPlanMode.
+ *
+ * Why a separate test from skill-e2e-plan-eng-finding-floor:
+ *   - The gate-tier floor (runPlanSkillFloorCheck) exits on the first AUQ
+ *     render and returns success. A model that fires once-then-batches
+ *     would pass that test trivially.
+ *   - This test uses runPlanSkillCounting at periodic tier (~25 min budget,
+ *     N-AUQ tracking, ceiling-bounded retries) to actually count distinct
+ *     review-phase AUQs and assert the model fires one per finding.
+ *
+ * Why a separate test from skill-e2e-plan-eng-finding-count (the existing
+ * 5-finding count test):
+ *   - The fixture here mirrors the D1-D4 transcript shape (4 findings) and
+ *     the floor matches that exact threshold (3, the [N-1] tolerance band).
+ *     This is the tightest regression test for the original bug class —
+ *     not a band-around-N test, but a "did the agent batch?" test.
+ *
+ * Tier: periodic (~25 min, ~$5/run). Sequential by default.
+ */
 
 import { test } from 'bun:test';
-import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
-import { ENG_BATCHING_FINDINGS, pickPlanReviewQuestion } from './helpers/plan-review-cases';
-import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   runPlanSkillCounting,
-  PLAN_SKILL_COUNT_FINALIZE_MS,
   engStep0Boundary,
+  engSetupAUQ,
+  engFirstReviewAUQ,
 } from './helpers/claude-pty-runner';
 import { FORCING_BATCHING_ENG } from './fixtures/forcing-finding-seeds';
+import { isEngBatchingIssueAUQ } from './helpers/eng-seeded-coverage';
 
 const describeE2E = describeE2ETier('periodic');
 
@@ -29,9 +50,8 @@ const FIXTURE_PLAN_PATH = '/tmp/gstack-test-plan-eng-batching.md';
 
 describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () => {
   test(
-    `4-finding plan emits >= ${FLOOR} substantive finding calls (no batching)`,
+    `4-finding plan emits >= ${FLOOR} review-phase AskUserQuestions (no batching)`,
     async () => {
-      const caseStartedAt = Date.now();
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-e2e-plan-eng-batching-'));
       const planPath = path.join(tmpDir, 'gstack-test-plan-eng-batching.md');
       const followUpPrompt = FORCING_BATCHING_ENG.replaceAll(FIXTURE_PLAN_PATH, planPath);
@@ -42,40 +62,41 @@ describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () 
       }
 
       try {
-        const planText = followUpPrompt;
-        seedPlanReviewProject(tmpDir, planText, 'plan-eng-review');
         const obs = await runPlanSkillCounting({
           skillName: 'plan-eng-review',
           slashCommand: '/plan-eng-review',
-          followUpPrompt: '', // plan already committed before the first model turn
+          followUpPrompt,
+          permissionPlanPath: planPath,
           isLastStep0AUQ: engStep0Boundary,
-          reviewCountCeiling: null, // classify findings after actual workflow completion
-          questionPick: pickPlanReviewQuestion,
-          // The review target is present before scope selection.
-          cwd: tmpDir,
-          timeoutMs: 1_500_000 - (Date.now() - caseStartedAt), // 25 min
+          isSetupAUQ: engSetupAUQ,
+          isFirstReviewAUQ: engFirstReviewAUQ,
+          isReviewAUQ: isEngBatchingIssueAUQ,
+          reviewCountCeiling: N + 3, // hard cap above floor + tolerance
+          timeoutMs: 1_500_000, // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
-        console.log('Plan review native evidence:', JSON.stringify({
-          plan: planText, outcome: obs.outcome, fingerprints: obs.fingerprints, diagnostics: obs.diagnostics,
-        }));
-
-        if (!['plan_ready', 'completion_summary'].includes(obs.outcome)) {
+        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome)) {
           throw new Error(
             `multi-finding batching test FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
               `--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
         }
-        const decisions = await evaluatePlanReviewDecisions({
-          plan: planText, targets: ENG_BATCHING_FINDINGS, fingerprints: obs.fingerprints,
-          kind: 'findings', floor: FLOOR,
-          deadlineAt: caseStartedAt + 1_500_000,
-        });
-        console.log('Plan review decisions verified:', JSON.stringify({
-          count: decisions.count, coveredTargetIds: decisions.coveredTargetIds,
-        }));
+        if (obs.reviewCount < FLOOR) {
+          throw new Error(
+            `BATCHING REGRESSION: reviewCount=${obs.reviewCount} < FLOOR=${FLOOR}.\n` +
+              `Agent surfaced fewer review-phase AUQs than findings — this is the\n` +
+              `May 2026 transcript bug shape: model batched multiple findings into\n` +
+              `a single plan write + ExitPlanMode instead of asking one per finding.\n` +
+              `Review-phase fingerprints:\n` +
+              obs.fingerprints
+                .filter((f) => !f.preReview)
+                .map((f) => `  - "${f.promptSnippet.slice(0, 80)}"`)
+                .join('\n') +
+              `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
+          );
+        }
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -84,6 +105,6 @@ describeE2E('/plan-eng-review multi-finding batching regression (periodic)', () 
         }
       }
     },
-    1_500_000 + PLAN_SKILL_COUNT_FINALIZE_MS /* same work budget, plus bounded finalization */,
+    1_500_000 /* physical ceiling: the 25-min CI job + 1800s shard wall cap what can actually execute */,
   );
 });

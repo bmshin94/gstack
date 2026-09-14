@@ -76,32 +76,44 @@ interface DaemonHandle {
   attemptsLogPath: string;
 }
 
-async function waitForReady(baseUrl: string, assertRunning: () => void, signal: AbortSignal, timeoutMs = 20_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+async function waitForReady(proc: DaemonProcess, stateFile: string, assertRunning: () => void, signal: AbortSignal): Promise<{ port: number; token: string }> {
+  for (;;) {
     signal.throwIfAborted();
     assertRunning();
-    try {
-      const resp = await fetch(`${baseUrl}/health`, {
-        signal: AbortSignal.any([signal, AbortSignal.timeout(1000)]),
-      });
-      if (resp.ok) return;
-    } catch {
-      // not ready yet
+    let state: { pid?: unknown; port?: unknown; token?: unknown } | undefined;
+    try { state = JSON.parse(fs.readFileSync(stateFile, 'utf8')); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    if (state !== undefined) {
+      if (!state || state.pid !== proc.pid || typeof state.port !== 'number' ||
+          !Number.isInteger(state.port) || state.port < 1 || state.port > 65535 ||
+          typeof state.token !== 'string' || !state.token.length) {
+        throw new Error('Daemon state does not identify the owned child with a valid port and token');
+      }
+      let ready = false;
+      try {
+        const resp = await fetch(`http://127.0.0.1:${state.port}/health`, {
+          signal: AbortSignal.any([signal, AbortSignal.timeout(1000)]),
+        });
+        ready = resp.ok;
+        void resp.body?.cancel().catch(() => {});
+      } catch { /* not ready yet; the single setup deadline still applies */ }
+      signal.throwIfAborted();
+      assertRunning();
+      if (ready) return { port: state.port, token: state.token };
     }
     await new Promise(r => setTimeout(r, 200));
   }
-  throw new Error(`Daemon did not become ready within ${timeoutMs}ms at ${baseUrl}`);
 }
 
-async function waitForTunnelPort(stateFile: string, assertRunning: () => void, signal: AbortSignal, timeoutMs = 20_000): Promise<number> {
+async function waitForTunnelPort(proc: DaemonProcess, stateFile: string, assertRunning: () => void, signal: AbortSignal, timeoutMs = 20_000): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     signal.throwIfAborted();
     assertRunning();
     try {
       const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-      if (typeof state.tunnelLocalPort === 'number') return state.tunnelLocalPort;
+      if (state.pid === proc.pid && Number.isInteger(state.tunnelLocalPort) &&
+          state.tunnelLocalPort > 0 && state.tunnelLocalPort <= 65535) return state.tunnelLocalPort;
     } catch {
       // state file not written yet
     }
@@ -150,7 +162,6 @@ async function spawnDaemonWithTunnel(options: {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pair-agent-tunnel-eval-'));
   const stateFile = path.join(tempDir, 'browse.json');
   const fakeHome = path.join(tempDir, 'home');
-  const localPort = 30000 + Math.floor(Math.random() * 30000);
   const attemptsLogPath = path.join(fakeHome, '.gstack', 'security', 'attempts.jsonl');
   let proc: DaemonProcess | undefined;
   let stdout: OutputCapture | undefined;
@@ -173,7 +184,7 @@ async function spawnDaemonWithTunnel(options: {
         HOME: fakeHome,
         BROWSE_HEADLESS_SKIP: '1',
         BROWSE_TUNNEL_LOCAL_ONLY: '1',
-        BROWSE_PORT: String(localPort),
+        BROWSE_PORT: '0', // Let the owned daemon choose and publish a checked port.
         BROWSE_STATE_FILE: stateFile,
         BROWSE_PARENT_PID: '0',
         BROWSE_IDLE_TIMEOUT: '600000',
@@ -189,15 +200,15 @@ async function spawnDaemonWithTunnel(options: {
         if (exitCode !== undefined) throw new Error(`Daemon exited before setup completed (code ${exitCode}, signal ${proc!.signalCode ?? 'none'})`);
       };
 
+      const state = await waitForReady(proc, stateFile, assertRunning, controller.signal);
+      const localPort = state.port;
       const localUrl = `http://127.0.0.1:${localPort}`;
-      await waitForReady(localUrl, assertRunning, controller.signal);
-      const tunnelPort = await waitForTunnelPort(stateFile, assertRunning, controller.signal);
+      const tunnelPort = await waitForTunnelPort(proc, stateFile, assertRunning, controller.signal);
       const tunnelUrl = `http://127.0.0.1:${tunnelPort}`;
       controller.signal.throwIfAborted();
       assertRunning();
 
       // Read the root token, then exchange it for a scoped token via /pair → /connect.
-      const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
       const rootToken = state.token;
 
       const pairResp = await fetch(`${localUrl}/pair`, {
@@ -365,10 +376,10 @@ describe('tunnel fixture startup diagnostics and ownership', () => {
         proc = Bun.spawn([process.execPath, '-e', `
           const fs = require('node:fs');
           const port = Number(process.env.BROWSE_PORT);
-          Bun.serve({ port, hostname: '127.0.0.1', fetch: req => new Response('fixture', {
+          const server = Bun.serve({ port, hostname: '127.0.0.1', fetch: req => new Response('fixture', {
             status: new URL(req.url).pathname === '/health' ? 200 : 503,
           }) });
-          fs.writeFileSync(process.env.BROWSE_STATE_FILE, JSON.stringify({ token: 'fixture-only', tunnelLocalPort: port }));
+          fs.writeFileSync(process.env.BROWSE_STATE_FILE, JSON.stringify({ pid: process.pid, port: server.port, token: 'fixture-only', tunnelLocalPort: server.port }));
           fs.writeFileSync(require('node:path').join(require('node:path').dirname(process.env.BROWSE_STATE_FILE), 'browse-startup-error.log'), 'owned startup diagnostic');
           console.error('owned child reached health');
         `], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -405,7 +416,7 @@ describe('tunnel fixture startup diagnostics and ownership', () => {
         tempDir = path.dirname(env.BROWSE_STATE_FILE!);
         proc = Bun.spawn([process.execPath, '-e', `
           const port = Number(process.env.BROWSE_PORT);
-          Bun.serve({ port, hostname: '127.0.0.1', fetch: req => {
+          const server = Bun.serve({ port, hostname: '127.0.0.1', fetch: req => {
             const pathname = new URL(req.url).pathname;
             if (pathname === '/health') return new Response('ready');
             if (pathname === ${JSON.stringify(endpoint)}) {
@@ -417,7 +428,7 @@ describe('tunnel fixture startup diagnostics and ownership', () => {
             }
             return Response.json({ setup_key: 'fixture-only' });
           } });
-          require('node:fs').writeFileSync(process.env.BROWSE_STATE_FILE, JSON.stringify({ token: 'fixture-only', tunnelLocalPort: port }));
+          require('node:fs').writeFileSync(process.env.BROWSE_STATE_FILE, JSON.stringify({ pid: process.pid, port: server.port, token: 'fixture-only', tunnelLocalPort: server.port }));
         `], { env, stdio: ['ignore', 'pipe', 'pipe'] });
         return proc;
       } });

@@ -9,15 +9,34 @@
 - `gstack-decision-log --help` explains the accepted payload and safe shell quoting without creating state.
 - Plan reviews preserve the selected mode and prior approvals, compare each option against independent changes, and verify complete reports before recording completion. Engineering reviews assign independent decisions before drafting options, then audit and save the complete question before presenting it. DX reviews use the same onboarding milestone for benchmarks, targets, examples, and measurement, and carry required factual verification forward without unnecessary approval questions. Outside-review suggestions use explicit approval menus; a dependency conflict returns to the affected decision before the plan is declared ready.
 - `/plan-ceo-review` follows ordered phases and carries every existing approval through scope changes, including reviews with no new approach choice. It applies file permissions consistently to plans, reports, tasks, and review metadata. When writes are forbidden, it carries complete review inputs in chat and labels them not persisted. A failed save stops completion. Unavailable reviewers and missing scores remain unavailable instead of inheriting a prior score.
-- Design skills save mockups, previews, and approved designs under the configured state directory, and later steps discover them there.
+- Design skills save mockups, previews, and approved designs under the configured state directory, and later steps discover them there. CEO plan discovery also follows the configured state directory in design input detection and prior-plan context.
 - `/autoplan` loads each review's complete instructions, waits for asynchronous reviewers to finish, carries approved decisions between phases, and verifies phase order and completion. Native review drivers acknowledge current questions and permissions promptly, reject stale frames and late completions, and recognize the offered manual handoff.
 - `/office-hours` preserves structured review evidence through completion and develops distinct builder ideas. `/setup-gbrain` handles fresh state, remote-only sharing declines, and interrupted attempts without leaking fixture state.
 - Browser shutdown drains terminal output and cleans up only the configured server instance. Setup tolerates disappearing process entries; pairing fixtures use checked ports and bounded cleanup. Deprecated-flag scans exclude workspace caches before searching and propagate command and filesystem failures.
 
 ### Changed
-- The full Autoplan chain evaluation has a dedicated 45-minute work limit and 52-minute outer process limit for its sequential reviews. Individual reviewer limits, assertions, retries, and other evaluation budgets are unchanged.
 - Review fixtures provide the application context and independent contracts their assertions require, declare supported editing and feedback interfaces, and verify existing rollback behavior. The DX count scenario covers a bounded onboarding decision checkpoint and defers independent roadmap work. Design evaluations submit real board feedback before acknowledging it and grant image reads only inside their owned artifact directory. Sol evaluations generate skills in private storage without replacing checkout caches. Native fixtures match complete permission text and offered handoff choices. Shared helper and source-template dependencies select the affected evaluations; overlay tests distinguish correctness from performance measurements.
 - Contributor instructions require focused reproductions and adjacent checks before paid evaluations, independent scheduling, launcher preflight with executed-case counts, reuse of passing checks with unchanged inputs, and one full free-suite acceptance run after the code is frozen. Recurring parser failures require checking the supported input class against the pinned runtime.
+
+## [1.86.0.0] - 2026-09-11
+
+### Added
+
+- **Get an independent Claude Code review from Codex.** Planning, review, shipping, design, documentation, and spec workflows select their outside reviewer from the running harness. Codex calls Claude Code; Claude Code calls Codex. Other supported harnesses expose both review skills.
+- **Review, challenge, or consult with `/claude-code`.** Reviews use only the context supplied by the parent. Consultations can read repository files and resume the previous conversation, using your configured Claude authentication and model.
+
+### Changed
+
+- **`/claude` is now `/claude-code`.** Run setup to migrate existing installations, including shared and copied installs. Each wrapper is available outside its own harness, and Kiro receives its native skills. Successful migration removes the old name without an alias; failed repairs preserve the working entry and user files.
+- **See which outside reviews actually completed.** Reports retain the provider and phase for each pass, including partial `/autoplan` coverage. Disabled, skipped, unavailable, and completed reviews stay distinct; historical records keep their original attribution.
+
+### Fixed
+
+- Failed, refused, empty, or malformed outside reviews can no longer count as a clean pass. Claude runner failures include authentication, timeout, and output overflow diagnoses, and stale skills stop before invoking their own harness.
+- Spec review stops when redaction fails, before sending the spec to a reviewer or saving it downstream.
+- Generated skills preserve their source files when an output directory links back into the installation, including on Windows.
+- Planning reviews request each unresolved decision before editing and carry approved remedies across sections without asking again. Choosing a scope or approach does not approve every finding. Reviews preserve stated requirements unless you authorize changing them.
+- Autoplan preserves the original plan and checks that each phase’s recorded requirements reach the next reviewer. It reconciles approvals with that record, reads the review skills installed for the current harness, and waits for reviewers and verified plan updates before advancing. Disabling extra plan or documentation review also skips replacement reviewers.
 
 ## [1.84.1.0] - 2026-09-09
 

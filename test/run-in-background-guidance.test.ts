@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { generateCodexPlanReview } from '../scripts/resolvers/review';
 import { CODEX_MODEL_CONFIG_FLAG } from '../scripts/resolvers/constants';
-import type { TemplateContext } from '../scripts/resolvers/types';
+import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';
 
 // Regression guard for #2440 (which itself regressed the #497 fix).
@@ -23,10 +23,15 @@ import { ALL_HOST_CONFIGS } from '../hosts';
 // resolver edit.
 
 const ROOT = path.resolve(import.meta.dir, '..');
+const reviewContext = (host: TemplateContext['host']): TemplateContext => ({
+  host, skillName: 'fixture-plan-review', tmplPath: 'fixture-plan-review/SKILL.md.tmpl', paths: HOST_PATHS[host],
+});
 const CEO_FOREGROUND_BRANCH = 'Set `run_in_background: false` when supported; the host may return a task handle';
 
 describe('generated Codex plan-review shell invocation', () => {
-  const rendered = generateCodexPlanReview({ host: 'claude' } as TemplateContext);
+  const rendered = generateCodexPlanReview({ ...reviewContext('claude'),
+    paths: { ...HOST_PATHS.claude, binDir: path.join(ROOT, 'bin'), skillRoot: ROOT },
+  });
   const ready = rendered.slice(rendered.indexOf('**If `CODEX_MODE: ready` — run Codex:**'),
     rendered.indexOf('Present the full output verbatim:'));
   const blocks = [...ready.matchAll(/```bash\n([\s\S]*?)\n```/g)].map(match => match[1]!);
@@ -36,6 +41,8 @@ describe('generated Codex plan-review shell invocation', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-codex-plan-shell-'));
     const bin = path.join(dir, 'bin');
     fs.mkdirSync(bin);
+    const prompt = path.join(dir, 'review-prompt.txt');
+    fs.writeFileSync(prompt, 'Review the current plan without edits.');
     const created = path.join(dir, 'created');
     const calls = path.join(dir, 'calls');
     const stale = path.join(dir, 'codex-out-foreign');
@@ -46,18 +53,19 @@ describe('generated Codex plan-review shell invocation', () => {
     writeBin('git', 'printf "%s\\n" "$FAKE_REPO"\n');
     writeBin('mktemp', `
 if [ "$FAKE_MKTEMP_FAIL" = 1 ]; then exit 42; fi
-p=$(${quote(Bun.which('mktemp')!)} "$FAKE_REPO/codex-planreview-XXXXXXXX") || exit 1
+p=$(${quote(Bun.which('mktemp')!)} "$@") || exit 1
 printf '%s\\n' "$p" >> "$FAKE_CREATED"
 printf '%s\\n' "$p"
 `);
     writeBin('codex', `
 printf '%s\\n' "$FAKE_REVIEW_ID" >> "$FAKE_CALLS"
 printf '%s\\n' "$FAKE_REVIEW_ID: current findings"
+printf '%s\\n' "Recommendation: fix $FAKE_REVIEW_ID because this is the current finding."
 printf '%s\\n' "$FAKE_REVIEW_ID: current stderr" >&2
 exit "$FAKE_CODEX_STATUS"
 `);
     writeBin('cat', `
-if [ "$FAKE_CAT_FAIL" = 1 ]; then
+if [ "$FAKE_CAT_FAIL" = 1 ] && [ "\${1##*/}" = stderr ]; then
   printf '%s\\n' 'cat: simulated current-file read failure' >&2
   exit 47
 fi
@@ -67,9 +75,10 @@ exec ${quote(Bun.which('cat')!)} "$@"
       const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}`, FAKE_REPO: dir,
         FAKE_CREATED: created, FAKE_CALLS: calls, FAKE_REVIEW_ID: id,
         FAKE_CODEX_STATUS: String(code), FAKE_MKTEMP_FAIL: mktempFailure ? '1' : '0',
-        FAKE_CAT_FAIL: catFailure ? '1' : '0' };
+        FAKE_CAT_FAIL: catFailure ? '1' : '0', TMPDIR: dir,
+        CODEX_THREAD_ID: '', CODEX_SANDBOX: '', CLAUDECODE: '1', GSTACK_ACTIVE_HOST: 'claude' };
       // Each displayed block gets a fresh shell, as separate Bash tool calls do.
-      return blocks.map(block => spawnSync('bash', ['-c', (errexit ? 'set -e\n' : '') + block], {
+      return blocks.map(block => spawnSync('bash', ['-c', (errexit ? 'set -e\n' : '') + block.replace("'<prepared-prompt-file>'", quote(prompt))], {
         cwd: dir, env, encoding: 'utf8', timeout: 3_000,
       }));
     };
@@ -78,12 +87,15 @@ exec ${quote(Bun.which('cat')!)} "$@"
       cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
   }
 
+  const findings = (id: string) => `${id}: current findings\nRecommendation: fix ${id} because this is the current finding.\n`;
+  const completed = (id: string) => `${findings(id)}OUTSIDE_STATUS: completed provider=codex host=claude\n`;
+
   test('fresh shells retain the current stderr and clean its exact temporary file', () => {
     const f = fixture();
     try {
       const results = f.run('current');
       expect(results.map(result => result.status)).toEqual([0]);
-      expect(results[0]!.stdout).toBe('current: current findings\n');
+      expect(results[0]!.stdout).toBe(completed('current'));
       expect(results[0]!.stderr).toBe('current: current stderr\n');
       expect(f.created()).toHaveLength(1);
       expect(f.created().every(file => !fs.existsSync(file))).toBe(true);
@@ -94,8 +106,8 @@ exec ${quote(Bun.which('cat')!)} "$@"
     try {
       const results = f.run('failed', 23, errexit);
       expect(results.map(result => result.status)).toEqual([23]);
-      expect(results[0]!.stdout).toBe('failed: current findings\n');
-      expect(results[0]!.stderr).toBe('failed: current stderr\n');
+      expect(results[0]!.stdout).toBe(findings('failed'));
+      expect(results[0]!.stderr).toContain('failed: current stderr\n');
       expect(f.created()).toHaveLength(1);
       expect(f.created().every(file => !fs.existsSync(file))).toBe(true);
     } finally { f.cleanup(); }
@@ -106,8 +118,8 @@ exec ${quote(Bun.which('cat')!)} "$@"
       try {
         const results = f.run('display-failed', code, errexit, false, true);
         expect(results.map(result => result.status)).toEqual([code || 1]);
-        expect(results[0]!.stdout).toBe('display-failed: current findings\n');
-        expect(results[0]!.stderr).toBe('cat: simulated current-file read failure\n');
+        expect(results[0]!.stdout).toBe(findings('display-failed'));
+        expect(results[0]!.stderr).toContain('cat: simulated current-file read failure\n');
         expect(f.created()).toHaveLength(1);
         expect(f.created().every(file => !fs.existsSync(file))).toBe(true);
       } finally { f.cleanup(); }
@@ -118,7 +130,7 @@ exec ${quote(Bun.which('cat')!)} "$@"
       for (const id of ['first', 'second']) {
         const results = f.run(id);
         expect(results.map(result => result.status)).toEqual([0]);
-        expect(results[0]!.stdout).toBe(`${id}: current findings\n`);
+        expect(results[0]!.stdout).toBe(completed(id));
         expect(results[0]!.stderr).toBe(`${id}: current stderr\n`);
       }
       expect(new Set(f.created()).size).toBe(2);
@@ -128,7 +140,7 @@ exec ${quote(Bun.which('cat')!)} "$@"
       expect(fs.readFileSync(f.calls, 'utf8')).toBe('first\nsecond\n');
     } finally { f.cleanup(); }
   });
-  test('temporary-file failure stops before starting Codex', () => {
+  test('temporary-directory failure stops before starting Codex', () => {
     const f = fixture();
     try {
       const results = f.run('unstarted', 0, false, true);
@@ -159,11 +171,12 @@ function hasBoundedOutsideVoiceWait(content: string): boolean {
     '`<status>`\n   must be `completed`', '`<output>` must be nonempty', 'must be no outer\n   `<error>`',
     'identifiable complete', 'Reject raw or in-progress transcripts',
     'call TaskStop with the same ID', 'Ignore partial or late results',
-    'Skip Cross-model tension and Persist the result'].every(part => fallback.includes(part));
+    'Skip Cross-model tension. Persist an unavailable result',
+    'STATUS = "unavailable", SOURCE = "none", OUTSIDE_STATUS = "unavailable"'].every(part => fallback.includes(part));
 }
 
 describe('outside-voice dispatch contract', () => {
-  const rendered = generateCodexPlanReview({ host: 'claude' } as TemplateContext);
+  const rendered = generateCodexPlanReview(reviewContext('claude'));
   const fallback = boundedOutsideVoice(rendered);
 
   test('the delegated prompt itself requires findings only and forbids plan mutations', () => {
@@ -208,7 +221,9 @@ describe('outside-voice dispatch contract', () => {
     expect(fallback).toContain('Report missing outside-voice coverage.');
     expect(fallback).toContain('still give no late-result credit');
     expect(fallback).toContain('cancellation is unconfirmed');
-    expect(fallback).toContain('Skip Cross-model tension and Persist the result; continue directly to outputs.');
+    expect(fallback).toContain('Skip Cross-model tension. Persist an unavailable result');
+    expect(fallback).toContain('STATUS = "unavailable", SOURCE = "none", OUTSIDE_STATUS = "unavailable"');
+    expect(fallback).toContain('then continue directly to outputs. The storage policy still applies.');
     expect(fallback).toContain('Do not record a clean review when no reviewer completed within the accepted wait.');
     expect(rendered).toContain('Wait for the user; model agreement is evidence, not consent.');
     expect(rendered).toContain('Record its answer reference and exact accepted scope');
@@ -223,15 +238,16 @@ describe('outside-voice dispatch contract', () => {
     expect(hasBoundedOutsideVoiceWait(rendered)).toBe(true);
     for (const guard of ['subagent_type: "Plan"', 'timeout: 300000', 'call TaskStop with the same ID',
       '<status>', '<output>', 'Reject raw or in-progress transcripts',
-      'Ignore partial or late results', 'Skip Cross-model tension and Persist the result']) {
+      'Ignore partial or late results', 'Skip Cross-model tension. Persist an unavailable result',
+      'STATUS = "unavailable", SOURCE = "none", OUTSIDE_STATUS = "unavailable"']) {
       expect(hasBoundedOutsideVoiceWait(rendered.replaceAll(guard, 'missing guard')), guard).toBe(false);
     }
     expect(hasBoundedOutsideVoiceWait('Dispatch via the Agent tool with run_in_background: true')).toBe(false);
   });
 
   test('expanded Codex availability states preserve the same bounded dispatch guards', () => {
-    const earlier = rendered.replace('`CODEX_MODE: not_installed`, `not_authed`, `broken_install`, or `model_unusable`',
-      '`CODEX_MODE: not_installed` or `not_authed`');
+    const earlier = rendered.replaceAll('broken_install', 'not_installed')
+      .replaceAll('model_unusable', 'not_authed');
     expect(earlier).not.toBe(rendered);
     for (const content of [earlier, rendered]) {
       expect(hasBoundedOutsideVoiceWait(content)).toBe(true);
@@ -239,11 +255,10 @@ describe('outside-voice dispatch contract', () => {
     }
   });
 
-  test('all host resolver outputs either omit the section or require Plan availability', () => {
+  test('all host resolver outputs require Plan availability for native fallback', () => {
     for (const host of ALL_HOST_CONFIGS) {
-      const output = generateCodexPlanReview({ host: host.name } as TemplateContext);
-      if (host.name === 'codex') expect(output).toBe('');
-      else {
+      const output = generateCodexPlanReview(reviewContext(host.name));
+      {
         expect(output, host.name).toContain('If any is unavailable, take the unavailable path below without launching.');
         expect(output, host.name).toContain('Do not record a clean review when no reviewer completed within the accepted wait.');
         expect(output, host.name).toContain('Do not set a model\noverride');
@@ -276,7 +291,7 @@ const GENERATED_WITH_GUIDANCE = [
   'autoplan/sections/eng-phase.md',
   'autoplan/sections/dx-phase.md',
   'cso/SKILL.md',
-  'design-consultation/sections/proposal-and-preview.md',
+  'design-consultation/SKILL.md',
   'design-review/SKILL.md',
   'design-shotgun/SKILL.md',
   'document-release/sections/release-body.md',
@@ -294,6 +309,14 @@ const GENERATED_WITH_GUIDANCE = [
 // The inverted, post-2.1.198-inert phrasings. Checked across every generated
 // SKILL.md so the regression can't migrate to another skill unnoticed.
 const INVERTED = /do not use\s+`?run_in_background`?/i;
+
+// Both spellings describe the same boolean Agent argument. Keep the key and
+// false token bounded so an unrelated key or quoted/string value cannot pass.
+const EXPLICIT_FOREGROUND = /(?:\brun_in_background\b|"run_in_background")\s*:\s*false\b/;
+function hasForegroundGuidance(content: string): boolean {
+  return EXPLICIT_FOREGROUND.test(content) && !INVERTED.test(content);
+}
+
 
 function allGeneratedSkillFiles(): string[] {
   const out: string[] = [];
@@ -337,6 +360,26 @@ describe('run_in_background guidance (#2440)', () => {
     }
   });
 
+  test('recognizes prose and actual JSON false without accepting missing, true, or inverted guidance', () => {
+    for (const guidance of [
+      'Pass `run_in_background: false` on the Agent call.',
+      'Native subagent tool; Claude Code Agent arguments:\n```json\n{ "run_in_background": false }\n```\nSet on the call, not in prompt text.',
+      '{\n  "run_in_background" :\n  false\n}',
+    ]) expect(hasForegroundGuidance(guidance), guidance).toBe(true);
+    for (const guidance of [
+      'Dispatch via the Agent tool (foreground).',
+      'run_in_background: true',
+      '{ "run_in_background": true }',
+      '{ "run_in_background": "false" }',
+      '{ "run_in_background": null }',
+      'other_run_in_background: false',
+      'run_in_background: falsehood',
+      'Do NOT use `run_in_background`.',
+      'Do NOT use run_in_background: false.',
+      'Do NOT use `run_in_background`. { "run_in_background": false }',
+    ]) expect(hasForegroundGuidance(guidance), guidance).toBe(false);
+  });
+
   test('foreground-required skills instruct run_in_background: false explicitly', () => {
     for (const rel of GENERATED_WITH_GUIDANCE) {
       const content = fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -344,17 +387,24 @@ describe('run_in_background guidance (#2440)', () => {
         expect(hasBoundedOutsideVoiceWait(content), rel).toBe(true);
       } else if (rel === 'plan-ceo-review/SKILL.md') {
         expect(content).toContain(CEO_FOREGROUND_BRANCH);
-      } else expect(content).toContain('run_in_background: false');
+      } else expect(hasForegroundGuidance(content), rel).toBe(true);
     }
   });
 
-  test('consultation loads the foreground dispatch section after research', () => {
+  test('consultation awaits independent voices after research and before proposal synthesis', () => {
     const skeleton = fs.readFileSync(path.join(ROOT, 'design-consultation/SKILL.md'), 'utf-8');
     const research = skeleton.indexOf('## Phase 2: Research');
     const requiredRead = skeleton.match(/^> \*\*STOP\.\*\* Before [^\n]*, Read `[^`\n]*\/design-consultation\/sections\/proposal-and-preview\.md` and execute it$/m);
     expect(research).toBeGreaterThan(-1);
     expect(requiredRead).not.toBeNull();
-    expect(requiredRead!.index).toBeGreaterThan(research);
+    const voices = skeleton.indexOf('## Design Outside Voices (independent)');
+    expect(voices).toBeGreaterThan(research);
+    expect(requiredRead!.index).toBeGreaterThan(voices);
+    expect(skeleton.slice(voices, requiredRead!.index)).toContain('await both before synthesis');
+    expect(skeleton.slice(voices, requiredRead!.index)).toContain('Keep your draft direction out of both prompts');
+    expect(skeleton.slice(voices, requiredRead!.index)).toContain('Include its complete contents in the outside prompt file');
+    const proposal = fs.readFileSync(path.join(ROOT, 'design-consultation/sections/proposal-and-preview.md'), 'utf8');
+    expect(proposal).not.toContain('## Design Outside Voices');
   });
 
   // Third recurrence (#497 → #2440 → /ship Step 18): a backgrounded doc-sync
@@ -419,7 +469,7 @@ describe('run_in_background guidance (#2440)', () => {
       const content = fs.readFileSync(file, 'utf-8');
       const boundedOutsideVoice = BOUNDED_OUTSIDE_VOICE_SITES.has(rel) && hasBoundedOutsideVoiceWait(content);
       const ceoForeground = rel === 'plan-ceo-review/SKILL.md' && content.includes(CEO_FOREGROUND_BRANCH);
-      if (DISPATCH_IMPERATIVE.test(content) && !content.includes('run_in_background: false') && !boundedOutsideVoice && !ceoForeground) {
+      if (DISPATCH_IMPERATIVE.test(content) && !hasForegroundGuidance(content) && !boundedOutsideVoice && !ceoForeground) {
         throw new Error(
           `${rel} contains an Agent-dispatch imperative (or bare "foreground" prose) but never states ` +
           '`run_in_background: false` — pin the flag at the dispatch site or add a reasoned BACKGROUND_OK ' +

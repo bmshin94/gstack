@@ -12,9 +12,10 @@ import * as path from 'path';
 import * as os from 'os';
 
 const evalCollector = createEvalCollector('e2e-cso');
-// Let the owned capture drain and assertions settle before Bun retries it.
-// This is outer finalization time only; runner work budgets stay unchanged.
+// runSkillTest can drain stderr for 5s after its unchanged CLI deadline.
+// Let cleanup and failure recording finish before Bun starts a retry.
 const CSO_FINALIZE_MS = SESSION_DRAIN_GRACE_MS + 5_000;
+let captureSequence = 0;
 
 afterAll(() => {
   finalizeEvalCollector(evalCollector);
@@ -67,6 +68,9 @@ app.listen(3000);
 
   test('/cso finds planted vulnerabilities', async () => {
     const result = await runSkillTest({
+      testName: 'cso-full-audit',
+      runId: `cso-full-audit-${process.env.EVALS_RUN_ID ?? runId}-${process.pid}-${++captureSequence}`,
+      publicStreamDiagnostics: true,
       prompt: `Read the file ${path.join(ROOT, 'cso', 'SKILL.md')} for the CSO skill instructions.
 
 Run /cso on this repo (full daily audit, no flags).
@@ -83,33 +87,37 @@ IMPORTANT:
     });
 
     logCost('cso', result);
-    expect(result.exitReason).toBe('success');
+    let passed = false;
+    try {
+      expect(result.exitReason).toBe('success');
 
-    // Should detect hardcoded API key
-    const output = result.output.toLowerCase();
-    expect(
-      output.includes('sk-') || output.includes('hardcoded') || output.includes('api key') || output.includes('api_key')
-    ).toBe(true);
+      // Should detect hardcoded API key
+      const output = result.output.toLowerCase();
+      expect(
+        output.includes('sk-') || output.includes('hardcoded') || output.includes('api key') || output.includes('api_key')
+      ).toBe(true);
 
-    // Should detect .env tracked by git
-    expect(
-      output.includes('.env') && (output.includes('tracked') || output.includes('gitignore'))
-    ).toBe(true);
+      // Should detect .env tracked by git
+      expect(
+        output.includes('.env') && (output.includes('tracked') || output.includes('gitignore'))
+      ).toBe(true);
 
-    // Should produce a findings table
-    expect(
-      output.includes('security findings') || output.includes('SECURITY FINDINGS')
-    ).toBe(true);
+      // Should produce a findings table
+      expect(
+        output.includes('security findings') || output.includes('SECURITY FINDINGS')
+      ).toBe(true);
 
-    // Should save a report
-    const reportDir = path.join(csoDir, '.gstack', 'security-reports');
-    const reportExists = fs.existsSync(reportDir);
-    if (reportExists) {
-      const reports = fs.readdirSync(reportDir).filter(f => f.endsWith('.json'));
-      expect(reports.length).toBeGreaterThanOrEqual(1);
+      // Should save a report
+      const reportDir = path.join(csoDir, '.gstack', 'security-reports');
+      const reportExists = fs.existsSync(reportDir);
+      if (reportExists) {
+        const reports = fs.readdirSync(reportDir).filter(f => f.endsWith('.json'));
+        expect(reports.length).toBeGreaterThanOrEqual(1);
+      }
+      passed = true;
+    } finally {
+      recordE2E(evalCollector, 'cso-full-audit', 'e2e-cso', result, { passed: passed && result.browseErrors.length === 0 });
     }
-
-    recordE2E(evalCollector, 'cso-full-audit', 'e2e-cso', result);
   }, CAPTURE_MS + CSO_FINALIZE_MS);
 });
 
@@ -156,6 +164,9 @@ app.post('/webhook/stripe', (req, res) => {
 
   test('/cso --diff scopes to branch changes', async () => {
     const result = await runSkillTest({
+      testName: 'cso-diff-mode',
+      runId: `cso-diff-mode-${process.env.EVALS_RUN_ID ?? runId}-${process.pid}-${++captureSequence}`,
+      publicStreamDiagnostics: true,
       prompt: `Read the file ${path.join(ROOT, 'cso', 'SKILL.md')} for the CSO skill instructions.
 
 Run /cso --diff on this repo. The base branch is "main".
@@ -176,15 +187,19 @@ IMPORTANT:
     });
 
     logCost('cso', result);
-    expect(result.exitReason).toBe('success');
+    let passed = false;
+    try {
+      expect(result.exitReason).toBe('success');
 
-    const output = result.output.toLowerCase();
-    // Should mention webhook and missing signature verification
-    expect(
-      output.includes('webhook') && (output.includes('signature') || output.includes('verify'))
-    ).toBe(true);
-
-    recordE2E(evalCollector, 'cso-diff-mode', 'e2e-cso', result);
+      const output = result.output.toLowerCase();
+      // Should mention webhook and missing signature verification
+      expect(
+        output.includes('webhook') && (output.includes('signature') || output.includes('verify'))
+      ).toBe(true);
+      passed = true;
+    } finally {
+      recordE2E(evalCollector, 'cso-diff-mode', 'e2e-cso', result, { passed: passed && result.browseErrors.length === 0 });
+    }
   }, CAPTURE_LONG_MS);
 });
 
@@ -235,6 +250,9 @@ CMD ["node", "server.js"]
 
   test('/cso --infra runs infrastructure phases only', async () => {
     const result = await runSkillTest({
+      testName: 'cso-infra-scope',
+      runId: `cso-infra-scope-${process.env.EVALS_RUN_ID ?? runId}-${process.pid}-${++captureSequence}`,
+      publicStreamDiagnostics: true,
       prompt: `Read the file ${path.join(ROOT, 'cso', 'SKILL.md')} for the CSO skill instructions.
 
 Run /cso --infra on this repo. This should run infrastructure-only phases (0-6, 12-14).
@@ -253,15 +271,19 @@ IMPORTANT:
     });
 
     logCost('cso', result);
-    expect(result.exitReason).toBe('success');
+    let passed = false;
+    try {
+      expect(result.exitReason).toBe('success');
 
-    const output = result.output.toLowerCase();
-    // Should mention unpinned action or Dockerfile issues
-    expect(
-      output.includes('unpinned') || output.includes('third-party') ||
-      output.includes('user directive') || output.includes('root')
-    ).toBe(true);
-
-    recordE2E(evalCollector, 'cso-infra-scope', 'e2e-cso', result);
+      const output = result.output.toLowerCase();
+      // Should mention unpinned action or Dockerfile issues
+      expect(
+        output.includes('unpinned') || output.includes('third-party') ||
+        output.includes('user directive') || output.includes('root')
+      ).toBe(true);
+      passed = true;
+    } finally {
+      recordE2E(evalCollector, 'cso-infra-scope', 'e2e-cso', result, { passed: passed && result.browseErrors.length === 0 });
+    }
   }, CAPTURE_LONG_MS + CSO_FINALIZE_MS);
 });

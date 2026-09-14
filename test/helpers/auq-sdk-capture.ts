@@ -16,9 +16,17 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import type { SkillTestResult } from './session-runner';
+import { runSkillTest, type SkillTestResult } from './session-runner';
 
 const ROOT = path.resolve(__dirname, '..', '..');
+
+/**
+ * Existing long section-loader work budget (v1.71): complete workflows can
+ * load their sections quickly, then need 300–450s to generate the full report.
+ * Keep 120s of the CAPTURE_LONG_MS outer budget for setup and reporting.
+ * Ordinary captureSectionReads callers retain the 300s default below.
+ */
+export const LONG_SECTION_CAPTURE_MS = 480_000;
 
 /** The 7 decision-brief format elements graded on the captured AUQ text. */
 export const AUQ_FORMAT_ELEMENTS: Array<{ field: string; re: RegExp }> = [
@@ -184,7 +192,6 @@ ${opts.scenario}
 
 This is a capture test, not an interactive session. Skip any system-audit / environment-setup / codebase-exploration steps. When you reach the FIRST point where the skill would call AskUserQuestion, write the verbatim full decision-brief text of that question (title, ELI10, stakes, recommendation, every option with its ✅/❌ pros/cons bullets, and the Net line) to ${outFile}. Do NOT call any tool to ask the user. Do NOT paraphrase. After writing the file, STOP.`;
 
-  const { runSkillTest } = await import('./session-runner');
   await runSkillTest({
     prompt,
     workingDirectory: opts.planDir,
@@ -214,15 +221,30 @@ This is a capture test, not an interactive session. Skip any system-audit / envi
  * The skill under test is the planted copy in `planDir` (pin the absolute path so
  * the agent cannot wander to the global install). AskUserQuestion is declared
  * unavailable so the agent auto-picks the recommended option and proceeds far
- * enough to hit the post-Step-0 STOP-Read directives. Read/Grep/Glob load the
- * sections, Write/Edit save review artifacts, and Agent provides an independent
- * review when required. These tools are pre-approved; the prompt separately
- * prohibits command mutations and wandering to other skill installs.
+ * enough to hit the post-Step-0 STOP-Read directives; Read is the tool a STOP-Read
+ * resolves to, so Read/Grep/Glob/Write is all the agent needs (no Bash → it cannot
+ * `find /` its way out, nor run git/gh mutations).
  */
+export function hasDisabledOutsideReview(output: string): boolean {
+  const headings = [...output.matchAll(/^## GSTACK REVIEW REPORT[ \t]*\r?$/gm)];
+  const heading = headings.at(-1);
+  if (!heading) return false;
+  const section = output.slice(heading.index! + heading[0].length).split(/^##[ \t]+/m, 1)[0];
+  const plain = (cell: string) => cell.replace(/[*_`]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
+  for (const line of section.split('\n')) {
+    if (!line.trimStart().startsWith('|')) continue;
+    const cells = line.split('|').map(plain);
+    if (cells[1] === 'outside review') {
+      return /^disabled(?:$|\s|[(:—–-])/.test(cells[5] ?? '');
+    }
+  }
+  return false;
+}
+
 export async function captureSectionReads(opts: {
   planDir: string;
   skillName: string;
-  /** Explicit local artifact commands authorized by a particular fixture. */
+  /** Fixture-authorized local artifact commands. */
   artifactCommands?: string;
   scenario: string;
   /** Relative filename the agent writes its final output to (terminal signal). */
@@ -234,16 +256,11 @@ export async function captureSectionReads(opts: {
   model?: string;
   maxTurns?: number;
   timeout?: number;
-}): Promise<{
-  readSections: Set<string>;
-  reportProduced: boolean;
-  /** The report file was created or its bytes changed during this attempt. */
-  reportWritten: boolean;
-  exitReason: SkillTestResult['exitReason'];
-  toolCalls: SkillTestResult['toolCalls'];
-  transcript: SkillTestResult['transcript'];
-  output: string;
-}> {
+  /** Measure native section loading with the documented extra-review opt-out. */
+  nativeReviewOnly?: boolean;
+}): Promise<{ readSections: Set<string>; reportProduced: boolean; reportWritten: boolean;
+  exitReason: SkillTestResult['exitReason']; toolCalls: SkillTestResult['toolCalls'];
+  transcript: SkillTestResult['transcript']; output: string }> {
   const outFile = path.join(opts.planDir, opts.reportFile ?? 'REPORT.md');
   const readReport = (): Buffer | undefined => {
     try { return fs.readFileSync(outFile); }
@@ -254,6 +271,20 @@ export async function captureSectionReads(opts: {
   };
   const beforeReport = readReport();
   const skillPath = path.join(opts.planDir, opts.skillName, 'SKILL.md');
+  // Outside-review dispatch has separate behavioral coverage. Native-only
+  // captures use the real supported control in state owned by this call;
+  // never mutate the operator's or another capture's gstack configuration.
+  // Keep the model-facing config path relative to the fixture's working directory.
+  const stateDir = opts.nativeReviewOnly
+    ? fs.mkdtempSync(path.join(path.resolve(opts.planDir), '.gstack-section-state-')) : null;
+  const nativeReviewRule = stateDir
+    ? `\n- Read ${path.relative(path.resolve(opts.planDir), path.join(stateDir, 'config.yaml'))}, the isolated gstack configuration for this capture. It sets codex_reviews: disabled. Follow that documented control: skip the entire extra outside-review step, including its native fallback, and report outside coverage as disabled. Complete all native review sections and the full required report.`
+    : '';
+  // Preserve full method execution while avoiding a second written walkthrough
+  // of decisions already represented in the amended plan and required outputs.
+  const planReviewWritingRule = opts.skillName === 'plan-ceo-review'
+    ? `\n- Write a concise, complete decision record: preserve original requirements and accepted plan amendments. Record each finding once with concrete evidence, the selected remedy, residual risks, and verification. Give all 11 sections an explicit outcome (including no issues or justified skips); retain the complete required registries, applicable diagrams, tasks, completion summary, and exact GSTACK REVIEW REPORT table. Cross-reference those records instead of repeating findings, option deliberations, diagrams, or registries in each section. Use compact outcome entries and short table cells; execute the review checklists without copying their questions or narrating every check into the artifact. Brevity must preserve every finding, accepted requirement, required field, and required diagram in its specified format. Do not expand the artifact into full implementation or test code unless that code is needed to specify an accepted plan change. This is a writing rule only: execute the full review, perform every required lazy-file Read, and complete all required artifacts before returning.`
+    : '';
   const prompt = `You are running an automated skill-execution test. No human is present, so AskUserQuestion is unavailable. The ONLY skill file you may read is this absolute path: ${skillPath}. Do NOT Glob/find/search for any other SKILL.md anywhere — especially nothing under ~/.claude or /Users.
 
 Read ${skillPath} and EXECUTE its workflow for this scenario:
@@ -263,26 +294,31 @@ ${opts.scenario}
 Rules for this run:
 - Skip system-audit, environment-setup, telemetry, and unrelated codebase exploration. Read the supplied plan's referenced fixture files when its review requires them.
 - At any decision point that would call AskUserQuestion, silently pick the skill's recommended option and continue. Do NOT stop to ask.
-- Resolve installed-root paths for section and companion Markdown files under ${opts.planDir}, where this fixture's skill package is copied.
 - This skill's body has been carved into on-demand sections/. When the skill gives a STOP-Read directive (for example "Read \`.../sections/<file>\` and execute it in full"), you MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers. Do not work from memory.
-- Do NOT run git, gh, commit, push, or any other mutating command${opts.artifactCommands ? ' except the local artifact commands explicitly authorized below' : ''}.${opts.artifactCommands ? `\n- ${opts.artifactCommands}` : ''}
-- When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.
-- After completing the full workflow and writing the complete report, finish with only a brief acknowledgement naming the report path and verdict; do not repeat the report in your final response. This changes only final-response delivery, not required workflow steps or report content.`;
+- Resolve installed-root paths for section and companion Markdown files under ${opts.planDir}, where this fixture's skill package is copied.
+- Do NOT run git, gh, commit, push, or any mutating command${opts.artifactCommands ? ' except the local artifact commands explicitly authorized below' : ''}.${opts.artifactCommands ? `\n- ${opts.artifactCommands}` : ''}
+- When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.${nativeReviewRule}${planReviewWritingRule}
+- After all required writes are complete, return a brief completion message and STOP. Do not reproduce the full report in the final response.`;
 
-  const { runSkillTest } = await import('./session-runner');
-  const result = await runSkillTest({
-    prompt,
-    // This is the existing observable tool-use contract, not expected review content.
-    // Keep the complete tool surface: Bash remains necessary for CLI/program work.
-    appendSystemPrompt: 'In this native skill-execution test, when the workflow directs you to Read a file, invoke the native Read tool. Shell commands that print file contents (such as cat, sed, head, or tail) do not satisfy a required Read. Bash remains available for required program and CLI execution, including temporary command input/output. Follow the skill to choose which files to read and complete its full workflow.',
-    workingDirectory: opts.planDir,
-    allowedTools: ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent', ...(opts.artifactCommands ? ['Bash'] : [])],
-    maxTurns: opts.maxTurns ?? 25,
-    timeout: opts.timeout ?? 300_000,
-    testName: opts.testName,
-    runId: opts.runId,
-    model: resolveEvalModel('capture', opts.model),
-  });
+  let result: SkillTestResult;
+  try {
+    if (stateDir) fs.writeFileSync(path.join(stateDir, 'config.yaml'), 'codex_reviews: disabled\n');
+    result = await runSkillTest({
+      prompt,
+      workingDirectory: opts.planDir,
+      allowedTools: ['Read', 'Grep', 'Glob', 'Write', ...(opts.nativeReviewOnly ? [] : ['Edit', 'Agent']), ...(opts.artifactCommands ? ['Bash'] : [])],
+      tools: ['Read', 'Grep', 'Glob', 'Write', ...(opts.nativeReviewOnly ? [] : ['Edit', 'Agent']), ...(opts.artifactCommands ? ['Bash'] : [])],
+      publicStreamDiagnostics: true,
+      maxTurns: opts.maxTurns ?? 25,
+      timeout: opts.timeout ?? 300_000,
+      testName: opts.testName,
+      runId: opts.runId,
+      model: resolveEvalModel('capture', opts.model),
+      ...(stateDir ? { env: { GSTACK_HOME: stateDir, GSTACK_STATE_ROOT: stateDir } } : {}),
+    });
+  } finally {
+    if (stateDir) fs.rmSync(stateDir, { recursive: true, force: true });
+  }
 
   const readSections = new Set<string>();
   for (const c of result.toolCalls) {
@@ -370,7 +406,7 @@ function execGit(args: string[]): string {
 }
 
 /**
- * Drive plan-ceo-review to its Mode Selection AskUserQuestion in the
+ * Drive plan-ceo-review to its Step 0F mode-selection AskUserQuestion in the
  * given plan dir and capture the verbatim question text the model generates.
  * Returns the captured text ('' if the agent never wrote the file).
  */
@@ -397,11 +433,10 @@ Read ${skillPath} for the review workflow. Do NOT search for, Glob, find, or rea
 
 Read ${planPath} — that is the plan to review. It is a standalone plan document, not a codebase. Skip any codebase exploration or system-audit steps.
 
-Proceed to Mode Selection, where the skill presents the 4 review-mode options to the user via AskUserQuestion.
+Proceed to Step 0F (Mode Selection), where the skill presents the 4 review-mode options to the user via AskUserQuestion.
 
 Write the verbatim text of that AskUserQuestion (the full decision brief: title, ELI10, stakes, recommendation, every option with its pros/cons bullets, and the Net line) to ${outFile}. Do NOT call any tool to ask the user. Do NOT paraphrase. After writing the file, stop.`;
 
-  const { runSkillTest } = await import('./session-runner');
   await runSkillTest({
     prompt,
     workingDirectory: opts.planDir,

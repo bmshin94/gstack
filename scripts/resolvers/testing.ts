@@ -431,7 +431,7 @@ When these test and eval choices are resolved, write the Test Plan Artifact belo
 After resolving the Test review decisions, record the approved test requirements in an artifact for \`/qa\` and \`/qa-only\`. List any unresolved choices separately as pending, not required implementation. Update this artifact if later approved decisions change the tests. Use the ledger's write/read-only rules.
 
 \`\`\`bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG  # sets SLUG and BRANCH
 TEST_PLAN_USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 \`\`\`

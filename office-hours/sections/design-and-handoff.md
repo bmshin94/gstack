@@ -166,7 +166,8 @@ Supersedes: {prior filename — omit this line if first design on this branch}
 
 ## Spec Review Loop
 
-Before presenting the document to the user for approval, run an adversarial review.
+Run an adversarial review before presenting the final document to the user.
+Follow the calling workflow's approval steps.
 The reviewer's saved JSON is the complete verdict. A prose summary is not a second
 finding inventory: the report helper preserves every problem/remedy and counts the
 records mechanically. Do not rewrite, condense, deduplicate, or recount its blocks.

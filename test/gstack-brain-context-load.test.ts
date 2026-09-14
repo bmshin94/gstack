@@ -498,3 +498,70 @@ gbrain:
     expect(r.stdout).toContain("legacy.txt");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+
+describe("gstack-brain-context-load — CEO plan reader uses its writer's root", () => {
+  for (const source of ["SKILL.md.tmpl", "SKILL.md"]) {
+    for (const storage of ["configured", "plugin", "default"]) {
+      it(`${source}: prior CEO plans use only the ${storage} root`, () => {
+        const dir = mkdtempSync(join(tmpdir(), "gstack-ceo-context-"));
+        const suffix = process.platform === "win32" ? "space $ [x]" : "space $ [x]*?";
+        const home = join(dir, "operator " + suffix);
+        const configured = join(dir, "configured " + suffix);
+        const plugin = join(dir, "plugin " + suffix);
+        const expected = storage === "configured" ? configured : storage === "plugin" ? plugin : join(home, ".gstack");
+        try {
+          mkdirSync(home, { recursive: true });
+          const plans = join(expected, "projects", "test-repo", "ceo-plans");
+          mkdirSync(plans, { recursive: true });
+          const selectedPlan = join(plans, "2026-09-14-selected-ceo.md");
+          writeFileSync(selectedPlan, "# Selected CEO plan\n");
+          const otherProject = join(expected, "projects", "other-repo", "ceo-plans");
+          mkdirSync(otherProject, { recursive: true });
+          writeFileSync(join(otherProject, "2099-other-project.md"), "# Other project\n");
+          if (storage !== "default") {
+            const legacy = join(home, ".gstack", "projects", "test-repo", "ceo-plans");
+            mkdirSync(legacy, { recursive: true });
+            writeFileSync(join(legacy, "2099-wrong-root.md"), "# Wrong root\n");
+          }
+          const query = parseSkillManifest(join(import.meta.dir, "..", "plan-ceo-review", source))!
+            .context_queries.find(item => item.id === "prior-ceo-plans")!;
+          // Load the real shipped query alone so unrelated gbrain queries do
+          // not need a provider. Preserve its sorting, limit and presentation.
+          const skillFile = join(dir, "SKILL.md");
+          writeFileSync(skillFile, `---
+name: ceo-context-fixture
+gbrain:
+  schema: 1
+  context_queries:
+    - id: ${query.id}
+      kind: filesystem
+      glob: "${query.glob}"
+      sort: ${query.sort}
+      limit: ${query.limit}
+      render_as: "${query.render_as}"
+---
+`);
+          const env = {
+            HOME: home, USERPROFILE: home, GSTACK_HOME: storage === "configured" ? configured : "",
+            CLAUDE_PLUGIN_DATA: storage === "default" ? "" : plugin,
+            CLAUDE_PLUGIN_ROOT: storage === "default" ? "" : "/plugins/gstack",
+            TMPDIR: join(dir, "tmp"),
+          };
+          const r = runScript(["--skill-file", skillFile, "--repo", "test-repo", "--explain"], env);
+          expect(r.exitCode).toBe(0);
+          expect(r.stderr).toContain("OK    prior-ceo-plans");
+          expect(r.stdout).toContain("2026-09-14-selected-ceo.md");
+          expect(r.stdout).not.toContain("2099-wrong-root.md");
+          expect(r.stdout).not.toContain("2099-other-project.md");
+          rmSync(selectedPlan);
+          const empty = runScript(["--skill-file", skillFile, "--repo", "test-repo", "--explain"], env);
+          expect(empty.exitCode).toBe(0);
+          expect(empty.stderr).toContain("SKIP  prior-ceo-plans");
+          expect(empty.stderr).toContain("no matches");
+          expect(empty.stdout.trim()).toBe("");
+        } finally { rmSync(dir, { recursive: true, force: true }); }
+      });
+    }
+  }
+});

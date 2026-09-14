@@ -20,7 +20,7 @@ gbrain:
   context_queries:
     - id: prior-ceo-plans
       kind: filesystem
-      glob: "~/.gstack/projects/{repo_slug}/ceo-plans/*.md"
+      glob: "{gstack_state_root}/projects/{repo_slug}/ceo-plans/*.md"
       sort: mtime_desc
       limit: 5
       render_as: "## Prior CEO plans for this project"
@@ -257,6 +257,7 @@ At session start or after compaction, recover recent project context.
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
+_BRANCH=$(git branch --show-current 2>/dev/null | tr -cd 'a-zA-Z0-9._/-') || :; _BRANCH=${_BRANCH:-unknown}
 _PROJ="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"
@@ -282,7 +283,7 @@ fi
 
 If artifacts are listed, read the newest useful one. If `LAST_SESSION` or `LATEST_CHECKPOINT` appears, give a 2-sentence welcome back summary. If `RECENT_PATTERN` clearly implies a next skill, suggest it once.
 
-**Cross-session decisions.** If `ACTIVE DECISIONS` are listed, treat them as prior settled calls with their rationale — do not silently re-litigate them; if you're about to reverse one, say so explicitly. Reach for `~/.claude/skills/gstack/bin/gstack-decision-search` whenever a question touches a past decision ("what did we decide / why / did we try"). When you or the user make a DURABLE decision (architecture, scope, tool/vendor choice, or a reversal) — NOT a turn-level or trivial choice — log it with `~/.claude/skills/gstack/bin/gstack-decision-log` (`--supersede <id>` for a reversal). Reliable and local; gbrain not required.
+**Cross-session decisions.** Honor listed `ACTIVE DECISIONS` and their rationale; do not silently re-litigate them, and announce planned reversals. Use `~/.claude/skills/gstack/bin/gstack-decision-search` for past-decision questions. Log DURABLE decisions by you or the user (architecture, scope, tool/vendor choice, reversal; not trivial or turn-level choices) with `~/.claude/skills/gstack/bin/gstack-decision-log` (`--supersede <id>` for reversals). Reliable and local; gbrain not required.
 
 ## Writing Style (skip entirely if `EXPLAIN_LEVEL: terse` appears in the preamble echo OR the user's current message explicitly requests terse / no-explanations output)
 
@@ -578,6 +579,8 @@ fi
 - `NEEDS_ASIDE` or `ASIDE_NOT_RUNNING`: run the same queries with the WebSearch tool if this host provides it — same read-only intent, same untrusted-content rule. If it does not, skip the research and say once: "Search unavailable — proceeding with in-distribution knowledge only." Never install Aside yourself; mention aside.com at most once per run. The rest of the skill continues.
 
 Sanitize every query before it leaves the machine: strip hostnames, IPs, file paths, SQL fragments, and anything that looks like a secret. Search for the error class and the library, not the user's data.
+
+**Anti-shortcut clause:** Analyze → resolve → apply for each section before advancing. The plan file records the interactive review; it cannot replace it. Do not prewrite the remaining sections or their implementation tasks and then walk through a fixed question list. Proposed findings are not accepted plan changes: mark them pending until their actual decisions are made. Ask once per unresolved or reopened issue, wait for the answer, and apply only the exact accepted choice and scope to the working plan. An earlier approach selection does not authorize unrelated choices. Keep established contracts, accepted decisions, and their evidence available to later sections; new material risks or changed remedies still need approval. Cross-referencing settled decisions never replaces the full review and terminal report. Follow the working review decisions below; never invent a question merely because a new section starts.
 
 ## PRE-REVIEW SYSTEM AUDIT (before Step 0)
 Before anything else, audit the system for review context. Run:
@@ -982,10 +985,11 @@ For both expansion modes, ask separately for each proposed addition: **A)** Add 
 **For HOLD SCOPE** — run this:
 1. Complexity check: If the plan changes more than 8 files or introduces more than 2 new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
 2. What is the minimum set of changes that achieves the stated goal? Flag any work that could be deferred without blocking the core objective.
+3. Keep stated invariants and acceptance criteria; repairs needed to meet them are in scope.
 
 **For SCOPE REDUCTION** — run this:
-1. Ruthless cut: Identify the minimum that ships value to a user. Propose everything else for deferral.
-2. What can be a follow-up PR? Separate "must ship together" from "nice to ship together."
+1. Propose minimum scope for the core goal and work to defer.
+2. Explain each cut via AskUserQuestion; **STOP** for approval. Put approved cuts in "NOT in scope" and retain the rest.
 
 **Deferring current scope:** In REDUCTION, HOLD, and the HOLD checks performed by SELECTIVE, ask separately for each proposed cut: **A)** Defer this item to TODOS.md **B)** Keep it in scope. Review only the agreed scope.
 
@@ -1046,7 +1050,8 @@ Repo: {owner/repo}
 
 #### Spec Review Loop
 
-Before presenting the document to the user for approval, run an adversarial review.
+Run an adversarial review before presenting the final document to the user.
+Follow the calling workflow's approval steps.
 
 **Step 1: Dispatch reviewer subagent**
 
@@ -1108,6 +1113,8 @@ Add this sequence, feasibility blockers and remaining choices to the working pla
 
 Use 0D for urgent decisions; never defer critical risks. Carry the ledger and each answer's exact scope into the review sections.
 
+**STOP.** AskUserQuestion: one tool_use per issue, no batching, even obvious fixes. Recommend + WHY; wait for approval before changing the plan. Zero findings: state "No issues, moving on" and proceed. No code changes; review only.
+
 > **STOP.** Before running the 11-section deep review, required outputs, and review report (only after Step 0 scope and mode are agreed), Read `~/.claude/skills/gstack/plan-ceo-review/sections/review-sections.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
 
@@ -1118,6 +1125,7 @@ review, required outputs and review report from the file, not memory. If you
 produced the Completion Summary or review report without that Read, STOP, Read
 it now and redo the review from the source of truth.
 
+Before summaries, review logs or next-step menus, run approval check 0 below.
 
 ## EXIT PLAN MODE GATE (BLOCKING)
 
@@ -1125,11 +1133,18 @@ If storage restrictions prevented the plan/report or completion log, present the
 full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
 An attempted artifact save that failed still stops the review.
 
+0. Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
+   Never group distinct issues. Setup, mode, approach and navigation are not approval.
+   Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
+   record why. Deferrals remain unresolved.
+   If missing, reset drafts to pending, ask and wait. After answers or resets,
+   refresh the plan, report and review log; rerun this gate.
+
 Before calling ExitPlanMode, verify all five checks:
 1. Read the plan file after your most recent write.
 2. Its LAST `## ` heading is exactly `## GSTACK REVIEW REPORT`.
 3. The report contains a Runs / Status / Findings table and VERDICT; include
-   CODEX / CROSS-MODEL when applicable.
+   OUTSIDE COVERAGE / CROSS-MODEL when applicable.
 4. Its final non-whitespace line is the exact unbolded `NO UNRESOLVED DECISIONS`,
    or the last bullet under `**UNRESOLVED DECISIONS:**`. A bolded sentinel,
    missing status or any trailing prose fails this check.

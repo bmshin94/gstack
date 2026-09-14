@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
-import { AUTOPLAN_CHAIN_BUDGET } from './helpers/autoplan-chain-policy';
+import { AUTOPLAN_CHAIN_BUDGET } from './helpers/eval-budgets';
 import { generateSlugEval, generateSlugSetup } from '../scripts/resolvers/utility';
 import { DESIGN_DOC_DISCOVERY_BLOCK } from '../scripts/resolvers/design-doc-discovery';
 import type { TemplateContext } from '../scripts/resolvers/types';
@@ -286,7 +286,7 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
     expect(discovery).toBe('Design doc found: ' + path.join(cwd, 'DESIGN.md') + '\\n');
     config = path.join(cwd, '.native'); sessionId = opts.captureQuestionsForSession;
     fs.mkdirSync(path.join(config, 'projects', 'fixture'), { recursive: true });
-    expect(opts).toMatchObject({ permissionMode: 'plan', timeoutMs: ${AUTOPLAN_CHAIN_BUDGET.ptyMs}, seedSkills: true, captureScreen: true, rows: 120,
+    expect(opts).toMatchObject({ permissionMode: 'plan', timeoutMs: ${AUTOPLAN_CHAIN_BUDGET.sessionMs}, seedSkills: true, captureScreen: true, rows: 120,
       env: { GSTACK_HOME: path.join(opts.cwd, '.gstack') } });
     expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
     return {

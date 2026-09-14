@@ -1,19 +1,22 @@
-/** Periodic real-PTY review: validate every seeded decision across all phases,
- * count substantive calls within the existing band, and reject bundled issues.
- * The 25-minute work budget includes the final semantic judgment. */
+/**
+ * /plan-design-review per-finding AskUserQuestion count (periodic, paid, real-PTY).
+ *
+ * Same shape as skill-e2e-plan-ceo-finding-count: drives /plan-design-review
+ * against a 5-finding seeded plan and asserts review-phase AUQ count ∈ [N-1, N+2].
+ * Plus D19: review report at bottom of produced plan file.
+ *
+ * Tier: periodic (~25 min, ~$5/run). Sequential by default per plan §D15.
+ */
 
 import { test } from 'bun:test';
-import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
-import { DESIGN_FINDINGS } from './helpers/plan-review-cases';
-import { createDesignReviewPicker, seedDesignBoardActorProtocol } from './helpers/plan-review-board-feedback';
-import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
 import { describeE2ETier } from './helpers/e2e-gate';
+import { isDesignCountFirstReview, isDesignCountSetup, isDesignCompletionHandoff, pickDesignCountQuestion } from './helpers/design-count-review';
+import { isDesignArtifactGeneration } from './helpers/design-artifact-question';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   runPlanSkillCounting,
-  PLAN_SKILL_COUNT_FINALIZE_MS,
   designStep0Boundary,
   assertReviewReportAtBottom,
 } from './helpers/claude-pty-runner';
@@ -24,18 +27,177 @@ const N = 5;
 const FLOOR = N - 1;
 const CEILING = N + 2;
 
+// Existing interaction behavior belongs to the surrounding fixture, not the
+// five intentionally inconsistent visual requirements under review.
+const existingInteractionStates = [
+  'The existing router protects dirty edits on every in-app exit, including',
+  'persistent app navigation, using the same Cancel confirmation dialog.',
+  'Register the browser-native beforeunload warning only while the form is dirty;',
+  'remove it when clean. Confirmed in-app navigation uses the existing destination',
+  'heading focus behavior; Keep editing returns focus to the attempted exit.',
+  'During Save or Export, both request buttons use aria-disabled=true plus an',
+  'explicit click/keyboard activation guard, rather than the HTML disabled attribute.',
+  'They remain focusable and keep the existing disabled appearance. Reset and',
+  'Cancel use HTML disabled during the request. Do not move focus while pending',
+  'or after success. On a network error, focus the operation-specific Retry only',
+  'if focus is still on the request trigger; never steal focus the user moved.',
+  'The existing InlineStatus text stays unchanged while Save is pending:',
+  'Unsaved changes for a dirty form, otherwise its saved timestamp or initial',
+  'blank text. Pending feedback belongs to the request button; do not repeat',
+  'Saving… in the status live region. Success and failure use the outcomes above.',
+  'When clean and idle, Reset is disabled because it has nothing to discard,',
+  'and Cancel navigates back immediately without a confirmation. When dirty',
+  'and idle, Reset and Cancel use their existing discard confirmations. Their',
+  '44px geometry is unchanged; the disabled style is separate from pending feedback.',
+];
+
+// A known surrounding design prevents missing layout/journey/state contracts
+// from becoming legitimate extra findings unrelated to the five seeded gaps.
+const designSystem = [
+  '# Approved account-settings design system',
+  '',
+  'Reuse the existing single-column settings shell: persistent app navigation,',
+  'page title and description, action group, then Profile and Notifications fieldsets.',
+  'The existing description is “Manage your display name, email address, and notification preferences.”',
+  'Preserve that description verbatim.',
+  'The form has a 640px maximum width. Reuse existing Button, Field, InlineStatus,',
+  'ErrorSummary and ConfirmationDialog components; no new component family is needed.',
+  'Profile contains Display name (text) and Email (email). Notifications contains',
+  'Weekly digest and Product tips switches. Existing server defaults are the',
+  'account name/email, Weekly digest on, and Product tips off; labels/order stay fixed.',
+  'The page title “Account settings” is h1. Profile and Notifications are h2',
+  'headings that label their fieldsets via aria-labelledby; no heading level is skipped.',
+  'The existing DOM and visual order are:',
+  '```text',
+  'Persistent app navigation',
+  'main: Account settings (h1) + description',
+  '  Save | Reset | Cancel | Export',
+  '  InlineStatus',
+  '  Profile (h2): Display name, Email',
+  '  Notifications (h2): Weekly digest, Product tips',
+  '```',
+  '',
+  'Save is the only filled primary action (#1d4ed8 with white text). Reset, Cancel',
+  'and Export are neutral ghost buttons; destructive intent is explained in the',
+  'existing confirmation dialog, whose default is Cancel. All targets are at least 44px.',
+  'Spacing uses an 8px base: sections 32px, field groups 24px, label-to-input 8px.',
+  'Typography has two roles: 16px body/form labels/helper text, 20px section headings.',
+  'The existing app font family is system-ui, sans-serif, inherited by form controls.',
+  'Use error.text #991b1b on error.surface #fef2f2 with an icon and explicit text.',
+  'All text must meet WCAG AA contrast; never communicate status through color alone.',
+  'Focus-visible is the existing 2px solid #1d4ed8 outline, offset 2px on white;',
+  'its measured contrast exceeds 3:1. Reuse it on all controls and dialog actions.',
+  '',
+  'The established pending-action pattern is an inline spinner beside “Saving…”',
+  'inside the disabled Save button, aria-busy=true, with reduced-motion support.',
+  'Save and Export are mutually exclusive: disable both while either is pending.',
+  'Reset and Cancel are also disabled while either request is pending; all four',
+  'header actions return to their idle/dirty-state behavior when it settles. Export uses the existing inline spinner',
+  'beside “Exporting…” inside its disabled button, aria-busy=true, with reduced-motion support.',
+  'After Save finishes, Export downloads the latest successfully saved preferences.',
+  'Success uses the persistent inline status “Saved” plus the save time (aria-live=polite).',
+  'The existing formatter renders “Saved at HH:mm” in the user’s local 24-hour time.',
+  'Editing a field away from its saved value changes that same persistent status',
+  'to “Unsaved changes” (role=status, aria-live=polite, aria-atomic=true); text',
+  'communicates the dirty state without relying on color or button enabled state.',
+  'Reverting all edits or confirming Reset restores “Saved at HH:mm” for the',
+  'last successful save. Failed saves retain “Unsaved changes” alongside the error.',
+  'Before the first successful save, the unchanged form has blank status text;',
+  'editing shows “Unsaved changes”, and reverting or confirming Reset restores blank text.',
+  'Reset dialog: “Discard unsaved changes?” / “Your saved preferences will be restored.”',
+  'Its actions are “Keep editing” (default) and “Discard changes”. Cancel navigation',
+  'uses the same dialog with “Keep editing” (default) and “Discard and leave”.',
+  'Closing a dialog while staying on the form returns focus to its Reset or Cancel',
+  'trigger; confirmed navigation uses the existing destination-main-heading focus behavior.',
+  'Validation errors appear beside fields and in a linked error summary; focus the',
+  'first invalid field. Network errors preserve edits and show Retry in that status area.',
+  'Retry is a sibling button beside the status text, outside its live region.',
+  'Visible text stays “Retry”; its aria-label is “Retry save” or “Retry export” for that operation.',
+  'The read-failure control follows the same pattern with aria-label “Retry loading”.',
+  ...existingInteractionStates,
+  'Export failures use that same error/retry area without changing unsaved fields;',
+  'Retry repeats Export. A successful download clears the Export error only.',
+  'At 640px and below, the three secondary actions share one equal-column row',
+  'below full-width Save, fitting 320px while preserving order and 44px targets.',
+].join('\n');
+
 const planDesign5Findings = (planPath: string) => [
   `Please review this plan thoroughly. As you go, write your plan-mode plan to ${planPath} (use Edit/Write to that exact path).`,
+  // The skill explicitly supports this opt-out. The cadence test measures
+  // review findings; generated-variant preference questions have separate evals.
+  'Text-only review; skip mockups. Review all seven design dimensions.',
+  'Native design review only: skip optional outside voices. Finish after the design review; I will handle subsequent reviews manually.',
   '',
   '# Plan: Settings Page UI redesign',
   '',
-  '## Existing page and accepted boundaries',
-  'This is an incremental redesign of the existing settings form. Preserve its',
-  'documented behavior and layout in DESIGN.md; these contracts are unchanged.',
-  'The proposal below changes action emphasis, section rhythm, error colors,',
-  'form-label hierarchy, and the visual feedback during an in-flight Save.',
-  'The chosen treatments remain open for review. Other changes need new evidence',
-  'of a conflict with the existing page, rather than an omission from this proposal.',
+  '## Existing product and accepted behavior',
+  'This updates an existing account-settings form using the checked-in DESIGN.md.',
+  'The shell and components already exist. Profile and Notifications are the only',
+  'sections, with visible headings and associated field labels. The page header',
+  'contains the title, a short description, and Save/Reset/Cancel/Export actions.',
+  'The existing description is “Manage your display name, email address, and notification preferences.”',
+  'Preserve that description verbatim.',
+  'Preserve the approved single-column structure and component behavior.',
+  'The page title “Account settings” is h1. Profile and Notifications are h2',
+  'headings that label their fieldsets via aria-labelledby; no heading level is skipped.',
+  'The existing DOM and visual order are:',
+  '```text',
+  'Persistent app navigation',
+  'main: Account settings (h1) + description',
+  '  Save | Reset | Cancel | Export',
+  '  InlineStatus',
+  '  Profile (h2): Display name, Email',
+  '  Notifications (h2): Weekly digest, Product tips',
+  '```',
+  '',
+  'Journey: a user arrives from account navigation wanting to adjust preferences,',
+  'edits the labeled fields, saves, and reads the inline Saved timestamp before',
+  'leaving. The feedback preserves confidence that their preferences were stored.',
+  'The persistent InlineStatus has role=status, aria-live=polite, aria-atomic=true.',
+  'After success it reads “Saved at HH:mm” in the user’s local 24-hour time.',
+  'Editing away from a saved value changes its text to “Unsaved changes”, so',
+  'dirty state never relies on color or the Save button being enabled. Reverting',
+  'all edits or confirming Reset restores the last successful save timestamp.',
+  'Before any successful save, unchanged values show blank status text; editing',
+  'shows “Unsaved changes”, and reverting or confirming Reset restores blank text.',
+  'Failed saves retain “Unsaved changes” alongside the error message.',
+  'Initial loading uses the existing form skeleton. A new account sees useful',
+  'default preferences as specified in DESIGN.md rather than an empty page. Read failures show Retry.',
+  'Save is atomic: all fields persist together or none do, so partial success is',
+  'not exposed. Field validation, network failure, and successful-save feedback',
+  'use the exact existing DESIGN.md patterns. Preserve unsaved values after errors.',
+  'Disable repeat Save submissions while pending. Save and Export are mutually',
+  'exclusive: disable both while either is pending. After Save finishes, Export',
+  'downloads the latest successfully saved preferences. Reset restores saved values only',
+  'after confirmation; Cancel confirms discarding dirty edits before returning to',
+  'the previous page; Export downloads the current saved preferences as JSON.',
+  'Reset and Cancel are disabled while Save or Export is pending; all four header',
+  'actions return to their idle/dirty-state behavior when it settles. While preparing Export, use the existing inline',
+  'spinner beside “Exporting…” inside its disabled button, aria-busy=true, with reduced-motion support.',
+  'An Export failure uses the existing inline error/retry area and preserves',
+  'unsaved fields. Retry repeats Export; success clears only that Export error.',
+  'Retry controls are siblings beside the status text, outside its live region.',
+  'Visible text stays “Retry”; its aria-label is “Retry save” or “Retry export” for that operation.',
+  'The read-failure control follows the same pattern with aria-label “Retry loading”.',
+  ...existingInteractionStates,
+  '',
+  'Responsive behavior: above 640px keep the header action group in one row; at',
+  '640px and below, place full-width Save first and the three secondary actions',
+  'in one equal-column row below it, preserving DOM/tab order. The form fits 320px',
+  'without horizontal scroll, including the secondary actions and their 44px targets.',
+  'All controls have visible focus rings and 44px targets. Use semantic fieldsets,',
+  'labels, a main landmark and heading order; errors link through aria-describedby.',
+  'Focus-visible on every control and dialog action is the existing 2px solid',
+  '#1d4ed8 outline, offset 2px on white, with measured contrast above 3:1.',
+  'Dialogs trap focus; Escape cancels. Closing while staying on the form restores',
+  'focus to the Reset or Cancel trigger. Confirmed navigation uses the existing',
+  'destination-main-heading focus behavior. Export remains a',
+  'clearly labeled button. Respect reduced motion. No additional visual exploration',
+  'or component replacement is part of this established form update.',
+  'Retain the existing system-ui, sans-serif font family, including on form controls.',
+  '',
+  '## Planned implementation gaps',
+  'The proposed form still has the following inconsistencies with that design:',
   '',
   '## Visual Hierarchy',
   'The "Save" button is rendered with the same size, weight, and color as',
@@ -59,101 +221,10 @@ const planDesign5Findings = (planPath: string) => [
   'see a frozen page; we should add a spinner or skeleton state.',
 ].join('\n');
 
-// The count fixture is an existing page, not a blank-slate product. These
-// contracts answer the unrelated questions observed in the native review;
-// none chooses a remedy for the five defects in the proposed change.
-// These are synthetic fixture contracts, not claims about production code.
-// Error presentation, helper type and pending-input behavior below are newly
-// authored baseline facts, not recovered facts or the native review's choices.
-const existingSettingsDesign = `# Existing settings page design
-
-## Purpose and information architecture
-Account administrators edit their own Profile, Notifications, and Security settings.
-The page is a flat form in a 640px-wide content column, with those three named
-sections in that order. A page heading and one sentence of purpose precede the
-form. Each section has its own heading and a short description. There are no
-cards, side navigation, new routes, or new section names in this change.
-
-## Existing actions and interaction contract
-Save persists the complete valid draft using the existing API. It is disabled
-until values differ from the saved state and there are no validation errors.
-The proposed visual emphasis of Save relative to the other actions is unresolved.
-The shared Button already applies the app's disabled-opacity token to every visual
-variant without changing its size or position. This disabled treatment is unchanged;
-the redesign chooses action emphasis, not a new disabled-state design.
-During an in-flight Save, duplicate submission is blocked; Reset and Export are
-disabled, Cancel remains available, fields keep their values, focus stays on Save,
-and cancellation does not discard the draft. These action states are unchanged.
-The existing inputs are read-only while Save is pending, without dimming or
-clearing their values; they become editable again when that pending state ends.
-The redesign preserves this existing interaction.
-The visual feedback during this delay is the unresolved part of the proposal.
-Success shows the existing saved-status line and announces it through the polite
-live region. Failure preserves every draft value and offers retry beside the
-error message. Partial saves are not supported: the API updates the form atomically.
-Field-validation messages already sit directly below their inputs as plain text,
-without a tinted container or an added error border. The save-failure message
-uses the existing tinted panel between the page introduction and the header
-actions, with retry in that panel. It appears after failure, persists through
-edits, and clears when the next Save attempt begins. These locations, surfaces
-and lifetimes stay fixed; the unresolved error colors do not redesign them.
-Cancel restores the saved values after a discard confirmation when the draft is
-dirty. Navigating away uses the same existing discard guard. Reset opens a dialog
-naming all three sections, then loads page-wide defaults into the draft; Save is
-still required to persist them. Export downloads the last saved settings as CSV
-through the existing flow and reports download failures inline. No new keyboard
-shortcut, action behavior, or per-section reset is part of this redesign.
-
-## Existing visual system
-The app uses its locally bundled Source Sans 3 face. Body, helper and input text are 16px,
-page headings 24px, and section headings 20px. Form-label tiers are under review;
-the current inconsistent 14px, 16px, and 18px usage remains a defect to resolve.
-Helper text is regular weight; field-validation text is 14px regular and the
-save-failure panel text is 16px regular. Those existing roles stay unchanged;
-the typography proposal concerns form labels only.
-The app's primary accent is #0F6E6E on white. Neutral text is #1F2937 on white,
-with a visible two-pixel focus outline and two-pixel offset on all Button variants,
-including filled buttons. The existing outline and offset are unchanged. Section gaps currently vary as described
-in the proposal; the redesign must choose a coherent rhythm. The error-message
-foreground/background pair is also unresolved; other colors remain unchanged.
-No new font, brand palette, dark mode, component library, or motion system is needed.
-Color, spacing, type, and motion values already use named CSS custom properties
-on the shared Button, FormStack, and Field components. The current inconsistent
-values are legacy role assignments, not missing token infrastructure. Reuse the
-existing mechanism; choosing the five proposed visual treatments remains open.
-Settings role values are scoped to the Settings page. Shared component defaults
-and other pages retain their existing values; app-wide adoption is outside this change.
-Within each section, the unchanged FormStack uses 16px between fields and the
-Field component uses 8px between a label and its input. Only the gaps between
-sections are inconsistent and under review; intra-section spacing is preserved.
-
-## Responsive and accessible behavior already in place
-At 375px the form fits the viewport with 16px side padding; the header actions
-wrap in their existing order, with intrinsic widths, without hiding actions or
-causing horizontal scroll. The visual redesign preserves that geometry.
-At 768px and above the content column remains at most 640px, centered with at least
-24px side gutters. Controls and touch targets are at least 44px high.
-There is one main landmark, a page heading, named form sections, and explicit
-labels linked to each input. Tab order follows the visual order. Buttons use
-native keyboard behavior, dialogs trap focus and return it to their trigger,
-validation links each message to its field, and the existing save-status live
-region announces progress and completion.
-The error-message color contrast in the proposal is the known accessibility gap.
-
-## Existing user journey
-Land and orient using the heading and named sections; scan saved values; edit
-with inline validation; save; see the persisted status and leave confidently.
-First-time and returning administrators use the same flow. Empty optional fields
-show their labels and helper text; an empty settings response shows the existing
-retry state. The proposal preserves this journey and improves the visual
-problems it identifies. No new storyboard or onboarding flow is required.
-`;
-
 describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', () => {
   test(
-    `5-finding plan emits ${FLOOR}-${CEILING} substantive finding calls`,
+    `5-finding plan emits ${FLOOR}-${CEILING} review-phase AskUserQuestions`,
     async () => {
-      const caseStartedAt = Date.now();
       // Per-run artifact dir: a hardcoded shared /tmp path collides under
       // --retry, EVALS_JOBS>1, or concurrent worktrees (a sibling's finally-
       // rmSync deletes this run's artifact → spurious D19 failure).
@@ -161,28 +232,26 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
       const planPath = path.join(tmpDir, 'gstack-test-plan-design.md');
 
       try {
-        const planText = planDesign5Findings(planPath);
-        seedPlanReviewProject(tmpDir, planText, 'plan-design-review', existingSettingsDesign);
-        seedDesignBoardActorProtocol(tmpDir);
         const obs = await runPlanSkillCounting({
-          readDesignArtifacts: true,
           skillName: 'plan-design-review',
           slashCommand: '/plan-design-review',
-          followUpPrompt: '', // plan already committed before the first model turn
+          followUpPrompt: planDesign5Findings(planPath),
+          expectedPlanPath: planPath,
           isLastStep0AUQ: designStep0Boundary,
-          reviewCountCeiling: null, // classify findings after actual workflow completion
-          questionPick: createDesignReviewPicker({ cwd: tmpDir, deadlineAt: caseStartedAt + 1_500_000 }),
-          // The review target is present before scope selection.
-          cwd: tmpDir,
-          timeoutMs: 1_500_000 - (Date.now() - caseStartedAt),
+          isFirstReviewAUQ: isDesignCountFirstReview,
+          isSetupAUQ: isDesignCountSetup,
+          isCompletionHandoffAUQ: isDesignCompletionHandoff,
+          isArtifactGenerationAUQ: isDesignArtifactGeneration,
+          fixtureFiles: { 'DESIGN.md': designSystem },
+          // Design's explicit opt-in is separate from codex_reviews. Keep
+          // this native-cadence fixture within its declared review scope.
+          pickAUQ: pickDesignCountQuestion,
+          reviewCountCeiling: CEILING + 1,
+          timeoutMs: 1_500_000,
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
-        console.log('Plan review native evidence:', JSON.stringify({
-          plan: planText, outcome: obs.outcome, fingerprints: obs.fingerprints, diagnostics: obs.diagnostics,
-        }));
-
-        if (!['plan_ready', 'completion_summary'].includes(obs.outcome)) {
+        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome)) {
           throw new Error(
             `plan-design-review finding-count FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +
@@ -197,6 +266,28 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
               `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
           );
         }
+        if (obs.reviewCount < FLOOR) {
+          throw new Error(
+            `BAND FAIL (below floor): reviewCount=${obs.reviewCount} < FLOOR=${FLOOR}.\n` +
+              `outcome=${obs.outcome} step0=${obs.step0Count} elapsed=${obs.elapsedMs}ms\n` +
+              `summary: ${obs.summary}\n` +
+              `All captured fingerprints (including Step 0):\n` +
+              obs.fingerprints
+                .map(
+                  (f) =>
+                    `  - preReview=${f.preReview} sig=${f.signature.slice(0, 12)} prompt="${f.promptSnippet}"`,
+                )
+                .join('\n') +
+              `\n--- evidence (last 3KB) ---\n${obs.evidence}`,
+          );
+        }
+        if (obs.reviewCount > CEILING) {
+          throw new Error(
+            `BAND FAIL (above ceiling): reviewCount=${obs.reviewCount} > CEILING=${CEILING}.\n` +
+              `Captured observation:\n${JSON.stringify(obs, null, 2)}`,
+          );
+        }
+
         if (!fs.existsSync(planPath)) {
           throw new Error(
             `D19 FAIL: agent did not produce expected plan file at ${planPath}. ` +
@@ -214,14 +305,6 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
               `--- plan content (last 1KB) ---\n${planContent.slice(-1024)}`,
           );
         }
-        const decisions = await evaluatePlanReviewDecisions({
-          plan: planText, targets: DESIGN_FINDINGS, fingerprints: obs.fingerprints,
-          kind: 'findings', floor: FLOOR, ceiling: CEILING,
-          deadlineAt: caseStartedAt + 1_500_000,
-        });
-        console.log('Plan review decisions verified:', JSON.stringify({
-          count: decisions.count, coveredTargetIds: decisions.coveredTargetIds, report: 'D19 passed',
-        }));
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -230,6 +313,6 @@ describeE2E('/plan-design-review per-finding AskUserQuestion count (periodic)', 
         }
       }
     },
-    1_500_000 + PLAN_SKILL_COUNT_FINALIZE_MS /* same work budget, plus bounded finalization */,
+    1_500_000 /* physical ceiling: the 25-min CI job + 1800s shard wall cap what can actually execute */,
   );
 });

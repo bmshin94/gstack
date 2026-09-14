@@ -1,89 +1,9 @@
 <!-- AUTO-GENERATED from proposal-and-preview.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
 <!-- The font-selection procedure and the three-looks calibration in this section are derived from pbakaus/impeccable reference/new-work.md (Apache-2.0), rewritten and modified. See NOTICE.md. -->
-## Design Outside Voices (parallel)
-
-Use AskUserQuestion:
-> "Want outside design voices? Codex evaluates against OpenAI's design hard rules + litmus checks; Claude subagent does an independent design direction proposal."
->
-> A) Yes — run outside design voices
-> B) No — proceed without
-
-If user chooses B, skip this step and continue.
-
-**Before Phase 3:** Create a private shared brief:
-```bash
-_DESIGN_BRIEF=$(mktemp /tmp/gstack-design-brief-XXXXXXXX) || exit 1
-printf 'DESIGN_BRIEF=%s\n' "$_DESIGN_BRIEF"
-```
-Write the confirmed product, users, project type, memorable-thing answer, constraints, and research findings (or skipped/unavailable) to the printed path. Both voices read the same brief; neither inherits this conversation. Rebind `$_DESIGN_BRIEF` to that path in each Bash call; use it in the Agent prompt. Never paste brief contents into shell source.
-
-**Check Codex availability:**
-```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-```
-
-**Dispatch:** If Codex is available, send Bash and foreground Agent calls together; await both actual results before the Phase 3 synthesis. If it is unavailable, run the Agent alone. Keep proposals independent.
-
-1. **Codex design voice** (via Bash):
-```bash
-test -s "$_DESIGN_BRIEF" || { echo "ERROR: missing product brief" >&2; exit 1; }
-TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-codex exec "Read the complete product brief at \"$_DESIGN_BRIEF\" before proposing.
-
-Propose a complete design direction:
-- Visual thesis: one sentence describing mood, material, and energy
-- Typography: specific font names (not defaults — no Inter/Roboto/Arial/system) + hex colors
-- Color system: CSS variables for background, surface, primary text, muted text, accent
-- Layout: composition-first, not component-first. First viewport as poster, not document
-- Differentiation: 2 deliberate departures from category norms
-- Anti-slop: none of purple gradient palette, the 3-column feature grid, centered everything, decorative blobs and dividers, nested cards, kicker above heading, icon tile above every heading, dark-mode glow
-
-Be opinionated. Be specific. Do not hedge. This is YOUR design direction — own it." -C "$_REPO_ROOT" -s read-only -c "model=\"${GSTACK_CODEX_MODEL:-gpt-6-astra}\"" -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR_DESIGN"
-```
-Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
-```bash
-cat "$TMPERR_DESIGN" && rm -f "$TMPERR_DESIGN"
-```
-
-2. **Claude design subagent** (via Agent tool, `run_in_background: false` — subagents default to background since Claude Code v2.1.198):
-Dispatch a subagent with this prompt:
-"Read the complete product brief at [the absolute DESIGN_BRIEF path printed above].
-
-Propose a design direction that would SURPRISE. What would the cool indie studio do that the enterprise UI team wouldn't?
-- Propose an aesthetic direction, typography stack (specific font names), color palette (hex values)
-- 2 deliberate departures from category norms
-- What emotional reaction should the user have in the first 3 seconds?
-
-Be bold. Be specific. No hedging."
-
-**Error handling (all non-blocking):**
-- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run `codex login` to authenticate."
-- **Timeout:** "Codex timed out after 5 minutes."
-- **Empty response:** "Codex returned no response."
-- On any Codex error: proceed with Claude subagent output only, tagged `[single-model]`.
-- If Claude subagent also fails: "Outside voices unavailable — continuing with primary review."
-
-Present only completed, available voice outputs; label a sole voice `[single-model]`.
-Present Codex output under a `CODEX SAYS (design direction):` header.
-Present subagent output under a `CLAUDE SUBAGENT (design direction):` header.
-
-**Synthesis:** Claude main references both Codex and subagent proposals in the Phase 3 proposal. Present:
-- Areas of agreement between all three voices (Claude main + Codex + subagent)
-- Genuine divergences as creative alternatives for the user to choose from
-- "Codex and I agree on X. Codex suggested Y where I'm proposing Z — here's why..."
-After both voices finish (including failure), remove the private brief with `rm -f -- "$_DESIGN_BRIEF"`.
-
-**Log the result:**
-```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
-```
-Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable". For proposals: clean = usable directions, no unresolved risks; issues_found = unresolved risk or unavailable voice. SOURCE names actual responders.
-
 ## Phase 3: The Complete Proposal
 
-This is the soul of the skill. Propose EVERYTHING as one coherent package.
+Develop your draft with the design knowledge below. Compare completed outside proposals: explain agreements, differences, and ideas adopted with attribution. Tie the recommendation to the memorable-thing answer. Do not count agreement as a vote or invent a missing proposal. Q2 names completed, unavailable, or declined voices and presents the recommendation.
 
 **AskUserQuestion Q2 — present the full proposal with SAFE/RISK breakdown:**
 
@@ -100,6 +20,8 @@ MOTION: [approach] — [rationale]
 
 This system is coherent because [explain how choices reinforce each other].
 
+INDEPENDENT INPUT: [completed/unavailable/skipped voices; agreements, differences, ideas adopted and product-specific reasons — omit comparisons if none completed]
+
 SAFE CHOICES (category baseline — your users expect these):
   - [2-3 decisions that match category conventions, with rationale for playing safe]
 
@@ -112,13 +34,13 @@ your product becomes memorable. Which risks appeal to you? Want to see
 different ones? Or adjust anything else?
 ```
 
-The SAFE/RISK breakdown is critical. Design coherence is table stakes — every product in a category can be coherent and still look identical. The real question is: where do you take creative risks? The agent should always propose at least 2 risks, each with a clear rationale for why the risk is worth taking and what the user gives up. Risks might include: an unexpected typeface for the category, a bold accent color nobody else uses, tighter or looser spacing than the norm, a layout approach that breaks from convention, motion choices that add personality.
+Coherence alone can look generic. Propose at least 2 creative risks—type, accent, spacing, layout or motion—with rationale, benefit and cost alongside the category's safe choices.
 
 **Options:** A) Looks great — generate the preview page. B) I want to adjust [section]. C) I want different risks — show me wilder options. D) Start over with a different direction. E) Skip the preview, just write DESIGN.md.
 
 ### Your Design Knowledge (use to inform proposals — do NOT display as tables)
 
-**Calibration: the three looks.** AI-built interfaces land in one of three looks no matter what the product is: (1) cream ground, high-contrast serif display, terracotta or signal-red accent; (2) near-black, one neon accent, glowing edges; (3) broadsheet hairlines, italic display serif, tiny tracked mono labels. Each is fine when the brief asks for it. If the brief left the look open and you landed in one anyway, you stopped looking. The test: could someone guess your look from the category alone? From "the category, but avoiding the obvious"? Either way, start over. "It's about books, so cream and a serif" fails this test. Book cloth and jackets come in every saturated color there is.
+**Calibration: the three looks.** Avoid predictable compositions: cream/serif/terracotta; near-black/neon/glowing edges; or broadsheet hairlines/italic serif/tiny tracked mono. Use one only when the brief specifically calls for it. Otherwise choose a direction grounded in these users, rather than the category stereotype or its obvious opposite. For example, a book product can draw color from jackets and cloth instead of defaulting to cream and serif.
 
 **Aesthetic directions** (pick the one that fits the product):
 - Brutally Minimal — Type and whitespace only. No decoration. Modernist.
@@ -140,7 +62,9 @@ The SAFE/RISK breakdown is critical. Design coherence is table stakes — every 
 
 **Motion approaches:** minimal-functional (only transitions that aid comprehension) / intentional (subtle entrance animations, meaningful state transitions) / expressive (full choreography, scroll-driven, playful)
 
-**Choosing faces: a procedure, not a menu.** Type comes from the subject's world, in the mode's register. (1) Name the world: the publication, notation, identity program, or object this audience already reads. (2) Shortlist three faces per role (display, body, label, mono) from that world. (3) Strike anything on the overused list for the role it would play. (4) Verify availability this session: WebSearch or Aside the Google Fonts / Fontshare page, or inspect existing repository font assets and their license. Competitive research is optional; font verification still applies. Without online tools, use verified licensed repository assets. If none are available, ask the user for a licensed source before finalizing typography; continue the other design decisions and state what remains pending. Unverified faces do not go in the proposal. (5) State the loading strategy with the name.
+**Choosing faces: a procedure, not a menu.** Type comes from the subject's world: the publication, notation, identity program, or object this audience already reads. (1) Name that world, the audience, and surface mode: Persuade (marketing), Operate (tasks), Read (long content), or Experience (immersive). Choose the corresponding tone. (2) Shortlist three faces per display/body/label/mono role. (3) Apply role exclusions. (4) Verify via WebSearch/Aside on Google Fonts/Fontshare, or local files and licenses; omit unverified faces. (5) Specify loading strategy.
+
+**Font-verification fallback:** Skipping competitive research does not waive font verification. Offline, check local files/licenses. Otherwise describe roles/weights/proportions; mark font selection as pending verification in DESIGN.md. Continue palette/layout; defer the preview until fonts can be verified, or honor a user skip. Invent no face or URL.
 
 **Overused as display** (never the display voice, on any surface; the body/UI exception below is the only one; the detector flags several as `overused-font`): Inter, Roboto, Arial, Helvetica, Open Sans, Lato, Montserrat, Poppins, Space Grotesk, Space Mono, Fraunces, Playfair Display, Cormorant, Lora, Crimson, Newsreader, Syne, IBM Plex Sans, IBM Plex Serif, DM Sans, DM Serif, Outfit, Plus Jakarta Sans, Instrument Sans, Geist.
 
@@ -148,11 +72,11 @@ The SAFE/RISK breakdown is critical. Design coherence is table stakes — every 
 
 **Banned in any role:** Papyrus, Comic Sans, Lobster, Impact, Jokerman, Bleeding Cowboys, Permanent Marker, Bradley Hand, Brush Script, Hobo, Trajan, Raleway, Clash Display, Courier New.
 
-**Freely available faces on no default list** (verified 2026-09-08; re-verify in-session before naming one): Satoshi, General Sans, Clash Grotesk, Cabinet Grotesk (Fontshare); Instrument Serif, Source Sans 3, JetBrains Mono, Fira Code (Google Fonts). Short on purpose. A long list of "good" fonts is how the last convergence happened.
+**Freely available faces on no default list** (verified 2026-09-08; re-verify in-session; see font-verification fallback if offline): Satoshi, General Sans, Clash Grotesk, Cabinet Grotesk (Fontshare); Instrument Serif, Source Sans 3, JetBrains Mono, Fira Code (Google Fonts). Short on purpose. A long list of "good" fonts is how the last convergence happened.
 
 User asks for a listed face by name: comply, state the tradeoff once.
 
-**Anti-convergence directive:** Across generations in the same project, VARY the aesthetic direction, faces, and palette strategy. Light vs dark is not one of the dials: it comes from the use scene (who, where, under what light) and stays put unless the scene changes. Doubling down is allowed if you say why. Convergence across generations is slop.
+**Anti-convergence directive:** VARY aesthetic, faces and palette across project generations; justify repetition. Light vs dark is not one of the dials: fix it to the use scene (who, where, lighting) until that scene changes. Unjustified convergence is slop.
 
 **AI slop anti-patterns** (never include in your recommendations):
 - Purple/violet/indigo gradient backgrounds or blue-to-purple color schemes
@@ -202,35 +126,23 @@ User asks for a listed face by name: comply, state the tradeoff once.
 
 ### Coherence Validation
 
-When the user overrides one section, check if the rest still coheres. Flag mismatches with a gentle nudge — never block:
-
-- Brutalist/Minimal aesthetic + expressive motion → "Heads up: brutalist aesthetics usually pair with minimal motion. Your combo is unusual — which is fine if intentional. Want me to suggest motion that fits, or keep it?"
-- Drenched color + minimal decoration → "Bold palette with minimal decoration can work, but the colors will carry a lot of weight. Want me to suggest decoration that supports the palette?"
-- Creative-editorial layout + data-heavy product → "Editorial layouts are gorgeous but can fight data density. Want me to show how a hybrid approach keeps both?"
-- Always accept the user's final choice. Never refuse to proceed.
+After any override, gently flag mismatches and offer alternatives: Brutalist/Minimal + expressive motion → quieter motion or keep intentionally; Drenched + minimal decoration → supporting decoration; editorial + dense data → hybrid layout. Never block; accept the user's final choice and proceed.
 
 ---
 
 ## Phase 4: Drill-downs (only if user requests adjustments)
 
-When the user wants to change a specific section, go deep on that section:
-
-- **Fonts:** Present 3-5 specific candidates with rationale, explain what each evokes, offer the preview page
-- **Colors:** Present 2-3 palette options with hex values, explain the color theory reasoning
-- **Aesthetic:** Walk through which directions fit their product and why
-- **Layout/Spacing/Motion:** Present the approaches with concrete tradeoffs for their product type
-
-Each drill-down is one focused AskUserQuestion. After the user decides, re-check coherence with the rest of the system.
+Use one focused AskUserQuestion per requested drill-down: **Fonts:** 3-5 candidates, rationale/evocation and preview offer; **Colors:** 2-3 hex palettes and color theory; **Aesthetic:** product-fit directions and why; **Layout/Spacing/Motion:** concrete product-specific tradeoffs. Re-check coherence after each decision.
 
 ---
 
 ## Phase 5: Design System Preview (default ON)
 
-This phase generates visual previews of the proposed design system. Two paths depending on whether the gstack designer is available.
+Preview the proposed system using the available path.
 
 ### Path A: AI Mockups (if DESIGN_READY)
 
-Generate AI-rendered mockups showing the proposed design system applied to realistic screens for this product. This is far more powerful than an HTML preview — the user sees what their product could actually look like.
+Generate AI mockups applying the proposed system to realistic product screens.
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
@@ -240,7 +152,7 @@ mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
 
-Construct a design brief from the Phase 3 proposal (aesthetic, colors, typography, spacing, layout) and the product context from Phase 1:
+Brief: Phase 3 aesthetic/colors/type/spacing/layout plus Phase 1 product context:
 
 ```bash
 $D variants --brief "<product name: [name]. Product type: [type]. Aesthetic: [direction]. Colors: primary [hex], secondary [hex], neutrals [range]. Typography: display [font], body [font]. Layout: [approach]. Show a realistic [page type] screen with [specific content for this product].>" --count 3 --output-dir "$_DESIGN_DIR/"
@@ -252,16 +164,11 @@ Run quality check on each variant:
 $D check --image "$_DESIGN_DIR/variant-A.png" --brief "<the original brief>"
 ```
 
-Show each variant inline (Read tool on each PNG) for instant preview.
+Read each PNG to show the variants inline.
 
-**Before presenting to the user, self-gate:** For each variant, ask yourself: *"Would
-a human designer be embarrassed to put their name on this?"* If yes, discard the
-variant and regenerate. This is a hard gate. A mediocre AI mockup is worse than no
-mockup. Embarrassment triggers include: purple gradient hero, 3-column SaaS grid,
-centered-everything, an overused face as the display voice, generic stock-photo vibe, system-ui font,
-gradient CTA button, bubble-radius everything. Any of those = reject and regenerate.
+**Before presenting, self-gate:** Would a human designer be embarrassed to sign each variant? If yes, discard and regenerate. Hard rejects: purple gradient hero, 3-column SaaS grid, centered-everything, overused display face, generic stock photo, system-ui, gradient CTA, bubble-radius everything. Any trigger requires regeneration.
 
-Tell the user: "I've generated 3 visual directions applying your design system to a realistic [product type] screen. Pick your favorite in the comparison board that just opened in your browser. You can also remix elements across variants."
+Open the board before inviting the user to choose or remix.
 
 ### Comparison Board + Feedback Loop
 
@@ -271,21 +178,13 @@ Create the comparison board and serve it over HTTP:
 $D compare --images "$_DESIGN_DIR/variant-A.png,$_DESIGN_DIR/variant-B.png,$_DESIGN_DIR/variant-C.png" --output "$_DESIGN_DIR/design-board.html" --serve
 ```
 
-This command generates the board HTML, starts an HTTP server on a random port,
-and opens it in the user's default browser. **Run it in the background** with `&`
-because the server needs to stay running while the user interacts with the board.
+Creates HTML and opens the board. **Run it in the background** (host task, or `&` redirecting stdout/stderr to private files in `$_DESIGN_DIR`). Read captured stderr for the startup marker; a PID is not readiness. Missing marker: use the failure fallback below.
 
-Parse the board URL from stderr output. Default daemon path:
-`BOARD_URL: http://127.0.0.1:N/boards/<id>/` (already includes the per-board
-path; use this for the AskUserQuestion URL AND as the base for the reload
-endpoint). Legacy `--no-daemon` path emits `SERVE_STARTED: port=XXXXX` and
-serves a single board at `/`, with reload at `/api/reload` — only relevant
-when an external caller explicitly passes `--no-daemon`.
+Default stderr: `BOARD_URL: http://127.0.0.1:N/boards/<id>/`. Use that full per-board URL for AskUserQuestion and as the reload base. Only explicit legacy `--no-daemon` emits `SERVE_STARTED: port=XXXXX`, serving one board at `/` with reload at `/api/reload`.
 
 **PRIMARY WAIT: AskUserQuestion with board URL**
 
-After the board is serving, use AskUserQuestion to wait for the user. Include the
-board URL so they can click it if they lost the browser tab:
+Once serving, wait with AskUserQuestion including the board URL:
 
 "I've opened a comparison board with the design variants:
 <BOARD_URL> — Rate them, leave comments, remix
@@ -293,11 +192,9 @@ elements you like, and click Submit when you're done. Let me know when you've
 submitted your feedback (or paste your preferences here). If you clicked
 Regenerate or Remix on the board, tell me and I'll generate new variants."
 
-Substitute `<BOARD_URL>` with the URL parsed from stderr (the daemon path
-emits `BOARD_URL: http://127.0.0.1:N/boards/<id>/`).
+Substitute `<BOARD_URL>` from the stderr marker above.
 
-**Do NOT use AskUserQuestion to ask which variant the user prefers.** The comparison
-board IS the chooser. AskUserQuestion is just the blocking wait mechanism.
+**The user chooses variants in the board; AskUserQuestion only waits.**
 
 **After the user responds to AskUserQuestion:**
 
@@ -342,7 +239,7 @@ the approved variant.
 5. Reload the board in the user's browser (same tab) — the URL is per-board
    under daemon mode, so use `<BOARD_URL>` (from the `BOARD_URL:` stderr
    line) as the base:
-   `curl -s -X POST "${BOARD_URL}api/reload" -H 'Content-Type: application/json' -d '{"html":"$_DESIGN_DIR/design-board.html"}'`
+   `jq -nc --arg html "$_DESIGN_DIR/design-board.html" '{html: $html}' | curl -sS -X POST "${BOARD_URL}api/reload" -H 'Content-Type: application/json' --data-binary @-`
    Under `--no-daemon` the reload endpoint is `/api/reload` at the legacy
    port; this path only matters if the caller explicitly opted out of the
    daemon.
@@ -353,8 +250,8 @@ the approved variant.
 AskUserQuestion response instead of using the board. Use their text response
 as the feedback.
 
-**POLLING FALLBACK:** Only use polling if `$D serve` fails (no port available).
-In that case, show each variant inline using the Read tool (so the user can see them),
+Exit 0 with `BOARD_URL` means the daemon is serving; use the board feedback flow above.
+**SERVER FALLBACK:** Nonzero exit or no readiness marker: show each variant inline using the Read tool (so the user can see them),
 then use AskUserQuestion:
 "The comparison board server failed to start. I've shown the variants above.
 Which do you prefer? Any feedback?"
@@ -379,16 +276,14 @@ echo '{"approved_variant":"<V>","feedback":"<FB>","date":"'$(date -u +%Y-%m-%dT%
 
 After the user picks a direction:
 
-- Use `$D extract --image "$_DESIGN_DIR/variant-<CHOSEN>.png"` to analyze the approved mockup and extract design tokens (colors, typography, spacing) that will populate DESIGN.md in Phase 6. This grounds the design system in what was actually approved visually, not just what was described in text.
-- If the user wants to iterate further: `$D iterate --feedback "<user's feedback>" --output "$_DESIGN_DIR/refined.png"`
+- `$D extract --image "$_DESIGN_DIR/variant-<CHOSEN>.png"`: Phase 6 color/type/spacing tokens come from the approved visual, not text alone.
+- Further iteration: `$D iterate --feedback "<user's feedback>" --output "$_DESIGN_DIR/refined.png"`
 
-**Plan mode vs. implementation mode:**
-- **If in plan mode:** Add the approved mockup path (the full `$_DESIGN_DIR` path) and extracted tokens to the plan file under an "## Approved Design Direction" section. The design system gets written to DESIGN.md when the plan is implemented.
-- **If NOT in plan mode:** Proceed directly to Phase 6 and write DESIGN.md with the extracted tokens.
+**Plan mode:** Carry the approved mockup paths/tokens into Phase 6's "## Proposed DESIGN.md" plan section. Its Q-final approval governs saving that content; defer the actual DESIGN.md to implementation.
 
 ### Path B: HTML Preview Page (fallback if DESIGN_NOT_AVAILABLE)
 
-Generate a polished HTML preview page and open it in the user's browser. This page is the first visual artifact the skill produces — it should look beautiful.
+Create and open the HTML preview:
 
 ```bash
 PREVIEW_FILE="/tmp/design-consultation-preview-$(date +%s).html"
@@ -402,30 +297,25 @@ open "$PREVIEW_FILE"
 
 ### Preview Page Requirements (Path B only)
 
-The agent writes a **single, self-contained HTML file** (no framework dependencies) that:
+Write a **single, self-contained HTML file**, no frameworks:
 
-1. **Loads proposed fonts** from the source verified in step (4) of the font procedure (Google Fonts, Fontshare, or the self-hosted files) via `<link>` tags
-2. **Uses the proposed color palette** throughout — dogfood the design system
-3. **Shows the product name** (not "Lorem Ipsum") as the hero heading
+1. **Loads proposed fonts** via `<link>` from their step (4) verified Google Fonts/Fontshare/self-hosted source.
+2. **Uses the proposed palette** throughout.
+3. **Shows the product name**, not Lorem Ipsum, in the hero.
 4. **Font specimen section:**
-   - Each font candidate shown in its proposed role (hero heading, body paragraph, button label, data table row)
-   - Side-by-side comparison if multiple candidates for one role
-   - Real content that matches the product (e.g., civic tech → government data examples)
+   - Each candidate in its hero/body/button/table role; compare same-role alternatives side by side using real domain content (e.g. civic tech: government data).
 5. **Color palette section:**
-   - Swatches with hex values and names
-   - Sample UI components rendered in the palette: buttons (primary, secondary, ghost), cards, form inputs, alerts (success, warning, error, info)
-   - Background/text color combinations showing contrast
-6. **Realistic product mockups** — this is what makes the preview page powerful. Based on the project type from Phase 1, render 2-3 realistic page layouts using the full design system:
-   - **Dashboard / web app:** sample data table with metrics, sidebar nav, header with user avatar, stat cards
-   - **Marketing site:** hero section with real copy, feature highlights, testimonial block, CTA
-   - **Settings / admin:** form with labeled inputs, toggle switches, dropdowns, save button
-   - **Auth / onboarding:** login form with social buttons, branding, input validation states
-   - Use the product name, realistic content for the domain, and the proposed spacing/layout/border-radius. The user should see their product (roughly) before writing any code.
-7. **Light/dark mode toggle** using CSS custom properties and a JS toggle button
-8. **Clean, professional layout** — the preview page IS a taste signal for the skill
-9. **Responsive** — looks good on any screen width
+   - Named hex swatches; primary/secondary/ghost buttons, cards, inputs, success/warning/error/info alerts; background/text contrast pairs.
+6. **Realistic product mockups:** Render 2-3 Phase 1 product-type layouts with the full system, product name, domain content and proposed spacing/layout/radii:
+   - **Dashboard/web app:** metrics table, sidebar nav, avatar header, stat cards.
+   - **Marketing:** real-copy hero, features, testimonials, CTA.
+   - **Settings/admin:** labeled inputs, toggles, dropdowns, save.
+   - **Auth/onboarding:** branded login, social buttons, validation states.
+7. **Light/dark toggle:** CSS custom properties plus a JS button.
+8. **Clean, professional layout.**
+9. **Responsive** at every width.
 
-The page should make the user think "oh nice, they thought of this." It's selling the design system by showing what the product could feel like, not just listing hex codes and font names.
+Show how their product feels, beyond a font/color inventory.
 
 If `open` fails (headless environment), tell the user: *"I wrote the preview to [path] — open it in your browser to see the fonts and colors rendered."*
 
@@ -435,11 +325,18 @@ If the user says skip the preview, go directly to Phase 6.
 
 ## Phase 6: Write DESIGN.md & Confirm
 
-If `$D extract` was used in Phase 5 (Path A), use the extracted tokens as the primary source for DESIGN.md values — colors, typography, and spacing grounded in the approved mockup rather than text descriptions alone. Merge extracted tokens with the Phase 3 proposal (the proposal provides rationale and context; the extraction provides exact values).
+Only Path A invokes `$D extract` for approved mockup tokens. For Path B, use the approved HTML preview's CSS values. No preview: approved Phase 3 values with pending fonts. Retain Phase 3 rationale.
+
+**Confirm before writing.** Prepare the contents below; show decisions and agent-selected defaults. AskUserQuestion Q-final:
+- A) Approve — write DESIGN.md and CLAUDE.md; in plan mode, save Proposed DESIGN.md in the plan only
+- B) Revise — return to Phase 3, then confirm again
+- C) Start over — return to Phase 1
+
+Wait. Only A permits the writes below; B/C leave project files untouched. Honor prior explicit approval of these exact writes without re-asking.
 
 **If in plan mode:** Write the DESIGN.md content into the plan file as a "## Proposed DESIGN.md" section. Do NOT write the actual file — that happens at implementation time.
 
-**If NOT in plan mode:** Write `DESIGN.md` to the repo root in the open DESIGN.md format (google-labs-code/design.md). The YAML front matter is normative: every token an agent needs lives there, in exactly five groups (`colors`, `typography`, `rounded`, `spacing`, `components`). The sections explain why the tokens exist and how to apply them, and never restate a token value. Line 2 is gstack's format marker, so no skill asks about conversion later. If a legacy file was kept in Phase 0, update that file in its own shape instead.
+**If NOT in plan mode:** Write root `DESIGN.md` in google-labs-code/design.md format. All tokens belong in the five normative YAML groups below; prose explains rationale/use without repeating values. Preserve the line-2 format marker to prevent conversion re-asks. A Phase 0 kept-legacy file instead retains its own shape.
 
 ```markdown
 ---
@@ -506,42 +403,42 @@ components:
 
 ## Overview
 
-**Creative North Star:** [one sentence: the aesthetic direction and why it is right for these users]
-**Product context:** [what this is, who it is for, the space and its peers, the project type]
-**Mode per surface:** [Persuade / Operate / Read / Experience, per surface, in one line each]
+**Creative North Star:** [one sentence: aesthetic + why it fits these users]
+**Product context:** [product, users, category/peers, project type]
+**Mode per surface:** [one line each: Persuade / Operate / Read / Experience]
 **Reference sites:** [URLs, if research was done]
-**Key characteristics:** [3-5 bullets: what someone notices in the first five seconds]
+**Key characteristics:** [3-5 bullets: first-five-second impressions]
 
 ## Colors
 
 **Strategy:** [Restrained / Committed / Full palette / Drenched] — [why]
 **Light or dark:** [decided by the use scene: who, where, under what light]
-Named rules: [which token carries interaction, which carries emphasis, what neutrals derive from, how dark mode redesigns surfaces (never a lightness inversion)]
+[Explain which tokens signal interaction or emphasis, how neutrals derive from the palette, and how dark-mode surfaces preserve hierarchy rather than merely inverting lightness.]
 
 ## Typography
 
-[Why these faces, in the mode's register: the world they come from, the roles they play, where the display voice is allowed. Loading strategy. Scale rationale. The overused-list exceptions you made and why.]
+[Faces' source world, mode/register, roles and display boundaries; loading, scale rationale, justified overused-list exceptions]
 
 ## Layout
 
-[Grid per breakpoint, max content width, density, the spacing scale's rhythm (large step vs small step), what breaks the grid on purpose]
+[Breakpoint grids, max width, density, large/small spacing rhythm, intentional grid breaks]
 
 ## Elevation & Depth
 
-[How depth is shown: offset + soft blur shadows, surface tints, borders. Never a zero-offset glow.]
+[Depth: offset + soft-blur shadows, tints, borders; no zero-offset glow]
 
 ## Shapes
 
-[Radius hierarchy and what each level is for; inner radius = outer radius − gap on nested elements]
+[Radius hierarchy/uses; nested inner radius = outer radius − gap]
 
 ## Components
 
-[Per component token group above: states (hover, focus-visible, active, disabled), what never changes, what adapts]
+[Per component: hover/focus-visible/active/disabled states, invariants and adaptations]
 
 ## Do's and Don'ts
 
 - Do: [3-5 specific, checkable rules]
-- Don't: [3-5 specific anti-patterns for THIS system, including the catalog entries most tempting for this category]
+- Don't: [3-5 system-specific anti-patterns, including this category's tempting catalog entries]
 
 ## Motion
 
@@ -556,9 +453,9 @@ Named rules: [which token carries interaction, which carries emphasis, what neut
 | [today] | Initial design system created | Created by /design-consultation based on [product context / research] |
 ```
 
-Fill every token with a real value (no placeholders survive into the file); drop a `components` entry rather than invent one. Verify the result parses: `bun --no-env-file run ~/.claude/skills/gstack/bin/gstack-design-md.ts check DESIGN.md` must print `DESIGN_MD_FORMAT: spec`.
+Use real token values, no placeholders; omit invented `components` entries. Outside plan mode, after writing DESIGN.md, require `bun --no-env-file run ~/.claude/skills/gstack/bin/gstack-design-md.ts check DESIGN.md` to print `DESIGN_MD_FORMAT: spec`.
 
-**Update CLAUDE.md** (or create it if it doesn't exist) — append this section:
+**Outside plan mode, update CLAUDE.md** (or create it if it doesn't exist) — append this section:
 
 ```markdown
 ## Design System
@@ -568,16 +465,8 @@ Do not deviate without explicit user approval.
 In QA mode, flag any code that doesn't match DESIGN.md.
 ```
 
-**AskUserQuestion Q-final — show summary and confirm:**
-
-List all decisions. Flag any that used agent defaults without explicit user confirmation (the user should know what they're shipping). Options:
-- A) Ship it — write DESIGN.md and CLAUDE.md
-- B) I want to change something (specify what)
-- C) Start over
-
 After shipping DESIGN.md, if the session produced screen-level mockups or page layouts
 (not just system-level tokens), suggest:
 "Want to see this design system as working Pretext-native HTML? Run /design-html."
 
 ---
-

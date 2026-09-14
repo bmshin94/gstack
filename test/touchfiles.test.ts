@@ -250,6 +250,9 @@ describe('selectTests', () => {
     expect(result.selected).toContain('codex-plan-ceo-format-approach');
     expect(result.selected.length).toBe(24);
     expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 24);
+    expect(result.selected).toContain('outside-plan-disabled-no-fallback');
+    expect(result.selected.length).toBe(22);
+    expect(result.skipped.length).toBe(Object.keys(E2E_TOUCHFILES).length - 22);
   });
 
   test('global touchfile triggers ALL tests', () => {
@@ -272,6 +275,14 @@ describe('selectTests', () => {
     expect(result.selected).toContain('plan-ceo-mode-routing');
     expect(result.selected).not.toContain('codex-plan-ceo-format-mode');
     expect(result.selected).not.toContain('retro');
+  });
+
+  test('section-capture tool isolation regression selects only its three capture workflows', () => {
+    const result = selectTests(['test/session-runner-tools.test.ts'], E2E_TOUCHFILES);
+    expect(result.selected.sort()).toEqual([
+      'carve-section-loading', 'plan-ceo-section-loading', 'ship-section-loading',
+    ]);
+    expect(result.reason).toBe('diff');
   });
 
   test('gen-skill-docs.ts is a scoped touchfile, not global', () => {

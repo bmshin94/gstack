@@ -1,56 +1,66 @@
 /**
- * /autoplan cross-skill chain (periodic, paid, real-PTY).
+ * /autoplan native chain sequencing (periodic, paid, real PTY).
  *
- * Asserts: when /autoplan runs against a plan fixture, the phase markers
- * the autoplan template emits appear in the correct order:
+ * The calibrated UI/API fixture requires full CEO → Design → DX → Eng review.
+ * This test disables only the outside CLI through codex_reviews; the native
+ * subagents and every applicable phase still run. Require real native phase
+ * completion announcements in order, with Eng last. Completion order does not
+ * establish phase start times or prove non-overlap.
  *
- *   "**Phase 1 complete." (CEO)        →
- *   "**Phase 2 complete." (Design — only if UI scope detected) →
- *   "**Phase 2.5 complete." (DX — optional, skipped if no DX scope) →
- *   "**Phase 3 complete." (Eng — always runs, always LAST: the required
- *     gate reviews the final amended plan)
+ * Outside coverage here is disabled, never completed. The separate dual-voice
+ * and cross-harness evals exercise provider dispatch; this test does not replace
+ * those or establish per-phase Autoplan outside completion coverage.
  *
- * Why this exists: per-phase smoke tests do not check the chain's
- * completion-marker order. This observes that order through Eng completion;
- * it does not establish whether any reviewer executions overlapped.
- *
- * Approach: the owned main transcript establishes assistant announcement order;
- * the rendered stream must corroborate that order. Tool previews cannot announce
- * completion. Design and DX are optional; Eng must complete last.
- * This oracle requires owned hermetic transcripts; EVALS_HERMETIC=0 is unsupported
- * for this case. The shared runner's opt-out behavior is unchanged.
- *
- * Periodic — runs weekly. The complete chain has a 45-minute observation cap;
- * cost and completion time depend on the actual reviews and correction loops.
+ * Specified four-phase allowance: 80 min work, 84 min session, 85 min test.
+ * This changes eval timing policy; it is not measured calibration.
  */
 
-import { test } from 'bun:test';
-import { AutoplanFilePermissionViewport, corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, reserveAutoplanFilePermission, retainAutoplanFailure, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
-import { seedAutoplanProject } from './helpers/autoplan-fixture';
-import { AUTOPLAN_CHAIN_BUDGET } from './helpers/autoplan-chain-policy';
+import { test, expect } from 'bun:test';
+import { AUTOPLAN_CHAIN_BUDGET } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { randomUUID } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
-import { readPlanSkillQuestions, type NativePermissionGrant } from './helpers/plan-skill-questions';
+import { stripVTControlCharacters } from 'node:util';
 import {
   launchClaudePty,
   isPlanReadyVisible,
   isPermissionDialogVisible,
   isNumberedOptionListVisible,
+  selectPtyNumberedOption,
 } from './helpers/claude-pty-runner';
+import { autoplanPermissionProgressKey } from './helpers/autoplan-artifact-permission';
+import { readPendingAutoplanArtifact, autoplanArtifactRecorderStatus, autoplanArtifactApprovalBoundary } from './helpers/autoplan-artifact-recorder';
+import { autoplanSetupDecision, autoplanBlockingQuestionBoundary, type AutoplanSetupDecision } from './helpers/autoplan-setup-question';
+import { autoplanPhaseCompletions, type AutoplanPhaseHit } from './helpers/autoplan-phase-observer';
+import { readPlanCountTranscript, type PlanCountTranscript, type NativePublicToolEvent } from './helpers/plan-count-transcript';
+import { readPendingQuestion, pendingQuestionRecorderStatus } from './helpers/plan-count-pending-question';
+import { auditAutoplanMethodReads, loadAutoplanMethodologyBinding, type AutoplanMethodReadAudit } from './helpers/autoplan-method-read-audit';
+import { getHermeticDirs } from './helpers/hermetic-env';
+import { createPlanCountSnapshotWriter } from './helpers/plan-count-artifacts';
+import { createNativeReviewState } from './helpers/plan-count-fixture';
+import { seedAutoplanOnboarding } from './helpers/autoplan-preconfigured-fixture';
 
 const describeE2E = describeE2ETier('periodic');
 
-describeE2E('/autoplan chain ordering (periodic)', () => {
+const ROOT = path.resolve(import.meta.dir, '..');
+const UI_FIXTURE = path.join(ROOT, 'test', 'fixtures', 'plans', 'autoplan-dashboard.md');
+
+function diagnosticTail(text: string): string {
+  return stripVTControlCharacters(text)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+    .slice(-3000);
+}
+
+describeE2E('/autoplan native chain ordering (periodic)', () => {
   test(
-    'completion markers follow CEO, optional Design, optional DX, then Eng',
+    'full native phase completions are ordered: CEO before Design before DX before Eng',
     async () => {
-      // A proposed focus-appearance change keeps Design applicable to the full chain.
+      // Chain-only fixture retains all new UI/API work and supplies existing
+      // application contracts; the shared design-scope fixture stays unchanged.
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-autoplan-chain-'));
+      let nativeState: ReturnType<typeof createNativeReviewState> | undefined;
       try {
         const gitRun = (args: string[]) =>
           spawnSync('git', args, { cwd: tempDir, stdio: 'pipe', timeout: 5000 });
@@ -58,173 +68,254 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         gitRun(['config', 'user.email', 'test@test.com']);
         gitRun(['config', 'user.name', 'Test']);
 
-        const stateDir = seedAutoplanProject(tempDir, 'focus-appearance');
+        const plansDir = path.join(tempDir, '.claude', 'plans');
+        fs.mkdirSync(plansDir, { recursive: true });
+        fs.copyFileSync(UI_FIXTURE, path.join(plansDir, 'ui-heavy-feature.md'));
+        // Exercise review sequencing with real, already configured prerequisites.
+        seedAutoplanOnboarding(tempDir);
+        fs.writeFileSync(path.join(tempDir, 'README.md'), '# Autoplan chain fixture\n');
         gitRun(['add', '.']);
-        gitRun(['commit', '-m', 'init focus-appearance fixture']);
+        gitRun(['commit', '-m', 'init UI-heavy fixture']);
 
-        const sessionId = randomUUID();
+        nativeState = createNativeReviewState();
         const session = await launchClaudePty({
+          env: nativeState.env,
           permissionMode: 'plan',
           cwd: tempDir,
-          timeoutMs: AUTOPLAN_CHAIN_BUDGET.ptyMs,
+          timeoutMs: AUTOPLAN_CHAIN_BUDGET.sessionMs,
           seedSkills: true,
-          env: { GSTACK_HOME: stateDir },
-          captureQuestionsForSession: sessionId,
-          captureScreen: true,
-          rows: 120, // Preserve the full file title/subtitle above the restore preview.
+          observeScreen: true,
+          observeSetupQuestions: true,
+          observeAutoplanArtifacts: true,
+          approveAutoplanArtifactEdits: true,
         });
 
-        let transcript: AutoplanTranscriptObservation = { file: null, phases: [], completedLines: 0, pendingBytes: 0 };
-        let renderedPhases: number[] = [];
-        let corroboratedPhases: number[] = [];
-        let outcome: 'chain_complete' | 'plan_ready' | 'timeout' | 'exited' = 'timeout';
+        let hits: AutoplanPhaseHit[] = [];
+        let transcript: PlanCountTranscript = { status: 'missing', calls: [], assistantMessages: [] };
+        let pendingSetupQuestion: ReturnType<typeof readPendingQuestion>;
+        let pendingArtifact: ReturnType<typeof readPendingAutoplanArtifact>;
+        let viewportCapturedAt = Date.now();
+        let methodologyAudit: AutoplanMethodReadAudit[] = [];
+        let outcome: 'chain_complete' | 'plan_ready' | 'timeout' | 'exited' | 'unsupported_setup' | 'incomplete_methodology' | 'blocked_on_question' | 'artifact_permission_failed' = 'timeout';
+        let unsupportedSetup: Extract<AutoplanSetupDecision, { kind: 'unsupported_setup' }> | null = null;
+        let blockedQuestion: ReturnType<typeof autoplanBlockingQuestionBoundary> = null;
         let evidence = '';
+        let viewport = '';
+        let fullSessionEvidence = '';
         let exitCode: number | null = null;
-        const counting: NonNullable<Parameters<typeof retainAutoplanFailure>[0]['counting']> = {
-          native: null, dialog: '', events: session.nativeQuestionEvents, frame: null,
+        let commandStartedAt = Date.now();
+        const saveSnapshot = createPlanCountSnapshotWriter();
+        let artifacts: { artifactDir?: string; artifactError?: string } = {};
+        let publicTools: NativePublicToolEvent[] = [];
+        const observe = () => {
+          publicTools = [];
+          transcript = session.hermeticConfigDir
+            ? readPlanCountTranscript(session.hermeticConfigDir, tempDir, event => publicTools.push(event))
+            : { status: 'error', calls: [], assistantMessages: [], error: 'No isolated autoplan transcript directory' };
+          pendingSetupQuestion = readPendingQuestion(session.pendingQuestionFile, tempDir,
+            session.hermeticConfigDir, commandStartedAt, transcript);
+          pendingArtifact = readPendingAutoplanArtifact(session.pendingAutoplanArtifactFile, tempDir,
+            session.hermeticConfigDir, session.hermeticSkillStateRoot, commandStartedAt, publicTools, Date.now(), true);
+          methodologyAudit = auditAutoplanMethodReads(publicTools, prompt =>
+            loadAutoplanMethodologyBinding(prompt, [getHermeticDirs().runRoot, nativeState!.env.GSTACK_HOME!]));
+          hits = autoplanPhaseCompletions(transcript, commandStartedAt);
         };
-        let lastPermissionCheck: { mark: number; nativeStable: boolean; lastInputMark: number } | null = null;
-        const observations = () => JSON.stringify({ sessionId, transcript, renderedPhases, corroboratedPhases, lastPermissionCheck });
+        const capture = (state: string) => {
+          artifacts = saveSnapshot({
+            skillName: 'autoplan', cwd: tempDir, claudeConfigDir: session.hermeticConfigDir,
+            raw: session.rawOutput(), visible: session.visibleText(), viewport,
+            observation: { state, hits, native: transcript, pendingSetupQuestion, pendingArtifact, methodologyAudit, exitCode: session.exitCode(), unsupportedSetup, blockedQuestion,
+              ownedArtifactStateRoot: session.hermeticSkillStateRoot,
+              artifactRecorder:autoplanArtifactRecorderStatus(session.pendingAutoplanArtifactFile, tempDir, session.hermeticConfigDir, session.hermeticSkillStateRoot),
+              pendingQuestionRecorder:pendingQuestionRecorderStatus(session.pendingQuestionFile, tempDir, session.hermeticConfigDir),
+              retention: 'Current raw/visible/viewport and parsed native metadata only; full parent JSONL retention is not guaranteed.' },
+          });
+        };
 
         try {
           await Bun.sleep(8000);
-          const startupEvidence = session.visibleText();
-          const since = session.mark();
+          session.mark();
+          commandStartedAt = Date.now();
+          if (!session.startAutoplanArtifactEditApproval) throw new Error('Owned artifact approval hook unavailable');
+          session.startAutoplanArtifactEditApproval(commandStartedAt);
           session.send('/autoplan\r');
 
           const budgetMs = AUTOPLAN_CHAIN_BUDGET.workMs;
           const start = Date.now();
-          const deadlineAt = start + budgetMs;
-          // Phase markers live in autoplan's carved phase sections
-          // (autoplan/sections/{ceo,design,eng,dx}-phase.md — the skeleton
-          // STOP-Reads each one at its phase boundary):
-          //   "**Phase 1 complete." / "**Phase 2 complete." / "**Phase 2.5 complete." / "**Phase 3 complete."
-
-          const granted = new Set<string>();
-          const requests = new Map<string, NativePermissionGrant>();
-          let lastPermissionInputMark = -1;
-          const permissionViewport = new AutoplanFilePermissionViewport({ session, deadlineAt, granted });
-          while (Date.now() < deadlineAt) {
-            // Match the runner's 250ms observation cadence. Native ownership,
-            // fresh frames, and ACKs below authorize grants; elapsed sleep does not.
-            await Bun.sleep(Math.min(250, Math.max(0, deadlineAt - Date.now())));
-            if (Date.now() >= deadlineAt) break;
+          let lastPermSig = '';
+          let lastPermissionProgress = '';
+          let lastCheckpointAt = start;
+          const seenSetupQuestions = new Set<string>();
+          while (Date.now() - start < budgetMs) {
+            await Bun.sleep(5000);
+            viewportCapturedAt = Date.now();
+            viewport = await session.currentScreen();
+            observe();
+            if (Date.now() - lastCheckpointAt >= 30_000) {
+              capture('in_progress');
+              lastCheckpointAt = Date.now();
+            }
             if (session.exited()) {
               outcome = 'exited';
-              exitCode = session.exitCode();
-              evidence = `--- startup ---\n${startupEvidence}\n--- after command ---\n${session.visibleSince(since).slice(-3000)}`;
+              evidence = viewport.slice(-3000);
               break;
             }
-            const visible = session.visibleSince(since);
-            evidence = visible.slice(-3000);
+            const visible = viewport;
 
-            // Autoplan owns its decisions. Only grant a current, owned file
-            // permission within this fixture or its private native plan folder.
-            lastPermissionCheck = null;
-            const native = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
-            counting.native = native;
-            const frame = await session.currentScreen!();
-            counting.dialog = frame.text;
-            counting.frame = { text: frame.text, rawEnd: frame.rawEnd, observedAtMs: Date.now() - start,
-              questionSince: since, viewportInputSince: lastPermissionInputMark };
-            const afterFrame = readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents);
-            lastPermissionCheck = { mark: session.mark(), nativeStable: isDeepStrictEqual(native, afterFrame), lastInputMark: lastPermissionInputMark };
-            if (Date.now() >= deadlineAt) break;
-            if (frame.rawEnd !== lastPermissionCheck.mark || !lastPermissionCheck.nativeStable) continue;
-            if (native.calls.some(call => call.validation && call.result === 'pending')) continue;
-            if (permissionViewport.active) {
-              const wait = await permissionViewport.advance(native, frame);
-              lastPermissionInputMark = Math.max(lastPermissionInputMark, permissionViewport.inputMark);
-              if (wait) continue;
-              // Recovery awaited a viewport transaction; refresh the same
-              // owner/output bracket before the original reservation below.
-              if (frame.rawEnd !== session.mark() || !isDeepStrictEqual(native,
-                readPlanSkillQuestions(session.hermeticConfigDir, sessionId, session.nativeQuestionEvents))) continue;
+            // Native hooks exclusively approve owned artifact Edits. Rejection
+            // is a failure, and pending hooks cannot fall through to UI input.
+            const artifactStatus = autoplanArtifactRecorderStatus(session.pendingAutoplanArtifactFile, tempDir,
+              session.hermeticConfigDir, session.hermeticSkillStateRoot);
+            const artifactBoundary = autoplanArtifactApprovalBoundary(artifactStatus);
+            if (artifactBoundary === 'failed') {
+              outcome = 'artifact_permission_failed';
+              evidence = JSON.stringify(artifactStatus);
+              break;
             }
-            const recentTail = frame.text;
-            if (frame.rawEnd > lastPermissionInputMark && isNumberedOptionListVisible(recentTail) && isPermissionDialogVisible(recentTail)) {
-              if (Date.now() >= deadlineAt) break;
-              let reserved: boolean;
-              try {
-                reserved = reserveAutoplanFilePermission(native, recentTail, {
-                  cwd: tempDir, planDir: path.join(fs.realpathSync(session.hermeticConfigDir!), 'plans'), granted, requests,
-                });
-              } catch (error) {
-                if (!await permissionViewport.recover(error, native, frame)) throw error;
-                lastPermissionInputMark = Math.max(lastPermissionInputMark, permissionViewport.inputMark);
-                continue;
-              }
-              if (reserved) {
-                lastPermissionInputMark = session.mark();
-                session.send('1\r');
+            if (artifactBoundary === 'pending') continue;
+
+            // Auto-grant any permission dialog so autoplan can keep moving
+            // through its phases. The autoplan template auto-decides review
+            // questions it owns. Classify on tail to avoid stale matches.
+            const recentTail = visible.slice(-1500);
+            if (isNumberedOptionListVisible(recentTail) && isPermissionDialogVisible(recentTail)) {
+              // A new acknowledged file mutation can lead to the same menu.
+              // Pending/failed/unrelated tools never reset an already sent choice.
+              const progress = transcript.status === 'ready' ? autoplanPermissionProgressKey(visible, publicTools) : undefined;
+              if (progress) lastPermissionProgress = progress;
+              const sig = JSON.stringify([visible.slice(-500), lastPermissionProgress]);
+              if (sig !== lastPermSig) {
+                lastPermSig = sig;
+                await selectPtyNumberedOption(session, 1);
+                await Bun.sleep(2000);
                 continue;
               }
             }
 
-            transcript = readAutoplanTranscript(session.hermeticConfigDir, sessionId);
-            renderedPhases = [...new Set(observedAutoplanPhases(visible))];
-            corroboratedPhases = corroboratedAutoplanPhases(transcript.phases, visible);
-            if (Date.now() >= deadlineAt) break;
-            // Reject a wrong authoritative order even if a tool preview looks
-            // correct or some assistant announcements have not rendered yet.
-            if (transcript.phases.includes(3)) validateAutoplanPhaseOrder(transcript.phases);
+            // This new repository offers routing and an optional design-doc
+            // prerequisite. Keep the supplied plan and continue its full
+            // review; taste decisions remain autoplan's responsibility. The helper
+            // deduplicates the complete question before returning an input.
+            const setup = autoplanSetupDecision(visible, seenSetupQuestions,
+              transcript.calls.find(call => !call.answered && !call.failed) ?? pendingSetupQuestion);
+            if (setup.kind === 'input') {
+              if (setup.input === '\r') session.send(setup.input); // Verified setup-packet Submit, no numbered choice.
+              else if (setup.input.includes('\r')) await selectPtyNumberedOption(session, Number(setup.input.trim()));
+              else session.send(setup.input);
+              for (const signature of setup.signatures) seenSetupQuestions.add(signature);
+              await Bun.sleep(2000);
+              continue;
+            }
+            if (setup.kind === 'unsupported_setup') {
+              outcome = 'unsupported_setup';
+              unsupportedSetup = setup;
+              evidence = viewport.slice(-3000);
+              break;
+            }
 
-            // Terminal: all assistant announcements through Eng also rendered.
-            if (corroboratedPhases.includes(3) && corroboratedPhases.length === transcript.phases.length) {
+            // Prepared files and completion announcements cannot replace actual
+            // successful parent content delivery before the native dispatch.
+            if (methodologyAudit.some(audit => !audit.passed)) {
+              outcome = 'incomplete_methodology';
+              evidence = JSON.stringify(methodologyAudit);
+              break;
+            }
+
+            // Terminal: Phase 3 (Eng) seen — chain reached the required end.
+            if (hits.some(h => h.phase === 3)) {
               outcome = 'chain_complete';
+              evidence = visible.slice(-3000);
+              break;
+            }
+
+            // Autoplan auto-decides until its final human gate. An unrelated
+            // unanswered question blocks this test; never supply an answer or credit.
+            // Keep waiting on already-handled/partial setup panels as before.
+            blockedQuestion = setup.kind === 'unrelated' ? autoplanBlockingQuestionBoundary(visible, {
+              commandStartedAt, viewportCapturedAt, transcript, publicTools, pending:pendingSetupQuestion}) : null;
+            if (blockedQuestion) {
+              outcome = 'blocked_on_question';
+              evidence = visible.slice(-3000);
               break;
             }
 
             // Plan-ready as a fallback terminal — autoplan finished without
             // surfacing a Phase 3 marker. This is a regression surface.
-            if (isPlanReadyVisible(visible) && transcript.file && transcript.pendingBytes === 0) {
+            if (isPlanReadyVisible(visible)) {
               outcome = 'plan_ready';
+              evidence = visible.slice(-3000);
               break;
             }
           }
-          if (outcome === 'timeout') evidence = session.visibleSince(since).slice(-3000);
-        } catch (error) {
-          throw new Error(
-            `${error instanceof Error ? error.message : String(error)}\n` +
-              `--- observed announcements ---\n${observations()}\n--- evidence ---\n${evidence}`,
-            { cause: error },
-          );
         } finally {
-          if (outcome !== 'chain_complete') retainAutoplanFailure({
-            configDir: session.hermeticConfigDir, sessionId,
-            observation: { outcome, exitCode, transcript, renderedPhases, corroboratedPhases, lastPermissionCheck }, counting,
-            raw: () => session.rawOutput(), visible: () => session.visibleText(),
-          });
-          await session.close();
+          // Preserve boot failures omitted by mark(), and observe the real exit
+          // status before close() deliberately terminates a live session.
+          try {
+            exitCode = session.exitCode();
+            viewportCapturedAt = Date.now();
+            viewport = await session.currentScreen();
+            fullSessionEvidence = diagnosticTail(session.visibleText());
+            observe();
+            // Final retained records can include a dispatch published after the loop break.
+            if (methodologyAudit.some(audit => !audit.passed) && outcome !== 'artifact_permission_failed') {
+              outcome = 'incomplete_methodology';
+              evidence = JSON.stringify(methodologyAudit);
+            }
+            capture(outcome);
+          } finally { await session.close(); }
         }
 
-        if (outcome === 'exited' || outcome === 'timeout') {
+        if (outcome === 'blocked_on_question') {
+          const missing = [1, 2, 2.5, 3].filter(phase => !hits.some(hit => hit.phase === phase));
           throw new Error(
-            `autoplan chain test FAILED: outcome=${outcome}, exitCode=${exitCode}\n` +
-              `--- observed announcements ---\n${observations()}\n` +
+            `autoplan chain test FAILED: outcome=blocked_on_question; missing phase markers=${JSON.stringify(missing)}; ` +
+              `question=${JSON.stringify(blockedQuestion)}; no input sent.\n` +
+              `Native transcript: ${transcript.status}; artifacts=${JSON.stringify(artifacts)}\n` +
               `--- evidence ---\n${evidence}`,
           );
         }
 
-        try {
-          validateAutoplanPhaseOrder(transcript.phases);
-          validateAutoplanPhaseOrder(corroboratedPhases);
-          if (corroboratedPhases.length !== transcript.phases.length) {
-            throw new Error('Not all assistant phase announcements appeared in the rendered stream');
-          }
-        } catch (error) {
+        if (outcome === 'exited' || outcome === 'timeout' || outcome === 'unsupported_setup' || outcome === 'incomplete_methodology' || outcome === 'artifact_permission_failed') {
           throw new Error(
-            `${error instanceof Error ? error.message : String(error)}\n` +
-              `--- observed announcements ---\n${observations()}\n` +
-              `--- evidence ---\n${evidence}`,
-            { cause: error },
+            `autoplan chain test FAILED: outcome=${outcome}, exitCode=${exitCode}, hits=${JSON.stringify(hits)}\n` +
+              `Native transcript: ${transcript.status}; artifacts=${JSON.stringify(artifacts)}\n` +
+              (unsupportedSetup ? `Unsupported setup: ${JSON.stringify(unsupportedSetup)}; no input sent. Artifacts contain UI and parsed metadata, not guaranteed full parent JSONL.\n` : '') +
+              `--- post-command evidence (last 3KB) ---\n${diagnosticTail(evidence)}\n` +
+              `--- full-session visible tail, including startup (last 3KB) ---\n${fullSessionEvidence}`,
           );
         }
 
+        // Phase 3 (Eng) MUST have been seen.
+        const ceo = hits.find(h => h.phase === 1);
+        const design = hits.find(h => h.phase === 2);
+        const dx = hits.find(h => h.phase === 2.5);
+        const eng = hits.find(h => h.phase === 3);
+        if (!ceo || !design || !dx || !eng) {
+          throw new Error(
+            `Required phase markers missing. Saw: ${JSON.stringify(hits)}\n` +
+              `Native transcript: ${transcript.status}; artifacts=${JSON.stringify(artifacts)}\n` +
+              `--- evidence ---\n${evidence}`,
+          );
+        }
+
+        // Every required phase needs its own actual dispatch and complete
+        // successful parent methodology delivery; unknown dispatches add no credit.
+        for (const phase of ['ceo', 'design', 'dx', 'eng']) {
+          expect(methodologyAudit.some(audit => audit.phase === phase && audit.passed)).toBe(true);
+        }
+
+        // This fixture has UI and API scope: all four phases are required.
+        expect(ceo.ts).toBeLessThan(design.ts);
+        expect(design.ts).toBeLessThan(dx.ts);
+        expect(dx.ts).toBeLessThan(eng.ts);
+        // No phase marker may appear after Eng's (Eng-last invariant).
+        const maxTs = Math.max(...hits.map(h => h.ts));
+        expect(eng.ts).toBe(maxTs);
       } finally {
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+        finally { nativeState?.cleanup(); }
       }
     },
-    AUTOPLAN_CHAIN_BUDGET.testMs,
+    AUTOPLAN_CHAIN_BUDGET.testMs, // explicit registered four-phase exception
   );
 });
