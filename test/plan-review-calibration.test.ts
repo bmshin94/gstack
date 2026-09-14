@@ -35,7 +35,7 @@ test('semantic helper changes also select the separate DX analysis calibration',
       expected.sort());
   }
   for (const id of IDS) expect(E2E_TIERS[id]).toBe('periodic');
-  expect(E2E_TOUCHFILES['plan-ceo-finding-count']).toContain('test/skill-e2e-plan-ceo-paired-control.test.ts');
+  expect(E2E_TOUCHFILES['plan-ceo-finding-count']).toContain('test/skill-e2e-plan-ceo-finding-count.test.ts');
 });
 
 test('calibration briefs preserve source-required structure and actual choices without phase/qid reliance', () => {

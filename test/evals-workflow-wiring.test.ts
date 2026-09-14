@@ -159,6 +159,7 @@ describe('evals-periodic.yml sliced-lane wiring', () => {
     expect(slices).toEqual(Array.from({ length: plannerOptions.slices }, (_, i) => i + 1));
     const manifest = buildRunManifest({
       tier: plannerOptions.tier, sliceCount: plannerOptions.slices,
+      dedicatedAutoplanSlice: plannerOptions.dedicatedAutoplanSlice,
       evalsAll: true, env: plannerEnv, rootDir: ROOT,
     });
     // Resolve the same per-file walls and overlay admission limit as execution.

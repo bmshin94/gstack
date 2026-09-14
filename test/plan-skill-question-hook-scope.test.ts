@@ -6,9 +6,9 @@ import { spawnSync } from 'node:child_process';
 
 const helper = path.join(import.meta.dir, 'helpers/plan-skill-question-hook-scope.ts');
 const sourceRoot = path.dirname(import.meta.dir);
-// Redirect only the OS-managed root in a byte-bound copy of the real helper.
-// The inverse check preserves every guard function; no filesystem mock can
-// accidentally inspect the machine's managed settings, plugins or auth.
+// Rebind the OS-managed root and the explicit live-source/census dependency
+// in a byte-bound copy. The inverse check preserves every guard function;
+// mutation controls operate only on private source fixtures, never the repo.
 const child = String.raw`
   try {
   const [helper, sourceRoot, root, scenario] = process.argv.slice(-4);
@@ -22,8 +22,18 @@ const child = String.raw`
   assert(matches[0][0].includes('/etc/claude-code'));
   assert(matches[0][0].includes('Program Files'));
   const replacement = 'const managedRoot = ' + JSON.stringify(managedFixture) + ';';
-  const copied = original.replace(matches[0][0], replacement);
-  assert.equal(copied.replace(replacement, matches[0][0]), original);
+  const liveRoot = scenario.startsWith('live-') ? path.join(root, 'source') : sourceRoot;
+  fs.mkdirSync(liveRoot, {recursive: true});
+  const sourceDeclaration = "const skillSourceRoot = fs.realpathSync(path.resolve(import.meta.dir, '..', '..'));";
+  const sourceReplacement = 'const skillSourceRoot = fs.realpathSync(' + JSON.stringify(liveRoot) + ');';
+  const censusImport = "from './skill-census'";
+  const censusReplacement = 'from ' + JSON.stringify(path.join(sourceRoot, 'test/helpers/skill-census.ts'));
+  assert.equal(original.split(sourceDeclaration).length, 2);
+  assert.equal(original.split(censusImport).length, 2);
+  const copied = original.replace(matches[0][0], replacement)
+    .replace(sourceDeclaration, sourceReplacement).replace(censusImport, censusReplacement);
+  assert.equal(copied.replace(replacement, matches[0][0])
+    .replace(sourceReplacement, sourceDeclaration).replace(censusReplacement, censusImport), original);
   const copiedHelper = path.join(root, 'scope-helper.ts');
   fs.writeFileSync(copiedHelper, copied, {flag: 'wx'});
   const { setupQuestionHookScope: setup, assertQuestionHookScope: check } = require(copiedHelper);
@@ -78,6 +88,46 @@ const child = String.raw`
       fs.symlinkSync(path.join(seeded, 'skills'), path.join(actualConfig, 'skills'), 'dir');
       const scope = setup({configDir: fs.realpathSync(actualConfig), cwd}); check(scope);
       assert(fs.readdirSync(path.join(actualConfig, 'skills')).length > 50); checks++; break;
+    }
+    case 'live-census-alias':
+    case 'live-router-cross-name':
+    case 'live-cross-name':
+    case 'live-noncensus-document':
+    case 'live-external-census-target':
+    case 'live-frontmatter-mutation':
+    case 'live-source-drift': {
+      const source = path.join(liveRoot, 'authored', 'SKILL.md');
+      write(source, '---\nname: review\n---\nLive source instructions.');
+      fs.symlinkSync(path.dirname(source), path.join(liveRoot, 'alias'), 'dir');
+      write(path.join(liveRoot, 'SKILL.md'), '---\nname: gstack\n---\nRoot router.');
+      const target = scenario === 'live-cross-name' ? path.join(liveRoot, 'other', 'SKILL.md')
+        : scenario === 'live-noncensus-document' ? path.join(liveRoot, 'authored', 'reference.md')
+          : scenario === 'live-external-census-target' ? path.join(root, 'outside', 'SKILL.md') : source;
+      if (target !== source) write(target, '---\nname: other\n---\nUnrelated instructions.');
+      if (scenario === 'live-external-census-target') {
+        // Even appearing in the census via a source-directory symlink cannot
+        // authorize a file outside the explicitly bound source root.
+        write(target, '---\nname: review\n---\nOutside instructions.');
+        fs.symlinkSync(path.dirname(target), path.join(liveRoot, 'outside-alias'), 'dir');
+      }
+      if (scenario === 'live-frontmatter-mutation') write(source,
+        '---\nname: review\nhooks:\n  PreToolUse:\n    - matcher: AskUserQuestion\n      hooks: []\n---\n');
+      fs.unlinkSync(path.join(registry, 'review', 'SKILL.md'));
+      fs.symlinkSync(target, path.join(registry, 'review', 'SKILL.md'));
+      if (scenario === 'live-census-alias') {
+        for (const name of ['_gstack-command', 'gstack']) {
+          fs.mkdirSync(path.join(registry, name));
+          fs.symlinkSync(path.join(liveRoot, 'SKILL.md'), path.join(registry, name, 'SKILL.md'));
+        }
+        passes();
+      } else if (scenario === 'live-router-cross-name') {
+        fs.mkdirSync(path.join(registry, 'gstack'));
+        fs.symlinkSync(source, path.join(registry, 'gstack', 'SKILL.md'));
+        refuses(() => setup({configDir,cwd}));
+      } else if (scenario === 'live-source-drift') {
+        const scope = passes(); fs.appendFileSync(source, '\nchanged'); refuses(() => check(scope));
+      } else refuses(() => setup({configDir,cwd}));
+      break;
     }
     case 'alias-registry': {
       const alias = path.join(root, 'private-alias'); fs.symlinkSync(privateRoot, alias, 'dir');
@@ -162,6 +212,8 @@ const child = String.raw`
 `;
 
 const scenarios = ['clean', 'all-generated-skills', 'actual-hermetic-registry', 'alias-registry',
+  'live-census-alias', 'live-router-cross-name', 'live-cross-name', 'live-noncensus-document', 'live-external-census-target',
+  'live-frontmatter-mutation', 'live-source-drift',
   'project-same-name-skill', 'project-cross-name-skill', 'project-external-skill',
   'project-pretool-mutation', 'project-permission-mutation', 'project-skill-drift',
   'empty-plugins-container', 'new-plugin-registry', 'changed-plugin-registry', 'plugin-container-symlink', 'plugin-container-nondirectory',

@@ -47,7 +47,8 @@ afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 describe("gstack-decision-log", () => {
   function invoke(args: string[], stateDir: string) {
     return spawnSync(process.execPath, [LOG, ...args], {
-      ...opts(), env: { ...process.env, GSTACK_HOME: stateDir, GSTACK_PROJECT_SLUG: "help-contract" },
+      ...opts(), // timeout via opts(), as with the other decision CLI helpers.
+      env: { ...process.env, GSTACK_HOME: stateDir, GSTACK_PROJECT_SLUG: "help-contract" },
     });
   }
 

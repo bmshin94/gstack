@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createFakeBunCli } from './helpers/fake-bun-cli';
+import { fakePlanSeedPrelude } from './helpers/fake-plan-seed';
 
 const fixture = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/native-auto-decide-ag.json'), 'utf8'));
 const retry = fixture.attempts[1];
@@ -12,19 +13,19 @@ const annotation = retry.transcript.assistantMessages.find((m: any) => m.session
 test('owned native AUTO_DECIDE survives damaged terminal and polls again after scope selection', async () => {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'auto-decide-pty-'));
   const working=path.join(dir,'repo');fs.mkdirSync(working);
-  const cli = createFakeBunCli(path.join(dir,'fake-claude'), `
+  const cli = createFakeBunCli(path.join(dir,'fake-claude'), fakePlanSeedPrelude() + `
 const fs=require('node:fs'),path=require('node:path');
 const args=process.argv.slice(2),id=args[args.indexOf('--session-id')+1];
 fs.writeFileSync(process.env.AUTO_TEST_ARGV,JSON.stringify(args));
 let sent=false;
-process.stdin.on('data',chunk=>{
+process.on('gstack-seeded-slash',chunk=>{
   if(sent||!chunk.toString().includes('/plan-ceo-review'))return;sent=true;
   const root=path.join(process.env.CLAUDE_CONFIG_DIR,'projects','fixture');fs.mkdirSync(root,{recursive:true});
   const file=path.join(root,id+'.jsonl'),base=Date.now();
   const record=(type,n,content)=>JSON.stringify({type,isSidechain:false,cwd:process.cwd(),sessionId:id,timestamp:new Date(base+n).toISOString(),message:{role:type,content}});
   const rows=[record('assistant',1,[{type:'tool_use',id:'load',name:'Skill',input:{skill:'plan-ceo-review'}}]),record('user',2,[{type:'tool_result',tool_use_id:'load',content:'loaded',is_error:false}]),record('assistant',3,[{type:'text',text:'I will review the "Auto decision fixture" draft plan pasted here.'}])];
   fs.writeFileSync(file,rows.join('\\n')+'\\n');process.stdout.write('Working on the current review.\\n');
-  setTimeout(()=>{fs.appendFileSync(file,record('assistant',Date.now()-base-1,[{type:'text',text:${JSON.stringify(annotation)}}])+'\\n');process.stdout.write('Auto-dcided review mode: HOLD SCOPE. DONE.\\n');},4500);
+  setTimeout(()=>{fs.appendFileSync(file,record('assistant',Date.now()-base-1,[{type:'text',text:${JSON.stringify(annotation)}}])+'\\n');process.stdout.write('Auto-dcided review mode: HOLD SCOPE. DONE.\\n');},2500);
 });
 setInterval(()=>{},1000);
 `);

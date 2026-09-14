@@ -174,7 +174,7 @@ test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => [
   ...['normal', 'already-exited', 'body-error'].map(scenario => [cols, scenario, 40, 80] as const),
   [cols, 'normal', 120, 480] as const,
   ...['normal', 'already-exited', 'body-error'].map(scenario => [cols, scenario, 120, 960] as const),
-]))('owned local PTY resize redraws at decoder geometry and session.close releases the parent (%i columns, %s, %i initial rows, %i expanded rows)', async (cols, scenario, initialRows, expandedRows) => {
+]))('owned local PTY sessions preserve viewport geometry and cleanup (%i columns, %s, %i initial rows, %i expanded rows)', async (cols, scenario, initialRows, expandedRows) => {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'native-viewport-free-')));
   const native = path.join(tmp, 'native.ts');
   const wrapper = path.join(tmp, 'native-wrapper');
@@ -182,24 +182,34 @@ test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => [
   const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
   fs.copyFileSync(path.join(import.meta.dir, 'fixtures', 'native-viewport.ts'), native);
   fs.writeFileSync(wrapper, '#!/bin/sh\nexec ' + quote(process.execPath) + ' ' + quote(native) + ' ' + quote(scenario) + '\n', { mode: 0o700 });
+  // The native driver now selects fixed geometry at launch. Adaptive
+  // resizeQuestionViewport is retired; exercise the same fourteen geometry
+  // and lifecycle scenarios against the decoder the current driver uses.
   fs.writeFileSync(probe, `import { launchClaudePty } from ${JSON.stringify(path.join(import.meta.dir, 'helpers', 'claude-pty-runner.ts'))};
-    const session=await launchClaudePty({cwd:${JSON.stringify(tmp)},cols:${cols},rows:${initialRows},captureScreen:true,captureQuestionsForSession:crypto.randomUUID(),timeoutMs:5000});
-    let evidence,observedError=null;
-    try {
-      await session.waitFor('NATIVE:${cols}x${initialRows}',{timeoutMs:2000});
-      const before=await session.currentScreen();
-      const mark=await session.resizeQuestionViewport(${expandedRows},Date.now()+2000);
-      await session.waitFor('NATIVE:${cols}x${expandedRows}',{since:mark,timeoutMs:2000});
-      const expanded=await session.currentScreen();
-      const noResize=await session.resizeQuestionViewport(120,Date.now()-1);
-      const restoredMark=await session.resizeQuestionViewport(${initialRows},Date.now()+2000);
-      await session.waitFor('NATIVE:${cols}x${initialRows}',{since:restoredMark,timeoutMs:2000});
-      const restored=await session.currentScreen();
-      evidence={before:before.text,mark,expanded:expanded.text,expandedMark:expanded.rawEnd,noResize,restored:restored.text};
-      if (${JSON.stringify(scenario)}==='already-exited') { const end=Date.now()+2000;while(!session.exited()&&Date.now()<end)await Bun.sleep(20);if(!session.exited())throw new Error('Native child failed to exit'); }
-      if (${JSON.stringify(scenario)}==='body-error') throw new Error('controlled body failure');
-    } catch(cause) { observedError=String(cause); } finally { await session.close(); await session.close(); }
-    console.log(JSON.stringify({...evidence,observedError,exited:session.exited()}));`);
+    const evidence=[];
+    for (const rows of [${initialRows},${expandedRows},${initialRows}]) {
+      const session=await launchClaudePty({cwd:${JSON.stringify(tmp)},cols:${cols},rows,observeScreen:true,timeoutMs:5000});
+      let viewport,observedError=null,rawStable=false;
+      try {
+        await session.waitFor('LOW:'+rows,{timeoutMs:2000});
+        const raw=session.rawOutput();
+        viewport=await session.currentScreen();
+        rawStable=raw===session.rawOutput();
+        if (${JSON.stringify(scenario)}==='already-exited') {
+          const end=Date.now()+2000;
+          while(!session.exited()&&Date.now()<end)await Bun.sleep(20);
+          if(!session.exited())throw new Error('Native child failed to exit');
+        }
+        if (${JSON.stringify(scenario)}==='body-error') throw new Error('controlled body failure');
+      } catch(cause) { observedError=String(cause); }
+      finally { await session.close(); await session.close(); }
+      let stillRunning=false;
+      try { process.kill(session.pid(),0); stillRunning=true; }
+      catch(cause) { if(cause.code!=='ESRCH')throw cause; }
+      evidence.push({rows,viewport,rawStable,observedError,exited:session.exited(),stillRunning,
+        finalViewport:await session.currentScreen()});
+    }
+    console.log(JSON.stringify(evidence));`);
   const child = Bun.spawn([process.execPath, probe], { cwd: tmp, env: { PATH: process.env.PATH ?? '', HOME: tmp, TMPDIR: tmp,
     TERM: 'xterm-256color', EVALS_HERMETIC: '1', BROWSE_TERMINAL_BINARY: wrapper }, stdout: 'pipe', stderr: 'pipe' });
   let timedOut = false;
@@ -209,14 +219,18 @@ test.skipIf(process.platform === 'win32').each([120, 240].flatMap(cols => [
     expect(timedOut, stderr).toBe(false);
     expect(exit, stderr).toBe(0);
     const result = JSON.parse(stdout.trim());
-    expect(result.before).toContain(`NATIVE:${cols}x${initialRows}`);
-    expect(result.expanded.startsWith(`NATIVE:${cols}x${expandedRows}`)).toBe(true);
-    expect(result.expanded.split('\n')[expandedRows - 3]).toBe(`LOW:${expandedRows}`);
-    expect(result.expandedMark).toBeGreaterThan(result.mark);
-    expect(result.noResize).toBeNull();
-    expect(result.restored).toContain(`NATIVE:${cols}x${initialRows}`);
-    expect(result.exited).toBe(true);
-    expect(result.observedError).toBe(scenario === 'body-error' ? 'Error: controlled body failure' : null);
+    expect(result.map((entry: { rows: number }) => entry.rows)).toEqual([initialRows, expandedRows, initialRows]);
+    for (const entry of result) {
+      expect(entry.viewport.startsWith(`NATIVE:${cols}x${entry.rows}`)).toBe(true);
+      expect(entry.viewport.split('\n')).toHaveLength(entry.rows);
+      expect(entry.viewport.split('\n')[entry.rows - 3]).toBe(`LOW:${entry.rows}`);
+      expect(entry.viewport).not.toContain('\x1b');
+      expect(entry.rawStable).toBe(true);
+      expect(entry.finalViewport).toBe(entry.viewport);
+      expect(entry.exited).toBe(true);
+      expect(entry.stillRunning).toBe(false);
+      expect(entry.observedError).toBe(scenario === 'body-error' ? 'Error: controlled body failure' : null);
+    }
   } finally {
     clearTimeout(watchdog);
     if (child.exitCode === null) { child.kill(); await child.exited; }

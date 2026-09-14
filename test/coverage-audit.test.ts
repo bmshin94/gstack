@@ -128,14 +128,14 @@ mock.module(path.join(root, 'test/helpers/session-runner.ts'), () => ({ runSkill
   for (const text of contents) expect(text).toMatch(/coverage-read-evidence: [a-f0-9-]{36}/);
   const native = { session_id: 'native', parent_tool_use_id: null };
   latest = { exitReason: mode === 'exit' ? 'timeout' : 'success', browseErrors: [], duration: 25,
-    output: mode === 'diagram' ? 'No diagram.' : 'Coverage\\nprocessPayment ✓ tested\\nrefundPayment GAP',
+    output: mode === 'diagram' ? 'No diagram.' : 'Coverage\\nsrc/billing.ts\\n├── processPayment: happy path [TESTED]\\n└── refundPayment [UNTESTED] [GAP]',
     model: 'recorded-model', firstResponseMs: 1, maxInterTurnMs: 1,
     costEstimate: { estimatedCost: 0.37, turnsUsed: 2, estimatedTokens: 100 },
     toolCalls: paths.map(file => ({ tool: 'Bash', input: { command: 'cat -n '+file }, output: '' })),
     transcript: [{ type: 'system', subtype: 'init', cwd: opts.workingDirectory, ...native },
-      ...contents.flatMap((content, i) => [{ type: 'assistant', ...native, message: { content: [{ type: 'tool_use', id: 'read-'+i,
+      ...contents.flatMap((content, i) => [{ type: 'assistant', ...native, message: { role: 'assistant', content: [{ type: 'tool_use', id: 'read-'+i,
         name: 'Bash', input: { command: 'cat -n '+paths[i] } }] } },
-      { type: 'user', ...native, message: { content: [{ type: 'tool_result', tool_use_id: 'read-'+i,
+      { type: 'user', ...native, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'read-'+i,
         content: mode === 'missing' && i === 1 ? '' : content.split('\\n').map((line,n) => String(n+1).padStart(6)+'\\t'+line).join('\\n'), is_error: false }] } }])],
   };
   if (mode === 'deadline') return new Promise(resolve => { lateResolve = resolve; });

@@ -32,7 +32,7 @@ const run = async opts => {
   else await Bun.sleep(50);
   expect(fs.existsSync(opts.workingDirectory)).toBe(true);
   if (attempt === 2) fs.writeFileSync(path.join(opts.workingDirectory, 'review-output.md'), 'SQL injection');
-  return { exitReason: attempt === 1 ? 'timeout' : 'success' };
+  return { exitReason: attempt === 1 ? 'timeout' : 'success', browseErrors: [] };
 };
 new Function('describe', 'test', 'expect', 'beforeAll', 'afterAll',
   'JUDGE_MS', 'CAPTURE_MS', 'SESSION_DRAIN_GRACE_MS', 'runSkillTest',

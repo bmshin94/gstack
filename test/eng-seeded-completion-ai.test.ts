@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createFakeBunCli } from './helpers/fake-bun-cli';
+import { fakePlanSeedPrelude } from './helpers/fake-plan-seed';
 import fixture from './fixtures/eng-seeded-completion-ai.json';
 import { classifyVisible, extractPlanFilePath } from './helpers/claude-pty-runner';
 import * as predicates from './helpers/claude-pty-runner';
@@ -59,12 +60,12 @@ test('real PTY waits past old TODO, stale, partial and mismatched panels but acc
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'seeded-completion-'));
     const working = path.join(dir, 'repo');
     fs.mkdirSync(working);
-    const cli = createFakeBunCli(path.join(dir, 'fake-claude'), `
+    const cli = createFakeBunCli(path.join(dir, 'fake-claude'), fakePlanSeedPrelude() + `
 const fs = require('node:fs');
 fs.writeFileSync(process.env.COMPLETION_ARGV, JSON.stringify(process.argv.slice(2)));
 let sent = false;
 const render = text => process.stdout.write('\\x1b[2J\\x1b[H' + text.replace(/\\n/g, '\\r\\n'));
-process.stdin.on('data', chunk => {
+process.on('gstack-seeded-slash', chunk => {
   if (sent || !chunk.toString().includes('/plan-eng-review')) return;
   sent = true;
   fs.writeFileSync(process.env.COMPLETION_PHASE, 'initial');
@@ -72,7 +73,7 @@ process.stdin.on('data', chunk => {
   if (${JSON.stringify(scenario.expected)} === 'asked') setTimeout(() => {
     fs.writeFileSync(process.env.COMPLETION_PHASE, 'question');
     render(${JSON.stringify(question)});
-  }, 4500);
+  }, 2500);
 });
 setInterval(() => {}, 1000);
 `);
@@ -135,6 +136,7 @@ async function mockedObservation(frames: string[], verdict: 'waiting' | 'working
       visibleSince: current, rawOutput: current, currentScreen: async () => current(), hermeticConfigDir: null,
       close: async () => { closed++; } }),
     createPlanCountSnapshotWriter: () => () => ({}), logPtySnapshot: () => {},
+    submitPlanSeed: async () => {}, PlanSeedTimeout: class extends Error {},
     isProseAUQVisible: predicates.isProseAUQVisible, isPlanReadyVisible: predicates.isPlanReadyVisible,
     isScopeGateQuestionVisible: predicates.isScopeGateQuestionVisible,
     isScopeGateAutoSelectVisible: predicates.isScopeGateAutoSelectVisible,

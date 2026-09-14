@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
+import { frontmatterName, skillCensus } from './skill-census';
 
 declare const scopeBrand: unique symbol;
 export type QuestionHookScope = Readonly<{ [scopeBrand]: true }>;
@@ -14,10 +15,31 @@ const object = (value: unknown): value is Record<string, unknown> => !!value && 
 const fail = (detail: string): never => { throw new Error(`Unsupported question hook scope: ${detail}`); };
 const managedRoot = process.platform === 'darwin' ? '/Library/Application Support/ClaudeCode'
   : process.platform === 'win32' ? 'C:\\Program Files\\ClaudeCode' : '/etc/claude-code';
+const skillSourceRoot = fs.realpathSync(path.resolve(import.meta.dir, '..', '..'));
 
 function inventory(opts: Options): string {
   const rows: [string, string | null][] = [];
   let totalBytes = 0;
+  let liveSkills: Map<string, string> | undefined;
+  function liveSkill(name: string): string | undefined {
+    if (!liveSkills) {
+      liveSkills = new Map();
+      // Mirror the seeder's finite registry, including frontmatter names and
+      // the root router alias. A census symlink cannot admit an outside file.
+      for (const rel of skillCensus(skillSourceRoot).physicalSkillFiles) {
+        const source = path.join(skillSourceRoot, rel);
+        const target = fs.realpathSync(source);
+        const relative = path.relative(skillSourceRoot, target);
+        if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) continue;
+        const registryName = rel === 'SKILL.md' ? '_gstack-command' : frontmatterName(source) || path.dirname(rel);
+        liveSkills.set(registryName, target);
+        // The seeder also exposes the same router in its canonical lazy-path
+        // view. This alias admits only that exact root document.
+        if (rel === 'SKILL.md') liveSkills.set('gstack', target);
+      }
+    }
+    return liveSkills.get(name);
+  }
   const stat = (file: string) => fs.lstatSync(file, { throwIfNoEntry: false });
   function directory(dir: string, listing = false): string[] | null {
     const info = stat(dir);
@@ -98,8 +120,10 @@ function inventory(opts: Options): string {
         const target = fs.realpathSync(file);
         const owner = path.dirname(path.dirname(dir));
         // The installed project registry links each name to its same-name
-        // checkout document. Keep the private derived-runtime rule separate.
+        // checkout document. Private registries can also use the seeder's
+        // exact live-source entry; neither rule admits a different skill.
         const allowed = privateRegistry ? target.startsWith(path.join(owner, 'runtime') + path.sep)
+          || target === liveSkill(name)
           : target === path.join(owner, name, 'SKILL.md');
         if (!allowed) fail('external skill document');
         rows.push([file, `link:${fs.readlinkSync(file)}:${target}`]);

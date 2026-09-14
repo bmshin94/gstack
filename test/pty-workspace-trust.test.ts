@@ -55,12 +55,10 @@ async function withFixture(check: (fixture: {
 }
 
 describe('PTY temporary workspace trust', () => {
-  test('each launch trusts its canonical cwd without changing shared config or losing plan artifacts', async () => {
+  test('temporary workspaces share owned registration without rewriting trust or losing plan artifacts', async () => {
     await withFixture(async ({ cwd, launch }) => {
       const shared = hermeticSkillsConfigDir();
       const before = fs.readFileSync(path.join(shared, '.claude.json'), 'utf8');
-      const permissionsBefore = fs.readFileSync(path.join(shared, 'settings.json'), 'utf8');
-      expect(JSON.parse(permissionsBefore).permissions.allow).toHaveLength(4);
       const alias = path.join(cwd, 'alias');
       const workspace = path.join(cwd, 'workspace');
       fs.mkdirSync(workspace);
@@ -68,28 +66,23 @@ describe('PTY temporary workspace trust', () => {
       const first = await launch({ cwd: alias, env: { ANTHROPIC_API_KEY: 'test-effective-key-12345678901234567890', GSTACK_HOME: path.join(cwd, 'state') } });
       const second = await launch();
       const sameWorkspace = await launch({ cwd: alias });
-      expect(first.session.visibleText()).toBe('FIXTURE_READY');
-      expect(second.session.visibleText()).toBe('FIXTURE_READY');
-      expect(first.env.CLAUDE_CONFIG_DIR).not.toBe(second.env.CLAUDE_CONFIG_DIR);
-      expect(first.env.CLAUDE_CONFIG_DIR).not.toBe(sameWorkspace.env.CLAUDE_CONFIG_DIR);
-      expect(first.env.CLAUDE_CONFIG_DIR).not.toBe(shared);
-      expect(first.env.CLAUDE_CONFIG_DIR.endsWith(`${path.sep}.claude`)).toBe(true);
-      expect(first.session.hermeticConfigDir).toBe(first.env.CLAUDE_CONFIG_DIR);
-      for (const launch of [first, second, sameWorkspace]) {
-        expect(fs.readFileSync(path.join(launch.env.CLAUDE_CONFIG_DIR, 'settings.json'), 'utf8')).toBe(permissionsBefore);
-        expect(fs.lstatSync(path.join(launch.env.CLAUDE_CONFIG_DIR, 'settings.json')).isFile()).toBe(true);
+      for (const child of [first, second, sameWorkspace]) {
+        // Main accepts the native trust dialog; it does not manufacture a
+        // trusted-folder entry for each disposable cwd before the CLI starts.
+        expect(child.session.visibleText()).toBe('FIXTURE_UNTRUSTED');
+        expect(child.env.CLAUDE_CONFIG_DIR).toBe(shared);
+        expect(child.session.hermeticConfigDir).toBe(shared);
+        expect(child.env.HOME.startsWith(getHermeticDirs().runRoot + path.sep)).toBe(true);
+        expect(fs.existsSync(path.join(shared, 'settings.json'))).toBe(false);
       }
-      expect(fs.readFileSync(path.join(shared, 'settings.json'), 'utf8')).toBe(permissionsBefore);
       expect(first.env.GSTACK_HOME).toBe(path.join(cwd, 'state'));
-      const config = JSON.parse(fs.readFileSync(path.join(first.env.CLAUDE_CONFIG_DIR, '.claude.json'), 'utf8'));
-      expect(config.diffSidebarOpen).toBe(false);
-      expect(config.customApiKeyResponses.approved).toEqual(['12345678901234567890']);
-      expect(config.projects[fs.realpathSync(cwd)]).toBeUndefined();
       expect(fs.readFileSync(path.join(shared, '.claude.json'), 'utf8')).toBe(before);
       expect(fs.realpathSync(path.join(first.env.CLAUDE_CONFIG_DIR, 'skills', 'autoplan', 'SKILL.md')))
-        .toBe(fs.realpathSync(path.join(path.dirname(shared), 'runtime', 'autoplan', 'SKILL.md')));
-      const plan = path.join(first.env.CLAUDE_CONFIG_DIR, 'plans', 'fixture.md');
-      fs.mkdirSync(path.dirname(plan));
+        .toBe(fs.realpathSync(path.join(ROOT, 'autoplan', 'SKILL.md')));
+      const plans = path.join(shared, 'plans');
+      fs.mkdirSync(plans, {recursive: true});
+      expect(fs.realpathSync(plans).startsWith(fs.realpathSync(getHermeticDirs().runRoot) + path.sep)).toBe(true);
+      const plan = path.join(plans, path.basename(cwd) + '.md');
       fs.writeFileSync(plan, 'plan evidence');
       await first.session.close();
       expect(fs.readFileSync(plan, 'utf8')).toBe('plan evidence');
@@ -99,7 +92,7 @@ describe('PTY temporary workspace trust', () => {
   test('does not seed skills when the caller did not request them', async () => {
     await withFixture(async ({ launch }) => {
       const { session, env } = await launch({ seedSkills: false });
-      expect(session.visibleText()).toBe('FIXTURE_READY');
+      expect(session.visibleText()).toBe('FIXTURE_UNTRUSTED');
       expect(fs.existsSync(path.join(env.CLAUDE_CONFIG_DIR, 'skills'))).toBe(false);
       expect(fs.existsSync(path.join(env.CLAUDE_CONFIG_DIR, 'settings.json'))).toBe(false);
     });
@@ -146,7 +139,7 @@ describe('PTY temporary workspace trust', () => {
 });
 
 
-test.skipIf(process.platform === 'win32')('a live PTY child receives only the scoped companion settings alongside native hooks', async () => {
+test.skipIf(process.platform === 'win32')('a live PTY child receives only owned runtime paths and the requested native observer', async () => {
   const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pty-companion-')));
   const binary = path.join(cwd, 'fake-cli.ts');
   fs.writeFileSync(binary, `#!${process.execPath}\n${fs.readFileSync(path.join(import.meta.dir, 'fixtures', 'pty-companion-cli.ts'), 'utf8')}`, { mode: 0o700 });
@@ -155,19 +148,25 @@ test.skipIf(process.platform === 'win32')('a live PTY child receives only the sc
   let session: Awaited<ReturnType<typeof launchClaudePty>> | undefined;
   try {
     session = await launchClaudePty({ cwd, seedSkills: true, model: 'fixture', timeoutMs: 5000,
-      captureQuestionsForSession: 'bbbbbbbb-1111-2222-3333-cccccccccccc' });
+      observeSetupQuestions: true });
     await session.waitFor(/COMPANION_SETTINGS /, 5000);
     const printed = JSON.parse(session.visibleText().match(/COMPANION_SETTINGS (.+)/)![1]);
-    const expected = JSON.parse(fs.readFileSync(path.join(hermeticSkillsConfigDir(), 'settings.json'), 'utf8'));
-    expect(printed.settings).toEqual(expected);
-    expect(printed.settings.useAutoModeDuringPlan).toBe(false);
-    expect(Object.keys(printed.settings).sort()).toEqual(['permissions', 'useAutoModeDuringPlan']);
-    expect(printed.settings.permissions.allow).toHaveLength(4);
+    expect(printed.settings).toBeNull();
     expect(printed.args.slice(0, 4)).toEqual(['--model', 'fixture', '--permission-mode', 'plan']);
-    expect(printed.args).not.toContain('--add-dir');
     expect(printed.args).not.toContain('--allowedTools');
-    const hookPath = printed.args[printed.args.indexOf('--settings') + 1];
-    expect(Object.keys(JSON.parse(fs.readFileSync(hookPath, 'utf8')))).toEqual(['hooks']);
+    const additions = printed.args.flatMap((arg: string, index: number) => arg === '--add-dir' ? [printed.args[index + 1]] : []);
+    expect(additions).toHaveLength(3);
+    for (const directory of additions) expect(directory.startsWith(getHermeticDirs().runRoot + path.sep)).toBe(true);
+    expect(fs.realpathSync(additions[0])).toBe(fs.realpathSync(ROOT));
+    expect(additions[1]).toBe(session.hermeticSkillStateRoot);
+    expect(additions[2]).toBe(path.join(hermeticSkillsConfigDir(), 'skills'));
+    const hooks = JSON.parse(printed.args[printed.args.indexOf('--settings') + 1]);
+    expect(Object.keys(hooks)).toEqual(['hooks']);
+    expect(Object.keys(hooks.hooks)).toEqual(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
+    for (const entries of Object.values(hooks.hooks) as Array<Array<{matcher: string}>>) {
+      expect(entries).toHaveLength(1);
+      expect(entries[0].matcher).toBe('^AskUserQuestion$');
+    }
   } finally {
     await session?.close();
     if (priorBinary === undefined) delete process.env.BROWSE_TERMINAL_BINARY; else process.env.BROWSE_TERMINAL_BINARY = priorBinary;

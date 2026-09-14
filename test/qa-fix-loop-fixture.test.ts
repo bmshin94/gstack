@@ -12,7 +12,7 @@ test('QA fixture regressions select only the QA fix loop', () => {
   expect(selectTests(['test/qa-fix-loop-fixture.test.ts'], E2E_TOUCHFILES).selected).toEqual(['qa-fix-loop']);
 });
 
-test.each(['success', 'max-turns', 'no-edit', 'no-commit', 'runner', 'retry', 'directory', 'recording', 'late-timeout'])
+test.each(['success', 'bash-edit', 'max-turns', 'no-edit', 'no-commit', 'runner', 'retry', 'directory', 'recording', 'late-timeout'])
   ('QA attempt recording and fixture ownership: %s', scenario => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-fix-body-'));
     const script = path.join(dir, 'body.fixture.test.ts');
@@ -88,16 +88,18 @@ mock.module(path.join(root, 'test/helpers/session-runner.ts'), () => ({
       fact.missingStatus = (await fetch(url + '/missing-route')).status;
       fact.initialServed = await (await fetch(url + '/')).text();
     }
-    fs.writeFileSync(path.join(cwd, 'index.html'), initial.replace(' disabled', ''));
+    const unchanged = ['no-edit', 'recording'].includes(scenario) || scenario === 'retry' && attempts.length === 1;
+    if (!unchanged) fs.writeFileSync(path.join(cwd, 'index.html'), initial.replace(' disabled', ''));
     fs.mkdirSync(path.join(cwd, 'qa-reports'), { recursive: true });
     fs.writeFileSync(path.join(cwd, 'qa-reports/qa-report.md'), 'previous attempt report');
-    if (scenario !== 'no-commit') { git('add', 'index.html'); git('commit', '-m', 'fixture fix'); }
+    if (scenario !== 'no-commit') { git('add', 'index.html'); git('commit', '--allow-empty', '-m', 'fixture fix'); }
     if (scenario === 'directory') fact.fixedServed = await (await fetch(url + '/')).text();
     return {
       exitReason: scenario === 'max-turns' ? 'error_max_turns' : 'success',
       model: 'fixture-model', costEstimate: { estimatedCost: 0.25 },
-      toolCalls: ['no-edit', 'recording'].includes(scenario) || scenario === 'retry' && attempts.length === 1
-        ? [] : [{ tool: 'Edit', input: { file_path: path.join(cwd, 'index.html') } }],
+      toolCalls: unchanged ? [] : scenario === 'bash-edit'
+        ? [{ tool: 'Bash', input: { command: 'apply the source fix' } }]
+        : [{ tool: 'Edit', input: { file_path: path.join(cwd, 'index.html') } }],
     };
   },
 }));
@@ -145,12 +147,14 @@ await import(path.join(root, 'test/skill-e2e-qa-workflow.test.ts'));
       } else {
         expect(records[0].cost_usd).toBe(0.25);
         expect(records[0].model).toBe('fixture-model');
-        if (['no-edit', 'no-commit', 'retry', 'recording'].includes(scenario)) {
+        if (scenario === 'no-commit') {
           expect(records[0].error).toContain('toBeGreaterThan');
+        } else if (['no-edit', 'retry', 'recording'].includes(scenario)) {
+          expect(records[0].error).toContain('toBe(expected)');
         }
       }
       if (scenario === 'recording') {
-        expect(child.stderr).toContain('toBeGreaterThan');
+        expect(child.stderr).toContain('toBe(expected)');
         expect(child.stderr).toContain('QA recorder failure');
       }
       if (scenario === 'late-timeout') {

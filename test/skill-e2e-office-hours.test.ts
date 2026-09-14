@@ -17,7 +17,7 @@ import {
   describeIfSelected, testConcurrentIfSelected,
   logCost, finalizeEvalCollector,
 } from './helpers/e2e-helpers';
-import { EvalCollector } from './helpers/eval-store';
+import { EvalCollector, type EvalTestEntry } from './helpers/eval-store';
 import { OFFICE_HOURS_BUN_GRACE_MS, runRecordedOfficeHoursAttempt } from './helpers/office-hours-attempt';
 import { judgePosture } from './helpers/llm-judge';
 import { spawnSync } from 'child_process';
@@ -64,8 +64,10 @@ describeIfSelected('Office Hours Forcing Energy E2E', ['office-hours-forcing-ene
   });
 
   testConcurrentIfSelected('office-hours-forcing-energy', async () => {
+    const judgeMetadata: Pick<EvalTestEntry, 'judge_scores' | 'judge_reasoning'> = {};
     await runRecordedOfficeHoursAttempt({
       collector: evalCollector,
+      judgeMetadata,
       name: '/office-hours-forcing-energy',
       suite: 'Office Hours Forcing Energy E2E',
       model: 'claude-sonnet-4-6',
@@ -97,6 +99,8 @@ Write Q3 output — the forcing question you would ask this founder — to ${wor
         expect(q3Text.length).toBeGreaterThan(80);
 
         const scores = await judgePosture('forcing', q3Text, signal);
+        judgeMetadata.judge_scores = { axis_a: scores.axis_a, axis_b: scores.axis_b };
+        judgeMetadata.judge_reasoning = scores.reasoning;
         console.log('Forcing energy scores:', JSON.stringify(scores, null, 2));
         expect(scores.axis_a).toBeGreaterThanOrEqual(4);  // stacking_preserved
         expect(scores.axis_b).toBeGreaterThanOrEqual(4);  // domain_matched_consequence
@@ -141,8 +145,10 @@ describeIfSelected('Office Hours Builder Wildness E2E', ['office-hours-builder-w
   });
 
   testConcurrentIfSelected('office-hours-builder-wildness', async () => {
+    const judgeMetadata: Pick<EvalTestEntry, 'judge_scores' | 'judge_reasoning'> = {};
     await runRecordedOfficeHoursAttempt({
       collector: evalCollector,
+      judgeMetadata,
       name: '/office-hours-builder-wildness',
       suite: 'Office Hours Builder Wildness E2E',
       model: 'claude-sonnet-4-6',
@@ -174,6 +180,8 @@ Write your response — the three adjacent unlocks — to ${workDir}/unlocks.md.
         expect(unlocksText.length).toBeGreaterThan(200);
 
         const scores = await judgePosture('builder', unlocksText, signal);
+        judgeMetadata.judge_scores = { axis_a: scores.axis_a, axis_b: scores.axis_b };
+        judgeMetadata.judge_reasoning = scores.reasoning;
         console.log('Builder wildness scores:', JSON.stringify(scores, null, 2));
         expect(scores.axis_a).toBeGreaterThanOrEqual(4);  // unexpected_combinations
         expect(scores.axis_b).toBeGreaterThanOrEqual(4);  // excitement_over_optimization

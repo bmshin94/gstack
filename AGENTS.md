@@ -121,11 +121,17 @@ When fixing failures or preparing `/ship`, follow this order:
 1. List the known failing cases, their logs and source revision, the demonstrated
    cause, and the smallest check that can prove each repair. Keep one current
    list in `.context/`; update it instead of starting overlapping repair plans.
+   Reconcile the runner's failure total with named failures and unhandled or
+   module-load errors; the named-test footer alone is not the complete inventory.
 2. Resolve base-branch integration and assign one owner per shared file before
    editing. Keep repairs within the observed failures and the user's scope.
    Before a fixture writes through a link, resolve its target and verify it stays
    inside that fixture's temporary root; live skill registrations can point back
    into this checkout.
+   When upstream replaces a helper API, inventory every direct caller, mock
+   adapter, source snapshot, generated golden, and selection edge before choosing
+   focused checks. Verify extracted test adapters supply the current imports and
+   result schema; an adapter failure is not evidence that production failed.
    Schedule independent checks independently. Gate a check only on inputs or
    prerequisites it actually needs; an unrelated failure must not serialize the
    whole validation plan. Keep source fixed while tests live-link its files.

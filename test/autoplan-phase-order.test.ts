@@ -111,16 +111,19 @@ describe('autoplan phase order (Eng always last)', () => {
       expect(start).toBeGreaterThan(-1);
       expect(end).toBeGreaterThan(start);
       const block = skill.slice(start, end);
-      const loads = [...block.matchAll(/Read `([^`]+\/SKILL\.md)` in full now/g)];
-      expect(loads.map(match => match[1])).toEqual([
-        `~/.claude/skills/gstack/plan-${name}-review/SKILL.md`,
-      ]);
-      // A phase cannot execute its carved body (or dispatch a reviewer) first.
-      expect(loads[0]!.index).toBeLessThan(block.indexOf('> **STOP.**'));
       const child = name === 'devex' ? 'dx' : name;
       expect(block).toContain(`/autoplan/sections/${child}-phase.md`);
+      // The phase checkpoint binds the installed host's complete methodology.
+      // A second runtime-root Read would select another harness's skill.
+      expect(block).not.toMatch(/^Read `[^`]+\/SKILL\.md` in full now/gm);
+      const phase = read(`autoplan/sections/${child}-phase.md`);
+      const load = phase.indexOf('Before dispatch, Read `methodologyPath`');
+      expect(load).toBeGreaterThanOrEqual(0);
+      expect(phase).toContain(`methodology ${child} "<REVIEW_SKILL>" "<RESTORE_PATH>"`);
+      expect(phase).toContain('per `readRanges`; log successful ranges/total to EOF');
+      expect(load).toBeLessThan(phase.indexOf(`create ${child} `));
       if (id === '2' || id === '2.5') {
-        expect(block.indexOf('**Skip condition:**')).toBeLessThan(loads[0]!.index!);
+        expect(block.indexOf('**Skip condition:**')).toBeLessThan(block.indexOf('> **STOP.**'));
       }
     }
     const gate = skill.indexOf('## Phase 4: Final Approval Gate');

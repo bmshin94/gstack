@@ -3,7 +3,9 @@ import * as path from 'node:path';
 import { readOwnedClaudeTranscript } from './owned-claude-transcript';
 import type { ClaudePtySession } from './claude-pty-runner';
 
-type SeedSession = Pick<ClaudePtySession, 'pid' | 'exited' | 'hermeticConfigDir' | 'send' | 'sendKey' | 'currentScreen' | 'mark'>;
+type SeedSession = Pick<ClaudePtySession, 'pid' | 'exited' | 'hermeticConfigDir' | 'send' | 'sendKey' | 'mark'> & {
+  currentScreen: ClaudePtySession['currentScreenFrame'];
+};
 export class PlanSeedTimeout extends Error {}
 
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;

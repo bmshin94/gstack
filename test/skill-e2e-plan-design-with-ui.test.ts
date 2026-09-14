@@ -11,10 +11,8 @@
 import { test } from 'bun:test';
 import { PTY_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
-import { seedPlanReviewProject } from './helpers/ceo-finding-fixture';
-import { createDesignReviewPicker, seedDesignBoardActorProtocol } from './helpers/plan-review-board-feedback';
+import { createDesignReviewPicker, DESIGN_BOARD_ACTOR_PROTOCOL } from './helpers/plan-review-board-feedback';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   runPlanSkillCounting,
@@ -26,7 +24,7 @@ const ROOT = path.resolve(import.meta.dir, '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'plans', 'ui-heavy-feature.md');
 
 const designFocusBoundary = (fp: AskUserQuestionFingerprint): boolean =>
-  (fp.questions ?? []).some(({ question }) => {
+  fp.nativeCall?.answered === true && !fp.nativeCall.failed && fp.nativeCall.questions.some(({ question }) => {
     const text = question.trim().replace(/^D\d+(?:\.\d+)?\s*[—–:-]\s*/i, '');
     // Require the source Step 0D question or its retained native paraphrase.
     // A target menu can mention a design system without reviewing this plan.
@@ -38,7 +36,7 @@ const designFocusBoundary = (fp: AskUserQuestionFingerprint): boolean =>
 // Both the question and an offered remedy must describe concrete UI behavior.
 const uiChoice = /\b(?:layout|compos(?:e|ed|ition)|anchor|regions?|panels?|notifications?|activity|quick actions?|loading|skeletons?|empty|errors?|success|modals?|toasts?|buttons?|links?|copy|typography|fonts?|spacing|contrast|colors?|breakpoints?|responsive|keyboard|focus (?:order|trap|management)|aria|a11y|accessibility)\b/i;
 const designReviewFinding = (fp: AskUserQuestionFingerprint): boolean =>
-  !designFocusBoundary(fp) && (fp.questions ?? []).some(({ question, options }) => {
+  fp.nativeCall?.answered === true && !fp.nativeCall.failed && !designFocusBoundary(fp) && fp.nativeCall.questions.some(({ question, options }) => {
     const title = question.split(/\r?\n/, 1)[0]!.trim().replace(/^D\d+(?:\.\d+)?\s*[—–:-]\s*/i, '');
     const setup = /\b(?:outside (?:design )?voices|cross[ -]project learnings|review (?:target|scope|mode)|what should I (?:design[ -])?review|which (?:artifact|plan|file))\b/i;
     return !setup.test(title) && uiChoice.test(title)
@@ -50,30 +48,40 @@ describeE2E('/plan-design-review with UI scope (gate)', () => {
     'reviews the supplied UI plan through an acknowledged Design finding',
     async () => {
       const startedAt = Date.now();
-      const project = fs.mkdtempSync(path.join(os.tmpdir(), 'design-ui-project-'));
-      try {
-        seedPlanReviewProject(project, fs.readFileSync(FIXTURE, 'utf8'), 'plan-design-review');
-        seedDesignBoardActorProtocol(project);
-        const obs = await runPlanSkillCounting({
-          readDesignArtifacts: true,
-          skillName: 'plan-design-review', slashCommand: '/plan-design-review',
-          followUpPrompt: '', cwd: project,
-          isLastStep0AUQ: designFocusBoundary,
-          isReviewAUQ: designReviewFinding,
-          reviewCountCeiling: 1,
-          questionPick: createDesignReviewPicker({ cwd: project, deadlineAt: startedAt + 600_000 }),
-          timeoutMs: 600_000 - (Date.now() - startedAt),
-        });
-        const focus = obs.fingerprints.findIndex(designFocusBoundary);
-        const postFocus = focus >= 0 && obs.fingerprints.slice(focus + 1).some(fp => !fp.preReview && designReviewFinding(fp));
-        if (obs.outcome !== 'ceiling_reached' || !postFocus) {
-          throw new Error(
-            `plan-design-review with UI scope FAILED: outcome=${obs.outcome}; no acknowledged Design focus and subsequent review question\n` +
-            `--- evidence (last 3KB) ---\n${obs.evidence}`,
-          );
-        }
-      } finally {
-        try { fs.rmSync(project, { recursive: true, force: true }); } catch { /* Preserve the observation failure. */ }
+      const plan = fs.readFileSync(FIXTURE, 'utf8');
+      let picker: ReturnType<typeof createDesignReviewPicker> | undefined;
+      let pickerCwd: string | undefined;
+      const obs = await runPlanSkillCounting({
+        skillName: 'plan-design-review', slashCommand: '/plan-design-review',
+        followUpPrompt: ['Review the supplied UI plan in review-input.md. Read it before',
+          'choosing review scope.', '', plan, '', DESIGN_BOARD_ACTOR_PROTOCOL].join('\n'),
+        fixtureFiles: {'review-input.md': plan},
+        isLastStep0AUQ: designFocusBoundary,
+        isReviewAUQ: designReviewFinding,
+        reviewCountCeiling: 1,
+        pickAUQ: (_routing, active, context) => {
+          const call = active.nativeCall;
+          const index = active.nativeQuestionIndex ?? (call?.questions.length === 1 ? 0 : -1);
+          if (!call && (/\/boards\//.test(active.promptSnippet) || active.options.some(option => /\bSubmitted\b/.test(option.label)))) {
+            throw new Error('Design board choice requires an owned native question');
+          }
+          if (!call || call.answered || call.failed || index < 0 || !call.questions[index]) return null;
+          if (pickerCwd && pickerCwd !== context.cwd) throw new Error('Design board picker fixture changed');
+          pickerCwd = context.cwd;
+          picker ??= createDesignReviewPicker(context);
+          const question = call.questions[index];
+          return picker({...question, multiSelect: question.multiSelect ?? false,
+            options: question.options.map(option => ({...option, description: option.description ?? ''}))});
+        },
+        timeoutMs: 600_000 - (Date.now() - startedAt),
+      });
+      const focus = obs.fingerprints.findIndex(designFocusBoundary);
+      const postFocus = focus >= 0 && obs.fingerprints.slice(focus + 1).some(fp => !fp.preReview && designReviewFinding(fp));
+      if (obs.outcome !== 'ceiling_reached' || !postFocus) {
+        throw new Error(
+          `plan-design-review with UI scope FAILED: outcome=${obs.outcome}; no acknowledged Design focus and subsequent review question\n` +
+          `--- evidence (last 3KB) ---\n${obs.evidence}`,
+        );
       }
     },
     PTY_MS,

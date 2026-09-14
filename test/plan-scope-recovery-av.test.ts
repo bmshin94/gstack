@@ -23,7 +23,9 @@ test('the review handoff repairs a missing public declaration without claiming t
     const start = skill === 'plan-eng-review' ? '### Step 0: Scope Challenge' : '## PRE-REVIEW SYSTEM AUDIT';
     expect(text.indexOf(check)).toBeGreaterThan(text.indexOf('{{PREAMBLE}}'));
     expect(text.indexOf(check)).toBeGreaterThan(text.indexOf(start));
-    expect(text.indexOf(check)).toBeLessThan(text.indexOf(skill === 'plan-eng-review' ? 'Before reviewing anything' : 'Before reviewing the plan, gather context'));
+    const reviewStart = text.indexOf(skill === 'plan-eng-review' ? 'Before reviewing, answer:' : 'Before reviewing the plan, gather context');
+    expect(reviewStart).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf(check)).toBeLessThan(reviewStart);
   }
 });
 

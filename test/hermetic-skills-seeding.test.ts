@@ -198,8 +198,7 @@ describe('hermeticSkillsConfigDir', () => {
 
   test('root router registered as _gstack-command pointing at the root SKILL.md', () => {
     const link = path.join(skillsDir, '_gstack-command', 'SKILL.md');
-    const runtimeRoot = path.join(path.dirname(configDir), 'runtime');
-    expect(fs.realpathSync(link)).toBe(fs.realpathSync(path.join(runtimeRoot, 'SKILL.md')));
+    expect(fs.realpathSync(link)).toBe(fs.realpathSync(path.join(ROOT, 'SKILL.md')));
   });
 
   test('second call returns the cached dir', () => {

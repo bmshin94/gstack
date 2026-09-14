@@ -92,10 +92,10 @@ for (const inheritedTerm of ['dumb', '', 'xterm-256color']) test.skipIf(process.
   const old = process.env.BROWSE_TERMINAL_BINARY; process.env.BROWSE_TERMINAL_BINARY = script;
   const launchedAt = Date.now(); let session: Awaited<ReturnType<typeof launchClaudePty>> | undefined;
   try {
-    session = await launchClaudePty({ cwd: dir, captureScreen: true, permissionMode: 'plan', timeoutMs: 4000, model: 'fixture',
+    session = await launchClaudePty({ cwd: dir, observeScreen: true, permissionMode: 'plan', timeoutMs: 4000, model: 'fixture',
       env: { CLAUDE_CONFIG_DIR: config, SEED_CASE: 'startup-terminal-placeholder-cursor', TERM: inheritedTerm } });
     const seed = '# Real launcher seed\nKeep this exact plan.';
-    await submitPlanSeed(session, seed, { cwd: dir, launchedAt, deadlineAt: launchedAt + 2500,
+    await submitPlanSeed({...session, currentScreen: session.currentScreenFrame}, seed, { cwd: dir, launchedAt, deadlineAt: launchedAt + 2500,
       isQuestionOrPermission: text => isProseAUQVisible(text) || isNumberedOptionListVisible(text) || isPermissionDialogVisible(text) });
     session.send('/plan-eng-review\r'); await Bun.sleep(50);
     const events = fs.readFileSync(path.join(config, 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
@@ -162,7 +162,11 @@ for (const entry of [
       ...(entry.seeded ? { initialPlanContent: plan } : {}), timeoutMs: entry.seeded ? 12000 : 600, model: 'fixture',
       env: { CLAUDE_CONFIG_DIR: config, SEED_CASE: entry.seeded ? 'observation-scope-hint' : 'success', ...entry.env } });
     const launch = JSON.parse(fs.readFileSync(path.join(config, 'launch.json'), 'utf8'));
-    expect(launch.argv).toEqual(['--model', 'fixture', ...(entry.inPlanMode ? ['--permission-mode', 'plan'] : []),
+    const sessionIndex = launch.argv.indexOf('--session-id');
+    if (entry.seeded) expect(launch.argv[sessionIndex + 1]).toMatch(/^[0-9a-f-]{36}$/);
+    else expect(sessionIndex).toBe(-1);
+    expect(entry.seeded ? launch.argv.slice(0, sessionIndex) : launch.argv).toEqual([
+      '--model', 'fixture', ...(entry.inPlanMode ? ['--permission-mode', 'plan'] : []),
       '--strict-mcp-config', ...entry.extraArgs]);
     expect(launch.planModeHint).toBe(entry.expectedHint);
     expect(launch.planModeForce).toBeNull();

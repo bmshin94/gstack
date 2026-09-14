@@ -10,14 +10,16 @@ import { fanoutPass, higherIsBetter20Pct, lowerIsBetter20Pct, OVERLAY_FIXTURES, 
 
 function result(overrides: Partial<AgentSdkResult> = {}): AgentSdkResult {
   return {
-    events: [{ type: 'result', subtype: 'success', result: '{"version":"1.0.0"}', usage: { output_tokens_details: { thinking_tokens: 31 } } }] as AgentSdkResult['events'],
+    events: [systemInit(), { type: 'result', subtype: 'success', result: '{"version":"1.0.0"}', usage: { output_tokens_details: { thinking_tokens: 31 } } }] as AgentSdkResult['events'],
     assistantTurns: [], toolCalls: [], output: 'Version 1.0.0', exitReason: 'success',
     turnsUsed: 3, durationMs: 100, firstResponseMs: 10, maxInterTurnMs: 20,
     costUsd: 0.03, model: 'claude-opus-4-7', sdkVersion: 'test', sdkClaudeCodeVersion: 'test', resolvedBinaryPath: 'test', browseErrors: [], ...overrides,
   };
 }
+function systemInit() { return { type: 'system', subtype: 'init', session_id: 'overlay-measurement' }; }
 function assistant(id: string | undefined, content: unknown[]): AgentSdkResult['assistantTurns'][number] {
-  return { type: 'assistant', message: { id, content } } as AgentSdkResult['assistantTurns'][number];
+  return { type: 'assistant', session_id: 'overlay-measurement', parent_tool_use_id: null,
+    message: { id, role: 'assistant', content } } as AgentSdkResult['assistantTurns'][number];
 }
 function tool(id: string) { return { type: 'tool_use', id, name: 'Read', input: { file_path: `${id}.txt` } }; }
 function fixture(overrides: Partial<OverlayFixture> = {}): OverlayFixture {
@@ -35,7 +37,7 @@ describe('SDK overlay measurements', () => {
     const b = assistant('A', [tool('b')]);
     const cumulative = assistant('A', [tool('a'), tool('b'), tool('c')]);
     const later = assistant('B', [tool('d')]);
-    const events = [first, a, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'a', content: 'read' }] } }, b, cumulative, later];
+    const events = [systemInit(), first, a, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'a', content: 'read' }] } }, b, cumulative, later];
     expect(firstAssistantMessageToolCount(result({ events: events as AgentSdkResult['events'], assistantTurns: [first, a, b, cumulative, later] }))).toBe(3);
   });
   test('does not count calls from a later message after a text-only first message', () => {

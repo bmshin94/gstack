@@ -7,13 +7,21 @@ import type { AgentSdkResult } from './agent-sdk-runner';
  * This measures message batching; it does not establish execution concurrency.
  */
 export function firstAssistantMessageToolCount(result: AgentSdkResult): number {
-  const first = result.assistantTurns[0];
+  if (!result.assistantTurns.length) return 0;
+  const init = result.events.find(event => event.type === 'system' && event.subtype === 'init');
+  const sessionId = init?.session_id;
+  if (typeof sessionId !== 'string' || !sessionId) throw new Error('SDK init has no session_id');
+  // The runner retains child and parent events. Only this session's parent
+  // message can establish the first response or contribute its fragments.
+  const owned = (event: AgentSdkResult['assistantTurns'][number]) =>
+    event.session_id === sessionId && event.parent_tool_use_id === null && event.message?.role === 'assistant';
+  const first = result.assistantTurns.find(owned);
   if (!first) return 0;
   const firstId = first.message?.id;
   if (!firstId) throw new Error('first assistant event has no message.id');
   const calls = new Set<string>();
   for (const event of result.assistantTurns) {
-    if (event.message?.id !== firstId) continue;
+    if (!owned(event) || event.message?.id !== firstId) continue;
     for (const block of event.message.content) {
       if (block.type !== 'tool_use') continue;
       if (!block.id) throw new Error('first-message tool call has no id');

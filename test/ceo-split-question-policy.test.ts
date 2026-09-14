@@ -140,9 +140,15 @@ test('the added-channel policy does not decline features, swaps, examples or a t
   ]) expect(pickCeoSplitQuestion(other)).toBe(pickPlanReviewQuestion(other));
 });
 
-// Import the actual paid case in a separate process with only its provider
-// boundaries mocked. Seeding, chooser wiring, finalization and judgment gating run.
-test.each(['complete', 'timeout'])('actual split registration keeps all five decisions and the native outcome gate: %s', async scenario => {
+// Import the actual paid case with its provider boundary mocked. The caller
+// supplies all five candidates; the native runner owns the workspace and count.
+test.each([
+  { outcome: 'plan_ready', count: 5, passes: true },
+  { outcome: 'completion_summary', count: 5, passes: true },
+  { outcome: 'ceiling_reached', count: 8, passes: true },
+  { outcome: 'plan_ready', count: 3, passes: false },
+  { outcome: 'timeout', count: 5, passes: false },
+])('actual split registration preserves every candidate and its native outcome/count gates: %j', async scenario => {
   const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-cap-registration-')));
   const facts = path.join(temp, 'facts.json');
   const script = path.join(temp, 'registration.test.ts');
@@ -150,54 +156,38 @@ test.each(['complete', 'timeout'])('actual split registration keeps all five dec
 import { describe, expect, mock } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { pickCeoSplitQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/ceo-split-question-policy.ts'))};
 import { CEO_SCOPE_CANDIDATES } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
 import { FORCING_SPLIT_OVERFLOW_CEO } from ${JSON.stringify(path.join(ROOT, 'test/fixtures/forcing-finding-seeds.ts'))};
-const cap = ${JSON.stringify(question())};
-const extraChannel = ${JSON.stringify(extraChannel())};
-const facts = { calls: 0, judgments: 0, cwd: '', selected: [], validated: false };
-const fingerprints = [];
+const facts = { calls: 0, directory: '', candidates: [], validated: false };
 const save = () => fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify(facts));
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
   describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
 }));
 const boundary = () => false;
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))}, () => ({
-  PLAN_SKILL_COUNT_FINALIZE_MS: 10_000, ceoStep0Boundary: boundary,
+  ceoStep0Boundary: boundary,
   runPlanSkillCounting: async opts => {
-    facts.calls++; facts.cwd = opts.cwd; save();
-    expect(opts.questionPick).toBe(pickCeoSplitQuestion);
-    expect(opts.reviewCountCeiling).toBeNull();
+    facts.calls++; save();
+    expect(opts.skillName).toBe('plan-ceo-review');
+    expect(opts.slashCommand).toBe('/plan-ceo-review');
+    expect(opts.cwd).toBeUndefined();
+    expect(opts.reviewCountCeiling).toBe(8);
     expect(opts.isLastStep0AUQ).toBe(boundary);
-    expect(opts.timeoutMs).toBeGreaterThan(0); expect(opts.timeoutMs).toBeLessThanOrEqual(1_500_000);
+    expect(opts.timeoutMs).toBe(1_500_000);
     expect(opts.env).toEqual({ QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' });
-    const input = fs.readFileSync(path.join(opts.cwd, 'review-input.md'), 'utf8');
-    expect(input).toBe(FORCING_SPLIT_OVERFLOW_CEO.replaceAll('/tmp/gstack-test-plan-ceo-split-overflow.md',
-      path.join(opts.cwd, 'gstack-test-plan-ceo-split-overflow.md')));
+    const directory = fs.readdirSync(${JSON.stringify(temp)}).find(name => name.startsWith('gstack-e2e-plan-ceo-split-overflow-'));
+    expect(directory).toBeDefined();
+    facts.directory = path.join(${JSON.stringify(temp)}, directory);
+    const planPath = path.join(facts.directory, 'gstack-test-plan-ceo-split-overflow.md');
+    expect(opts.followUpPrompt).toBe(FORCING_SPLIT_OVERFLOW_CEO.replaceAll('/tmp/gstack-test-plan-ceo-split-overflow.md', planPath));
     for (const target of CEO_SCOPE_CANDIDATES) {
-      const q = { ...cap, header: target.id, question: target.description,
-        options: ['Include', 'Defer to next quarter', 'Cut entirely'].map(label => ({ label, description: '' })) };
-      const selected = opts.questionPick(q); expect(selected).toBe(1);
-      fingerprints.push({ toolUseId: target.id, questions: [q], selectedOptions: [selected] });
-      facts.selected.push(target.id);
+      expect(opts.followUpPrompt).toContain('## ' + target.id + ')');
+      facts.candidates.push(target.id);
     }
-    const selected = opts.questionPick(cap); expect(selected).toBe(2);
-    fingerprints.push({ toolUseId: 'scope-cap', questions: [cap], selectedOptions: [selected] });
-    const extraSelected = opts.questionPick(extraChannel); expect(extraSelected).toBe(2);
-    fingerprints.push({ toolUseId: 'extra-channel', questions: [extraChannel], selectedOptions: [extraSelected] });
     facts.validated = true; save();
-    return { outcome: ${JSON.stringify(scenario)} === 'timeout' ? 'timeout' : 'plan_ready',
-      fingerprints, step0Count: 0, reviewCount: 7, elapsedMs: 1, evidence: 'controlled registration' };
-  },
-}));
-mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
-  evaluatePlanReviewDecisions: async opts => {
-    facts.judgments++; save();
-    expect(opts.fingerprints).toBe(fingerprints); expect(opts.fingerprints).toHaveLength(7);
-    expect(opts.targets).toBe(CEO_SCOPE_CANDIDATES); expect(opts.targets.map(t => t.id)).toEqual(['E1','E2','E3','E4','E5']);
-    expect(opts.kind).toBe('scope'); expect(opts.floor).toBe(4); expect(opts.ceiling).toBeUndefined();
-    expect(opts.deadlineAt).toBeGreaterThan(Date.now()); expect(opts.deadlineAt).toBeLessThanOrEqual(Date.now() + 1_500_000);
-    return { count: 7, coveredTargetIds: opts.targets.map(t => t.id) };
+    return { outcome: ${JSON.stringify(scenario.outcome)}, reviewCount: ${scenario.count},
+      fingerprints: CEO_SCOPE_CANDIDATES.slice(0, ${scenario.count}).map(target => ({preReview: false, promptSnippet: target.description})),
+      step0Count: 0, elapsedMs: 1, evidence: 'controlled registration' };
   },
 }));
 await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-split-overflow.test.ts'))});
@@ -213,10 +203,10 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-split-ove
       new Response(child.stdout).text(), new Response(child.stderr).text()]);
     const observed = JSON.parse(fs.readFileSync(facts, 'utf8'));
     expect(observed.calls, out + err).toBe(1); expect(observed.validated, out + err).toBe(true);
-    expect(observed.selected).toEqual(['E1', 'E2', 'E3', 'E4', 'E5']);
-    expect(observed.judgments).toBe(scenario === 'complete' ? 1 : 0);
-    expect(fs.existsSync(observed.cwd)).toBe(false);
-    expect(exit, out + err).toBe(scenario === 'complete' ? 0 : 1);
-    if (scenario === 'timeout') expect(out + err).toContain('split-overflow test FAILED: outcome=timeout');
+    expect(observed.candidates).toEqual(['E1', 'E2', 'E3', 'E4', 'E5']);
+    expect(fs.existsSync(observed.directory)).toBe(false);
+    expect(exit, out + err).toBe(scenario.passes ? 0 : 1);
+    if (scenario.outcome === 'timeout') expect(out + err).toContain('split-overflow test FAILED: outcome=timeout');
+    if (scenario.count < 4) expect(out + err).toContain('SPLIT-OVERFLOW REGRESSION: reviewCount=3 < FLOOR=4');
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }, 20_000);

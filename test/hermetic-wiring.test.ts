@@ -145,15 +145,15 @@ describe('hermetic wiring tripwire', () => {
     // hermeticSkillsConfigDir() is a BLESSED non-hermetic edge: it registers
     // the LIVE repo tree's skills (the skills are the subject under test).
     // What it must never do is hand children the operator's ~/.claude — the
-    // seeded CLAUDE_CONFIG_DIR lives under the hermetic runRoot, and every
-    // registered document lives in the private runtime refreshed from source.
+    // seeded CLAUDE_CONFIG_DIR lives under the hermetic runRoot, while its
+    // registered documents link directly to the live checkout under test.
     const configDir = hermeticSkillsConfigDir();
     const { runRoot } = getHermeticDirs();
     const operatorClaude = path.join(os.homedir(), '.claude') + path.sep;
     expect(configDir.startsWith(runRoot + path.sep)).toBe(true);
     expect(configDir.startsWith(operatorClaude)).toBe(false);
     const skillsDir = path.join(configDir, 'skills');
-    const runtimeRootReal = fs.realpathSync(path.join(path.dirname(configDir), 'runtime')) + path.sep;
+    const repoRootReal = fs.realpathSync(ROOT) + path.sep;
     for (const entry of fs.readdirSync(skillsDir)) {
       if (entry === 'gstack') {
         const verifyRuntime = (directory: string) => {
@@ -170,10 +170,13 @@ describe('hermetic wiring tripwire', () => {
         verifyRuntime(path.join(skillsDir, entry));
         continue;
       }
-      const target = fs.readlinkSync(path.join(skillsDir, entry, 'SKILL.md'));
-      const resolved = fs.realpathSync(target);
+      const link = path.join(skillsDir, entry, 'SKILL.md');
+      expect(fs.lstatSync(path.dirname(link)).isDirectory()).toBe(true);
+      expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+      const target = fs.readlinkSync(link);
+      const resolved = fs.realpathSync(link);
       expect(resolved.startsWith(operatorClaude), `${entry}: symlink escapes to ${target}`).toBe(false);
-      expect(resolved.startsWith(runtimeRootReal), `${entry}: symlink outside private runtime: ${target}`).toBe(true);
+      expect(resolved.startsWith(repoRootReal), `${entry}: symlink outside checkout: ${target}`).toBe(true);
     }
   });
 });

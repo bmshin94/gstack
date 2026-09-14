@@ -2,7 +2,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 const dir=process.env.CLAUDE_CONFIG_DIR, scenario=process.env.SEED_CASE;
-const sid='aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb', cwd=process.cwd();
+const cliArgs=process.argv.slice(2), sessionIndex=cliArgs.indexOf('--session-id');
+const sid=sessionIndex>=0?cliArgs[sessionIndex+1]:'aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb', cwd=process.cwd();
 const file=path.join(dir,'projects','fixture',sid+'.jsonl');
 const events=path.join(dir,'events.jsonl'), statusFile=path.join(dir,'sessions',process.pid+'.json');
 fs.mkdirSync(path.dirname(file),{recursive:true});fs.mkdirSync(path.dirname(statusFile),{recursive:true});
@@ -76,6 +77,10 @@ process.stdin.on('data',chunk=>{
    if(scenario==='stray-prompt-after-current')process.stdout.write('\r❯ keep this later draft');
   },180);return;
  }
- if(input==='/plan-eng-review\r'){event('slash',input);input='';if(scenario==='observation-scope-hint')process.stdout.write('\r\n❯ 1. Review changes\r\n  2. Keep current plan\r\nEnter to select\r\n');}
+ if(/^\/plan-[a-z-]+\r$/.test(input)){
+  const command=input;event('slash',command);input='';
+  if(scenario==='native-replay')process.emit('gstack-seeded-slash',command);
+  if(scenario==='observation-scope-hint')process.stdout.write('\r\n❯ 1. Review changes\r\n  2. Keep current plan\r\nEnter to select\r\n');
+ }
 });
-setTimeout(()=>process.exit(0),scenario==='observation-scope-hint'?15000:scenario==='wrong-pid'?12000:5000);
+setTimeout(()=>process.exit(0),scenario==='native-replay'?40000:scenario==='observation-scope-hint'?15000:scenario==='wrong-pid'?12000:5000);

@@ -857,8 +857,6 @@ Disabled/unavailable: retain each applicable native pass. Recheck before each ou
 
 ## Phase 1: CEO Review (Strategy & Scope)
 
-Read `~/.claude/skills/gstack/plan-ceo-review/SKILL.md` in full now.
-
 > **STOP.** Before starting Phase 1 (CEO review — always runs, after the Phase 0.5 preflight), Read `~/.claude/skills/gstack/autoplan/sections/ceo-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
 
@@ -876,8 +874,6 @@ Read `~/.claude/skills/gstack/plan-ceo-review/SKILL.md` in full now.
 **Skip condition:** If UI scope was NOT detected in Phase 0, skip this phase
 entirely — do NOT read its section. Log: "Phase 2 skipped — no UI scope detected."
 
-Read `~/.claude/skills/gstack/plan-design-review/SKILL.md` in full now.
-
 > **STOP.** Before starting Phase 2 (design review — ONLY if UI scope was detected in Phase 0; skip the read entirely otherwise), Read `~/.claude/skills/gstack/autoplan/sections/design-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
 
@@ -887,8 +883,6 @@ Read `~/.claude/skills/gstack/plan-design-review/SKILL.md` in full now.
 
 **Skip condition:** If DX scope was NOT detected in Phase 0, skip this phase
 entirely — do NOT read its section. Log: "Phase 2.5 skipped — no developer-facing scope detected."
-
-Read `~/.claude/skills/gstack/plan-devex-review/SKILL.md` in full now.
 
 > **STOP.** Before starting Phase 2.5 (DX review — ONLY if developer-facing scope was detected in Phase 0; skip the read entirely otherwise), Read `~/.claude/skills/gstack/autoplan/sections/dx-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
@@ -906,8 +900,6 @@ Read `~/.claude/skills/gstack/plan-devex-review/SKILL.md` in full now.
 - [ ] Phase-transition summary emitted
 
 ## Phase 3: Eng Review + Dual Voices (always runs, always LAST — the required gate reviews the final amended plan)
-
-Read `~/.claude/skills/gstack/plan-eng-review/SKILL.md` in full now.
 
 > **STOP.** Before starting Phase 3 (eng review — always runs, after the Pre-Phase 3 checklist), Read `~/.claude/skills/gstack/autoplan/sections/eng-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.

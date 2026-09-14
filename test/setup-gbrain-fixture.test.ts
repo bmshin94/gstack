@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { buildHermeticEnv } from './helpers/hermetic-env';
 import type { QueryProvider } from './helpers/agent-sdk-runner';
+import type { EvalCollector, EvalTestEntry } from './helpers/eval-store';
 import { createSetupGbrainSandbox, runSetupGbrainAttempt } from './helpers/setup-gbrain-sandbox';
 import { chooseLocalPgliteFixtureAnswer } from './helpers/setup-gbrain-fixture';
 
@@ -139,6 +140,7 @@ describe('setup-gbrain owned Path 4 fixture', () => {
     let aborted = false;
     let validated = false;
     let aliveAtClose = false;
+    const rows: EvalTestEntry[] = [];
     let release = () => {};
     let timer: ReturnType<typeof setTimeout> | undefined;
     let callerTimer: ReturnType<typeof setTimeout> | undefined;
@@ -166,7 +168,10 @@ describe('setup-gbrain owned Path 4 fixture', () => {
           systemPrompt: '', userPrompt: 'free deadline probe', queryProvider,
           pathToClaudeCodeExecutable: '/nonexistent/free-test-never-spawn-claude',
           signal: controller.signal,
-        }, () => { validated = true; }, mode === 'deadline' ? 250 : 1000);
+        }, () => { validated = true; }, mode === 'deadline' ? 250 : 1000, {
+          collector: { addTest: (row: EvalTestEntry) => rows.push(row) } as EvalCollector,
+          name: 'setup-gbrain-path4-local-pglite', suite: 'setup-gbrain',
+        });
       } catch (error) { failure = String(error); }
       expect(failure).toContain(mode === 'deadline' ? 'attempt exceeded' : 'caller cancellation');
       expect(calls).toBe(1);
@@ -174,6 +179,10 @@ describe('setup-gbrain owned Path 4 fixture', () => {
       expect(closes).toBe(1);
       expect(aliveAtClose).toBe(true);
       expect(validated).toBe(false);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].passed).toBe(false);
+      expect(rows[0].exit_reason).toBe(mode === 'deadline' ? 'timeout' : 'harness_error');
+      expect(rows[0].error).toContain(mode === 'deadline' ? 'attempt exceeded' : 'caller cancellation');
       expect(fs.existsSync(fixture.root)).toBe(false);
       const evidence = JSON.parse(fs.readFileSync(fixture.evidencePath, 'utf8'));
       expect(evidence.stage).toBe('failed');
@@ -193,6 +202,7 @@ describe('setup-gbrain owned Path 4 fixture', () => {
       name: 'validation-cancel', status: 401, originalClaudeMd, sections: ['brain-init.md'], evidenceRoot,
     });
     const controller = new AbortController();
+    const rows: EvalTestEntry[] = [];
     const queryProvider: QueryProvider = () => (async function* () {
       yield { type: 'result', subtype: 'success', num_turns: 0, total_cost_usd: 0 };
     })() as ReturnType<QueryProvider>;
@@ -203,7 +213,13 @@ describe('setup-gbrain owned Path 4 fixture', () => {
       }, async () => {
         await Promise.resolve();
         controller.abort(new Error('caller cancelled during validation'));
-      }, 1000)).rejects.toThrow('caller cancelled during validation');
+      }, 1000, {
+        collector: { addTest: (row: EvalTestEntry) => rows.push(row) } as EvalCollector,
+        name: 'setup-gbrain-path4-local-pglite', suite: 'setup-gbrain',
+      })).rejects.toThrow('caller cancelled during validation');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].passed).toBe(false);
+      expect(rows[0].error).toContain('caller cancelled during validation');
       const evidence = JSON.parse(fs.readFileSync(fixture.evidencePath, 'utf8'));
       expect(evidence.stage).toBe('failed');
       expect(evidence.failure).toContain('caller cancelled during validation');
@@ -225,23 +241,31 @@ describe('setup-gbrain owned Path 4 fixture', () => {
         paths.push(fixture.evidencePath);
         let assertionsRun = false;
         let providerCalls = 0;
+        const rows: EvalTestEntry[] = [];
+        const credentialUrl = ['https://fixture:', 'syntheticStreamCredential923', '@example.test/mcp'].join('');
+        const privateBlock = { type: 'thinking',
+          get thinking(): never { throw new Error('private stream thinking accessed'); },
+          get signature(): never { throw new Error('private stream signature accessed'); } };
         const queryProvider: QueryProvider = (input) => {
           providerCalls++;
           expect(input.options?.env?.GBRAIN_MCP_TOKEN === fixture.token).toBe(true);
           expect(input.options?.env?.HOME).toBe(fixture.home);
           return (async function* () {
-            yield { type: 'system', subtype: 'init', claude_code_version: 'fixture-cli' };
+            yield { type: 'system', subtype: 'init', claude_code_version: 'fixture-cli',
+              get apiKeySource(): never { throw new Error('private init credential field accessed'); } };
             const questions = [{ question: 'Want symbol-aware code search?', options: [{ label: 'Yes, local PGLite' }] }];
             await input.options!.canUseTool!('AskUserQuestion', { questions }, {
               signal: new AbortController().signal, toolUseID: 'fixture-question',
             });
-            yield { type: 'assistant', message: { content: [
-              { type: 'text', text: `synthetic diagnostic ${fixture.token}` },
-              { type: 'tool_use', id: 'tool-1', name: 'Bash', input: { command: 'fixture probe' } },
+            yield { type: 'assistant', message: { content: [privateBlock,
+              { type: 'text', text: `synthetic diagnostic ${fixture.token} ${credentialUrl}` },
+              { type: 'tool_use', id: 'tool-1', name: 'Bash', input: { command: `fixture probe ${credentialUrl}` } },
             ] } };
-            yield { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: `result ${fixture.token}` }] } };
-            if (mode === 'throw') throw new Error(`fixture stream failed ${fixture.token}`);
-            yield { type: 'result', subtype: mode === 'max-turns' ? 'error_max_turns' : 'success', num_turns: 1, total_cost_usd: 0 };
+            yield { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1',
+              content: [privateBlock, { type: 'text', text: `result ${fixture.token} ${credentialUrl}` }] }] } };
+            if (mode === 'throw') throw new Error(`fixture stream failed ${fixture.token} ${credentialUrl}`);
+            yield { type: 'result', subtype: mode === 'max-turns' ? 'error_max_turns' : 'success', num_turns: 1, total_cost_usd: 0,
+              get result(): never { throw new Error('private raw result field accessed'); } };
           })() as ReturnType<QueryProvider>;
         };
         let thrown = '';
@@ -255,20 +279,37 @@ describe('setup-gbrain owned Path 4 fixture', () => {
             assertionsRun = true;
             const before = fs.readFileSync(fixture.evidencePath, 'utf8');
             expect(before.includes(fixture.token)).toBe(false);
+            expect(before).not.toContain('syntheticStreamCredential923');
+            expect(before).not.toContain('thinking');
+            expect(before).not.toContain('apiKeySource');
             expect(JSON.parse(before).stage).toBe('before-assertions');
             if (mode === 'assertion') {
               fs.appendFileSync(path.join(fixture.home, 'CLAUDE.md'), fixture.token);
-              throw new Error(`assertion diagnostic ${fixture.token}`);
+              throw new Error(`assertion diagnostic ${fixture.token} ${credentialUrl}`);
             }
+          }, undefined, {
+            collector: { addTest: (row: EvalTestEntry) => rows.push(row) } as EvalCollector,
+            name: 'setup-gbrain-path4-local-pglite', suite: 'setup-gbrain',
           });
         } catch (error) { thrown = String(error); }
         expect(thrown.includes(fixture.token)).toBe(false);
+        expect(thrown).not.toContain('syntheticStreamCredential923');
         expect(thrown.length > 0).toBe(mode !== 'success');
+        expect(rows).toHaveLength(1);
+        expect(rows[0].passed).toBe(mode === 'success');
+        expect(rows[0].exit_reason).toBe(mode === 'throw' ? 'harness_error' : mode === 'max-turns' ? 'error_max_turns' : 'success');
+        expect(JSON.stringify(rows)).not.toContain(fixture.token);
+        expect(JSON.stringify(rows)).not.toContain('syntheticStreamCredential923');
+        expect(JSON.stringify(rows)).not.toContain('thinking');
+        expect(JSON.stringify(rows)).not.toContain('apiKeySource');
         expect(providerCalls).toBe(1);
         expect(assertionsRun).toBe(mode === 'assertion' || mode === 'success');
         expect(fs.existsSync(fixture.root)).toBe(false);
         const raw = fs.readFileSync(fixture.evidencePath, 'utf8');
         expect(raw.includes(fixture.token)).toBe(false);
+        expect(raw).not.toContain('syntheticStreamCredential923');
+        expect(raw).not.toContain('thinking');
+        expect(raw).not.toContain('apiKeySource');
         const evidence = JSON.parse(raw);
         expect(evidence.stage).toBe(mode === 'success' ? 'passed' : 'failed');
         expect(evidence.configuration.tokenPresent && evidence.configuration.tokenMatches).toBe(true);

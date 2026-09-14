@@ -18,17 +18,20 @@
 //
 // Cost: ~$0.50-$1.00 per run. Periodic-tier (EVALS=1 EVALS_TIER=periodic).
 
-import { test, expect } from 'bun:test';
+import { test, expect, afterAll } from 'bun:test';
 import { CAPTURE_MS } from './helpers/eval-budgets';
-import { describeE2ETier } from './helpers/e2e-gate';
+import { describeE2ETier, e2eTierEnabled } from './helpers/e2e-gate';
 import {
   passThroughNonAskUserQuestion,
   resolveClaudeBinary,
 } from './helpers/agent-sdk-runner';
 import { createSetupGbrainSandbox, runSetupGbrainAttempt, SETUP_GBRAIN_FINALIZE_MS } from './helpers/setup-gbrain-sandbox';
 import { chooseLocalPgliteFixtureAnswer } from './helpers/setup-gbrain-fixture';
+import { EvalCollector } from './helpers/eval-store';
 
 const describeE2E = describeE2ETier('periodic');
+const evalCollector = e2eTierEnabled('periodic') ? new EvalCollector('e2e') : null;
+afterAll(async () => { if (evalCollector) await evalCollector.finalize(); });
 
 describeE2E('/setup-gbrain Path 4 + Step 4d Yes → local PGLite for code', () => {
   test('opt-in flow invokes install + gbrain init + remote MCP register', async () => {
@@ -80,6 +83,8 @@ describeE2E('/setup-gbrain Path 4 + Step 4d Yes → local PGLite for code', () =
       expect(JSON.parse(final.gbrainConfig ?? '{}').engine).toBe('pglite');
       expect(final.claudeMdTokenLeak).toBe(false);
       expect(result.output.includes(fixture.token)).toBe(false);
-    }, CAPTURE_MS - (Date.now() - started));
+    }, CAPTURE_MS - (Date.now() - started), {
+      collector: evalCollector, name: 'setup-gbrain-path4-local-pglite', suite: 'setup-gbrain',
+    });
   }, CAPTURE_MS + SETUP_GBRAIN_FINALIZE_MS);
 });

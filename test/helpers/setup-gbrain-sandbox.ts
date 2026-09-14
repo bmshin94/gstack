@@ -15,12 +15,58 @@ import {
 import { buildSetupGbrainFixture } from './setup-gbrain-fixture';
 import { CAPTURE_MS } from './eval-budgets';
 import { runRecordedOfficeHoursAttempt, OFFICE_HOURS_BUN_GRACE_MS } from './office-hours-attempt';
+import type { EvalCollector, EvalTestEntry } from './eval-store';
+import { redactFindingSpans } from '../../lib/redact-engine';
 
 export const SETUP_GBRAIN_FINALIZE_MS = OFFICE_HOURS_BUN_GRACE_MS;
 
 const ROOT = path.resolve(import.meta.dir, '..', '..');
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const read = (file: string) => fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+const OMITTED = '[Public diagnostics omitted: redaction limit]';
+function redactPublicValue(value: unknown, token: string, unsafe = () => {}): any {
+  if (typeof value === 'string') {
+    const redacted = redactFindingSpans(value.replaceAll(token, '[REDACTED_FIXTURE_TOKEN]'), { repoVisibility: 'private' });
+    if (redacted === null) { unsafe(); return OMITTED; }
+    return redacted;
+  }
+  if (Array.isArray(value)) return value.map(item => redactPublicValue(item, token, unsafe));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+    [redactPublicValue(key, token, unsafe), redactPublicValue(item, token, unsafe)]));
+  return value;
+}
+
+/** Retain the prior Path 4 public projection; SDK private fields are never read. */
+function publicEvents(events: readonly unknown[]): unknown[] {
+  return events.flatMap((event: any) => {
+    if (event.type === 'system' && event.subtype === 'init') return [{
+      type: event.type, subtype: event.subtype, session_id: event.session_id,
+      cwd: event.cwd, model: event.model, tools: event.tools, claude_code_version: event.claude_code_version,
+    }];
+    if (event.type !== 'assistant' && event.type !== 'user') return [];
+    const content = Array.isArray(event.message?.content) ? event.message.content.flatMap((block: any) => {
+      if (block.type === 'text') return [{ type: block.type, text: block.text }];
+      if (block.type === 'tool_use') return [{ type: block.type, id: block.id, name: block.name, input: block.input }];
+      if (block.type === 'tool_result') return [{ type: block.type, tool_use_id: block.tool_use_id,
+        is_error: block.is_error, content: typeof block.content === 'string' ? block.content :
+          Array.isArray(block.content) ? block.content.filter((b: any) => b.type === 'text').map((b: any) => ({ type: 'text', text: b.text })) : [] }];
+      return [];
+    }) : [];
+    return content.length ? [{ type: event.type, session_id: event.session_id,
+      parent_tool_use_id: event.parent_tool_use_id,
+      message: { id: event.message.id, role: event.message.role, content } }] : [];
+  });
+}
+
+function publicDiagnostics(result: AgentSdkResult, token: string) {
+  let unsafe = false;
+  // Redact strings before serialization so credential URLs cannot consume JSON
+  // punctuation or replace the actual assertion outcome with a parse error.
+  const safe = redactPublicValue({ output: result.output, transcript: publicEvents(result.events),
+    browseErrors: result.browseErrors, toolCalls: result.toolCalls }, token, () => { unsafe = true; });
+  return unsafe ? { output: OMITTED, transcript: [], browseErrors: [], toolCalls: [] } : safe;
+}
+
 function parseRecord(text: string | null) {
   if (text === null) return null;
   try { return JSON.parse(text); } catch { return { malformed: true, text }; }
@@ -43,7 +89,7 @@ export async function createSetupGbrainSandbox(options: {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
   const token = `gbrain_fixture_${randomUUID()}`;
-  const redact = (text: string) => text.replaceAll(token, '[REDACTED_FIXTURE_TOKEN]');
+  const redact = (text: string): string => redactPublicValue(text, token);
   const requests: Array<Record<string, unknown>> = [];
   const server = http.createServer((req, res) => {
     let body = '';
@@ -141,7 +187,7 @@ export async function createSetupGbrainSandbox(options: {
       };
       fs.writeFileSync(path.join(evidenceDir, 'fixture.md'), redact(skill), { mode: 0o600 });
       const temporary = path.join(evidenceDir, 'evidence.tmp');
-      fs.writeFileSync(temporary, redact(JSON.stringify(evidence, null, 2)), { mode: 0o600 });
+      fs.writeFileSync(temporary, JSON.stringify(redactPublicValue(evidence, token), null, 2), { mode: 0o600 });
       fs.renameSync(temporary, evidencePath);
     };
     retain({ stage: 'prepared' });
@@ -166,6 +212,7 @@ export async function runSetupGbrainAttempt(
   options: Omit<RunAgentSdkOptions, 'env' | 'workingDirectory' | 'maxRetries'>,
   check: (result: AgentSdkResult) => void | Promise<void>,
   budgetMs = CAPTURE_MS,
+  recording?: { collector: EvalCollector | null; name: string; suite: string },
 ) {
   const events: unknown[] = [];
   const permissions: unknown[] = [];
@@ -202,15 +249,27 @@ export async function runSetupGbrainAttempt(
     // Preserve the SDK's explicit cancellation surface through observation.
     return Object.assign(observed, { close: () => source.close?.() }) as ReturnType<QueryProvider>;
   };
-  const retain = () => !finalized && fixture.retain({
-    stage, configuration, result, events, permissions, failure, elapsedMs: Date.now() - started,
-    modelOutputTokenLeak: result?.output.includes(fixture.token) ?? false,
-  });
+  const retain = () => {
+    if (finalized) return;
+    const diagnostics = result ? publicDiagnostics(result, fixture.token) : undefined;
+    fixture.retain({
+      stage, configuration,
+      result: result ? { exitReason: result.exitReason, durationMs: result.durationMs, costUsd: result.costUsd,
+        turnsUsed: result.turnsUsed, model: result.model, sdkVersion: result.sdkVersion,
+        sdkClaudeCodeVersion: result.sdkClaudeCodeVersion, resolvedBinaryPath: result.resolvedBinaryPath,
+        firstResponseMs: result.firstResponseMs, maxInterTurnMs: result.maxInterTurnMs, ...diagnostics } : undefined,
+      events: publicEvents(events), permissions, failure, elapsedMs: Date.now() - started,
+      modelOutputTokenLeak: result?.output.includes(fixture.token) ?? false,
+    });
+  };
+  const collector = recording?.collector ? { addTest(entry: EvalTestEntry) {
+    recording.collector!.addTest(redactPublicValue(entry, fixture.token));
+  } } as EvalCollector : null;
   try {
     // Work deadline → SDK cancellation → bounded settlement → sanitized
     // evidence → fixture cleanup. Bun's outer timeout includes finalization.
     await runRecordedOfficeHoursAttempt({
-      collector: null, name: 'setup-gbrain', suite: 'setup-gbrain', model: options.model ?? 'sdk-default',
+      collector, name: recording?.name ?? 'setup-gbrain', suite: recording?.suite ?? 'setup-gbrain', model: options.model ?? 'sdk-default',
       budgetMs: Math.max(0, budgetMs - (Date.now() - started)),
       run: async (deadlineSignal) => {
         const signal = options.signal ? AbortSignal.any([options.signal, deadlineSignal]) : deadlineSignal;
@@ -231,7 +290,7 @@ export async function runSetupGbrainAttempt(
           } } : {}),
         });
         if (!finalized) result = captured;
-        return toSkillTestResult(captured);
+        return { ...toSkillTestResult(captured), ...publicDiagnostics(captured, fixture.token) };
       },
       validate: async (_captured, signal) => {
         signal.throwIfAborted();

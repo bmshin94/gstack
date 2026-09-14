@@ -12,7 +12,7 @@ test('section capture keeps the native Read contract, tool availability and work
   fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
 const prompt = await Bun.stdin.text();
 const log = ${JSON.stringify(log)};
-await Bun.write(log, (await Bun.file(log).exists() ? await Bun.file(log).text() : '') + JSON.stringify({args:process.argv.slice(2), config:process.env.CLAUDE_CONFIG_DIR}) + '\\n');
+await Bun.write(log, (await Bun.file(log).exists() ? await Bun.file(log).text() : '') + JSON.stringify({args:process.argv.slice(2), config:process.env.CLAUDE_CONFIG_DIR, prompt}) + '\\n');
 console.log(JSON.stringify({type:'system',subtype:'init'}));
 if (prompt === 'deadline') await Bun.sleep(3000);
 const file = process.cwd() + '/fixture/sections/actual.md';
@@ -55,13 +55,19 @@ console.log(JSON.stringify({plain:plain.exitReason,literal:literal.exitReason,se
     const added = args(1).indexOf('--append-system-prompt');
     expect(added).toBeGreaterThan(-1); expect(args(1)[added + 1]).toBe(literal);
     expect(args(1).filter((_, i) => i !== added && i !== added + 1)).toEqual(args(0));
-    const sectionArgs = args(2), instruction = sectionArgs[sectionArgs.indexOf('--append-system-prompt') + 1];
-    expect(sectionArgs).toContain('--append-system-prompt'); expect(instruction).toContain('native Read tool');
+    const sectionArgs = args(2);
+    const instruction = launches[2].prompt.split('\n').find((line: string) => line.includes('with the Read tool BEFORE'));
+    expect(sectionArgs).not.toContain('--append-system-prompt');
+    expect(instruction).toContain('you MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers');
     expect(instruction).not.toContain('actual.md'); expect(instruction).not.toContain(dir);
     expect(sectionArgs.slice(sectionArgs.indexOf('--allowed-tools') + 1, sectionArgs.indexOf('--allowed-tools') + 8))
       .toEqual(['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent', 'Bash']);
-    for (const launch of launches) {
-      expect(launch.args).not.toContain('--tools'); expect(launch.args).not.toContain('--disallowed-tools');
+    for (const [index, launch] of launches.entries()) {
+      if (index === 2 || index === 3) {
+        const expected = ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent', ...(index === 2 ? ['Bash'] : [])];
+        expect(launch.args[launch.args.indexOf('--tools') + 1]).toBe(expected.join(','));
+      } else expect(launch.args).not.toContain('--tools');
+      expect(launch.args).not.toContain('--disallowed-tools');
       expect(launch.args).toContain('--dangerously-skip-permissions'); expect(launch.args).toContain('--strict-mcp-config');
       expect(launch.args[launch.args.indexOf('--max-turns') + 1]).toBe('7');
       expect(launch.args[launch.args.indexOf('--model') + 1]).toBe('fake-model');

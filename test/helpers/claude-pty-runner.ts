@@ -42,6 +42,10 @@ import { trustDialogInput } from './pty-trust-dialog';
 import { createPtyScreen } from './pty-screen';
 import { isRecordedDxManualNavigation } from './dx-selected-navigation';
 import { engCacheWriterDecision } from './eng-cache-writer-decision';
+import { submitPlanSeed, PlanSeedTimeout } from './plan-seed-submission';
+import { currentFilePermissionTarget, currentBashPermissionCard, currentReadPermissionCard,
+  currentWebFetchPermissionCard, hasCurrentBashPermissionHeading, hasCurrentReadPermissionHeading,
+  hasCurrentWebFetchPermissionHeading } from './plan-skill-questions';
 
 /** Strip ANSI escapes for pattern-matching against visible text. */
 export function stripAnsi(s: string): string {
@@ -136,6 +140,9 @@ export interface ClaudePtySession {
   visibleText(): string;
   /** Flush the opted-in terminal parser and return only its current viewport. */
   currentScreen(): Promise<string>;
+  /** Same decoded viewport with styles and input epoch for acknowledged paste. */
+  currentScreenFrame(): Promise<{ text: string; rawEnd: number;
+    styledText: Array<{ row: number; start: number; text: string; dim: boolean; inverse: boolean }> }>;
   /**
    * Mark the current buffer position. Subsequent waitForAny / visibleSince
    * calls only look at output AFTER this mark. Use to scope assertions to
@@ -364,7 +371,13 @@ function isNativeEditPermissionVisible(visible: string): boolean {
   return /^ {0,3}❯[ \t]*1\.[ \t]*Yes[ \t]*\n {0,3}2\.[ \t]*Yes, and switch to accept edits[^\n]*\n {0,3}3\.[ \t]*No[ \t]*\n\s*Esc to cancel [·•] Tab to amend\s*$/.test(prompt[2]!);
 }
 
-export function isPermissionDialogVisible(visible: string): boolean {
+export function isPermissionDialogVisible(visible: string, includeBoundPermission = false): boolean {
+  // Current cards must satisfy their complete controls before legacy phrases
+  // can classify them. Read and directory access remain ownership-bound opt-ins.
+  if (includeBoundPermission && hasCurrentReadPermissionHeading(visible)) return currentReadPermissionCard(visible) !== null;
+  if (hasCurrentWebFetchPermissionHeading(visible)) return currentWebFetchPermissionCard(visible) !== null;
+  if (hasCurrentBashPermissionHeading(visible)) return currentBashPermissionCard(visible, includeBoundPermission) !== null;
+  if (currentFilePermissionTarget(visible)) return true;
   // Cursor-positioning escapes supply spaces visually, but stripping those
   // escapes leaves labels such as "alwaysallowaccessto" in captured frames.
   const compact = visible.replace(/\s+/g, '');
@@ -372,13 +385,10 @@ export function isPermissionDialogVisible(visible: string): boolean {
   if (/requestedpermissions?to|allowalledits|alwaysallowaccessto|Bashcommand.*requirespermission/i.test(compact)) {
     return true;
   }
-  // Native Write/Edit confirmation captured during the design-count eval.
-  // Require the native footer as well as the file question so an AUQ about
-  // whether the plan should overwrite a file remains a real skill question.
-  if (/Doyouwantto(?:overwrite|create|edit)\S+\?/i.test(compact) &&
-      /Esctocancel[·•]Tabtoamend/i.test(compact)) {
-    return true;
-  }
+  // Main's cursor-positioning capture can collapse the path separator too.
+  // Classification still requires the complete current choices and footer;
+  // this projection never establishes native path ownership for a grant.
+  if (/(?:^|\n)Doyouwantto(?:overwrite|create|edit)[^\s?]+\?\n❯1\.Yes\n(?:2\.No|2\.Yes,andswitchtoacceptedits\(auto-approvefileeditsandcommonfilecommands\)forthissession\n3\.No)\nEsctocancel[·•]Tabtoamend\s*$/.test(visible.replace(/[ \t\r]/g, ''))) return true;
   // Standalone signatures — high specificity, never appear in skill questions.
   if (/requested\s+permissions?\s+to/i.test(visible)) return true;
   // "Yes / Yes, allow all edits / No" shape — file-edit permission grants.
@@ -1565,7 +1575,12 @@ export function createPlanCountPermissionGuard(): (visible: string, completionHi
     // Only the current viewport can establish an actionable permission.
     // Historical file results release a later identical grant, never a menu.
     const candidate = planCountPermissionMenu(visible);
-    if (!candidate) return null;
+    if (!candidate) {
+      // A completed tool row can remain below its old controls. Suppress that
+      // stale menu without making a trailing result an actionable permission.
+      const completed = /\n[\t ]*⎿[\t \u00a0]*(?:Wrote\s*\d+\s*lines?|Added\s*\d+\s*lines?|Removed\s*\d+\s*lines?|Updated\b|Edited\b)[^\n]*\s*$/.exec(visible);
+      return completed && planCountPermissionMenu(visible.slice(0, completed.index)) ? 'handled' : null;
+    }
     const { normalized, cursorAt, prompt, menu } = candidate;
     // A whole quoted pane is source text, even if it contains a native cursor.
     // Returning handled also suppresses the dispatcher's default permission input.
@@ -3725,6 +3740,9 @@ export async function launchClaudePty(
   // Hermetic by default (test/helpers/hermetic-env.ts): operator session
   // context never reaches the child; per-test opts.env merges last.
   let childEnv = hermeticChildEnv(opts.env);
+  // The opted-in viewport emulates xterm; placeholder styles are required to
+  // distinguish an empty suggestion from text the user has actually entered.
+  if (opts.observeScreen) childEnv.TERM = 'xterm-256color';
   let hermeticSkillStateRoot: string | undefined;
   if (opts.seedSkills && hermetic && !opts.env?.CLAUDE_CONFIG_DIR) {
     childEnv.CLAUDE_CONFIG_DIR = hermeticSkillsConfigDir();
@@ -3953,6 +3971,13 @@ export async function launchClaudePty(
       if (screenClosing) await screenClosing;
       if (screenFailure) throw new Error('PTY screen observation failed.', { cause: screenFailure });
       return screen.read();
+    },
+    currentScreenFrame: async () => {
+      if (!screen) throw new Error('PTY screen observation was not enabled for this session.');
+      if (screenClosing) await screenClosing;
+      if (screenFailure) throw new Error('PTY screen observation failed.', { cause: screenFailure });
+      const frame = await screen.readFrame();
+      return {text: frame.text, rawEnd: frame.inputOffset, styledText: frame.styledText};
     },
     mark,
     visibleSince,
@@ -4191,6 +4216,8 @@ export async function runPlanSkillObservation(opts: {
   trackTokens?: string[];
 }): Promise<PlanSkillObservation> {
   const startedAt = Date.now();
+  const budgetMs = opts.timeoutMs ?? 180_000;
+  const deadlineAt = startedAt + budgetMs;
   // Explicitly identify only a new seeded plan-mode session. Caller-owned
   // resume/session arguments retain their existing behavior.
   const scopeSessionId = opts.initialPlanContent && opts.inPlanMode !== false &&
@@ -4201,35 +4228,44 @@ export async function runPlanSkillObservation(opts: {
     cwd: opts.cwd,
     timeoutMs: (opts.timeoutMs ?? 180_000) + 30_000,
     extraArgs: [...(opts.extraArgs ?? []), ...(scopeSessionId ? ['--session-id', scopeSessionId] : [])],
-    env: opts.env,
+    env: {
+      ...(opts.inPlanMode !== false && !opts.extraArgs?.some(arg => /^--permission-mode(?:=|$)/.test(arg))
+        ? { GSTACK_PLAN_MODE: 'active' } : {}),
+      ...opts.env,
+    },
     model: opts.model,
     seedSkills: true,
     observeScreen: !!opts.initialPlanContent,
   });
 
   try {
-    // Boot grace + trust-dialog auto-handle.
-    await Bun.sleep(8000);
+    const preflightTimeout = (summary: string): PlanSkillObservation => ({
+      outcome: 'timeout', summary, evidence: session.visibleText().slice(-2000),
+      elapsedMs: Date.now() - startedAt,
+      proseAUQEverObserved: false, waitingEverObserved: false,
+      scopeGateQuestionObserved: false, scopeGateAutoSelectObserved: false,
+      ...(opts.trackTokens?.length ? { tokensObserved: Object.fromEntries(opts.trackTokens.map(t => [t, false])) } : {}),
+    });
+    // Entry deadline → boot → owned paste/receipt/ack → slash → observation.
+    // Setup consumes the existing case budget; cleanup has its separate grace.
+    await Bun.sleep(Math.min(8000, Math.max(0, deadlineAt - Date.now())));
     if (opts.initialPlanContent) {
-      // Pre-pump the draft as a user message so the skill's Step 0 has
-      // concrete content to scope-challenge. The trailing `\r` submits
-      // the message; embedded `\n` are preserved as line breaks within
-      // the message (claude-code uses Enter to send, Shift+Enter for
-      // newlines, but raw `\r` from a PTY just submits whatever's in
-      // the input buffer).
-      const seed = `Please review the following draft plan when I run the skill below:\n\n${opts.initialPlanContent}`;
-      session.send(`${seed}\r`);
-      // Wait for the seed message to render before sending the skill
-      // command. Without this gap the two messages can fuse and the
-      // skill name becomes part of the user prompt instead of a slash
-      // command.
-      await Bun.sleep(3000);
+      const seed = `Keep this draft plan as context. Briefly acknowledge receipt, then wait for my next message containing a slash command. Do not start the review or call tools yet.\n\n${opts.initialPlanContent}`;
+      try {
+        await submitPlanSeed({...session, currentScreen: session.currentScreenFrame}, seed, {
+          cwd: opts.cwd ?? process.cwd(), launchedAt: startedAt, deadlineAt,
+          isQuestionOrPermission: text => isProseAUQVisible(text) || isNumberedOptionListVisible(text) || isPermissionDialogVisible(text),
+        });
+      } catch (error) {
+        if (!(error instanceof PlanSeedTimeout)) throw error;
+        return preflightTimeout(`Plan seed submission failed: ${error.message}`);
+      }
     }
+    if (Date.now() >= deadlineAt) return preflightTimeout('Boot or seed preflight exhausted the existing case budget');
     const commandStartedAt = Date.now();
     const since = session.mark();
     session.send(`/${opts.skillName}\r`);
 
-    const budgetMs = opts.timeoutMs ?? 180_000;
     const start = Date.now();
     let lastJudgeAt = 0;
     let lastJudgeVerdict: PtyStateVerdict | null = null;
@@ -4270,8 +4306,8 @@ export async function runPlanSkillObservation(opts: {
     };
     const JUDGE_AFTER_MS = 60_000;
     const JUDGE_INTERVAL_MS = 30_000;
-    while (Date.now() - start < budgetMs) {
-      await Bun.sleep(2000);
+    while (Date.now() < deadlineAt) {
+      await Bun.sleep(Math.min(2000, Math.max(0, deadlineAt - Date.now())));
       const visible = session.visibleSince(since);
 
       if (session.exited()) {
@@ -4540,7 +4576,8 @@ export async function runPlanSkillCounting(opts: {
    * The first argument retains full pending metadata for existing callers.
    * Native-bound selection uses activeCapture, whose metadata is present only
    * when capturePlanCountQuestion matched the currently visible native question. */
-  pickAUQ?: (fp: AskUserQuestionFingerprint, activeCapture: AskUserQuestionFingerprint) => number | null;
+  pickAUQ?: (fp: AskUserQuestionFingerprint, activeCapture: AskUserQuestionFingerprint,
+    context: Readonly<{ cwd: string; deadlineAt: number }>) => number | null;
   /** Require native completion plus this caller-owned final report before accepting a soft terminal. */
   expectedPlanPath?: string;
   /** Additional versioned files available in the isolated fixture before the skill starts. */
@@ -4595,6 +4632,7 @@ export async function runPlanSkillCounting(opts: {
   }
 
   const fixture = createPlanCountFixture(opts.followUpPrompt, { nativeReviewOnly: true, files: opts.fixtureFiles });
+  const pickerContext = Object.freeze({cwd: fixture.cwd, deadlineAt: startedAt + timeoutMs - cleanupReserveMs});
   const permissionPaths = [
     ...(opts.expectedPlanPath ? [opts.expectedPlanPath, path.join(fixture.cwd, 'PLAN.md')] : []),
     ...(opts.permissionPlanPath ? [opts.permissionPlanPath] : []),
@@ -4876,7 +4914,7 @@ export async function runPlanSkillCounting(opts: {
       // this active UI; an unrelated pending record is not a routing identity.
       const boundNativeTab = pending && fp.nativeCall === pending && fp.nativeQuestionIndex !== undefined;
       const callerPick = !pending || pending.questions.length === 1 || boundNativeTab
-        ? opts.pickAUQ?.(routing, fp) ?? null : null;
+        ? opts.pickAUQ?.(routing, fp, pickerContext) ?? null : null;
       const pickIdx = prerequisitePick ?? callerPick ??
         (isFirstAUQ && opts.firstAUQPick ? opts.firstAUQPick(routing) : defaultPick);
       isFirstAUQ = false;

@@ -10,8 +10,34 @@ const ROOT = path.resolve(import.meta.dir, '..');
 const OLD_VERSION = '1.72.0.0';
 const NEW_VERSION = '1.81.0.0';
 const UPGRADE = `UPGRADE_AVAILABLE ${OLD_VERSION} ${NEW_VERSION}\n`;
-const preamble = fs.readFileSync(path.join(ROOT, 'plan-eng-review', 'SKILL.md'), 'utf8')
-  .match(/## Preamble \(run first\)\n\n```bash\n([\s\S]*?)\n```/)![1];
+function extractPreamble(source: string): string {
+  const heading = /^## Preamble(?: \([^\r\n]*\))?[ \t]*\r?\n/m.exec(source);
+  if (!heading) throw new Error('Generated skill has no Preamble section');
+  const remaining = source.slice(heading.index + heading[0].length);
+  const nextHeading = remaining.search(/^#{1,2} /m);
+  const section = nextHeading < 0 ? remaining : remaining.slice(0, nextHeading);
+  const block = /^```bash\r?\n([\s\S]*?)\r?\n```[ \t]*\r?$/m.exec(section);
+  if (!block) throw new Error('Generated Preamble has no complete Bash block');
+  return block[1];
+}
+
+const preamble = extractPreamble(fs.readFileSync(path.join(ROOT, 'plan-eng-review', 'SKILL.md'), 'utf8'));
+
+describe('generated Preamble extraction', () => {
+  test.each(['run first', 'after scope gate'])('allows guidance before the command (%s)', label => {
+    const source = `## Preamble (${label})\n\n**Before the command below:** resolve the Scope gate.\n\n\`\`\`bash\nprintf first\n\`\`\`\n\n\`\`\`bash\nprintf second\n\`\`\`\n\n## Next section\n`;
+    expect(extractPreamble(source)).toBe('printf first');
+  });
+
+  test.each([
+    '## Other section\n\n```bash\nprintf elsewhere\n```\n',
+    '## Preamble (after scope gate)\n\nNo command.\n\n## Next section\n```bash\nprintf elsewhere\n```\n',
+    '## Preamble (after scope gate)\n\n```sh\nprintf other-language\n```\n',
+    '## Preamble (after scope gate)\n\n```bash\nprintf unclosed\n\n## Next section\n```\n',
+  ])('rejects absent or incomplete Preamble Bash without borrowing another section (%#)', source => {
+    expect(() => extractPreamble(source)).toThrow(/Preamble/);
+  });
+});
 
 function withOldInstall(check: (fixture: {
   home: string;

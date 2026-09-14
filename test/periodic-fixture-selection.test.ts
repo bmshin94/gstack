@@ -120,7 +120,7 @@ test('shared native input dependencies select every PTY consumer without changin
   for (const file of ['test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
     'test/helpers/plan-skill-questions.ts', 'test/plan-skill-questions.test.ts', 'test/fixtures/design-tasks-bash-permission.json', 'test/fixtures/eng-auq-validation-error.json',
     'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts',
-    'test/helpers/plan-skill-question-hook-scope.ts', 'test/plan-skill-question-hook-scope.test.ts']) {
+    'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts']) {
     const result = selectTests([file], E2E_TOUCHFILES);
     expect(result.reason).toBe('diff');
     expect(result.selected.sort()).toEqual(expected);
@@ -129,13 +129,14 @@ test('shared native input dependencies select every PTY consumer without changin
 
 
 test('seed submission dependencies select every seeded caller with its existing tier', () => {
-  const expected = ['conductor-prose', 'plan-design-review-plan-mode', 'plan-eng-review-plan-mode', 'plan-mode-no-op'];
-  for (const file of ['test/helpers/plan-seed-submission.ts', 'test/plan-seed-submission.test.ts', 'test/fixtures/plan-seed-cli.ts']) {
+  const expected = ['auto-decide-preserved', 'conductor-prose', 'plan-ceo-review-plan-mode',
+    'plan-design-review-plan-mode', 'plan-devex-review-plan-mode', 'plan-eng-review-plan-mode', 'plan-mode-no-op'];
+  for (const file of ['test/helpers/fake-plan-seed.ts', 'test/helpers/plan-seed-submission.ts', 'test/plan-seed-submission.test.ts', 'test/fixtures/plan-seed-cli.ts']) {
     const result = selectTests([file], E2E_TOUCHFILES);
     expect(result.reason).toBe('diff');
     expect(result.selected.sort()).toEqual(expected);
   }
-  expect(expected.map(id => E2E_TIERS[id])).toEqual(['periodic', 'periodic', 'periodic', 'gate']);
+  expect(expected.map(id => E2E_TIERS[id])).toEqual(['periodic', 'periodic', 'gate', 'periodic', 'gate', 'periodic', 'gate']);
 });
 
 test('task emission source selects CEO completion consumers', () => {
