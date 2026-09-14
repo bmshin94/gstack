@@ -20,13 +20,14 @@
  * This oracle requires owned hermetic transcripts; EVALS_HERMETIC=0 is unsupported
  * for this case. The shared runner's opt-out behavior is unchanged.
  *
- * Cost: ~$5-8/run, 10-15 min wall clock. Periodic — runs weekly.
+ * Periodic — runs weekly. The complete chain has a 45-minute observation cap;
+ * cost and completion time depend on the actual reviews and correction loops.
  */
 
 import { test } from 'bun:test';
 import { AutoplanFilePermissionViewport, corroboratedAutoplanPhases, observedAutoplanPhases, readAutoplanTranscript, reserveAutoplanFilePermission, retainAutoplanFailure, validateAutoplanPhaseOrder, type AutoplanTranscriptObservation } from './helpers/autoplan-phase-order';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
-import { PTY_LONG_MS } from './helpers/eval-budgets';
+import { AUTOPLAN_CHAIN_BUDGET } from './helpers/autoplan-chain-policy';
 import { describeE2ETier } from './helpers/e2e-gate';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
@@ -65,7 +66,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         const session = await launchClaudePty({
           permissionMode: 'plan',
           cwd: tempDir,
-          timeoutMs: 1_080_000, // 18 min, slightly above test budget
+          timeoutMs: AUTOPLAN_CHAIN_BUDGET.ptyMs,
           seedSkills: true,
           env: { GSTACK_HOME: stateDir },
           captureQuestionsForSession: sessionId,
@@ -91,7 +92,7 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
           const since = session.mark();
           session.send('/autoplan\r');
 
-          const budgetMs = 900_000; // 15 min
+          const budgetMs = AUTOPLAN_CHAIN_BUDGET.workMs;
           const start = Date.now();
           const deadlineAt = start + budgetMs;
           // Phase markers live in autoplan's carved phase sections
@@ -224,6 +225,6 @@ describeE2E('/autoplan chain ordering (periodic)', () => {
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
       }
     },
-    PTY_LONG_MS, // 20 min absolute test ceiling
+    AUTOPLAN_CHAIN_BUDGET.testMs,
   );
 });

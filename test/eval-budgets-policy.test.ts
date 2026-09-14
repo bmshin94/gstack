@@ -18,9 +18,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { ALL_TIERS, PTY_LONG_MS } from './helpers/eval-budgets';
+import { AUTOPLAN_CHAIN_BUDGET } from './helpers/autoplan-chain-policy';
 import { PLAN_SKILL_COUNT_FINALIZE_MS } from './helpers/claude-pty-runner';
 import { isPaidTestFile } from './helpers/paid-test-set';
-import { DEFAULT_SHARD_TIMEOUT_MS } from '../scripts/test-paid-shards';
+import { buildPaidShardArgs, DEFAULT_SHARD_TIMEOUT_MS, resolvePaidShardTimeoutMs, retriesForFiles } from '../scripts/test-paid-shards';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -39,6 +40,33 @@ describe('eval budget tiers', () => {
     const values = Object.values(ALL_TIERS);
     expect([...values].sort((a, b) => a - b)).toEqual(values);
     expect(Math.max(...values)).toBe(PTY_LONG_MS);
+  });
+
+  test('only the complete Autoplan chain receives its bounded orchestration exception', () => {
+    expect(AUTOPLAN_CHAIN_BUDGET).toEqual({ workMs: 2_700_000, ptyMs: 2_880_000, testMs: 3_000_000, fileWallMs: 3_120_000 });
+    expect(AUTOPLAN_CHAIN_BUDGET.workMs).toBeLessThan(AUTOPLAN_CHAIN_BUDGET.ptyMs);
+    expect(AUTOPLAN_CHAIN_BUDGET.ptyMs).toBeLessThan(AUTOPLAN_CHAIN_BUDGET.testMs);
+    expect(AUTOPLAN_CHAIN_BUDGET.testMs + WALL_OVERHEAD_MS).toBe(AUTOPLAN_CHAIN_BUDGET.fileWallMs);
+    const file = 'test/skill-e2e-autoplan-chain.test.ts';
+    for (const spelling of [file, file.replaceAll('/', '\\'), path.join(ROOT, file)]) {
+      expect(resolvePaidShardTimeoutMs([spelling])).toBe(AUTOPLAN_CHAIN_BUDGET.fileWallMs);
+      expect(() => resolvePaidShardTimeoutMs([spelling], DEFAULT_SHARD_TIMEOUT_MS)).toThrow('explicit wall');
+    }
+    expect(resolvePaidShardTimeoutMs([file], 3_180_000)).toBe(3_180_000);
+    const overlay = 'test/skill-e2e-overlay-harness-claude-dedicated-tools-vs-bash.test.ts';
+    for (const group of [[overlay, file], [file, overlay]]) {
+      expect(resolvePaidShardTimeoutMs(group)).toBe(AUTOPLAN_CHAIN_BUDGET.fileWallMs);
+      expect(() => resolvePaidShardTimeoutMs(group, 1_830_000)).toThrow('explicit wall');
+    }
+    expect(retriesForFiles([file])).toBe(0);
+    expect(buildPaidShardArgs([file], resolvePaidShardTimeoutMs([file]), 2, retriesForFiles([file])))
+      .toEqual(['test', file, '--retry', '0', '--concurrent', '--max-concurrency=2', '--timeout=3120000']);
+    for (const other of ['test/skill-e2e-autoplan-dual-voice.test.ts', 'test/skill-e2e-autoplan-chain-extra.test.ts', 'test/skill-e2e-plan-eng-finding-count.test.ts']) {
+      expect(resolvePaidShardTimeoutMs([other])).toBe(DEFAULT_SHARD_TIMEOUT_MS);
+      expect(resolvePaidShardTimeoutMs([other], 1234)).toBe(1234);
+    }
+    expect(PTY_LONG_MS).toBe(1_200_000);
+    expect(DEFAULT_SHARD_TIMEOUT_MS).toBe(1_800_000);
   });
 
   test('counting cases retain 25-minute work budgets including setup, plus cleanup only', () => {

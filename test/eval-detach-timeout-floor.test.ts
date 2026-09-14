@@ -23,6 +23,7 @@ import {
   selectPaidTestFiles,
   DEFAULT_JOBS,
   DEFAULT_SHARD_TIMEOUT_MS,
+  resolvePaidShardTimeoutMs,
   type PaidTier,
 } from '../scripts/test-paid-shards';
 
@@ -40,9 +41,14 @@ function detachTimeoutSeconds(scriptName: string): number {
 }
 
 function worstCaseSeconds(tier: PaidTier): number {
-  const shards = selectPaidTestFiles(collectPaidTestFiles(), tier).selected.length;
+  const files = selectPaidTestFiles(collectPaidTestFiles(), tier).selected;
+  const shards = files.length;
   expect(shards).toBeGreaterThan(0);
-  return Math.ceil(shards / DEFAULT_JOBS) * (DEFAULT_SHARD_TIMEOUT_MS / 1000);
+  // Charge every file-specific excess serially: safe even when those longer
+  // shards land on the same worker. Ordinary shard and detach defaults stay fixed.
+  const extraMs = files.reduce((total, file) => total + Math.max(0,
+    resolvePaidShardTimeoutMs([file]) - DEFAULT_SHARD_TIMEOUT_MS), 0);
+  return (Math.ceil(shards / DEFAULT_JOBS) * DEFAULT_SHARD_TIMEOUT_MS + extraMs) / 1000;
 }
 
 describe('eval:bg detach timeouts cover the sharded runner worst case', () => {
@@ -50,14 +56,14 @@ describe('eval:bg detach timeouts cover the sharded runner worst case', () => {
     ['gate', 'eval:bg:gate'],
     ['periodic', 'eval:bg:periodic'],
   ] as Array<[PaidTier, string]>) {
-    test(`${script} >= ceil(${tier} shards / jobs) x shard timeout x ${MARGIN}`, () => {
+    test(`${script} >= (default ${tier} waves + file-specific overhead) x ${MARGIN}`, () => {
       const floor = Math.ceil(worstCaseSeconds(tier) * MARGIN);
       const configured = detachTimeoutSeconds(script);
       if (configured < floor) {
         throw new Error(
           `${script} --timeout ${configured}s is below the ${tier} tier's worst-case ` +
           `wall clock of ${floor}s (ceil(shards/${DEFAULT_JOBS} jobs) x ` +
-          `${DEFAULT_SHARD_TIMEOUT_MS / 1000}s shard timeout x ${MARGIN} margin). ` +
+          `${DEFAULT_SHARD_TIMEOUT_MS / 1000}s shard timeout + file-specific overhead, x ${MARGIN} margin). ` +
           `An undersized detach watchdog kills healthy runs mid-flight and the tail ` +
           `shards report never-started. Raise the --timeout in package.json or reduce ` +
           `the tier's worst case.`,

@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { seedAutoplanProject } from './helpers/autoplan-fixture';
+import { AUTOPLAN_CHAIN_BUDGET } from './helpers/autoplan-chain-policy';
 import { generateSlugEval, generateSlugSetup } from '../scripts/resolvers/utility';
 import { DESIGN_DOC_DISCOVERY_BLOCK } from '../scripts/resolvers/design-doc-discovery';
 import type { TemplateContext } from '../scripts/resolvers/types';
@@ -285,7 +286,7 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
     expect(discovery).toBe('Design doc found: ' + path.join(cwd, 'DESIGN.md') + '\\n');
     config = path.join(cwd, '.native'); sessionId = opts.captureQuestionsForSession;
     fs.mkdirSync(path.join(config, 'projects', 'fixture'), { recursive: true });
-    expect(opts).toMatchObject({ permissionMode: 'plan', timeoutMs: 1080000, seedSkills: true, captureScreen: true, rows: 120,
+    expect(opts).toMatchObject({ permissionMode: 'plan', timeoutMs: ${AUTOPLAN_CHAIN_BUDGET.ptyMs}, seedSkills: true, captureScreen: true, rows: 120,
       env: { GSTACK_HOME: path.join(opts.cwd, '.gstack') } });
     expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
     return {
@@ -294,7 +295,10 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
       visibleText: () => grants === 2 ? phaseText : '', visibleSince: () => grants === 2 ? phaseText : '',
       currentScreen: async () => {
         frames++; rawEnd = frames < 3 ? 110 : 111;
-        if (mode !== 'progress') clock = facts.startedAt + 900000;
+        // A full chain may finish past the former 15-minute envelope. Actual
+        // deadline and late-completion paths still withhold input and fail.
+        if (mode === 'progress' && grants === 2) clock = facts.startedAt + 900001;
+        if (mode !== 'progress') clock = facts.startedAt + ${AUTOPLAN_CHAIN_BUDGET.workMs};
         if (mode === 'late-completion') {
           fs.writeFileSync(path.join(config, 'projects', 'fixture', sessionId + '.jsonl'),
             JSON.stringify({ type: 'assistant', isSidechain: false, sessionId, message: { role: 'assistant', content: [{ type: 'text', text: phaseText }] } }) + '\\n');
@@ -329,10 +333,12 @@ await import(path.join(root, 'test/skill-e2e-autoplan-chain.test.ts'));
       expect(child.stderr).toContain('outcome=timeout');
       expect(facts.inputs).toEqual(['/autoplan\r']);
       expect(facts.frameInputs).toEqual([]);
-      expect(facts.elapsedMs).toBe(900000);
+      expect(facts.elapsedMs).toBe(AUTOPLAN_CHAIN_BUDGET.workMs);
     } else {
       expect(facts.inputs).toEqual(['/autoplan\r', '1\r', '1\r']);
       expect(facts.frameInputs).toEqual([1, 3]);
+      expect(facts.elapsedMs).toBe(900001);
+      expect(facts.elapsedMs).toBeLessThan(AUTOPLAN_CHAIN_BUDGET.workMs);
       // Immediate native ACKs still need fresh frames, not fixed multi-second waits.
       expect(facts.inputTimes[1] - facts.inputTimes[0]).toBeLessThan(1000);
       expect(facts.inputTimes[2] - facts.inputTimes[1]).toBeLessThan(1000);

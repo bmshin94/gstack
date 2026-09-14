@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.87.1.0] - 2026-09-12
+## [1.87.1.0] - 2026-09-14
 
 ### Fixed
 - `/health` preserves checker exit statuses and complete diagnostics, shows missing coverage, and reports `N/A` when no checks run. Trends compare results with the same coverage.
@@ -15,6 +15,7 @@
 - Browser shutdown drains terminal output and cleans up only the configured server instance. Setup tolerates disappearing process entries; pairing fixtures use checked ports and bounded cleanup. Deprecated-flag scans exclude workspace caches before searching and propagate command and filesystem failures.
 
 ### Changed
+- The full Autoplan chain evaluation has a dedicated 45-minute work limit and 52-minute outer process limit for its sequential reviews. Individual reviewer limits, assertions, retries, and other evaluation budgets are unchanged.
 - Review fixtures provide the application context and independent contracts their assertions require, declare supported editing and feedback interfaces, and verify existing rollback behavior. The DX count scenario covers a bounded onboarding decision checkpoint and defers independent roadmap work. Design evaluations submit real board feedback before acknowledging it and grant image reads only inside their owned artifact directory. Sol evaluations generate skills in private storage without replacing checkout caches. Native fixtures match complete permission text and offered handoff choices. Shared helper and source-template dependencies select the affected evaluations; overlay tests distinguish correctness from performance measurements.
 - Contributor instructions require focused reproductions and adjacent checks before paid evaluations, independent scheduling, launcher preflight with executed-case counts, reuse of passing checks with unchanged inputs, and one full free-suite acceptance run after the code is frozen. Recurring parser failures require checking the supported input class against the pinned runtime.
 

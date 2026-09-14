@@ -67,6 +67,7 @@ import { PERIODIC_CI_EXCLUDE } from '../test/helpers/periodic-exclude-data';
 import { getProjectEvalDir, getClaudeCliVersion, isFinalizedEvalResultFile } from '../test/helpers/eval-store';
 import { preflightAnthropicApi } from '../test/helpers/anthropic-preflight';
 import { OVERLAY_MIN_FILE_WALL_MS } from '../test/helpers/overlay-case-policy';
+import { AUTOPLAN_CHAIN_BUDGET } from '../test/helpers/autoplan-chain-policy';
 import {
   detectBaseBranch,
   getChangedFiles,
@@ -105,11 +106,17 @@ export function isOverlayTestFile(file: string): boolean {
 }
 
 export function resolvePaidShardTimeoutMs(files: string[], explicitTimeoutMs?: number): number {
-  if (files.some(isOverlayTestFile)) {
-    if (explicitTimeoutMs !== undefined && explicitTimeoutMs < OVERLAY_MIN_FILE_WALL_MS) {
-      throw new Error(`Overlay shard requires at least ${OVERLAY_MIN_FILE_WALL_MS}ms; explicit wall ${explicitTimeoutMs}ms cannot preserve its work and finalization budget: ${files.join(' ')}`);
+  const hasAutoplanChain = files.some(file => path.basename(normalizeRelativePath(file)) === 'skill-e2e-autoplan-chain.test.ts');
+  const minimumWallMs = Math.max(
+    files.some(isOverlayTestFile) ? OVERLAY_MIN_FILE_WALL_MS : 0,
+    hasAutoplanChain ? AUTOPLAN_CHAIN_BUDGET.fileWallMs : 0,
+  );
+  if (minimumWallMs > 0) {
+    if (explicitTimeoutMs !== undefined && explicitTimeoutMs < minimumWallMs) {
+      const label = hasAutoplanChain ? 'Autoplan chain' : 'Overlay shard';
+      throw new Error(`${label} requires at least ${minimumWallMs}ms; explicit wall ${explicitTimeoutMs}ms cannot preserve its work and finalization budget: ${files.join(' ')}`);
     }
-    return explicitTimeoutMs ?? OVERLAY_MIN_FILE_WALL_MS;
+    return explicitTimeoutMs ?? minimumWallMs;
   }
   return explicitTimeoutMs ?? DEFAULT_SHARD_TIMEOUT_MS;
 }
@@ -835,8 +842,8 @@ export const RETRY_OVERRIDES: Record<string, number> = {
   'test/skill-e2e-plan-mode-no-op.test.ts': 2,
 };
 
-/** These complete workflows each own a 30-minute process. A Bun retry cannot
- * retain two 25-minute cases, or two 15-minute autoplan work windows plus setup
+/** These complete workflows each own a bounded process. A Bun retry cannot
+ * retain two 25-minute cases, or two full Autoplan chains plus setup
  * and cleanup, inside that same wall. Run once and preserve the real failure;
  * any investigated rerun gets a fresh process and receipt.
  */
