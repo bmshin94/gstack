@@ -1,6 +1,6 @@
 ## Review Sections (11 sections, after scope and mode are agreed)
 
-**Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-11) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
+**Anti-skip rule:** Evaluate Sections 1–10 in full regardless of plan type (strategy, spec, code, infra). Evaluate Section 11 when the accepted scope includes UI; otherwise record `SKIPPED (no UI scope)`. A strategy document still needs the implementation feasibility checks. For an evaluated section with zero findings, say "No issues found" and move on.
 
 **Match the requested deliverable.** In scope prioritization, evaluate all 11 sections for include/defer/cut and feasibility under accepted constraints. Architecture, failure paths, security, dependencies, cost and verification inform these choices; required diagrams and maps show candidate boundaries, failure mechanisms, feasibility conditions and unresolved risks. Resolve material blockers now; reopen priorities on new evidence. Keep non-blocking implementation choices pending with owners and required verification. Ask before expanding into implementation design; do not invent endpoint, method or state-machine contracts. Preserve prior approvals, distinguish unchosen mitigations from approved/verified ones, and report prioritization completion separately from implementation readiness.
 
@@ -8,24 +8,20 @@
 
 ### Working review decisions
 
-Continue Step 0's ledger: ID, owner section, evidence, exact choice/scope, answer reference and status. Retain unchanged contracts, conventions, test coverage and actual earlier decisions. Separate proposed findings from accepted amendments. An approach approves its explicit commitments, not every implementation choice.
+Continue Step 0's six-column ledger. Use its owner field for the review section and retain each row's evidence, current/proposed values and exact approval. An approach approves its explicit commitments, not every implementation choice. For each section, follow these three phases:
 
-Use Step 0D's units: deliverables and exact approvals define boundaries, not issue, method or helper names. Record each commitment's current/proposed value, leaving others fixed or pending. Parameterizing a lookup and batching a per-order loop remain separate decisions even if one helper implements both.
+**Analyze.** Check original input, inspected source and actual approvals before drafting options. Correct source-disproven claims and dependent test/runbook text; the draft cannot authorize baseline changes. Carry contracts and mitigations forward with evidence; later silence does not invalidate them. Surface conflicts with accepted requirements. Unsupported premises stay unknown; unavailable external implementation proves neither failure nor safety. Keep unknown risks, owners and required verification visible; approval does not verify them.
 
-**Analyze.** Check original input, inspected source and actual approvals before drafting options. Correct source-disproven claims and dependent test/runbook text; the draft cannot authorize baseline changes. Surface conflicts with accepted requirements. Unsupported premises stay unknown; unavailable external implementation proves neither failure nor safety.
+**Resolve.** Use the complete four-step procedure in 0D for each new or reopened decision. Resolve each unit in its owner section; earlier sections cross-reference pending rows. Resolve newly discovered critical risks immediately. Cross-reference an exact settled decision instead of asking it again.
 
-Carry contracts and mitigations forward with evidence; later silence does not invalidate them. Reopen only on concrete new evidence or changed assumptions, citing the prior decision and change. Reviewer agreement or your draft's premise is not new evidence. Keep unknown risks, owners and required verification visible; approval does not verify them.
+Apply the three test rules in Step 0D: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Test wording alone does not choose test depth. Parameterizing a lookup and batching a per-order loop remain separate decisions even if one helper implements both; email recovery does not settle instrumentation. Do not invent independent add-ons to fill a third option.
 
-**Resolve.** Resolve each unit in its owner section; earlier sections cross-reference pending rows. Resolve newly discovered critical risks immediately. Topic names do not establish equivalence: different remedies, scope or risks need explicit decisions. Correcting test wording does not choose test depth; email recovery does not settle instrumentation. Obvious recommendations still need approval unless already accepted.
+**Apply.** Update the complete working plan under Step 0's storage policy before advancing:
+1. Before the answer, record only pending issues, evidence and alternatives. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome. For each unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**.
+2. Check every amended commitment against the actual answer or explicit earlier approval. Preserve existing content, approved behavior and its direct implementation/verification, including unchanged success/failure contracts. Surrounding analysis, independent remedies and extra verification depth stay pending. Record only authorized amendments and deferrals in the permitted medium.
+3. Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Carrying a constraint forward does not mean its later section was reviewed. Assemble required outputs after Sections 1–10 and Section 11's findings or no-UI skip are recorded.
 
-Check every offered option against its unit. Independently proposed commitments require separate rows when one can be adopted while another stays unchanged, including an unselected partial-package option. Do not invent independent add-ons to fill a third option. Apply the three test rules in Step 0D: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Reuse is evidence, not consent to other changes. Trace each amendment to its exact accepted option.
-
-**Apply.** Update the complete working plan before advancing, using Step 0's storage policy: scoped Edit when permitted, otherwise full updated chat text marked not persisted. Begin with the supplied input and explicitly accepted decisions.
-1. If the current section has an unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**. Before the answer, you may record only the pending issue, evidence, and alternatives in the ledger. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
-2. Check every amended commitment against the actual answer or explicit earlier approval. Surrounding analysis, independent remedies and extra verification depth stay pending; choosing a remedy does not verify its premise. Preserve existing content, approved behavior and its direct implementation/verification, including unchanged success/failure contracts. Record only authorized amendments and deferrals in the permitted medium. Carrying a constraint forward does not mean its later section was reviewed.
-3. Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Assemble the required outputs and terminal report after all 11 sections have been evaluated.
-
-Approval settles the planning choice; it does not prove the mitigation is implemented or verified. In later sections, cross-reference an exact settled decision instead of asking it again. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
+Approval settles the planning choice; it does not prove the mitigation is implemented or verified. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
 
 ### Section 1: Architecture Review
 Open in your own chat using the Step 0E mode-handoff format and the current ledger dispositions, including actual later scope-answer references. Retain the current mode, rationale and saved-preference attribution when applicable. Keep the original handoff as history; do not reannounce superseded scope as current. Then say `Section 1: Architecture Review`.
@@ -116,20 +112,11 @@ This section traces data through the system and interactions through the UI with
 ```
 For each node: what happens on each shadow path? Is it tested?
 
-**Async ordering:** For flows sharing mutable state, include a combined ASCII
-schedule with one column per operation and one for shared state. For each pair
-of overlapping awaits that can affect an invariant, show both completion orders;
-exclude an order only by naming the mechanism that prevents it. At each `await`,
-callback or job handoff: pause, let a competing operation complete, resume, then
-start a fresh consumer. Show the observed result and compare it with the exact
-caller/time boundary of the stated invariant. The invariant is a requirement,
-not proof that the implementation meets it. If safe, name the mechanism that
-prevents the violating schedule. Separate flow diagrams do not prove ordering.
-One favorable schedule is insufficient. Single-thread execution and atomic calls
-do not prevent interleaving across awaits. An accepted exception needs its exact
-contract clause; bounded damage is insufficient. Test the relevant completion
-orders with controlled pause/release points. Compare relevant pairs; exhaustive
-permutations are unnecessary.
+**Async ordering:** For flows sharing mutable state:
+1. **Define the boundary.** State the invariant and its exact caller/time boundary. Draw a combined ASCII schedule with one column per operation and one for shared state.
+2. **Exercise both orders.** For each pair of overlapping awaits that can affect that invariant, show both completion orders. At each relevant `await`, callback or job handoff: pause, let a competing operation complete, resume, then start a fresh consumer. Exclude an order only by naming the mechanism that prevents it.
+3. **Compare the result.** Show the observed result against the invariant. The invariant is a requirement, not proof that the implementation meets it. If safe, name the mechanism that prevents the violating schedule. Separate diagrams, one favorable schedule, single-thread execution and atomic calls do not prove ordering across awaits. An accepted exception needs its exact contract clause; bounded damage is insufficient.
+4. **Specify regression proof.** Test the relevant completion orders with controlled pause/release points. Compare relevant pairs; exhaustive permutations are unnecessary.
 
 **Interaction Edge Cases:** For every new user-visible interaction, evaluate:
 ```
@@ -196,22 +183,10 @@ For each item in the diagram:
 * What is the failure path test? (Be specific — which failure?)
 * What is the edge case test? (nil, empty, boundary values, concurrent access)
 
-For each behavior, name its observable assertion and a wrong result it rejects.
-First map it to the user's exact requirement or individually approved remedy.
-A stated outcome plus its retained caller contract can already determine the
-assertion, even without assertion syntax. Translate semantic counts, conditions
-and quantifiers exactly; selecting an existing probe or spelling out that check
-is implementation work, not another approval. Never weaken an exact count to a
-lower bound. Reuse these requirements without asking again.
-
-Ask individually only for an unresolved behavioral choice, new outcome, or
-independent uncovered failure mode. Vague success labels do not settle values;
-scope/approach approval does not resolve an individual assertion gap. Helper
-coverage alone does not prove the caller's path. Explain what the existing
-requirement or approved remedy fails to cover before calling a check missing.
-Never silently add, defer or waive a missing behavioral assertion. Keep required
-behaviors mandatory unless the user explicitly approves changing them; honor
-previously accepted risks and equivalent caller coverage.
+For each behavior, complete this assertion check:
+1. **Map the requirement.** Name its observable assertion and a wrong result it rejects. Map it to the user's exact requirement or individually approved remedy. A stated outcome plus its retained caller contract can determine the assertion, even without assertion syntax. Translate semantic counts, conditions and quantifiers exactly; never weaken an exact count to a lower bound.
+2. **Reuse settled proof.** Selecting an existing probe or spelling out a determined check is implementation work, not another approval. Reuse these requirements without asking again. Verify the caller's path; helper coverage alone does not prove it. Honor previously accepted risks and equivalent caller coverage.
+3. **Resolve actual gaps.** Explain what the existing requirement or approved remedy fails to cover before calling a check missing. Ask individually only for an unresolved behavioral choice, new outcome, or independent uncovered failure mode. Vague success labels do not settle values; scope/approach approval does not resolve an individual assertion gap. Never silently add, defer or waive a missing behavioral assertion. Keep required behaviors mandatory unless the user explicitly approves changing them.
 
 Test ambition check (all modes): For each new feature, answer:
 * What's the test that would make you confident shipping at 2am on a Friday?
@@ -337,15 +312,52 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
   in the option itself. Omit irrelevant work, and keep independent findings and
   new TODOs in their own questions.
 * **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference.
-* Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
+* Use the preamble's `D<N>` question heading and A/B/C option labels. Cite the stable ledger ID separately so a reopened question keeps its earlier decision history.
 * **Section decisions:** retain all findings, cross-reference settled decisions, and ask once per unresolved or reopened decision. If none remain, report the section's findings and their existing dispositions, then proceed. If there are zero findings, state "No issues, moving on". An "obvious fix" still needs approval when it is not covered by an exact accepted choice.
+
+## Formatting Rules
+* Keep option labels short; put the complete comparison in the question's brief using 0D and the preamble format.
+* After each section, reconcile its findings with the working ledger. Pause for unresolved or reopened decisions; otherwise continue with the existing dispositions visible.
+* Use **CRITICAL GAP** / **WARNING** / **OK** for scannability.
+
+## Mode Quick Reference
+
+The selected mode changes scope posture, not review coverage. Review every section
+for the accepted scope; Section 11 is skipped only when that scope has no UI.
+
+| Step | SCOPE EXPANSION | SELECTIVE EXPANSION | HOLD SCOPE | SCOPE REDUCTION |
+|------|-----------------|---------------------|------------|-----------------|
+| Scope proposals | Offer additions individually | Offer cherry-picks individually | No expansions | Offer cuts individually |
+| 10x check | Required; additions need approval | Required; additions need approval | Skip | Skip |
+| Platonic ideal | Required | Skip | Skip | Skip |
+| Delight opportunities | At least 5, each opt-in | At least 5, each opt-in | Skip | Skip |
+| Complexity | Review accepted ambition | Review baseline and accepted additions | Simplest correct accepted scope | Minimum valuable scope |
+| Temporal interrogation (0I) | Run | Run | Run | Skip |
+| Error and rescue map | Full accepted scope | Full accepted scope | Full accepted scope | Full remaining scope |
+| Observability and deployment | Review all accepted requirements | Review all accepted requirements | Review all accepted requirements | Review all remaining requirements |
+| Separate CEO archive (0H) | Write | Write | Skip | Skip |
+| Future direction (Section 10) | Review accepted trajectory | Review accepted cherry-picks | Review maintainability; no expansions | Review maintainability of remaining scope |
+| Design (Section 11) | Review if UI scope | Review if UI scope | Review if UI scope | Review if UI scope |
+
+All modes produce approved findings and the required outputs under Step 0's storage policy: save to the permitted active plan, or present in chat as not persisted.
+The separate CEO archive is additional persistence for expansion modes.
+
+## Closing sequence
+
+Complete these stages in order:
+1. **Required Outputs:** resolve TODO decisions, assemble tasks and summaries, then write the review report and perform its Read-back.
+2. **Saved history:** perform permitted handoff cleanup, write the Review Log, then display the dashboard. Unsaved output stays explicitly not persisted.
+3. **Navigation:** choose Next Steps and any docs/designs promotion. Queue the next skill until this review closes. If an answer changes the plan, resolve it through 0D and repeat the affected outputs, report Read-back, log and dashboard in that order.
+4. **Terminal gate:** return to the skeleton's Section self-check and EXIT PLAN MODE GATE. Stop on any unmet check; do not record success or run Closing hooks yet.
+5. **Closing hooks:** after the gate passes, run the hooks below once, then exit or hand off. No plan or approval changes occur after the terminal gate.
 
 ## Required Outputs
 
 Write the prose sections, registries, diagrams, and Markdown Implementation Tasks
 below into the active plan file, reflecting only approved changes. Also show the
 Completion Summary in the conversation. The task JSONL artifact and approved
-TODOS.md updates use their explicit destinations below.
+TODOS.md updates use their explicit destinations below; they are separate from
+the CEO scope archive in 0H.
 
 ### "NOT in scope" section
 List work considered and explicitly deferred, with one-line rationale each.
@@ -464,6 +476,7 @@ After producing the Completion Summary, remove this branch's handoff notes only 
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Resolve SLUG and BRANCH in this shell before matching handoff notes.
 {{SLUG_EVAL}}
 rm -f ~/.gstack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 ```
@@ -484,7 +497,7 @@ contains saved history; it must not be presented as recording this unlogged run.
 The second command records the accepted scope as a durable cross-session decision so the next session sees what was settled (and why) without re-litigating it. It writes to `~/.gstack/` (same pattern as review-log), is non-interactive, and is best-effort (`|| true` — never blocks the review). Substitute `SCOPE_SUMMARY` (e.g. "accepted 4 of 6 proposals" for expansion, or "held scope" / "cut 3 items" for HOLD/REDUCTION) and `VERDICT` (the one-line verdict from the summary).
 
 Before running this command, substitute the placeholder values from the Completion Summary you just produced:
-- **TIMESTAMP**: current ISO 8601 datetime (e.g., 2026-03-16T14:30:00)
+- **TIMESTAMP**: current UTC ISO 8601 datetime (e.g., 2026-03-16T14:30:00Z)
 - **STATUS**: "clean" if 0 unresolved decisions AND 0 critical gaps; otherwise "issues_open"
 - **unresolved**: number from "Unresolved decisions" in the summary
 - **critical_gaps**: number from "Failure modes: ___ CRITICAL GAPS" in the summary
@@ -522,12 +535,13 @@ At the end of the review, if the vision produced a compelling feature direction,
 
 If promoted and those writes are permitted, copy the CEO plan content to `docs/designs/{FEATURE}.md` (create the directory if needed) and update the original CEO plan's `status` from `ACTIVE` to `PROMOTED`. Otherwise present the proposed design document in chat, marked not persisted; do not claim promotion occurred.
 
-## Formatting Rules
-* NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).
-* Label with NUMBER + LETTER (e.g., "3A", "3B").
-* One sentence max per option.
-* After each section, reconcile its findings with the working ledger. Pause for unresolved or reopened decisions; otherwise continue with the existing dispositions visible.
-* Use **CRITICAL GAP** / **WARNING** / **OK** for scannability.
+Return to the skeleton's Section self-check and EXIT PLAN MODE GATE now. Resume
+below only after that gate passes; a failed gate must not emit success telemetry.
+
+## Closing hooks
+
+The review and its approvals are complete. Run these hooks once, in order,
+without changing the plan:
 
 {{LEARNINGS_LOG}}
 
@@ -535,26 +549,11 @@ If promoted and those writes are permitted, copy the CEO plan content to `docs/d
 
 {{BRAIN_WRITE_BACK}}
 
+Run the preamble's **Telemetry (run last)** now, after all skill work above.
+The separate nonblocking cache refresh follows telemetry:
+
 {{BRAIN_CACHE_REFRESH}}
 
-## Mode Quick Reference
-
-The selected mode changes scope posture, not review coverage. Review every section
-for the accepted scope; Section 11 is skipped only when that scope has no UI.
-
-| Step | SCOPE EXPANSION | SELECTIVE EXPANSION | HOLD SCOPE | SCOPE REDUCTION |
-|------|-----------------|---------------------|------------|-----------------|
-| Scope proposals | Offer additions individually | Offer cherry-picks individually | No expansions | Offer cuts individually |
-| 10x check | Required; additions need approval | Required; additions need approval | Skip | Skip |
-| Platonic ideal | Required | Skip | Skip | Skip |
-| Delight opportunities | At least 5, each opt-in | At least 5, each opt-in | Skip | Skip |
-| Complexity | Review accepted ambition | Review baseline and accepted additions | Simplest correct accepted scope | Minimum valuable scope |
-| Temporal interrogation (0I) | Run | Run | Run | Skip |
-| Error and rescue map | Full accepted scope | Full accepted scope | Full accepted scope | Full remaining scope |
-| Observability and deployment | Review all accepted requirements | Review all accepted requirements | Review all accepted requirements | Review all remaining requirements |
-| Separate CEO archive (0H) | Write | Write | Skip | Skip |
-| Future direction (Section 10) | Review accepted trajectory | Review accepted cherry-picks | Review maintainability; no expansions | Review maintainability of remaining scope |
-| Design (Section 11) | Review if UI scope | Review if UI scope | Review if UI scope | Review if UI scope |
-
-All modes produce approved findings and the required outputs under Step 0's storage policy: save to the permitted active plan, or present in chat as not persisted.
-The separate CEO archive is additional persistence for expansion modes.
+Now finish with ExitPlanMode where the host requires it, or return to the calling
+workflow. Then perform the chosen next-skill handoff; do not reopen this review
+or emit a second completion event.

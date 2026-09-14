@@ -717,6 +717,8 @@ Confirm you Read the review section the Section index named, and executed every 
 
 Before summaries, review logs or next-step menus, run approval check 0 below.
 
+After the full gate below passes, run **Closing hooks** in `sections/review-sections.md`, then call ExitPlanMode. Make no further plan or approval changes between verification and exit.
+
 ## EXIT PLAN MODE GATE (BLOCKING)
 
 Before calling ExitPlanMode, run this self-check. If any item fails, do the
@@ -726,10 +728,11 @@ missing work — do NOT call ExitPlanMode:
    Never group distinct issues. Setup, mode, approach and navigation are not approval.
    Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
    record why. Deferrals remain unresolved.
-   The coverage-audit REGRESSION test is already authorized; cite that rule.
-   This exception covers only the regression test, not other findings.
+   Carry forward an exact approved regression contract. Otherwise settle its
+   behavior and assertions in one dedicated decision before adding it to the plan.
    If missing, reset drafts to pending, ask and wait. After answers or resets,
-   refresh the plan, report and review log; rerun this gate.
+   refresh the plan and report, pass the Read-back gate, then update the review
+   log and rerun this gate.
 
 1. Read the plan file with the Read tool (after your most recent write to it).
 2. Confirm the LAST `## ` heading in the file is `## GSTACK REVIEW REPORT`.

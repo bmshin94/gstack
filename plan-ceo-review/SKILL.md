@@ -883,7 +883,7 @@ Keep one decision ledger through Step 0, Spec Review Loop and Outside Voice:
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
 
-Name each decision and its owner. Cite evidence, conventions and test coverage; mark unknowns. Current holds existing/approved values; Proposed holds pending alternatives. Status is unresolved, approved, reopened, deferred or declined. Record the actual instruction or answer reference and its exact scope.
+Name the decision and owner. Cite evidence, conventions and test coverage; mark unknowns. Current = existing/approved values; Proposed = pending alternatives. Status: unresolved, approved, reopened, deferred or declined. Record the actual instruction or answer reference and its exact scope.
 
 ### 0A. Premise Challenge
 1. Is this the right problem? Would another framing be simpler or more impactful?
@@ -918,14 +918,13 @@ Give changes separate rows if one can be selected while another stays unchanged.
 Fill Current and Proposed with behavior, limits, test method and coverage. Under the storage policy, save this pending row or present the complete updated chat plan before comparing options. Do not prewrite approval or implementation tasks.
 
 **3. Compare and save that row's options.**
-Compare 2–3 approaches; prefer 3 for non-trivial plans and explain a lone viable option. Give each a name, 1–2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage. Weigh diff size and long-term architecture equally; a rewrite may be better.
-
-Read every option's label, description and pros/cons. In Proposed, record each commitment as `commitment [source/approval or pending]: current=value; A=value; B=value; C=value`. Use offered options only; include unchanged, pending and shared values. Sharing a test method or framework does not merge test additions that can be accepted separately.
-
-Split independently varying commitments into separate rows. Each option may resolve only one pending choice; keep other commitments fixed or pending, including shared new values. Preserve accepted requirements and their required tests and fixes in every option. Save or present the complete updated plan again before asking.
+- **Options:** Compare 2–3 approaches; prefer 3 for non-trivial plans and explain a lone viable option. For each: name, 1–2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage. Weigh diff size and long-term architecture equally; a rewrite may be better.
+- **Commitment grid:** Audit every option's label, description and pros/cons. In Proposed, record each commitment as `commitment [source/approval or pending]: current=value; A=value; B=value; C=value`. Use offered options only; include unchanged, pending and shared values.
+- **Boundary check:** Split independently varying commitments into separate rows, even when shared by every option. Each option may resolve only one pending choice; keep other commitments fixed or pending. A shared test framework does not merge independently selectable test additions. Preserve accepted requirements and their required tests and fixes in every option.
+- **Save:** Save or present the complete updated plan again before asking.
 
 **4. Ask, record the answer, and amend.**
-Use the preamble's question format, recommendation and preference/session rules. Ask one row per call and cite its ID. Recommendations are not approval.
+Use the preamble's question format, recommendation and preference/session rules. Ask one row per call and cite its ID; recommendations are not approval.
 
 If options differ in coverage, score this row only: 10 covers all its edge cases, 7 the happy path, 3 a shortcut. Otherwise write: "Note: options differ in kind, not coverage — no completeness score."
 
@@ -936,19 +935,22 @@ If all alternatives are declined, continue only when the actual answer keeps a v
 Use this procedure for later new or reopened choices, including Outside Voice. Mode and scope questions use their own menus below. Report settled findings; say "No issues, moving on." only when none remain.
 
 ### 0E. Mode Selection
-The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` controls transport only.
+The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` changes transport only.
 
 1. Use an explicit user mode choice and skip steps 2–3. "Go big", "ambitious" or "cathedral" selects SCOPE EXPANSION; "hold scope but tempt me", "show me options" or "cherry-pick" selects SELECTIVE EXPANSION. Do not ask again.
-2. Otherwise compute a recommendation: SCOPE REDUCTION for >15 planned changed files; else SCOPE EXPANSION for greenfield work, SELECTIVE EXPANSION for enhancements, or HOLD SCOPE for bug fixes/refactors. This step recommends a mode; it does not select one.
-3. Use `question_id=plan-ceo-review-mode` for the preamble's Question Tuning check, marker and log (`auto_decided: true` when automatic). Ask and wait unless the user explicitly selected a mode or tuning is enabled and the actual mode check exits 0 with `AUTO_DECIDE`. Otherwise offer all four modes in one AskUserQuestion, using step 2's context defaults for RECOMMENDATION; the user's choice wins. When `QUESTION_TUNING: false`, skip the lookup. Do NOT emit `Completeness: N/10` per option; use 0D's differences-in-kind note.
+2. Recommend SCOPE REDUCTION for >15 planned changed files; else SCOPE EXPANSION for greenfield work, SELECTIVE EXPANSION for enhancements, or HOLD SCOPE for bug fixes/refactors. This step recommends a mode; it does not select one.
+3. Resolve that recommendation:
+   - When `QUESTION_TUNING: false`, skip the lookup and ask below.
+   - Otherwise check `question_id=plan-ceo-review-mode` through the preamble. Select the recommendation automatically only if that check exits 0 with `AUTO_DECIDE`; emit its marker and log with `auto_decided: true`.
+   - Without that successful check, offer all four modes in one AskUserQuestion, using step 2's recommendation. **STOP for the answer**; the user's choice wins. Use the same ID for its marker and log. Do NOT emit `Completeness: N/10` per option; use 0D's differences-in-kind note.
 
-This settles only the mode, not approach or scope approval. Preserve approved 0D decisions; obtain approval for any mode-required change. Every mode requires explicit user approval for scope changes. The >8-file check applies to HOLD SCOPE and SELECTIVE EXPANSION. Use 0D's question format.
+Mode selection grants no approach or scope approval. Preserve approved 0D decisions; obtain explicit approval for any mode-required change. The >15-file threshold recommends a mode; the >8-file check challenges complexity within HOLD SCOPE and SELECTIVE EXPANSION. Neither threshold authorizes a scope cut.
 
-**Mode handoff:** In normal chat, give the mode, rationale and every governing approved row's ID, answer reference and accepted scope. Do not collapse several choices into one approach.
+**Mode handoff:** Give the mode, rationale and every governing approved row's ID, answer reference and accepted scope. Do not collapse several choices into one approach.
 - `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected mode> (your preference). Change with /plan-tune. Approved decisions: <rows or none>.`
 - Other selections: `Mode: <selected mode>; approved decisions: <rows or none>.`
 
-If 0D needed no new choice, say "No new approach decision was needed" and carry prior approvals forward. Ask before changing the mode.
+If 0D needed no new choice, say "No new approach decision was needed"; carry prior approvals forward. Ask before changing the mode.
 
 Follow the selected mode's route:
 
@@ -958,7 +960,7 @@ Follow the selected mode's route:
 | HOLD SCOPE | 0G → 0I |
 | SCOPE REDUCTION | 0G |
 
-Then read Review Sections; complete all 11 sections, required outputs and terminal review report.
+Then read Review Sections; evaluate Sections 1–10 and Section 11's UI applicability, complete every applicable section, required outputs and terminal review report.
 
 ### 0F. Expansion Framing (shared by EXPANSION and SELECTIVE EXPANSION)
 
@@ -976,7 +978,7 @@ In SELECTIVE EXPANSION, describe benefits and tradeoffs with equal care. Keep th
 4. **Expansion opt-in ceremony:** Present these visions and individual proposals. Recommend enthusiastically and explain each proposal's value; the user decides.
 
 **For SELECTIVE EXPANSION:**
-1. Run both HOLD SCOPE checks below, including their defer/keep decisions.
+1. Run all three HOLD SCOPE checks below, including their defer/keep decisions.
 2. Describe a version that is 10x more ambitious. Run the delight scan above and assess platform potential for other features. Keep these candidates pending until scope answers.
 3. **Cherry-pick ceremony:** Use the 0F framing with S/M/L effort and risk. If there are more than 8, present the top 5–6 and offer the remainder on request.
 
@@ -999,7 +1001,7 @@ Record approved deferrals and context in TODOS.md under the storage policy. Reus
 
 ### 0H. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
 
-Prepare two inputs: the complete amended working plan and the CEO scope summary below. Behavior and requirements belong in the plan; scope decisions belong in the summary. Keep them consistent. The summary cannot replace or reference itself as the plan.
+Prepare two consistent inputs: the complete amended working plan (behavior and requirements) and the CEO scope summary below (scope decisions). The summary cannot replace or reference itself as the plan.
 
 **Save each input under the storage policy.** For a permitted CEO summary directory, prepare:
 
@@ -1011,7 +1013,7 @@ mkdir -p "$CEO_PLANS"
 echo "CEO_PLANS=$CEO_PLANS"
 ```
 
-Use `{printed CEO_PLANS}/{YYYY-MM-DD}-{feature-slug}.md`, deriving the slug from the plan. Offer to archive plans >30 days old or from merged/deleted branches; only with approval move them into `archive/`.
+Use `{printed CEO_PLANS}/{YYYY-MM-DD}-{feature-slug}.md` with the plan's slug. Offer to archive plans >30 days old or from merged/deleted branches; move them to `archive/` only with approval.
 
 **Otherwise:** Present each unsaved input in full under the storage policy. Summary format:
 
@@ -1109,21 +1111,19 @@ Resolve scope and feasibility blockers now. Keep other design choices pending un
   HOUR 4-5 (integration):  What will surprise them?
   HOUR 6+ (polish/tests):  What will they wish they'd planned for?
 ```
-Add this sequence, feasibility blockers and remaining choices to the working plan. These are human-team hours: with CC + gstack, 6 hours becomes ~30–60 minutes (10–20x faster), with identical decisions. Present both effort scales.
+Add the sequence, feasibility blockers and remaining choices to the working plan. Show both effort scales: these are human-team hours; with CC + gstack, 6 hours becomes ~30–60 minutes (10–20x faster), with identical decisions.
 
 Use 0D for urgent decisions; never defer critical risks. Carry the ledger and each answer's exact scope into the review sections.
-
-**STOP.** AskUserQuestion: one tool_use per issue, no batching, even obvious fixes. Recommend + WHY; wait for approval before changing the plan. Zero findings: state "No issues, moving on" and proceed. No code changes; review only.
 
 > **STOP.** Before running the 11-section deep review, required outputs, and review report (only after Step 0 scope and mode are agreed), Read `~/.claude/skills/gstack/plan-ceo-review/sections/review-sections.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
 
 ## Section self-check (before you finish)
 
-Confirm you Read `sections/review-sections.md` and executed its 11-section deep
-review, required outputs and review report from the file, not memory. If you
-produced the Completion Summary or review report without that Read, STOP, Read
-it now and redo the review from the source of truth.
+Confirm you Read `sections/review-sections.md` and executed its review, required
+outputs and report from the file, not memory: Sections 1–10 and Section 11's
+findings or no-UI skip. If the Completion Summary or report preceded that Read,
+STOP, Read the file and redo the review.
 
 Before summaries, review logs or next-step menus, run approval check 0 below.
 
@@ -1138,7 +1138,8 @@ An attempted artifact save that failed still stops the review.
    Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
    record why. Deferrals remain unresolved.
    If missing, reset drafts to pending, ask and wait. After answers or resets,
-   refresh the plan, report and review log; rerun this gate.
+   refresh the plan and report, pass the Read-back gate, then update the review
+   log and rerun this gate.
 
 Before calling ExitPlanMode, verify all five checks:
 1. Read the plan file after your most recent write.
@@ -1153,3 +1154,6 @@ Before calling ExitPlanMode, verify all five checks:
 
 If any check fails, report the missing work and do not call ExitPlanMode. Review
 prose in the plan body cannot replace its separate, terminal structured report.
+
+After this gate passes, return to the section's **Closing hooks**, then exit or
+hand off without further plan changes.

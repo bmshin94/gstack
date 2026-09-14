@@ -19,13 +19,18 @@ A bounded probe answers a named uncertainty about current behavior or an existin
 
 ## Decision procedure
 
-**Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. Use these five steps in Sections 1–4 and the outside review. One finding may raise several choices. Ask about each independently selectable change separately, keeping a short decision record and reusing its ID when reopened.
+**Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. Repeat this five-step loop for each new or reopened choice in Sections 1–4 and the outside review. These are decision steps; the numbered review sections and Test review's coverage steps are separate sequences.
+
+Number findings in the report and give each its severity, confidence and source. Give each independently selectable choice a stable decision ID; one finding may need several IDs. Use the preamble's `D<N>` question title and `A)`, `B)`, `C)` option labels, linking the question to its finding and decision record. A reopened choice keeps its decision ID and gets a new question number. Test stars rate existing test quality; they do not rate findings or decisions.
 
 **1. Check the current plan and evidence.**
 
-Read the request, relevant source and actual answers. Use the latest accepted plan value and exact approved scope, or the original proposal if unapproved. Distinguish this from observed runtime; keep earlier values and answers as history.
+Read the request, relevant source and actual answers. Record two things separately:
 
-Disclose factual corrections without changing behavior. Reopen an approval only for a concrete new risk, contradictory evidence or changed assumption; explain what changed. An uncertain risk may still need a decision. Keep unknowns explicit: a draft value, recommendation or reviewer agreement is not approval.
+- **Plan baseline:** Use the latest accepted plan value and exact approved scope, or the original proposal if unapproved. Keep earlier values and answers as history.
+- **Runtime evidence:** Record what the current code actually does, with its source or probe. For example, an approved 20-second timeout belongs in the plan even while deployed code still uses 10 seconds. Neither value proves the other.
+
+Disclose factual corrections without changing behavior. Reopen an approval only for a concrete new risk, contradictory evidence or changed assumption; explain what changed. Keep unknowns explicit, including uncertain risks that need a decision. A draft value, recommendation or reviewer agreement is not approval.
 
 **2. Separate the choices before drafting options.**
 
@@ -37,7 +42,7 @@ Keep a chosen behavior together with its necessary code, tests and docs. Before 
 
 Each decision record needs:
 - ID, finding and source/reviewer.
-- Current plan value and verification evidence from Step 1.
+- Current plan value and separate runtime evidence from decision step 1.
 - `pending`, or `approved` with the actual option, answer reference and exact scope.
 
 Pending remedies are not accepted work. Required proof of an exact approval is already authorized, including necessary scenarios discovered after Test review. Cite the answer and carry that work forward. If no choice remains pending, report the finding and continue without another question.
@@ -131,25 +136,26 @@ Run the decision gate for this section's new or reopened choices. **STOP for eac
 Complete the chosen Outside Voice branch, including its accurate coverage record. Only completed reviews enter Cross-model tension. Then continue to Required outputs; report disabled or unavailable coverage in the Completion summary.
 
 ## CRITICAL RULE — How to ask questions
-Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
+
+Use the preamble's complete decision brief and the finding/decision/question identities defined above. Do not combine finding numbers and option letters into a second question-label scheme.
+
 * **One new or reopened decision = one AskUserQuestion call.** Never combine independent decisions into one question.
 * Describe the problem concretely, with file and line references.
 * Present 2-3 options, including "do nothing" where that's reasonable. The four-option outside-voice menus above take precedence for those findings.
 * Include each option's effort (human: ~X / CC: ~Y), risk and maintenance burden in the brief audited by the decision gate. Within that decision, recommend the complete option when it costs only marginally more with CC.
 * **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference (DRY, explicit > clever, minimal diff, etc.).
-* Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
 * **Coverage vs kind:** Score completeness only within this one decision. For each question, compare valid options for one recorded decision: coverage varies the depth of its implementation or proof; kind varies the approach. Coverage options receive `Completeness: N/10`: 10 = complete (all relevant in-scope edge cases), 7 = happy path, 3 = shortcut. Kind options receive no score and the line `Note: options differ in kind, not coverage — no completeness score.` Do not score a package of independent policies as more complete, or fabricate scores for different approaches.
-* **No pending decisions:** after the decision gate, report the section's findings and dispositions and proceed if no decision remains. Otherwise, use AskUserQuestion for each new or reopened decision; an "obvious fix" never bypasses approval for an unapproved remedy.
-
-## Formatting rules
-* NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).
-* Label with NUMBER + LETTER (e.g., "3A", "3B").
-* Keep option labels short; include the full decision brief required by the preamble.
-* After each section, report findings and dispositions. Pause only for a pending decision; otherwise continue.
+* Keep option labels short. After each section, report findings and dispositions. Pause for pending decisions; continue when none remain. Exact prior approval still applies.
 
 ## Required outputs
 
-After Sections 1–4 and the Outside Voice path, finish these outputs in order: TODO choices, the remaining output sections, Implementation Tasks, Completion summary, then the report and Read-back gate. Only then write Review Log and display the dashboard. Write narrative outputs to the active plan, or the review response when no plan file is present; use the specified paths for separately named artifacts.
+After Sections 1–4 and the Outside Voice path, follow this closing sequence:
+
+1. Resolve the TODO choices below. Write the remaining output sections, Implementation Tasks and Completion summary from accepted decisions; list pending choices separately. Write narrative outputs to the active plan, or the review response when no plan file is present. Use the specified paths for separate artifacts.
+2. Save the complete plan/report and pass its Read-back gate. Only then write Review Log and display the dashboard. Follow the report's no-file rules when no plan file is in scope.
+3. Complete **Next Steps — Review Chaining** below. That question selects navigation only. If a substantive late change arises, use the decision procedure, then repeat the affected outputs, report save, Read-back gate, Review Log and dashboard in that order.
+4. Return to the entrypoint's Section self-check and EXIT PLAN MODE GATE. Verify the completed review there before running the closing hooks; a next-step answer does not replace that gate.
+5. After the gate passes, run the closing hooks below: learnings and any enabled brain write-back, then the preamble's Telemetry command, then the non-blocking Brain Cache Background Refresh. Here, telemetry is the last reporting command; cache refresh is post-completion housekeeping. Do not start these hooks while a question is pending. Make no further plan or approval changes, then call ExitPlanMode.
 
 ### TODOS.md updates
 Present each potential TODO as its own individual AskUserQuestion. Never batch TODOs — one per question. Never silently skip this step. Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.
@@ -258,14 +264,6 @@ Substitute values from the Completion Summary:
 
 {{REVIEW_DASHBOARD}}
 
-{{LEARNINGS_LOG}}
-
-{{GBRAIN_SAVE_RESULTS}}
-
-{{BRAIN_WRITE_BACK}}
-
-{{BRAIN_CACHE_REFRESH}}
-
 ## Next Steps — Review Chaining
 
 After displaying the Review Readiness Dashboard, check if additional reviews would be valuable. Read the dashboard output to see which reviews have already been run and whether they are stale.
@@ -280,9 +278,25 @@ After displaying the Review Readiness Dashboard, check if additional reviews wou
 
 **Navigation only.** Match task prerequisites, dependencies and execution order to the written plan; do not add or strengthen them in this question or its option descriptions. A test required before editing one function does not make every independent lane wait for it.
 
-If a substantive late change is needed, return to the individual issue-approval loop. After the answer, update the plan's tasks and dependency/parallelization sections, refresh the review report and log, then Read the updated plan and rerun the exit gate before ExitPlanMode. A next-step answer alone approves no implementation change.
+If a substantive late change is needed, return to the decision procedure. After its answer, update the plan's tasks and dependency/parallelization sections, save the refreshed report, and pass the Read-back gate before updating Review Log or the dashboard. Then resume this navigation step. A next-step answer alone approves no implementation change.
 
 Use AskUserQuestion with only the applicable options:
 - **A)** Run /plan-design-review (only if UI scope detected and no design review exists)
 - **B)** Run /plan-ceo-review (only if significant product change and no CEO review exists)
 - **C)** Ready to implement — run /ship when done
+
+## Closing hooks
+
+The entrypoint returns here only after its final gate passes. These hooks do not change the plan or approval record. Review durable operational learnings as required by the preamble, and use the Capture Learnings format below for other discoveries; do not log the same learning twice.
+
+{{LEARNINGS_LOG}}
+
+{{GBRAIN_SAVE_RESULTS}}
+
+{{BRAIN_WRITE_BACK}}
+
+Run the preamble's **Telemetry (run last)** command now, once for this review. Then start the following non-blocking refresh.
+
+{{BRAIN_CACHE_REFRESH}}
+
+Call ExitPlanMode.

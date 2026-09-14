@@ -199,11 +199,14 @@ describe('Eng approved-work decision gate', () => {
     // A reopened row must use its latest accepted plan, not the seed/runtime
     // value, and rebuild all option states before the existing save/ask gate.
     const baseline = gate.slice(stages[0], stages[1]);
-    expect(baseline).toContain('Distinguish this from observed runtime');
+    expect(baseline).toContain('**Plan baseline:**');
+    expect(baseline).toContain('**Runtime evidence:** Record what the current code actually does');
+    expect(baseline).toContain('an approved 20-second timeout belongs in the plan even while deployed code still uses 10 seconds');
+    expect(baseline).toContain('Neither value proves the other');
     expect(baseline).toContain('Use the latest accepted plan value and exact approved scope');
     expect(gate).toContain('`approved` with the actual option, answer reference and exact scope');
     expect(baseline).toContain('or the original proposal if unapproved');
-    expect(baseline).toContain('keep earlier values and answers as history');
+    expect(baseline).toContain('Keep earlier values and answers as history');
     const options = gate.slice(stages[2], stages[3]);
     expect(options).toContain('Use concrete values, not package names');
     expect(options).toContain('For Investigate and Defer, name any bounded investigation and the values left unchanged or pending. Neither approves implementation');
@@ -239,7 +242,7 @@ describe('Eng approved-work decision gate', () => {
     expect(identify).toContain('as current → proposed value');
     expect(identify).toContain('`pending`, or `approved` with the actual option, answer reference and exact scope');
     expect(identify).toContain('ID, finding and source/reviewer');
-    expect(identify).toContain('Current plan value and verification evidence from Step 1');
+    expect(identify).toContain('Current plan value and separate runtime evidence from decision step 1');
     const audit = gate.slice(gate.indexOf('**3.'), gate.indexOf('**4.'));
     expect(audit).toContain("Draft the complete question, recommendation, option labels, descriptions and tradeoffs");
     expect(audit).toContain('Check the entire brief against the grid');
@@ -312,6 +315,39 @@ describe('Eng approved-work decision gate', () => {
     expect(format).not.toContain('per-issue AskUserQuestion');
   });
 
+  test('finding evidence, stable decision identity and question labels have distinct roles', () => {
+    const identity = gate.split('**1.')[0]!;
+    expect(identity).toContain('one finding may need several IDs');
+    expect(identity).toContain('`D<N>` question title');
+    expect(identity).toContain('`A)`, `B)`, `C)` option labels');
+    expect(identity).toContain('A reopened choice keeps its decision ID and gets a new question number');
+    expect(identity).toContain('Test stars rate existing test quality');
+    expect(template).not.toContain('issue NUMBER + option LETTER');
+    expect(template).not.toContain('Label with NUMBER + LETTER');
+  });
+
+  test('navigation and late changes finish before terminal telemetry and cache refresh', () => {
+    const closing = template.split('## Required outputs')[1]!.split('### TODOS.md updates')[0]!;
+    expect(closing).toContain('Read-back gate. Only then write Review Log and display the dashboard');
+    expect(closing).toContain('report save, Read-back gate, Review Log and dashboard in that order');
+    expect(closing).toContain('Do not start these hooks while a question is pending');
+    expect(closing.indexOf("Return to the entrypoint's Section self-check and EXIT PLAN MODE GATE"))
+      .toBeLessThan(closing.indexOf('After the gate passes, run the closing hooks'));
+    expect(closing).toContain('Make no further plan or approval changes, then call ExitPlanMode');
+    const ending = template.slice(template.indexOf('{{REVIEW_DASHBOARD}}'));
+    const stages = ['## Next Steps — Review Chaining', '## Closing hooks', '{{LEARNINGS_LOG}}',
+      '{{BRAIN_WRITE_BACK}}', 'Run the preamble\'s **Telemetry (run last)** command now',
+      '{{BRAIN_CACHE_REFRESH}}'].map(stage => ending.indexOf(stage));
+    expect(stages.every(position => position >= 0)).toBe(true);
+    expect(stages).toEqual([...stages].sort((a, b) => a - b));
+    const navigation = ending.split('## Closing hooks')[0]!;
+    expect(navigation).toContain('pass the Read-back gate before updating Review Log or the dashboard');
+    expect(navigation).toContain('A next-step answer alone approves no implementation change');
+    const skeleton = readFileSync('plan-eng-review/SKILL.md.tmpl', 'utf8');
+    expect(skeleton).toContain('After the full gate below passes, run **Closing hooks**');
+    expect(skeleton).toContain('Make no further plan or approval changes between verification and exit');
+  });
+
   // This parses the actual worked example, not model output or a test-only
   // decision oracle. It proves the instructions expose the observed two-axis
   // option pattern; only native evaluation can prove the model follows them.
@@ -364,11 +400,11 @@ describe('Eng approved-work decision gate', () => {
     expect(normalized).toContain('Apply only those amendments to the working plan with a scoped Edit before taking the next choice');
     expect(normalized).toContain('Independent instrumentation, follow-up work, guarantees or policies need separate choices');
     expect(normalized).toContain('Reopen an approval only for a concrete new risk, contradictory evidence or changed assumption');
-    expect(normalized).toContain('An uncertain risk may still need a decision');
+    expect(normalized).toContain('including uncertain risks that need a decision');
     expect(normalized).toContain('keep other approved values fixed and other pending values undecided');
     expect(normalized).toContain('with their tests conditional on approval');
     expect(normalized).toContain('Retain unresolved risks and required verification');
-    expect(normalized).toContain('a draft value, recommendation or reviewer agreement is not approval');
+    expect(normalized).toContain('A draft value, recommendation or reviewer agreement is not approval');
     expect(normalized).toContain('Keep unknowns explicit');
   });
 

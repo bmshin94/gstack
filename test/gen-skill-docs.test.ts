@@ -1540,7 +1540,9 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
     expect(template).toContain('## Plan under review\n{working plan path, or');
     expect(template).toContain('the complete amended working plan');
-    expect(template).toContain('Behavior and requirements belong in the plan; scope decisions belong in the summary. Keep them consistent');
+    expect(template).toContain('Prepare two consistent inputs:');
+    expect(template).toContain('the complete amended working plan (behavior and requirements)');
+    expect(template).toContain('the CEO scope summary below (scope decisions)');
     expect(template).toContain('The summary cannot replace or reference itself as the plan');
   });
 
@@ -2178,7 +2180,8 @@ describe('Design approval reconciliation', () => {
     expect(gate).toContain('preamble-authorized');
     expect(gate).toContain('record why. Deferrals remain unresolved.');
     expect(gate).toContain('If missing, reset drafts to pending, ask and wait.');
-    expect(gate).toContain('refresh the plan, report and review log; rerun this gate.');
+    expect(gate).toContain('refresh the plan and report, pass the Read-back gate, then update the review');
+    expect(gate).toContain('log and rerun this gate.');
     expect(gate).toContain('after your most recent write to it');
   });
 
@@ -2196,14 +2199,18 @@ describe('Design approval reconciliation', () => {
     expect(gate).toContain('preamble-authorized');
     expect(gate).toContain('record why. Deferrals remain unresolved.');
     expect(gate).toContain('If missing, reset drafts to pending, ask and wait.');
-    expect(gate).toContain('refresh the plan, report and review log; rerun this gate.');
-    expect(check).toContain('Confirm you Read `sections/review-sections.md` and executed its 11-section deep');
-    expect(check).toContain('review, required outputs and review report from the file, not memory.');
-    expect(check).toContain('STOP, Read\nit now and redo the review from the source of truth.');
-    expect(main).toContain('one tool_use per issue, no batching');
-    expect(main).toContain('even obvious fixes');
-    expect(main).toContain('wait for approval before changing the plan');
-    expect(main).toContain('Zero findings: state "No issues, moving on"');
+    expect(gate).toContain('refresh the plan and report, pass the Read-back gate, then update the review');
+    expect(gate).toContain('log and rerun this gate.');
+    expect(check).toContain('Confirm you Read `sections/review-sections.md` and executed its review, required');
+    expect(check).toContain('outputs and report from the file, not memory: Sections 1–10 and Section 11');
+    expect(check).toContain('findings or no-UI skip.');
+    expect(check).toContain('STOP, Read the file and redo the review.');
+    const decisions = main.slice(main.indexOf('### 0D.'), main.indexOf('### 0E.'));
+    expect(decisions).toContain('Ask one row per call and cite its ID');
+    expect(decisions).toContain('**STOP for the actual answer, even for a lone option.**');
+    expect(decisions).toContain('apply only the authorized amendments before the next row');
+    expect(decisions).toContain('Carry exact approvals forward.');
+    expect(decisions).toContain('Report settled findings; say "No issues, moving on." only when none remain.');
   });
 
   test('Eng cannot exit with unasked findings listed only in an unresolved-decisions report', () => {
@@ -2217,10 +2224,12 @@ describe('Design approval reconciliation', () => {
     expect(gate).toContain('Never group distinct issues. Setup, mode, approach and navigation are not approval.');
     expect(gate).toContain('Honor prior exact decisions and preamble-authorized per-issue auto-decisions;');
     expect(gate).toContain('record why. Deferrals remain unresolved.');
-    expect(gate).toContain('The coverage-audit REGRESSION test is already authorized; cite that rule.');
-    expect(gate).toContain('This exception covers only the regression test, not other findings.');
+    expect(gate).toContain('Carry forward an exact approved regression contract.');
+    expect(gate).toContain('behavior and assertions in one dedicated decision before adding it to the plan.');
+    expect(gate).not.toContain('REGRESSION test is already authorized');
     expect(gate).toContain('If missing, reset drafts to pending, ask and wait.');
-    expect(gate).toContain('refresh the plan, report and review log; rerun this gate.');
+    expect(gate).toContain('refresh the plan and report, pass the Read-back gate, then update the review');
+    expect(gate).toContain('log and rerun this gate.');
   });
 
   test('approval entry does not alter other review Exit checklists', () => {
@@ -4195,7 +4204,7 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     const gate = content.slice(stopIdx, modeIdx);
     expect(gate).toContain('Resolve required approaches before 0E');
     expect(gate).toContain('even for a lone option');
-    expect(approach).toContain('Recommendations are not approval');
+    expect(approach).toContain('recommendations are not approval');
     expect(approach).toContain('Ask one row per call and cite its ID');
     expect(gate).toContain('Record its reference and scope in Exact approval and scope');
     expect(gate).toContain('update Status, and apply only the authorized amendments before the next row');

@@ -1185,7 +1185,8 @@ missing work — do NOT call ExitPlanMode:
    Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
    record why. Deferrals remain unresolved.
    If missing, reset drafts to pending, ask and wait. After answers or resets,
-   refresh the plan, report and review log; rerun this gate.
+   refresh the plan and report, pass the Read-back gate, then update the review
+   log and rerun this gate.
 
 1. Read the plan file with the Read tool (after your most recent write to it).
 2. Confirm the LAST `## ` heading in the file is `## GSTACK REVIEW REPORT`.

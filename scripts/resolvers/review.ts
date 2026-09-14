@@ -197,10 +197,11 @@ export function generateExitPlanModeGate(ctx: TemplateContext): string {
    Never group distinct issues. ${noApproval} are not approval.
    Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
    record why. Deferrals remain unresolved.${ctx.skillName === 'plan-eng-review' ? `
-   The coverage-audit REGRESSION test is already authorized; cite that rule.
-   This exception covers only the regression test, not other findings.` : ''}
+   Carry forward an exact approved regression contract. Otherwise settle its
+   behavior and assertions in one dedicated decision before adding it to the plan.` : ''}
    If missing, reset drafts to pending, ask and wait. After answers or resets,
-   refresh the plan, report and review log; rerun this gate.
+   refresh the plan and report, pass the Read-back gate, then update the review
+   log and rerun this gate.
 
 ` : '';
   if (ctx.skillName === 'plan-ceo-review') return `## EXIT PLAN MODE GATE (BLOCKING)

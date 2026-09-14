@@ -54,8 +54,14 @@ test('source and both isolated host renders bind the shared check, marker and lo
  for(const document of [source,...rendered.values()]){
   const id=modeId(document),s=section(document);
   expect(getQuestion(id)).toMatchObject({id:'plan-ceo-review-mode',skill:'plan-ceo-review',category:'routing',door_type:'two-way'});
-  expect(s).toContain("preamble's Question Tuning check, marker and log");
-  expect(s).toContain('`auto_decided: true` when automatic');
+  expect(s).toContain('check `question_id=plan-ceo-review-mode` through the preamble');
+  const automatic=s.split('Select the recommendation automatically')[1]!.split('\n')[0]!;
+  expect(automatic).toContain('only if that check exits 0 with `AUTO_DECIDE`');
+  expect(automatic).toContain('emit its marker and log with `auto_decided: true`');
+  const asked=s.split('Without that successful check,')[1]!.split('\n')[0]!;
+  expect(asked).toContain('offer all four modes in one AskUserQuestion');
+  expect(asked).toContain('**STOP for the answer**');
+  expect(asked).toContain('Use the same ID for its marker and log');
   expect(s).not.toContain('plan-ceo-review-mode-selection');
  }
  for(const document of rendered.values()){
@@ -81,17 +87,23 @@ test('absent, always-ask and foreign preferences do not authorize either host to
 test('only an explicit user selection or enabled successful mode check bypasses asking',()=>{
  for(const document of rendered.values()){
   const s=section(document),q=tuning(document);
-  expect(s).toContain('Ask and wait unless the user explicitly selected a mode or tuning is enabled and the actual mode check exits 0 with `AUTO_DECIDE`');
+  expect(s).toContain('Use an explicit user mode choice and skip steps 2–3');
+  expect(s).toContain('When `QUESTION_TUNING: false`, skip the lookup and ask below');
+  expect(s).toContain('Otherwise check `question_id=plan-ceo-review-mode` through the preamble');
+  expect(s).toContain('Select the recommendation automatically only if that check exits 0 with `AUTO_DECIDE`');
+  expect(s).toContain('**STOP for the answer**');
   expect(document).toContain('Question Tuning (skip entirely if `QUESTION_TUNING: false`)');
   expect(q).toContain('`AUTO_DECIDE` means choose the recommended option');
   expect(q).toContain('Auto-decided [summary] → [option] (your preference). Change with /plan-tune.');
   expect(q).toContain('`ASK_NORMALLY` means ask.');
-  expect(s).toContain('This settles only the mode, not approach or scope approval.');
+  expect(s).toContain('Mode selection grants no approach or scope approval.');
   expect(document).toContain('Resolve required approaches before 0E.');
-  expect(s).toContain('Every mode requires explicit user approval for scope changes.');
-  expect(s).toContain('Preserve approved 0D decisions; obtain approval for any mode-required change.');
+  expect(s).toContain('Preserve approved 0D decisions; obtain explicit approval for any mode-required change.');
   expect(s).toContain('offer all four modes in one AskUserQuestion');
-  expect(s).toContain('context defaults for RECOMMENDATION');
+  expect(s).toContain("using step 2's recommendation");
+  expect(s).toContain('The >15-file threshold recommends a mode');
+  expect(s).toContain('the >8-file check challenges complexity within HOLD SCOPE and SELECTIVE EXPANSION');
+  expect(s).toContain('Neither threshold authorizes a scope cut');
   expect(s).toContain('Do NOT emit `Completeness: N/10` per option');
   expect(s).toContain("use 0D's differences-in-kind note");
   expect(document).toContain('Note: options differ in kind, not coverage — no completeness score.');
