@@ -601,5 +601,123 @@
   ],
   "startedAt": 1789499312528,
   "captureAt": "2026-09-15T19:33:27.540Z",
-  "reportMtimeMs": 1789500302188.9832
+  "reportMtimeMs": 1789500302188.9832,
+  "pendingInvestigationRetry": {
+    "call": {
+      "sessionId": "604c616f-edb2-4d04-bf37-deef45a62a4b",
+      "toolUseId": "toolu_013HczhhaAHx9qtiHfPakYS5",
+      "questions": [
+        {
+          "question": "D15 — Next step after this eng review?\nProject/branch/task: gstack-plan-count-1OoDxf on main, Multi-tenant Auth Refactor plan.\nELI10: The engineering review is done and every P1 fix is approved and specified; one performance follow-up (R6) is intentionally parked until the 5 IDP calls are enumerated. The remaining choice is whether another review pass adds value before coding starts. There is no UI, so design review does not apply.\nStakes if we pick wrong: an unnecessary review costs a session; skipping a needed one risks scope creeping back (TokenStore/RequestPolicy) during implementation.\nRecommendation: C because all blocking decisions are made and scope was already challenged in Step 0; the open item (R6) is a follow-up task (T6), not a blocker.\nNote: options differ in kind, not coverage — no completeness score.\nNet: start T1-T5 now versus one more strategic pass over a scope that was already reduced.",
+          "header": "Next Steps",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "C) Ready to implement (recommended)",
+              "description": "✅ All P1 remedies approved with proof tests; 10 tasks and 4 parallel lanes are laid out. ✅ REGRESSION RULE satisfied by T1 gate before any rewrite. ❌ R6 stays open and must be re-asked after T6, or every cache miss keeps making 5 IDP calls."
+            },
+            {
+              "label": "B) CEO review (/plan-ceo-review)",
+              "description": "✅ Independent challenge of whether the refactor itself is worth 9-10 files this cycle. ✅ Would formalize TokenStore/RequestPolicy deferral at the strategy level. ❌ Scope was already cut 5→3 classes in Step 0; likely re-confirms D4-D6 at the cost of a session."
+            },
+            {
+              "label": "A) Design review (/plan-design-review)",
+              "description": "✅ Would catch UX gaps if any surface existed. ❌ This plan has no UI or user-facing screens; the review would have nothing to evaluate."
+            }
+          ]
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D15 — Next step after this eng review?\nProject/branch/task: gstack-plan-count-1OoDxf on main, Multi-tenant Auth Refactor plan.\nELI10: The engineering review is done and every P1 fix is approved and specified; one performance follow-up (R6) is intentionally parked until the 5 IDP calls are enumerated. The remaining choice is whether another review pass adds value before coding starts. There is no UI, so design review does not apply.\nStakes if we pick wrong: an unnecessary review costs a session; skipping a needed one risks scope creeping back (TokenStore/RequestPolicy) during implementation.\nRecommendation: C because all blocking decisions are made and scope was already challenged in Step 0; the open item (R6) is a follow-up task (T6), not a blocker.\nNote: options differ in kind, not coverage — no completeness score.\nNet: start T1-T5 now versus one more strategic pass over a scope that was already reduced.": "C) Ready to implement (recommended)"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T19:51:51.347Z"
+    },
+    "priorCalls": [
+      {
+        "sessionId": "604c616f-edb2-4d04-bf37-deef45a62a4b",
+        "toolUseId": "toolu_01DtxXQEpE3DjjXwuUbFcLUz",
+        "questions": [
+          {
+            "question": "D12 — R6: Cache per-issuer IDP metadata (discovery doc, JWKS, tenant config) so most validations skip the network entirely?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; Performance review, R5 approved (parallel calls with idpCall wrapper).\nELI10: Parallelizing (R5) turns 5 round trips into 1 round trip of latency, but every cache miss still makes 5 network calls. If some of those 5 fetch things that rarely change for a given IDP issuer (its discovery document, its signing keys, a tenant's config), those responses can be cached per issuer with a TTL and most validations would make 0 or 1 calls. I do not know what the 5 calls are; the plan does not list them. R5 already includes a task to enumerate them. Deciding on caching before that list exists would be guessing.\nStakes if we pick wrong: build a metadata cache for calls that turn out to be all per-token (introspection, userinfo) and it is dead code; skip it when 3 of the 5 are static metadata and you leave a 60-80% network reduction on the table plus an IDP hammering risk at scale.\nRecommendation: C because the R5 enumeration produces exactly the information this decision needs, at no extra cost; choose with facts, not guesses. This is an outside-style policy row: keep other approved choices fixed.\nNote: options differ in kind, not coverage — no completeness score.\nNet: decide now blind vs decide right after a task you are already doing.",
+            "header": "R6 metadata",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "C) Investigate before choosing (recommended)",
+                "description": "✅ The R5 call enumeration (already accepted) tells you which calls are static metadata; this row is re-asked with that list in hand (human: ~1h / CC: ~5 min)\n✅ No dead code and no missed win; the decision waits exactly as long as it needs to\n❌ Leaves one pending row in the ledger; the plan reports it as an unresolved decision until the enumeration is done"
+              },
+              {
+                "label": "A) Apply: add per-issuer metadata cache now",
+                "description": "✅ If the calls include discovery/JWKS/tenant config, cache misses drop to 0-1 network calls and IDP load falls sharply\n✅ JWKS refresh-on-unknown-kid is a well-known Layer 1 pattern with little risk\n❌ Built before knowing if any of the 5 calls qualify; could be dead code (human: ~1 day / CC: ~30 min)"
+              },
+              {
+                "label": "B) Keep current value: no metadata cache",
+                "description": "✅ Nothing to build; R5 already delivers the latency win\n✅ No second cache with its own TTL semantics next to the token cache\n❌ Every cache miss still makes all 5 network calls; at scale the IDP sees the full validation volume"
+              },
+              {
+                "label": "D) Defer this proposed change only",
+                "description": "✅ Removes it from this PR cleanly; can be a TODO with the R5 call list attached\n✅ Keeps the PR focused on correctness fixes\n❌ Same downside as B for this release, and the decision still has to be made later without the review context"
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D12 — R6: Cache per-issuer IDP metadata (discovery doc, JWKS, tenant config) so most validations skip the network entirely?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; Performance review, R5 approved (parallel calls with idpCall wrapper).\nELI10: Parallelizing (R5) turns 5 round trips into 1 round trip of latency, but every cache miss still makes 5 network calls. If some of those 5 fetch things that rarely change for a given IDP issuer (its discovery document, its signing keys, a tenant's config), those responses can be cached per issuer with a TTL and most validations would make 0 or 1 calls. I do not know what the 5 calls are; the plan does not list them. R5 already includes a task to enumerate them. Deciding on caching before that list exists would be guessing.\nStakes if we pick wrong: build a metadata cache for calls that turn out to be all per-token (introspection, userinfo) and it is dead code; skip it when 3 of the 5 are static metadata and you leave a 60-80% network reduction on the table plus an IDP hammering risk at scale.\nRecommendation: C because the R5 enumeration produces exactly the information this decision needs, at no extra cost; choose with facts, not guesses. This is an outside-style policy row: keep other approved choices fixed.\nNote: options differ in kind, not coverage — no completeness score.\nNet: decide now blind vs decide right after a task you are already doing.": "C) Investigate before choosing (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T19:44:36.055Z"
+      },
+      {
+        "sessionId": "604c616f-edb2-4d04-bf37-deef45a62a4b",
+        "toolUseId": "toolu_01EgFqZBhycDhGCpHu66GYQM",
+        "questions": [
+          {
+            "question": "D14 — TODO: capture the deferred RequestPolicy in TODOS.md?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; TODOS.md updates.\nELI10: RequestPolicy was deferred in D5 for the same reason as TokenStore: no stated contract, and a name that overlaps the adapter's existing policy-version cache key. The proposed TODO: **What:** Define what RequestPolicy enforces and how it relates to the cache's policy version. **Why:** two notions of \"policy\" that can drift is a correctness bug (a policy bump invalidates cache entries but the enforcer keeps the old rule, or vice versa). **Pros:** forces the policy-version relationship to be written before any second policy class exists. **Cons:** may resolve to \"policy version already covers it\". **Context:** the adapter keys entries by tenant/issuer/audience/policy version (PLAN.md:7-8); R3 added a `PolicyMismatch` AuthError variant for cache-key-vs-current mismatch. Start from that variant: if RequestPolicy would only re-derive it, cut it. **Depends on:** R3 landing (PolicyMismatch variant). **Effort:** S. **Priority:** P3.\nStakes if we pick wrong: skip and the policy-drift question is never asked; build now and you ship a second policy concept without defining its relationship to the first.\nRecommendation: A because the policy-version relationship is exactly the kind of reasoning that gets lost without a written TODO.\nNote: options differ in kind, not coverage — no completeness score.\nNet: a backlog entry that carries the drift risk explicitly vs dropping it vs reversing D5.",
+            "header": "TODO Policy",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "A) Add to TODOS.md (recommended)",
+                "description": "✅ The policy-version drift concern is written down where the next implementer will see it\n✅ Written on plan exit under `## Auth` with Effort S / Priority P3\n❌ Backlog item that may resolve to \"already covered by PolicyMismatch\""
+              },
+              {
+                "label": "B) Skip, not valuable enough",
+                "description": "✅ No backlog entry for an undefined class\n✅ Nothing to maintain\n❌ The drift question between RequestPolicy and policy version is never asked on record"
+              },
+              {
+                "label": "C) Build it now in this PR",
+                "description": "✅ Gives per-tenant request rules a named home immediately if you can define them now\n✅ No deferral to track\n❌ Reverses D5 and adds a second policy concept with no written relationship to the cache key"
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D14 — TODO: capture the deferred RequestPolicy in TODOS.md?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; TODOS.md updates.\nELI10: RequestPolicy was deferred in D5 for the same reason as TokenStore: no stated contract, and a name that overlaps the adapter's existing policy-version cache key. The proposed TODO: **What:** Define what RequestPolicy enforces and how it relates to the cache's policy version. **Why:** two notions of \"policy\" that can drift is a correctness bug (a policy bump invalidates cache entries but the enforcer keeps the old rule, or vice versa). **Pros:** forces the policy-version relationship to be written before any second policy class exists. **Cons:** may resolve to \"policy version already covers it\". **Context:** the adapter keys entries by tenant/issuer/audience/policy version (PLAN.md:7-8); R3 added a `PolicyMismatch` AuthError variant for cache-key-vs-current mismatch. Start from that variant: if RequestPolicy would only re-derive it, cut it. **Depends on:** R3 landing (PolicyMismatch variant). **Effort:** S. **Priority:** P3.\nStakes if we pick wrong: skip and the policy-drift question is never asked; build now and you ship a second policy concept without defining its relationship to the first.\nRecommendation: A because the policy-version relationship is exactly the kind of reasoning that gets lost without a written TODO.\nNote: options differ in kind, not coverage — no completeness score.\nNet: a backlog entry that carries the drift risk explicitly vs dropping it vs reversing D5.": "A) Add to TODOS.md (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T19:45:52.214Z"
+      }
+    ],
+    "plan": "# Plan: Multi-tenant Auth Refactor (reviewed)\n\nReviewed target: `PLAN.md` on `main` (commit 360b3cb) via `/plan-eng-review`, 2026-09-15.\nReport file: this file (user-requested path). Scope: reduced per recommendation (D4-D6). Mode: SCOPE_REDUCED.\n\n## Decision ledger\n\n### R6: Per-issuer IDP metadata caching\nFinding: Performance #3, P2, confidence 5/10, PLAN.md:31, native reviewer\nPlan baseline: no metadata cache\nRuntime evidence: unknown which calls fetch cacheable metadata\nState: pending (Investigate)\n\nComparison grid:\n\n| Choice | Current | A | B | C | D |\n|---|---|---|---|---|---|\n| R6 metadata cache | none | per-issuer cache, TTL from Cache-Control / 5 min, JWKS refresh-on-unknown-kid | none | investigate after R5 enumeration | defer |\n| R5 wrapper | approved (D11) | unchanged | unchanged | unchanged | unchanged |\n| Token cache | approved | unchanged, separate | unchanged | unchanged | unchanged |\n\nQuestion D12: \"Cache per-issuer IDP metadata (discovery doc, JWKS, tenant config) so most validations skip the network entirely?\" Options: C) Investigate before choosing (recommended); A) Apply now; B) Keep current value; D) Defer this change only. Note: options differ in kind.\n\nActual answer: C) Investigate before choosing (D12)\nAccepted scope: bounded investigation only: mark each of the 5 calls per-token vs per-issuer-static in the plan's \"The 5 IDP calls\" table. No cache implementation approved. R6 remains unresolved until re-asked with the list.\nHistory: none\n\n## Implementation Tasks\nSynthesized from this review's findings. Each task derives from a specific finding above. Run with Claude Code or Codex; checkbox as you ship. Ratios assumed: tests ~50x, features ~30x, architecture ~5x.\n\n- [ ] **T1 (P1, human: ~1 day / CC: ~30 min)** — tests/auth — Record `legacyAuthFlow()` characterization suite (10 cases) and commit green against legacy before any rewrite\n  - Surfaced by: Test review — R4 / D10, PLAN.md:27-28\n  - Files: `legacyAuthFlow.characterization.test.*`, plan section \"Intended differences\"\n  - Verify: suite green on unmodified legacy; later green on the new flow\n- [ ] **T2 (P1, human: ~1 day / CC: ~30 min)** — auth/cache — Implement `AuthCache` with per-key invalidation generation and conditional `put`; minimal surface; eviction hook removes generation; inline diagram\n  - Surfaced by: Architecture — R2 / D8, PLAN.md:10, :20; Code Quality #3\n  - Files: `AuthCache.*`, `AuthCache.test.*`\n  - Verify: put-after-invalidate dropped; tenant-wide suspension; cross-tenant isolation; race integration test\n- [ ] **T3 (P1, human: ~2h / CC: ~10 min)** — app bootstrap, auth/broker, auth/mint — Remove module-level export; inject one `AuthCache` from the composition root\n  - Surfaced by: Architecture — R1 / D7, PLAN.md:19-20\n  - Files: composition root, `AuthBroker` and `SessionMint` constructors\n  - Verify: shared-instance and separate-instance tests\n- [ ] **T4 (P1, human: ~half day / CC: ~20 min)** — auth/broker — Split `validateAndDispatch()` into `validate`/`dispatch`; typed `AuthError` union; fail closed\n  - Surfaced by: Code Quality — R3 / D9, PLAN.md:23-24\n  - Files: broker module, request boundary handler, `AuthError.*`\n  - Verify: one test per variant; unknown rethrown; dispatch unreachable on failure\n- [ ] **T5 (P2, human: ~half day / CC: ~20 min)** — auth/idp-client — Add `idpCall` wrapper (timeout, abort, name); `Promise.all` with one AbortController; keep-alive agent\n  - Surfaced by: Performance — R5 / D11, PLAN.md:31-32; Code Quality #2 (DRY)\n  - Files: IDP client module, `AuthBroker.validate()`\n  - Verify: timeout -> IdpUnavailable with failedCall; abort on first rejection; latency ~= max\n- [ ] **T6 (P2, human: ~1h / CC: ~5 min)** — plan — Enumerate the 5 IDP calls (name, input, output, depends-on, per-token vs per-issuer-static); sequence any dependent pair; feeds R6\n  - Surfaced by: Performance #2 and R6 / D12\n  - Files: this plan, \"The 5 IDP calls\" table\n  - Verify: table complete; R6 re-asked\n- [ ] **T7 (P1, human: ~1 day / CC: ~30 min)** — auth/mint — Implement `SessionMint.mint()` using `beginWrite`/`put`; return token even when write dropped; inline diagram\n  - Surfaced by: Architecture — R2 / D8; Test review GAPs\n  - Files: `SessionMint.*`, `SessionMint.test.*`\n  - Verify: success cached; invalidated-during dropped; IDP failure typed\n- [ ] **T8 (P1, human: ~1 day / CC: ~30 min)** — tests/e2e — Three E2E flows: two-tenant happy path; revoke mid-session -> 401; suspend tenant -> tenant-wide 401, others unaffected\n  - Surfaced by: Test review — [→E2E] gaps, retained contract PLAN.md:8-10\n  - Files: e2e suite\n  - Verify: all three pass against the composed app\n- [ ] **T9 (P2, human: ~half day / CC: ~15 min)** — auth/legacy — Rewrite `legacyAuthFlow()` on top of AuthBroker/SessionMint; fill \"Intended differences\"; remove stale comments\n  - Surfaced by: Tests — PLAN.md:27; Code Quality #4\n  - Files: legacy flow module\n  - Verify: T1 suite green with only listed differences\n- [ ] **T10 (P3, human: ~15 min / CC: ~2 min)** — repo — Create `TODOS.md` with the two accepted TODOs (D13, D14) under `## Auth`\n  - Surfaced by: TODOS.md updates\n  - Files: `TODOS.md`\n  - Verify: file present with both items\n\n_No new tasks from Outside Voice (disabled)._\n\n## Worktree parallelization strategy\n\n| Step | Modules touched | Depends on |\n|------|----------------|------------|\n| S1 legacyAuthFlow characterization suite | tests/auth (legacy) | — |\n| S2 AuthCache facade + generation | auth/cache | — |\n| S3 idpCall wrapper + 5-call enumeration | auth/idp-client | — |\n| S4 validate/dispatch split + AuthError + AuthBroker | auth/broker | S2, S3 |\n| S5 SessionMint | auth/mint | S2 |\n| S6 composition root wiring | app bootstrap | S2, S4, S5 |\n| S7 legacyAuthFlow rewrite + E2E flows | auth/legacy, tests/e2e | S1, S4, S5, S6 |\n\nLanes: `Lane A: S1 (independent)` / `Lane B: S2 → S5 (sequential, S5 needs AuthCache API)` / `Lane C: S3 → S4 (sequential, S4 needs idpCall; S4 also waits on S2)` / `Lane D: S6 → S7 (after A, B, C merge)`.\nExecution order: launch A, B, C in parallel worktrees. Merge B before S4 starts in C (S4 needs AuthCache). Merge all, then D.\nConflict flags: S4 and S5 both live under `auth/` and both consume the AuthCache API; if they share a directory, coordinate the import surface or run S5 after S4. S7 touches the file S1 tested; S1 must be merged and green first (REGRESSION RULE).\n\n## GSTACK REVIEW REPORT\n\n| Review | Trigger | Why | Runs | Status | Findings |\n|--------|---------|-----|------|--------|----------|\n| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |\n| Outside Review | codex via `/plan-eng-review` outside voice | Independent 2nd opinion | 1 | DISABLED (skipped) | codex_reviews disabled; no findings |\n| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 40 issues, 0 critical gaps |\n| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |\n| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |\n\n**OUTSIDE COVERAGE:** provider codex, phase plan-review, disabled (opt-out via `codex_reviews`), no findings; no native fallback dispatched.\n\n**VERDICT:** No reviews CLEAR. Eng Review ISSUES OPEN (1 unresolved decision, 0 critical gaps) — eng review required. All P1 remedies are approved and specified; the open item is a performance follow-up, not a blocker to starting T1-T5.\n\n**UNRESOLVED DECISIONS:**\n- R6 / D12 — per-issuer IDP metadata cache: Investigate; re-ask after the 5 IDP calls are enumerated (T6)\n",
+    "captureAt": "2026-09-15T19:58:22.814Z",
+    "reportMtimeMs": 1789501736036.9578,
+    "startedAt": 1789500807800.0,
+    "planReadyRequests": [
+      {
+        "sessionId": "604c616f-edb2-4d04-bf37-deef45a62a4b",
+        "toolUseId": "toolu_01QjYheYXsvycjoZzikwMrcp",
+        "timestamp": "2026-09-15T19:53:05.518Z",
+        "failed": false,
+        "source": "pre_tool_use"
+      }
+    ],
+    "projection": "Exact parent D12 and D14 ACKs, D15 question/ACK, and current owned report sections; full 15-call report replay retained separately."
+  }
 }
