@@ -226,6 +226,33 @@ describe('office-hours owned Markdown sections', () => {
     expect(() => replaceOfficeHoursReviewBlock(crossed, 'report', rendered.report)).toThrow('cross another section');
   });
 
+  test.each(['Handoff — the relationship closing', 'Handoff - the relationship closing'])('preserves the supported combined closing %s', label => {
+    const closing = `**${label}:**\nNext: /plan-ceo-review. The user declined launching it now.\n\n### Follow-up\nPreserve this saved closing.`;
+    const original = '# Report\n\n## Spec Review\nplaceholder\n\n' + closing + '\n';
+    const updated = replaceOfficeHoursReviewBlock(original, 'report', rendered.report);
+    expect(updated).toContain(closing);
+    expect(updated).not.toContain('placeholder');
+    expect(extractOfficeHoursReviewBlock(updated, 'report')).toBe(rendered.report);
+    expect(replaceOfficeHoursReviewBlock(updated, 'report', rendered.report)).toBe(updated);
+    const crossed = rendered.report.replace('<!-- gstack:office-hours:report:end -->', closing + '\n<!-- gstack:office-hours:report:end -->');
+    expect(() => replaceOfficeHoursReviewBlock(crossed, 'report', rendered.report)).toThrow('cross another section');
+    expect(() => extractOfficeHoursReviewBlock(crossed, 'report')).toThrow('cross another section');
+  });
+
+  test.each([
+    '**Handoff — an unresolved review question**',
+    '**Handoff-ish — the relationship closing**',
+    '> **Handoff — the relationship closing**',
+    '```markdown\n**Handoff — the relationship closing**\n```',
+  ])('keeps non-closing or quoted emphasis inside the review: %s', reviewText => {
+    const original = '# Report\n\n## Spec Review\n' + reviewText + '\n\n## Handoff\nNot now.\n';
+    const updated = replaceOfficeHoursReviewBlock(original, 'report', rendered.report);
+    expect(updated).not.toContain(reviewText);
+    expect(updated).toContain('## Handoff\nNot now.');
+    const owned = rendered.report.replace('<!-- gstack:office-hours:report:end -->', reviewText + '\n<!-- gstack:office-hours:report:end -->');
+    expect(extractOfficeHoursReviewBlock(owned, 'report')).toBe(owned);
+  });
+
   test.each([
     '<!-- gstack:office-hours:report:start -->',
     '<!-- gstack:office-hours:report:end -->',

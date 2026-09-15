@@ -255,7 +255,7 @@ function headingsIn(lines: Array<{ line: string; start: number }>): Array<{ star
   });
 }
 function isClosingLabel(line: string): boolean {
-  return /^\s*\*\*(?:(?:the |your )?assignment|handoff|relationship closing|what i noticed about how you think|founder resources shared):?\*\*(?:\s|:|$)/i.test(line);
+  return /^\s*\*\*(?:(?:the |your )?assignment|handoff(?: [—-] the relationship closing)?|relationship closing|what i noticed about how you think|founder resources shared):?\*\*(?:\s|:|$)/i.test(line);
 }
 /** Locate only visible, whole-line owned markers with the expected section extent. */
 function blockRange(text: string, kind: 'concerns' | 'report'): [number, number] | null {
