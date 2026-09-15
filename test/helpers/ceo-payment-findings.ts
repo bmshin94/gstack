@@ -67,6 +67,53 @@ function currentDocumentSources(tokens: ReturnType<typeof marked.lexer>): string
       .map(match => match[1]!.replace(/[.;,]+$/, ''));
   });
 }
+// An existing suite can provide zero coverage of the new implementation.
+// The owned test row supplies that scope; historical quotes and current
+// positive/contradictory coverage statements cannot establish its absence.
+function excludesCurrentTestTarget(value: string): boolean {
+  const text = prose(value.replace(/"[^"\n]*"|“[^”\n]*”|`[^`\n]*`/g, ''));
+  const clauses = text.split(/(?<=[.!?])\s+|\n/).filter(clause => current(clause) &&
+    !/\b(?:previously|formerly|historical(?:ly)?|used to|(?:prior|earlier|old) (?:plan|version))\b/i.test(clause));
+  if (clauses.some(clause => /\b(?:not true|false|not the case)\b/i.test(clause) ||
+    /\b(?:suite|tests?)\s+(?:(?:now|already|also|fully|directly|does|do)\s+)*(?:covers?|exercises?|executes?|tests?|runs?)\s+(?:the\s+)?(?:new|this|current)\s+(?:class|handler|code|path|implementation)\b/i.test(clause))) return false;
+  return clauses.some(clause => /\b(?:suite|tests?|coverage)\b/i.test(clause) && (
+    /\b(?:does not|do not|doesn't|don't|never)\s+(?:currently\s+)?(?:cover|exercise|execute|test|run)s?\s+(?:the\s+)?(?:new|this|current)\s+(?:class|handler|code|path|implementation)\b/i.test(clause) ||
+    /\b(?:suite|tests?)\s+(?:(?:only|still)\s+)?(?:covers?|exercises?|executes?|tests?|runs?)\s+(?:the\s+)?(?:old|prior)\s+(?:class|handler|code|path|implementation)\s*[,;]?\s*(?:but\s+)?not\s+(?:this one|(?:the\s+)?new\s+(?:class|handler|code|path|implementation))\b/i.test(clause)));
+}
+
+// A Contracts citation inherits the document's unique current source only
+// when its substantive quotation is a complete current source clause. It
+// never borrows arbitrary quoted examples or a partial substring elsewhere.
+function currentContractQuote(literal: string, sourcePlan: string): boolean {
+  const normalize = (text: string) => plain(text).replace(/\s+/g, ' ').replace(/[.;]+$/, '').trim();
+  const active = (text: string) => current(text) && !/\b(?:withdrawn|retracted|superseded|historical|obsolete|no longer current|not current)\b/i.test(text);
+  const tokens = marked.lexer(sourcePlan);
+  const clauses = tokens.flatMap((token, index) => token.type === 'paragraph' &&
+      currentDocumentContext(tokens, index) && active(token.raw)
+    ? plain(token.raw).replace(/\s+/g, ' ').split(/(?<=[.;])\s+/).filter(active).map(normalize) : []);
+  return active(literal) && clauses.filter(clause => clause === normalize(literal)).length === 1;
+}
+function hasForeignContractSource(value: string, sourcePlan: string): boolean {
+  // Only authenticated source quotations can contain incidental code paths.
+  // Quotation length alone must not hide a conflicting source citation.
+  const attribution = value.replace(/"([^"\n]+)"|“([^”\n]+)”/g,
+    (whole, straight, curly) => (straight ?? curly).trim().split(/\s+/).length >= 6 &&
+      currentContractQuote(straight ?? curly, sourcePlan) ? '' : whole);
+  const paths = attribution.match(/(?:[A-Za-z]:)?(?:[./\\]*[\w.-]+[\\/])+[\w.-]+|\b[\w-]+\.(?:md|markdown)\b/gi) ?? [];
+  return paths.some(path => path !== 'PLAN.md');
+}
+function currentContractCitation(value: string, sourcePlan: string): boolean {
+  if (!/^Contracts?:\s*\S/i.test(value) || hasForeignContractSource(value, sourcePlan)) return false;
+  const normalize = (text: string) => plain(text).replace(/\s+/g, ' ').replace(/[.;]+$/, '').trim();
+  const active = (text: string) => current(text) && !/\b(?:withdrawn|retracted|superseded|historical|obsolete|no longer current|not current)\b/i.test(text);
+  const outside = value.replace(/"[^"\n]*"|“[^”\n]*”/g, '');
+  if (!active(outside)) return false;
+  const quotes = [...value.matchAll(/"([^"\n]+)"|“([^”\n]+)”/g)].map(match => normalize(match[1] ?? match[2]!))
+    .filter(literal => literal.split(' ').length >= 6);
+  if (!quotes.length) return false;
+  return quotes.every(literal => currentContractQuote(literal, sourcePlan));
+}
+
 // A whole quoted ledger value can cite the supplied plan's current prose.
 // Authenticate its complete paragraph/sentence, not a substring or a quote
 // elsewhere. This does not turn quoted evidence into a seeded defect.
@@ -193,14 +240,14 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
       // A row can contain its proposals directly or cite a separate saved
       // comparison bearing the same ID. Heading spelling/depth is immaterial.
       const blocks = tokens.map((t, i) => t.type === 'heading' && mentions(plain(t.text), id) ? i : -1).filter(i => i >= 0);
-      const proposals: Array<{ body: string; phase: string }> = [{ body: read('proposed'), phase: 'ledger row' }];
+      const proposals: Array<{ body: string; phase: string; active: boolean }> = [{ body: read('proposed'), phase: 'ledger row', active: currentDocumentContext(tokens, tokens.indexOf(table)) }];
       for (const start of blocks) {
         const heading = tokens[start]!;
         if (heading.type !== 'heading') continue;
         let end = start + 1;
         while (end < tokens.length && !(tokens[end]!.type === 'heading' && (tokens[end] as any).depth <= heading.depth)) end++;
         const preceding = tokens.slice(0, start).filter(t => t.type === 'heading' && t.depth < heading.depth).at(-1);
-        proposals.push({ body: prose(tokens.slice(start + 1, end).map(t => t.raw).join('')), phase: preceding?.type === 'heading' ? preceding.text : heading.text });
+        proposals.push({ body: prose(tokens.slice(start + 1, end).map(t => t.raw).join('')), phase: preceding?.type === 'heading' ? preceding.text : heading.text, active: current(plain(heading.text)) && currentDocumentContext(tokens, start) });
       }
       for (const spec of obligations) {
         const row = `${owner} ${read('evidence')} ${read('current')}`;
@@ -211,15 +258,20 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
           ? cells[fields[field][0]!]!.text : read(field);
         const defectExplanation = spec.seed === 'tests'
           ? /^ELI10:\s*(.+)$/m.exec(q.question)?.[1] ?? q.question : explanation;
+        const scopedTestAbsence = spec.seed === 'tests' && declaredSources.length === 1 && declaredSources[0] === 'PLAN.md' &&
+          currentDocumentContext(tokens, tokens.indexOf(table)) && /\btests?\b/i.test(owner) &&
+          /^(?:unresolved|reopened)\b/i.test(read('status')) && current(read('current')) &&
+          /^(?:None|zero|0|no (?:new )?(?:automated )?tests?)\.?$/i.test(cells[fields.proposed[0]!]!.text.trim()) &&
+          excludesCurrentTestTarget(cells[fields.current[0]!]!.text) && excludesCurrentTestTarget(defectExplanation);
         const pendingDefect = /^(?:unresolved|reopened)\b/i.test(read('status')) &&
           current(read('proposed')) && spec.subject.test(read('proposed')) && spec.defect.test(defectValue('proposed'));
         if (!spec.subject.test(seedPlan) || !spec.defect.test(seedPlan) || !spec.subject.test(row) ||
-          !(spec.defect.test(defectValue('current')) || pendingDefect) ||
-          !spec.subject.test(question) || !(spec.defect.test(defectExplanation) ||
+          !(spec.defect.test(defectValue('current')) || pendingDefect || scopedTestAbsence) ||
+          !spec.subject.test(question) || !(spec.defect.test(defectExplanation) || scopedTestAbsence ||
             (pendingDefect && declaredSources.length <= 1 && declaredSources.every(source => source === 'PLAN.md') &&
               currentDocumentContext(tokens, tokens.indexOf(table)) && attributedBaselineDefect(q, read('proposed'), explanation, spec)))) continue;
         const operative = options.some(o => spec.remedy.test(o) && spec.subject.test(o));
-        const proposal = proposals.find(p => current(p.body) && spec.remedy.test(p.body) && spec.subject.test(p.body));
+        const proposal = proposals.find(p => (!scopedTestAbsence || p.active) && current(p.body) && spec.remedy.test(p.body) && spec.subject.test(p.body));
         if (operative && proposal) matches.push({ seed: spec.seed, ledgerId: id, phase: proposal.phase, signature: fp.signature });
       }
     }
@@ -283,7 +335,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
   };
   const inheritedSource = (evidence: string) => namedSource &&
     (/\bEvidence:\s*plan text\b|\bplan\s+§\s*\S|\bplan\s+sections?\s+\S|^Plan(?: contract)?:\s*\S/i.test(evidence) ||
-      lineCitation(evidence));
+      lineCitation(evidence) || currentContractCitation(evidence, sourcePlan));
   // The same option may give both dimensions as a parenthesized tuple,
   // with the value before or after its field. Normalize only complete,
   // operative tuples; the ordinary field inventory still rejects duplicates.
@@ -397,12 +449,14 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
           !read('current') || !read('proposed') || read('current') === read('proposed') ||
           !current(read('evidence')) || (!current(read('proposed')) && !quotedProposal)) continue;
       if (!/\bPLAN\.md\b/.test(read('evidence')) && !inheritedSource(read('evidence'))) continue;
+      const contractCitation = /^Contracts?:/i.test(read('evidence'));
+      if (contractCitation && (!currentContext(tokens.indexOf(table)) || hasForeignContractSource(read('evidence'), sourcePlan))) continue;
       const anchors = tokens.flatMap((t, i) =>
         (t.type === 'heading' && current(plain(t.text)) && mentions(plain(t.text), id)) ||
         (t.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(t.raw)) && mentions(plain(t.raw), id)) ? [i] : []);
       let matchedPhase: string | undefined;
       for (const start of anchors) {
-        if (quotedProposal && !currentContext(start)) continue;
+        if ((quotedProposal || contractCitation) && !currentContext(start)) continue;
         const anchor = tokens[start]!;
         let end = start + 1;
         while (end < tokens.length && !(tokens[end]!.type === 'heading' &&
@@ -473,7 +527,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
         }
         for (const comparison of tokens.slice(start + 1, end)) {
           if (comparison.type !== 'table') continue;
-          if (quotedProposal && !currentContext(tokens.indexOf(comparison))) continue;
+          if ((quotedProposal || contractCitation) && !currentContext(tokens.indexOf(comparison))) continue;
           const headers = comparison.header.map(c => plain(c.text));
           // The declared commitment grid transposes the option table: each
           // complete alternative is a column. Its saved effort/risk row and

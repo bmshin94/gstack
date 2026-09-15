@@ -474,5 +474,149 @@
       }
     ],
     "limitation": "Original paid failure preserved. Only exact mode and pending pacing calls plus their public events are included; onboarding calls remain in the private source capture."
+  },
+  "countedNativeB955": {
+    "source": "b955a49ec344706fa25c4ca47bcb1dac5c06a086",
+    "actualOutcome": "first attempt failed: pacing used the generic substantive allowance; pending proposal was never answered. No paid pass supplied.",
+    "selectedAt": 1789504882674,
+    "mode": {
+      "sessionId": "3a32c9a8-fd5a-4557-9b79-965c64aa8fcb",
+      "toolUseId": "toolu_01NA24LMtPcSFuxeKaJQkDYt",
+      "questions": [
+        {
+          "question": "D2 — Which review mode should govern this plan?\nProject/branch/task: plan-count fixture on `main`; reviewing PLAN.md \"Add saved project views\".\nELI10: The mode sets my posture for the rest of the review. Do I push you to build a bigger, better version (EXPANSION)? Keep your scope but offer add-ons one at a time for you to accept or reject (SELECTIVE)? Lock scope and hunt every failure path (HOLD)? Or strip it to the smallest thing that works (REDUCTION)? Picking a mode approves no scope change by itself; every change still gets its own question.\nStakes if we pick wrong: Too ambitious and a small quality-of-life feature turns into a views platform; too strict and you ship member-private views, then migrate to shared views in three months when the team asks for them.\nRecommendation: SELECTIVE EXPANSION because this is an enhancement to an existing task list (~8-10 files), and the audit found two or three real expansions (shared visibility, versioned payload, cheaper framings) that deserve an individual yes/no rather than a blanket push.\nNote: options differ in kind, not coverage — no completeness score.\nPros / cons:\nA) SELECTIVE EXPANSION (recommended)\n  ✅ Your stated scope stays the baseline; each add-on gets a neutral, separate accept/defer/skip question\n  ✅ Still runs the HOLD SCOPE complexity and minimum-change checks, so nothing sneaks in\n  ❌ More questions than HOLD; you make 3-6 small scope calls before the deep review\nB) SCOPE EXPANSION\n  ✅ Rethinks views as a first-class object: shared, default-per-project, deep-linkable, from day one\n  ✅ Best fit if you already know the team wants shared views and this is the moment to build them\n  ❌ Turns a small feature into a larger one; pilot metric gets harder to read\nC) HOLD SCOPE\n  ✅ Fastest path to a bulletproof version of exactly what PLAN.md says\n  ✅ Maximum rigor on failure paths, edge cases, tests, observability for the stated four bullets\n  ❌ Shared visibility and payload versioning only get flagged, not offered; likely rework later\nD) SCOPE REDUCTION\n  ✅ Tests whether auto-persisting last-used filters or URL-encoded state covers most of the pain\n  ✅ Smallest maintenance surface if the pilot shows low reuse\n  ❌ Named saved views are already a modest feature; cutting further may leave the goal unmet\nNet: how much of the shared-vs-private and payload-format questions you want to settle now versus after the pilot.",
+          "header": "Review mode",
+          "options": [
+            {
+              "label": "SELECTIVE EXPANSION (recommended)",
+              "description": "Hold current scope, cherry-pick expansions one by one."
+            },
+            {
+              "label": "SCOPE EXPANSION",
+              "description": "Dream big: views as a first-class shared object."
+            },
+            {
+              "label": "HOLD SCOPE",
+              "description": "Preserve scope; maximum rigor on failure paths and tests."
+            },
+            {
+              "label": "SCOPE REDUCTION",
+              "description": "Strip to the minimum viable core with your approval per cut."
+            }
+          ],
+          "multiSelect": false
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D2 — Which review mode should govern this plan?\nProject/branch/task: plan-count fixture on `main`; reviewing PLAN.md \"Add saved project views\".\nELI10: The mode sets my posture for the rest of the review. Do I push you to build a bigger, better version (EXPANSION)? Keep your scope but offer add-ons one at a time for you to accept or reject (SELECTIVE)? Lock scope and hunt every failure path (HOLD)? Or strip it to the smallest thing that works (REDUCTION)? Picking a mode approves no scope change by itself; every change still gets its own question.\nStakes if we pick wrong: Too ambitious and a small quality-of-life feature turns into a views platform; too strict and you ship member-private views, then migrate to shared views in three months when the team asks for them.\nRecommendation: SELECTIVE EXPANSION because this is an enhancement to an existing task list (~8-10 files), and the audit found two or three real expansions (shared visibility, versioned payload, cheaper framings) that deserve an individual yes/no rather than a blanket push.\nNote: options differ in kind, not coverage — no completeness score.\nPros / cons:\nA) SELECTIVE EXPANSION (recommended)\n  ✅ Your stated scope stays the baseline; each add-on gets a neutral, separate accept/defer/skip question\n  ✅ Still runs the HOLD SCOPE complexity and minimum-change checks, so nothing sneaks in\n  ❌ More questions than HOLD; you make 3-6 small scope calls before the deep review\nB) SCOPE EXPANSION\n  ✅ Rethinks views as a first-class object: shared, default-per-project, deep-linkable, from day one\n  ✅ Best fit if you already know the team wants shared views and this is the moment to build them\n  ❌ Turns a small feature into a larger one; pilot metric gets harder to read\nC) HOLD SCOPE\n  ✅ Fastest path to a bulletproof version of exactly what PLAN.md says\n  ✅ Maximum rigor on failure paths, edge cases, tests, observability for the stated four bullets\n  ❌ Shared visibility and payload versioning only get flagged, not offered; likely rework later\nD) SCOPE REDUCTION\n  ✅ Tests whether auto-persisting last-used filters or URL-encoded state covers most of the pain\n  ✅ Smallest maintenance surface if the pilot shows low reuse\n  ❌ Named saved views are already a modest feature; cutting further may leave the goal unmet\nNet: how much of the shared-vs-private and payload-format questions you want to settle now versus after the pilot.": "SCOPE EXPANSION"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T20:41:22.706Z"
+    },
+    "pacing": {
+      "sessionId": "3a32c9a8-fd5a-4557-9b79-965c64aa8fcb",
+      "toolUseId": "toolu_01UFKuY2dmUU9nEqDPEzy1YT",
+      "questions": [
+        {
+          "question": "D3.0 — Eleven expansion proposals: full per-item chain, narrow first, or batch?\nProject/branch/task: plan-count fixture on `main`; SCOPE EXPANSION review of \"Add saved project views\".\nELI10: The 10x analysis produced 11 independent add-ons (E1 shared visibility, E2 versioned payload, E3 stable view URLs, E4 modified/save-as state, E5 remember last view, E6 default view per project, E7 duplicate, E8 empty-state copy, E9 inline rename, E10 keyboard switching, L3 auto-persist last filters). Each needs its own Add / Defer / Cut call so nothing gets dropped silently. That is 11 short questions plus a final confirmation. Alternatively I narrow the list first, or batch them into groups of up to 4.\nStakes if we pick wrong: Full chain costs you a dozen taps; narrowing means I pre-filter your decision space; batching risks forcing one pick among items that are not alternatives to each other.\nRecommendation: Proceed with the full split because every proposal is independent (only E6 depends on E1) and you chose EXPANSION, which means you want to see the whole menu.\nNote: options differ in kind, not coverage — no completeness score.\nPros / cons:\nA) Proceed with the full split (recommended)\n  ✅ You see and rule on all 11 proposals; none are cut by me before you weigh in\n  ✅ Each question carries its own effort, risk, and dependency note so the picked set stays coherent\n  ❌ Eleven sequential questions before the deep review starts\nB) Narrow scope first: I propose a smaller set\n  ✅ Fewer questions; I pre-rank and present roughly the top 5-6 with the rest listed for opt-in\n  ✅ Faster path to the deep review if you mostly trust the ranking\n  ❌ The lower-ranked items get less consideration than the mode's \"dream big\" posture implies\nC) Batch into groups of 4\n  ✅ Three or four questions instead of eleven\n  ✅ Related items (E4/E5/E6 all touch \"which view is active\") appear side by side\n  ❌ Multi-select batches blur individual Defer vs Cut decisions and dependency notes\nNet: your time now versus the completeness of the decision record.",
+          "header": "Chain size",
+          "options": [
+            {
+              "label": "Proceed with the full split (recommended)",
+              "description": "11 per-item questions (Add / Defer / Cut / Hold), then a final confirmation."
+            },
+            {
+              "label": "Narrow scope first",
+              "description": "I present a ranked top 5-6; the rest are offered on request."
+            },
+            {
+              "label": "Batch into groups of 4",
+              "description": "Multi-select batches of related proposals."
+            }
+          ],
+          "multiSelect": false
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D3.0 — Eleven expansion proposals: full per-item chain, narrow first, or batch?\nProject/branch/task: plan-count fixture on `main`; SCOPE EXPANSION review of \"Add saved project views\".\nELI10: The 10x analysis produced 11 independent add-ons (E1 shared visibility, E2 versioned payload, E3 stable view URLs, E4 modified/save-as state, E5 remember last view, E6 default view per project, E7 duplicate, E8 empty-state copy, E9 inline rename, E10 keyboard switching, L3 auto-persist last filters). Each needs its own Add / Defer / Cut call so nothing gets dropped silently. That is 11 short questions plus a final confirmation. Alternatively I narrow the list first, or batch them into groups of up to 4.\nStakes if we pick wrong: Full chain costs you a dozen taps; narrowing means I pre-filter your decision space; batching risks forcing one pick among items that are not alternatives to each other.\nRecommendation: Proceed with the full split because every proposal is independent (only E6 depends on E1) and you chose EXPANSION, which means you want to see the whole menu.\nNote: options differ in kind, not coverage — no completeness score.\nPros / cons:\nA) Proceed with the full split (recommended)\n  ✅ You see and rule on all 11 proposals; none are cut by me before you weigh in\n  ✅ Each question carries its own effort, risk, and dependency note so the picked set stays coherent\n  ❌ Eleven sequential questions before the deep review starts\nB) Narrow scope first: I propose a smaller set\n  ✅ Fewer questions; I pre-rank and present roughly the top 5-6 with the rest listed for opt-in\n  ✅ Faster path to the deep review if you mostly trust the ranking\n  ❌ The lower-ranked items get less consideration than the mode's \"dream big\" posture implies\nC) Batch into groups of 4\n  ✅ Three or four questions instead of eleven\n  ✅ Related items (E4/E5/E6 all touch \"which view is active\") appear side by side\n  ❌ Multi-select batches blur individual Defer vs Cut decisions and dependency notes\nNet: your time now versus the completeness of the decision record.": "Proceed with the full split (recommended)"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T20:42:35.861Z"
+    },
+    "pending": {
+      "sessionId": "3a32c9a8-fd5a-4557-9b79-965c64aa8fcb",
+      "toolUseId": "toolu_01K811Ztw6AZKMcbwVkLg6Qu",
+      "questions": [
+        {
+          "question": "D3.1 — E1: Shared (project-level) views alongside private ones?\nProject/branch/task: plan-count fixture on `main`; SCOPE EXPANSION, ledger row L1.\nELI10: Today's plan scopes every view to one member. E1 adds a `visibility` column (private | project) and `created_by`. The list endpoint returns your private views plus the project's shared ones; the picker shows \"Mine\" and \"Team\". Any project member can create a shared view; only the creator or a project admin can edit or delete it. The stated pain (\"team members repeatedly recreate filters\") is a team pain, and Jira and Asana both landed on this dual layer. Dependency: E6 (default view per project) needs E1.\nStakes if we pick wrong: Without it, five members build five copies of \"Blocked\" and the team has no shared vocabulary; adding it later means a migration and a fight over who owns existing views. With it, you take on a small permission surface (who may edit a shared view) on day one.\nRecommendation: Include because it is one column plus one permission check on top of a table you are building anyway, and it is the single change most likely to make the pilot show real reuse. (human: ~1 day / CC: ~10 min)\nNote: options differ in kind, not coverage — no completeness score.\nPros / cons:\nA) Include in this plan (recommended)\n  ✅ One \"Blocked\" view means the same thing to everyone; recreated-filter pain actually goes away\n  ✅ Schema is right from day one; no later migration or ownership dispute over existing rows\n  ❌ Adds an authorization rule (creator or admin edits shared views) that needs tests and clear error copy\nB) Defer to TODOS.md\n  ✅ Ships the plan as written faster; pilot measures private reuse first\n  ✅ Keeps the permission surface at exactly the existing project-membership check\n  ❌ Likely migration later; pilot may undercount value because private-only views miss the team pain\nC) Cut entirely\n  ✅ Smallest possible feature; no visibility concept ever\n  ✅ Zero shared-ownership edge cases (deleting a view others use, etc.)\n  ❌ Locks the product into per-member presets even though the landscape converged on shared\nD) Hold: stop the chain and discuss E1 first\n  ✅ Lets you settle the visibility model before ruling on E3-E6, which lean on it\n  ❌ Pauses the expansion chain; no other items get decided until you resume\nNet: settle the visibility model now with one column, or ship private-only and accept a probable migration.",
+          "header": "E1 shared",
+          "options": [
+            {
+              "label": "Include (recommended)",
+              "description": "Add visibility (private | project) + created_by; \"Mine\" and \"Team\" in picker."
+            },
+            {
+              "label": "Defer to TODOS.md",
+              "description": "Record with context; ship private-only views first."
+            },
+            {
+              "label": "Cut",
+              "description": "Not in scope; goes to NOT in scope."
+            },
+            {
+              "label": "Hold",
+              "description": "Stop the chain; discuss E1 before continuing."
+            }
+          ],
+          "multiSelect": false
+        }
+      ],
+      "answered": false,
+      "failed": false
+    },
+    "viewport": " ☐ Chain size \n\n│ D3.0 — Eleven expansion proposals: full per-item chain, narrow first, or batch?\n│Project/branch/task: plan-count fixture on `main`; SCOPE EXPANSION review of \"Add saved project views\".\n\n│ELI10:The10xanalysisproduced11independentadd-ons(E1sharedvisibility,E2versionedpayload,E3stableview\n\n│URLs,E4modified/save-asstate,E5rememberlastview,E6defaultviewperproject,E7duplicate,E8empty-state\n\n│copy,E9inlinerename,E10keyboardswitching,L3auto-persistlastfilters).EachneedsitsownAdd/Defer/Cut\n\n│callsonothinggetsdroppedsilently.Thatis11shortquestionsplusafinalconfirmation.AlternativelyInarrow\n\n│thelistfirst,orbatchthemintogroupsofupto4.\n\n│Stakesifwepickwrong:Fullchaincostsyouadozentaps;narrowingmeansIpre-filteryourdecisionspace;batching\n\n│risksforcingonepickamongitemsthatarenotalternativestoeachother.\n\n│Recommendation:Proceedwiththefullsplitbecauseeveryproposalisindependent(onlyE6dependsonE1)andyou\n\n│choseEXPANSION,whichmeansyouwanttoseethewholemenu.\n\n│Note:optionsdifferinkind,notcoverage—nocompletenessscore.\n\n│Pros/cons:\n\n│A)Proceedwiththefullsplit(recommended)\n\n│ ✅Youseeandruleonall11proposals;nonearecutbymebeforeyouweighin\n\n│ ✅Eachquestioncarriesitsowneffort,risk,anddependencynotesothepickedsetstayscoherent\n\n│ ❌Elevensequentialquestionsbeforethedeepreviewstarts\n\n│B)Narrowscopefirst:Iproposeasmallerset\n\n│ ✅Fewerquestions;Ipre-rankandpresentroughlythetop5-6withtherestlistedforopt-in\n\n│ ✅Fasterpathtothedeepreviewifyoumostlytrusttheranking\n\n│ ❌Thelower-rankeditemsgetlessconsiderationthanthemode's\"dreambig\"postureimplies\n\n│C)Batchintogroupsof4\n\n│ ✅Threeorfourquestionsinsteadofeleven\n\n│ ✅Relateditems(E4/E5/E6alltouch\"whichviewisactive\")appearsidebyside\n\n│ ❌Multi-selectbatchesblurindividualDefervsCutdecisionsanddependencynotes\n\n│Net:yourtimeno…\n\n\n\n❯1.Proceedwiththefullsplit(recommended)\n\n11per-itemquestions(Add/Defer/Cut/Hold),thenafinalconfirmation.\n\n2.Narrowscopefirst\n\nIpresentarankedtop5-6;therestareofferedonrequest.\n\n3.Batchintogroupsof4\n\nMulti-selectbatchesofrelatedproposals.\n\n4.Typesomething.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n5.Chataboutthis\n\n\n\nEntertoselect·↑/↓tonavigate·Esctocancel",
+    "nextViewport": "│ D3.1 — E1: Shared (project-level) views alongside private ones?\n│ Project/branch/task: plan-count fixture on `main`; SCOPE EXPANSION, ledger row L1.\n│ ELI10: Today's plan scopes every view to one member. E1 adds a `visibility` column (private | project) and\n│ `created_by`. The list endpoint returns your private views plus the project's shared ones; the picker shows \"Mine\" and\n│ \"Team\". Any project member can create a shared view; only the creator or a project admin can edit or delete it. The\n│ stated pain (\"team members repeatedly recreate filters\") is a team pain, and Jira and Asana both landed on this dual\n│ layer. Dependency: E6 (default view per project) needs E1.\n│ Stakes if we pick wrong: Without it, five members build five copies of \"Blocked\" and the team has no shared\n│ vocabulary; adding it later means a migration and a fight over who owns existing views. With it, you take on a small\n│ permission surface (who may edit a shared view) on day one.\n│ Recommendation: Include because it is one column plus one permission check on top of a table you are building anyway,\n│ and it is the single change most likely to make the pilot show real reuse. (human: ~1 day / CC: ~10 min)\n│ Note: options differ in kind, not coverage — no completeness score.\n│ Pros / cons:\n│ A) Include in this plan (recommended)\n│   ✅ One \"Blocked\" view means the same thing to everyone; recreated-filter pain actually goes away\n│   ✅ Schema is right from day one; no later migration or ownership dispute over existing rows\n│   ❌ Adds an authorization rule (creator or admin edits shared views) that needs tests and clear error copy\n│ B) Defer to TODOS.md\n│   ✅ Ships the plan as written faster; pilot measures private reuse first\n│   ✅ Keeps the permission surface at exactly the existing project-membership check\n│   ❌ Likely migration later; pilot may undercount value because private-only views miss the team pain\n│ C) Cut entirely\n│   ✅ Smallest possible feature; no visibility concept ever\n│   ✅ Zero shared-ownership edge cases (deleting a view other…\n\n❯ 1. Include (recommended)\n     Add visibility (private | project) + created_by; \"Mine\" and \"Team\" in picker.\n  2. Defer to TODOS.md\n     Record with context; ship private-only views first.\n  3. Cut\n     Not in scope; goes to NOT in scope.\n  4. Hold\n     Stop the chain; discuss E1 before continuing.\n  5. Type something.\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  6. Chat about this\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n",
+    "events": [
+      {
+        "kind": "use",
+        "name": "AskUserQuestion",
+        "timestamp": "2026-09-15T20:41:20.626Z",
+        "sessionId": "3a32c9a8-fd5a-4557-9b79-965c64aa8fcb",
+        "toolUseId": "toolu_01NA24LMtPcSFuxeKaJQkDYt"
+      },
+      {
+        "kind": "result",
+        "timestamp": "2026-09-15T20:41:22.706Z",
+        "sessionId": "3a32c9a8-fd5a-4557-9b79-965c64aa8fcb",
+        "toolUseId": "toolu_01NA24LMtPcSFuxeKaJQkDYt",
+        "isError": false
+      },
+      {
+        "kind": "use",
+        "name": "AskUserQuestion",
+        "timestamp": "2026-09-15T20:42:34.622Z",
+        "sessionId": "3a32c9a8-fd5a-4557-9b79-965c64aa8fcb",
+        "toolUseId": "toolu_01UFKuY2dmUU9nEqDPEzy1YT"
+      },
+      {
+        "kind": "result",
+        "timestamp": "2026-09-15T20:42:35.861Z",
+        "sessionId": "3a32c9a8-fd5a-4557-9b79-965c64aa8fcb",
+        "toolUseId": "toolu_01UFKuY2dmUU9nEqDPEzy1YT",
+        "isError": false
+      },
+      {
+        "kind": "use",
+        "name": "AskUserQuestion",
+        "timestamp": "2026-09-15T20:42:55.217Z",
+        "sessionId": "3a32c9a8-fd5a-4557-9b79-965c64aa8fcb",
+        "toolUseId": "toolu_01K811Ztw6AZKMcbwVkLg6Qu"
+      }
+    ],
+    "provenance": "Exact public native calls and public event identities from retained source; pacing viewport is an exact contiguous visible-terminal segment. Full source receipts live in final-b955-ceo-monitor/expansion-first-pending."
   }
 }

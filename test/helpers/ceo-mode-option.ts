@@ -354,7 +354,7 @@ function hasAnsweredHoldPosture(transcript: PlanCountTranscript, selected: Nativ
 }
 
 /** A fourth Hold/Pause control can only defer the decision for discussion. */
-function expansionDiscussionControl(label: string, description: string): boolean {
+function expansionDiscussionControl(label: string, description: string, proposalId?: string): boolean {
   const title = label.replace(/^[A-D][):.]\s*/i, '').replace(/\s*\(recommended\)\s*$/i, '').trim();
   const match = /^(?:hold|pause)\b([\s\S]*)$/i.exec(title);
   if (!match) return false;
@@ -370,7 +370,14 @@ function expansionDiscussionControl(label: string, description: string): boolean
   const prose = description.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
     .replace(/^\s*>.*$/gm, '').replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g, '');
   const noDecision = /\b(?:nothing\s+(?:is\s+)?(?:decided|approved|selected)|no\s+(?:scope\s+)?(?:decision|choice|disposition|approval)\s+(?:is\s+)?(?:made|recorded|granted|selected))\b/gi;
-  if (!noDecision.test(prose) || !/\b(?:paus\w*|stop\w*|wait\w*|discuss\w*|talk)\b/i.test(prose)) return false;
+  // A stopped chain plus discussion of this exact proposal also postpones
+  // its disposition. Both clauses must be complete; another item or action
+  // cannot borrow this procedural control's authority.
+  const clauses = description.trim().split(/[.;]/).map(part => part.trim()).filter(Boolean);
+  const sameProposalDiscussion = proposalId && clauses.length === 2 &&
+    clauses.filter(part => /^(?:stop|pause) the (?:chain|review)$/i.test(part)).length === 1 &&
+    clauses.filter(part => new RegExp(`^discuss ${proposalId} before (?:continuing|proceeding|resuming)$`, 'i').test(part)).length === 1;
+  if ((!noDecision.test(prose) && !sameProposalDiscussion) || !/\b(?:paus\w*|stop\w*|wait\w*|discuss\w*|talk)\b/i.test(prose)) return false;
   // Keep all remaining text, including quotations, in the effect veto. A
   // no-decision assurance cannot conceal a second action in the same control.
   const effects = `${title}\n${description}`.replace(noDecision, '');
@@ -427,6 +434,7 @@ function hasAnsweredExpansionPosture(
       .replace(/\s*<gstack-qid:[a-z0-9-]+>\s*$/i, '').replace(/^D\d+(?:\.\d+)*\s*[—–-]\s*/i, '');
     const context = /\nProject\/branch\/task:([^\n]+)/i.exec(question.question)?.[1] ?? '';
     const concreteProposal = concreteExpansionProposal(title, question.question);
+    const proposalId = /^(?:Proposal\s+\d+\s+of\s+\d+\s*[:—–-]\s*)?(E[1-9]\d*)\s*[:—–-]/i.exec(title)?.[1];
     if (question.multiSelect || question.options.length < 3 || question.options.length > 4 ||
         (!/^[\p{L}\p{N}][^?\n]+\?$/u.test(title) && !concreteProposal) ||
         /\b(?:review\s+(?:mode|posture)|(?:selected|confirmed)\s+(?:mode|option))\b/i.test(title) ||
@@ -446,7 +454,7 @@ function hasAnsweredExpansionPosture(
           /^add to (?:scope|(?:this|the) plan(?:['’]s scope)?)$/.test(label)) return 'include';
       if (/^defer to todos(?:\.md)?$/.test(label)) return 'defer';
       if (/^(?:skip|cut)(?: entirely| (?:this proposal|from (?:this |the )?scope))?$/.test(label)) return 'skip';
-      if (expansionDiscussionControl(label, option.description ?? '')) return 'pause';
+      if (expansionDiscussionControl(label, option.description ?? '', proposalId)) return 'pause';
       return null;
     });
     const answer = question.options.findIndex(option => option.label === call.answers?.[question.question]);
@@ -618,6 +626,68 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
   return candidates.length === 1 ? candidates[0]! : null;
 }
 
+/** A complete explicit inventory can bind N per-item questions without an inferred ID range. */
+function countedPerItemChoice(q: NativePlanQuestionCall['questions'][number]): number | null {
+  const words = 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty'.split(' ');
+  const token = `(?:[1-9]\\d*|${words.join('|')})`;
+  const number = (s: string) => /^\d+$/.test(s) ? Number(s) : words.indexOf(s.toLowerCase()) + 1;
+  const title = q.question.split('\n')[0]!;
+  const count = new RegExp(`\\b(${token}) (?:expansion )?(?:proposals|candidates)\\b`, 'i').exec(title);
+  const rationale = /ELI10:\s*([\s\S]*?)(?=Stakes if (?:we pick )?wrong:)/i.exec(q.question)?.[1] ?? '';
+  const inventory = new RegExp(`\\b(${token}) independent (?:add-ons|proposals|candidates|expansions)\\s*\\(([^()!?\\n]+)\\)`, 'i').exec(rationale);
+  const countPrefix = new RegExp(`(?:[\\w-]|\\b(?:${token}|zero|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|trillion)(?:\\s+and)?\\s+)$`, 'i');
+  if (!count || !inventory || countPrefix.test(title.slice(0, count.index)) || countPrefix.test(rationale.slice(0, inventory.index)) ||
+      number(count[1]!) !== number(inventory[1]!) ||
+      /\b(?:example|quoted|historical|previously|formerly|if|unless)\b/i.test(rationale.slice(0, inventory.index))) return null;
+  const n = number(count[1]!);
+  const items = inventory[2]!.split(/\s*[,;]\s*/);
+  const identities = items.map(item => /^([A-Z][1-9]\d*)\s+\S/.exec(item)?.[1]);
+  if (n < 2 || items.length !== n || identities.some(id => !id) || new Set(identities).size !== n) return null;
+  // A feature name may describe delete/update behavior, but a candidate
+  // caption cannot approve/defer scope or smuggle another item's disposition.
+  if (items.some(item => /\b(?:approv(?:e|es|ed|ing)|accept(?:s|ed|ing)?|authori[sz](?:e|es|ed|ing)|commit(?:s|ted|ting)?|adopt(?:s|ed|ing)?|defer(?:s|red|ring)?|skip(?:s|ped|ping)?|reject(?:s|ed|ing)?|exclude(?:s|d|ing)?)\b/i.test(item) ||
+      /\b(?:add|include|remove|delete|drop|merge|ship)\s+(?:all|every|these|those|others?|[A-Z][1-9]\d*)\b/i.test(item))) return null;
+  // These are explicit identities, not endpoints of an inferred E1..En range.
+  // A universal local mapping must cover every listed item, including mixed IDs.
+  const plainRationale = rationale.replace(/"[^"\n]*"|“[^”\n]*”|`[^`]*`/g, text => ' '.repeat(text.length));
+  const dispositionMenu = /\bAdd\s*\/\s*Defer\s*\/\s*(?:Cut|Skip)(?:\s*\/\s*Hold)?\b/gi;
+  const universal = /\b(?:Each|Every)(?: (?:proposal|candidate|item))? (?:needs|gets) (?:its|their) own Add\s*\/\s*Defer\s*\/\s*(?:Cut|Skip)\b/i;
+  const questions = [...plainRationale.matchAll(new RegExp(`\\b(${token}) (?:short |sequential )?questions\\b`, 'gi'))];
+  if (!universal.test(plainRationale) || !questions.length || questions.some(m =>
+      countPrefix.test(plainRationale.slice(0, m.index)) || number(m[1]!) !== n)) return null;
+  const inline = [...q.question.matchAll(/(?:^|\n)([A-D])[):.]\s+([^\n]+)/g)];
+  const net = q.question.lastIndexOf('\nNet:');
+  if (inline.length !== q.options.length || new Set(inline.map(x => x[1])).size !== inline.length || net <= inline.at(-1)!.index!) return null;
+  const cleanLabel = (s: string) => s.replace(/^[A-D][):.]\s*/i, '').replace(/\s*\(recommended\)\s*$/i, '').trim().toLowerCase();
+  const effect = /\b(?:approv\w*|authori[sz]\w*|accept\w*|commit\w*|adopt\w*|implement\w*|add(?:s|ed|ing)?|includ\w*|remov\w*|delet\w*|drop\w*|cut(?:s|ting)?|skip\w*|defer\w*|merg\w*|ship(?:s|ped|ping)?|deploy\w*|enabl\w*|disabl\w*)\b/i;
+  const allText = q.question + '\n' + q.options.map(o => o.description ?? '').join('\n');
+  if (/\b(?:regardless|whichever|choosing|selecting|picking|any choice|every choice)\b[^.!?\n]*\b(?:approv\w*|authori[sz]\w*|accept\w*|commit\w*|add\w*|includ\w*|delet\w*|drop\w*|skip\w*|defer\w*|merg\w*)\b/i.test(allText)) return null;
+  const premise = q.question.slice(0, inline[0]!.index);
+  if (/\b(?:we|I|you|this (?:answer|choice|selection))\s+(?:(?:now|hereby|already|automatically|will)\s+)*(?:approv\w*|accept\w*|authori[sz]\w*|adopt\w*|commit\w*|defer\w*|skip\w*|reject\w*|exclude\w*|add\w*|include\w*|remove\w*|drop\w*|merge\w*|ship\w*)\b/i.test(premise) ||
+      /\b(?:already|now|is|are|was|were|has been|have been)\s+(?:already |now )?(?:approved|accepted|included|authorized|adopted|deferred|skipped|rejected|in scope)\b|[([]\s*(?:approved|accepted|deferred|skipped)\b/i.test(premise) ||
+      /(?:^|[;:.])\s*(?:approve|accept|authorize|adopt|commit|defer|skip|reject|exclude|add|include|remove|drop|merge|ship)\s+(?:all|every|these|those|[A-Z][1-9]\d*)\b/im.test(premise)) return null;
+  const common = (premise + q.question.slice(net)).replace(inventory[0], '').replace(dispositionMenu, '')
+    .replace(/\bnothing gets (?:cut|dropped|removed|omitted) silently\b/gi, '')
+    .replace(/^Project\/branch\/task:[^\n]+/gim, context => context.replace(/"[^"\n]*"|“[^”\n]*”/g, task =>
+      /\b(?:approv\w*|authori[sz]\w*|accept\w*|commit\w*|all|every|[A-Z][1-9]\d*)\b/i.test(task) ? task : ''));
+  if (effect.test(common)) return null;
+  const choices = q.options.flatMap((o, index) => {
+    const label = cleanLabel(o.label), description = o.description ?? '';
+    const ownIndex = inline.findIndex(line => cleanLabel(line[2]!) === label);
+    if (ownIndex < 0 || inline.filter(line => cleanLabel(line[2]!) === label).length !== 1 ||
+        !/\b(?:full|complete|all)\b/i.test(label) || !/\b(?:split|walkthrough|per[- ]item|one[- ]by[- ]one)\b/i.test(label)) return [];
+    const mapping = new RegExp(`^(${token}) per[- ]item questions\\s*\\(Add\\s*/\\s*Defer\\s*/\\s*(?:Cut|Skip)\\s*/\\s*Hold\\),? (?:then|plus) (?:a |the )?final confirmation\\.$`, 'i').exec(description.trim());
+    if (!mapping || number(mapping[1]!) !== n) return [];
+    const own = q.question.slice(inline[ownIndex]!.index!, inline[ownIndex + 1]?.index ?? net);
+    if ((own.match(/✅/g)?.length ?? 0) < 2 || (own.match(/❌/g)?.length ?? 0) < 1) return [];
+    const local = (label + '\n' + description + '\n' + own).replace(dispositionMenu, '')
+      .replace(/\b(?:none|no (?:proposal|candidate|item)) (?:is|are) (?:cut|dropped|removed|skipped|merged)(?: by (?:me|the reviewer))? before you (?:weigh in|decide|choose)\b/gi, '');
+    if (/```|~~~|^\s*>|\b(?:not|never|without|except|excluding|stop\w*|omit\w*|narrow\w*|batch\w*|subset|shortlist|groups?)\b/im.test(local) || effect.test(local)) return [];
+    return [index + 1];
+  });
+  return choices.length === 1 ? choices[0]! : null;
+}
+
 /** Only the full independent walkthrough is navigation; no scope selection is authorized. */
 export function ceoExpansionPacingChoice(visible: string, transcript: PlanCountTranscript,
   selectionStartedAt: number, pending?: NativePlanQuestionCall & {source:'pre_tool_use'}) {
@@ -630,8 +700,15 @@ export function ceoExpansionPacingChoice(visible: string, transcript: PlanCountT
   const position = transcript.calls.indexOf(call);
   if (position >= 0 && position <= transcript.calls.indexOf(selected)) return null;
   const q = call.questions[0]!;
-  const pacing = call.questions.some(q=>/\bhow\b[^?\n]*\b(?:walk|present|review|group|batch|split|decide)\b[^?\n]*\?/i.test(q.question.split('\n')[0]!) &&
-    /\b(?:proposals|items|expansions|candidates)\b/i.test(q.question));
+  const pacing = call.questions.some(q=> {
+    const title = q.question.split('\n')[0]!;
+    const how = /\bhow\b[^?\n]*\b(?:walk|present|review|group|batch|split|decide)\b[^?\n]*\?/i.test(title);
+    const alternatives = /\b(?:proposals|candidates)\b[^?\n]*\?/i.test(title) &&
+      /\b(?:chain|split|walkthrough|per[- ]item)\b/i.test(title) &&
+      q.options.some(o=>/\b(?:full|complete|all)\b[^\n]*\b(?:split|walkthrough|per[- ]item)\b/i.test(o.label)) &&
+      q.options.some(o=>/\b(?:narrow|batch|group|shortlist)\w*\b/i.test(o.label));
+    return (how || alternatives) && /\b(?:proposals|items|expansions|candidates)\b/i.test(q.question);
+  });
   if (!pacing) return null;
   // Index zero is an explicit unsupported pacing outcome, never a request
   // for the caller's generic first-option fallback.
@@ -639,7 +716,7 @@ export function ceoExpansionPacingChoice(visible: string, transcript: PlanCountT
   if (waiting.length>1 || call.questions.length!==1 || q.multiSelect || q.options.length < 2 || q.options.length > 4 ||
       !/Project\/branch\/task:[^\n]*\bSCOPE EXPANSION\b/i.test(q.question) ||
       !singleScopeBrief(q.question,q.options.map(o=>o.description ?? ''),false,true)) return refused();
-  let selectedIndex = completeCandidateSplit(q);
+  let selectedIndex = completeCandidateSplit(q) ?? countedPerItemChoice(q);
   if (selectedIndex === null) {
     if (!/\beach\b[^.!?\n]*\bseparate (?:scope call|decision)\b/i.test(q.question)) return refused();
     // The question can grant scope even when its selected option sounds like

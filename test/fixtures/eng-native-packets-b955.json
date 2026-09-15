@@ -1,0 +1,182 @@
+{
+  "source": "b955a49ec344706fa25c4ca47bcb1dac5c06a086",
+  "publicProjectionSha256": "c83d16d0631404150a2b8fad3e5de7dc858e9b276f04baee80c46443f2cb777c",
+  "originalOutcome": "no_review_questions",
+  "startedAt": 1789504730350,
+  "finishedAt": 1789505826450,
+  "calls": [
+    {
+      "sessionId": "1f9aa924-7ef7-4c0b-a76e-3202eb5741f2",
+      "toolUseId": "toolu_01BvStSKFLiZ6VNcjKb3inFZ",
+      "questions": [
+        {
+          "header": "Structure",
+          "question": "D7 \u2014 Structure: with RequestPolicy deferred and TokenStore folded, which class arrangement do we build?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: Three arrangements deliver the same features (D4-D6 held fixed, legacy flow untouched behind a flag). A) three classes: AuthBroker and SessionMint as services, AuthCache as the one facade over the existing adapter. B) two classes: drop the AuthCache facade and let both services call the existing adapter directly, since it already keys by tenant/issuer/audience/policy version. C) one service: merge AuthBroker and SessionMint into a single AuthService over the adapter. The facade matters because two services write to one cache; a single seam is where you put the write discipline and the test double.\nStakes if we pick wrong: too many layers and you maintain a pass-through class; too few and cache write rules get duplicated in two services or one service grows into a god object.\nRecommendation: A because both services mutate the same cache (PLAN.md:19-20); one facade is the only place to enforce a single write path and to mock in tests, and it costs one small class. (human: A ~3 days, B ~2.5 days, C ~2 days / CC: A ~40 min, B ~35 min, C ~30 min)\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: one deliberate seam for shared-cache writes vs. fewer files with the write rules spread across callers.",
+          "options": [
+            {
+              "label": "A) 3 classes: Broker, Mint, AuthCache facade (recommended)",
+              "description": "\u2705 Single seam for every cache mutation from both services; the concurrency fix lands once. \u2705 AuthCache is the natural test double and the natural home for the strangler flag check. \u274c One more class than strictly necessary; the facade must stay thin or it becomes a second adapter."
+            },
+            {
+              "label": "B) 2 classes: services use adapter directly",
+              "description": "\u2705 Fewest new files; the adapter already has the right tenant-scoped keys and invalidation hooks. \u2705 No pass-through layer to keep honest. \u274c Write discipline (who may mutate, in what order) gets duplicated in AuthBroker and SessionMint, the DRY smell the review will flag next."
+            },
+            {
+              "label": "C) 1 merged AuthService",
+              "description": "\u2705 Smallest possible surface; one class, one test suite. \u2705 No shared-cache coordination between services because there is only one service. \u274c Brokering and session minting are different responsibilities with different failure modes; one class grows into the god object the refactor was meant to avoid."
+            }
+          ],
+          "multiSelect": false
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D7 \u2014 Structure: with RequestPolicy deferred and TokenStore folded, which class arrangement do we build?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: Three arrangements deliver the same features (D4-D6 held fixed, legacy flow untouched behind a flag). A) three classes: AuthBroker and SessionMint as services, AuthCache as the one facade over the existing adapter. B) two classes: drop the AuthCache facade and let both services call the existing adapter directly, since it already keys by tenant/issuer/audience/policy version. C) one service: merge AuthBroker and SessionMint into a single AuthService over the adapter. The facade matters because two services write to one cache; a single seam is where you put the write discipline and the test double.\nStakes if we pick wrong: too many layers and you maintain a pass-through class; too few and cache write rules get duplicated in two services or one service grows into a god object.\nRecommendation: A because both services mutate the same cache (PLAN.md:19-20); one facade is the only place to enforce a single write path and to mock in tests, and it costs one small class. (human: A ~3 days, B ~2.5 days, C ~2 days / CC: A ~40 min, B ~35 min, C ~30 min)\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: one deliberate seam for shared-cache writes vs. fewer files with the write rules spread across callers.": "A) 3 classes: Broker, Mint, AuthCache facade (recommended)"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T20:42:57.969Z"
+    },
+    {
+      "sessionId": "1f9aa924-7ef7-4c0b-a76e-3202eb5741f2",
+      "toolUseId": "toolu_01XLQ5bdUNXoXApuVeeYxfYt",
+      "questions": [
+        {
+          "header": "R1 wiring",
+          "question": "D8 \u2014 R1: how does the shared AuthCache reach AuthBroker and SessionMint?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: Today the plan exports one AuthCache from a module and both services import it (PLAN.md:19-20). That works until you need a second instance (a test, a per-region cache) and discover every import is welded to the same object. Constructor injection means the app's startup code builds one AuthCache and hands it to both services; production still has one instance, tests get a fresh one each.\nStakes if we pick wrong: module export leaves tests order-dependent and hides the coupling the refactor exists to remove; injection adds one composition-root file.\nRecommendation: A because it is the Layer 1 fix for shared mutable singletons and costs one constructor parameter per service. (human: ~3h / CC: ~10 min)\nCompleteness: A=10/10, B=3/10, C=6/10\nNet: explicit wiring you can see in one file vs. implicit wiring you discover in a flaky test.",
+          "options": [
+            {
+              "label": "A) Constructor injection (recommended)",
+              "description": "\u2705 One AuthCache built at the composition root and passed to both services; production shape unchanged. \u2705 Every test gets an isolated instance; no shared-state flakes. \u274c Adds a composition-root file and a constructor parameter to each service."
+            },
+            {
+              "label": "B) Keep module-level export",
+              "description": "\u2705 Zero extra wiring; matches the original plan text. \u2705 Fewest files touched. \u274c Test isolation requires module-cache resets; coupling stays hidden; cannot compose a second instance."
+            },
+            {
+              "label": "C) Service locator / getter",
+              "description": "\u2705 Central registry, swappable in tests via a setter. \u2705 No constructor changes. \u274c Dependencies still invisible at the call site; the setter is global mutable state by another name."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "header": "R2 writes",
+          "question": "D9 \u2014 R2: who may write to AuthCache, and how do writes respect invalidation?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: Both services write to one cache with no ordering (PLAN.md:10, :20). Picture a tenant getting suspended while SessionMint is halfway through minting a session: the suspension wipes the tenant's entries, then the mint finishes and writes a brand-new one. The suspended tenant now has a working session. Fix options: make SessionMint the only writer and have each write carry the invalidation version it read (write is rejected if the version moved); or let both write but dedupe in-flight work per key and still version-check; or leave it and rely on token expiry.\nStakes if we pick wrong: a revoked or suspended tenant keeps a live session until TTL; that is a security incident, not a cache bug.\nRecommendation: A because one writer plus a version check is the smallest change that closes the race, and AuthBroker has no reason to write (it validates). (human: ~1 day / CC: ~20 min)\nCompleteness: A=10/10, B=9/10, C=2/10\nNet: a simple rule (one writer, versioned writes) vs. coordination logic in two places vs. accepting the race.",
+          "options": [
+            {
+              "label": "A) Single writer + version check (recommended)",
+              "description": "\u2705 Only SessionMint writes; AuthBroker is read-only, so there is exactly one write path to test. \u2705 Write carries the invalidation version it observed; a suspension between read and write rejects the stale mint. \u274c AuthBroker must ask SessionMint (or the facade) to persist anything it learns; slightly more ceremony."
+            },
+            {
+              "label": "B) Per-key in-flight dedupe + version check, both write",
+              "description": "\u2705 Concurrent mints for the same key collapse to one IDP round-trip. \u2705 Version check still closes the suspension race. \u274c Two writers to test and reason about; the dedupe map is more shared mutable state to get right."
+            },
+            {
+              "label": "C) Keep unserialized",
+              "description": "\u2705 No new code; matches the original plan. \u2705 Fastest to ship. \u274c Suspension/revocation race stays open; a suspended tenant can hold a session until expiry. Fails the security bar for an auth refactor."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "header": "R3 flag",
+          "question": "D10 \u2014 R3: strangler flag granularity for routing tenants to the new services?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: D6 keeps legacyAuthFlow() running and routes some traffic to AuthBroker/SessionMint behind a flag. A single on/off flag moves every tenant at once. A per-tenant allowlist lets you move one internal tenant first, watch it, then widen; a global kill switch still exists for emergencies. The cache adapter is already tenant-keyed, so per-tenant costs one lookup.\nStakes if we pick wrong: global-only means your first production test of the new auth path is every customer at the same time; per-tenant adds a small config surface to maintain.\nRecommendation: A because auth is the one place a canary is non-negotiable and the tenant key is already in hand. (human: ~2h / CC: ~10 min)\nCompleteness: A=10/10, B=6/10\nNet: staged rollout you can reverse per tenant vs. one switch for everyone.",
+          "options": [
+            {
+              "label": "A) Per-tenant allowlist + global kill switch (recommended)",
+              "description": "\u2705 Canary one tenant, then widen; rollback is per tenant or global. \u2705 Reuses the tenant key already threaded through every request. \u274c Small config surface (allowlist source, who edits it) to document and test."
+            },
+            {
+              "label": "B) Single global boolean",
+              "description": "\u2705 Simplest possible flag; one line to flip. \u2705 No allowlist to maintain. \u274c First real traffic on the new path is all tenants at once; a bug is a full outage, not a canary blip."
+            }
+          ],
+          "multiSelect": false
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D8 \u2014 R1: how does the shared AuthCache reach AuthBroker and SessionMint?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: Today the plan exports one AuthCache from a module and both services import it (PLAN.md:19-20). That works until you need a second instance (a test, a per-region cache) and discover every import is welded to the same object. Constructor injection means the app's startup code builds one AuthCache and hands it to both services; production still has one instance, tests get a fresh one each.\nStakes if we pick wrong: module export leaves tests order-dependent and hides the coupling the refactor exists to remove; injection adds one composition-root file.\nRecommendation: A because it is the Layer 1 fix for shared mutable singletons and costs one constructor parameter per service. (human: ~3h / CC: ~10 min)\nCompleteness: A=10/10, B=3/10, C=6/10\nNet: explicit wiring you can see in one file vs. implicit wiring you discover in a flaky test.": "A) Constructor injection (recommended)",
+        "D9 \u2014 R2: who may write to AuthCache, and how do writes respect invalidation?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: Both services write to one cache with no ordering (PLAN.md:10, :20). Picture a tenant getting suspended while SessionMint is halfway through minting a session: the suspension wipes the tenant's entries, then the mint finishes and writes a brand-new one. The suspended tenant now has a working session. Fix options: make SessionMint the only writer and have each write carry the invalidation version it read (write is rejected if the version moved); or let both write but dedupe in-flight work per key and still version-check; or leave it and rely on token expiry.\nStakes if we pick wrong: a revoked or suspended tenant keeps a live session until TTL; that is a security incident, not a cache bug.\nRecommendation: A because one writer plus a version check is the smallest change that closes the race, and AuthBroker has no reason to write (it validates). (human: ~1 day / CC: ~20 min)\nCompleteness: A=10/10, B=9/10, C=2/10\nNet: a simple rule (one writer, versioned writes) vs. coordination logic in two places vs. accepting the race.": "A) Single writer + version check (recommended)",
+        "D10 \u2014 R3: strangler flag granularity for routing tenants to the new services?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: D6 keeps legacyAuthFlow() running and routes some traffic to AuthBroker/SessionMint behind a flag. A single on/off flag moves every tenant at once. A per-tenant allowlist lets you move one internal tenant first, watch it, then widen; a global kill switch still exists for emergencies. The cache adapter is already tenant-keyed, so per-tenant costs one lookup.\nStakes if we pick wrong: global-only means your first production test of the new auth path is every customer at the same time; per-tenant adds a small config surface to maintain.\nRecommendation: A because auth is the one place a canary is non-negotiable and the tenant key is already in hand. (human: ~2h / CC: ~10 min)\nCompleteness: A=10/10, B=6/10\nNet: staged rollout you can reverse per tenant vs. one switch for everyone.": "A) Per-tenant allowlist + global kill switch (recommended)"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T20:45:01.853Z"
+    },
+    {
+      "sessionId": "1f9aa924-7ef7-4c0b-a76e-3202eb5741f2",
+      "toolUseId": "toolu_0167xqCwcTFCEnwz1gtkwoCG",
+      "questions": [
+        {
+          "header": "R4 errors",
+          "question": "D11 \u2014 R4: how should validateAndDispatch() handle errors?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: PLAN.md:23-24 describes a 60-line function with three nested try/catch blocks where each catch quietly eats one kind of error. In an auth path that means a request can fail for three different reasons and the caller sees the same nothing. The complete fix splits the function into named steps and puts one catch at the boundary that turns each failure into a typed error (TokenInvalid, IdpUnavailable, CacheUnavailable) and rethrows it, so the HTTP layer can pick 401 vs 503 and logs say what happened.\nStakes if we pick wrong: keep swallowing and on-call cannot tell an IDP outage from a bad token at 3am; users get a generic failure with no retry hint.\nRecommendation: A because AuthBroker will call this function and its errors feed R6's fail-fast; swallowed errors would defeat both. (human: ~1 day / CC: ~15 min)\nCompleteness: A=10/10, B=5/10, C=1/10\nNet: explicit typed failures vs. quiet fallthrough you debug in production.",
+          "options": [
+            {
+              "label": "A) Flatten + typed AuthError, rethrow (recommended)",
+              "description": "\u2705 Each former swallowed class becomes a typed error the HTTP layer maps to 401/403/503 with a clear message. \u2705 Function shrinks to sequential named steps; one test per error class. \u274c Callers that relied on silent undefined must now handle a throw; find them via grep."
+            },
+            {
+              "label": "B) Keep nesting, log inside each catch",
+              "description": "\u2705 Smallest diff; errors at least appear in logs. \u2705 No caller changes. \u274c Callers still get silent fallthrough; 60 lines and three nesting levels remain; logs without propagation do not help the user."
+            },
+            {
+              "label": "C) Leave as is",
+              "description": "\u2705 No work now. \u2705 Zero regression risk in this function. \u274c The new AuthBroker inherits a dispatcher that hides IDP outages and bad tokens alike."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "header": "R5 regression",
+          "question": "D12 \u2014 R5 (Iron Rule): what regression contract protects legacyAuthFlow() and proves the new path is equivalent?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: PLAN.md:14-16 plans zero tests around legacyAuthFlow(). With D6, legacy stays untouched, but two things are still at risk: tenants with the flag off must still reach legacy exactly as before, and tenants with the flag on must get an equivalent session. Behavior to preserve: legacy outputs for success, expired token, revoked token, wrong audience, suspended tenant. Intentional changes: none on the legacy path. Acceptance: a characterization suite pins those five legacy outcomes; a parity test runs the same fixtures through both paths and asserts equivalent session claims and equivalent error class.\nStakes if we pick wrong: a regression in every tenant's login with no test that would have caught it; you find out from customers.\nRecommendation: A because with CC the full suite costs minutes and this is the login path for every tenant. (human: ~1.5 days / CC: ~25 min)\nCompleteness: A=10/10, B=7/10, C=3/10\nNet: pinned legacy behavior plus proven equivalence vs. trusting the flag.",
+          "options": [
+            {
+              "label": "A) Characterization suite + parity test (recommended)",
+              "description": "\u2705 Five legacy outcomes pinned before any routing change; a future legacy deletion has a spec to satisfy. \u2705 Parity test proves the new path is a drop-in for the same inputs, including error classes. \u274c Requires fixtures for expired, revoked, wrong-audience, suspended cases; the IDP must be stubbed."
+            },
+            {
+              "label": "B) Parity test only",
+              "description": "\u2705 Proves equivalence on the fixtures you provide. \u2705 Less fixture work. \u274c Legacy behavior itself is never pinned; if both paths drift together the test still passes."
+            },
+            {
+              "label": "C) Flag-off smoke test only",
+              "description": "\u2705 One test, minutes of work. \u2705 Confirms routing to legacy still happens. \u274c Says nothing about what legacy or the new path actually return; regression in either goes unnoticed."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "header": "R6 parallel",
+          "question": "D13 \u2014 R6: how should the 5 IDP calls run in parallel?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: PLAN.md:31-32 says the 5 IDP calls are independent and sequential today, so login waits 5 round-trips when it could wait one. Promise.all runs them together and fails the moment any one fails, which is right for validation: one failed check means the token is not valid, so stop. Add a per-call timeout and an overall deadline with AbortController so a hung IDP does not hold the request open. Promise.allSettled instead waits for all five and reports every failure, useful for diagnostics but always as slow as the slowest call.\nStakes if we pick wrong: no timeout means one slow IDP endpoint pins connections; allSettled means users wait for the slowest call even when the first already failed.\nRecommendation: A because validation is all-or-nothing and fail-fast with a deadline is the built-in that fits. (human: ~4h / CC: ~10 min)\nCompleteness: A=10/10, B=8/10, C=2/10\nNet: fastest possible answer with a hard ceiling vs. fuller diagnostics at the cost of latency.",
+          "options": [
+            {
+              "label": "A) Promise.all + per-call timeout + deadline abort (recommended)",
+              "description": "\u2705 Login latency drops from 5x to ~1x IDP round-trip; first failure aborts the rest. \u2705 Hard deadline means a hung IDP becomes a typed 503, not a stuck request. \u274c Aborted calls' partial failures are not reported; only the first error surfaces."
+            },
+            {
+              "label": "B) Promise.allSettled, aggregate errors",
+              "description": "\u2705 Every failing check is reported in one error; best for debugging IDP misconfiguration. \u2705 Still ~1x round-trip when all succeed. \u274c Waits for the slowest call even after a definitive failure; still needs the same timeout work."
+            },
+            {
+              "label": "C) Keep sequential",
+              "description": "\u2705 No change; simplest to reason about. \u2705 Natural short-circuit on first failure. \u274c Every login pays 5 round-trips; the plan itself calls the fix trivial."
+            }
+          ],
+          "multiSelect": false
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D11 \u2014 R4: how should validateAndDispatch() handle errors?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: PLAN.md:23-24 describes a 60-line function with three nested try/catch blocks where each catch quietly eats one kind of error. In an auth path that means a request can fail for three different reasons and the caller sees the same nothing. The complete fix splits the function into named steps and puts one catch at the boundary that turns each failure into a typed error (TokenInvalid, IdpUnavailable, CacheUnavailable) and rethrows it, so the HTTP layer can pick 401 vs 503 and logs say what happened.\nStakes if we pick wrong: keep swallowing and on-call cannot tell an IDP outage from a bad token at 3am; users get a generic failure with no retry hint.\nRecommendation: A because AuthBroker will call this function and its errors feed R6's fail-fast; swallowed errors would defeat both. (human: ~1 day / CC: ~15 min)\nCompleteness: A=10/10, B=5/10, C=1/10\nNet: explicit typed failures vs. quiet fallthrough you debug in production.": "A) Flatten + typed AuthError, rethrow (recommended)",
+        "D12 \u2014 R5 (Iron Rule): what regression contract protects legacyAuthFlow() and proves the new path is equivalent?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: PLAN.md:14-16 plans zero tests around legacyAuthFlow(). With D6, legacy stays untouched, but two things are still at risk: tenants with the flag off must still reach legacy exactly as before, and tenants with the flag on must get an equivalent session. Behavior to preserve: legacy outputs for success, expired token, revoked token, wrong audience, suspended tenant. Intentional changes: none on the legacy path. Acceptance: a characterization suite pins those five legacy outcomes; a parity test runs the same fixtures through both paths and asserts equivalent session claims and equivalent error class.\nStakes if we pick wrong: a regression in every tenant's login with no test that would have caught it; you find out from customers.\nRecommendation: A because with CC the full suite costs minutes and this is the login path for every tenant. (human: ~1.5 days / CC: ~25 min)\nCompleteness: A=10/10, B=7/10, C=3/10\nNet: pinned legacy behavior plus proven equivalence vs. trusting the flag.": "A) Characterization suite + parity test (recommended)",
+        "D13 \u2014 R6: how should the 5 IDP calls run in parallel?\nProject/branch/task: gstack-plan-count-FkY8wp on main, PLAN.md Multi-tenant Auth Refactor.\nELI10: PLAN.md:31-32 says the 5 IDP calls are independent and sequential today, so login waits 5 round-trips when it could wait one. Promise.all runs them together and fails the moment any one fails, which is right for validation: one failed check means the token is not valid, so stop. Add a per-call timeout and an overall deadline with AbortController so a hung IDP does not hold the request open. Promise.allSettled instead waits for all five and reports every failure, useful for diagnostics but always as slow as the slowest call.\nStakes if we pick wrong: no timeout means one slow IDP endpoint pins connections; allSettled means users wait for the slowest call even when the first already failed.\nRecommendation: A because validation is all-or-nothing and fail-fast with a deadline is the built-in that fits. (human: ~4h / CC: ~10 min)\nCompleteness: A=10/10, B=8/10, C=2/10\nNet: fastest possible answer with a hard ceiling vs. fuller diagnostics at the cost of latency.": "A) Promise.all + per-call timeout + deadline abort (recommended)"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T20:47:01.327Z"
+    }
+  ],
+  "evidenceLimits": "Complete original native calls and ACK mappings. Report and original paid outcome remain in immutable private retention; these free replays do not award paid credit."
+}

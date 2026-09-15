@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, afterAll } from 'bun:test';
 import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { runSkillTest } from './helpers/session-runner';
-import { buildSeedConfig, seedHermeticGstackHome } from './helpers/hermetic-env';
+import { buildSeedConfig, seedHermeticGstackHome, seedHermeticRuntimeView } from './helpers/hermetic-env';
 import {
   ROOT, runId, evalsEnabled,
   describeIfSelected, logCost, recordE2E,
@@ -47,7 +47,16 @@ describeIfSelected('Autoplan dual-voice E2E', ['autoplan-dual-voice'], () => {
       trustedDirs: [workDir],
     })), { mode: 0o600 });
     seedHermeticGstackHome(gstackHome);
-    attemptEnv = { CLAUDE_CONFIG_DIR: configDir, GSTACK_HOME: gstackHome, GSTACK_STATE_ROOT: gstackHome };
+    // Canonical skill paths must resolve inside this attempt's HOME as well
+    // as Claude's config. Link the existing guarded runtime view, including
+    // bin/lib and review assets; copied slash-command skeletons are not enough.
+    const runtime = path.join(configDir, 'skills', 'gstack');
+    fs.mkdirSync(path.dirname(runtime), { recursive: true });
+    seedHermeticRuntimeView(ROOT, runtime);
+    attemptEnv = { HOME: stateDir, CLAUDE_CONFIG_DIR: configDir,
+      GSTACK_HOME: gstackHome, GSTACK_STATE_ROOT: gstackHome,
+      // Preserve the same outside-reviewer auth/model home across HOME isolation.
+      CODEX_HOME: process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex') };
 
     const run = (cmd: string, args: string[]) => {
       const result = spawnSync(cmd, args, { cwd: workDir, encoding: 'utf8', timeout: 10000 });

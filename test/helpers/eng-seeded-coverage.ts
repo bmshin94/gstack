@@ -320,6 +320,42 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     const settledStructure = (raw: string) => !new RegExp(`\\b${owner} (?:is|was|has been) ${unsettled}\\b`, 'i').test(current(raw.replace(
       new RegExp(`(${owner} (?:is|was|has been) )["“'‘\\x60](${unsettled})["”'’\\x60]`, 'gi'), '$1$2')));
     const structureOptions = q.options.map(o => `${o.label}\n${o.description ?? ''}`).filter(settledStructure).map(current).filter(active);
+    // A structure comparison may spell out its counted alternatives in ELI10
+    // and abbreviate the native labels. Join only matching option letters and
+    // counts; both the smaller body and its own native option must reuse the
+    // existing adapter. Earlier cuts do not supply this decision's reduction.
+    const comparisonBodies = [...explanation.matchAll(/(?:^|\s)([A-D])\)\s*([\s\S]*?)(?=\s+[A-D]\)|$)/g)];
+    const comparison = structureOptions.flatMap(option => {
+      const label = /^([A-D])\)\s*(one|two|three|[1-9]\d*) (?:classes|services?)\b/i.exec(option);
+      const bodies = comparisonBodies.filter(body => body[1] === label?.[1]);
+      const body = bodies.length === 1 ? bodies[0]![2]! : '';
+      const bodyCount = /^(one|two|three|[1-9]\d*) (?:classes|services?)\s*:/i.exec(body)?.[1];
+      const number = (value: string) => counts[value.toLowerCase()] ?? Number(value);
+      return label && bodyCount && number(label[2]!) === number(bodyCount)
+        ? [{ count: number(bodyCount), body, option }] : [];
+    });
+    if (/\b(?:class|component|module) (?:arrangement|structure)\b/i.test(title) && settledStructure(q.question) &&
+        /\b(?:same|unchanged) features\b/i.test(explanation) && /\bheld fixed\b/i.test(explanation) &&
+        !/\bAuthCache (?:now |already )?(?:has|provides|adds) (?:independent|distinct|new) (?:behavior|rules|policy)\b|\b(?:smaller|reduced) arrangement changes (?:the )?accepted feature choices\b/i.test(text) &&
+        comparison.some(choice => choice.count === 3 && /\bAuthCache facade\b/.test(choice.option.split('\n')[0]!) &&
+          ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => new RegExp(`\\b${name}\\b`).test(choice.body)) &&
+          /\bAuthCache as (?:the |one )*facade over the existing adapter\b/i.test(choice.body)) &&
+        comparison.some(choice => choice.count === 2 && /\b(?:drop|remove|cut) (?:the )?AuthCache facade\b/i.test(choice.body) &&
+          /\bboth services (?:call|use) the existing adapter directly\b/i.test(choice.body) &&
+          /\bservices (?:use|call) (?:the )?(?:existing )?adapter directly\b/i.test(choice.option) &&
+          !/\b(?:keep|retain|restore) (?:the )?AuthCache facade\b|\b(?:do not|don't|never) (?:drop|remove|cut) (?:the |AuthCache )?facade\b|\b(?:replace|remove|drop) the existing adapter\b|\b(?:other|another|foreign|different) (?:function|method|issue|project|remedy)\b/i.test(`${choice.body}\n${choice.option}`))) ids.push('complexity');
+
+    // Flattening can preserve a throwing API: each formerly swallowed class
+    // becomes a typed failure and is rethrown. The question owns the current
+    // catch defect; exhaustive conversion and propagation belong to one option.
+    if (/\bvalidateAndDispatch\(\)/.test(title) && settledStructure(q.question) &&
+        /\b(?:three|3) nested (?:try\/catch|catch) blocks\b[^.!?]*\b(?:each|every) catch (?:quietly|silently) (?:eats?|swallows?|suppresses?|discards?) (?:one kind of error|a different error class)\b/i.test(explanation) &&
+        !/\bvalidateAndDispatch\(\) (?:now |already )?(?:rethrows every error|no longer swallows failures)\b/i.test(text) &&
+        structureOptions.some(option => /^(?:[A-D][):.]\s*)?(?:Flatten|Split)\b/i.test(option) &&
+          /\btyped [A-Z][A-Za-z0-9_]*\b/.test(option) && /\b(?:rethrow|propagate)\b/i.test(option.split('\n')[0]!) &&
+          /\b(?:Each|Every|All) (?:former |previously )?(?:swallowed )?(?:error |failure )?class(?:es)? (?:becomes?|maps? to) a typed (?:error|failure)\b/i.test(option) &&
+          /\b(?:sequential|linear) named steps\b/i.test(option) &&
+          !/\b(?:do not|don't|does not|doesn't|never|will not|won't) (?:rethrow|propagate|surface|expose)\b|\b(?:not (?:every|all|each)|only some) (?:(?:known|former|previously|swallowed)\s+)*(?:(?:errors?|failures?)(?: classes?| class)?|classes|class)\b|\b(?:errors?|failures?) (?:are |is |will be |still |silently )*(?:swallowed|ignored|discarded|suppressed|hidden)\b|\b(?:other|another|foreign|different) (?:function|method|issue|project|remedy)\b/i.test(option))) ids.push('swallowed-errors');
     // A current store-consolidation choice may follow a separate feature cut.
     // Its own counted inventory and opposed keep/remove options establish the
     // reduction; neither the earlier approval nor the cumulative count does.
@@ -479,8 +515,10 @@ export function isEngSeedDecisionAUQ(fp: AskUserQuestionFingerprint,
       (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0) ||
       priorCalls.some(prior => prior.sessionId !== call.sessionId || prior.toolUseId === call.toolUseId) ||
       !completedDecision(call, startedAt, finishedAt)) return false;
-  const q = call.questions[0]!;
-  if (fp.options.length !== q.options.length || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label)) return false;
+  // nativePlanCallFingerprint retains all answered tabs with per-tab indices.
+  // Authenticate that complete shape before allowing one seed per whole call.
+  const offered = call.questions.flatMap(q => q.options.map((o, i) => ({ index: i + 1, label: o.label })));
+  if (fp.options.length !== offered.length || !fp.options.every((o, i) => o.index === offered[i]!.index && o.label === offered[i]!.label)) return false;
   const seeds = call.questions.flatMap(seedSubjects);
   return seeds.length === 1 && !priorCalls.some(prior => completedDecision(prior, startedAt, finishedAt) &&
     prior.questions.flatMap(seedSubjects).length === 1 && prior.questions.flatMap(seedSubjects)[0] === seeds[0]);

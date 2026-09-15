@@ -698,3 +698,111 @@ test('owned effort/risk tuple never bypasses native identity or ACK validation',
   const stale = tupleQuestion77(); stale.options[1]!.label = 'Different native option';
   expect(() => tupleCount77(tupleProposal77.savedPlan, stale)).toThrow(/Invalid/);
 });
+
+
+const b955 = fixture.b955.rows;
+const b955Fingerprint = (index: number) => nativePlanCallFingerprint(clone(b955[index]!.call), 1, true);
+const b955Counter = (index: number, question = b955Fingerprint(index), plan = b955[index]!.savedPlan, seed = b955[index]!.seed) =>
+  createCeoPaymentFindingCounter(seed, () => plan, ceoFirstReviewAUQ).isReviewAUQ(question);
+test('b955 completed test-coverage decision binds scoped None to the actual uncovered handler', () => {
+  expect(ceoPaymentFinding(b955Fingerprint(0), b955[0]!.seed, b955[0]!.savedPlan)).toMatchObject({seed:'tests', ledgerId:'D4'});
+  expect(b955Counter(0)).toBe(true);
+});
+test('b955 complete dispatcher comparison inherits its exact current source contract', () => {
+  expect(b955Counter(1)).toBe(true);
+});
+
+const b955Tests = (question = b955Fingerprint(0), plan = b955[0]!.savedPlan, seed = b955[0]!.seed) => ceoPaymentFinding(question, seed, plan);
+for (const scalar of ['zero', '0', 'No automated tests']) test(`b955 test-owned absence supports categorical ${scalar}`, () => {
+  expect(b955Tests(b955Fingerprint(0), b955[0]!.savedPlan.replace('| None | unresolved |', `| ${scalar} | unresolved |`))).toMatchObject({seed:'tests'});
+});
+for (const description of ['Existing suite does not cover the new handler', 'Existing tests never execute this code', 'Existing suite does not test the current implementation'])
+  test(`b955 test-owned absence supports ${description}`, () => {
+    const q=b955Fingerprint(0); amendCurrent(q, v=>{v.question=v.question.replace(/^ELI10:.*$/m, 'ELI10: '+description+'.');});
+    expect(b955Tests(q, b955[0]!.savedPlan.replace('Existing integration suite (does not exercise new class)', description))).toMatchObject({seed:'tests'});
+  });
+for (const [name, mutation] of Object.entries({
+  'healthy current suite': (p:string)=>p.replace('Existing integration suite (does not exercise new class)', 'The existing suite covers the new handler'),
+  'quoted exclusion': (p:string)=>p.replace('Existing integration suite (does not exercise new class)', '"Existing integration suite does not exercise new class"'),
+  'historical exclusion': (p:string)=>p.replace('Existing integration suite (does not exercise new class)', 'Historically the existing suite does not exercise new class'),
+  'conditional None': (p:string)=>p.replace('| None | unresolved |','| None if approved | unresolved |'),
+  'quoted None': (p:string)=>p.replace('| None | unresolved |','| "None" | unresolved |'),
+  'negated None': (p:string)=>p.replace('| None | unresolved |','| Not None | unresolved |'),
+  'approved test addition': (p:string)=>p.replace('| None | unresolved |','| Add unit tests | approved |'),
+  'withdrawn test decision': (p:string)=>p.replace('| None | unresolved |','| None | withdrawn |'),
+  'foreign document source': (p:string)=>p.replace('Reviewed plan: `PLAN.md`','Reviewed plan: `other.md`'),
+  'missing document source': (p:string)=>p.replace(/^Reviewed plan:.*$/m,''),
+  'duplicate document source': (p:string)=>p+'\nSource: PLAN.md\n',
+  'foreign row evidence': (p:string)=>p.replace('PLAN.md L76-80, L118-119:', 'other.md L76-80, L118-119:'),
+  'historical ledger context': (p:string)=>p.replace('## Decision ledger','## Historical decision ledger'),
+  'historical remedy section': (p:string)=>p.replace('### D4 — automated tests:', '### Historical D4 — automated tests:'),
+  'missing remedy section': (p:string)=>p.replace(/### D4 — automated tests:[\s\S]*?(?=## NOT in scope)/,'')
+})) test(`b955 test-owned absence rejects ${name}`,()=>expect(b955Tests(b955Fingerprint(0),mutation(b955[0]!.savedPlan))).toBeNull());
+for (const [name, explanation] of Object.entries({
+  'quote alone':'The plan says "no tests, the existing integration suite will catch regressions".',
+  'quoted exclusion':'"The existing suite does not cover the new handler."',
+  'historical exclusion':'Previously the existing suite did not cover the new handler.',
+  'conditional exclusion':'If approved, the suite does not exercise the new handler.',
+  'negated assertion':'It is not true that the existing suite does not cover the new handler.',
+  'current healthy correction':'The suite tests the old handler, not this one. The suite now covers the new handler.',
+  'withdrawn finding':'This finding is withdrawn. The suite does not cover the new handler.',
+  'foreign target':'The existing suite does not cover another project.'
+})) test(`b955 current test rationale rejects ${name}`,()=>{const q=b955Fingerprint(0);amendCurrent(q,v=>{v.question=v.question.replace(/^ELI10:.*$/m,'ELI10: '+explanation);});expect(b955Tests(q)).toBeNull();});
+test('b955 categorical absence cannot replace a now-covered source plan',()=>{
+  const seed=b955[0]!.seed.replace("None planned. We'll rely on the existing integration suite catching regressions.", 'Automated handler regression tests are required.');
+  expect(b955Tests(b955Fingerprint(0),b955[0]!.savedPlan,seed)).toBeNull();
+});
+for (const [name, mutation] of Object.entries({
+  'missing declaration':(p:string)=>p.replace(/^Reviewed plan:.*$/m,''),
+  'foreign declaration':(p:string)=>p.replace('Reviewed plan: `PLAN.md`','Reviewed plan: `other.md`'),
+  'ambiguous declaration':(p:string)=>p+'\nSource: other.md\n',
+  'quoted declaration':(p:string)=>p.replace('Reviewed plan:', '> Reviewed plan:'),
+  'missing literal source clause':(p:string)=>p.replace('"whether to add a separate implementation or reuse WebhookDispatcher remains open"','a reported unresolved choice'),
+  'partial literal source clause':(p:string)=>p.replace('"whether to add a separate implementation or reuse WebhookDispatcher remains open"','"a separate implementation or reuse WebhookDispatcher remains open"'),
+  'foreign contract owner':(p:string)=>p.replace('Contracts: guards live in ingress;', 'Other plan contracts: guards live in ingress;'),
+  'withdrawn contract':(p:string)=>p.replace('Contracts: guards live in ingress;', 'Contracts: this contract is withdrawn; guards live in ingress;'),
+  'historical ledger':(p:string)=>p.replace('## Decision ledger','## Historical decision ledger'),
+  'historical comparison':(p:string)=>p.replace('### R1 Architecture:', '### Historical R1 Architecture:'),
+  'foreign comparison':(p:string)=>p.replace('### R1 Architecture:', '### OTHER Architecture:'),
+  'incomplete comparison':(p:string)=>p.replace('| Effort | Risk | Pros | Cons |','| Effort | Notes | Pros | Cons |'),
+})) test(`b955 inherited contract rejects ${name}`,()=>expect(()=>b955Counter(1,b955Fingerprint(1),mutation(b955[1]!.savedPlan))).toThrow(/cannot exclude/));
+for (const [name, seed] of Object.entries({
+  'historical source section': b955[1]!.seed.replace('## Existing contracts retained', '## Historical contracts retained'),
+  'duplicate source clause': b955[1]!.seed+'\nWhether to add a separate implementation or reuse WebhookDispatcher remains open.\n'.toLowerCase().replace('webhookdispatcher','WebhookDispatcher'),
+  'source only in code': '```text\n'+b955[1]!.seed+'\n```',
+  'source clause withdrawn': b955[1]!.seed.replace('reuse WebhookDispatcher remains open.', 'reuse WebhookDispatcher remains open. This contract is withdrawn.'),
+})) test(`b955 inherited contract rejects ${name}`,()=>expect(()=>b955Counter(1,b955Fingerprint(1),b955[1]!.savedPlan,seed)).toThrow(/cannot exclude/));
+test('b955 inherited current contract tolerates source whitespace and the singular field label',()=>{
+  expect(b955Counter(1,b955Fingerprint(1),b955[1]!.savedPlan.replace('Contracts: guards live in ingress;','Contract: guards live in ingress;'),b955[1]!.seed.replace('whether\nto add','whether to add'))).toBe(true);
+});
+for (const source of ['OTHER.md', 'docs/PLAN.md', '../PLAN.md', '/tmp/PLAN.md', 'C:\\other\\PLAN.md', '`OTHER.md`', '"OTHER.md"', '[contract](OTHER.md)', 'PLAN.md and OTHER.md'])
+  test(`b955 inherited contract rejects explicit foreign provenance ${source}`,()=>{
+    const plan=b955[1]!.savedPlan.replace('Contracts: guards live in ingress;',`Contracts: ${source} guards live in ingress;`);
+    expect(()=>b955Counter(1,b955Fingerprint(1),plan)).toThrow(/cannot exclude/);
+  });
+test('b955 inherited contract accepts an explicit matching PLAN citation',()=>{
+  expect(b955Counter(1,b955Fingerprint(1),b955[1]!.savedPlan.replace('Contracts: guards live in ingress;','Contracts: PLAN.md guards live in ingress;'))).toBe(true);
+});
+test('b955 current Contracts provenance preserves code member references',()=>{
+  const plan=b955[1]!.savedPlan.replace('Contracts: guards live in ingress;','Contracts: PLAN.md; WebhookDispatcher.call guards live in ingress;');
+  expect(b955Counter(1,b955Fingerprint(1),plan)).toBe(true);
+});
+for (const literal of ['read archive/PLAN.md and PLAN.md for the earlier contractual decisions', 'read /tmp/PLAN.md together with PLAN.md for the current contractual decisions', 'read OTHER.md and then consult PLAN.md for the contractual decisions'])
+  test(`b955 Contracts rejects an unowned long quoted citation: ${literal}`,()=>{
+    const plan=b955[1]!.savedPlan.replace('Contracts: guards live in ingress;',`Contracts: "${literal}"; guards live in ingress;`);
+    expect(()=>b955Counter(1,b955Fingerprint(1),plan)).toThrow(/cannot exclude/);
+  });
+test('b955 Contracts preserves paths inside an authenticated current source clause',()=>{
+  const literal='The current PLAN.md implementation uses src/webhooks/ingress.ts for the existing ownership guard';
+  const plan=b955[1]!.savedPlan.replace('Contracts: guards live in ingress;',`Contracts: "${literal}"; guards live in ingress;`);
+  expect(b955Counter(1,b955Fingerprint(1),plan,b955[1]!.seed+'\n'+literal+'.\n')).toBe(true);
+  expect(()=>b955Counter(1,b955Fingerprint(1),plan,b955[1]!.seed+'\n## Historical contracts\n'+literal+'.\n')).toThrow(/cannot exclude/);
+});
+for(let index=0;index<2;index++) for(const state of ['pending','failed','foreign','no-answer']) test(`b955 ${index} still rejects ${state} native evidence`,()=>{
+  const q=b955Fingerprint(index);
+  if(state==='pending')q.nativeCall!.answered=false;
+  if(state==='failed')q.nativeCall!.failed=true;
+  if(state==='foreign')q.signature='foreign-session:other-tool';
+  if(state==='no-answer')q.nativeCall!.answers={};
+  expect(()=>b955Counter(index,q)).toThrow();
+});

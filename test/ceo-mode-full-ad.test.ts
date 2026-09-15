@@ -1,7 +1,7 @@
 import {describe,expect,test} from 'bun:test';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
-import {ceoExpansionPacingChoice,ceoExpansionPacingReady,hasNativePostAnswerCeoPosture,nextCeoModeNavigation} from './helpers/ceo-mode-option';
-import {capturePlanCountQuestion,nativePlanCallFingerprint,planCountPrerequisitePick,planCountQuestionInput} from './helpers/claude-pty-runner';
+import {ceoExpansionPacingChoice,ceoExpansionPacingReady,ceoModeSubmissionInput,hasNativePostAnswerCeoPosture,nextCeoModeNavigation,nextCeoPostureContinuation} from './helpers/ceo-mode-option';
+import {capturePlanCountQuestion,nativePlanCallFingerprint,planCountPrerequisitePick,planCountQuestionInput,isNumberedOptionListVisible,isPlanReadyVisible} from './helpers/claude-pty-runner';
 import {readPlanCountTranscript,type NativePublicToolEvent,type NativePlanQuestionCall} from './helpers/plan-count-transcript';
 import captured from './fixtures/ceo-mode-full-ad.json';
 import kindCapture from './fixtures/ceo-expansion-posture-kind-dacc.json';
@@ -568,4 +568,155 @@ describe('native option descriptions bind the complete candidate walkthrough',()
   test('actual retained viewport cannot bind a changed native option',()=>{
     const e=state();e.pacing.questions[0]!.options[0]!.label='A: Other menu';expect(choose(e,f.viewport)?.index).not.toBe(1);
   });
+});
+
+
+describe('counted native per-item menu is pacing, not a substantive approval',()=>{
+  const f=nativePacing77.countedNativeB955;
+  function state(){const mode=structuredClone(f.mode),pacing=structuredClone(f.pacing);pacing.answered=false;delete pacing.answers;delete pacing.answeredAt;delete pacing.unansweredQuestionIndices;return{mode,pacing,transcript:{status:'ready' as const,calls:[mode,pacing],assistantMessages:[]}};}
+  const screen=(c:any)=>pane(c,0);
+  const choose=(e=state(),visible=screen(e.pacing))=>ceoExpansionPacingChoice(visible,e.transcript as any,f.selectedAt);
+  test('complete captured native packet and observed display preserve the substantive allowance',()=>{
+    const e=state();
+    expect(choose(e)?.index).toBe(1);
+    expect(choose(e,f.viewport)?.index).toBe(1);
+    const pick=choose(e)!;
+    const next={status:'ready' as const,calls:[structuredClone(f.mode),structuredClone(f.pacing),structuredClone(f.pending)],assistantMessages:[]};
+    const events=f.events.map(v=>v.kind==='use'?{...v,input:{questions:next.calls.find(c=>c.toolUseId===v.toolUseId)!.questions}}:v) as NativePublicToolEvent[];
+    expect(ceoExpansionPacingReady(f.nextViewport,next as any,pick,events)).toBe(true);
+    expect(hasNativePostAnswerCeoPosture(next as any,'SCOPE EXPANSION',pattern,f.selectedAt,events)).toBe(false);
+    expect(nextCeoPostureContinuation(f.nextViewport,next as any,'SCOPE EXPANSION',f.selectedAt,new Set(),false)).toBe('question');
+    expect(nextCeoPostureContinuation(f.nextViewport,next as any,'SCOPE EXPANSION',f.selectedAt,new Set(),true)).toBeNull();
+    expect(f.pending.answered).toBe(false);
+  });
+  const positive={
+    'question wording describes pacing intent':(q:any)=>{q.question=q.question.replace('Eleven expansion proposals: full per-item chain, narrow first, or batch?','How should we present the eleven expansion proposals: individually or in batches?');},
+    'explicit numeric count and independent candidate terminology':(q:any)=>{q.question=q.question.replace('Eleven expansion proposals','11 expansion candidates').replace('11 independent add-ons','eleven independent candidates');},
+    'proposals can name natural add/remove changes':(q:any)=>{q.question=q.question.replace('E1 shared visibility','E1 add shared views').replace('E2 versioned payload','E2 remove duplicate controls');},
+    'another complete set of explicit identities':(q:any)=>{q.question=q.question.replace(/\bE(?=\d)/g,'P').replaceAll('L3','Q9');},
+    'consistent reordered comparison and native options':(q:any)=>{q.options.reverse();},
+    'native labels carry letters too':(q:any)=>{q.options.forEach((o:any,i:number)=>{o.label=String.fromCharCode(65+i)+') '+o.label;});},
+  };
+  for(const[name,change]of Object.entries(positive))test(name,()=>{const e=state();change(e.pacing.questions[0]);expect(choose(e)?.index).toBe(name.startsWith('consistent reordered')?3:1);});
+  const negative={
+    'missing declared candidate':(q:any)=>{q.question=q.question.replace(', L3 auto-persist last filters','');},
+    'duplicate declared identity':(q:any)=>{q.question=q.question.replace('L3 auto-persist last filters','E10 auto-persist last filters');},
+    'wrong title count':(q:any)=>{q.question=q.question.replace('Eleven expansion','Twelve expansion');},
+    'wrong question count in selected option':(q:any)=>{q.options[0].description=q.options[0].description.replace('11 per-item','10 per-item');},
+    'wrong rationale question count':(q:any)=>{q.question=q.question.replace('11 short questions','10 short questions');},
+    'partial per-item mapping':(q:any)=>{q.question=q.question.replace('Each needs its own','Some need their own');},
+    'another option owns the complete selected comparison':(q:any)=>{q.question=q.question.replace('A) Proceed with the full split (recommended)','A) Approve the first proposal (recommended)');},
+    'selected option lacks its own comparison':(q:any)=>{q.question=q.question.replace('✅ You see and rule on all 11 proposals; none are cut by me before you weigh in','');},
+    'quoted mapping is not evidence':(q:any)=>{q.options[0].description='"'+q.options[0].description+'"';},
+    'historical inventory':(q:any)=>{q.question=q.question.replace('The 10x analysis produced','Previously the 10x analysis produced');},
+    'conditional inventory':(q:any)=>{q.question=q.question.replace('The 10x analysis produced','If the 10x analysis produced');},
+    'inventory asserts approved status':(q:any)=>{q.question=q.question.replace('L3 auto-persist last filters','L3 auto-persist last filters (already approved)');},
+    'inventory conceals an actor grant':(q:any)=>{q.question=q.question.replace('L3 auto-persist last filters','L3 auto-persist last filters; we approve all eleven now');},
+    'inventory caption imperatively approves':(q:any)=>{q.question=q.question.replace('E1 shared visibility','E1 approve all proposals');},
+    'inventory caption declares approved':(q:any)=>{q.question=q.question.replace('E1 shared visibility','E1 approved shared views');},
+    'inventory caption defers other items':(q:any)=>{q.question=q.question.replace('E1 shared visibility','E1 defer others');},
+    'inventory caption hides imperative after a noun':(q:any)=>{q.question=q.question.replace('E1 shared visibility','E1 shared visibility and approve E2');},
+    'selected immediate scope approval':(q:any)=>{q.options[0].description+=' Approve E1 now.';},
+    'selected implicit approval':(q:any)=>{q.options[0].description+=' All proposals are included.';},
+    'selected omission':(q:any)=>{q.options[0].description+=' Except E4.';},
+    'selected grouping':(q:any)=>{q.options[0].description+=' Batch E1 and E2 together.';},
+    'unconditional effect in an unselected option':(q:any)=>{q.options[1].description+=' Regardless of choice, include E1 now.';},
+    'grant concealed in task title':(q:any)=>{q.question=q.question.replace('Add saved project views','Approve all proposals now');},
+    'extra decision':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: Should we remove access checks?');},
+    'duplicate preserving option':(q:any)=>{q.options[1]=structuredClone(q.options[0]);},
+  };
+  for(const[name,change]of Object.entries(negative))test(name,()=>{const e=state();change(e.pacing.questions[0]);expect(choose(e)?.index).not.toBe(1);});
+  test('descriptive inventory nouns remain valid and substantive scope cards remain substantive',()=>{
+    const e=state();e.pacing.questions[0]!.question=e.pacing.questions[0]!.question.replace('E1 shared visibility','E1 delete history views');expect(choose(e)?.index).toBe(1);
+    const pending=structuredClone(f.pending),transcript={status:'ready' as const,calls:[structuredClone(f.mode),pending],assistantMessages:[]};
+    expect(ceoExpansionPacingChoice(screen(pending),transcript as any,f.selectedAt)).toBeNull();
+    pending.questions[0]!.question=pending.questions[0]!.question.replace(/^D3\.1[^\n]+/,'D3.1 — Should we split the shared-view proposal into separate schemas?');
+    expect(ceoExpansionPacingChoice(screen(pending),transcript as any,f.selectedAt)).toBeNull();
+  });
+  test('mode ownership, matching pane and actual ACK remain mandatory',()=>{
+    const e=state();e.pacing.sessionId='foreign';expect(choose(e)).toBeNull();
+    const noMode=state();noMode.mode.answered=false;expect(choose(noMode)).toBeNull();
+    const ack=state(),pick=choose(ack)!;expect(pick?.index).toBe(1);
+    expect(ceoExpansionPacingReady('next',ack.transcript as any,pick,[])).toBe(false);
+  });
+});
+
+
+describe('same-proposal discussion control makes no scope decision',()=>{
+  const f=nativePacing77.countedNativeB955;
+  function state(){
+    const mode=structuredClone(f.mode),proposal=structuredClone(f.pending) as NativePlanQuestionCall;
+    // The actual proposal stayed pending. This derived ACK exercises only the
+    // downstream predicate; it cannot convert the original paid timeout to PASS.
+    proposal.answered=true;proposal.unansweredQuestionIndices=[];
+    proposal.answers={[proposal.questions[0]!.question]:proposal.questions[0]!.options[0]!.label};
+    proposal.answeredAt='2026-09-15T20:44:00.000Z';
+    const calls=[mode,proposal];
+    const events=f.events.filter(e=>calls.some(c=>c.toolUseId===e.toolUseId)).map(e=>e.kind==='use'?{...e,input:{questions:calls.find(c=>c.toolUseId===e.toolUseId)!.questions}}:{...e}) as NativePublicToolEvent[];
+    events.push({kind:'result',sessionId:proposal.sessionId,toolUseId:proposal.toolUseId,timestamp:proposal.answeredAt,isError:false});
+    return{proposal,transcript:{status:'ready' as const,calls,assistantMessages:[]},events};
+  }
+  const matches=(e=state())=>hasNativePostAnswerCeoPosture(e.transcript,'SCOPE EXPANSION',pattern,f.selectedAt,e.events);
+  test('actual stop-and-discuss current E1 content remains nonoperative under a synthetic Include ACK',()=>{expect(f.pending.answered).toBe(false);expect(matches()).toBe(true);});
+  test.each(['Pause the review. Discuss E1 before proceeding.','Discuss E1 before continuing; stop the chain.'])('equivalent two-clause procedural control: %s',description=>{
+    const e=state();e.proposal.questions[0]!.options[3]!.description=description;expect(matches(e)).toBe(true);
+  });
+  test.each(['Stop the chain; discuss E2 before continuing.','Stop the chain; approve E1 before continuing.','Stop the chain; discuss E1 before continuing. Add E2.',
+    'Discuss E1 before continuing.','Stop the chain.','"Stop the chain; discuss E1 before continuing."','Previously stop the chain; discuss E1 before continuing.',
+    'If needed, stop the chain; discuss E1 before continuing.','Stop the chain; discuss E1 before implementing it.'])('foreign, incomplete or operative control stays negative: %s',description=>{
+    const e=state();e.proposal.questions[0]!.options[3]!.description=description;expect(matches(e)).toBe(false);
+  });
+  test('pending, selected Hold, duplicate and foreign ACKs still supply no posture',()=>{
+    for(const change of [
+      (e:ReturnType<typeof state>)=>{e.proposal.answered=false;},
+      (e:ReturnType<typeof state>)=>{const q=e.proposal.questions[0]!;e.proposal.answers={[q.question]:q.options[3]!.label};},
+      (e:ReturnType<typeof state>)=>{e.events.push({...e.events.at(-1)!});},
+      (e:ReturnType<typeof state>)=>{e.events.at(-1)!.sessionId='foreign';},
+    ]){const e=state();change(e);expect(matches(e)).toBe(false);}
+  });
+});
+
+
+test.each(['acknowledged pacing','missing pacing ACK'])('actual paid posture loop preserves the substantive allowance: %s',async scenario=>{
+  const f=nativePacing77.countedNativeB955;
+  const source=fs.readFileSync(path.join(import.meta.dir,'skill-e2e-plan-ceo-mode-routing.test.ts'),'utf8');
+  const start=source.indexOf('          const budgetMs = 240_000;'),end=source.indexOf("          outcome = 'posture_confirmed';",start);
+  expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
+  const loop=source.slice(start,end+"          outcome = 'posture_confirmed';".length);
+  const keys=['Bun','Date','c','session','sincePick','selectionStartedAt','question','fixture','capture','readPlanCountTranscript',
+    'readPendingQuestion','hasNativePostAnswerCeoPosture','ceoModeSubmissionInput','ceoExpansionPacingReady','ceoExpansionPacingChoice',
+    'nextCeoPostureContinuation','capturePlanCountQuestion','planCountQuestionInput','selectPtyNumberedOption','isPlanReadyVisible','isNumberedOptionListVisible',
+    'EXPANSION_PACING_CALLS','modeIndex','artifacts','visibleAtMode'];
+  const compiled=new Bun.Transpiler({loader:'ts'}).transformSync(`async function run(b){const {${keys.join(',')}}=b;let outcome;${loop};return {outcome,continuedQuestion,pacingCalls};}`);
+  const run=new Function(compiled+';return run;')();
+  const pending=structuredClone(f.pacing);pending.answered=false;delete pending.answers;delete pending.answeredAt;delete pending.unansweredQuestionIndices;
+  const proposal=structuredClone(f.pending) as NativePlanQuestionCall;
+  let stage=0,clock=f.selectedAt;
+  const sends:string[]=[];
+  const snapshots:string[]=[];
+  const view=()=>stage===0?f.viewport:f.nextViewport;
+  const session={hermeticConfigDir:'fixture-native',pendingQuestionFile:'fixture-pending',exited:()=>false,exitCode:()=>null,
+    currentScreen:async()=>view(),visibleSince:()=>view(),visibleText:()=>view(),send:(value:string)=>{
+      sends.push(value);stage++;
+      if(stage===2){proposal.answered=true;proposal.answers={[proposal.questions[0]!.question]:proposal.questions[0]!.options[0]!.label};
+        proposal.answeredAt='2026-09-15T20:44:00.000Z';proposal.unansweredQuestionIndices=[];}
+    }};
+  const readPlanCountTranscript=(_config:string,_cwd:string,emit:(e:NativePublicToolEvent)=>void)=>{
+    const pacing=stage===0||scenario==='missing pacing ACK'?pending:f.pacing;
+    const calls=stage===0?[f.mode,pacing]:[f.mode,pacing,proposal];
+    const events=f.events.filter(e=>calls.some(c=>c.toolUseId===e.toolUseId)&&!(e.kind==='result'&&e.toolUseId===f.pacing.toolUseId&&!pacing.answered))
+      .map(e=>e.kind==='use'?{...e,input:{questions:calls.find(c=>c.toolUseId===e.toolUseId)!.questions}}:{...e}) as NativePublicToolEvent[];
+    if(proposal.answered)events.push({kind:'result',sessionId:proposal.sessionId,toolUseId:proposal.toolUseId,timestamp:proposal.answeredAt!,isError:false});
+    events.forEach(emit);return{status:'ready',calls,assistantMessages:[]};
+  };
+  const bindings={Bun:{sleep:async(ms:number)=>{clock+=ms;}},Date:{now:()=>clock},c:{mode:'SCOPE EXPANSION',postureRe:pattern},session,sincePick:0,
+    selectionStartedAt:f.selectedAt,question:{nativeCall:f.mode},fixture:{cwd:'fixture-root'},capture:(state:string)=>snapshots.push(state),readPlanCountTranscript,
+    readPendingQuestion:()=>undefined,hasNativePostAnswerCeoPosture,ceoModeSubmissionInput,ceoExpansionPacingReady,ceoExpansionPacingChoice,nextCeoPostureContinuation,
+    capturePlanCountQuestion,planCountQuestionInput,selectPtyNumberedOption:async(s:any,index:number)=>s.send(String(index)),isPlanReadyVisible,isNumberedOptionListVisible,
+    EXPANSION_PACING_CALLS:1,modeIndex:2,artifacts:{},visibleAtMode:'captured mode menu'};
+  if(scenario==='missing pacing ACK')await expect(run(bindings)).rejects.toThrow('no posture match');
+  else expect(await run(bindings)).toEqual({outcome:'posture_confirmed',continuedQuestion:true,pacingCalls:1});
+  expect(sends).toEqual(scenario==='missing pacing ACK'?['1']:['1','1']);
+  expect(snapshots.length).toBeGreaterThan(0);
+  expect(f.pending.answered).toBe(false); // Final synthetic ACK is never paid evidence.
 });

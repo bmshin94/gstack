@@ -434,6 +434,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'plan-eng-finding-count':      [
     'test/fixtures/eng-current-choice-cab3.json', 'test/fixtures/eng-completed-navigation-cab3.json',
     'test/eng-native-seed-contract.test.ts', 'test/fixtures/eng-native-seed-contract-6f.json',
+    'test/fixtures/eng-native-packets-b955.json',
     'test/fixtures/eng-structure-choice-90f.json',
     'test/fixtures/eng-idp-choice-90f.json',
     'test/fixtures/eng-legacy-declaration-90f.json',

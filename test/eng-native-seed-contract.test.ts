@@ -4,6 +4,7 @@ import goldenDeclaration from './fixtures/eng-legacy-declaration-90f.json';
 import idpChoice from './fixtures/eng-idp-choice-90f.json';
 import {evaluateEngSeedCoverage, isEngSeedDecisionAUQ} from './helpers/eng-seeded-coverage';
 import structureChoice from './fixtures/eng-structure-choice-90f.json';
+import nativePackets from './fixtures/eng-native-packets-b955.json';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -581,3 +582,125 @@ for(const tail of ['This option never removes an undefined class from this PR.',
   const x=wholeChange(q=>{for(const o of q.options.filter(o=>/^(?:B|C)\)/.test(o.label)))o.description=tail+' Adapter remains the single source of truth for cached tokens.';});
   expect(wholeResult(x)).toEqual({});
  });
+
+
+// Original packet identities and every answer are retained. Single-question
+// projections below isolate semantic controls; they never re-credit the paid run.
+const packet = (n:number) => structuredClone(nativePackets.calls[n]) as NativePlanQuestionCall;
+const packetResult = (calls:NativePlanQuestionCall[]) => evaluateEngSeedCoverage(
+  {status:'ready',calls,assistantMessages:[]},'',nativePackets.startedAt,nativePackets.finishedAt);
+const packetGuard = (c:NativePlanQuestionCall,prior:NativePlanQuestionCall[]=[]) => isEngSeedDecisionAUQ(
+  nativePlanCallFingerprint(c,0,true),prior,nativePackets.startedAt,nativePackets.finishedAt);
+const singlePacketQuestion = (n:number,index:number) => {
+  const c=packet(n),q=c.questions[index]!;
+  c.questions=[q];c.answers={[q.question]:c.answers![q.question]!};return c;
+};
+const editedPacketQuestion=(n:number,index:number,edit:(q:NativePlanQuestionCall['questions'][number])=>void)=>{
+  const c=singlePacketQuestion(n,index),q=c.questions[0]!,chosen=q.options.findIndex(o=>o.label===c.answers![q.question]);
+  edit(q);c.answers={[q.question]:q.options[chosen]!.label};return c;
+};
+
+test('b955 native packets: actual whole-call options authenticate one seed with independently answered unrelated tabs',()=>{
+  const c=packet(1),fp=nativePlanCallFingerprint(c,0,true);
+  expect(fp.options).toHaveLength(c.questions.reduce((n,q)=>n+q.options.length,0));
+  expect(packetResult([c]).decisions['shared-cache']).toBe(`${c.sessionId}:${c.toolUseId}`);
+  expect(packetGuard(c)).toBe(true);
+  for(const position of [0,fp.options.length-1]){
+    const bad=structuredClone(fp);bad.options[position]!.label='forged option';
+    expect(isEngSeedDecisionAUQ(bad,[],nativePackets.startedAt,nativePackets.finishedAt)).toBe(false);
+  }
+  const firstOnly={...fp,options:fp.options.slice(0,c.questions[0]!.options.length)};
+  expect(isEngSeedDecisionAUQ(firstOnly,[],nativePackets.startedAt,nativePackets.finishedAt)).toBe(false);
+  const reordered=packet(1);reordered.questions.reverse();expect(packetGuard(reordered)).toBe(true);
+});
+
+test('b955 native packets: current structure alternatives offer a real reduction with unchanged feature choices',()=>{
+  const c=packet(0);expect(packetGuard(c)).toBe(true);
+  expect(packetResult([c]).decisions).toEqual({complexity:`${c.sessionId}:${c.toolUseId}`});
+});
+test('b955 native packets: original error question owns each swallowed class and an offered flatten/typed/rethrow remedy',()=>{
+  const c=singlePacketQuestion(2,0);expect(packetGuard(c)).toBe(true);
+  expect(packetResult([c]).decisions).toEqual({'swallowed-errors':`${c.sessionId}:${c.toolUseId}`});
+});
+test('b955 native packets: one acknowledged packet containing two seeds cannot supply either distinct decision',()=>{
+  const c=packet(2);expect(packetGuard(c)).toBe(false);expect(packetResult([c]).decisions).toEqual({});
+  const actual=packetResult([packet(0),packet(1),c]);
+  expect(Object.keys(actual.decisions).sort()).toEqual(['complexity','shared-cache']);
+  expect(actual.missing).toEqual(['swallowed-errors','sequential-idp']);
+  expect(nativePackets.originalOutcome).toBe('no_review_questions');
+});
+for(const [name,edit] of Object.entries({
+  'foreign PLAN path':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','archive/PLAN.md');},
+  'foreign primary source':(q:any)=>{q.question=q.question.replace('PLAN.md Multi-tenant Auth Refactor','OTHER.md Other Refactor; compare PLAN.md Multi-tenant Auth Refactor');},
+  'quoted source':(q:any)=>{q.question=q.question.replace(/^Project\/branch\/task: (.+)$/m,'Project/branch/task: "$1"');},
+  'historical source':(q:any)=>{q.question=q.question.replace('Project/branch/task: ','Project/branch/task: Historical example: ');},
+  'quoted explanation':(q:any)=>{q.question=q.question.replace(/^ELI10: (.+)$/m,'ELI10: "$1"');},
+  'duplicated source':(q:any)=>{q.question+='\nProject/branch/task: OTHER.md';},
+  'conditional finding':(q:any)=>{q.question=q.question.replace('ELI10: ','ELI10: If approved, ');},
+  'withdrawn decision':(q:any)=>{q.question+='\nThis decision is withdrawn.';},
+  'current quoted withdrawal':(q:any)=>{q.question+='\nThis decision is "withdrawn".';},
+  'reopened decision':(q:any)=>{q.question+='\nThis decision is reopened.';},
+}))test('b955 native packets reject '+name,()=>{
+  for(const [n,index] of [[0,0],[2,0]])expect(packetResult([editedPacketQuestion(n!,index!,edit)]).decisions).toEqual({});
+});
+for(const [name,edit] of Object.entries({
+  'numeric counts in explanation':(q:any)=>{q.question=q.question.replace('A) three classes:','A) 3 classes:').replace('B) two classes:','B) 2 classes:');},
+  'renamed structure title':(q:any)=>{q.question=q.question.replace(q.question.split('\n')[0],'D7 — Which component arrangement preserves the accepted feature choices?');},
+  'reordered native options':(q:any)=>{q.options.reverse();},
+  'historical contradiction inert':(q:any)=>{q.question+='\nEarlier note: "AuthCache now has independent behavior."';},
+}))test('b955 structure comparison accepts '+name,()=>expect(packetResult([editedPacketQuestion(0,0,edit)]).decisions.complexity).toBeDefined());
+for(const [name,edit] of Object.entries({
+  'no fixed feature choices':(q:any)=>{q.question=q.question.replace('deliver the same features (D4-D6 held fixed, legacy flow untouched behind a flag)','deliver different features');},
+  'foreign retained service':(q:any)=>{q.question=q.question.replaceAll('SessionMint','OtherService');},
+  'no current facade':(q:any)=>{q.question=q.question.replace('AuthCache as the one facade over the existing adapter','a new component with an unknown role');},
+  'equal option counts':(q:any)=>{q.options[1].label=q.options[1].label.replace('2 classes','3 classes');},
+  'mismatched body count':(q:any)=>{q.question=q.question.replace('B) two classes:','B) three classes:');},
+  'no offered reduction':(q:any)=>{q.options[1]={label:'B) Discuss the cache',description:'No change yet.'};},
+  'no same-option adapter reuse':(q:any)=>{q.options[1].label=q.options[1].label.replace('services use adapter directly','new services');q.options[1].description='Unspecified behavior.';},
+  'remedy borrowed from unselected option':(q:any)=>{q.options[0].description+=' Services use adapter directly.';q.options[1].label='B) 2 classes';q.options[1].description='Unspecified behavior.';},
+  'foreign comparison letter':(q:any)=>{q.question=q.question.replace('B) two classes:','Z) two classes:');},
+  'native baseline is another component':(q:any)=>{q.options[0].label=q.options[0].label.replace('AuthCache facade','ForeignCache wrapper');},
+  'foreign offered remedy':(q:any)=>{q.options[1].description+=' This remedy applies to another project.';},
+  'same-option retains facade':(q:any)=>{q.options[1].description+=' Correction: Keep the AuthCache facade.';},
+  'matching explanation retains facade':(q:any)=>{q.question=q.question.replace('C) one service:', 'But keep the AuthCache facade. C) one service:');},
+  'matching explanation cancels drop':(q:any)=>{q.question=q.question.replace('C) one service:', 'Do not drop the facade. C) one service:');},
+  'same-option negated removal':(q:any)=>{q.options[1].description+=' Do not drop the facade.';},
+  'same-option replaced adapter':(q:any)=>{q.options[1].description+=' Replace the existing adapter.';},
+  'same-option withdrawn':(q:any)=>{q.options[1].description+=' This option is withdrawn.';},
+  'independent current facade':(q:any)=>{q.question+='\nCorrection: AuthCache now has independent behavior.';},
+  'unapproved additional feature':(q:any)=>{q.question+='\nCorrection: The smaller arrangement changes the accepted feature choices.';},
+}))test('b955 structure comparison rejects '+name,()=>expect(packetResult([editedPacketQuestion(0,0,edit)]).decisions).toEqual({}));
+for(const [name,edit] of Object.entries({
+  'current defect equivalent wording':(q:any)=>{q.question=q.question.replace('where each catch quietly eats one kind of error','where every catch silently swallows a different error class');},
+  'typed error name changes':(q:any)=>{q.options[0].label=q.options[0].label.replace('AuthError','ValidationFailure');},
+  'same-option propagation wording':(q:any)=>{q.options[0].label=q.options[0].label.replace('rethrow','propagate');},
+  'reordered options':(q:any)=>{q.options.reverse();},
+  'historical correction inert':(q:any)=>{q.question+='\nEarlier note: "validateAndDispatch() no longer swallows failures."';},
+}))test('b955 current error choice accepts '+name,()=>expect(packetResult([editedPacketQuestion(2,0,edit)]).decisions['swallowed-errors']).toBeDefined());
+for(const [name,edit] of Object.entries({
+  'non-swallowing current behavior':(q:any)=>{q.question=q.question.replace('where each catch quietly eats one kind of error','where every catch already surfaces each error');},
+  'typed name alone':(q:any)=>{q.options[0]={label:'A) Typed AuthError',description:'Add the named type.'};},
+  'no propagation':(q:any)=>{q.options[0].label=q.options[0].label.replace(', rethrow','');},
+  'no flattening':(q:any)=>{q.options[0].label=q.options[0].label.replace('Flatten + ','');q.options[0].description=q.options[0].description.replace('Function shrinks to sequential named steps','Function remains deeply nested');},
+  'partial classes':(q:any)=>{q.options[0].description=q.options[0].description.replace('Each former swallowed class','Some former swallowed classes');},
+  'missing typed result':(q:any)=>{q.options[0].description=q.options[0].description.replace('becomes a typed error','is logged');},
+  'borrowed class coverage':(q:any)=>{q.options[1].description+=' '+q.options[0].description;q.options[0].description='Add the named type.';},
+  'quoted remedy':(q:any)=>{q.options[0].label='"'+q.options[0].label+'"';q.options[0].description='"'+q.options[0].description+'"';},
+  'negated propagation':(q:any)=>{q.options[0].description+=' Do not rethrow errors.';},
+  'declarative negation':(q:any)=>{q.options[0].description+=' This option does not rethrow errors.';},
+  'errors still swallowed':(q:any)=>{q.options[0].description+=' Correction: Errors are still swallowed.';},
+  'incomplete mapping':(q:any)=>{q.options[0].description+=' Not every failure class has a named outcome.';},
+  'partial former swallowed classes':(q:any)=>{q.options[0].description+=' Only some former swallowed classes become a typed error.';},
+  'negated former class coverage':(q:any)=>{q.options[0].description+=' Not every previously swallowed class becomes a typed error.';},
+  'foreign remedy':(q:any)=>{q.options[0].description+=' This remedy applies to another function.';},
+  'withdrawn remedy':(q:any)=>{q.options[0].description+=' This option is withdrawn.';},
+  'already fixed current source':(q:any)=>{q.question+='\nCorrection: validateAndDispatch() now rethrows every error.';},
+}))test('b955 current error choice rejects '+name,()=>expect(packetResult([editedPacketQuestion(2,0,edit)]).decisions).toEqual({}));
+test('b955 whole-call adapter keeps native completion and fingerprint integrity checks',()=>{
+  for(const edit of [(c:any)=>{c.answered=false;},(c:any)=>{c.failed=true;},(c:any)=>{delete c.answers[c.questions[1].question];c.unansweredQuestionIndices=[1];},(c:any)=>{c.answers[c.questions[2].question]='Not offered';},(c:any)=>{c.answeredAt=new Date(nativePackets.finishedAt+1).toISOString();}]){
+    const c=packet(1);edit(c);expect(packetGuard(c)).toBe(false);
+  }
+  const c=packet(1);expect(packetGuard(c,[c])).toBe(false);
+  const foreign=packet(0);foreign.sessionId+='-foreign';expect(packetGuard(c,[foreign])).toBe(false);
+  const reask=packet(1);reask.toolUseId+='-reask';expect(packetGuard(reask,[c])).toBe(false);
+});

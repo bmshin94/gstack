@@ -12,6 +12,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/design-completion-envelope-90f.json', ['plan-design-finding-count']],
     ['test/eng-native-seed-contract.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-native-seed-contract-6f.json', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-native-packets-b955.json', ['plan-eng-finding-count']],
     ['test/review-count-markdown.test.ts', ['plan-eng-finding-count', 'plan-design-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/review-count-markdown-6f.json', ['plan-eng-finding-count', 'plan-design-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/eng-current-native-seeds.test.ts', ['plan-eng-finding-count']],
