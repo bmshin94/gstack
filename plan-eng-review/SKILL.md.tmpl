@@ -71,39 +71,37 @@ Recommendation: A when a branch diff exists, otherwise B. Reply with A, B, or C.
 If the user asks you to compress or the system triggers context compaction: Step 0 > Test diagram > Opinionated recommendations > Everything else. Never skip Step 0 or the test diagram. Do not preemptively warn about context limits -- the system handles compaction automatically.
 
 ## My engineering preferences (use these to guide your recommendations):
-* DRY is important—flag repetition aggressively.
-* Well-tested code is non-negotiable; I'd rather have too many tests than too few.
-* I want code that's "engineered enough" — not under-engineered (fragile, hacky) and not over-engineered (premature abstraction, unnecessary complexity).
-* I err on the side of handling more edge cases, not fewer; thoughtfulness > speed.
-* Bias toward explicit over clever.
-* Right-sized diff: favor the smallest diff that cleanly expresses the change ... but don't compress a necessary rewrite into a minimal patch. If the existing foundation is broken, say "scrap it and do this instead."
+* **DRY:** flag repetition aggressively.
+* **Tests:** well-tested code is non-negotiable; prefer too many tests to too few.
+* **Enough engineering:** avoid both fragile hacks and premature abstraction or complexity.
+* **Edge cases:** favor thorough handling and thoughtfulness over speed.
+* **Explicit over clever.**
+* **Right-sized diff:** choose the smallest clear change. If the foundation is broken, recommend a rewrite rather than preserving it for a smaller diff.
 
 ## Cognitive Patterns — How Great Eng Managers Think
 
-These are engineering instincts, not extra checklist items. Apply them throughout the review.
+Apply these instincts throughout; they are not extra checklist items.
 
-1. **State diagnosis** — Teams exist in four states: falling behind, treading water, repaying debt, innovating. Each demands a different intervention (Larson, An Elegant Puzzle).
-2. **Blast radius instinct** — Every decision evaluated through "what's the worst case and how many systems/people does it affect?"
-3. **Boring by default** — "Every company gets about three innovation tokens." Everything else should be proven technology (McKinley, Choose Boring Technology).
-4. **Incremental over revolutionary** — Strangler fig, not big bang. Canary, not global rollout. Refactor, not rewrite (Fowler).
-5. **Systems over heroes** — Design for tired humans at 3am, not your best engineer on their best day.
-6. **Reversibility preference** — Feature flags, A/B tests, incremental rollouts. Make the cost of being wrong low.
-7. **Failure is information** — Blameless postmortems, error budgets, chaos engineering. Incidents are learning opportunities, not blame events (Allspaw, Google SRE).
-8. **Org structure IS architecture** — Conway's Law in practice. Design both intentionally (Skelton/Pais, Team Topologies).
-9. **DX is product quality** — Slow CI, bad local dev, painful deploys → worse software, higher attrition. Developer experience is a leading indicator.
-10. **Essential vs accidental complexity** — Before adding anything: "Is this solving a real problem or one we created?" (Brooks, No Silver Bullet).
-11. **Two-week smell test** — If a competent engineer can't ship a small feature in two weeks, you have an onboarding problem disguised as architecture.
-12. **Glue work awareness** — Recognize invisible coordination work. Value it, but don't let people get stuck doing only glue (Reilly, The Staff Engineer's Path).
-13. **Make the change easy, then make the easy change** — Refactor first, implement second. Never structural + behavioral changes simultaneously (Beck).
-14. **Own your code in production** — No wall between dev and ops. "The DevOps movement is ending because there are only engineers who write code and own it in production" (Majors).
-15. **Error budgets over uptime targets** — SLO of 99.9% = 0.1% downtime *budget to spend on shipping*. Reliability is resource allocation (Google SRE).
-
-Apply boring defaults to architecture, systems over heroes to tests, Brooks to complexity, and innovation budgets to new infrastructure.
+1. **State diagnosis:** Match the intervention to falling behind, treading water, repaying debt or innovating (Larson).
+2. **Blast radius:** Trace worst-case effects on systems and people.
+3. **Boring by default:** Budget about three innovation tokens; otherwise use proven technology (McKinley).
+4. **Incremental change:** Prefer strangler migrations and canaries to big-bang rewrites and rollouts (Fowler).
+5. **Systems over heroes:** Design for tired humans at 3am.
+6. **Reversibility:** Use flags and incremental rollout; make wrong choices cheap to undo.
+7. **Failure is information:** Learn through blameless postmortems, error budgets and chaos engineering (Allspaw, Google SRE).
+8. **Conway's Law:** Design team and system boundaries together (Skelton/Pais).
+9. **DX signals quality:** Slow CI, local dev and deploys hurt software and retention; treat them as leading indicators.
+10. **Essential vs accidental complexity:** Are we solving a real problem or one we created? (Brooks).
+11. **Two-week smell:** Difficulty shipping a small feature in two weeks points to onboarding problems.
+12. **Glue work:** Recognize invisible coordination without trapping people in it (Reilly).
+13. **Make change easy first:** Refactor before changing behavior; separate structural and behavioral changes (Beck).
+14. **Own production:** Development and operations share responsibility (Majors).
+15. **Error budgets:** An SLO of 99.9% permits 0.1% downtime; allocate that budget instead of maximizing uptime at any cost (Google SRE).
 
 ## Documentation and diagrams:
-* I value ASCII art diagrams highly — for data flow, state machines, dependency graphs, processing pipelines, and decision trees. Use them liberally in plans and design docs.
-* For particularly complex designs or behaviors, embed ASCII diagrams directly in code comments in the appropriate places: Models (data relationships, state transitions), Controllers (request flow), Concerns (mixin behavior), Services (processing pipelines), and Tests (what's being set up and why) when the test structure is non-obvious.
-* **Diagram maintenance is part of the change.** When modifying code that has ASCII diagrams in comments nearby, review whether those diagrams are still accurate. Update them as part of the same commit. Stale diagrams are worse than no diagrams — they actively mislead. Flag any stale diagrams you encounter during review even if they're outside the immediate scope of the change.
+* Use ASCII diagrams liberally for data flow, state machines, dependencies, pipelines and decision trees in plans and design docs.
+* Add inline ASCII diagrams in code comments for complex behavior: Models (data/state), Controllers (request flow), Concerns (mixin behavior), Services (pipelines), and Tests (non-obvious setup or purpose).
+* **Maintain diagrams with code.** Check nearby diagrams when changing code and update them in the same commit. Stale diagrams mislead; flag those found even outside the immediate change's scope.
 
 {{BRAIN_PREFLIGHT}}
 

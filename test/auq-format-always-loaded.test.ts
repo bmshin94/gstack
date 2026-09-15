@@ -60,8 +60,8 @@ const MANDATORY: Array<{ name: string; re: RegExp }> = [
 const PER_SKILL_RULES: Record<string, RegExp[]> = {
   'plan-ceo-review': [/One decision unit = one AskUserQuestion call/i, /Do NOT batch/i],
   'plan-eng-review': [
-    /One new or reopened decision = one AskUserQuestion call/i,
-    /Never combine independent decisions into one question/i,
+    /one question for one choice per AskUserQuestion call/i,
+    /If another independent change appears, return to \*\*Frame the choices\*\* and split it before sending/i,
   ],
   'plan-design-review': [/One issue = one AskUserQuestion call/i],
   'plan-devex-review': [
