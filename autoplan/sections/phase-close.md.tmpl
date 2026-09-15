@@ -30,12 +30,18 @@ bun "<SNAPSHOT_TOOL>" amend-input "<PHASE>" "<ACTIVE_PLAN>" "<AMENDMENT_CHECKPOI
    outputs. Retention checks prove bytes; counts, hashes, keyword probes and a
    saved “Read-back” sentence do not perform this semantic review. Fix omissions,
    then repeat the export and full readback. Review history stays in Review record.
-6. **Send the phase's completion message now.** Fill the publication format
-   below using the bound phase's row and completed review data. Send it as your
-   next visible parent assistant text block, with actual findings and voice
-   statuses. Missing outside coverage means N/A consensus, never confirmed.
-   Saving the message in ACTIVE_PLAN or printing it through Bash does not send
-   it to the user. Send it before any next-phase Read/create/dispatch.
+6. **Hand off in one ordered parent response.** If any prerequisite in steps
+   1–5 is incomplete, keep this phase open: repair, export and finish the full
+   readback/verification before constructing the handoff. Otherwise your next
+   response has this order:
+   - **First content block: the phase report below.** Fill it from this phase's
+     completed review data and row: actual findings, voice statuses and next step.
+     Send visible parent assistant text. Saving it in ACTIVE_PLAN or printing it
+     through Bash does not publish it. Missing outside coverage means N/A
+     consensus, never confirmed.
+   - **Subsequent tool calls: the next step from that row.** Only after the report
+     text may this same response Read/create/dispatch the next phase. A response
+     that starts with that tool call has not closed the current phase.
 
 | Phase | Number | Consensus total | Next step |
 |---|---|---|---|
@@ -55,7 +61,7 @@ Consensus: [N/A (voice coverage missing) | X/[total] native+outside confirmed; Y
 Passing to [next step].
 ```
 
-After sending, return to the driver and continue in the same turn. After Eng,
-continue to final synthesis/approval. The driver emits its declared skip message
-for each inapplicable Design or DX phase; a skip is never a completion.
-Do not wait for a “continue” reply.
+This handoff continues the driver in the same turn; do not end the turn to wait
+for a “continue” reply. After Eng, the next step is final synthesis/approval.
+The driver emits its declared skip message for each inapplicable Design or DX
+phase; a skip is never a completion.

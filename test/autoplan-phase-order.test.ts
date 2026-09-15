@@ -252,7 +252,7 @@ describe('autoplan phase execution checkpoints', () => {
     const close = template.replace(/\s+/g, ' ');
     const stages = ['1. **Finish and save the review.**', '2. **Reconcile accepted requirements.**',
       '3. **Export the current implementation.**', '4. **Read the complete new export.**',
-      '5. **Verify the actual text.**', "6. **Send the phase's completion message now.**"];
+      '5. **Verify the actual text.**', '6. **Hand off in one ordered parent response.**'];
     const positions = stages.map(stage => template.indexOf(stage));
     expect(positions.every(position => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
@@ -276,15 +276,31 @@ describe('autoplan phase execution checkpoints', () => {
     expect(close).toContain('Retention checks prove bytes; counts, hashes, keyword probes and a saved “Read-back” sentence do not perform this semantic review');
     expect(close).toContain('Fix omissions, then repeat the export and full readback');
     expect(close).toContain('Review history stays in Review record');
-    expect(close).toContain('next visible parent assistant text block, with actual findings and voice statuses');
+    expect(close).toContain('First content block: the phase report below.');
+    expect(close).toContain('actual findings, voice statuses and next step');
+    expect(close).toContain('Send visible parent assistant text');
     expect(close).toContain('Missing outside coverage means N/A consensus, never confirmed');
-    expect(close).toContain('Saving the message in ACTIVE_PLAN or printing it through Bash does not send it to the user');
-    expect(close).toContain('Send it before any next-phase Read/create/dispatch');
-    expect(close).toContain('continue in the same turn. After Eng, continue to final synthesis/approval');
-    expect(close).toContain('Do not wait for a “continue” reply');
+    expect(close).toContain('Saving it in ACTIVE_PLAN or printing it through Bash does not publish it');
+    expect(close).toContain('Only after the report text may this same response Read/create/dispatch the next phase');
+    expect(close).toContain('This handoff continues the driver in the same turn');
+    expect(close).toContain('After Eng, the next step is final synthesis/approval');
+    expect(close).toContain('do not end the turn to wait for a “continue” reply');
     expect(close).not.toContain('This message contains no tool calls');
     expect(read('autoplan/sections/phase-close.md')).toContain(template.trim()
       .replaceAll('{{OUTSIDE_LABEL}}', 'Codex').replaceAll('{{NATIVE_LABEL}}', 'Claude'));
+  });
+
+  test('handoff response puts the public report before next-phase tools, with no repair bypass or user wait', () => {
+    const source = read('autoplan/sections/phase-close.md.tmpl').replace(/\s+/g, ' ');
+    const handoff = source.slice(source.indexOf('6. **Hand off'));
+    expect(handoff).toContain('If any prerequisite in steps 1–5 is incomplete, keep this phase open: repair, export and finish the full readback/verification before constructing the handoff');
+    expect(handoff.indexOf('First content block: the phase report below.')).toBeLessThan(handoff.indexOf('Subsequent tool calls: the next step from that row.'));
+    expect(handoff).toContain('Only after the report text may this same response Read/create/dispatch the next phase');
+    expect(handoff).toContain('A response that starts with that tool call has not closed the current phase');
+    expect(handoff).toContain('do not end the turn to wait for a “continue” reply');
+    expect(handoff).not.toContain('This message contains no tool calls');
+    expect(handoff).toContain('a skip is never a completion');
+    expect(handoff).toContain('After Eng, the next step is final synthesis/approval');
   });
 
   test('a fresh close contains publication data without recovering the pre-compaction caller', () => {

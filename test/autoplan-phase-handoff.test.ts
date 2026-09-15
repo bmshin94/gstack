@@ -213,8 +213,10 @@ test('phase progress text permits immediate tool continuation in the same turn',
   expect(contract).toContain('in the same turn');
   expect(contract).not.toContain('This parent response contains no tool calls');
   const shared = source('autoplan/sections/phase-close.md.tmpl').replace(/\s+/g, ' ');
-  expect(shared).toContain('next visible parent assistant text block');
-  expect(shared).toContain('Send it before any next-phase Read/create/dispatch');
+  expect(shared).toContain('Send visible parent assistant text');
+  expect(shared).toContain('Only after the report text may this same response Read/create/dispatch the next phase');
+  expect(shared.indexOf('First content block: the phase report below.')).toBeLessThan(
+    shared.indexOf('Subsequent tool calls: the next step from that row.'));
   expect(shared).toContain('in the same turn');
   expect(shared).not.toContain('This message contains no tool calls');
   for (const phase of ['ceo', 'design', 'dx', 'eng']) {
