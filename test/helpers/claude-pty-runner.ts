@@ -1526,7 +1526,38 @@ export function matchesNativePlanQuestion(visible: string, call: NativePlanQuest
   if (!header) return matchesClippedNativeQuestion(normalized, call);
   if (compact(header[1]!) !== compact(question.header) || /❯\s*[1-9]\./.test(before.slice(header.index))) return false;
   const identity = question.question.match(/<gstack-qid:[^>]+>/i)?.[0] ?? question.question;
-  if (!compact(before.slice(header.index)).includes(compact(identity))) return matchesTruncatedNativeQuestion(normalized, call);
+  if (!compact(before.slice(header.index)).includes(compact(identity))) {
+    // Complete native question bodies can prefix each wrapped line with a UI rail.
+    // Remove exactly one rail, as the clipped/truncated body paths do; retain
+    // any second or interior rail that belongs to the native question text.
+    const body = before.slice(header.index + header[0].length).trim();
+    const rows = body.split('\n').filter(line => line.trim());
+    const unboxed = body.replace(/^[ \t]*[\u2502\u2503] ?/gm, '');
+    if (!rows.length || !rows.every(line => /^[ \t]*[\u2502\u2503](?: |$)/.test(line)) ||
+        compact(unboxed) !== compact(question.question)) return matchesTruncatedNativeQuestion(normalized, call);
+    // The boxed body belongs to a current pane at viewport top or below
+    // native pane chrome. Plain prose immediately introducing a copy does not.
+    const preceding = normalized.slice(0, normalized.length - tail.length + header.index).trimEnd();
+    if (preceding && !/(?:^|\n)[ \t]*[─━]{10,}[ \t]*$/.test(preceding)) return false;
+    let fence: string | undefined;
+    for (const line of preceding.split('\n')) {
+      const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (!marker) continue;
+      if (!fence) fence = marker[1];
+      else if (marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = undefined;
+    }
+    if (fence) return false;
+    const menu = tail.slice(cursor.index);
+    const footer = /Enter\s*to\s*select\s*\u00B7\s*\u2191\/\u2193\s*to\s*navigate\s*\u00B7\s*(?:n\s*to\s*add\s*notes\s*\u00B7\s*)?Esc\s*to\s*cancel/i.exec(menu);
+    if (!footer || !/^[\s\u2502\u2503\u2500\u2501\u2514\u2518]*$/.test(menu.slice(footer.index + footer[0].length))) return false;
+    const options = parseNumberedOptions(visible);
+    const offered = options.slice(0, question.options.length);
+    const controls = options.slice(question.options.length);
+    return offered.length === question.options.length && offered.every((option, index) =>
+      option.index === index + 1 && compact(option.label) === compact(question.options[index]!.label)) &&
+      controls.length <= 2 && controls.every((option, index) => option.index === question.options.length + index + 1 &&
+        (index === 0 ? /^Typesomething\.?$/i : /^Chataboutthis$/i).test(compact(option.label)));
+  }
   // Preserve the captured damaged-option path when the native panel's
   // complete footer is intact, including the optional native preview notes key.
   // With a damaged footer, require the full

@@ -125,7 +125,7 @@ test('shared native input dependencies select every PTY consumer without changin
   expect(expected).toHaveLength(22);
   expect(expected.filter(id => E2E_TIERS[id] === 'gate')).toHaveLength(7);
   expect(expected.filter(id => E2E_TIERS[id] === 'periodic')).toHaveLength(15);
-  for (const file of ['test/plan-count-design-ui-recovery.test.ts', 'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
+  for (const file of ['test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts',
     'test/helpers/plan-skill-questions.ts', 'test/plan-skill-questions.test.ts', 'test/fixtures/design-tasks-bash-permission.json', 'test/fixtures/eng-auq-validation-error.json',
     'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts',
     'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts']) {

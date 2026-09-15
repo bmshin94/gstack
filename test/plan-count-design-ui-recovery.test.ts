@@ -1,9 +1,11 @@
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { isRejectedSlashCommand } from './helpers/claude-pty-runner';
+import { capturePlanCountQuestion, isRejectedSlashCommand, matchesNativePlanQuestion, planCountQuestionInput, stripAnsi } from './helpers/claude-pty-runner';
+import type { NativePlanQuestionCall } from './helpers/plan-count-transcript';
+import boxedFrames from './fixtures/design-ui-boxed-question.json';
 
 // Exact public tool-result frame from the first Sep 15 Design UI attempt.
 const TOOL_HELP_FRAME = "● Bash(eval \"$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)\"\n      eval \"$(~/.claude/skills/gstack/bin/gstack-paths)\"…)\n  ⎿  DESIGN_DIR: /tmp/gstack-owned-display-9o13klaz/gstack-paid-shard-awmDRC/tmp/gstack-native-review-state-mT1Xxz/\n     projects/gstack-plan-count-UAhijs/designs/user-dashboard-20260915\n     Unknown command: --help\n     … +34 lines (ctrl+o to expand)\n  ⎿  Allowed by auto mode classifier\n\n";
@@ -22,6 +24,135 @@ test('the requested native slash rejection remains an immediate failure', () => 
     expect(isRejectedSlashCommand(`Unknown command: /plan-design-review${suffix}`, '/plan-design-review')).toBe(true);
     expect(isRejectedSlashCommand(`\x1b[31mUnknown command: /plan-design-review${suffix}\x1b[0m`, '/plan-design-review')).toBe(true);
   }
+});
+
+
+describe('complete boxed native questions', () => {
+  const pending = (capture: typeof boxedFrames[number]): NativePlanQuestionCall => structuredClone(capture.call);
+  const pane = (screen: string) => screen.slice(screen.indexOf(' ☐ Board'));
+
+  test.each(boxedFrames)('binds the exact retained attempt $attempt question without answer credit', capture => {
+    const call = pending(capture);
+    expect(call.questions[0]!.question.length).toBeGreaterThan(240);
+    expect(matchesNativePlanQuestion(capture.screen, call)).toBe(true);
+    const active = capturePlanCountQuestion(capture.screen, new Set(), 0, false, call)!;
+    expect(active.nativeCall).toBe(call);
+    expect(active.nativeQuestionIndex).toBe(0);
+    expect(active.options).toEqual(call.questions[0]!.options.map((option, i) => ({ index: i + 1, label: option.label })));
+    expect(planCountQuestionInput(capture.screen, active, 1)).toBe('1');
+    expect(call.answered).toBe(false);
+    expect(call.answers).toBeUndefined();
+  });
+
+  test('preserves the supported question presentation class across wrapping and terminal decoration', () => {
+    for (const capture of boxedFrames) {
+      const call = pending(capture);
+      const wrapped = call.questions[0]!.question.match(/.{1,60}(?:\s|$)|\S+/g)!.map(line => `│ ${line.trim()}`).join('\n');
+      for (const screen of [
+        pane(capture.screen),
+        capture.screen.replace(/^│ /gm, ''),
+        capture.screen.replace(/^│ /gm, '┃ '),
+        capture.screen.replaceAll('\n', '\r\n'),
+        // The session decodes ANSI before the visible-frame matcher runs.
+        stripAnsi(`\x1b[32m${capture.screen}\x1b[0m`),
+        capture.screen.replace(/\n\n│[\s\S]*?\n\n❯/, `\n\n${wrapped}\n\n❯`),
+      ]) expect(matchesNativePlanQuestion(screen, call), screen).toBe(true);
+    }
+  });
+
+  test('requires the entire native question and current header, including text after character 240', () => {
+    for (const capture of boxedFrames) {
+      const call = pending(capture);
+      const after240 = "I'll generate new variants.";
+      expect(call.questions[0]!.question.indexOf(after240)).toBeGreaterThan(240);
+      for (const screen of [
+        capture.screen.replace('☐ Board', '☐ Different board'),
+        capture.screen.replace(/\/boards\/[^/]+\//, '/boards/foreign/'),
+        capture.screen.replace(after240, "I'll discard those variants."),
+        capture.screen.replace(/^│ submitted[^\n]*\n/m, ''),
+      ]) {
+        expect(screen).not.toBe(capture.screen);
+        expect(matchesNativePlanQuestion(screen, call), screen).toBe(false);
+        expect(capturePlanCountQuestion(screen, new Set(), 0, false, call)?.nativeCall).toBeUndefined();
+      }
+    }
+  });
+
+  test('retains literal leading and interior rails as part of the full question identity', () => {
+    for (const capture of boxedFrames) {
+      const call = pending(capture);
+      const first = capture.screen.match(/^│ (.*)$/m)![1]!;
+      const extraLeading = capture.screen.replace(`│ ${first}`, `│ │${first}`);
+      const extraInterior = capture.screen.replace('comparison board with', 'comparison │board with');
+      expect(matchesNativePlanQuestion(extraLeading, call)).toBe(false);
+      expect(matchesNativePlanQuestion(extraInterior, call)).toBe(false);
+      const literal = pending(capture);
+      literal.questions[0]!.question = `│${literal.questions[0]!.question}`;
+      expect(matchesNativePlanQuestion(extraLeading, literal)).toBe(true);
+      expect(matchesNativePlanQuestion(capture.screen, literal)).toBe(false);
+      const interior = pending(capture);
+      interior.questions[0]!.question = interior.questions[0]!.question.replace('comparison board with', 'comparison │board with');
+      expect(matchesNativePlanQuestion(extraInterior, interior)).toBe(true);
+      expect(matchesNativePlanQuestion(capture.screen, interior)).toBe(false);
+    }
+  });
+
+  test('requires current pane structure and rejects quoted, fenced or superseded copies', () => {
+    for (const capture of boxedFrames) {
+      const call = pending(capture);
+      for (const screen of [
+        capture.screen.split('\n').map(line => `> ${line}`).join('\n'),
+        'Quoted earlier menu:\n' + pane(capture.screen),
+        'Unrelated descriptive prose:\n' + pane(capture.screen),
+        '```text\n' + capture.screen,
+        '~~~text\n' + capture.screen,
+        '````text\n```\n' + capture.screen,
+        '~~~text\n```\n' + capture.screen,
+        capture.screen + '\nA later question?',
+        capture.screen + '\n☐ Other\nA different question?\n❯ 1. Submitted\n  2. Wait\nEnter to select · ↑/↓ to navigate · Esc to cancel',
+      ]) {
+        expect(matchesNativePlanQuestion(screen, call), screen).toBe(false);
+        expect(capturePlanCountQuestion(screen, new Set(), 0, false, call)?.nativeCall).toBeUndefined();
+      }
+      // Closed historical source does not hide a later real native pane.
+      for (const prefix of ['```text\nold source\n```\n', '~~~text\nold source\n~~~~\n']) {
+        expect(matchesNativePlanQuestion(prefix + capture.screen, call)).toBe(true);
+      }
+    }
+  });
+
+  test('requires all offered choices, supported controls and the final native footer on the new path', () => {
+    for (const capture of boxedFrames) {
+      const call = pending(capture);
+      for (const screen of [
+        capture.screen.replace('3. Type preferences', '3. Type pref'),
+        capture.screen.replace(/^  3\. Type preferences\n[^\n]*\n/m, ''),
+        capture.screen.replace('4. Type something.', '4. Perform another action'),
+        capture.screen.replace('5. Chat about this', '5. Accept everything'),
+        capture.screen.replace('↑/↓ to navigate', '↑/↓ to navigte'),
+        capture.screen.replace('Enter to select · ↑/↓ to navigate · Esc to cancel', ''),
+      ]) {
+        expect(screen).not.toBe(capture.screen);
+        expect(matchesNativePlanQuestion(screen, call), screen).toBe(false);
+        expect(capturePlanCountQuestion(screen, new Set(), 0, false, call)?.nativeCall).toBeUndefined();
+      }
+    }
+  });
+
+  test('keeps pending ownership, answered state and native/rendered deduplication unchanged', () => {
+    for (const capture of boxedFrames) {
+      for (const call of [undefined, { ...pending(capture), answered: true }, { ...pending(capture), failed: true }]) {
+        expect(capturePlanCountQuestion(capture.screen, new Set(), 0, false, call)?.nativeCall).toBeUndefined();
+      }
+      const seen = new Set<string>(), call = pending(capture);
+      expect(capturePlanCountQuestion(capture.screen, seen, 0, false, call)?.nativeCall).toBe(call);
+      expect(capturePlanCountQuestion(capture.screen, seen, 1, false, call)).toBeNull();
+      expect(capturePlanCountQuestion(capture.screen, seen, 2, false)).toBeNull();
+      const delayed = new Set<string>();
+      expect(capturePlanCountQuestion(capture.screen, delayed, 0, false)?.nativeCall).toBeUndefined();
+      expect(capturePlanCountQuestion(capture.screen, delayed, 1, false, call)).toBeNull();
+    }
+  });
 });
 
 test.skipIf(process.platform === 'win32').each(['answer', 'throw'] as const)(
