@@ -151,6 +151,10 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(scope).toContain('leave unapproved fixes pending');
     expect(scope).toContain('This chooses structure only');
     expect(scope).toContain('Ask separately before accepting, rejecting or deferring another remedy');
+    const complexityRule = scope.indexOf('These initial scope selectors do not use the later grid or ledger writes');
+    expect(complexityRule).toBeGreaterThan(0);
+    expect(complexityRule).toBeLessThan(scope.indexOf('1. Explain the excess complexity'));
+    expect(scope.slice(complexityRule)).toContain('Wait for actual answers before applying changes');
     expect(scope).not.toContain('proceed as-is');
     const stop = skeleton.indexOf('**STOP while a Scope Challenge complexity question');
     const sectionRead = skeleton.indexOf(suffix ? '{{SECTION:review-sections}}' : '> **STOP.** Before starting the Scope Challenge');
@@ -230,11 +234,12 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
 describe('Eng approved-work decision gate', () => {
   const template = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
   const gate = template.split('**Decision gate (all sections and outside voice):**')[1]?.split('### 1. Architecture review')[0] ?? '';
+  const ledger = gate.match(/```markdown\n([\s\S]*?)\n```/)?.[1] ?? '';
 
   test('identifies commitments before comparing values, then saves before asking', () => {
     const identify = gate.indexOf('Before drafting options');
     const alternatives = gate.indexOf('### Compare one choice');
-    const save = gate.indexOf('**Save before asking:**');
+    const save = gate.indexOf('**Save a pending remedy before asking:**');
     const ask = gate.indexOf('**Ask and wait:**');
     expect(0 <= identify && identify < alternatives && alternatives < save && save < ask).toBe(true);
     const choice = gate.slice(identify, alternatives);
@@ -254,20 +259,19 @@ describe('Eng approved-work decision gate', () => {
 
   test('current contracts and completed comparisons precede saved questions without approving a fix', () => {
     const stages = ['### Frame the choices', 'Before drafting options',
-      '### Compare one choice', '**Save before asking:**',
+      '### Compare one choice', '**Save a pending remedy before asking:**',
       '**Ask and wait:**'].map(stage => gate.indexOf(stage));
     expect(stages.every(position => position >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     // A reopened row must use its latest accepted plan, not the seed/runtime
     // value, and rebuild all option states before the existing save/ask gate.
     const baseline = gate.slice(stages[0], stages[1]);
-    expect(baseline).toContain('| Plan baseline |');
-    expect(baseline).toContain('| Runtime evidence | What the current code actually does');
+    expect(ledger).toContain('Plan baseline: <last approved value, exact scope and answer reference; otherwise the original proposal>');
+    expect(ledger).toContain('Runtime evidence: <observed value and source/probe; unknown if unverified>');
     expect(baseline).toContain('An approved 20-second timeout belongs in the plan even while deployed code still uses 10 seconds');
     expect(baseline).toContain('neither value proves the other');
-    expect(baseline).toContain('Latest accepted plan value and exact approved scope');
-    expect(gate).toContain('`approved` with the actual option, answer reference and exact scope');
-    expect(baseline).toContain('or the original proposal if unapproved');
+    expect(ledger).toContain('Actual answer: <unanswered, or actual option and answer reference>');
+    expect(ledger).toContain('Accepted scope: <exact approved work; none if no change approved>');
     expect(baseline).toContain('Keep earlier values and answers as history');
     const options = gate.slice(stages[2], stages[3]);
     expect(options).toContain('Use concrete values, not package names');
@@ -291,7 +295,7 @@ describe('Eng approved-work decision gate', () => {
     expect(template.split('## Review record and write policy')[1]!.split('{{ANTI_SHORTCUT_CLAUSE}}')[0]!).toContain('Honor user and host limits, including an active-plan-only restriction');
     expect(gate).toContain('present the same material if report writing is forbidden');
     expect(gate).toContain('one question for one choice per AskUserQuestion call');
-    expect(gate).toContain('`pending`, or `approved` with the actual option, answer reference and exact scope');
+    expect(ledger).toContain('State: <pending, or approved>');
     expect(gate).toContain('Pending remedies are not accepted work');
     const flow = gate.split('```text')[1]!.split('```')[0]!;
     expect(flow).toContain('Fact/correction only, or exact approval still covers all needed work?');
@@ -311,10 +315,13 @@ describe('Eng approved-work decision gate', () => {
     const assign = identify.indexOf('If yes, assign separate IDs');
     expect(decompose >= 0 && decompose < mixed && mixed < assign).toBe(true);
     expect(identify).toContain('as current → proposed value');
-    expect(gate.slice(0, gate.indexOf('### Compare one choice'))).toContain('`pending`, or `approved` with the actual option, answer reference and exact scope');
-    expect(gate.slice(0, gate.indexOf('### Compare one choice'))).toContain('ID, finding and source/reviewer');
-    expect(gate.slice(0, gate.indexOf('### Compare one choice'))).toContain('| Runtime evidence | What the current code actually does');
-    const audit = gate.slice(gate.indexOf('### Compare one choice'), gate.indexOf('**Save before asking:**'));
+    expect(ledger).toContain('State: <pending, or approved>');
+    expect(ledger).toContain('### R1: <one independently selectable choice>');
+    expect(ledger).toContain('Finding: <number, severity, confidence, file:line and reviewer>');
+    expect(ledger).toContain('Runtime evidence: <observed value and source/probe; unknown if unverified>');
+    expect(ledger).toContain('Actual answer: <unanswered, or actual option and answer reference>');
+    expect(ledger).toContain('Accepted scope: <exact approved work; none if no change approved>');
+    const audit = gate.slice(gate.indexOf('### Compare one choice'), gate.indexOf('**Save a pending remedy before asking:**'));
     expect(audit).toContain("Draft the complete question, recommendation, option labels, descriptions and tradeoffs");
     expect(audit).toContain('Check the entire brief against the grid');
     expect(audit).toContain('If another independent change appears, return to **Frame the choices** and split it before sending');
@@ -324,8 +331,8 @@ describe('Eng approved-work decision gate', () => {
   });
 
   test('saves the final brief and re-audits substantive revisions before sending', () => {
-    const audit = gate.slice(gate.indexOf('### Compare one choice'), gate.indexOf('**Save before asking:**'));
-    const save = gate.slice(gate.indexOf('**Save before asking:**'), gate.indexOf('**Ask and wait:**'));
+    const audit = gate.slice(gate.indexOf('### Compare one choice'), gate.indexOf('**Save a pending remedy before asking:**'));
+    const save = gate.slice(gate.indexOf('**Save a pending remedy before asking:**'), gate.indexOf('**Ask and wait:**'));
     const send = gate.slice(gate.indexOf('**Ask and wait:**'));
     expect(audit).toContain("in the preamble's decision-brief format");
     expect(save).toContain('Use Write or Edit to save the decision record, current grid and brief');
@@ -375,10 +382,12 @@ describe('Eng approved-work decision gate', () => {
   test('every option is recorded against one decision before sending or scoring coverage', () => {
     const rows = gate.indexOf('Before drafting options');
     const compare = gate.indexOf('### Compare one choice');
-    const save = gate.indexOf('**Save before asking:**');
+    const save = gate.indexOf('**Save a pending remedy before asking:**');
     const ask = gate.indexOf('**Ask and wait:**');
     expect(0 <= rows && rows < compare && compare < save && save < ask).toBe(true);
-    expect(gate.slice(0, compare)).toContain('Each decision record needs:');
+    expect(gate.indexOf(ledger)).toBeLessThan(gate.indexOf('### Frame the choices'));
+    expect(ledger).toContain('Comparison grid:\n<the complete grid from Compare one choice>');
+    expect(ledger).toContain('Question D2:\n<the exact complete brief, with all offered option labels and recommendation>');
     expect(gate.slice(compare, save)).toContain('Give every independently selectable behavior, approach, guarantee or bound affected anywhere in it a row, including fixed and pending choices');
     expect(gate.slice(compare, save)).toContain('Show its current plan value and resulting value/work under every option; cite its approval or mark it pending');
     expect(gate.slice(compare, save)).toContain('keep other approved values fixed and other pending values undecided');
@@ -393,11 +402,14 @@ describe('Eng approved-work decision gate', () => {
 
   test('finding evidence, stable decision identity and question labels have distinct roles', () => {
     const identity = gate.split('### Frame the choices')[0]!;
-    expect(identity).toContain('one finding may need several IDs');
-    expect(identity).toContain('`D<N>` question title');
-    expect(identity).toContain('`A)`, `B)`, `C)` option labels');
-    expect(identity).toContain('A reopened choice keeps its decision ID and gets a new question number');
-    expect(identity).toContain('Test stars rate existing test quality');
+    expect(identity).toContain('One finding can have several independent choices');
+    expect(identity).toContain("Keep a choice's ID when reopening it");
+    expect(identity).toContain('retain its old brief and answer as history');
+    expect(identity).toContain('assign the new question the next `D<N>`');
+    expect(ledger).toContain('### R1: <one independently selectable choice>');
+    expect(ledger).toContain('Question D2:\n<the exact complete brief, with all offered option labels and recommendation>');
+    expect(ledger).toContain('History: <earlier values, briefs, answers and reason for reopening>');
+    expect(identity).toContain('Test stars measure existing test quality, not findings or decisions');
     expect(template).not.toContain('issue NUMBER + option LETTER');
     expect(template).not.toContain('Label with NUMBER + LETTER');
   });
@@ -497,7 +509,7 @@ describe('Eng approved-work decision gate', () => {
     expect(blocked).toContain('With startup values and an available, permitted telemetry command');
     expect(blocked).toContain('`OUTCOME=error`, actual `ERROR_MESSAGE`/`FAILED_STEP`');
     expect(blocked).toContain('Stop without ExitPlanMode');
-    expect(blocked).toContain('Resume at the failed step; repeat affected outputs/read-back/logs');
+    expect(blocked).toContain('A later resumption starts at the failed step and repeats affected outputs/read-back/logs');
     expect(skeleton.slice(skeleton.indexOf('After the gate passes:'))).toContain('once with `OUTCOME=success`, then cache refresh');
     expect(skeleton).toContain('Make no further plan or approval changes between verification and exit');
   });
@@ -506,7 +518,7 @@ describe('Eng approved-work decision gate', () => {
   // decision oracle. It proves the instructions expose the observed two-axis
   // option pattern; only native evaluation can prove the model follows them.
   test('worked comparison exposes two independently selectable option values', () => {
-    const worked = gate.split('This example combines two choices:')[1]?.split('**Save before asking:**')[0] ?? '';
+    const worked = gate.split('This example combines two choices:')[1]?.split('**Save a pending remedy before asking:**')[0] ?? '';
     const [bundled = '', split = ''] = worked.split('Ask about R1 with R2 still undecided:');
     const rows = [...bundled.matchAll(/^\| (R[12] [^|]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
       .map(([, commitment, current, A, B, C]) => ({ commitment, current, A, B, C }));
@@ -533,7 +545,7 @@ describe('Eng approved-work decision gate', () => {
   });
 
   test('common new defaults still need approval while necessary contract proof carries forward', () => {
-    const compare = gate.split('### Compare one choice')[1]!.split('**Save before asking:**')[0]!;
+    const compare = gate.split('### Compare one choice')[1]!.split('**Save a pending remedy before asking:**')[0]!;
     expect(compare).toContain('A new value shared by all options still needs approval');
     expect(compare).toContain('Include shared values and recommendations');
     const identify = gate.slice(gate.indexOf('Before drafting options'), gate.indexOf('### Compare one choice'));
@@ -550,7 +562,7 @@ describe('Eng approved-work decision gate', () => {
     const normalized = gate.replace(/\s+/g, ' ');
     expect(normalized).toContain('Read the request, relevant source and actual answers');
     expect(normalized).toContain('Disclose factual corrections without changing behavior');
-    expect(normalized).toContain('Latest accepted plan value and exact approved scope');
+    expect(ledger).toContain('Plan baseline: <last approved value, exact scope and answer reference; otherwise the original proposal>');
     expect(normalized).toContain('Apply only those amendments to the working plan with a scoped Edit before taking the next choice');
     expect(normalized).toContain('Independent instrumentation, follow-up work, guarantees or policies need separate choices');
     expect(normalized).toContain('Reopen an approval only for a concrete new risk, contradictory evidence or changed assumption');

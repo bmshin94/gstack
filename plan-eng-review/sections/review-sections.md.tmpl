@@ -45,18 +45,29 @@ Finding + evidence + actual answers
         -> next pending choice (or next finding when none remain)
 ```
 
-Keep three identities distinct: number each finding with severity, confidence and source; give each independently selectable choice a stable decision ID (one finding may need several IDs); use the preamble's `D<N>` question title and `A)`, `B)`, `C)` option labels for its brief. Link the question to its finding and decision record. A reopened choice keeps its decision ID and gets a new question number. Test stars rate existing test quality, not findings or decisions.
+Use this layout before the selected report's final `## GSTACK REVIEW REPORT`; replace R1/D2 and brackets with this review's data. One finding can have several independent choices. Keep a choice's ID when reopening it, retain its old brief and answer as history, and assign the new question the next `D<N>`. Test stars measure existing test quality, not findings or decisions.
+
+```markdown
+## Decision ledger
+
+### R1: <one independently selectable choice>
+Finding: <number, severity, confidence, file:line and reviewer>
+Plan baseline: <last approved value, exact scope and answer reference; otherwise the original proposal>
+Runtime evidence: <observed value and source/probe; unknown if unverified>
+State: <pending, or approved>
+
+Comparison grid:
+<the complete grid from Compare one choice>
+
+Question D2:
+<the exact complete brief, with all offered option labels and recommendation>
+
+Actual answer: <unanswered, or actual option and answer reference>
+Accepted scope: <exact approved work; none if no change approved>
+History: <earlier values, briefs, answers and reason for reopening>
+```
 
 ### Frame the choices
-
-Each decision record needs:
-
-| Field | Record |
-|---|---|
-| Identity | ID, finding and source/reviewer |
-| Plan baseline | Latest accepted plan value and exact approved scope, or the original proposal if unapproved |
-| Runtime evidence | What the current code actually does, with its source or probe |
-| State | `pending`, or `approved` with the actual option, answer reference and exact scope |
 
 Keep earlier values and answers as history. An approved 20-second timeout belongs in the plan even while deployed code still uses 10 seconds; neither value proves the other. A draft value, recommendation or reviewer agreement is not approval. Pending remedies are not accepted work.
 
@@ -103,7 +114,7 @@ Jitter without a cap is meaningful despite being omitted. Ask about R1 with R2 s
 
 ### Record and resolve
 
-**Save before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if report writing is forbidden. If saving fails, use **Blocked outcome** before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
+**Save a pending remedy before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if report writing is forbidden. If saving fails, use **Blocked outcome** before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
 
 **Ask and wait:** Send the audited brief without substantive additions: one question for one choice per AskUserQuestion call. An obvious fix still needs an answer unless exact prior approval covers it. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode.
 
@@ -142,11 +153,13 @@ Before reviewing, answer:
 
 At 8+ files or 2+ new classes/services, STOP before Section 1. Use the preamble's decision-brief format for this complexity gate:
 
+These initial scope selectors do not use the later grid or ledger writes. Wait for actual answers before applying changes.
+
 1. Explain the excess complexity. Ask about each needed feature cut or deferral separately first.
 2. Compare original and smaller class/module arrangements with the same feature choices. Preserve contracts and approved security, error handling, test and performance fixes in both; leave unapproved fixes pending.
 3. Ask which arrangement to use. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
 
-These initial scope selectors do not use the later grid or ledger writes. Wait for actual answers before applying changes. Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Without a complexity gate, proceed to findings.
+Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Without a complexity gate, proceed to findings.
 
 **Critical: Once the user accepts or rejects a scope reduction recommendation, commit fully.** Do not re-argue for smaller scope during later review sections. Do not silently reduce scope or skip planned components.
 

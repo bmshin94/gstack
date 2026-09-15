@@ -1171,6 +1171,53 @@ describe('TEST_FAILURE_TRIAGE resolver', () => {
 describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
   const REVIEW_SKILLS = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'codex'];
 
+  test('Eng report example is fenced Markdown, and the original escaped fence is rejected', async () => {
+    const { marked } = await import('marked');
+    const content = readSkillUnion('plan-eng-review');
+    const tokens = marked.lexer(content);
+    const headings = tokens.filter(token => token.type === 'heading' && token.depth === 2);
+    expect(headings.map(token => token.text)).not.toContain('GSTACK REVIEW REPORT');
+    const example = tokens.find(token => token.type === 'code'
+      && token.lang === 'markdown' && token.text.startsWith('## GSTACK REVIEW REPORT\n'));
+    expect(example).toBeDefined();
+    if (example?.type !== 'code') throw new Error('Missing fenced report example');
+    expect(example.text).toContain('| Review | Trigger | Why | Runs | Status | Findings |');
+    expect(example.text).toContain('`/plan-eng-review`');
+    // Reproduce the observed literal-backslash delimiters without changing
+    // the parser or preprocessing malformed Markdown into valid fences.
+    const broken = content.replace(example.raw, example.raw.replaceAll('`', '\\`'));
+    expect(broken).not.toBe(content);
+    const brokenTokens = marked.lexer(broken);
+    expect(brokenTokens.some(token => token.type === 'code' && token.lang === 'markdown'
+      && token.text.startsWith('## GSTACK REVIEW REPORT\n'))).toBe(false);
+    expect(brokenTokens.filter(token => token.type === 'heading' && token.depth === 2)
+      .map(token => token.text)).toContain('GSTACK REVIEW REPORT');
+  });
+
+  test('Eng renderers use real code delimiters without changing confidence rules or report fields', async () => {
+    const {generateConfidenceCalibration} = await import('../scripts/resolvers/confidence');
+    const {generateReviewDashboard, generatePlanFileReviewReport, generateCodexPlanReview} = await import('../scripts/resolvers/review');
+    const {HOST_PATHS} = await import('../scripts/resolvers/types');
+    for (const host of ALL_HOST_CONFIGS) {
+      const ctx = {skillName: 'plan-eng-review', tmplPath: 'plan-eng-review/SKILL.md.tmpl',
+        host: host.name, paths: HOST_PATHS[host.name]!};
+      const confidence = generateConfidenceCalibration(ctx);
+      const dashboard = generateReviewDashboard(ctx);
+      const report = generatePlanFileReviewReport(ctx);
+      const outside = generateCodexPlanReview(ctx);
+      // These four resolver fragments contain no intentional escaped-backtick
+      // example; the preamble does, and is deliberately outside this check.
+      for (const output of [confidence, dashboard, report, outside]) expect(output).not.toContain('\\`');
+      expect(confidence).toBe(generateConfidenceCalibration({...ctx, skillName: 'plan-ceo-review'}).replaceAll('\\`', '`'));
+      expect(dashboard).toBe(generateReviewDashboard({...ctx, skillName: 'plan-ceo-review'}).replaceAll('\\`', '`'));
+      for (const field of ['status', 'unresolved', 'critical_gaps', 'issues_found', 'mode', 'commit']) {
+        expect(report).toContain('`' + field + '`');
+      }
+      expect(outside).toContain(host.name === 'codex' ? 'claude auth login' : 'codex login');
+      expect(outside).toContain('A native result never supplies outside coverage');
+    }
+  });
+
   for (const skill of REVIEW_SKILLS) {
     test(`plan file review report appears in ${skill} generated file`, () => {
       const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
@@ -2326,7 +2373,7 @@ describe('Design approval reconciliation', () => {
     expect(readiness).toContain('If missing, reset drafts to pending, ask and wait.');
     expect(readiness).toContain('repeat this check before writing completion outputs');
     expect(gate).toContain('report the stale verification and stop');
-    expect(gate).toContain('starts at Approval readiness, then repeats affected outputs, Read-back,');
+    expect(gate).toContain('starts at Decision procedure for changed choices, then Approval readiness, then repeats affected outputs, Read-back,');
     expect(gate).toContain('Review Log and dashboard');
     expect(gate).toContain('and follow **Blocked outcome**');
     const report = extractMarkdownSection(section, '### Write to the plan file');

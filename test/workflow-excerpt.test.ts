@@ -122,7 +122,8 @@ describe('workflow judge excerpts', () => {
     expect(text).toContain('if VERSION is absent, use the completion date only');
   });
 
-  test('Eng preparation and decision procedure precede the four review sections', () => {
+  test('Eng preparation and decision procedure precede the four review sections', async () => {
+    const { marked } = await import('marked');
     const { skillPath, startMarker, endMarker } = ENG_REVIEW_EXCERPT;
     const eng = readWorkflowExcerpt(skillPath, startMarker, endMarker);
     const stages = ['## Review preparation', '## Retrospective learning', '## Confidence Calibration', '## Decision procedure',
@@ -133,8 +134,9 @@ describe('workflow judge excerpts', () => {
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     expect(eng.match(/^## Decision procedure$/gm)).toHaveLength(1);
     const procedure = eng.slice(eng.indexOf('## Decision procedure'), eng.indexOf('## Review Sections'));
-    expect(procedure.match(/^### .+$/gm)).toEqual(['### Frame the choices', '### Compare one choice', '### Record and resolve']);
-    expect(procedure).toContain('**Save before asking:**');
+    const headings = marked.lexer(procedure).filter(token => token.type === 'heading' && token.depth === 3);
+    expect(headings.map(token => token.text)).toEqual(['Frame the choices', 'Compare one choice', 'Record and resolve']);
+    expect(procedure).toContain('**Save a pending remedy before asking:**');
     expect(procedure).toContain('**Ask and wait:**');
     expect(procedure).toContain('**Apply the answer:**');
     const outputs = ['### TODOS.md updates', '## Approval readiness', '## Required outputs', '## Implementation Tasks',

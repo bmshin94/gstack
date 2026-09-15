@@ -695,7 +695,7 @@ Verify you Read `sections/review-sections.md` and fully executed Scope Challenge
 
 **Paused question:** Wait for its actual answer without completion telemetry or ExitPlanMode.
 
-**Blocked outcome:** Report `BLOCKED`, missing path/work, attempts and the resume requirement. Complete chat-only output stays **not persisted** and cannot pass the persisted-report gate. Unavailable report persistence, unrecovered saves and failed gates use this route. With startup values and an available, permitted telemetry command, run **Telemetry (run last)** once: `OUTCOME=error`, actual `ERROR_MESSAGE`/`FAILED_STEP`. Stop without ExitPlanMode. Resume at the failed step; repeat affected outputs/read-back/logs.
+**Blocked outcome:** Report `BLOCKED`, missing path/work, attempts and the resume requirement. Complete chat-only output stays **not persisted** and cannot pass the persisted-report gate. Unavailable report persistence, unrecovered saves and failed gates use this route. With startup values and an available, permitted telemetry command, run **Telemetry (run last)** once: `OUTCOME=error`, actual `ERROR_MESSAGE`/`FAILED_STEP`. Stop without ExitPlanMode. A later resumption starts at the failed step and repeats affected outputs/read-back/logs.
 
 ## EXIT PLAN MODE GATE (BLOCKING)
 
@@ -707,7 +707,7 @@ Confirm Approval readiness passed for the current decisions. This is a
 read-only verification, not a new approval or output-writing step. If the
 decisions changed, report the stale verification and stop before success
 telemetry or exit and follow **Blocked outcome**. A resumed repair
-starts at Approval readiness, then repeats affected outputs, Read-back,
+starts at Decision procedure for changed choices, then Approval readiness, then repeats affected outputs, Read-back,
 Review Log and dashboard.
 
 Before calling ExitPlanMode, verify all five checks:

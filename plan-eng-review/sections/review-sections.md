@@ -78,11 +78,11 @@ Every finding MUST include a confidence score (1-10):
 
 **Finding format:**
 
-\`[SEVERITY] (confidence: N/10) file:line — description\`
+`[SEVERITY] (confidence: N/10) file:line — description`
 
 Example:
-\`[P1] (confidence: 9/10) app/models/user.rb:42 — SQL injection via string interpolation in where clause\`
-\`[P2] (confidence: 5/10) app/controllers/api/v1/users_controller.rb:18 — Possible N+1 query, verify with production logs\`
+`[P1] (confidence: 9/10) app/models/user.rb:42 — SQL injection via string interpolation in where clause`
+`[P2] (confidence: 5/10) app/controllers/api/v1/users_controller.rb:18 — Possible N+1 query, verify with production logs`
 
 ### Pre-emit verification gate (#1539 — kills the "field doesn't exist" FP class)
 
@@ -143,18 +143,29 @@ Finding + evidence + actual answers
         -> next pending choice (or next finding when none remain)
 ```
 
-Keep three identities distinct: number each finding with severity, confidence and source; give each independently selectable choice a stable decision ID (one finding may need several IDs); use the preamble's `D<N>` question title and `A)`, `B)`, `C)` option labels for its brief. Link the question to its finding and decision record. A reopened choice keeps its decision ID and gets a new question number. Test stars rate existing test quality, not findings or decisions.
+Use this layout before the selected report's final `## GSTACK REVIEW REPORT`; replace R1/D2 and brackets with this review's data. One finding can have several independent choices. Keep a choice's ID when reopening it, retain its old brief and answer as history, and assign the new question the next `D<N>`. Test stars measure existing test quality, not findings or decisions.
+
+```markdown
+## Decision ledger
+
+### R1: <one independently selectable choice>
+Finding: <number, severity, confidence, file:line and reviewer>
+Plan baseline: <last approved value, exact scope and answer reference; otherwise the original proposal>
+Runtime evidence: <observed value and source/probe; unknown if unverified>
+State: <pending, or approved>
+
+Comparison grid:
+<the complete grid from Compare one choice>
+
+Question D2:
+<the exact complete brief, with all offered option labels and recommendation>
+
+Actual answer: <unanswered, or actual option and answer reference>
+Accepted scope: <exact approved work; none if no change approved>
+History: <earlier values, briefs, answers and reason for reopening>
+```
 
 ### Frame the choices
-
-Each decision record needs:
-
-| Field | Record |
-|---|---|
-| Identity | ID, finding and source/reviewer |
-| Plan baseline | Latest accepted plan value and exact approved scope, or the original proposal if unapproved |
-| Runtime evidence | What the current code actually does, with its source or probe |
-| State | `pending`, or `approved` with the actual option, answer reference and exact scope |
 
 Keep earlier values and answers as history. An approved 20-second timeout belongs in the plan even while deployed code still uses 10 seconds; neither value proves the other. A draft value, recommendation or reviewer agreement is not approval. Pending remedies are not accepted work.
 
@@ -201,7 +212,7 @@ Jitter without a cap is meaningful despite being omitted. Ask about R1 with R2 s
 
 ### Record and resolve
 
-**Save before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if report writing is forbidden. If saving fails, use **Blocked outcome** before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
+**Save a pending remedy before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if report writing is forbidden. If saving fails, use **Blocked outcome** before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
 
 **Ask and wait:** Send the audited brief without substantive additions: one question for one choice per AskUserQuestion call. An obvious fix still needs an answer unless exact prior approval covers it. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode.
 
@@ -240,11 +251,13 @@ Before reviewing, answer:
 
 At 8+ files or 2+ new classes/services, STOP before Section 1. Use the preamble's decision-brief format for this complexity gate:
 
+These initial scope selectors do not use the later grid or ledger writes. Wait for actual answers before applying changes.
+
 1. Explain the excess complexity. Ask about each needed feature cut or deferral separately first.
 2. Compare original and smaller class/module arrangements with the same feature choices. Preserve contracts and approved security, error handling, test and performance fixes in both; leave unapproved fixes pending.
 3. Ask which arrangement to use. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
 
-These initial scope selectors do not use the later grid or ledger writes. Wait for actual answers before applying changes. Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Without a complexity gate, proceed to findings.
+Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Without a complexity gate, proceed to findings.
 
 **Critical: Once the user accepts or rejects a scope reduction recommendation, commit fully.** Do not re-argue for smaller scope during later review sections. Do not silently reduce scope or skip planned components.
 
@@ -641,7 +654,7 @@ CODEX SAYS (plan review — outside voice):
 ```
 
 **Error handling:** All errors are non-blocking — the outside voice is informational.
-- Auth failure (stderr contains "auth", "login", "unauthorized"): "Codex auth failed. Run \`codex login\` to authenticate." Fall back to the Claude subagent below.
+- Auth failure (stderr contains "auth", "login", "unauthorized"): "Codex auth failed. Run `codex login` to authenticate." Fall back to the Claude subagent below.
 - Timeout: "Codex timed out after 5 minutes." Fall back to the Claude subagent below.
 - Empty response: "Codex returned no response." Fall back to the Claude subagent below.
 
@@ -924,18 +937,18 @@ Parse each JSONL entry using recorded provenance. Historical source "claude" is 
 
 Each skill logs different fields:
 
-- **plan-ceo-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`mode\`, \`scope_proposed\`, \`scope_accepted\`, \`scope_deferred\`, \`commit\`
+- **plan-ceo-review**: `status`, `unresolved`, `critical_gaps`, `mode`, `scope_proposed`, `scope_accepted`, `scope_deferred`, `commit`
   → Findings: "{scope_proposed} proposals, {scope_accepted} accepted, {scope_deferred} deferred"
   → If scope fields are 0 or missing (HOLD/REDUCTION mode): "mode: {mode}, {critical_gaps} critical gaps"
-- **plan-eng-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`issues_found\`, \`mode\`, \`commit\`
+- **plan-eng-review**: `status`, `unresolved`, `critical_gaps`, `issues_found`, `mode`, `commit`
   → Findings: "{issues_found} issues, {critical_gaps} critical gaps"
-- **plan-design-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`unresolved\`, \`decisions_made\`, \`commit\`
+- **plan-design-review**: `status`, `initial_score`, `overall_score`, `unresolved`, `decisions_made`, `commit`
   → Findings: "score: {initial_score}/10 → {overall_score}/10, {decisions_made} decisions"
-- **plan-devex-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`product_type\`, \`tthw_current\`, \`tthw_target\`, \`mode\`, \`persona\`, \`competitive_tier\`, \`unresolved\`, \`commit\`
+- **plan-devex-review**: `status`, `initial_score`, `overall_score`, `product_type`, `tthw_current`, `tthw_target`, `mode`, `persona`, `competitive_tier`, `unresolved`, `commit`
   → Findings: "score: {initial_score}/10 → {overall_score}/10, TTHW: {tthw_current} → {tthw_target}"
-- **devex-review**: \`status\`, \`overall_score\`, \`product_type\`, \`tthw_measured\`, \`dimensions_tested\`, \`dimensions_inferred\`, \`boomerang\`, \`commit\`
+- **devex-review**: `status`, `overall_score`, `product_type`, `tthw_measured`, `dimensions_tested`, `dimensions_inferred`, `boomerang`, `commit`
   → Findings: "score: {overall_score}/10, TTHW: {tthw_measured}, {dimensions_tested} tested/{dimensions_inferred} inferred"
-- **codex-review**: \`status\`, \`gate\`, \`findings\`, \`findings_fixed\`
+- **codex-review**: `status`, `gate`, `findings`, `findings_fixed`
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 
 The current row describes this actual review. Mark an unlogged current run as not persisted; do not present it as a saved dashboard entry.
@@ -944,17 +957,17 @@ Display `clean` as CLEAR and `issues_open` as ISSUES OPEN, retaining freshness a
 
 Produce this markdown table:
 
-\`\`\`markdown
+```markdown
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | {runs} | {status} | {findings} |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | {runs} | {status} | {findings} |
 | Outside Review | {recorded provider and trigger} | Independent 2nd opinion | {runs} | {outside_status} | {findings} |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | {runs} | {status} | {findings} |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | {runs} | {status} | {findings} |
-| DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
-\`\`\`
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | {runs} | {status} | {findings} |
+| Design Review | `/plan-design-review` | UI/UX gaps | {runs} | {status} | {findings} |
+| DX Review | `/plan-devex-review` | Developer experience gaps | {runs} | {status} | {findings} |
+```
 
 Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are optional (omit when
 empty); **VERDICT** is always present:
@@ -965,13 +978,13 @@ empty); **VERDICT** is always present:
   If Eng Review is not CLEAR and not skipped globally, append "eng review required".
 
 **Unresolved-decisions status (MANDATORY — never omitted; the report's final non-whitespace
-line).** After VERDICT, end the report (content under the \`## GSTACK REVIEW REPORT\`
-heading — a bold label, never a new \`## \` heading; exempt from the "omit when empty"
-rule) with exactly one: the exact unbolded line \`NO UNRESOLVED DECISIONS\` (a bolded one
-does NOT count), OR a \`**UNRESOLVED DECISIONS:**\` header + one bullet per open item
-(last bullet = final line; add \`+ N unresolved from prior reviews\` only when N > 0).
+line).** After VERDICT, end the report (content under the `## GSTACK REVIEW REPORT`
+heading — a bold label, never a new `## ` heading; exempt from the "omit when empty"
+rule) with exactly one: the exact unbolded line `NO UNRESOLVED DECISIONS` (a bolded one
+does NOT count), OR a `**UNRESOLVED DECISIONS:**` header + one bullet per open item
+(last bullet = final line; add `+ N unresolved from prior reviews` only when N > 0).
 This avoids double-counting: list THIS review's open items from context; for prior reviews
-sum \`unresolved\` over the latest fresh row per skill (dashboard 7-day window) after you
+sum `unresolved` over the latest fresh row per skill (dashboard 7-day window) after you
 DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
@@ -985,13 +998,13 @@ Use a single delete-then-append flow:
    accepted changes; include the full review output. Locate any existing
    `## GSTACK REVIEW REPORT` section.
 2. If found, use the Edit tool to DELETE the entire existing section. Match from
-   \`## GSTACK REVIEW REPORT\` through either the next \`## \` heading or end of
+   `## GSTACK REVIEW REPORT` through either the next `## ` heading or end of
    file, whichever comes first. Replace with the empty string. This applies
    regardless of where the section currently lives — mid-file deletion is
    intentional, not a special case. If the Edit fails (e.g., concurrent edit
    changed the content), re-read the plan file and retry once.
 3. If a report was deleted, Read the updated file. Append the new
-   \`## GSTACK REVIEW REPORT\` at EOF. Use Edit to match the suffix
+   `## GSTACK REVIEW REPORT` at EOF. Use Edit to match the suffix
    confirmed by the latest Read, or Write the full file with the report last. Append whether or not a prior report existed.
    "Unresolved Decisions" is not an EOF anchor when other sections follow it.
 4. **Read-back gate:** Read the saved file. Verify the accepted changes, full review
@@ -1040,7 +1053,7 @@ Render each record using its recorded host, source, outside_provider, outside_st
 
 Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
 
-**Source attribution:** If the most recent entry for a skill has a \`"via"\` field, append it to the status label in parentheses. Examples: `plan-eng-review` with `via:"autoplan"` shows as "CLEAR (PLAN via /autoplan)". `review` with `via:"ship"` shows as "CLEAR (DIFF via /ship)". Entries without a `via` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
+**Source attribution:** If the most recent entry for a skill has a `"via"` field, append it to the status label in parentheses. Examples: `plan-eng-review` with `via:"autoplan"` shows as "CLEAR (PLAN via /autoplan)". `review` with `via:"ship"` shows as "CLEAR (DIFF via /ship)". Entries without a `via` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
 Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
 
@@ -1065,23 +1078,23 @@ Display:
 ```
 
 **Review tiers:**
-- **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`gstack-config set skip_eng_review true\` (the "don't bother me" setting).
+- **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with `gstack-config set skip_eng_review true` (the "don't bother me" setting).
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
 - **Adversarial Review (automatic):** Always-on for every review. Every diff gets a native adversarial pass and, when enabled and available, a host-selected outside challenge. Large diffs (200+ lines) additionally get a structured outside review with P1 gate.
 - **Outside Voice (default-on):** Independent plan review through the host-selected provider after /plan-ceo-review and /plan-eng-review. The codex_reviews switch disables the entire extra step. Provider failure uses the existing native fallback and reports missing outside coverage. Never gates shipping.
 
 **Verdict logic:**
-- **CLEARED**: Eng Review has >= 1 entry within 7 days from either \`review\` or \`plan-eng-review\` with status "clean" (or \`skip_eng_review\` is \`true\`)
+- **CLEARED**: Eng Review has >= 1 entry within 7 days from either `review` or `plan-eng-review` with status "clean" (or `skip_eng_review` is `true`)
 - **NOT CLEARED**: Eng Review missing, stale (>7 days), or has open issues
 - CEO, Design, and outside reviews are shown for context but never block shipping
-- If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
+- If `skip_eng_review` config is `true`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
 
 **Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
-- **Content-first rule (diff-scoped rows only: \`review\`, \`adversarial-review\`, \`codex-review\`, ship-stage entries).** Parse the \`---WTREE---\` and \`---DIRTY---\` sections from the bash output. If an entry has a \`wtree\` field AND it equals the current \`---WTREE---\` value, the review is CURRENT — identical content, regardless of commit count, rebase, amend, or whether it was committed yet (wtree equality alone proves identical content; that is the keystone property). Skip the commit-count heuristic for that entry and show no staleness note.
-- Plan-tier rows (plan-ceo-review, plan-eng-review, plan-design-review) grade a plan file, not the repo tree — never apply the wtree rule to them; they keep the 7-day freshness logic. If such an entry carries a \`plan_sha256\` field, you MAY compare it against the current plan file's sha256 and note "plan changed since review" on mismatch.
-- Fallback (no \`wtree\` on the entry, or wtree mismatch): parse the \`---HEAD---\` section to get the current HEAD commit hash. For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. If that command FAILS (the stored commit was rebased away), grade UNKNOWN and treat as stale — do not error. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
-- For entries without a \`commit\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
+- **Content-first rule (diff-scoped rows only: `review`, `adversarial-review`, `codex-review`, ship-stage entries).** Parse the `---WTREE---` and `---DIRTY---` sections from the bash output. If an entry has a `wtree` field AND it equals the current `---WTREE---` value, the review is CURRENT — identical content, regardless of commit count, rebase, amend, or whether it was committed yet (wtree equality alone proves identical content; that is the keystone property). Skip the commit-count heuristic for that entry and show no staleness note.
+- Plan-tier rows (plan-ceo-review, plan-eng-review, plan-design-review) grade a plan file, not the repo tree — never apply the wtree rule to them; they keep the 7-day freshness logic. If such an entry carries a `plan_sha256` field, you MAY compare it against the current plan file's sha256 and note "plan changed since review" on mismatch.
+- Fallback (no `wtree` on the entry, or wtree mismatch): parse the `---HEAD---` section to get the current HEAD commit hash. For each review entry that has a `commit` field: compare it against the current HEAD. If different, count elapsed commits: `git rev-list --count STORED_COMMIT..HEAD`. If that command FAILS (the stored commit was rebased away), grade UNKNOWN and treat as stale — do not error. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
+- For entries without a `commit` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
 - If all reviews grade CURRENT (wtree match or HEAD match), do not display any staleness notes
 
 ## Next Steps — Review Chaining

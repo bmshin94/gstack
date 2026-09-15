@@ -17,7 +17,7 @@
 import type { TemplateContext } from './types';
 
 export function generateConfidenceCalibration(_ctx: TemplateContext): string {
-  return `## Confidence Calibration
+  const result = `## Confidence Calibration
 
 Every finding MUST include a confidence score (1-10):
 
@@ -78,4 +78,5 @@ The FP classes the gate kills (measured against Django Sprint 2.5 #1539):
 confirms it IS a real issue, that is a calibration event. Your initial confidence was
 too low. Log the corrected pattern as a learning so future reviews catch it with
 higher confidence.`;
+  return _ctx.skillName === 'plan-eng-review' ? result.replaceAll('\\`', '`') : result;
 }
