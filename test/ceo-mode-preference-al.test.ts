@@ -66,15 +66,16 @@ test('source and both isolated host renders bind the shared check, marker and lo
   expect(asked).toContain('**STOP for the answer**');
   expect(asked).toContain('When `QUESTION_TUNING: true`');
   expect(asked).toContain('`<gstack-qid:'+id+'>`');
-  const logging=handoff.split('After the handoff, use the preamble to log')[1]!.split('If 0D')[0]!.replace(/\s+/g,' ');
-  expect(logging).toContain('`'+id+'`: `auto_decided: true` for automatic selection');
-  expect(logging).toContain('for an asked question, log its ID only when `QUESTION_TUNING: true`');
+  const logging=handoff.split('Record mode provenance after the handoff')[1]!.split('If 0D')[0]!.replace(/\s+/g,' ');
+  expect(logging).toContain('no question log because none was asked');
+  expect(logging).toContain('`'+id+'`, `auto_decided: true`');
+  expect(logging).toContain('`auto_decided: false`, including the question ID only when `QUESTION_TUNING: true`');
   expect(s.indexOf('4. **Mode handoff:**')).toBeGreaterThan(s.indexOf('3. Resolve that recommendation:'));
-  expect(handoff).toContain('After either an explicit choice or step 3');
-  expect(handoff).toContain('your next response is a brief chat message before tools and before the next scope or review question');
+  expect(handoff).toContain('After selection');
+  expect(handoff).toContain('send brief chat before tools or further questions');
   expect(s.slice(0,s.indexOf('4. **Mode handoff:**'))).not.toMatch(/\blog (?:with|that ID)\b/);
-  expect(handoff.indexOf('After the handoff, use the preamble to log')).toBeGreaterThan(handoff.indexOf('- Other selections:'));
-  expect(handoff.indexOf("Follow the selected mode's route:")).toBeGreaterThan(handoff.indexOf('After the handoff, use the preamble to log'));
+  expect(handoff.indexOf('Record mode provenance after the handoff')).toBeGreaterThan(handoff.indexOf('- Other selections:'));
+  expect(handoff.indexOf("Follow the selected mode's route:")).toBeGreaterThan(handoff.indexOf('Record mode provenance after the handoff'));
   expect(s).not.toContain('plan-ceo-review-mode-selection');
  }
  for(const document of rendered.values()){
@@ -100,7 +101,7 @@ test('absent, always-ask and foreign preferences do not authorize either host to
 test('only an explicit user selection or enabled successful mode check bypasses asking',()=>{
  for(const document of rendered.values()){
   const s=section(document),q=tuning(document);
-  expect(s).toContain('Use an explicit user mode choice and skip steps 2–3');
+  expect(s).toContain('An explicit choice skips steps 2–3');
   expect(s).toContain('When `QUESTION_TUNING: false`, skip the lookup and ask below');
   expect(s).toContain('Otherwise check `question_id=plan-ceo-review-mode` through the preamble');
   expect(s).toContain('Select the recommendation automatically only if that check exits 0 with `AUTO_DECIDE`');
@@ -109,15 +110,15 @@ test('only an explicit user selection or enabled successful mode check bypasses 
   expect(q).toContain('`AUTO_DECIDE` means choose the recommended option');
   expect(q).toContain('Auto-decided [summary] → [option] (your preference). Change with /plan-tune.');
   expect(q).toContain('`ASK_NORMALLY` means ask.');
-  expect(s).toContain('Mode selection grants no approach or scope approval.');
-  expect(document).toContain('Resolve required approaches before 0E.');
-  expect(s).toContain('Preserve approved 0D decisions; obtain explicit approval for any mode-required change.');
+  expect(s).toContain('Mode selection approves no approach or scope change');
+  expect(document).toContain('Finish required approaches before 0E.');
+  expect(s).toContain('preserve 0D approvals and ask for any mode-required change');
   expect(s).toContain('offer all four modes in one AskUserQuestion');
   expect(s).toContain("using step 2's recommendation");
-  expect(s).toContain('The >15-file threshold recommends a mode');
-  expect(s).toContain('the >8-file check challenges complexity within HOLD SCOPE and SELECTIVE EXPANSION');
-  expect(s).toContain('Neither threshold authorizes a scope cut');
-  expect(s).toContain('Count distinct planned file additions, edits and deletions; label uncertain counts as estimates');
+  expect(s).toContain('>15 files recommends a mode');
+  expect(s).toContain('>8 files challenges complexity in HOLD/SELECTIVE');
+  expect(s).toContain('Neither authorizes a cut');
+  expect(s).toContain('Count distinct planned file additions, edits and deletions, labeling estimates');
   expect(s).toContain('These modes differ in kind, not coverage; do NOT score completeness');
   expect(document).toContain('Note: options differ in kind, not coverage — no completeness score.');
  }

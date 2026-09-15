@@ -135,9 +135,10 @@ describe('workflow judge excerpts', () => {
     expect(eng.match(/^## Decision procedure$/gm)).toHaveLength(1);
     const procedure = eng.slice(eng.indexOf('## Decision procedure'), eng.indexOf('## Review Sections'));
     const headings = marked.lexer(procedure).filter(token => token.type === 'heading' && token.depth === 3);
-    expect(headings.map(token => token.text)).toEqual(['Frame the choices', 'Compare one choice', 'Record and resolve']);
+    expect(headings.map(token => token.text)).toEqual(['1. Establish current state', '2. Separate independent choices', '3. Compare one choice',
+      '4. Save the pending record', '5. Ask and wait', '6. Apply and refresh']);
     expect(procedure).toContain('**Save a pending remedy before asking:**');
-    expect(procedure).toContain('**Ask and wait:**');
+    expect(procedure).toContain('### 5. Ask and wait');
     expect(procedure).toContain('**Apply the answer:**');
     const outputs = ['### TODOS.md updates', '## Approval readiness', '## Required outputs', '## Implementation Tasks',
       '### Unresolved decisions', '### Completion summary', '## Plan File Review Report',
@@ -233,9 +234,9 @@ console.log(JSON.stringify({calls, results}));
     expectOutsideReviewControlFlow(eng, '**Construct the plan review prompt**');
     expect(eng).toContain('Agreement between reviewers is evidence, not approval');
     expect(eng).toContain('new or reopened choices still need their own answers');
-    const pendingDecision = eng.slice(eng.indexOf('**Ask and wait:**'), eng.indexOf('**Apply the answer:**'));
+    const pendingDecision = eng.slice(eng.indexOf('### 5. Ask and wait'), eng.indexOf('**Apply the answer:**'));
     expect(pendingDecision).toContain('**STOP for each pending decision.**');
-    expect(pendingDecision).toContain('Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode');
+    expect(pendingDecision).toContain('Wait for its actual answer before applying the remedy, moving to the next section or calling ExitPlanMode');
     expect(eng).toContain('Apply only those amendments to the working plan with a scoped Edit');
     const design = readWorkflowExcerpt('plan-design-review/SKILL.md', '## Review Sections', '## CRITICAL RULE');
     expect(design).toContain('wait for approval, then edit the plan and re-rate');

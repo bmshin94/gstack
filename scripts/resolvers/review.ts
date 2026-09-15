@@ -969,8 +969,10 @@ A native result never supplies outside coverage.`}
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
 
-Before dispatch, verify the host offers the built-in Plan agent type, TaskOutput and
-TaskStop. If any is unavailable, take the unavailable path below without launching.
+${['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName) ? `Before dispatch, verify TaskOutput and TaskStop in this session's tool definitions,
+and Plan in Agent's declared subagent types. Do not launch a task to test availability.
+If any capability is missing or undeclared, take the unavailable path below.` : `Before dispatch, verify the host offers the built-in Plan agent type, TaskOutput and
+TaskStop. If any is unavailable, take the unavailable path below without launching.`}
 Use Plan, which denies native Edit, Write and NotebookEdit tools. Do not set a model
 override; keep the inherited model. This is not a filesystem sandbox: the review-only
 prompt also forbids mutations through other tools. The subagent has fresh context
@@ -1015,7 +1017,7 @@ Run every outside finding through the same Decision procedure and decision recor
 
 For these questions, use the following four-option menus instead of the ordinary 2-3 options. Identify one independently answerable change before building its alternatives, then compare and save them as the Decision procedure requires.
 
-- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Keep other approved choices fixed and other pending choices undecided. Deferring a stack change does not defer its entire candidate or approve a new schedule gate. Those are separate rows.
+- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. D leaves this proposal row unresolved. Keep candidate scope, scheduling and other approved or pending choices unchanged; ask separately before changing them.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After the individual answers, check the assembled set's capacity and dependencies. If they conflict, return to the affected candidate's Include/Defer/Cut/Hold row; preserve prior answers, report unresolved conflicts, and recheck the set before confirming it. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
 Report all findings, dispositions and remaining disagreements after resolving the questions. An answer to one row does not resolve the finding's other pending rows. Preserve /autoplan's authorized auto-decisions, audit trail and User Challenge rules; challenges wait for its final gate.
@@ -1028,7 +1030,7 @@ Record the reviewer and evidence in the same six-column ledger. Use 0D for new o
 
 Use 0D's rules for independent choices, fixed/pending commitments, required proof and new test additions. For an outside finding, substitute the applicable menu below for the usual alternatives:
 
-- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
+- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. D leaves this proposal row unresolved. Keep candidate scope, scheduling and other approved or pending choices unchanged; ask separately before changing them.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
 Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.

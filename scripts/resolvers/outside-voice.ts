@@ -173,7 +173,9 @@ export function outsideVoiceInvocation(ctx: TemplateContext, opts: OutsideComman
         : 'Request a final Recommendation: <action> because <specific reason> line, including an explicit no-findings rationale.';
   const preparation = nativeStructured
     ? 'Run Codex’s built-in structured review with the selected base. It supplies its own prompt and accepts no custom prompt file with --base. Require severity-tagged findings (including native P1:/P2: labels) or an explicit no-findings conclusion; arbitrary prose or a refusal is missing coverage.'
-    : `Write the **complete prompt and context**, including actual plan/spec/source, to a private file${outsideVoiceFor(ctx).id === 'claude-code' ? ' (Claude Code has no tools, git or path access)' : ''}. Substitute its shell-quoted path for \`<prepared-prompt-file>\`; never interpolate user text into shell source. ${completion}`;
+    : `${['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName)
+      ? 'Create a private prompt file: run `umask 077; mktemp "${TMPDIR:-/tmp}/gstack-plan-prompt.XXXXXXXX"` in Bash and keep the returned path. Use Write to put the **complete prompt and context**, including actual plan/spec/source, in that file'
+      : 'Write the **complete prompt and context**, including actual plan/spec/source, to a private file'}${outsideVoiceFor(ctx).id === 'claude-code' ? ' (Claude Code has no tools, git or path access)' : ''}. Substitute its shell-quoted path for \`<prepared-prompt-file>\`; never interpolate user text into shell source. ${completion}`;
   return `${preparation}
 
 \`\`\`bash

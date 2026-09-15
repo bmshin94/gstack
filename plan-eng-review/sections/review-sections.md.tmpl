@@ -1,10 +1,18 @@
 ## Review preparation
 
-Preparation order: report file and write policy → Prior Learnings → Retrospective learning → evidence calibration → Decision procedure. Then execute Scope Challenge once before Sections 1–4.
+After the entrypoint's startup: choose report/write policy → Prior Learnings → Retrospective learning → evidence calibration. Read Decision procedure, then execute Scope Challenge once and Sections 1–4 in order.
 
 ## Review record and write policy
 
-Keep the Scope gate's target fixed. Review proposed work for a plan, existing behavior for code. For code targets, "plan" below means the recorded proposed remedies, never an implementation file. Apply every test, evidence and output requirement.
+Keep the Scope gate's target fixed throughout the review:
+
+| Selected target | Evidence and Test review input | Working plan for proposed changes |
+|---|---|---|
+| Plan or design document | Its proposed paths, checked against existing interfaces and tests | That plan's approved amendments |
+| Branch diff | Changed behavior and full surrounding code, traced from its entry points | Proposed remedies recorded in the report |
+| Specific file or directory | Existing behavior within that path and its relevant callers/tests | Proposed remedies recorded in the report |
+
+For code targets, "plan" means the remedy plan, never an implementation file. Test review traces selected code and proposed remedies; distinguish existing evidence from future requirements. Give Outside Voice the target content, current remedy plan and actual decisions within its existing size limit. Apply every test, evidence and output requirement.
 
 Choose one **report file** before ledger writes: an output/report path explicitly requested by the user; otherwise the selected plan file; otherwise a new `$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md` (add a suffix on collision). For that default path, run `~/.claude/skills/gstack/bin/gstack-paths` and `~/.claude/skills/gstack/bin/gstack-slug`; use their returned `GSTACK_STATE_ROOT`, `SLUG` and `BRANCH` assignments to form the literal path. If either command fails or a value is absent, that destination is unavailable. Name the reviewed target in its header. Never select an unrelated active plan. Use this file for the ledger, narrative output, report and final gate.
 
@@ -28,22 +36,54 @@ A bounded probe answers a named uncertainty about current behavior or an existin
 
 ## Decision procedure
 
-**Decision gate (all sections and outside voice):** Read the request, relevant source and actual answers. Follow this route for Step 0 findings, Sections 1–4, Outside Voice and late changes:
+**Decision gate (all sections and outside voice):** For Scope Challenge findings, Sections 1–4, Outside Voice and late changes, finish one choice before preparing the next. Initial scope selectors keep their separate rules.
 
-```text
-Finding + evidence + actual answers
-  |
-  +-- Fact/correction only, or exact approval still covers all needed work?
-  |     Yes -> record evidence and disposition; carry approved work -> next finding
-  |            No new question or comparison grid.
-  |
-  +-- New or reopened independent choice?
-        Frame choices -> Compare one choice in its grid -> Save the brief
-        -> Ask and STOP -> Record actual answer -> Apply only accepted scope
-        -> next pending choice (or next finding when none remain)
-```
+### 1. Establish current state
 
-Use this layout before the selected report's final `## GSTACK REVIEW REPORT`; replace R1/D2 and brackets with this review's data. One finding can have several independent choices. Keep a choice's ID when reopening it, retain its old brief and answer as history, and assign the new question the next `D<N>`. Test stars measure existing test quality, not findings or decisions.
+Read the request, relevant source and actual answers. For each finding, record its number, severity, confidence, file:line and reviewer. Keep two facts separate:
+- **Plan baseline:** the last approved value and its exact scope/answer reference, or the original proposal if none is approved.
+- **Runtime evidence:** what existing code or a bounded probe demonstrates; mark unverified behavior unknown.
+
+An approved 20-second timeout can coexist with deployed code using 10 seconds; neither proves the other. Drafts, recommendations and reviewer agreement are not approval.
+
+Factual correction only: record description/evidence and continue without a question or grid; approve no behavior change. Exact approval covering all needed work: cite its answer and finding/disposition, then carry necessary code, tests and docs without another question or grid, including required proof scenarios found after Test review.
+
+Otherwise keep the remedy pending. Reopen an approval only for a concrete new risk, contradictory evidence or changed assumption; explain what changed. Retain earlier values, briefs and answers as history. Keep unknowns and uncertain risks explicit.
+
+### 2. Separate independent choices
+
+Before drafting options, list the proposed changes as current → proposed values: behaviors, implementation approaches, guarantees and bounds. Include response timing, resource use, lifetimes and optional verification method/depth; name each bound's measure and unit.
+
+Test mixed choices: could one change be accepted while another keeps its approved value or stays undecided? If yes, give them separate IDs, even within one function, issue or patch. One finding can produce several choices. Keep a choice's ID when reopening it; its new question gets the next continuous `D<N>`.
+
+Keep a behavior with its necessary code, tests and docs. To decide whether a mechanism is necessary, hold the contract fixed and check alternatives: interchangeable implementation details stay together; a separately selectable runtime effect needs its own choice. Optional depth for one fixed verification is one choice. Independent instrumentation, follow-up work, guarantees or policies remain separate, with tests conditional on approval.
+
+### 3. Compare one choice
+
+Select one pending ID. Prepare the preamble's complete decision brief, recommendation, option labels, descriptions and tradeoffs:
+- Describe the problem with file and line references. Offer 2–3 alternatives, including “do nothing” when reasonable; Outside Voice uses its four-option menu.
+- Include effort (human: ~X / CC: ~Y), risk and maintenance for each option. Connect the recommendation to the engineering preferences; prefer complete coverage when its extra CC effort is marginal.
+- Coverage choices vary implementation or proof depth: use `Completeness: N/10` (10 covers all relevant in-scope edge cases, 7 the happy path, 3 a shortcut). Different approaches instead get `Note: options differ in kind, not coverage — no completeness score.` Bundled policies are not extra completeness. Test stars measure existing test quality, not decisions or findings.
+
+Build a **comparison grid** covering the entire brief: one row per independently selectable behavior, approach, guarantee or bound. Show current and per-option values/work, including shared recommendations, fixed and pending choices. Cite approvals; use concrete values, not package names.
+
+Check each row:
+- The selected choice may vary between options. Every other approved value stays fixed; every other pending choice stays undecided. A new value common to all options is still a choice requiring approval.
+- Necessary implementation and proof of an already approved contract is common work: cite its answer; no new approval row is needed. Do not remove an established contract or required proof to make an option smaller.
+- Investigate and Defer name any bounded investigation and the values left unchanged or pending. Neither approves implementation.
+
+For example, jitter and a delay cap can be chosen independently. A menu of “both / cap only / neither” bundles them by omitting “jitter only.” Ask about jitter first:
+
+| Choice | Current | A | B |
+|---|---|---|---|
+| R1 jitter | unspecified, pending | on | off |
+| R2 delay cap | unspecified, pending | unspecified, pending | unspecified, pending |
+
+After the jitter answer, carry that value into both options of the later cap question. If the grid exposes another independent change, return to step 2 and split it before sending.
+
+### 4. Save the pending record
+
+**Save a pending remedy before asking:** Under **Review record and write policy**, save this record, complete grid and exact brief before the report's final `## GSTACK REVIEW REPORT`. Preserve other content and approvals. In read-only mode, present the same material as not persisted. A failed save takes **Blocked outcome** before asking.
 
 ```markdown
 ## Decision ledger
@@ -53,74 +93,30 @@ Finding: <number, severity, confidence, file:line and reviewer>
 Plan baseline: <last approved value, exact scope and answer reference; otherwise the original proposal>
 Runtime evidence: <observed value and source/probe; unknown if unverified>
 State: <pending, or approved>
-
-Comparison grid:
-<the complete grid from Compare one choice>
-
-Question D2:
-<the exact complete brief, with all offered option labels and recommendation>
-
+Comparison grid: <complete grid from step 3>
+Question D2: <exact complete brief, every option label and recommendation>
 Actual answer: <unanswered, or actual option and answer reference>
 Accepted scope: <exact approved work; none if no change approved>
 History: <earlier values, briefs, answers and reason for reopening>
 ```
 
-### Frame the choices
+An old comparison or critic's recommendation cannot replace this record. If outcomes, work or meaning change before dispatch, repeat step 3 and save the revised record first.
 
-Keep earlier values and answers as history. An approved 20-second timeout belongs in the plan even while deployed code still uses 10 seconds; neither value proves the other. A draft value, recommendation or reviewer agreement is not approval. Pending remedies are not accepted work.
+### 5. Ask and wait
 
-Disclose factual corrections without changing behavior. Reopen an approval only for a concrete new risk, contradictory evidence or changed assumption; explain what changed. Keep unknowns explicit, including uncertain risks that need a decision.
+Use the preamble's tool resolution, failure fallback and authorized auto-decision rules. Setup and Scope Challenge selectors use this same dispatch order with their own recording rules.
 
-Before drafting options, list the remedy's behaviors, implementation approaches, guarantees and bounds as current → proposed values. Include response timing, resource use, lifetimes and any optional verification method and depth. Name each bound's measure and unit.
+For a tool question, `currentDecision` is the single question object for the saved brief: one `D<N>` and that choice's alternative answers. Send it without substantive additions using `AskUserQuestion({ questions: [currentDecision] })`: one question for one choice per AskUserQuestion call. The array contains exactly one question object; other pending IDs wait for later calls.
 
-Could one change be accepted while another keeps its approved value or stays undecided? Test mixed choices even if you did not plan to offer them. If yes, assign separate IDs, even within one function, issue or patch.
+**STOP for each pending decision.** Wait for its actual answer before applying the remedy, moving to the next section or calling ExitPlanMode. Do not queue another call while an answer is pending. An obvious fix still needs an answer unless exact prior approval covers it.
 
-Keep a chosen behavior together with its necessary code, tests and docs. Before calling a mechanism necessary, hold the contract fixed and check alternatives: a separately selectable runtime effect needs its own choice; interchangeable implementation details do not. Optional test depth for one fixed behavior is one verification choice. Independent instrumentation, follow-up work, guarantees or policies need separate choices, with their tests conditional on approval.
+### 6. Apply and refresh
 
-Required proof of an exact approval is already authorized, including necessary scenarios discovered after Test review. Cite the answer and carry that work forward. If no choice remains pending, report the finding and continue without another question.
+**Apply the answer:** Record the actual option, answer reference and accepted scope separately from the draft options. Apply only those amendments to the working plan with a scoped Edit; present them in read-only mode. Update this choice's record and leave others unchanged.
 
-### Compare one choice
+Now return to step 1 with the updated plan and actual answer. Hold the chosen value fixed while rebuilding the next relevant pending choice through steps 2–5; record why an irrelevant choice needs no question. Advance to the next finding or section only when no choice in this section awaits an answer.
 
-Choose one pending ID. Draft the complete question, recommendation, option labels, descriptions and tradeoffs in the preamble's decision-brief format:
-
-- Describe the problem with file and line references. Offer 2–3 options, including “do nothing” when reasonable; outside-voice findings use that branch's four-option menu.
-- Give each option short labels, effort (human: ~X / CC: ~Y), risk and maintenance burden. Connect the recommendation to the entrypoint's engineering preferences. Recommend the complete option when it costs only marginally more with CC.
-- Score completeness only within this one decision. Coverage choices vary implementation or proof depth: `Completeness: N/10`, where 10 covers all relevant in-scope edge cases, 7 the happy path and 3 a shortcut. Different approaches receive no score and the line `Note: options differ in kind, not coverage — no completeness score.` Never score bundled policies as more complete or fabricate coverage scores for different approaches.
-
-Make one grid for the complete brief. Give every independently selectable behavior, approach, guarantee or bound affected anywhere in it a row, including fixed and pending choices. Show its current plan value and resulting value/work under every option; cite its approval or mark it pending. Include shared values and recommendations. Use concrete values, not package names.
-
-Check the entire brief against the grid:
-- Only the selected choice may change or become decided. In every option, keep other approved values fixed and other pending values undecided. A new value shared by all options still needs approval.
-- Carry necessary implementation and proof of an already approved contract as common work, citing its answer. This needs no new approval row. Never remove an established contract or required proof to make an option smaller; changing the contract needs its own decision.
-- For Investigate and Defer, name any bounded investigation and the values left unchanged or pending. Neither approves implementation.
-
-If another independent change appears, return to **Frame the choices** and split it before sending.
-
-This example combines two choices:
-
-| Choice | Current | A | B | C |
-|---|---|---|---|---|
-| R1 jitter | unspecified, pending | on | off | off |
-| R2 delay cap | unspecified, pending | on | on | off |
-
-Jitter without a cap is meaningful despite being omitted. Ask about R1 with R2 still undecided:
-
-| Choice | Current | A | B |
-|---|---|---|---|
-| R1 jitter | unspecified, pending | on | off |
-| R2 delay cap | unspecified, pending | unspecified, pending | unspecified, pending |
-
-### Record and resolve
-
-**Save a pending remedy before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if report writing is forbidden. If saving fails, use **Blocked outcome** before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
-
-Resolve pending choices with this sequential loop. Setup and Scope Challenge selectors use the same dispatch order with their own recording rules. Follow the preamble's Tool resolution and failure fallback, including authorized auto-decisions.
-
-1. **Ask and wait:** For a tool question, set `currentDecision` to the single question object for the audited brief: one `D<N>` and alternative answers for that one choice. Send the audited brief without substantive additions using `AskUserQuestion({ questions: [currentDecision] })`: one question for one choice per AskUserQuestion call. The array contains exactly one question object; other pending IDs wait for later calls. An obvious fix still needs an answer unless exact prior approval covers it. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode. Do not queue another call while its answer is pending.
-2. **Apply the answer:** Record the actual option, answer reference and accepted scope separately from draft options. Apply only those amendments to the working plan with a scoped Edit before taking the next choice; present them in read-only mode. Update its decision record and leave others unchanged.
-3. **Refresh the next choice:** Use the updated plan and actual answer to rebuild the next brief; for remedies, return through **Frame the choices**, **Compare one choice**, and the save step. Hold the chosen value fixed and ask the next pending choice if still relevant; record why an irrelevant choice needs no question. Advance to the next section only when this section has no pending choices.
-
-Retain unresolved risks and required verification; resolve remaining risk or safety choices before declaring the plan ready. In /autoplan, use its authorized auto-decisions and audit trail, keeping User Challenges pending for its final gate.
+Retain unresolved risks and required verification. Resolve remaining risk or safety choices before declaring the plan ready. In /autoplan, use its authorized auto-decisions and audit trail, keeping User Challenges pending for its final gate.
 
 ## Scope Challenge
 
@@ -237,12 +233,12 @@ Do NOT just append vague bullet points. A TODO without context is worse than no 
 
 ## Required outputs
 
-Follow this closing sequence once the approval check passes:
+Each gate checks these inputs in order, without restarting settled decisions:
 
-1. Write the output sections, Implementation Tasks and Completion summary from accepted decisions; list pending choices separately. Follow **Review record and write policy** and each artifact's specified path.
-2. Save the complete plan/report and pass its Read-back gate. Only then write Review Log and display the dashboard. Follow the report's no-file rules if the selected report destination is unavailable.
-3. Complete **Next Steps — Review Chaining** below, including its required refresh if a late decision changes the plan.
-4. Run the learning hooks below. Do not start these hooks while a question is pending. Then return once to the entrypoint for its Section self-check and read-only final gate; that gate precedes telemetry, cache refresh and ExitPlanMode.
+1. **Approval readiness** verifies ledger answers before outputs exist. After it passes, write accepted sections, Implementation Tasks and Completion summary; list pending choices separately. Follow **Review record and write policy** and per-artifact paths.
+2. Save the complete plan/report, including its terminal report, and pass **Read-back**. Then announce completion, write Review Log and display the dashboard. Unavailable persistence follows the no-file rules and **Blocked outcome**.
+3. Complete **Next Steps — Review Chaining**. A substantive change repeats Decision procedure → approval → affected outputs → Read-back → logs/dashboard; navigation alone adds no approval.
+4. Finish learning hooks after navigation, with no pending question. Return once to the entrypoint: **Section self-check** verifies methodology; read-only **EXIT PLAN MODE GATE** verifies current approval, persisted report and completion logs before success telemetry, cache refresh and ExitPlanMode.
 
 ### "NOT in scope" section
 Every plan review MUST produce a "NOT in scope" section listing work that was considered and explicitly deferred, with a one-line rationale for each item.

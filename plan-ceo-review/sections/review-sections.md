@@ -51,44 +51,37 @@ The separate CEO archive is additional persistence for expansion modes.
 
 ### Working review decisions
 
-Continue Step 0's six-column ledger, naming the owner section for each row. An
-approach approves its explicit commitments, not every implementation choice.
-At each **Decision gate**, complete Analyze → Resolve → Apply. Review only;
-do not change code.
+Continue Step 0's six-column ledger with each row's owner section. An approach
+approves only its explicit commitments. At each **Decision gate**, follow
+Analyze → Resolve → Apply. Review only; do not change code.
 
-**Analyze.** Check the original input, inspected source and actual approvals.
-Correct source-disproven claims and their dependent test/runbook text; factual
-correction does not authorize changing approved behavior. Preserve contracts
-and mitigations with their evidence; later silence does not revoke them. Surface
-conflicts with accepted requirements. Leave unsupported premises unknown:
-unavailable implementation proves neither failure nor safety. Keep each unknown
-risk's owner and required verification visible; approval does not verify it.
+**Analyze.** Check input, inspected source and actual approvals. Correct disproven
+claims and dependent test/runbook text without changing approved behavior.
+Preserve contracts and mitigations; later silence revokes neither. Surface
+approval conflicts. Unsupported premises stay unknown: unavailable code proves
+neither failure nor safety. Keep each unknown risk's owner and verification visible.
 
-**Resolve.** Use 0D for each new or reopened choice in its owner section. Earlier
-sections cross-reference those pending rows; newly discovered critical risks
-need immediate resolution. One choice per AskUserQuestion: recommend + WHY and
-**STOP until the user responds**. Cross-reference exact settled decisions instead
-of asking again. Follow 0D's test table; sharing a helper does not combine a safety
-fix with a throughput improvement. Report findings with their dispositions;
-"No issues found" means zero findings, not zero new questions.
+**Resolve.** Call 0D for new or reopened choices, returning after its post-answer
+checkpoint. Cross-reference exact settled answers instead of asking again.
+Resolve new critical risks immediately; earlier sections reference other pending
+rows in their owner section. Follow 0D's test table: independently selectable
+safety fixes and throughput improvements need separate rows despite shared helpers.
 
-**Apply.** Check every amendment against the actual answer or exact prior
-approval. Preserve existing content and approved behavior, including its required
-implementation, tests and success/failure contracts. Keep independent remedies
-and extra verification depth pending. Before approval, show proposed remedies only as alternatives. Keep them out of
-implementation tasks and do not prescribe them in diagrams or verification steps.
-Save or present the complete updated plan under Step 0's storage policy before
-advancing.
+**Apply.** Verify the saved amendment against its actual answer or exact prior
+approval. Preserve existing content, approved behavior and required implementation,
+tests and success/failure contracts. Independent remedies and extra verification
+stay pending: no unapproved tasks, diagram prescriptions or verification steps.
+Save again only to correct this check's discrepancies under the storage policy;
+a correction needing new approval returns to 0D.
 
-Record this section's conclusions after its decisions are resolved. Evaluate
-later sections before adding their conclusions or implementation tasks: carrying
-a constraint forward does not mean that section was reviewed. Assemble Required
-Outputs only after Sections 1–10 and Section 11's findings or no-UI skip are
-recorded. Retain unresolved choices in the ledger and final report; approval
-settles the choice, not whether its remedy is implemented or verified.
+Record this section's findings and dispositions; "No issues found" means zero
+findings. Evaluate later sections before writing their conclusions or tasks.
+Assemble Required Outputs after Sections 1–10 and Section 11's findings or no-UI
+skip. Retain unresolved choices in the ledger and report; approval proves neither
+implementation nor verification.
 
 ### Section 1: Architecture Review
-Open in your own chat using the Step 0E mode-handoff format and the current ledger dispositions, including actual later scope-answer references. Retain the current mode, rationale and saved-preference attribution when applicable. Keep the original handoff as history; do not reannounce superseded scope as current. Then say `Section 1: Architecture Review`.
+Publish **Current scope** in chat using the Step 0E mode-handoff format and the current ledger dispositions, including actual later scope-answer references. Retain mode, rationale and preference attribution. This updates scope after 0G; do not ask or log the mode again. Keep earlier answers as history, showing current accepted scope. Then say `Section 1: Architecture Review`.
 
 Evaluate and diagram:
 * Overall system design and component boundaries. Draw the dependency graph.
@@ -346,7 +339,7 @@ Continue through the blocks below in file order:
 1. **Outside Voice:** run the configured review and resolve its findings through 0D. Record disabled or unavailable coverage and continue when no reviewer runs.
 2. **Resolve remaining TODO choices:** use the selected mode's scope rules.
 3. **Approval readiness:** check the ledger and record PASS before writing outputs. Its complete checklist is immediately after the TODO choices; no report or log is needed yet.
-4. **Required Outputs:** assemble tasks and summaries, save the terminal review report and pass its Read-back gate.
+4. **Required Outputs:** derive Review facts, prepare tasks and the summary, save the terminal review report and pass its Read-back gate. Then publish the Completion Summary.
 5. **Cleanup and history:** perform permitted cleanup, write Review Log and display the dashboard.
 6. **Navigation:** choose Next Steps and any docs/designs promotion; queue the next skill. A substantive answer returns to 0D → Approval readiness → affected outputs → report Read-back → log → dashboard. Navigation alone does not reopen decisions.
 7. **Learnings:** finish learning and brain write-back. Return to this skill's main `SKILL.md`, at **Section self-check**. Its EXIT gate only verifies completed work and the saved readiness result; it does not ask again. A passing persisted review then runs telemetry, cache refresh and exit.
@@ -475,7 +468,7 @@ rechecks the fresh shell: exit 78 uses the same Native fallback below, never a
 replacement provider. Finish termination before fallback and consume only
 completed output. Use private temporary paths, with no background jobs.
 
-Write the **complete prompt and context**, including actual plan/spec/source, to a private file. Substitute its shell-quoted path for `<prepared-prompt-file>`; never interpolate user text into shell source. Request a final Recommendation: <action> because <specific reason> line, including an explicit no-findings rationale.
+Create a private prompt file: run `umask 077; mktemp "${TMPDIR:-/tmp}/gstack-plan-prompt.XXXXXXXX"` in Bash and keep the returned path. Use Write to put the **complete prompt and context**, including actual plan/spec/source, in that file. Substitute its shell-quoted path for `<prepared-prompt-file>`; never interpolate user text into shell source. Request a final Recommendation: <action> because <specific reason> line, including an explicit no-findings rationale.
 
 ```bash
 # GSTACK_ACTIVE_HOST names the harness, never the model.
@@ -539,8 +532,9 @@ The disabled branch never reaches this fallback.
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
 
-Before dispatch, verify the host offers the built-in Plan agent type, TaskOutput and
-TaskStop. If any is unavailable, take the unavailable path below without launching.
+Before dispatch, verify TaskOutput and TaskStop in this session's tool definitions,
+and Plan in Agent's declared subagent types. Do not launch a task to test availability.
+If any capability is missing or undeclared, take the unavailable path below.
 Use Plan, which denies native Edit, Write and NotebookEdit tools. Do not set a model
 override; keep the inherited model. This is not a filesystem sandbox: the review-only
 prompt also forbids mutations through other tools. The subagent has fresh context
@@ -587,7 +581,7 @@ Record the reviewer and evidence in the same six-column ledger. Use 0D for new o
 
 Use 0D's rules for independent choices, fixed/pending commitments, required proof and new test additions. For an outside finding, substitute the applicable menu below for the usual alternatives:
 
-- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
+- **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. D leaves this proposal row unresolved. Keep candidate scope, scheduling and other approved or pending choices unchanged; ask separately before changing them.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
 Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
@@ -618,7 +612,11 @@ HOLD SCOPE. Still audit observability and performance against the requirements,
 and approve each real deferred gap individually. Expansion modes retain their
 expansion scan and opt-in ceremony.
 
-Present each potential TODO as its own individual AskUserQuestion. Never batch TODOs — one per question. Never silently skip this step. Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.
+Only unanswered TODO proposals reach this menu. Do not ask again about an item
+already deferred, skipped or kept; carry its actual answer and destination forward.
+Present each remaining proposal as its own individual AskUserQuestion. Never
+batch TODOs — one per question. If none remain, record that and continue.
+Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.
 
 For each TODO, describe:
 * **What:** One-line description of the work.
@@ -653,14 +651,24 @@ Outputs. A substantive change invalidates this result; navigation alone does not
 
 ## Required Outputs
 
-Write the prose sections, registries, diagrams, and Markdown Implementation Tasks
-below into the active plan file, reflecting only approved changes. Also show the
-Completion Summary in the conversation. The task JSONL artifact and approved
-TODOS.md updates use their explicit destinations below; they are separate from
-the CEO scope archive in 0H.
+Write these sections, registries, diagrams and Markdown tasks in the working plan
+from approved changes. Task JSONL and approved TODOs use their specified paths,
+separate from the 0H CEO archive. Prepare the summary; publish it after Read-back.
+
+### Review facts
+
+Derive facts from the approved ledger and completed sections: mode, findings,
+unresolved choices, critical gaps, scope dispositions and each outside attempt's
+coverage. Status is `clean` only with zero unresolved choices and critical gaps;
+otherwise `issues_open`. No report or completion log is needed yet.
+
+Use these facts in the Summary, report row and Review Log. Artifact cells stay
+pending until confirmed writes, or not persisted when forbidden. A substantive
+late decision repeats readiness and recomputes facts before refreshing outputs.
 
 ### "NOT in scope" section
-List work considered and explicitly deferred, with one-line rationale each.
+List explicitly deferred and rejected work separately, with each actual answer
+and one-line rationale. Deferred work also goes to TODOS.md; rejected work does not.
 
 ### "What already exists" section
 List existing code/flows that partially solve sub-problems and whether the plan reuses them.
@@ -679,7 +687,8 @@ Complete table of every method that can fail, every exception class, rescued sta
 Any row with RESCUED=N, TEST=N, USER SEES=Silent → **CRITICAL GAP**.
 
 ### Scope Expansion Decisions (EXPANSION and SELECTIVE EXPANSION only)
-For EXPANSION and SELECTIVE EXPANSION modes: expansion opportunities and delight items were surfaced and decided in Step 0G (opt-in/cherry-pick ceremony). The CEO plan records those decisions under the storage policy. Reference the CEO plan for the full record. Do not re-surface them here — list the accepted expansions for completeness:
+For EXPANSION and SELECTIVE EXPANSION, reference the CEO plan's full 0G scope record
+under the storage policy. List its dispositions without asking again:
 * Accepted: {list items added to scope}
 * Deferred: {list items sent to TODOS.md}
 * Skipped: {list items rejected}
@@ -767,7 +776,9 @@ this run (an empty file means "ran, no findings" — distinct from "didn't run")
 
 
 ### Completion Summary
-Prepare this for the complete review. Announce file completion only after the Read-back gate; label chat-only outputs not persisted, including TODOs and the CEO plan below.
+Prepare this from Review facts for the complete review. Do not announce a saved
+completion before the report Read-back gate passes; label chat-only outputs not
+persisted, including TODOs and the CEO plan below.
 
 
 Use the full mode name from Step 0E; replace spaces with underscores only in the
@@ -913,6 +924,10 @@ Do NOT replace the section in place. The "replace mid-file" path is what allowed
 prior versions to leave the report mid-file when an older report already lived
 there — the user then sees a plan whose review report is not at the bottom and
 (correctly) rejects it.
+
+**Publish the Completion Summary:** After the report Read-back gate passes, show
+the summary with confirmed artifact outcomes. For chat-only output, show the
+complete plan, report and summary as not persisted; do not claim file completion.
 
 ## Handoff Note Cleanup
 

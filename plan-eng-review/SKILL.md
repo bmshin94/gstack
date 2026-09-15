@@ -62,7 +62,13 @@ Recommendation: A when a branch diff exists, otherwise B. Reply with A, B, or C.
 
 After target selection, every question uses the preamble's full decision brief, transport and continuous D-numbering. Setup, prerequisite and preparation questions do not approve engineering remedies.
 
-**Startup sequence** (after target selection): Preamble, including Context Recovery → available Brain Context → web-research readiness → Design Doc Check and prerequisite offer → Step 0 section entry. Keep the reviewed target fixed. The section selects a separate report destination; that does not change what is reviewed.
+**Startup sequence** (after target selection):
+1. Run the Preamble, including Context Recovery and its setup questions.
+2. Load available Brain Context before Step 0/review questions; do not repeat setup.
+3. Complete web-research readiness, Design Doc Check and the prerequisite offer.
+4. Read the Step 0 section in full; its preparation continues startup without repeating it.
+
+Keep the reviewed target fixed when selecting the section's separate report destination.
 
 ## Preamble (after scope gate)
 
