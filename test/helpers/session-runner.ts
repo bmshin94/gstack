@@ -218,8 +218,6 @@ export async function runSkillTest(options: {
   prompt: string;
   workingDirectory: string;
   maxTurns?: number;
-  /** Permission preapprovals; this does not restrict the available tool set. */
-  allowedTools?: string[];
   /** Optional harness contract appended to the native system prompt. */
   appendSystemPrompt?: string;
   /** Approval allowlist; does not restrict which tools the model can see. */

@@ -404,6 +404,48 @@ describe('terminal-agent: owned PTY completion and restart', () => {
     }
   });
 
+  test('replacement attachment ignores stale input and survives the old socket close', async () => {
+    const sessionId = 'owned-overlapping-attachment-session';
+    const oldToken = 'owned-overlapping-old-token-long-enough';
+    const old = await attach(sessionId, oldToken);
+    let replacement: Awaited<ReturnType<typeof attach>> | undefined;
+    try {
+      old.ws.send(new TextEncoder().encode("printf 'overlap-%s:%s\\n' original $$\n"));
+      await until(() => /overlap-original:\d+\r?\n/.test(old.output()), 'original child output');
+      const pid = /overlap-original:(\d+)\r?\n/.exec(old.output())![1];
+
+      // Reattach while the original is still open. The replay proves open()
+      // has replaced liveWs before we deliver the stale socket's final input.
+      replacement = await attach(sessionId, 'owned-overlapping-new-token-long-enough');
+      await until(() => replacement!.events.some(event => event.type === 'reattach-begin')
+        && replacement!.output().includes(`overlap-original:${pid}`), 'replacement replay');
+      expect(old.ws.readyState).toBe(WebSocket.OPEN);
+      old.ws.send(new TextEncoder().encode("printf 'overlap-%s\\n' forbidden\n"));
+      old.ws.close(1000);
+      // Frames on the old connection are ordered: its close follows the late
+      // input. No guessed sleep is needed before probing replacement ownership.
+      await until(() => old.closed() !== null, 'stale socket close');
+      expect(old.closed()).toBe(1000);
+      expect(replacement.closed()).toBeNull();
+      const revoked = await fetch(`http://127.0.0.1:${agentPort}/ws`, {
+        headers: { Origin: 'chrome-extension://test-extension-id', Cookie: `gstack_pty=${oldToken}` },
+      });
+      expect(revoked.status).toBe(401);
+
+      replacement.ws.send(new TextEncoder().encode("printf 'overlap-%s:%s\\n' current $$\nexit\n"));
+      await until(() => replacement!.closed() !== null, 'replacement child completion');
+      expect(replacement.output()).toContain(`overlap-current:${pid}`);
+      expect(replacement.output()).not.toContain('overlap-forbidden');
+      expect(replacement.events.find(event => event.type === 'pty-exit')?.process.exitCode).toBe(0);
+      expect(replacement.closed()).toBe(1000);
+      expect(old.output()).not.toContain('overlap-current:');
+    } finally {
+      try { old.ws.close(1000); } catch {}
+      try { replacement?.ws.close(1000); } catch {}
+      await internal('restart', { sessionId });
+    }
+  });
+
   test('completion while detached replays final output before closing without a new child', async () => {
     const sessionId = 'owned-detached-completion-session';
     const release = path.join(stateDir, 'release-detached-child');
