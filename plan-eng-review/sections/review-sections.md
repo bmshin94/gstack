@@ -2,16 +2,18 @@
 <!-- Regenerate: bun run gen:skill-docs -->
 ## Review preparation
 
-Resolve the Scope Challenge complexity gate before executing this section. Complete Prior Learnings, Retrospective learning and Confidence Calibration below, then present Step 0 findings. The decision ledger and full grid/save-before-ask procedure start here, for those findings and all later review choices.
+Read the Decision procedure, then execute Scope Challenge once before Sections 1–4. The initial complexity selector has its own brief and wait rule; the full grid/save procedure governs subsequent findings and remedy choices.
 
 ## Review record and write policy
 
-Keep the target selected at the Scope gate. For a plan, review its proposed work; for a branch diff or code path, review that existing code and record proposed remedies without inventing a plan document. Below, "plan" or "plan document" means that recorded proposal for a code target. Apply every test, evidence and output requirement to it.
+Keep the Scope gate's target fixed. Review proposed work for a plan, existing behavior for code. For code targets, "plan" below means the recorded proposed remedies, never an implementation file. Apply every test, evidence and output requirement.
 
-The **decision ledger** is the collection of decision records, grids, briefs and actual answers defined below. Its **write/read-only rules** apply to every review artifact:
-- Use the requested report file, otherwise the reviewed plan, for the ledger and narrative outputs. For a code review with neither, present the complete review in chat. Do not edit reviewed implementation files unless the user explicitly authorized that work.
-- Check user and host write limits separately for that document, the Test Plan Artifact, task JSONL, TODOs and logs. A permitted plan write does not authorize another path. If a path is forbidden, present the complete artifact as **not persisted** and do not attempt that write.
-- If a save still fails after its writer's stated recovery, use the entrypoint's **Blocked outcome**. Never claim persistence succeeded or silently switch to chat. Explicitly best-effort logs retain their documented behavior.
+Choose one **report file** before ledger writes: the requested report path; otherwise the selected plan file; otherwise a new `$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md` (add a suffix on collision). For that default path, run `~/.claude/skills/gstack/bin/gstack-paths` and `~/.claude/skills/gstack/bin/gstack-slug`; use their returned `GSTACK_STATE_ROOT`, `SLUG` and `BRANCH` assignments to form the literal path. If either command fails or a value is absent, that destination is unavailable. Name the reviewed target in its header. Never select an unrelated active plan. Use this file for the ledger, narrative output, report and final gate.
+
+The **decision ledger** holds records, grids, briefs and actual answers. Its **write/read-only rules** apply per artifact:
+- Honor user and host limits, including an active-plan-only restriction. Before creating directories or writing, check this file and its directory, Test Plan Artifact, task JSONL, TODOs and logs separately; one permitted path authorizes no other. Do not edit implementation files without explicit authorization.
+- Never write forbidden paths or silently replace a requested destination. Present any unsavable artifact in full as **not persisted**. If the report has no permitted destination, request one when a user can supply it; wait without completion telemetry. If none is permitted, finish the full review in chat as not persisted, then use **Blocked outcome**.
+- If stated write recovery fails, use **Blocked outcome**; never claim persistence or silently switch to chat. Explicitly best-effort logs retain their behavior.
 
 **Anti-shortcut clause:** Use the decision gate for all four sections and outside voice. Retain findings and evidence. Ask only for new or reopened choices and apply their exact answers. Never prewrite unapproved remedies or skip sections or the terminal report.
 
@@ -56,7 +58,7 @@ smarter on their codebase over time.
 ## Retrospective learning
 Check the git log for this branch. If there are prior commits suggesting a previous review cycle (e.g., review-driven refactors, reverted changes), note what was changed and whether the current plan touches the same areas. Be more aggressive reviewing areas that were previously problematic.
 
-**Plan-review evidence:** Treat implementation and validation steps in the plan as proposals to review. Apply the calibration gate below before Section 1. For proposed work, quote the motivating plan requirement (plan file:line); verify it against existing interfaces where applicable. Do not require nonexistent future code or describe a proposed regression as an observed one. Code-specific examples apply when critiquing existing code.
+**Plan-review evidence:** Treat implementation and validation steps in the plan as proposals to review. Apply the calibration gate below when reporting findings. For proposed work, quote the motivating plan requirement (plan file:line); verify it against existing interfaces where applicable. Do not require nonexistent future code or describe a proposed regression as an observed one. Code-specific examples apply when critiquing existing code.
 
 A bounded probe answers a named uncertainty about current behavior or an existing interface; report its evidence and limits. Record unknowns, unmeasured results and future verification in the plan. Complete every review section, required approval and output; unresolved assumptions may remain explicitly reported without building the proposed implementation to resolve them. Put suppressed findings in a `Suppressed findings` appendix to the review report.
 
@@ -122,10 +124,6 @@ confirms it IS a real issue, that is a calibration event. Your initial confidenc
 too low. Log the corrected pattern as a learning so future reviews catch it with
 higher confidence.
 
-## Step 0 findings
-
-Present the Scope Challenge's findings now, using Confidence Calibration above. Number each finding, give its severity, confidence and source, and record its accepted, rejected, deferred or pending disposition. Use "No issues found" for an empty list. Carry actual scope answers forward; a finding is not approval of its remedy.
-
 ## Decision procedure
 
 **Decision gate (all sections and outside voice):** Read the request, relevant source and actual answers. Follow this route for Step 0 findings, Sections 1–4, Outside Voice and late changes:
@@ -142,8 +140,6 @@ Finding + evidence + actual answers
         -> Ask and STOP -> Record actual answer -> Apply only accepted scope
         -> next pending choice (or next finding when none remain)
 ```
-
-For previously approved work, use the no-question path only while that approval still applies. Concrete new risks, contradictory evidence or changed assumptions use the pending-choice path. The stages below specify that path; they are not a ceremony for every finding.
 
 Keep three identities distinct: number each finding with severity, confidence and source; give each independently selectable choice a stable decision ID (one finding may need several IDs); use the preamble's `D<N>` question title and `A)`, `B)`, `C)` option labels for its brief. Link the question to its finding and decision record. A reopened choice keeps its decision ID and gets a new question number. Test stars rate existing test quality, not findings or decisions.
 
@@ -203,7 +199,7 @@ Jitter without a cap is meaningful despite being omitted. Ask about R1 with R2 s
 
 ### Record and resolve
 
-**Save before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if no writable plan is in scope. If saving fails, use **Blocked outcome** before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
+**Save before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if report writing is forbidden. If saving fails, use **Blocked outcome** before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
 
 **Ask and wait:** Send the audited brief without substantive additions: one question for one choice per AskUserQuestion call. An obvious fix still needs an answer unless exact prior approval covers it. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode.
 
@@ -211,9 +207,50 @@ Jitter without a cap is meaningful despite being omitted. Ask about R1 with R2 s
 
 Retain unresolved risks and required verification; resolve remaining risk or safety choices before declaring the plan ready. In /autoplan, use its authorized auto-decisions and audit trail, keeping User Challenges pending for its final gate.
 
+## Scope Challenge
+
+Before reviewing, answer:
+1. **What existing code already partially or fully solves each sub-problem?** Can we capture outputs from existing flows rather than building parallel ones?
+2. **What is the minimum set of changes that achieves the stated goal?** Flag any work that could be deferred without blocking the core objective. Be ruthless about scope creep.
+3. **Complexity check:** If the plan touches 8+ files or introduces 2+ new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
+4. **Search check:** For each architectural pattern, infrastructure component, or concurrency approach the plan introduces, research through Aside (Web research runs in Aside, above), one read-only request per pattern:
+   - Does the runtime/framework have a built-in? Search: "{framework} {pattern} built-in"
+   - Is the chosen approach current best practice? Search: "{pattern} best practice {current year}"
+   - Are there known footguns? Search: "{framework} {pattern} pitfalls"
+
+   ```bash
+   _EG="$HOME/.claude/skills/gstack/bin/gstack-egress-lib.sh"; [ -r "$_EG" ] && . "$_EG"; _aside_exec() { if command -v _gstack_egress_run >/dev/null 2>&1; then _gstack_egress_run open aside-agent aside.com aside-exec "user invoked this skill" --no-payload aside exec "$@"; else aside exec "$@"; fi; }
+   _aside_exec "Search the web for {framework} {pattern} built-in, {pattern} best practice {current year}, and {framework} {pattern} pitfalls. Read-only: do not sign in, submit, or change anything. Reply with up to 8 bullets, each with its source URL, then stop."
+   ```
+
+   Use the readiness result from **Web research runs in Aside**, above. If Aside is unavailable, run the same searches with the WebSearch tool when the host provides it; with neither, skip this check and note: "Search unavailable — proceeding with in-distribution knowledge only."
+
+   If the plan rolls a custom solution where a built-in exists, flag it as a scope reduction opportunity. Annotate recommendations with **[Layer 1]**, **[Layer 2]**, **[Layer 3]**, or **[EUREKA]** (see preamble's Search Before Building section). If you find a eureka moment — a reason the standard approach is wrong for this case — present it as an architectural insight.
+5. **TODOS cross-reference:** Read `TODOS.md` if it exists. Are any deferred items blocking this plan? Can any deferred items be bundled into this PR without expanding scope? Does this plan create new work that should be captured as a TODO?
+
+6. **Completeness check:** Is the plan doing the complete version or a shortcut? With AI-assisted coding, the cost of completeness (100% test coverage, full edge case handling, complete error paths) is 10-100x cheaper than with a human team. If the plan proposes a shortcut that saves human-hours but only saves minutes with CC+gstack, recommend the complete version. Boil the ocean.
+
+7. **Distribution check:** For new artifacts (CLI, library, container, mobile app), verify the build/publish pipeline:
+   - Is there a CI/CD workflow for building and publishing the artifact?
+   - Are target platforms defined (linux/darwin/windows, amd64/arm64)?
+   - How will users download or install it (GitHub Releases, package manager, container registry)?
+   If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
+
+At 8+ files or 2+ new classes/services, STOP before Section 1. Use the preamble's decision-brief format for this complexity gate:
+
+1. Explain the excess complexity. Ask about each needed feature cut or deferral separately first.
+2. Compare original and smaller class/module arrangements with the same feature choices. Preserve contracts and approved security, error handling, test and performance fixes in both; leave unapproved fixes pending.
+3. Ask which arrangement to use. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
+
+These initial scope selectors do not use the later grid or ledger writes. Wait for actual answers before applying changes. Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Take the same route if complexity did not trigger the gate.
+
+**Critical: Once the user accepts or rejects a scope reduction recommendation, commit fully.** Do not re-argue for smaller scope during later review sections. Do not silently reduce scope or skip planned components.
+
+Present the Scope Challenge's findings now, using Confidence Calibration above. Number each finding, give its severity, confidence and source, and record its accepted, rejected, deferred or pending disposition. Use "No issues found" for an empty list. Carry actual scope answers forward; a finding is not approval of its remedy.
+
 ## Review Sections (after scope is agreed)
 
-Resolve any pending Step 0 choices through the Decision procedure before Section 1; carry exact prior answers without re-asking. Evaluate all four sections in order (Architecture → Code Quality → Tests → Performance), with at most 8 top issues per section. Never condense, abbreviate, or skip any review section (1-4), including for strategy, spec or infrastructure plans. Evaluate even a section with zero findings; report "No issues found" and continue. The Decision procedure governs pending choices.
+Resolve any pending remedy choices from Scope Challenge through the Decision procedure before Section 1; carry exact prior answers without re-asking. Evaluate all four sections in order (Architecture → Code Quality → Tests → Performance), with at most 8 top issues per section. Never condense, abbreviate, or skip any review section (1-4), including for strategy, spec or infrastructure plans. Evaluate even a section with zero findings; report "No issues found" and continue. The Decision procedure governs pending choices.
 
 ### 1. Architecture review
 Evaluate:
@@ -486,7 +523,7 @@ echo "CODEX_MODE: $_CODEX_MODE"
 Branch on the echoed `CODEX_MODE`:
 - **`disabled`** — the user turned Codex reviews off (`codex_reviews=disabled`). Skip the reviewer invocation; record disabled coverage as directed below; do NOT fall back to a Claude subagent — disabled means no extra review step. Print: "Codex review skipped (codex_reviews disabled). Re-enable: `gstack-config set codex_reviews enabled`."
 - **`not_installed`** — Codex CLI absent. Print: "Codex not installed — falling back to a Claude subagent (fresh context, but the same harness; model identity is unknown). Install Codex for an actual outside-model read: `npm install -g @openai/codex`." Fall back to the Claude subagent path.
-- **`under_codex`** — stale artifact selected its own harness. Print: "Codex outside review unavailable: harness mismatch; no outside process started. Missing coverage. Repair: setup --host codex." Skip the outside invocation and follow the workflow's native-review instructions below. Conflicting inherited harness markers are not grounds to guess another provider.
+- **`under_codex`** — stale artifact selected its own harness. Print: "Codex outside review unavailable: harness mismatch; no outside process started. Missing coverage. Repair: setup --host codex." Skip the outside invocation and construct the prompt below, then follow **Native fallback**. Conflicting inherited harness markers are not grounds to guess another provider.
 - **`not_authed`** — installed but no credentials. Print: "Codex installed but not authenticated — falling back to a Claude subagent (same harness; model identity is unknown). Run `codex login` or set `$CODEX_API_KEY`." Fall back to the Claude subagent path.
 - **`broken_install`** — the CLI is on PATH but cannot execute (spawn ENOENT, non-executable binary, missing vendor payload). Print: "Codex is installed but its binary cannot run — Codex passes skipped. Reinstall: `npm install -g @openai/codex`." Relay the probe's HINT lines and fall back to the Claude subagent path. This state exists because a missing binary used to land in the model probe's fail-open bucket and report `ready`, so every Codex pass was skipped silently (#2742).
 - **`model_unusable`** — authed but the account cannot use gstack's selected Codex model (#2477: HTTP 400 on every call). Relay the probe's HINT lines, tell the user the one-line fix (set `GSTACK_CODEX_MODEL=<supported-model>` or pass an explicit `-c model=...` override), and fall back to the Claude subagent path. The ~10s round trip is cached for 1h; timeouts fail open to `ready`.
@@ -728,7 +765,7 @@ Required Outputs, preserving unresolved decisions in the report.
 Follow this closing sequence once the approval check passes:
 
 1. Write the output sections, Implementation Tasks and Completion summary from accepted decisions; list pending choices separately. Follow **Review record and write policy** and each artifact's specified path.
-2. Save the complete plan/report and pass its Read-back gate. Only then write Review Log and display the dashboard. Follow the report's no-file rules when no plan file is in scope.
+2. Save the complete plan/report and pass its Read-back gate. Only then write Review Log and display the dashboard. Follow the report's no-file rules if the selected report destination is unavailable.
 3. Complete **Next Steps — Review Chaining** below, including its required refresh if a late decision changes the plan.
 4. Run the learning hooks below. Do not start these hooks while a question is pending. Then return once to the entrypoint for its Section self-check and read-only final gate; that gate precedes telemetry, cache refresh and ExitPlanMode.
 
@@ -870,9 +907,9 @@ Prepare this from the final decision record and outputs for the saved review; an
 
 Produce the complete accepted plan and review output, including this report, under the Review record and write policy before announcing completion.
 
-### Detect the plan file
+### Use the selected report file
 
-Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. Apply the Review record and write policy. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.
+Use the report file selected under **Review record and write policy** for the Scope gate's target. "Plan file" in the writer and EXIT gate means this file, including a standalone code-review report. Do not discover or substitute another plan. Apply that policy if the destination is unavailable.
 
 ### Generate the report
 
@@ -938,7 +975,7 @@ DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
 
-If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Then follow **Blocked outcome** in the entrypoint. Otherwise save only accepted changes, keeping unresolved choices pending:
+If the report destination is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Then follow **Blocked outcome** in the entrypoint. Otherwise save only accepted changes, keeping unresolved choices pending:
 
 The report must always be the LAST section of the plan file — never mid-file.
 Use a single delete-then-append flow:

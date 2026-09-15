@@ -87,9 +87,9 @@ export function generatePlanFileReviewReport(ctx: TemplateContext): string {
 ${beforeLog ? (conditionalWrites ? `Produce the complete accepted plan and review output, including this report, under the ${storagePolicy} before announcing completion.` : 'Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.') : `After displaying the Review Readiness Dashboard in conversation output, also update the
 **plan file** itself so review status is visible to anyone reading the plan.`}
 
-### Detect the plan file
+### ${ctx.skillName === 'plan-eng-review' ? 'Use the selected report file' : 'Detect the plan file'}
 
-${beforeLog ? `Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. ${conditionalWrites ? `Apply the ${storagePolicy}. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.` : 'If no file is in scope, skip this section; ordinary no-file review logging still applies.'}` : `1. Check if there is an active plan file in this conversation (the host provides plan file
+${ctx.skillName === 'plan-eng-review' ? 'Use the report file selected under **Review record and write policy** for the Scope gate\'s target. "Plan file" in the writer and EXIT gate means this file, including a standalone code-review report. Do not discover or substitute another plan. Apply that policy if the destination is unavailable.' : beforeLog ? `Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. ${conditionalWrites ? `Apply the ${storagePolicy}. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.` : 'If no file is in scope, skip this section; ordinary no-file review logging still applies.'}` : `1. Check if there is an active plan file in this conversation (the host provides plan file
    paths in system messages — look for plan file references in the conversation context).
 2. If not found, skip this section silently — not every review runs in plan mode.`}
 
@@ -157,7 +157,7 @@ DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
 
-${beforeLog ? (conditionalWrites ? `If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed.${ctx.skillName === 'plan-eng-review' ? ' Then follow **Blocked outcome** in the entrypoint.' : ''} Otherwise save only accepted changes, keeping unresolved choices pending:` : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
+${beforeLog ? (conditionalWrites ? `If the ${ctx.skillName === 'plan-eng-review' ? 'report destination' : 'target'} is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed.${ctx.skillName === 'plan-eng-review' ? ' Then follow **Blocked outcome** in the entrypoint.' : ''} Otherwise save only accepted changes, keeping unresolved choices pending:` : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.`}
 

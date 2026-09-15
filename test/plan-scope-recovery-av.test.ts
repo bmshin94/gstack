@@ -23,9 +23,14 @@ test('the review handoff repairs a missing public declaration without claiming t
     const start = skill === 'plan-eng-review' ? '### Step 0: Scope Challenge' : '## PRE-REVIEW SYSTEM AUDIT';
     expect(text.indexOf(check)).toBeGreaterThan(text.indexOf('{{PREAMBLE}}'));
     expect(text.indexOf(check)).toBeGreaterThan(text.indexOf(start));
-    const reviewStart = text.indexOf(skill === 'plan-eng-review' ? 'Before reviewing, answer:' : 'Before reviewing the plan, gather context');
+    const reviewStart = text.indexOf(skill === 'plan-eng-review' ? '{{SECTION:review-sections}}' : 'Before reviewing the plan, gather context');
     expect(reviewStart).toBeGreaterThanOrEqual(0);
     expect(text.indexOf(check)).toBeLessThan(reviewStart);
+    if (skill === 'plan-eng-review') {
+      const section = fs.readFileSync(path.join(import.meta.dir, '..', skill, 'sections/review-sections.md.tmpl'), 'utf8');
+      expect(section).toContain('Before reviewing, answer:');
+      expect(text.slice(text.indexOf(check), reviewStart)).toContain('Scope Challenge is mandatory before Section 1');
+    }
   }
 });
 

@@ -7,7 +7,7 @@ import { join } from 'path';
 import { spawnSync } from 'child_process';
 
 function expectOutsideReviewControlFlow(text: string, promptHeading: string): void {
-  const markers = ['**Disabled is a terminal branch', promptHeading, '**If `CODEX_MODE: ready`', '**Native fallback'];
+  const markers = ['**Disabled is a terminal branch', promptHeading, '**If `CODEX_MODE: ready`', '\n**Native fallback —'];
   const indices = markers.map(marker => text.indexOf(marker));
   expect(indices.every(index => index >= 0)).toBe(true);
   expect(indices).toEqual([...indices].sort((a, b) => a - b));
@@ -211,7 +211,7 @@ console.log(JSON.stringify({calls, results}));
   });
 
   test('Eng LLM scope and pending decisions precede the test artifact', () => {
-    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## Section self-check');
+    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## Scope gate', '## Section self-check');
     const tests = eng.slice(eng.indexOf('### 3. Test review'), eng.indexOf('### 4. Performance review'));
     const scope = tests.indexOf('### LLM/eval scope');
     const decisions = tests.indexOf('**Step 5. Add missing tests to the plan:**');
@@ -225,7 +225,7 @@ console.log(JSON.stringify({calls, results}));
   });
 
   test('plan review evidence and design approval rules precede their use', () => {
-    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## Section self-check');
+    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## Scope gate', '## Section self-check');
     expect(eng.indexOf('## Confidence Calibration')).toBeLessThan(eng.indexOf('### 1. Architecture review'));
     expect(eng).toContain('quote the motivating plan requirement');
     expectOutsideReviewControlFlow(eng, '**Construct the plan review prompt**');

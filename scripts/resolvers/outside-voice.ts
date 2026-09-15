@@ -69,8 +69,12 @@ fi`;
 export function outsideVoicePreflight(ctx: TemplateContext, opts: { disabledBehavior: 'skip-all' | 'codex-only' | 'opt-in' }): string {
   const v = outsideVoiceFor(ctx);
   if (v.id === 'codex' && opts.disabledBehavior !== 'opt-in') {
-    const preflight = outsideVoiceLabels(ctx, codexPreflight(opts))
+    let preflight = outsideVoiceLabels(ctx, codexPreflight(opts))
       .replace('```bash\n', `\`\`\`bash\n${outsideVoiceRuntime(ctx)}\n`);
+    if (ctx.skillName === 'plan-eng-review') {
+      preflight = preflight.replace("follow the workflow's native-review instructions below",
+        'construct the prompt below, then follow **Native fallback**');
+    }
     return ['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName)
       ? preflight.replace('Skip this section entirely;', 'Skip the reviewer invocation; record disabled coverage as directed below;')
       : preflight;

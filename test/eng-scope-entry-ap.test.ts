@@ -28,6 +28,7 @@ test('every host expands its real bootstrap after the mandatory entry gate', () 
     const ctx: TemplateContext = {skillName: 'plan-eng-review', tmplPath: 'plan-eng-review/SKILL.md.tmpl',
       host: host.name, paths: HOST_PATHS[host.name]!, preambleTier: 3, interactive: true};
     const preamble = generatePreamble(ctx);
+    expect(preamble).toContain('starting from the Scope gate, then follow its Startup sequence');
     const brain = host.suppressedResolvers?.includes('GBRAIN_CONTEXT_LOAD') ? '' : generateGBrainContextLoad(ctx);
     const expanded = template.replace('{{PREAMBLE}}', preamble).replace('{{GBRAIN_CONTEXT_LOAD}}', brain);
     expect(expanded.indexOf(announcement)).toBeLessThan(expanded.indexOf('## Preamble (after scope gate)'));
@@ -43,8 +44,13 @@ test('entry binds a current target and delays bootstrap until scope resolves', (
   expect(scope).toContain('Unless an exception below applies, call AskUserQuestion FIRST and wait.');
   expect(scope).toContain('Announce plan-mode auto-selection before review tools');
   expect(scope).toContain('A fresh declaration for this invocation may precede skill loading');
-  expect(scope).toContain('After resolution: preamble → brain context → Design Doc Check → Step 0.');
-  expect(scope).toContain('Preamble “run first” is subordinate to this gate.');
+  expect(scope.match(/\*\*Startup sequence\*\*/g)).toHaveLength(1);
+  const startup = scope.slice(scope.indexOf('**Startup sequence**'), scope.indexOf('{{PREAMBLE}}'));
+  const order = ['after target selection', 'Preamble', 'Context Recovery', 'Brain Context',
+    'web-research readiness', 'Design Doc Check', 'Step 0 section entry'].map(step => startup.indexOf(step));
+  expect(order.every(position => position >= 0)).toBe(true);
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+  expect(startup).toContain('Keep the reviewed target fixed');
 });
 
 test('existing plan selection exceptions and unseeded hard STOP remain explicit', () => {
@@ -55,7 +61,7 @@ test('existing plan selection exceptions and unseeded hard STOP remain explicit'
   expect(scope).toContain('First tool call = AskUserQuestion (tool_use). Confirm what to review.');
   expect(scope).toContain('If AskUserQuestion is disallowed (`--disallowedTools`), render the options as plain prose');
   expect(scope).toContain('A) The current branch diff — the work in progress on this branch.\nB) A plan or design doc I\'ll paste or point you to.\nC) A specific file, directory, or path.');
-  expect(scope).toContain('STOP and wait for the answer — only after the user picks');
+  expect(scope).toContain('Reply with A, B, or C. STOP and wait for the answer.');
 });
 
 test('the regression selects the same paid owners as the Eng template', () => {
