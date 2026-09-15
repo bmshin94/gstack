@@ -415,3 +415,35 @@ for (const caption of ['Register in WebhookDispatcher and delete backups.', 'Reg
     expect(plan).not.toBe(prose6714.savedPlan);
     expect(() => count6714(plan, question6714(prose6714), prose6714)).toThrow();
   });
+
+
+import metadataListFixture from './fixtures/ceo-option-metadata-list-6f6730f4.json';
+const metadataListDecision = (plan = metadataListFixture.savedPlan) => {
+  const question = nativePlanCallFingerprint(structuredClone(metadataListFixture.call), 1, true);
+  const counter = createCeoPaymentFindingCounter('', () => plan, ceoFirstReviewAUQ);
+  return counter.isReviewAUQ(question);
+};
+
+test('captured paired receipt decision binds an option paragraph to its adjacent metadata bullets', () => {
+  expect(metadataListDecision()).toBe(true);
+});
+
+for (const [name, mutate] of Object.entries({
+  'missing pros': (s: string) => s.replaceAll('- Pros:', '- Benefits:'),
+  'missing cons': (s: string) => s.replaceAll('- Cons:', '- Tradeoff:'),
+  'missing effort': (s: string) => s.replaceAll('Effort S.', ''),
+  'missing risk': (s: string) => s.replaceAll('Risk low.', ''),
+  'duplicate effort': (s: string) => s.replace('- Pros: pins', '- Effort: S\n- Pros: pins'),
+  'unrelated intervening paragraph': (s: string) => s.replace('- Pros: pins', '\nThis is a separate unrelated paragraph.\n\n- Pros: pins'),
+  'metadata below another heading': (s: string) => s.replace('- Pros: pins', '### OTHER decision\n\n- Pros: pins'),
+  'code-only metadata': (s: string) => s.replace('- Pros: pins', '```text\n- Pros: pins').replace('Coverage: C1 fully.', 'Coverage: C1 fully.\n```'),
+  'quoted metadata': (s: string) => s.replace('- Pros: pins', '> - Pros: pins'),
+  'foreign option': (s: string) => s.replace('**A) Assert the full receipt**', '**D) Assert the full receipt**'),
+  'missing saved comparison': (s: string) => s.split('## 0D. Alternatives')[0]!,
+  'missing current ledger row': (s: string) => s.replace(/^\| R1 \(user\).*\n/m, ''),
+  'foreign source': (s: string) => s.replaceAll('PLAN.md', 'other.md'),
+  'historical comparison': (s: string) => s.replace('## 0D. Alternatives', '## Historical 0D. Alternatives'),
+  'withdrawn metadata': (s: string) => s.replace('Pros: pins', 'Pros: This decision is withdrawn. pins'),
+})) test(`adjacent metadata list still rejects ${name}`, () => {
+  expect(() => metadataListDecision(mutate(metadataListFixture.savedPlan))).toThrow(/Unsupported current CEO decision/);
+});

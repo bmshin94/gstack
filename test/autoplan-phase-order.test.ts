@@ -57,7 +57,7 @@ describe('autoplan phase order (Eng always last)', () => {
     const section = read(`autoplan/sections/${child}-phase.md.tmpl`);
     const announced = [...section.matchAll(/^\*\*Phase (\d+(?:\.\d+)?) complete\.\*\*$/gm)].map(m => m[1]);
     const handoff = section.match(/^Passing to .+$/m)?.[0] ?? '';
-    expect(section).toContain('Only then send this completion summary as a standalone user-facing message');
+    expect(section).toContain('Emit the following summary as its own visible parent assistant text block');
     expect(announced).toEqual([id]);
     expect([...handoff.matchAll(/Phase (\d+(?:\.\d+)?)/g)].map(m => m[1])).toEqual(next);
     // Catch obsolete Phase 3.5 references anywhere in any carved child,
@@ -191,15 +191,18 @@ describe('autoplan phase execution checkpoints', () => {
     const contract = tmpl.split('## Sequential Execution')[1]?.split('---')[0] ?? '';
     expect(contract).toContain('Keep ONE phase active');
     expect(contract).toContain('Never draft future-phase reviews or outputs');
-    expect(contract).toContain('After compaction, reload current phase instructions/skill/sections; reconcile disk progress before resuming');
+    expect(contract).toContain('After compaction, reload current phase instructions/skill/sections');
+    expect(contract).toContain('reconcile saved artifacts and sent conversation messages separately');
     expect(contract).toContain('Load its phase instructions and full skill/sections');
     expect(contract).toContain("Complete the phase's required preliminary work (CEO: all Step 0");
-    expect(contract).toContain('then create the fresh snapshot and dispatch its nativeDispatchPrompt unchanged');
-    expect(contract.replace(/\s+/g, ' ')).toContain("Consume native completion, then enabled outside results; only then complete the phase's remaining primary review sections");
-    expect(contract).toContain("Persist outputs/amendments and run the phase's implementation check/readback");
-    expect(contract).toContain('Send the phase completion summary as a standalone user-facing message');
-    expect(contract).toContain("Only then make the next phase's tool calls");
-    expect(contract).toContain('for Eng, send it before final synthesis and the approval question');
+    expect(contract.replace(/\s+/g, ' ')).toContain('then create the fresh snapshot and dispatch its nativeDispatchPrompt unchanged');
+    expect(contract.replace(/\s+/g, ' ')).toContain("Consume the native terminal result and apply the phase's failure policy");
+    expect(contract.replace(/\s+/g, ' ')).toContain("consume enabled outside results. Complete the phase's remaining primary review sections after these results");
+    expect(contract).toContain('Save the full review artifacts and accepted amendments');
+    expect(contract).toContain('implementation check and readback');
+    expect(contract).toContain('Emit the phase completion summary as its own visible parent assistant text block');
+    expect(contract.replace(/\s+/g, ' ')).toContain("Then continue to the next phase's tool calls in the same turn");
+    expect(contract.replace(/\s+/g, ' ')).toContain('for Eng, send this text before final synthesis/approval');
     expect(contract).toContain('A missing gate means the current phase remains open');
     expect(contract).toContain('Read requests/self-reports and INPUT hashes do not prove uptake or review quality');
     expect(contract).toContain('Pending is not unavailable');
@@ -215,16 +218,18 @@ describe('autoplan phase execution checkpoints', () => {
       const announcement = section.indexOf(`\n**Phase ${number} complete.**\n`);
       expect(barrier).toBeGreaterThan(-1);
       expect(barrier).toBeLessThan(announcement);
-      const checkpoint = section.slice(barrier, announcement);
+      const checkpoint = section.slice(barrier, announcement).replace(/\s+/g, ' ');
       expect(checkpoint).toContain('Require full skill/section ranges');
       expect(checkpoint).toContain('successful writes');
-      expect(checkpoint).toContain('terminal reviewers');
-      expect(checkpoint).toContain('matched completed-native INPUT');
+      expect(checkpoint).toContain('terminal reviewer results');
+      expect(checkpoint).toContain('When the native review succeeded, match its INPUT');
+      expect(checkpoint).toContain("A failed native attempt follows the phase's failure policy without native completion credit");
+      expect(checkpoint).toContain('a pending reviewer keeps this phase open');
       expect(checkpoint).toContain('(unavailable/disabled allowed)');
       expect(checkpoint).toContain('successful writes/check');
       expect(checkpoint).toContain(phase === 'eng'
-        ? 'After sending it, proceed to final synthesis/approval'
-        : 'After sending it, load/create/dispatch the next phase');
+        ? 'After this text, proceed to final synthesis/approval in the same turn'
+        : 'After this text, load/create/dispatch the next phase in the same turn');
       expect(checkpoint).toContain('EVERY accepted requirement/condition/test');
       expect(checkpoint).toContain('in its block');
       expect(checkpoint).toContain('Reconcile full review');
@@ -234,7 +239,15 @@ describe('autoplan phase execution checkpoints', () => {
       expect(checkpoint).toContain('User Challenges keep original');
       expect(checkpoint).toContain(`amend ${phase} "<ACTIVE_PLAN>" "<${phase.toUpperCase()}_INPUT>"`);
       expect(checkpoint).toContain('None: reason checks unchanged');
-      expect(checkpoint).toContain('Only then send this completion summary as a standalone user-facing message');
+      expect(checkpoint).toContain('Emit the following summary as its own visible parent assistant text block');
+      const save = checkpoint.indexOf('1. **Save artifacts.**');
+      const verify = checkpoint.indexOf('2. **Verify.**');
+      const notify = checkpoint.indexOf('3. **Notify the user.**');
+      expect(save).toBeGreaterThan(-1);
+      expect(save).toBeLessThan(verify);
+      expect(verify).toBeLessThan(notify);
+      expect(checkpoint).toContain('after the verification results');
+      expect(checkpoint).not.toContain('This message contains no tool calls');
     }
   });
 
@@ -253,7 +266,8 @@ describe('autoplan current implementation-plan identity', () => {
   test('pins the assigned active plan and keeps accepted amendments separate from review analyses', () => {
     const intake = read('autoplan/SKILL.md.tmpl').split('## Phase 0: Intake')[1]?.split('### Step 2:')[0] ?? '';
     expect(intake).toContain('ACTIVE_PLAN (harness-assigned plan, else SOURCE_PLAN)');
-    expect(intake).toContain('Write all amendments/outputs to ACTIVE_PLAN');
+    expect(intake).toContain('Save plan amendments and review artifacts to ACTIVE_PLAN');
+    expect(intake).toContain('Send phase announcements and the final approval request in the conversation');
     expect(intake).toContain("init backs up SOURCE_PLAN exactly");
     expect(intake).toContain('without losing requirements');
     expect(intake).toContain('init "<SOURCE_PLAN>" "<ACTIVE_PLAN>" "<RESTORE_PATH>"');
@@ -287,7 +301,8 @@ describe('autoplan current implementation-plan identity', () => {
       expect(preparation).toContain(`create ${phase} "<ACTIVE_PLAN>" "<RESTORE_PATH>"`);
       expect(preparation).toContain('`snapshotPath` as `<' + phase.toUpperCase() + '_INPUT>` for both voices');
       expect(preparation).toContain('excludes `Review record`');
-      expect(section).toContain('Send `nativeDispatchPrompt` verbatim');
+      expect(section.replace(/\s+/g, ' ')).toContain('Send its `nativeDispatchPrompt` verbatim as the Agent prompt');
+      expect(section).toContain('Read `snapshot.json` beside `<' + phase.toUpperCase() + '_INPUT>`');
       expect(section).toContain('Reads `nativePromptPath` to EOF');
       expect(section).toContain(`Outside prompt: inline the full contents of <${phase.toUpperCase()}_INPUT>`);
       expect(section).toContain(`amend ${phase} "<ACTIVE_PLAN>" "<${phase.toUpperCase()}_INPUT>"`);

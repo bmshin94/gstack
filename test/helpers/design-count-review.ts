@@ -359,10 +359,17 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
           (/\b(?:(?:this|the) (?:finding|gap|issue|amendment|fix|decision)|G[1-9]\d*|Issue [1-9]\d*) (?:is|was|has been) (?:already |now )?$/i.test(source.slice(0, index)) || namedStatusPrefix.test(source.slice(0, index)))
           ? quoted.slice(1, -1) : '');
     const sourceText = current(values[0]!.replace(/`PLAN\.md`/g, 'PLAN.md'));
-    // A current pass can identify its plan by title. A different filename or
-    // quoted plan reference must not gain authority from the descriptive form.
+    // A review can name its current plan instead of repeating PLAN.md. Treat
+    // the title as a title only inside the review's own provenance field; a
+    // pass number corroborates that ownership but cannot supply it by itself.
+    const namedPlan = /(?:^|[,;]\s*)(?:\/plan-design-review of|reviewing|design review of)\s+(?:"([^"\n]+)"|“([^”\n]+)”|`([^`\n]+)`)(?=[,;.\s]|$)/i.exec(values[0]!);
+    const title = namedPlan?.slice(1).find(Boolean);
+    const namedCurrentPlan = !!title && !/\b[\w.-]+\.md\b/i.test(title) &&
+      !/\b(?:other|another|different|unrelated|foreign|historical|archived|quoted|copied|example)\b/i.test(title) &&
+      /\bPass [1-7]\s*\([A-Za-z][A-Za-z &/-]*\)/.test(sourceText);
     const ownedSource = /\bPLAN\.md\b/.test(sourceText) ||
-      (!/\b[\w.-]+\.md\b/i.test(values[0]!) && /\bPass [1-7]\s*\([A-Za-z][A-Za-z &/-]*\) of the [A-Za-z][A-Za-z -]* plan\.$/.test(sourceText));
+      (!/\b[\w.-]+\.md\b/i.test(values[0]!) && (namedCurrentPlan ||
+        /\bPass [1-7]\s*\([A-Za-z][A-Za-z &/-]*\) of the [A-Za-z][A-Za-z -]* plan\.$/.test(sourceText)));
     if (values.some(value => !value || sourceOnly.test(value)) || inactiveCurrent(current(q.question)) ||
         !ownedSource || /\b(?:other|another|different|unrelated|foreign|historical|archived|quoted|copied) (?:[A-Za-z-]+ )?(?:plan|review|source)\b/i.test(sourceText) ||
         /\b(?:planning|review|workflow) setup\b|\b(?:setup|onboarding|routing|posture|learnings) (?:stage|phase|step|decision)\b/i.test(current(values[0]!)) ||
@@ -432,6 +439,7 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
           [...opposed.matchAll(/\bIssue ([1-9]\d*)\b/gi)].every(match => match[1] === issueNumber);
         return ownedOpposition && other !== option && /^(?:Keep|Leave|Defer|Decline|No)\b/i.test(other.label.replace(new RegExp(`^${ids[otherIndex]}[).:]?\\s+`), '')) &&
           !sourceOnly.test(declined) && !inactiveCurrent(current(declined)) &&
+          !/\b(?:(?:does?|did) not|no longer|never) violates? DESIGN\.md\b/i.test(opposed) &&
           (new RegExp(`\\b(?:gap\\s+)?G${gapNumber}\\s+(?:stays|remains|is)\\s+(?:open|unresolved)\\b`, 'i').test(current(declined)) ||
             (!!scopedIssue && (/\b(?:the |[a-z-]+ )?gap (?:stays|remains|is) (?:open|unresolved)\b/i.test(current(declined)) ||
               (!!nativeIssue && /\b(?:known|documented) (?:WCAG )?AA failure ships\b/i.test(current(declined)) && /\bstays open\b/i.test(current(declined))) ||
@@ -439,6 +447,11 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
                 !/\b(?:other|another|different|unrelated) (?:gap|issue|finding|decision)\b/i.test(current(declined)) &&
                 [...current(declined).matchAll(/\bIssue ([1-9]\d*)\b/gi)].every(match => match[1] === issueNumber)) ||
               (!!nativeIssue && /^Record as unresolved[.;]/i.test(current(declined))) ||
+              // A kept violation may name the relevant contract, rather than
+              // use the exact phrase "gap remains open". It still belongs to
+              // this issue and the same design-defect class as the remedy.
+              (!!nativeIssue && /\bviolates DESIGN\.md(?:'s)?\b/i.test(opposed) && kind.subject.test(opposed) &&
+                !/\b(?:(?:does?|did) not|no longer|never) violates?\b|\b(?:historical|previous|earlier|example|quoted|hypothetical)\b/i.test(opposed)) ||
               (!!nativeIssue && /\bviolates DESIGN\.md(?:'s)? (?:stated |existing |documented )?(?:primary treatment|two-role rule|spacing scale|contrast requirement)\b/i.test(current(declined))) ||
               /\b(?:plan|design|page|header)\b[^.!?]*\b(?:keeps|retains|leaves|ships)\b[^.!?]*\bDESIGN\.md violation\b/i.test(current(declined))) &&
               [...q.options.flatMap(o => [...`${o.label} ${o.description ?? ''}`.matchAll(/\bG([1-9]\d*)\b/g)])]

@@ -365,3 +365,84 @@ describe('EXPANSION pacing preserves one separate substantive continuation', () 
     expect(hasNativePostAnswerCeoPosture(e.transcript,'SCOPE EXPANSION',pattern,retry.selectedAt,e.events)).toBe(false);
   });
 });
+
+import completeInventory from './fixtures/ceo-expansion-complete-inventory-6f.json';
+describe('complete candidate split is navigation with an actual ACK boundary',()=>{
+const f=completeInventory;
+const actualFrame=f.viewport;
+function state(){const pacing=structuredClone(f.pacing);pacing.answered=false;delete pacing.answers;delete pacing.answeredAt;delete pacing.unansweredQuestionIndices;return{pacing,transcript:{status:'ready' as const,calls:[structuredClone(f.mode),pacing],assistantMessages:[]}};}
+function pane(c:any){const q=c.questions[0];return ['☐ '+q.header,q.question,...q.options.map((o:any,i:number)=>`${i?' ':'❯'} ${i+1}. ${o.label}`),'4. Type something.','5. Chat about this','Enter to select · ↑/↓ to navigate · Esc to cancel'].join('\n');}
+const verify=(name:string,pass:boolean)=>test(name,()=>expect(pass).toBe(true));
+const choose=(e=state(),screen=pane(e.pacing))=>ceoExpansionPacingChoice(screen,e.transcript,f.selectedAt);
+verify('actual retained frame selects the complete seven-candidate walkthrough',choose(state(),actualFrame)?.index===1);
+for(const [name,mutate]of Object.entries({
+ 'eight complete candidates':(q:any)=>{q.question=q.question.replaceAll('7 expansion candidates','8 expansion candidates').replace('7 adjacent improvements','8 adjacent improvements').replace('E7 cross-project views.','E7 cross-project views, E8 shared pinned groups.');q.options[0].label=q.options[0].label.replace('7 questions','8 questions');q.options[0].description=q.options[0].description.replace('E7','E8');},
+ 'different proposal prefix':(q:any)=>{q.question=q.question.replace(/\bE(?=\d)/g,'P');q.options.forEach((o:any)=>{o.description=o.description.replace(/\bE(?=\d)/g,'P');});},
+ 'complete walkthrough label':(q:any)=>{q.options[0].label='A: Complete walkthrough, 7 questions (recommended)';},
+ 'one per item with explicit range':(q:any)=>{q.options[0].description='One question per item, E1 to E7.';},
+ 'reordered choices':(q:any)=>{q.options.reverse();},
+})){const e=state();mutate(e.pacing.questions[0]);verify(name,choose(e)?.index===(name==='reordered choices'?3:1));}
+for(const [name,mutate]of Object.entries({
+ 'partial range':(q:any)=>{q.options[0].description=q.options[0].description.replace('E7','E6');},
+ 'wrong number of questions':(q:any)=>{q.options[0].label=q.options[0].label.replace('7','6');},
+ 'wrong declared count':(q:any)=>{q.question=q.question.replace('7 expansion candidates','8 expansion candidates');},
+ 'missing candidate':(q:any)=>{q.question=q.question.replace(', E7 cross-project views','');},
+ 'duplicate candidate':(q:any)=>{q.question=q.question.replace('E7 cross-project views','E6 cross-project views');},
+ 'mixed proposal IDs':(q:any)=>{q.question=q.question.replace('E7 cross-project views','P7 cross-project views');},
+ 'narrow selected walk':(q:any)=>{q.options[0].description+=' Except E4.';},
+ 'selected scope approval':(q:any)=>{q.options[0].description+=' Approve E1 immediately.';},
+ 'selected deletion':(q:any)=>{q.options[0].label+=' and delete E7';},
+ 'selected grouping':(q:any)=>{q.options[0].description+=' Batch E1 and E2 together.';},
+ 'quoted only range':(q:any)=>{q.options[0].description='"'+q.options[0].description+'"';},
+ 'code-only range':(q:any)=>{q.options[0].description='`'+q.options[0].description+'`';},
+ 'negated complete walk':(q:any)=>{q.options[0].label=q.options[0].label.replace('Full split','Not a full split');},
+ 'duplicate complete choice':(q:any)=>{q.options[1]=structuredClone(q.options[0]);},
+ 'extra question':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: Should all candidates ship?');},
+ 'unconditional approval':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: This answer approves every expansion.');},
+ 'quoted whole-question approval':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: “Choosing Full split approves E1 immediately.”');},
+ 'hidden universal effect in another option':(q:any)=>{q.question=q.question.replace('B) Narrow first:','B) Regardless of choice, approve E1. Narrow first:');},
+ 'historical inventory':(q:any)=>{q.question=q.question.replace('The delight scan produced','Previously the delight scan produced');},
+ 'fenced brief':(q:any)=>{q.question='```\n'+q.question+'\n```';},
+ 'missing comparison marker':(q:any)=>{q.question=q.question.replace('Note: options differ in kind, not coverage — no completeness score.','');},
+})){const e=state();mutate(e.pacing.questions[0]);verify(name,choose(e)?.index!==1);}
+for(const [name,mutate]of Object.entries({
+ 'foreign session':(e:any)=>{e.pacing.sessionId='foreign';},
+ 'unanswered mode':(e:any)=>{e.transcript.calls[0].answered=false;},
+ 'already answered pacing':(e:any)=>{e.pacing.answered=true;},
+ 'mixed question packet':(e:any)=>{e.pacing.questions.push({...structuredClone(e.pacing.questions[0]),header:'Extra',question:'Approve everything?'});},
+ 'another pending call':(e:any)=>{e.transcript.calls.push({...structuredClone(e.pacing),toolUseId:'other'});},
+})){const e=state();mutate(e);verify(name,choose(e)?.index!==1);}
+const e=state(),choice=choose(e,actualFrame)!;const acknowledged={status:'ready' as const,calls:[f.mode,f.pacing,f.pending],assistantMessages:[]};
+const actualNext=f.nextViewport;
+verify('actual pacing ACK and different pending E1 pane complete navigation',ceoExpansionPacingReady(actualNext,acknowledged,choice,f.publicEvents));
+verify('intended key without actual ACK does not complete navigation',!ceoExpansionPacingReady(actualNext,e.transcript,choice,f.publicEvents));
+verify('missing result does not complete navigation',!ceoExpansionPacingReady(actualNext,acknowledged,choice,f.publicEvents.filter((e:any)=>e.kind!=='result')));
+verify('failed result does not complete navigation',!ceoExpansionPacingReady(actualNext,acknowledged,choice,f.publicEvents.map((e:any)=>({...e,isError:e.kind==='result'}))));
+verify('same old pane does not complete navigation',!ceoExpansionPacingReady(actualFrame,acknowledged,choice,f.publicEvents));
+verify('pacing and pending E1 supply no completed posture',!hasNativePostAnswerCeoPosture(acknowledged,'SCOPE EXPANSION',/expansion|10x|delight|dream/i,f.selectedAt,f.publicEvents));
+});
+
+describe('candidate inventory cannot approve scope',()=>{
+const f=completeInventory;
+function state(){const pacing=structuredClone(f.pacing);pacing.answered=false;delete pacing.answers;delete pacing.answeredAt;delete pacing.unansweredQuestionIndices;return{pacing,transcript:{status:'ready' as const,calls:[structuredClone(f.mode),pacing],assistantMessages:[]}};}
+function pane(c:any){const q=c.questions[0];return ['☐ '+q.header,q.question,...q.options.map((o:any,i:number)=>`${i?' ':'❯'} ${i+1}. ${o.label}`),'4. Type something.','5. Chat about this','Enter to select · ↑/↓ to navigate · Esc to cancel'].join('\n');}
+const mutations={
+ 'inventory actor grants all candidates':(q:any)=>q.question=q.question.replace('E7 cross-project views.','E7 cross-project views; we approve all seven now.'),
+ 'inventory item claims current approval':(q:any)=>q.question=q.question.replace('E7 cross-project views.','E7 cross-project views (already approved).'),
+ 'inventory item has bare approval status':(q:any)=>q.question=q.question.replace('E7 cross-project views.','E7 cross-project views (approved).'),
+ 'inventory all items are approved':(q:any)=>q.question=q.question.replace('E7 cross-project views.','E7 cross-project views; all seven are approved.'),
+ 'inventory imperative ship grant':(q:any)=>q.question=q.question.replace('E7 cross-project views.','E7 cross-project views; ship all seven now.'),
+ 'inventory scope disposition':(q:any)=>q.question=q.question.replace('E7 cross-project views.','E7 cross-project views; all seven are in scope.'),
+ 'inventory skipped candidate':(q:any)=>q.question=q.question.replace('E7 cross-project views.','E7 cross-project views (deferred).'),
+ 'title claims inventory approved':(q:any)=>q.question=q.question.replace('How do you want to decide them?','All seven are already approved. How do you want to decide them?'),
+ 'rationale claims candidates in scope':(q:any)=>q.question=q.question.replace('The delight scan produced','All candidates are in scope. The delight scan produced'),
+ 'rationale claims prior approval':(q:any)=>q.question=q.question.replace('The delight scan produced','These items have been approved. The delight scan produced'),
+};
+for (const [name,mutate] of Object.entries(mutations)) test(name,()=>{
+  const e=state();mutate(e.pacing.questions[0]);
+  expect(ceoExpansionPacingChoice(pane(e.pacing),e.transcript,f.selectedAt)?.index).not.toBe(1);
+});
+test('descriptive Update and delete feature titles remain supported',()=>{
+  expect(ceoExpansionPacingChoice(f.viewport,state().transcript,f.selectedAt)?.index).toBe(1);
+});
+});

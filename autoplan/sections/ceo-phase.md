@@ -23,16 +23,27 @@ Complete every Step 0 analysis/output on the loaded skill's SELECTIVE EXPANSION
 route with the overrides above: CEO scope document and 0H Spec Review Loop before
 0I and Review Sections.
 
-**At 0H, reconcile both inputs.** Define behavior, tests and manual checklists in
-their owning working-plan sections before citing actual headings/test names in
-the ledger or CEO scope summary; future review records stay pending.
-Preserve source-plan and DESIGN.md requirements. Proposed changes follow User
-Challenge rules; keep original requirements pending the gate. In the Decision
-Audit Trail, Taste is provisional auto-decision; User Challenges are unapproved.
-Accepted expansions must work without assuming queued changes are approved.
-Carry these dispositions, scope counts and proposal IDs into both files before
-spec review. Link deferrals to actual TODOs or pending writes. Fix summary drift
+**At 0H, apply the accepted decisions before spec review.** Create one amendment
+checkpoint; keep its `snapshotPath` as `<CEO_STEP0_INPUT>`:
+```bash
+bun "<SNAPSHOT_TOOL>" create ceo "<ACTIVE_PLAN>" "<RESTORE_PATH>" "<methodologyPath>"
+```
+Put every accepted behavior, condition, test and manual checklist from Step 0 in
+the CEO accepted-obligations block. Preserve source-plan and DESIGN.md requirements;
+User Challenges retain the original requirements. Taste is a provisional
+auto-decision; accepted expansions must work without assuming queued changes are
+approved. Keep decision history and pending review work in `Review record`.
+
+Run this before the first spec dispatch and after each accepted spec fix:
+```bash
+bun "<SNAPSHOT_TOOL>" amend ceo "<ACTIVE_PLAN>" "<CEO_STEP0_INPUT>"
+```
+Read back the operative `Implementation plan` and CEO scope summary in full.
+Reconcile dispositions, scope counts, proposal IDs and actual heading/test references
+between them. Link deferrals to actual TODOs or pending writes. Fix summary drift
 without changing decisions, dropping findings/required fields or inventing references.
+The recorded block alone is not an amended input. Reuse this checkpoint through the
+Spec Review Loop, then create a fresh snapshot below for both voices.
 
 Step 0.5 (Dual Voices): After Step 0's Spec Review Loop, consume the native CEO
 review, then the available outside voice (P6). Present both completed results
@@ -48,7 +59,8 @@ bun "<SNAPSHOT_TOOL>" create ceo "<ACTIVE_PLAN>" "<RESTORE_PATH>" "<methodologyP
   Claude Code: set Agent `run_in_background: false` if its schema exposes it.
   Other hosts: foreground; await completion when supported.
 
-  Send `nativeDispatchPrompt` verbatim: ONLY/FINAL tool call this response.
+  Read `snapshot.json` beside `<CEO_INPUT>`. Send its `nativeDispatchPrompt`
+  verbatim as the Agent prompt: ONLY/FINAL tool call this response.
   Keep native Reads enabled. Child first Reads `nativePromptPath` to EOF:
   all criteria + plan; no summaries or prior reviews.
 
@@ -162,14 +174,22 @@ Sections 1-11 — for EACH section, run the evaluation criteria from the loaded 
 - Dream state delta (where this plan leaves us vs 12-month ideal)
 - Completion Summary (the full summary table from the CEO skill)
 
-**Close this phase:** Reconcile full review → EVERY accepted requirement/condition/test
-in its block. Taste provisional; User Challenges keep original.
+**Close this phase:**
+
+1. **Save artifacts.** Reconcile full review → EVERY accepted requirement/condition/test
+   in its block. Taste provisional; User Challenges keep original.
 ```bash
 bun "<SNAPSHOT_TOOL>" amend ceo "<ACTIVE_PLAN>" "<CEO_INPUT>"
 ```
-None: reason checks unchanged. Read back fully; retention ≠ approval/completeness/correctness.
-Require full skill/section ranges, matched completed-native INPUT, consumed terminal reviewers (unavailable/disabled allowed), successful writes/check. Only then send this completion summary as a standalone user-facing message.
-After sending it, load/create/dispatch the next phase:
+2. **Verify.** None: reason checks unchanged. Read back fully; retention ≠ approval/completeness/correctness.
+   Require full skill/section ranges, successful writes/check and terminal reviewer
+   results (unavailable/disabled allowed). When the native review succeeded, match
+   its INPUT. A failed native attempt follows the phase's failure policy without
+   native completion credit; a pending reviewer keeps this phase open.
+3. **Notify the user.** Emit the following summary as its own visible parent assistant text block
+   after the verification results. Saving it in ACTIVE_PLAN or printing it through
+   Bash does not send it to the user.
+   After this text, load/create/dispatch the next phase in the same turn:
 
 **Phase 1 complete.**
 Codex: [completed: N concerns / unavailable / disabled]. Claude subagent: [completed: N issues / unavailable].

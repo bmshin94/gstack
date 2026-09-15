@@ -285,6 +285,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'scripts/resolvers/tasks-section.ts'
   ],
   'plan-ceo-mode-routing':       [
+    'test/fixtures/ceo-expansion-complete-inventory-6f.json',
     'test/fixtures/ceo-expansion-posture-kind-dacc.json',
     'test/fixtures/ceo-expansion-pause-6714.json',
     'test/ceo-mode-pending-submit.test.ts', 'test/fixtures/ceo-mode-pending-submit.json',
@@ -333,7 +334,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // devex, office-hours + future PR2 carves). One file iterating CARVE_GUARDS;
   // the selector sets GSTACK_CARVE_SKILL=<name> to scope cost to the changed
   // skill (D-CODEX A). Touching the registry/helper or sections.ts runs all.
-  'carve-section-loading':       ['scripts/resolvers/learnings.ts', 'test/gstack-paths.test.ts',
+  'carve-section-loading':       [
+    'test/autoplan-phase-handoff.test.ts', 'test/fixtures/autoplan-phase-handoff-6714.json','scripts/resolvers/learnings.ts', 'test/gstack-paths.test.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json",
     "test/fixtures/design-scope-checkpoint-at.json",'test/eng-scope-entry-ap.test.ts', 'scripts/resolvers/composition.ts', 'test/autoplan-review-discovery.test.ts', 'test/autoplan-phase-order.test.ts', 'design-html/**', 'design-shotgun/**', 'qa/**', 'browse/**', 'retro/**', 'autoplan/**', 'spec/**', 'setup-gbrain/**', 'review/**', 'codex/**', 'land-and-deploy/**', 'plan-eng-review/**', 'plan-design-review/**', 'plan-devex-review/**', 'document-release/**', 'design-consultation/**', 'test/helpers/carve-guards.ts', 'scripts/resolvers/sections.ts', 'scripts/resolvers/redact-doc.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/auq-sdk-capture.ts', 'test/helpers/session-runner.ts', 'test/session-runner-tools.test.ts', 'bin/gstack-autoplan-snapshot.ts', 'test/autoplan-snapshot.test.ts', 'test/autoplan-init.test.ts', 'test/autoplan-obligations.test.ts', 'test/fixtures/autoplan/t-ceo-omitted-obligations.json', 'test/fixtures/autoplan/u-ceo-original-loss.json', 'test/fixtures/autoplan/v-ceo-dangling-references.json',
@@ -343,6 +345,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/section-capture-native-tools.test.ts', 'test/carve-section-loading*.test.ts', 'test/helpers/carve-section-case.ts', 'test/codex-carve-fixture.test.ts', 'test/carve-section-sharding.test.ts', 'test/carve-section-loading-browse.test.ts', 'test/carve-section-loading-codex.test.ts', 'test/carve-section-loading-design-consultation.test.ts', 'test/carve-section-loading-design-html.test.ts', 'test/carve-section-loading-design-shotgun.test.ts', 'test/carve-section-loading-document-release.test.ts', 'test/carve-section-loading-land-and-deploy.test.ts', 'test/carve-section-loading-plan-design-review.test.ts', 'test/carve-section-loading-plan-devex-review.test.ts', 'test/carve-section-loading-plan-eng-review.test.ts', 'test/carve-section-loading-qa.test.ts', 'test/carve-section-loading-retro.test.ts', 'test/carve-section-loading-review.test.ts', 'test/carve-section-loading-setup-gbrain.test.ts', 'test/carve-section-loading-spec.test.ts', 'test/design-html-section-completion.test.ts', 'test/fixtures/design-html-section-complete.md', 'scripts/resolvers/testing.ts', 'test/helpers/carve-plan-fixture.ts', 'test/carve-plan-fixture.test.ts', 'test/fixtures/carve-existing-repository/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'test/plan-review-cases.test.ts'
   ],
   'autoplan-chain-pty':          [
+    'test/autoplan-phase-handoff.test.ts', 'test/fixtures/autoplan-phase-handoff-6714.json',
     'test/eng-test-plan-edit-approval.test.ts',
     'test/fixtures/eng-test-plan-edit-dacc.json',
     'test/autoplan-owned-state.test.ts', 'test/fixtures/autoplan-owned-state-edit.json',
@@ -388,6 +391,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/plan-count-cropped-wrap-6714.json',
     'test/eng-finding-retry-budget.test.ts',
     'test/ceo-native-ledger-replay.test.ts', 'test/fixtures/ceo-native-ledger-8525.json',
+    'test/fixtures/ceo-option-metadata-list-6f6730f4.json',
+    'test/fixtures/ceo-zero-test-absence-6f6730f4.json',
     'test/fixtures/ceo-recorded-decisions-dacc95ea.json',
     'test/helpers/ceo-payment-findings.ts', 'test/ceo-payment-findings.test.ts', 'test/fixtures/ceo-payment-ledger-decisions.json',
     "test/plan-count-session-cwd.test.ts",
@@ -416,6 +421,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'test/helpers/ceo-paired-fixture.ts', 'test/ceo-paired-payment-fixture.test.ts', 'test/fixtures/ceo-paired-option-values.json', 'test/fixtures/paired-payment/**', 'test/fixtures/ceo-existing-payment/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/tasks-section.ts'
   ],
   'plan-eng-finding-count':      [
+    'test/eng-native-seed-contract.test.ts', 'test/fixtures/eng-native-seed-contract-6f.json',
+    'test/review-count-markdown.test.ts', 'test/fixtures/review-count-markdown-6f.json',
     'test/eng-current-native-seeds.test.ts',
     'test/fixtures/eng-current-native-seeds-6714.json',
     'test/plan-count-cropped-wrap.test.ts',
@@ -477,6 +484,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'scripts/resolvers/testing.ts', 'test/helpers/eng-finding-fixture.ts', 'test/eng-finding-fixture.test.ts', 'test/fixtures/eng-existing-auth/**', 'scripts/resolvers/review.ts'
   ],
   'plan-design-finding-count':   [
+    'test/review-count-markdown.test.ts', 'test/fixtures/review-count-markdown-6f.json',
     'test/plan-count-cropped-wrap.test.ts',
     'test/fixtures/plan-count-cropped-wrap-6714.json',
     'test/design-count-current-pass.test.ts',
@@ -577,6 +585,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // confirm" plan write. runPlanSkillFloorCheck cannot detect that shape
   // (it exits on first AUQ); runPlanSkillCounting can.
   'plan-eng-multi-finding-batching': [
+    'test/review-count-markdown.test.ts', 'test/fixtures/review-count-markdown-6f.json',
     'test/plan-count-cropped-wrap.test.ts',
     'test/fixtures/plan-count-cropped-wrap-6714.json',
     'test/fixtures/eng-batching-expanded-ledger-6714.json',
@@ -937,7 +946,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
 
 
   // Autoplan
-  'autoplan-dual-voice': ['scripts/resolvers/learnings.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'scripts/resolvers/preamble/generate-preamble-bash.ts', 'test/review-entry-and-design-clarity-au.test.ts', 'test/fixtures/plan-scope-recovery-av.json', 'test/plan-scope-recovery-av.test.ts', 'test/eng-scope-entry-ap.test.ts', 'test/fixtures/design-scope-checkpoint-at.json', 'test/design-scope-entry-aq.test.ts', 'scripts/resolvers/composition.ts', 'test/autoplan-review-discovery.test.ts', 'test/autoplan-phase-order.test.ts', 'autoplan/**', 'codex/**', 'bin/gstack-codex-probe', 'scripts/resolvers/review.ts', 'scripts/resolvers/design.ts', 'test/skill-e2e-autoplan-dual-voice.test.ts', 'bin/gstack-autoplan-snapshot.ts', 'test/autoplan-snapshot.test.ts', 'test/autoplan-init.test.ts', 'test/autoplan-obligations.test.ts', 'test/fixtures/autoplan/t-ceo-omitted-obligations.json', 'test/fixtures/autoplan/u-ceo-original-loss.json', 'test/fixtures/autoplan/v-ceo-dangling-references.json',
+  'autoplan-dual-voice': [
+    'test/autoplan-phase-handoff.test.ts', 'test/fixtures/autoplan-phase-handoff-6714.json','scripts/resolvers/learnings.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'scripts/resolvers/preamble/generate-preamble-bash.ts', 'test/review-entry-and-design-clarity-au.test.ts', 'test/fixtures/plan-scope-recovery-av.json', 'test/plan-scope-recovery-av.test.ts', 'test/eng-scope-entry-ap.test.ts', 'test/fixtures/design-scope-checkpoint-at.json', 'test/design-scope-entry-aq.test.ts', 'scripts/resolvers/composition.ts', 'test/autoplan-review-discovery.test.ts', 'test/autoplan-phase-order.test.ts', 'autoplan/**', 'codex/**', 'bin/gstack-codex-probe', 'scripts/resolvers/review.ts', 'scripts/resolvers/design.ts', 'test/skill-e2e-autoplan-dual-voice.test.ts', 'bin/gstack-autoplan-snapshot.ts', 'test/autoplan-snapshot.test.ts', 'test/autoplan-init.test.ts', 'test/autoplan-obligations.test.ts', 'test/fixtures/autoplan/t-ceo-omitted-obligations.json', 'test/fixtures/autoplan/u-ceo-original-loss.json', 'test/fixtures/autoplan/v-ceo-dangling-references.json',
     'scripts/resolvers/design-doc-discovery.ts', 'plan-ceo-review/**', 'plan-eng-review/**', 'plan-design-review/**', 'plan-devex-review/**', 'scripts/resolvers/testing.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'test/plan-review-cases.test.ts', 'scripts/resolvers/tasks-section.ts'
   ],
 

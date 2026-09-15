@@ -4,6 +4,10 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
+    ['test/eng-native-seed-contract.test.ts', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-native-seed-contract-6f.json', ['plan-eng-finding-count']],
+    ['test/review-count-markdown.test.ts', ['plan-eng-finding-count', 'plan-design-finding-count', 'plan-eng-multi-finding-batching']],
+    ['test/fixtures/review-count-markdown-6f.json', ['plan-eng-finding-count', 'plan-design-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/eng-current-native-seeds.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-current-native-seeds-6714.json', ['plan-eng-finding-count']],
     ['test/plan-count-cropped-wrap.test.ts', ['plan-eng-finding-count', 'plan-ceo-finding-count', 'plan-design-finding-count', 'plan-devex-finding-count', 'plan-eng-multi-finding-batching', 'plan-ceo-split-overflow']],
@@ -16,6 +20,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/eng-test-plan-edit-approval.test.ts', ['autoplan-chain-pty', 'plan-eng-finding-count']],
     ['test/fixtures/eng-test-plan-edit-dacc.json', ['autoplan-chain-pty', 'plan-eng-finding-count']],
     ['test/autoplan-owned-state.test.ts', ['autoplan-chain-pty']],
+    ['test/autoplan-phase-handoff.test.ts', ['carve-section-loading', 'autoplan-chain-pty', 'autoplan-dual-voice']],
+    ['test/fixtures/autoplan-phase-handoff-6714.json', ['carve-section-loading', 'autoplan-chain-pty', 'autoplan-dual-voice']],
     ['test/fixtures/autoplan-owned-state-edit.json', ['autoplan-chain-pty']],
     ['test/eng-finding-retry-budget.test.ts', ['plan-ceo-finding-count', 'plan-ceo-split-overflow', 'plan-design-finding-count', 'plan-devex-finding-count', 'plan-eng-finding-count', 'plan-eng-multi-finding-batching', 'autoplan-chain-pty']],
     ['test/design-count-native-8525.test.ts', ['plan-design-finding-count']],
@@ -25,9 +31,12 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/disabled-retained-record.json', ['outside-plan-disabled-no-fallback']],
     ['test/ceo-native-ledger-replay.test.ts', ['plan-ceo-finding-count']],
     ['test/fixtures/ceo-native-ledger-8525.json', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-option-metadata-list-6f6730f4.json', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-zero-test-absence-6f6730f4.json', ['plan-ceo-finding-count']],
     ['test/fixtures/ceo-recorded-decisions-dacc95ea.json', ['plan-ceo-finding-count']],
     ['test/fixtures/ceo-expansion-posture-kind-dacc.json', ['plan-ceo-mode-routing']],
     ['test/fixtures/ceo-expansion-pause-6714.json', ['plan-ceo-mode-routing']],
+    ['test/fixtures/ceo-expansion-complete-inventory-6f.json', ['plan-ceo-mode-routing']],
     ['test/ceo-mode-pending-submit.test.ts', ['plan-ceo-mode-routing']],
     ['test/fixtures/ceo-mode-pending-submit.json', ['plan-ceo-mode-routing']],
     ['test/fixtures/ceo-fill-lifetime.json', ['plan-ceo-section-loading']],

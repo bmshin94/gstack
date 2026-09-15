@@ -715,12 +715,14 @@ describe('plan-ceo-review carve — static ordering', () => {
       expect(step0).not.toMatch(/^- 0[A-I](?:-bis)?:/m);
       // The headings alone can be ordered while executable reviewer payloads
       // still run ahead of Step 0, or Codex is presented ahead of Claude.
+      const prose = phase.replace(/\s+/g, ' ');
       const positions = ['**Required execution checklist (CEO):**', 'Step 0.5 (Dual Voices):',
-        'Send `nativeDispatchPrompt` verbatim', 'Native completion barrier:',
+        'Read `snapshot.json` beside `<CEO_INPUT>`',
+        'Send its `nativeDispatchPrompt` verbatim as the Agent prompt', 'Native completion barrier:',
         'Outside prompt: inline the full contents of <CEO_INPUT>',
         suffix === '.md.tmpl' ? '{{OUTSIDE_INVOCATION:autoplan}}' : '_OUTSIDE_EXIT=0',
         'CEO DUAL VOICES — CONSENSUS TABLE:', 'Sections 1-11 —', '**Mandatory outputs from Phase 1:**', '**Phase 1 complete.**']
-        .map(stage => phase.indexOf(stage));
+        .map(stage => prose.indexOf(stage));
       expect(positions.every(position => position >= 0)).toBe(true);
       expect(positions).toEqual([...positions].sort((a, b) => a - b));
     }

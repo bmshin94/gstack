@@ -23,7 +23,8 @@ bun "<SNAPSHOT_TOOL>" create dx "<ACTIVE_PLAN>" "<RESTORE_PATH>" "<methodologyPa
   Claude Code: set Agent `run_in_background: false` if its schema exposes it.
   Other hosts: foreground; await completion when supported.
 
-  Send `nativeDispatchPrompt` verbatim: ONLY/FINAL tool call this response.
+  Read `snapshot.json` beside `<DX_INPUT>`. Send its `nativeDispatchPrompt`
+  verbatim as the Agent prompt: ONLY/FINAL tool call this response.
   Keep native Reads enabled. Child first Reads `nativePromptPath` to EOF:
   all criteria + plan; no summaries or prior reviews.
 
@@ -141,14 +142,22 @@ Missing/disabled voice = N/A, never CONFIRMED. Flag any single-voice critical fi
 - DX Implementation Checklist
 - TTHW assessment with target
 
-**Close this phase:** Reconcile full review → EVERY accepted requirement/condition/test
-in its block. Taste provisional; User Challenges keep original.
+**Close this phase:**
+
+1. **Save artifacts.** Reconcile full review → EVERY accepted requirement/condition/test
+   in its block. Taste provisional; User Challenges keep original.
 ```bash
 bun "<SNAPSHOT_TOOL>" amend dx "<ACTIVE_PLAN>" "<DX_INPUT>"
 ```
-None: reason checks unchanged. Read back fully; retention ≠ approval/completeness/correctness.
-Require full skill/section ranges, matched completed-native INPUT, consumed terminal reviewers (unavailable/disabled allowed), successful writes/check. Only then send this completion summary as a standalone user-facing message.
-After sending it, load/create/dispatch the next phase:
+2. **Verify.** None: reason checks unchanged. Read back fully; retention ≠ approval/completeness/correctness.
+   Require full skill/section ranges, successful writes/check and terminal reviewer
+   results (unavailable/disabled allowed). When the native review succeeded, match
+   its INPUT. A failed native attempt follows the phase's failure policy without
+   native completion credit; a pending reviewer keeps this phase open.
+3. **Notify the user.** Emit the following summary as its own visible parent assistant text block
+   after the verification results. Saving it in ACTIVE_PLAN or printing it through
+   Bash does not send it to the user.
+   After this text, load/create/dispatch the next phase in the same turn:
 
 **Phase 2.5 complete.**
 DX overall: [N]/10. TTHW: [N] min → [target] min.

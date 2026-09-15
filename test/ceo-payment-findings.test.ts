@@ -166,3 +166,72 @@ test('a TODO label cannot hide an actual question, and the existing completion p
   const informational = fingerprint(todo); informational.nativeCall!.questions[0]!.options = [{label:'Read the example'}, {label:'Show the same example'}]; reanswer(informational);
   expect(() => counter.isReviewAUQ(informational)).toThrow(/cannot exclude/);
 });
+
+
+import zeroAbsenceFixture from './fixtures/ceo-zero-test-absence-6f6730f4.json';
+const zeroAbsenceFingerprint = (replacement = 'zero automated tests') => {
+  const call = structuredClone(zeroAbsenceFixture.call);
+  call.questions[0]!.question = call.questions[0]!.question.replace('zero automated tests', replacement);
+  call.answers = { [call.questions[0]!.question]: call.questions[0]!.options[0]!.label } as typeof call.answers;
+  return nativePlanCallFingerprint(call, 1, true);
+};
+const zeroAbsenceFinding = (question = zeroAbsenceFingerprint(), plan = zeroAbsenceFixture.savedPlan) =>
+  ceoPaymentFinding(question, zeroAbsenceFixture.seed, plan);
+
+test('captured numeric-zero D4 question binds its authenticated unchanged ledger row', () => {
+  // The final full report was not retained; this tests the observed lexical
+  // blocker using the complete earlier report and unchanged D4 row only.
+  expect(zeroAbsenceFinding()).toMatchObject({ seed: 'tests', ledgerId: 'D4' });
+});
+for (const absence of ['no automated tests', 'zero automated tests', '0 automated tests',
+  'no tests', 'zero tests', '0 tests', 'no automated coverage', 'zero automated coverage', '0 automated coverage'])
+  test(`current test absence: ${absence}`, () => {
+    expect(zeroAbsenceFinding(zeroAbsenceFingerprint(absence))?.seed).toBe('tests');
+  });
+for (const claim of ['not zero automated tests', 'not 0 automated tests', 'more than zero automated tests',
+  'more than 0 automated tests', 'greater than zero automated tests', 'at least zero automated tests',
+  'not exactly zero automated tests', 'no longer zero automated tests', '"zero automated tests"', '`zero automated tests`'])
+  test(`test absence rejects ${claim}`, () => {
+    expect(zeroAbsenceFinding(zeroAbsenceFingerprint(claim))).toBeNull();
+  });
+for (const intro of ['Previously the plan shipped', 'The prior plan shipped', 'The old version shipped', 'A historical example shipped'])
+  test(`test absence rejects historical claim: ${intro}`, () => {
+    const question = zeroAbsenceFingerprint(), call = question.nativeCall!;
+    call.questions[0]!.question = call.questions[0]!.question.replace('The plan ships a new payment handler', intro + ' a payment handler');
+    call.answers = { [call.questions[0]!.question]: call.questions[0]!.options[0]!.label };
+    expect(zeroAbsenceFinding(question)).toBeNull();
+  });
+for (const [name, mutate] of Object.entries({
+  'missing row': (s: string) => s.replace(/^\| D4 .*\n/m, ''),
+  'foreign source': (s: string) => s.replaceAll('PLAN.md', 'other.md'),
+  'quoted-only row absence': (s: string) => s.replace('No automated coverage of new handler', '"No automated coverage of new handler"'),
+  'code-only row absence': (s: string) => s.replace('No automated coverage of new handler', '`No automated coverage of new handler`'),
+  'negated row absence': (s: string) => s.replace('No automated coverage of new handler', 'not zero automated coverage of new handler'),
+})) test(`test absence keeps ${name} rejected`, () => {
+  expect(zeroAbsenceFinding(zeroAbsenceFingerprint(), mutate(zeroAbsenceFixture.savedPlan))).toBeNull();
+});
+test('test absence never substitutes for a native acknowledgment', () => {
+  const question = zeroAbsenceFingerprint(); question.nativeCall!.answered = false;
+  expect(zeroAbsenceFinding(question)).toBeNull();
+});
+
+for (const [claim, expected] of [
+  ['The plan has not currently zero automated tests', false],
+  ['The plan does not have zero automated tests', false],
+  ['The plan does not currently have zero automated tests', false],
+  ['The plan does not have exactly 0 automated tests', false],
+  ['The plan does not yet contain 0 automated tests', false],
+  ['The number of automated tests is not currently zero automated tests', false],
+  ['The plan doesn’t have zero automated tests', false],
+  ["The plan doesn't currently provide 0 automated tests", false],
+  ['The plan has more than currently zero automated tests', false],
+  ['The plan currently ships a new payment handler with zero automated tests', true],
+  ['The plan is not ready because it ships a new payment handler with zero automated tests', true],
+  ['The plan ships a new payment handler with 0 automated tests', true],
+] as const) test(`test absence respects quantified negation: ${claim}`, () => {
+  const question = zeroAbsenceFingerprint(), call = question.nativeCall!;
+  call.questions[0]!.question = call.questions[0]!.question.replace(
+    'The plan ships a new payment handler with zero automated tests', claim);
+  call.answers = { [call.questions[0]!.question]: call.questions[0]!.options[0]!.label };
+  expect(zeroAbsenceFinding(question)?.seed === 'tests').toBe(expected);
+});

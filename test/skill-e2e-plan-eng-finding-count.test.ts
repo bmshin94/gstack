@@ -24,7 +24,7 @@ import {
 
 import { isEngCompletionHandoff } from './helpers/eng-completion-handoff';
 import type { NativePlanQuestionCall } from './helpers/plan-count-transcript';
-import { evaluateEngSeedCoverage, createEngBatchingIssueCounter } from './helpers/eng-seeded-coverage';
+import { evaluateEngSeedCoverage, isEngSeedDecisionAUQ } from './helpers/eng-seeded-coverage';
 
 const describeE2E = describeE2ETier('periodic');
 
@@ -83,15 +83,6 @@ describeE2E('/plan-eng-review seeded issue coverage (periodic)', () => {
       try {
         const startedAt = Date.now();
         const completedCalls = new Map<string, NativePlanQuestionCall>();
-        const findings = createEngBatchingIssueCounter(() => {
-          try {
-            const stat = fs.lstatSync(planPath);
-            return stat.isFile() && !stat.isSymbolicLink() ? fs.readFileSync(planPath, 'utf8') : '';
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
-            throw error;
-          }
-        }, engSetupAUQ);
         const obs = await runPlanSkillCounting({
           skillName: 'plan-eng-review',
           slashCommand: '/plan-eng-review',
@@ -101,7 +92,7 @@ describeE2E('/plan-eng-review seeded issue coverage (periodic)', () => {
           isLastStep0AUQ: engStep0Boundary,
           isSetupAUQ: engSetupAUQ,
           isFirstReviewAUQ: engFirstReviewAUQ,
-          isReviewAUQ: findings.isReviewAUQ,
+          isReviewAUQ: (fp, priorCalls) => isEngSeedDecisionAUQ(fp, priorCalls, startedAt),
           isCompletionHandoffAUQ: fp => {
             try { return isEngCompletionHandoff(fp, fs.readFileSync(planPath, 'utf8'), [...completedCalls.values()]); }
             catch { return false; } // Unpublished work cannot establish a closed handoff.

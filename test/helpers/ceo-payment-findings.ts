@@ -7,10 +7,21 @@ type Finding = { seed: Seed; ledgerId: string; phase: string; signature: string 
 const plain = (value: string) => value.replace(/[`*_]/g, '').trim();
 const option = (value: string) => plain(value).replace(/^[A-D][).]\s*/, '').replace(/\s*\(recommended\)$/i, '');
 
+// A numeric zero and "no" state the same current coverage absence. Keep
+// quantified negation and historical/quoted claims out of the seeded defect.
+function hasCurrentTestAbsence(value: string): boolean {
+  const text = prose(value.replace(/"[^"\n]*"|“[^”\n]*”|`[^`\n]*`/g, ''));
+  return text.split(/(?<=[.!?])\s+|\n/).some(clause => {
+    if (!current(clause) || /\b(?:previously|formerly|historical|used to|in the past|(?:prior|earlier|old) (?:plan|version))\b/i.test(clause)) return false;
+    const absent = /\b(?:(?:no|zero|0) (?:automated )?(?:tests?|coverage)|none planned|never (?:runs|executes))\b/gi;
+    return [...clause.matchAll(absent)].some(match => !/\b(?:not|never|no longer|more than|greater than|less than|at least|at most|over|above|under|below|up to|(?:do|does|did|is|are|was|were|has|have|had|could|would|should|must)n['’]t|can['’]t|won['’]t|cannot)\s+(?:(?:currently|now|yet|still|already|actually|exactly|just|only|have|has|had|contain|contains|include|includes|provide|provides|run|runs|ship|ships)\s+)*$/i.test(clause.slice(0, match.index)));
+  });
+}
+
 // Finite obligations from this fixture's supplied plan. These match the
 // behavior under discussion, not decision numbers, option labels, class names
 // chosen for a remedy, or a particular generated sentence.
-const obligations: Array<{ seed: Seed; subject: RegExp; defect: RegExp; remedy: RegExp }> = [
+const obligations: Array<{ seed: Seed; subject: RegExp; defect: { test(value: string): boolean }; remedy: RegExp }> = [
   { seed: 'dispatcher', subject: /\b(?:dispatcher|WebhookDispatcher|routing)\b/i,
     defect: /\b(?:bypass\w*|skip\w*|separate (?:entry|routing)|second (?:path|front door|routing))\b/i,
     remedy: /\b(?:register\w*|reus\w*|route\w*|single routing|one routing)\b/i },
@@ -21,7 +32,7 @@ const obligations: Array<{ seed: Seed; subject: RegExp; defect: RegExp; remedy: 
     defect: /\b(?:no error handling|propagat\w*|escape\w*|unhandled|uncaught|rethrow\w*)\b/i,
     remedy: /\b(?:rescue|catch|handle|isolate|isolation|enqueue|queue|background job)\b/i },
   { seed: 'tests', subject: /\b(?:tests?|coverage|suite)\b/i,
-    defect: /\b(?:no (?:automated )?tests?|none planned|never (?:runs|executes)|no (?:automated )?coverage)\b/i,
+    defect: { test: hasCurrentTestAbsence },
     remedy: /\b(?:add|write|implement|handler|unit|integration|regression)\b/i },
   { seed: 'orders', subject: /\b(?:orders?|query|queries)\b/i,
     defect: /\b(?:per-order|one query per order|N\+1|(?:fetch\w*|quer\w*)[^.]*loop)\b/i,
@@ -100,11 +111,15 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
         // Current holds existing/approved behavior. A correct baseline can
         // still have a defective pending alternative in Proposed; keep that
         // defect bound to this active row, not a copied comparison elsewhere.
+        const defectValue = (field: 'current' | 'proposed') => spec.seed === 'tests'
+          ? cells[fields[field][0]!]!.text : read(field);
+        const defectExplanation = spec.seed === 'tests'
+          ? /^ELI10:\s*(.+)$/m.exec(q.question)?.[1] ?? q.question : explanation;
         const pendingDefect = /^(?:unresolved|reopened)\b/i.test(read('status')) &&
-          current(read('proposed')) && spec.subject.test(read('proposed')) && spec.defect.test(read('proposed'));
+          current(read('proposed')) && spec.subject.test(read('proposed')) && spec.defect.test(defectValue('proposed'));
         if (!spec.subject.test(seedPlan) || !spec.defect.test(seedPlan) || !spec.subject.test(row) ||
-          !(spec.defect.test(read('current')) || pendingDefect) ||
-          !spec.subject.test(question) || !spec.defect.test(explanation)) continue;
+          !(spec.defect.test(defectValue('current')) || pendingDefect) ||
+          !spec.subject.test(question) || !spec.defect.test(defectExplanation)) continue;
         const operative = options.some(o => spec.remedy.test(o) && spec.subject.test(o));
         const proposal = proposals.find(p => current(p.body) && spec.remedy.test(p.body) && spec.subject.test(p.body));
         if (operative && proposal) matches.push({ seed: spec.seed, ledgerId: id, phase: proposal.phase, signature: fp.signature });
@@ -244,9 +259,21 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
           (anchor.type !== 'heading' || (tokens[end] as any).depth <= anchor.depth))) end++;
         const section = tokens.slice(start + 1, end);
         if (currentContext(start) && currentContext(tokens.indexOf(table))) {
-          const options = section.flatMap(token => token.type === 'list'
-            ? token.items.map(item => proseOption(item.tokens))
-            : token.type === 'paragraph' ? [proseOption([token])] : []).filter(option => option !== null);
+          // Markdown permits an option paragraph followed by a facts list.
+          // Bind only the adjacent list to that option; never borrow a later
+          // option's facts, quoted/code content or another section's details.
+          const options = section.flatMap((token, index) => {
+            if (token.type === 'list') return token.items.map(item => proseOption(item.tokens));
+            if (token.type !== 'paragraph') return [];
+            let next = index + 1;
+            while (section[next]?.type === 'space') next++;
+            const details = section[next];
+            const facts = details?.type === 'list' && details.items.every(item => {
+              const first = item.tokens.find(part => part.type === 'text' || part.type === 'paragraph');
+              return first && /^(?:Effort|Risk|Pros|Cons|Reuse|Coverage)\s*:/i.test(plain(first.raw));
+            }) ? details.items.flatMap(item => item.tokens.filter(part => part.type === 'text' || part.type === 'paragraph')) : [];
+            return [proseOption([token, ...facts])];
+          }).filter(option => option !== null);
           const matched = q.options.map(offered => options.flatMap((saved, index) =>
             saved!.complete && sameOption(offered.label, saved!.label, selector(offered.label) ? saved!.summary : saved!.bindingText) ? [index] : []));
           if (options.length === q.options.length && matched.every(found => found.length === 1) &&

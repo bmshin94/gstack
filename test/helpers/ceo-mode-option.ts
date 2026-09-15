@@ -501,6 +501,61 @@ function barlessPostureSubmit(visible: string, packet: PosturePacket): boolean {
   return body === answers.join('') + BARLESS_SUBMIT_END;
 }
 
+/** A complete numbered candidate inventory can bind one question per item.
+ * This selects a walkthrough only: no candidate receives a scope disposition. */
+function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]): number | null {
+  const title = q.question.split('\n')[0]!;
+  const count = /\b([1-9]\d*)\s+(?:expansion\s+)?candidates?\b/i.exec(title);
+  const rationale = /ELI10:\s*([\s\S]*?)(?=Stakes if (?:we pick )?wrong:)/i.exec(q.question)?.[1] ?? '';
+  const inventory = /\b([1-9]\d*)\s+(?:adjacent improvements|candidate expansions|expansion candidates|items|candidates)\s*:\s*([^.!?\n]+)[.!?]/i.exec(rationale);
+  if (!count || !inventory || count[1] !== inventory[1] ||
+      /\b(?:example|quoted|historical|previously|formerly|if|unless)\b/i.test(rationale.slice(0, inventory.index))) return null;
+  const ids = [...inventory[2]!.matchAll(/(?:^|[,;]\s*|\band\s+)([A-Z])([1-9]\d*)\s+/g)];
+  const n = Number(count[1]), prefix = ids[0]?.[1];
+  if (!Number.isSafeInteger(n) || n < 2 || ids.length !== n || !prefix ||
+      ids.some((id, i) => id[1] !== prefix || Number(id[2]) !== i + 1)) return null;
+  const options = [...q.question.matchAll(/(?:^|\n)([A-D])[):.]\s+[^\n]+/g)];
+  if (options.length !== q.options.length || new Set(options.map(o => o[1])).size !== options.length) return null;
+  const netAt = q.question.lastIndexOf('\nNet:');
+  if (netAt <= options.at(-1)!.index!) return null;
+  const menu = (value: string) => value.replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi, '');
+  const scopeEffect = /\b(?:approv\w*|authori[sz]\w*|accept\w*|commit\w*|adopt\w*|implement\w*|add(?:s|ed|ing)?|includ\w*|remov\w*|delet\w*|drop\w*|cut(?:s|ting)?|skip\w*|defer\w*|merg\w*|ship\w*|deploy\w*|enabl\w*|disabl\w*)\b/i;
+  // An unconditional or selected-choice effect cannot hide in another option.
+  if (/\b(?:regardless|whichever|choosing|selecting|picking|any choice|every choice)\b[^.!?\n]*\b(?:approv\w*|authori[sz]\w*|commit\w*|add(?:s|ed|ing)?|delet\w*|drop\w*|skip\w*|defer\w*|merg\w*)\b/i.test(q.question)) return null;
+  // Feature titles may describe Update or delete behavior. Explicit actor
+  // grants, imperative dispositions and current approval status are different:
+  // none may hide inside the inventory or its surrounding rationale.
+  const premise = menu(q.question.slice(0, options[0]!.index));
+  const disposition = '(?:approved|accepted|authorized|authorised|adopted|committed|deferred|skipped|rejected|excluded|in scope|out of scope)';
+  if (/\b(?:we|I|you|this (?:answer|choice|selection))\s+(?:(?:now|hereby|already|automatically|will)\s+)*(?:approv\w*|accept\w*|authori[sz]\w*|adopt\w*|commit\w*|defer\w*|skip\w*|reject\w*|exclude\w*|add\w*|include\w*|remove\w*|drop\w*|merge\w*|ship\w*)\b/i.test(premise) ||
+      new RegExp(`\\b(?:already|now|hereby|automatically|is|are|was|were|has been|have been)\\s+(?:(?:already|now|hereby|automatically)\\s+)*${disposition}\\b`, 'i').test(premise) ||
+      new RegExp(`\\b(?:all|every|these|those)(?:\\s+\\w+){0,3}\\s+${disposition}\\b|[([]\\s*${disposition}\\b`, 'i').test(premise) ||
+      /(?:^|[;:.])\s*(?:approve|accept|authorize|authorise|adopt|commit|defer|skip|reject|exclude|add|include|remove|drop|merge|ship)\s+(?:all|every|these|those|[A-Z][1-9]\d*)\b/im.test(premise)) return null;
+  const common = menu(q.question.slice(0, options[0]!.index) + q.question.slice(netAt))
+    .replace(inventory[0], '')
+    .replace(/\bnothing gets (?:cut|dropped|removed|omitted) silently\b/gi, '');
+  if (scopeEffect.test(common)) return null;
+  const candidates = q.options.flatMap((o, index) => {
+    const id = /^([A-D])[):.]\s*/i.exec(o.label)?.[1]?.toUpperCase();
+    const label = o.label.replace(/^[A-D][):.]\s*/i, '').replace(/\s*\(recommended\)\s*$/i, '');
+    const numbers = label.match(/\b\d+\b/g) ?? [];
+    const rawDescription = o.description ?? '';
+    const description = menu(rawDescription.replace(/"[^"\n]*"|“[^”\n]*”|`[^`\n]*`/g, '')).trim();
+    const option = options.findIndex(option => option[1] === id);
+    if (!id || option < 0 || numbers.length !== 1 || Number(numbers[0]) !== n ||
+        !/\b(?:full|complete|all)\b/i.test(label) || !/\b(?:split|walkthrough|per[- ]item|one[- ]by[- ]one)\b/i.test(label) ||
+        !/\bquestions?\b/i.test(label) ||
+        !/\bone\s+question per (?:candidate|item|proposal)\b/i.test(description) ||
+        !new RegExp(`\\b${prefix}1\\s*(?:through|to|[-–—])\\s*${prefix}${n}\\b`).test(description)) return [];
+    const ownBrief = q.question.slice(options[option]!.index!, options[option + 1]?.index ?? netAt);
+    const own = menu(label + '\n' + rawDescription + '\n' + ownBrief);
+    if (/```|~~~|^\s*>|\b(?:not|never|without|except|excluding|omit\w*|narrow\w*|batch\w*|subset|shortlist|groups?)\b/im.test(label + '\n' + description) ||
+        scopeEffect.test(own)) return [];
+    return [index + 1];
+  });
+  return candidates.length === 1 ? candidates[0]! : null;
+}
+
 /** Only the full independent walkthrough is navigation; no scope selection is authorized. */
 export function ceoExpansionPacingChoice(visible: string, transcript: PlanCountTranscript,
   selectionStartedAt: number, pending?: NativePlanQuestionCall & {source:'pre_tool_use'}) {
@@ -513,45 +568,49 @@ export function ceoExpansionPacingChoice(visible: string, transcript: PlanCountT
   const position = transcript.calls.indexOf(call);
   if (position >= 0 && position <= transcript.calls.indexOf(selected)) return null;
   const q = call.questions[0]!;
-  const pacing = call.questions.some(q=>/\bhow\b[^?\n]*\b(?:walk|present|review|group|batch|split)\b[^?\n]*\?/i.test(q.question.split('\n')[0]!) &&
-    /\b(?:proposals|items|expansions)\b/i.test(q.question));
+  const pacing = call.questions.some(q=>/\bhow\b[^?\n]*\b(?:walk|present|review|group|batch|split|decide)\b[^?\n]*\?/i.test(q.question.split('\n')[0]!) &&
+    /\b(?:proposals|items|expansions|candidates)\b/i.test(q.question));
   if (!pacing) return null;
   // Index zero is an explicit unsupported pacing outcome, never a request
   // for the caller's generic first-option fallback.
   const refused=()=>({call,index:0,mode:selected});
   if (waiting.length>1 || call.questions.length!==1 || q.multiSelect || q.options.length < 2 || q.options.length > 4 ||
       !/Project\/branch\/task:[^\n]*\bSCOPE EXPANSION\b/i.test(q.question) ||
-      !/\beach\b[^.!?\n]*\bseparate (?:scope call|decision)\b/i.test(q.question) ||
       !singleScopeBrief(q.question,q.options.map(o=>o.description ?? ''),false,true)) return refused();
-  // The question can grant scope even when its selected option sounds like
-  // navigation. Future disposition labels are a menu, not an operative grant.
-  // Keep quoted text in this veto; it cannot smuggle a second scope effect.
-  const questionEffects=q.question.replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi,'');
-  const scopeAction=/\b(?:approv(?:e|es|ed|ing)|authori[sz](?:e|es|ed|ing)|accept(?:s|ed|ing)?|commit(?:s|ted|ting)?|adopt(?:s|ed|ing)?|implement(?:s|ed|ing)?|add(?:s|ed|ing)?|includ(?:e|es|ed|ing)|remov(?:e|es|ed|ing)|drop(?:s|ped|ping)?|cut(?:s|ting)?|skip(?:s|ped|ping)?|defer(?:s|red|ring)?|merg(?:e|es|ed|ing)|ship(?:s|ped|ping)?|deploy(?:s|ed|ing)?|enabl(?:e|es|ed|ing)|disabl(?:e|es|ed|ing))\b/i;
-  if (scopeAction.test(questionEffects)) return refused();
-  const choices = q.options.map((o,index) => ({o,index:index+1})).filter(({o}) => {
-    const label=o.label.replace(/^[A-D][):.]\s*/i,'').replace(/\s*\(recommended\)\s*$/i,'');
-    const rawDescription=o.description ?? '';
-    const description=rawDescription.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g,'').replace(/^\s*>.*$/gm,'')
-      .replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g,'');
-    const unchanged=/\bno (?:proposal|item) (?:is )?(?:dropped|removed|skipped) or merged without your (?:say|approval)\b/i;
-    if (!/\b(?:per[- ]item|one[- ]by[- ]one|individually|separately)\b/i.test(label) ||
-        /\b(?:narrow|batch|cut|skip|defer|subset|shortlist|groups?)\b/i.test(label) ||
-        !/\bone per (?:proposal|item)\b|\beach (?:proposal|item) (?:separately|individually)\b/i.test(description) ||
-        !unchanged.test(description)) return false;
-    const effects=label+'\n'+rawDescription.replace(unchanged,'').replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi,'');
-    // The brief may compare batching/narrowing as unselected pacing options;
-    // the chosen full independent walkthrough cannot perform either.
-    return !scopeAction.test(effects) && !/\b(?:narrow\w*|batch\w*)\b/i.test(effects);
-  });
-  if (choices.length !== 1) return refused();
+  let selectedIndex = completeCandidateSplit(q);
+  if (selectedIndex === null) {
+    if (!/\beach\b[^.!?\n]*\bseparate (?:scope call|decision)\b/i.test(q.question)) return refused();
+    // The question can grant scope even when its selected option sounds like
+    // navigation. Future disposition labels are a menu, not an operative grant.
+    // Keep quoted text in this veto; it cannot smuggle a second scope effect.
+    const questionEffects=q.question.replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi,'');
+    const scopeAction=/\b(?:approv(?:e|es|ed|ing)|authori[sz](?:e|es|ed|ing)|accept(?:s|ed|ing)?|commit(?:s|ted|ting)?|adopt(?:s|ed|ing)?|implement(?:s|ed|ing)?|add(?:s|ed|ing)?|includ(?:e|es|ed|ing)|remov(?:e|es|ed|ing)|drop(?:s|ped|ping)?|cut(?:s|ting)?|skip(?:s|ped|ping)?|defer(?:s|red|ring)?|merg(?:e|es|ed|ing)|ship(?:s|ped|ping)?|deploy(?:s|ed|ing)?|enabl(?:e|es|ed|ing)|disabl(?:e|es|ed|ing))\b/i;
+    if (scopeAction.test(questionEffects)) return refused();
+    const choices = q.options.map((o,index) => ({o,index:index+1})).filter(({o}) => {
+      const label=o.label.replace(/^[A-D][):.]\s*/i,'').replace(/\s*\(recommended\)\s*$/i,'');
+      const rawDescription=o.description ?? '';
+      const description=rawDescription.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g,'').replace(/^\s*>.*$/gm,'')
+        .replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g,'');
+      const unchanged=/\bno (?:proposal|item) (?:is )?(?:dropped|removed|skipped) or merged without your (?:say|approval)\b/i;
+      if (!/\b(?:per[- ]item|one[- ]by[- ]one|individually|separately)\b/i.test(label) ||
+          /\b(?:narrow|batch|cut|skip|defer|subset|shortlist|groups?)\b/i.test(label) ||
+          !/\bone per (?:proposal|item)\b|\beach (?:proposal|item) (?:separately|individually)\b/i.test(description) ||
+          !unchanged.test(description)) return false;
+      const effects=label+'\n'+rawDescription.replace(unchanged,'').replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi,'');
+      // The brief may compare batching/narrowing as unselected pacing options;
+      // the chosen full independent walkthrough cannot perform either.
+      return !scopeAction.test(effects) && !/\b(?:narrow\w*|batch\w*)\b/i.test(effects);
+    });
+    if (choices.length !== 1) return refused();
+    selectedIndex = choices[0]!.index;
+  }
   const rendered=parseNumberedOptions(visible),compact=(s:string)=>s.replace(/\s+/g,'');
   const controls=rendered.slice(q.options.length);
   if (rendered.length<q.options.length || !q.options.every((o,i)=>
       compact(rendered.find(r=>r.index===i+1)?.label ?? '').startsWith(compact(o.label))) ||
       controls.length>2 || !controls.every((o,i)=>o.index===q.options.length+i+1 &&
         (i===0?/^Typesomething\.?$/i:/^Chataboutthis$/i).test(compact(o.label)))) return refused();
-  return {call,index:choices[0]!.index,mode:selected};
+  return {call,index:selectedIndex,mode:selected};
 }
 
 /** Sending a pacing key never supplies an ACK or consumes the substantive allowance. */

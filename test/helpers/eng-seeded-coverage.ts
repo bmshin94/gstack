@@ -176,7 +176,7 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     && !/\b(?:copied|quoted|historical)\s+(?:(?:source|quoted)\s+)?(?:example|excerpt|text|material)\b/i.test(value)
     && !new RegExp(`\\b${owner} (?:is|was|has been) ${inactive}\\b`, 'i').test(value)
     && !/\b(?:if|once|when|unless) (?:approved|accepted)|\b(?:after|pending) approval\b/i.test(value)
-    && !/(?:^|[.!?;]\s+|\n)(?:Correction:\s*)?(?:do not|don't|never|skip|cancel|withdraw) (?:reduce|cut|remove|keep|flatten|split|map|rethrow|parallelize|run|apply|fold|inline|combine|inject|propagate|log|construct|pass)\b/i.test(value);
+    && !/(?:^|[.!?;]\s+|\n)(?:Correction:\s*)?(?:do not|don't|never|skip|cancel|withdraw) (?:reduce|cut|remove|keep|flatten|split|map|rethrow|parallelize|run|apply|fold|inline|combine|consolidate|merge|inject|propagate|log|construct|pass)\b/i.test(value);
   // Inline literal sentences and a non-current title cannot own the packet.
   if (/^[`"“>]/.test(rawTitle.replace(/^D[1-9]\d*\s*[—–:-]\s*/, ''))) return [];
   const text = current(q.question), lines = text.split('\n').filter(line => line.trim());
@@ -270,38 +270,54 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
   const ownsPlan = citations.length > 0 && citations.every(file => file === 'PLAN.md') &&
     !/\b(?:other|another|different|foreign|historical|quoted|copied) (?:plan|source|review)\b/i.test(metadata[0]!);
   if (ownsPlan) {
-    const inventory = /\b(?:plan (?:adds|builds|introduces)|introducing) (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new (?:classes|types|units|components|pieces):\s*([A-Z]\w*(?:,\s*[A-Z]\w*)+)/.exec(explanation);
-    const before = inventory ? (counts[inventory[1]!] ?? Number(inventory[1])) : 0;
-    const components = inventory?.[2]?.split(/,\s*/) ?? [];
-    if (/\b(?:structure|units|components|classes|decomposition)\b/i.test(title) && before === components.length && new Set(components).size === before &&
-        ['AuthBroker', 'SessionMint', 'TokenStore', 'AuthCache', 'RequestPolicy'].every(name => components.includes(name)) &&
-        /\bAuthCache\b[^.!?]*\b(?:one|same|existing)\b[^.!?]*\b(?:backing cache|adapter)\b/.test(explanation) &&
-        /\bTokenStore\b[^.!?]*\b(?:second layer|duplicate|redundant)\b/.test(explanation) &&
+    // Validate subject, current defect and one complete offered remedy as
+    // separate facts. Sentence order and a particular result type are not
+    // evidence; the native brief's owned PLAN.md references are.
+    const namedComponents = ['AuthBroker', 'SessionMint', 'AuthCache', 'TokenStore', 'RequestPolicy'];
+    const inventory = /\b(?:plan (?:adds|builds|introduces)|introducing) (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new (?:classes|types|units|components|pieces|building blocks)\b/i.exec(explanation);
+    const before = inventory ? (counts[inventory[1]!.toLowerCase()] ?? Number(inventory[1])) : 0;
+    const tokenOverlap = /\bTokenStore\b[^.!?]*\b(?:second layer|duplicate|redundant)\b/i.test(explanation)
+      || /\bTokenStore (?:is )?(?:never described|undefined|has no stated responsibility)\b/i.test(explanation)
+        && /\b(?:two|both) (?:new )?(?:things|components|classes|stores)\b[^.!?]*\b(?:same data|token state|store tokens)\b/i.test(explanation);
+    if (/\b(?:structure|units|components|classes|decomposition)\b/i.test(title) && before === namedComponents.length &&
+        namedComponents.every(name => new RegExp(`\\b${name}\\b`).test(subject)) && tokenOverlap &&
+        /\bAuthCache\b[^.!?]*\b(?:one|same|existing|already have)\b[^.!?]*\b(?:backing cache|adapter)\b|\bAuthCache\b[^.!?]*\b(?:backing cache|adapter)\b[^.!?]*\b(?:existing|already have)\b/i.test(explanation) &&
         !/\bTokenStore (?:now |already )?has (?:a documented )?(?:independent|distinct) (?:purpose|behavior|state)\b/i.test(text) &&
         options.some(option => {
-          const after = /\b([1-9]\d*) new classes\s*\(([^)]+)\)/.exec(option);
-          const retained = after?.[2]?.split(/,\s*/) ?? [];
-          return /^(?:[A-D][):.]\s*)?(?:Fold|Remove|Drop|Inline|Combine) TokenStore\s*\+\s*RequestPolicy\b/i.test(option) &&
-            after && Number(after[1]) === before - 2 && retained.length === Number(after[1]) && new Set(retained).size === retained.length &&
-            ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => retained.includes(name)) &&
-            /\brequestPolicy(?:\.ts)?\b[^.!?\n]*\bpure functions?\b/i.test(option) &&
-            /\b(?:one|single) token layer over the existing adapter\b/i.test(option);
+          const count = /\b([1-9]\d*) new classes\s*\(([^)]+)\)/.exec(option);
+          const retained = count?.[2]?.split(/,\s*/) ?? [];
+          const removesStore = /\b(?:Fold|Remove|Drop|Inline|Combine|Merge) TokenStore\b|\bAuthCache\s*\(absorbs TokenStore\)/i.test(option);
+          const valuePolicy = /\brequestPolicy(?:\.ts)?\b[^.!?\n]*\bpure functions?\b|\bRequestPolicy (?:as|becomes) (?:a )?(?:typed value|config)\b/i.test(option);
+          const oneStore = /\b(?:one|single) token layer over the existing adapter\b|\b(?:one|single) owner for (?:cached )?token state\b[^\n]*\bno second store\b/i.test(option);
+          return /^(?:[A-D][):.]\s*)?(?:Fold|Remove|Drop|Inline|Combine|Consolidate|Merge|Reduce)\b/i.test(option) &&
+            removesStore && valuePolicy && oneStore &&
+            !/\b(?:second|duplicate) (?:token )?store (?:still |now |also )?(?:exists|remains|is retained|will remain)\b/i.test(option) &&
+            ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => new RegExp(`\\b${name}\\b`).test(option)) &&
+            (!count || Number(count[1]) === before - 2 && retained.length === Number(count[1]) && new Set(retained).size === retained.length &&
+              ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => retained.includes(name)));
         })) ids.push('complexity');
-    if (['AuthBroker', 'SessionMint', 'AuthCache'].every(name => title.includes(name)) &&
-        /\bboth services\b[^.!?]*\b(?:one|same|shared) cache (?:object|instance)\b/i.test(explanation) &&
+    const sharedObject = /\b(?:one|same|shared) cache (?:object|instance)\b/i.test(explanation)
+      && /\bboth services\b[^.!?]*\b(?:cache|import|mutate|change)\b/i.test(explanation);
+    if (['AuthBroker', 'SessionMint', 'AuthCache'].every(name => title.includes(name)) && sharedObject &&
         /\b(?:top of a module|module[- ]level|global variable)\b/i.test(explanation) &&
-        /\b(?:same object|shared mutable state|can change it)\b/i.test(explanation) &&
+        /\b(?:same object|shared mutable state|invisible shared state|can change it)\b/i.test(explanation) &&
         !/\b(?:cache|services|writers) (?:is |are |now |already )*(?:isolated|injected|no longer shared)\b/i.test(text) &&
         options.some(option => /^(?:[A-D][):.]\s*)?(?:Constructor injection|Inject\b)/i.test(option) &&
-          /\b(?:one|single) AuthCache\b[^.!?\n]*\bcomposition root\b[^.!?\n]*\b(?:passed|injected) to both services\b/i.test(option) &&
-          /\btests?\b[^.!?\n]*\b(?:fresh|isolated|independent) (?:one|cache|instance)\b/i.test(option))) ids.push('shared-cache');
+          /\b(?:one|single) AuthCache\b|\bAuthCache once\b/i.test(option) && /\bcomposition root\b/i.test(option) &&
+          /\b(?:passed|injected|pass|inject) to both (?:services|constructors)\b/i.test(option) &&
+          /\btests?\b[^.!?\n]*\b(?:fresh|isolated|independent) (?:one|cache|instance|AuthCache)\b/i.test(option) &&
+          !/\btests?\b[^.!?\n]*\b(?:(?:do not|don't|never) (?:get|receive|use|create|build) (?:a )?(?:fresh|isolated|independent) (?:one|cache|instance|AuthCache)|share (?:one|the same|a single) (?:cache|instance|AuthCache))\b/i.test(option))) ids.push('shared-cache');
     if (/\bvalidateAndDispatch\b/.test(title) &&
-        /\b(?:catch(?:es)?|try\/catch blocks)\b[^.!?]*\b(?:swallows?|eats?|suppresses?|discards?|ignores?)\b[^.!?]*\berrors?\b/i.test(explanation) &&
-        /\b(?:without passing it on|no log|silent|nothing is logged)\b/i.test(explanation) &&
+        /\b(?:catch(?:es)?|try\/catch blocks|catch blocks)\b[^.!?]*\b(?:swallows?|eats?|suppresses?|discards?|ignores?)\b[^.!?]*\berrors?\b/i.test(explanation) &&
+        /\b(?:without passing it on|no log|silent|nothing is logged|nobody sees a log)\b/i.test(explanation) &&
         !/\bvalidateAndDispatch\(\) (?:now |already )?(?:rethrows every error|no longer swallows failures)\b/i.test(text) &&
-        options.some(option => /\bvalidate\(\)\b|\bvalidate\(\)/.test(option) && /\bdispatch\(\)/.test(option) &&
-          /\b(?:single|one) try\/catch at the boundary\b/i.test(option) && /\bAuthError subclasses\b/.test(option) &&
-          /\b(?:every|all) errors? (?:is |are )?logged and propagated\b/i.test(option))) ids.push('swallowed-errors');
+        options.some(option => /\bvalidate\(\)/.test(option) && /\bdispatch\(\)/.test(option) &&
+          !/\b(?:not (?:every|all|each)|only some) (?:errors?|failures?)(?: classes?)?\b|\b(?:errors?|failures?) (?:are |is |will be |still |silently )*(?:swallowed|ignored|discarded|suppressed)\b/i.test(option) &&
+          /\b(?:single|one) (?:(?:try\/)?catch at the boundary|boundary catch)\b/i.test(option) &&
+          (/\bAuthError subclasses\b/.test(option) && /\b(?:every|all) errors? (?:is |are )?logged and propagated\b/i.test(option)
+            || /\bmap each error class to a typed [A-Za-z]\w*\b/i.test(option) && /\bfail closed\b/i.test(option)
+              && /\b(?:every|all) failure class(?:es)?\b[^.!?\n]*\b(?:named|explicit)\b[^.!?\n]*\boutcome\b/i.test(option)
+              && /\bnothing is (?:silently )?swallowed\b/i.test(option)))) ids.push('swallowed-errors');
   }
   return [...new Set(ids)];
 }
@@ -317,6 +333,24 @@ function completedDecision(call: NativePlanQuestionCall, startedAt: number, fini
     call.questions.every(q => q.question.trim() && !q.multiSelect && q.options.length >= 2 && q.options.length <= 4 &&
     q.options.every(o => o.label.trim()) && new Set(q.options.map(o => o.label)).size === q.options.length &&
     q.options.some(o => call.answers?.[q.question] === o.label));
+}
+
+/** The seeded case counts owned, completed native seed decisions. Saved brief
+ * formatting belongs to the batching case; final seed/report assertions remain
+ * the acceptance gate. No screenshot or arbitrary answered question earns credit. */
+export function isEngSeedDecisionAUQ(fp: AskUserQuestionFingerprint,
+  priorCalls: readonly NativePlanQuestionCall[] = [], startedAt = 0, finishedAt = Date.now()): boolean {
+  const call = fp.nativeCall;
+  if (!call || !Number.isFinite(startedAt) || !Number.isFinite(finishedAt) || startedAt > finishedAt ||
+      fp.signature !== `${call.sessionId}:${call.toolUseId}` ||
+      (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0) ||
+      priorCalls.some(prior => prior.sessionId !== call.sessionId || prior.toolUseId === call.toolUseId) ||
+      !completedDecision(call, startedAt, finishedAt)) return false;
+  const q = call.questions[0]!;
+  if (fp.options.length !== q.options.length || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label)) return false;
+  const seeds = call.questions.flatMap(seedSubjects);
+  return seeds.length === 1 && !priorCalls.some(prior => completedDecision(prior, startedAt, finishedAt) &&
+    prior.questions.flatMap(seedSubjects).length === 1 && prior.questions.flatMap(seedSubjects)[0] === seeds[0]);
 }
 
 /** Structural eligibility for this distinct-issue counter, not seed quality. */
@@ -432,9 +466,13 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
   const words = (s: string) => (clean(s).toLowerCase().replace(/\(recommended\)/g, '').match(/[a-z][a-z0-9_]*/g) ?? [])
     .filter(word => !['the', 'a', 'an', 'and', 'or', 'with', 'to', 'of', 'as', 'is', 'it', 'one', 'first', 'now', 'option', 'recommended', 'planned'].includes(word));
   const labelScore = (native: string, saved: string) => {
-    const normalize = (s: string) => clean(s).replace(/\s*\(recommended\)/gi, '').toLowerCase();
+    const normalize = (s: string) => clean(s).replace(/^[A-D][).:]\s+/, '')
+      .replace(/\s*\(recommended\)/gi, '').toLowerCase()
+      // Both captions defer this choice. An appended implementation action
+      // is not part of the equivalence.
+      .replace(/^(?:decide at|leave to) implementation(?: time)?$/, 'defer to implementation');
     if (normalize(native) === normalize(saved)) return 3;
-    const left = words(native), right = words(saved);
+    const left = words(normalize(native)), right = words(normalize(saved));
     const negated = (tokens: string[]) => tokens.some(word => ['no', 'not', 'never', 'without', 'dont'].includes(word));
     if (Math.min(left.length, right.length) < 2 || negated(left) !== negated(right)) return 0;
     if (normalize(saved).startsWith(normalize(native) + ' ')) return 2;
@@ -498,16 +536,30 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
     const comparisons = body.filter(t => t.type === 'table').filter(table => {
       if (table.type !== 'table') return false;
       const headers = table.header.map(c => clean(c.text));
-      if (JSON.stringify(headers) !== JSON.stringify(['Choice', 'Current', ...q.options.map((_, at) => String.fromCharCode(65 + at))])) return false;
-      const rows = table.rows.filter(row => new RegExp(`^${id}\\b`).test(clean(row[0]!.text)));
-      if (rows.length !== 1 || !rows[0]!.every(cell => clean(cell.text))) return false;
+      const columnIds = headers.slice(2).map(header => /^([A-D])(?:[).:]?\s+\S.*)?$/.exec(header)?.[1]);
+      if (headers[0] !== 'Choice' || headers[1] !== 'Current' ||
+          JSON.stringify(columnIds) !== JSON.stringify(q.options.map((_, at) => String.fromCharCode(65 + at)))) return false;
+      // R5a/R5b are dimensions of the one R5 decision, not extra asks. Keep
+      // the record boundary and unique row identities; R50 is another issue.
+      const rows = table.rows.filter(row => new RegExp(`^${id}(?:[a-z])?\\b`).test(clean(row[0]!.text)));
+      const rowIds = rows.map(row => new RegExp(`^(${id}[a-z]?)\\b`).exec(clean(row[0]!.text))![1]);
+      if (!rows.length || new Set(rowIds).size !== rowIds.length || rows.some(row => !row.every(cell => clean(cell.text)))) return false;
       const optionColumns = q.options.map(option => {
         const scores = labels.map((label, at) => {
           const direct = labelScore(option.label, label[2]!);
+          const caption = headers[at + 2]!.replace(/^[A-D][).:]?\s*/, '');
+          const captionWords = words(caption), savedWords = words(label[2]!);
+          const negated = (tokens: string[]) => tokens.some(word => ['no', 'not', 'never', 'without', 'dont'].includes(word));
+          // A descriptive header belongs to its existing A/B/C option. It
+          // cannot relabel a contradictory saved choice or lend another
+          // column's action to a short native caption.
+          const boundCaption = captionWords.filter(word => savedWords.includes(word)).length >= 2 &&
+            negated(captionWords) === negated(savedWords);
+          const captionScore = boundCaption ? labelScore(option.label, caption) : 0;
           // Extra native detail must also exist in that option's saved grid
           // column; a shared caption cannot authorize an added action.
           const extendsCaption = clean(option.label).toLowerCase().startsWith(clean(label[2]!).toLowerCase() + ' ');
-          return direct || extendsCaption && labelScore(option.label, rows[0]![at + 2]!.text) || 0;
+          return direct || captionScore || extendsCaption && Math.max(...rows.map(row => labelScore(option.label, row[at + 2]!.text))) || 0;
         });
         const best = Math.max(...scores);
         return best > 0 && scores.filter(score => score === best).length === 1 ? scores.indexOf(best) : -1;
@@ -640,6 +692,48 @@ function declaredLegacyCharacterization(text: string): boolean {
       return Boolean(subject && (!foreignSuite || subject[1]) && withdrawn(statement));
     });
   });
+  // A current test contract may declare its oracle in a paragraph and bind
+  // the same decision to a numbered implementation task. Read those atoms
+  // independently: legacy target, current outcomes, pre-change green baseline,
+  // task ownership and verification. Neighboring tasks cannot fill a gap.
+  for (const section of current.filter(s => /^Tests(?: \([^\n]*\))?$/i.test(s.title))) {
+    for (const paragraph of section.body.join('\n').split(/\n\s*\n/)) {
+      const claim = unquoted(paragraph).replace(/\s+/g, ' ').trim();
+      const contract = /^(?:CRITICAL|mandatory|required) regression contract \((D[1-9]\d*)\):\s*/i.exec(claim);
+      const cases = /\bone test per (?:current|existing|prior) outcome:\s*([^.!?]+)[.!?]/i.exec(claim)?.[1]?.split(',').map(value => value.trim()) ?? [];
+      const baseline = /\b(?:written and green|written and passing|implemented and green) on ([A-Za-z][\w/-]*) BEFORE (?:the )?(?:Phase [1-9]\d* )?flag (?:wrap|wrapper) (?:lands|is added)\b/i.exec(claim);
+      if (!contract || !baseline || !cases.length || cases.some(value => !value) || new Set(cases).size !== cases.length || suiteWithdrawn || withdrawn(claim) ||
+          !/\bcharacterization suite (?:at|for) (?:the )?legacyAuthFlow\(\)(?: boundary)?\b/i.test(claim) ||
+          /\b(?:maybe|might|could|if|unless|optional|hypothetical|unproven)\b/i.test(claim)) continue;
+      for (const tasks of current.filter(s => s.title === 'Implementation Tasks')) {
+        for (const task of tasks.body.join('\n').split(/\n(?=-\s)/)) {
+          const body = unquoted(task), first = body.split('\n')[0] ?? '';
+          const id = /^- (?:\[[ xX]\] )?(T[1-9]\d*)\b/.exec(first)?.[1];
+          const outcomeCount = /\(([1-9]\d*) outcomes?\b/.exec(first)?.[1];
+          if (!id || sourceFrame(body) || withdrawn(body, id) ||
+              /\b(?:do not|don't|never|skip|defer|optional|if|unless|hypothetical|unproven)\b/i.test(body) ||
+              !/\b(?:Write|Add|Implement) (?:the )?legacyAuthFlow\(\) characterization suite\b/i.test(first) ||
+              Number(outcomeCount) !== cases.length ||
+              !new RegExp(`\\bland it (?:green|passing) on ${baseline[1]} before (?:any|the) flag (?:wrap|wrapper)\\b`, 'i').test(first) ||
+              !new RegExp(`^\\s+- Surfaced by: [^\\n]*\\b${contract[1]}\\b`, 'm').test(body) ||
+              !new RegExp(`^\\s+- Verify: suite passes on unmodified ${baseline[1]}; each of the ${cases.length} outcomes has one test[\\t ]*$`, 'm').test(body)) continue;
+          const owners = `(?:${id}|${contract[1]}|(?:this|the|that) (?:(?:legacy|baseline|regression|characterization) )?(?:suite|verification|requirement))`;
+          const inactiveStatus = '(?:withdrawn|cancelled|canceled|rejected|deferred|superseded|optional|not current|(?:not|no longer) (?:required|needed))';
+          const cancelled = current.some(s => {
+            const named = /^(.*?)\b(?:regression|characterization)\s+(?:suite|tests?)\b/i.exec(s.title)?.[1]?.trim();
+            const foreign = Boolean(named && !/^(?:(?:current|final|required|updated)\s*)*(?:legacy(?:AuthFlow\(\))?)?[\s:—-]*$/i.test(named));
+            if (foreign && !new RegExp(`\\b(?:${id}|${contract[1]}|legacyAuthFlow)\\b`).test(s.body.join(' '))) return false;
+            const raw = s.body.join('\n').replace(new RegExp(`(${owners} (?:is|was|has been) )["“'‘\x60](${inactiveStatus})["”'’\x60]`, 'gi'), '$1$2');
+            return unquoted(raw).split(/\n|[.!?;]\s+/).some(line => !sourceFrame(line) &&
+              (new RegExp(`\\b${owners} (?:is|was|has been) ${inactiveStatus}\\b`, 'i').test(line) ||
+               new RegExp(`(?:do not|don't|never|skip|defer|cancel) (?:run |write |add |verify )?${owners}\\b`, 'i').test(line) ||
+               new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|will be) (?:modified|changed|rewritten) before ${id}\\b`, 'i').test(line)));
+          });
+          if (!cancelled) return true;
+        }
+      }
+    }
+  }
   for (const section of current.filter(s => /^Required tests(?: \([^\n]*\))?$/i.test(s.title))) {
     const body = section.body.join('\n').trim();
     if (!body.startsWith('- ')) continue;

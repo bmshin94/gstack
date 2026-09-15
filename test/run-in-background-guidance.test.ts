@@ -365,11 +365,13 @@ describe('run_in_background guidance (#2440)', () => {
     const phase = fs.readFileSync(path.join(ROOT, 'autoplan/sections/ceo-phase.md'), 'utf8').replace(/\s+/g, ' ');
     expect(phase).toContain('Step 0 (including its completed Spec Review Loop) → Claude CEO voice → Codex CEO voice → consensus → Review Sections → saved summary → phase announcement');
     for (const name of ['ceo', 'design', 'eng', 'dx']) {
-      const next = fs.readFileSync(path.join(ROOT, `autoplan/sections/${name}-phase.md`), 'utf8');
-      const native = next.indexOf('Send `nativeDispatchPrompt` verbatim: ONLY/FINAL tool call this response');
+      const next = fs.readFileSync(path.join(ROOT, `autoplan/sections/${name}-phase.md`), 'utf8').replace(/\s+/g, ' ');
+      const manifest = next.indexOf(`Read \`snapshot.json\` beside \`<${name.toUpperCase()}_INPUT>\``);
+      const native = next.indexOf('Send its `nativeDispatchPrompt` verbatim as the Agent prompt: ONLY/FINAL tool call this response');
       const barrier = next.indexOf('**Native completion barrier:**', native);
       const outside = next.indexOf('voice** (via Bash)', barrier);
-      expect(native, name).toBeGreaterThan(0);
+      expect(manifest, name).toBeGreaterThan(0);
+      expect(native, name).toBeGreaterThan(manifest);
       expect(barrier, name).toBeGreaterThan(native);
       expect(outside, name).toBeGreaterThan(barrier);
       const wait = next.slice(barrier, outside);

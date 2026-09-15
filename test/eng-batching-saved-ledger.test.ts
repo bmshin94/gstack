@@ -244,8 +244,8 @@ for (const [name, change] of Object.entries({
   const call = structuredClone(engNative.calls[4]) as NativePlanQuestionCall;change(call);
   expect(evaluate(call, '')).toBe(false);
 });
-test('two paid Eng callers use the same counter while keeping completion, actors, floors and limits', () => {
-  for (const file of ['skill-e2e-plan-eng-finding-count.test.ts', 'skill-e2e-plan-eng-multi-finding-batching.test.ts']) {
+test('the batching caller keeps its saved-brief counter, floor and limit', () => {
+  for (const file of ['skill-e2e-plan-eng-multi-finding-batching.test.ts']) {
     const source = fs.readFileSync(path.join(import.meta.dir, file), 'utf8');
     const start = source.indexOf('const findings = createEngBatchingIssueCounter');
     const stop = source.indexOf('const obs = await runPlanSkillCounting', start);

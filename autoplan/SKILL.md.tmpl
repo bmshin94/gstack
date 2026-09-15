@@ -114,17 +114,31 @@ developer-facing scope) → Eng. Eng runs LAST, always, reviewing all prior amen
 Keep ONE phase active, completing these gates in order:
 1. Load its phase instructions and full skill/sections, recording complete Read ranges.
 2. Complete the phase's required preliminary work (CEO: all Step 0, including its
-   Spec Review Loop), then create the fresh snapshot and dispatch its nativeDispatchPrompt unchanged.
-3. Consume native completion, then enabled outside results; only then complete the
-   phase's remaining primary review sections.
-4. Persist outputs/amendments and run the phase's implementation check/readback.
-5. Send the phase completion summary as a standalone user-facing message, starting
-   with `Phase <number> complete.` Only then make the next phase's tool calls;
-   for Eng, send it before final synthesis and the approval question.
+   Spec Review Loop and its amendment checkpoint), then create the fresh snapshot
+   and dispatch its nativeDispatchPrompt unchanged.
+3. Consume the native terminal result and apply the phase's failure policy, then
+   consume enabled outside results. Complete the phase's remaining primary review
+   sections after these results.
+4. Save the full review artifacts and accepted amendments; run the phase's
+   implementation check and readback. This completes the file work.
+5. Emit the phase completion summary as its own visible parent assistant text block,
+   starting with `Phase <number> complete.` Then continue to the next phase's tool
+   calls in the same turn; for Eng, send this text before final synthesis/approval.
+   The same response may contain the summary text followed by tool calls.
+Phase notifications, including skips, are progress updates: do not end the turn
+or wait for a "continue" reply at these boundaries.
 A missing gate means the current phase remains open, even if a reviewer finished.
 Read requests/self-reports and INPUT hashes do not prove uptake or review quality.
 Never draft future-phase reviews or outputs. Headings/promises are not completion.
-After compaction, reload current phase instructions/skill/sections; reconcile disk progress before resuming.
+After compaction, reload current phase instructions/skill/sections, then
+reconcile saved artifacts and sent conversation messages separately:
+- If a verified phase lacks its announcement, send that message before advancing.
+- If its reviewer is pending, wait for that same reviewer.
+- If native dispatch has not happened, finish any incomplete preliminary work before recovering a voice input.
+  If the final voice input does not exist, create it after the preliminary gates.
+  Read `snapshot.json` beside that final `<PHASE_INPUT>` and use its `nativeDispatchPrompt` unchanged.
+  Never dispatch `<CEO_STEP0_INPUT>`: it is the draft amendment checkpoint.
+  `nativePrompt` is the file's review body, not the Agent prompt. Resume at the first incomplete gate.
 
 Pending is not unavailable. Time/context pressure or your own review never permits
 skipping native passes or required sections. Missing outside coverage does not block
@@ -192,7 +206,9 @@ Prefix every {{OUTSIDE_LABEL}} prompt:
 ### Step 1: Capture restore point
 
 Absolute paths: SOURCE_PLAN (input), ACTIVE_PLAN (harness-assigned plan, else SOURCE_PLAN).
-Write all amendments/outputs to ACTIVE_PLAN. Resolve SNAPSHOT_TOOL once:
+Save plan amendments and review artifacts to ACTIVE_PLAN.
+Send phase announcements and the final approval request in the conversation.
+Resolve SNAPSHOT_TOOL once:
 {{AUTOPLAN_SNAPSHOT_TOOL}}
 
 Fresh external RESTORE_PATH:
@@ -291,12 +307,13 @@ Disabled/unavailable: retain each applicable native pass. Recheck before each ou
 - [ ] CEO dual voices ran ({{OUTSIDE_LABEL}} + {{NATIVE_LABEL}} subagent, or noted unavailable)
 - [ ] CEO consensus table produced
 - [ ] Premises assessed (clearly-wrong ones queued as Final Gate items — no mid-run stop)
-- [ ] Phase-transition summary emitted
+- [ ] Parent phase-completion text sent after file verification
 
 ## Phase 2: Design Review (conditional — skip if no UI scope)
 
 **Skip condition:** If UI scope was NOT detected in Phase 0, skip this phase
-entirely — do NOT read its section. Log: "Phase 2 skipped — no UI scope detected."
+entirely — do NOT read its section. Send: "Phase 2 skipped — no UI scope detected."
+Record the skip in ACTIVE_PLAN; it is not a completed review.
 
 {{SECTION:design-phase}}
 
@@ -305,7 +322,8 @@ entirely — do NOT read its section. Log: "Phase 2 skipped — no UI scope dete
 ## Phase 2.5: DX Review (conditional — skip if no developer-facing scope)
 
 **Skip condition:** If DX scope was NOT detected in Phase 0, skip this phase
-entirely — do NOT read its section. Log: "Phase 2.5 skipped — no developer-facing scope detected."
+entirely — do NOT read its section. Send: "Phase 2.5 skipped — no developer-facing scope detected."
+Record the skip in ACTIVE_PLAN; it is not a completed review.
 
 {{SECTION:dx-phase}}
 
@@ -319,7 +337,7 @@ entirely — do NOT read its section. Log: "Phase 2.5 skipped — no developer-f
 - [ ] DX completion summary written (or "skipped, no developer-facing scope")
 - [ ] DX dual voices ran (if Phase 2.5 ran)
 - [ ] DX consensus table produced (if Phase 2.5 ran)
-- [ ] Phase-transition summary emitted
+- [ ] Parent phase-completion text sent after file verification
 
 ## Phase 3: Eng Review + Dual Voices (always runs, always LAST — the required gate reviews the final amended plan)
 
@@ -473,10 +491,10 @@ AskUserQuestion options:
 
 **Option handling:**
 - A: mark APPROVED, write review logs, suggest /ship
-- B: ask which overrides, apply, re-present gate
+- B: ask which overrides, apply, then follow D's affected-phase rerun rule (including Eng last) before re-presenting the gate. Counts toward the same 3-cycle cap as D.
 - B2: walk the User Challenges one at a time (accept or reject each). Rejected → note the user's direction stands, no plan change. Accepted → amend the plan for that challenge (a clearly-wrong premise accepted here reshapes scope the way a mid-run stop used to), then re-run Eng on the amended plan (same rule as D — the gate always reviews the final plan), then re-present the gate. Counts toward the same 3-cycle cap as D.
 - C: answer freeform, re-present gate
-- D: make changes, re-run affected phases (scope→1B, design→2, dx→2.5, test plan→3, arch→3; a re-run of any earlier phase re-runs Eng after it — the gate always reviews the final plan). Max 3 cycles.
+- D: make changes, re-run affected phases (scope→1, design→2, dx→2.5, test plan→3, arch→3; a re-run of any earlier phase re-runs Eng after it — the gate always reviews the final plan). Max 3 cycles.
 - E: start over
 
 ---
