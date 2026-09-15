@@ -2206,7 +2206,7 @@ describe('Design approval reconciliation', () => {
     expect(readiness).toContain('no completion report or log is required yet');
     expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
     expect(gate).toContain('read-only verification, not a new approval or output-writing step');
-    expect(readiness.indexOf('0. Approvals:')).toBeGreaterThanOrEqual(0);
+    expect(readiness.indexOf('Approvals:')).toBeGreaterThanOrEqual(0);
     expect(gate.indexOf('Confirm Approval readiness')).toBeLessThan(gate.indexOf('1. Read the plan file'));
     expect(readiness).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
     expect(readiness).toContain("Never group distinct issues.");
@@ -2228,7 +2228,7 @@ describe('Design approval reconciliation', () => {
     expect(decisions).toContain('**STOP for the actual answer, even for a lone option.**');
     expect(decisions).toContain('apply only the authorized amendments before the next row');
     expect(decisions).toContain('Carry exact approvals forward.');
-    expect(decisions).toContain('Report settled findings; say "No issues, moving on." only when none remain.');
+    expect(decisions).toContain('Report settled findings; say "No issues, moving on." only when there are zero findings.');
   });
 
   test('Eng cannot exit with unasked findings listed only in an unresolved-decisions report', () => {
@@ -2241,7 +2241,7 @@ describe('Design approval reconciliation', () => {
     expect(readiness).toContain('no completion report or log is required yet');
     expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
     expect(gate).toContain('read-only verification, not a new approval or output-writing step');
-    expect(readiness.indexOf('0. Approvals:')).toBeGreaterThanOrEqual(0);
+    expect(readiness.indexOf('Approvals:')).toBeGreaterThanOrEqual(0);
     expect(gate.indexOf('Confirm Approval readiness')).toBeLessThan(gate.indexOf('1. Read the plan file'));
     expect(readiness).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
     expect(readiness).toContain('Never group distinct issues. Setup, mode, approach and navigation are not approval.');
@@ -4219,7 +4219,7 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
     expect(approach).toContain('Read the original input, inspected source and actual answers');
-    expect(approach).toContain('Correct factual errors in the working plan; flag conflicts with approvals');
+    expect(approach).toContain('Correct factual errors, flag conflicts with approvals, and preserve unknowns');
     expect(approach).toContain('Carry exact approvals forward.');
     expect(content).toContain("the actual instruction or answer reference and its exact scope");
     const reopenRule = 'Reopen only for a concrete contradiction, changed assumption or explicit new user instruction';
@@ -4355,12 +4355,15 @@ describe('EXIT PLAN MODE GATE placement', () => {
         const telemetry = tail.indexOf('**Telemetry (run last)**');
         expect(telemetry).toBeGreaterThan(0);
         expect(telemetry).toBeLessThan(tail.indexOf('## Brain Cache Background Refresh'));
-        expect(tail).toContain(skill === 'plan-ceo-review' ? 'once after this gate passes' : 'After the gate passes');
-        expect(tail.lastIndexOf(skill === 'plan-ceo-review' ? 'Finish with ExitPlanMode' : 'Call ExitPlanMode')).toBeGreaterThan(tail.indexOf('## Brain Cache Background Refresh'));
+        expect(tail).toContain(skill === 'plan-ceo-review' ? 'Passed with a verified persisted report' : 'After the gate passes');
+        const finalHandoff = tail.slice(tail.indexOf('## Brain Cache Background Refresh'));
+        expect(finalHandoff).toContain(skill === 'plan-ceo-review' ? 'Only after a passing gate: call ExitPlanMode' : 'Once the gate passes, telemetry runs and the cache refresh is dispatched, call ExitPlanMode');
+        expect(tail).not.toContain('short-circuit when no plan file exists');
+        expect(tail).toContain('full chat report as not persisted; do not call ExitPlanMode');
       } else {
         expect(lastH2, `${skill}/SKILL.md last ## heading (fences stripped)`).toBe('## EXIT PLAN MODE GATE (BLOCKING)');
       }
-      expect(md, `${skill}/SKILL.md gate body`).toContain(skill === 'plan-ceo-review'
+      expect(md, `${skill}/SKILL.md gate body`).toContain(['plan-ceo-review', 'plan-eng-review'].includes(skill)
         ? 'If any check fails, report the missing work and do not call ExitPlanMode'
         : 'Failing this gate and calling ExitPlanMode anyway is a contract violation');
     }
@@ -4474,7 +4477,7 @@ describe('GSTACK REVIEW REPORT mandatory unresolved-decisions status', () => {
       const md = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
       // Gate check #4 — present, sentinel named, and explicitly blocking (no escape).
       expect(md).toContain('NO UNRESOLVED DECISIONS');
-      if (skill === 'plan-ceo-review') {
+      if (['plan-ceo-review', 'plan-eng-review'].includes(skill)) {
         const gate = md.split('## EXIT PLAN MODE GATE (BLOCKING)')[1]!.replace(/\s+/g, ' ');
         expect(gate).toContain('final non-whitespace line is the exact unbolded `NO UNRESOLVED DECISIONS`');
         expect(gate).toContain('or the last bullet under `**UNRESOLVED DECISIONS:**`');

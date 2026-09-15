@@ -512,14 +512,14 @@ Review only. Do NOT change code or start implementation.
 ## Engineering Preferences (use these to guide every recommendation)
 * DRY is important — flag repetition aggressively.
 * Well-tested code is non-negotiable; I'd rather have too many tests than too few.
-* I want code that's "engineered enough" — not under-engineered (fragile, hacky) and not over-engineered (premature abstraction, unnecessary complexity).
+* Engineer enough: avoid fragile hacks, premature abstractions and unnecessary complexity.
 * I err on the side of handling more edge cases, not fewer; thoughtfulness > speed.
 * Bias toward explicit over clever.
-* Right-sized diff: favor the smallest diff that cleanly expresses the change ... but don't compress a necessary rewrite into a minimal patch. If the existing foundation is broken, invoke permission #9 and say "scrap it and do this instead."
+* Right-sized diff: prefer the smallest clear change. A broken foundation may need a rewrite; use permission #9 rather than forcing a small patch.
 * Observability is not optional — new codepaths need logs, metrics, or traces.
 * Security is not optional — new codepaths need threat modeling.
 * Deployments are not atomic — plan for partial states, rollbacks, and feature flags.
-* ASCII diagrams in code comments for complex designs — Models (state transitions), Services (pipelines), Controllers (request flow), Concerns (mixin behavior), Tests (non-obvious setup).
+* Put ASCII diagrams in complex code comments: Model states, Service pipelines, Controller requests, Concern mixins and non-obvious Test setup.
 * Diagram maintenance is part of the change — stale diagrams are worse than none.
 
 ## Cognitive Patterns — How Great CEOs Think
@@ -545,11 +545,11 @@ Internalize these thinking instincts throughout the review; do not enumerate the
 17. **Subtraction default** — "As little design as possible" (Rams). Cut UI that doesn't earn its pixels; avoid feature bloat.
 18. **Design for trust** — Every interface detail affects trust: safety, identity and belonging.
 
-Apply inversion to architecture, focus as subtraction to scope, speed calibration to timelines, and proxy skepticism to the problem. For UI flows, use hierarchy as service and subtraction default; for user-facing features, use design for trust and edge case paranoia.
+Apply inversion to architecture, subtraction to scope, speed calibration to timelines and proxy skepticism to the problem. For UI, apply hierarchy, subtraction, trust and edge-case paranoia.
 
 ## Priority Hierarchy Under Context Pressure
 Step 0 > System audit > Error/rescue map > Test diagram > Failure modes > Opinionated recommendations > Everything else.
-Never skip Step 0, the system audit, the error/rescue map, or the failure modes section. These are the highest-leverage outputs.
+Never skip Step 0, system audit, error/rescue map or failure modes.
 
 ## Web research runs in Aside
 
@@ -750,13 +750,13 @@ Map:
 * Are there any FIXME/TODO comments in files this plan touches?
 
 ### Retrospective Check
-Check the git log for this branch. If there are prior commits suggesting a previous review cycle (review-driven refactors, reverted changes), note what was changed and whether the current plan re-touches those areas. Be MORE aggressive reviewing areas that were previously problematic. Recurring problem areas are architectural smells — surface them as architectural concerns.
+Check the branch log for earlier review cycles: refactors or reverted changes. Record what changed and whether this plan touches it again. Review prior problem areas more aggressively; flag recurring problems as architectural concerns.
 
 ### Frontend/UI Scope Detection
 Analyze the plan. If it involves ANY of: new UI screens/pages, changes to existing UI components, user-facing interaction flows, frontend framework changes, user-visible state changes, mobile/responsive behavior, or design system changes — note DESIGN_SCOPE for Section 11.
 
 ### Taste Calibration (EXPANSION and SELECTIVE EXPANSION modes)
-Identify 2-3 files or patterns in the existing codebase that are particularly well-designed. Note them as style references for the review. Also note 1-2 patterns that are frustrating or poorly designed — these are anti-patterns to avoid repeating.
+Choose 2-3 well-designed files or patterns as style references, and 1-2 frustrating or poorly designed patterns to avoid repeating.
 Report findings before proceeding to Step 0.
 
 ### Landscape Check
@@ -871,7 +871,7 @@ Complete 0A–0E in order, then follow the selected mode's route. Put the 0A–0
 
 **Review depth** follows the requested deliverable: scope prioritization decides what belongs and whether it is feasible; implementation planning also resolves how to build it. Ask before expanding that depth. A pending choice is an unanswered decision needed for that deliverable. Facts and approved work need no new question.
 
-**Keep the stated limits.** Record what each limit measures, its value, unit and prerequisites. Reusing code reduces effort, not the requested deliverable count. Changing a limit needs evidence and user approval.
+**Keep the stated limits.** Record what each limit measures, its value, unit and prerequisites. Count every requested deliverable, including those built with reused code. Changing a limit needs evidence and user approval.
 
 **Storage policy: choose before writing.** Obey user/host restrictions separately for plans, tasks, TODOs, metadata and cleanup. The working plan is the requested output file, otherwise the reviewed plan, otherwise the host's active plan.
 - Use native Write/Edit for permitted plan documents (host editor if unavailable); use each other artifact's specified writer.
@@ -904,24 +904,32 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 ### 0D. Alternatives (MANDATORY)
 
 **1. Check sources and prior answers.**
-Read the original input, inspected source and actual answers. Correct factual errors in the working plan; flag conflicts with approvals and preserve unknowns. Carry exact approvals forward. Reopen only for a concrete contradiction, changed assumption or explicit new user instruction; speculation or reviewer agreement is not enough.
+Read the original input, inspected source and actual answers. Correct factual errors, flag conflicts with approvals, and preserve unknowns. Carry exact approvals forward. Reopen only for a concrete contradiction, changed assumption or explicit new user instruction; speculation or reviewer agreement is not enough.
 
 If no pending approach remains, continue to 0E. Do not invent alternatives or approval to fill the handoff.
 
 **2. Record the pending choice.**
 Give changes separate rows if one can be selected while another stays unchanged. If they must stay together, explain why.
 
-- Keep a code change with its required regression tests. Carry that pair forward once approved.
-- If an approved change's test method or coverage remains open, decide that once. Every option preserves required behavior and approved test requirements.
-- For existing behavior, separate proposed tests if either can be selected alone. Keep tests for undecided behavior pending.
+For tests, distinguish these three cases:
+| Case | Decision |
+|------|----------|
+| Code change and its required regression tests | Keep them together; carry both forward once approved. |
+| Approved change with an open test method or coverage choice | Decide that once; preserve required behavior and approved test requirements in every option. |
+| Proposed tests for existing behavior | Separate them if either can be selected alone. Tests for undecided behavior stay pending. |
 
 Fill Current and Proposed with behavior, limits, test method and coverage. Under the storage policy, save this pending row or present the complete updated chat plan before comparing options. Do not prewrite approval or implementation tasks.
 
 **3. Compare and save that row's options.**
-- **Options:** Compare 2–3 approaches; prefer 3 for non-trivial plans and explain a lone viable option. For each: name, 1–2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage. Weigh diff size and long-term architecture equally; a rewrite may be better.
-- **Commitment grid:** Audit every option's label, description and pros/cons. In Proposed, record each commitment as `commitment [source/approval or pending]: current=value; A=value; B=value; C=value`. Use offered options only; include unchanged, pending and shared values.
-- **Boundary check:** Split independently varying commitments into separate rows, even when shared by every option. Each option may resolve only one pending choice; keep other commitments fixed or pending. A shared test framework does not merge independently selectable test additions. Preserve accepted requirements and their required tests and fixes in every option.
-- **Save:** Save or present the complete updated plan again before asking.
+Compare 2–3 approaches; prefer 3 for non-trivial plans and explain a lone viable option. Give each a name, 1–2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage. Weigh diff size and long-term architecture equally; a rewrite may be better.
+
+Check everything promised by each option's label, description and pros/cons. In Proposed, record each commitment as:
+`commitment [source/approval or pending]: current=value; A=value; B=value; C=value`
+Use offered options only; include unchanged, pending and shared values.
+
+Read the grid before asking: can two changes be chosen separately? If so, split them into separate rows. Check shared values too: a new commitment common to all options still needs its own decision if it is independent. A shared test framework does not merge independently selectable test additions. Each option may resolve only one pending choice; keep other commitments fixed or pending. Preserve accepted requirements and their required tests and fixes in every option.
+
+Save or present the complete updated plan again before asking.
 
 **4. Ask, record the answer, and amend.**
 Use the preamble's question format, recommendation and preference/session rules. Ask one row per call and cite its ID; recommendations are not approval.
@@ -932,7 +940,7 @@ If options differ in coverage, score this row only: 10 covers all its edge cases
 
 If all alternatives are declined, continue only when the actual answer keeps a viable current approach. Otherwise leave the row unresolved and stop for new direction. Resolve required approaches before 0E.
 
-Use this procedure for later new or reopened choices, including Outside Voice. Mode and scope questions use their own menus below. Report settled findings; say "No issues, moving on." only when none remain.
+Use this procedure for later new or reopened choices, including Outside Voice. Mode and scope questions use their own menus below. Report settled findings; say "No issues, moving on." only when there are zero findings.
 
 ### 0E. Mode Selection
 The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` changes transport only.
@@ -1134,11 +1142,12 @@ If storage restrictions prevented the plan/report or completion log, present the
 full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
 An attempted artifact save that failed still stops the review.
 
-0. Confirm Approval readiness passed for the current decisions. This is a
+Confirm Approval readiness passed for the current decisions. This is a
    read-only verification, not a new approval or output-writing step. If the
-   decisions changed, report the stale verification and stop. A resumed repair
+   decisions changed, report the stale verification and stop before success
+   telemetry or exit. A resumed repair
    starts at Approval readiness, then repeats affected outputs, Read-back,
-   Review Log and dashboard. Do not run success telemetry or exit now.
+   Review Log and dashboard.
 
 Before calling ExitPlanMode, verify all five checks:
 1. Read the plan file after your most recent write.
@@ -1154,8 +1163,9 @@ Before calling ExitPlanMode, verify all five checks:
 If any check fails, report the missing work and do not call ExitPlanMode. Review
 prose in the plan body cannot replace its separate, terminal structured report.
 
-Run the preamble's **Telemetry (run last)** once after this gate passes.
-The nonblocking cache refresh follows:
+**Gate outcome:**
+- **Failed or not persisted:** report the failed check or complete labeled chat output and stop here. Do not run success telemetry or call ExitPlanMode.
+- **Passed with a verified persisted report:** run the preamble's **Telemetry (run last)** once, then the nonblocking cache refresh below.
 
 ## Brain Cache Background Refresh
 
@@ -1170,5 +1180,4 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || tru
 ```
 
 
-Finish with ExitPlanMode where the host requires it, or return to the calling
-workflow. Perform the chosen next-skill handoff without changing this review.
+Only after a passing gate: call ExitPlanMode where required or return to the caller, then perform the chosen next-skill handoff without changing this review.

@@ -4,14 +4,36 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { outsideVoiceCommand, outsideVoicePreflight } from '../scripts/resolvers/outside-voice';
+import { outsideVoiceCommand, outsideVoicePreflight, outsideVoiceInvocation } from '../scripts/resolvers/outside-voice';
 import { generateCodexDocReview, generateCodexPlanReview } from '../scripts/resolvers/review';
+import { validateOutsideReview } from '../lib/outside-review-result';
 import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const TEMP = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-outside-preflight-'));
 afterAll(() => fs.rmSync(TEMP, { recursive: true, force: true }));
+
+test('CEO and Eng describe the actual disabled route and completion validator', () => {
+  for (const host of ALL_HOST_CONFIGS) {
+    for (const skillName of ['plan-ceo-review', 'plan-eng-review']) {
+      const ctx: TemplateContext = { host: host.name, skillName, tmplPath: `${skillName}/SKILL.md.tmpl`, paths: HOST_PATHS[host.name] };
+      const output = generateCodexPlanReview(ctx);
+      expect(output).not.toContain('Skip this section entirely');
+      expect(output).toContain('persist `outside_status: disabled` with the guarded');
+      const prompt = output.slice(output.indexOf('"IMPORTANT:'), output.indexOf('\n<plan content>"'));
+      expect(prompt).toContain('End with Recommendation: <action> because <specific reason>');
+      expect(prompt).toContain('If there are no findings, say so and explain why');
+      const invocation = outsideVoiceInvocation(ctx);
+      expect(invocation).toContain('missing Recommendation: <action> because <reason> markers');
+      expect(invocation).not.toContain('score/severity/completion');
+      expect(output).toContain('Harness mismatch follows this same native fallback');
+    }
+  }
+  expect(validateOutsideReview('Recommendation: proceed because no findings remain.', 'review').completed).toBe(true);
+  expect(validateOutsideReview('SCORE: 10\nAMBIGUITIES: NONE', 'review').completed).toBe(false);
+  expect(validateOutsideReview('Recommendation: proceed', 'review').completed).toBe(false);
+});
 
 describe('own-harness review fallback instructions', () => {
   for (const host of ALL_HOST_CONFIGS) {

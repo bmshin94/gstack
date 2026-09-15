@@ -597,6 +597,8 @@ fi
 ```
 If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why.
 
+The Prerequisite Skill Offer below uses the preamble's complete decision-brief format and the next `D<N>` number (`D1` if it is the first question after startup). Its quoted text explains the choice; it is not an alternative question format. Running or skipping that prerequisite does not approve engineering remedies.
+
 ## Prerequisite Skill Offer
 
 When the design doc check above prints "No design doc found," offer the prerequisite
@@ -706,7 +708,7 @@ At 8+ files or 2+ new classes/services, STOP before section work. Use the preamb
 
 **STOP while a Step 0 question awaits an answer.** Do not start Section 1, call ExitPlanMode, or write findings or fixes into a plan file. An unchanged copy of the original plan is allowed. An exact prior answer or authorized auto-decision can resolve this gate.
 
-After the gate resolves, apply only accepted scope changes. Present Step 0 findings, complete Review preparation, and enter Section 1. Take the same route if complexity did not trigger the gate.
+After the gate resolves, apply only accepted scope changes. Complete Review preparation, then present a **Step 0 findings** list before Section 1. Use the numbered finding format and Confidence Calibration from the review section, with a disposition of accepted, rejected, deferred or pending for each; use "No issues found" for an empty list. Take the same route if complexity did not trigger the gate.
 
 Always work through the full interactive review: one section at a time (Architecture → Code Quality → Tests → Performance) with at most 8 top issues per section.
 
@@ -719,43 +721,34 @@ Always work through the full interactive review: one section at a time (Architec
 
 Confirm you Read the review section the Section index named, and executed every review section (Architecture, Code Quality, Tests, Performance), the outside voice, and the required outputs in full. If you produced findings or the review report from memory without Reading `sections/review-sections.md`, stop and Read it now.
 
-The section has resolved approvals, completed navigation and run its learning hooks. Verify that each permitted persistence step completed; keep forbidden writes explicitly not persisted. Perform the read-only final gate below. If a check fails, report the missing work and stop; do not start success telemetry or exit.
+Perform the read-only final gate below. Chat-only output remains complete and explicitly not persisted; it cannot pass the persisted-report gate. If a check fails, report the missing work and stop; do not start success telemetry or exit.
 
 ## EXIT PLAN MODE GATE (BLOCKING)
 
-Before calling ExitPlanMode, verify the checks below. If any item fails, report the
-missing work and stop; do not run success telemetry or call ExitPlanMode:
+If storage restrictions prevented the plan/report or completion log, present the
+full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
+An attempted artifact save that failed still stops the review.
 
-0. Confirm Approval readiness passed for the current decisions. This is a
+Confirm Approval readiness passed for the current decisions. This is a
    read-only verification, not a new approval or output-writing step. If the
-   decisions changed, report the stale verification and stop. A resumed repair
+   decisions changed, report the stale verification and stop before success
+   telemetry or exit. A resumed repair
    starts at Approval readiness, then repeats affected outputs, Read-back,
-   Review Log and dashboard. Do not run success telemetry or exit now.
+   Review Log and dashboard.
 
-1. Read the plan file with the Read tool (after your most recent write to it).
-2. Confirm the LAST `## ` heading in the file is `## GSTACK REVIEW REPORT`.
-   In-body prose that mentions "outside voice", "codex findings", or similar
-   does NOT count — only the structured `## GSTACK REVIEW REPORT` section
-   satisfies this check.
-3. Confirm the report has a Runs / Status / Findings table and a VERDICT line
-   (OUTSIDE COVERAGE / CROSS-MODEL included when applicable).
-4. Confirm the report's FINAL non-whitespace line is the unresolved-decisions
-   status: the exact unbolded `NO UNRESOLVED DECISIONS`, or a bullet of a final
-   `**UNRESOLVED DECISIONS:**` block. BLOCKING, no "if applicable" escape — a
-   bolded sentinel, any trailing report field or prose, or a missing
-   status each FAILS the gate.
-5. If a plan file is in context for this skill invocation: confirm
-   `gstack-review-log` was called and `gstack-review-read` was run at least
-   once. If no plan file is in context (e.g. a diff review with no plan),
-   this check short-circuits — checks 1-4 already
-   short-circuit when no plan file exists.
+Before calling ExitPlanMode, verify all five checks:
+1. Read the plan file after your most recent write.
+2. Its LAST `## ` heading is exactly `## GSTACK REVIEW REPORT`.
+3. The report contains a Runs / Status / Findings table and VERDICT; include
+   OUTSIDE COVERAGE / CROSS-MODEL when applicable.
+4. Its final non-whitespace line is the exact unbolded `NO UNRESOLVED DECISIONS`,
+   or the last bullet under `**UNRESOLVED DECISIONS:**`. A bolded sentinel,
+   missing status or any trailing prose fails this check.
+5. Confirm `gstack-review-log` was called and `gstack-review-read` ran at
+   least once. Do not substitute an unlogged chat review for saved completion.
 
-Failing this gate and calling ExitPlanMode anyway is a contract violation —
-the user will see a plan whose review report is missing or stale, and will
-(correctly) reject it. Self-deception failure mode to watch for: feeling
-"done" after writing review prose into the plan body. The body prose is not
-the report. The report is a separate, structured, table-bearing section that
-must be the file's terminal heading.
+If any check fails, report the missing work and do not call ExitPlanMode. Review
+prose in the plan body cannot replace its separate, terminal structured report.
 
 After the gate passes, run the preamble's **Telemetry (run last)** command once. Make no further plan or approval changes between verification and exit. Then start the non-blocking cache refresh below.
 
@@ -772,4 +765,4 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || tru
 ```
 
 
-Call ExitPlanMode, then follow the selected next step.
+Once the gate passes, telemetry runs and the cache refresh is dispatched, call ExitPlanMode and follow the selected next step.

@@ -134,7 +134,7 @@ describe('selectTests', () => {
 
   test.each([
     ['plan-eng-review/sections/review-sections.md', 'plan-eng-review/SKILL.md sections',
-      'plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## CRITICAL RULE', '### REGRESSION RULE (mandatory)'],
+      'plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## Section self-check', '### REGRESSION RULE (mandatory)'],
     ['ship/sections/tests.md', 'ship/SKILL.md workflow',
       'ship/SKILL.md', '# Ship:', '## Important Rules', '## Test Framework Bootstrap'],
     ['ship/sections/test-coverage.md', 'ship/SKILL.md workflow',

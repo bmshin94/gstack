@@ -71,7 +71,9 @@ export function outsideVoicePreflight(ctx: TemplateContext, opts: { disabledBeha
   if (v.id === 'codex' && opts.disabledBehavior !== 'opt-in') {
     const preflight = outsideVoiceLabels(ctx, codexPreflight(opts))
       .replace('```bash\n', `\`\`\`bash\n${outsideVoiceRuntime(ctx)}\n`);
-    return preflight;
+    return ['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName)
+      ? preflight.replace('Skip this section entirely;', 'Skip the reviewer invocation; record disabled coverage as directed below;')
+      : preflight;
   }
   const bin = toShellPath(ctx.paths.binDir);
   const probe = v.id === 'codex'
@@ -156,6 +158,8 @@ echo 'OUTSIDE_STATUS: completed provider=${v.id} host=${ctx.host}'`;
 
 export function outsideVoiceInvocation(ctx: TemplateContext, opts: OutsideCommandOptions = { timeoutMs: 300000 }): string {
   const nativeStructured = outsideVoiceFor(ctx).id === 'codex' && !!opts.structuredBase;
+  const planRecommendation = ['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName)
+    && (opts.gate ?? 'review') === 'review';
   const completion = opts.gate === 'spec'
     ? 'Request exactly SCORE: N (integer 0-10) and AMBIGUITIES: ... (or NONE), as two distinct nonempty lines.'
     : opts.gate === 'structured'
@@ -172,7 +176,7 @@ export function outsideVoiceInvocation(ctx: TemplateContext, opts: OutsideComman
 ${outsideVoiceCommand(ctx, opts)}
 \`\`\`
 
-Show the full response in a \`tool-output\` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing ${opts.purpose === 'design-direction' ? 'Recommendation' : 'score/severity/completion'} markers, timeout or CLI failure means \`outside_status: unavailable\`. ${opts.purpose === 'design-direction' ? 'Continue completed proposals; native completion does not count as outside coverage.' : "Use the caller's fallback; missing coverage is never clean/PASS."} ${nativeStructured ? 'Scratch cleanup is automatic.' : 'After either outcome, delete only your private prompt; scratch cleanup is automatic.'}`;
+Show the full response in a \`tool-output\` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing ${planRecommendation ? 'Recommendation: <action> because <reason>' : opts.purpose === 'design-direction' ? 'Recommendation' : 'score/severity/completion'} markers, timeout or CLI failure means \`outside_status: unavailable\`. ${opts.purpose === 'design-direction' ? 'Continue completed proposals; native completion does not count as outside coverage.' : "Use the caller's fallback; missing coverage is never clean/PASS."} ${nativeStructured ? 'Scratch cleanup is automatic.' : 'After either outcome, delete only your private prompt; scratch cleanup is automatic.'}`;
 }
 
 export function outsideVoiceProvenance(ctx: TemplateContext, phase: string): string {

@@ -124,6 +124,8 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-br
 ```
 If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why.
 
+The Prerequisite Skill Offer below uses the preamble's complete decision-brief format and the next `D<N>` number (`D1` if it is the first question after startup). Its quoted text explains the choice; it is not an alternative question format. Running or skipping that prerequisite does not approve engineering remedies.
+
 {{BENEFITS_FROM}}
 
 ### Step 0: Scope Challenge
@@ -165,7 +167,7 @@ At 8+ files or 2+ new classes/services, STOP before section work. Use the preamb
 
 **STOP while a Step 0 question awaits an answer.** Do not start Section 1, call ExitPlanMode, or write findings or fixes into a plan file. An unchanged copy of the original plan is allowed. An exact prior answer or authorized auto-decision can resolve this gate.
 
-After the gate resolves, apply only accepted scope changes. Present Step 0 findings, complete Review preparation, and enter Section 1. Take the same route if complexity did not trigger the gate.
+After the gate resolves, apply only accepted scope changes. Complete Review preparation, then present a **Step 0 findings** list before Section 1. Use the numbered finding format and Confidence Calibration from the review section, with a disposition of accepted, rejected, deferred or pending for each; use "No issues found" for an empty list. Take the same route if complexity did not trigger the gate.
 
 Always work through the full interactive review: one section at a time (Architecture → Code Quality → Tests → Performance) with at most 8 top issues per section.
 
@@ -177,7 +179,7 @@ Always work through the full interactive review: one section at a time (Architec
 
 Confirm you Read the review section the Section index named, and executed every review section (Architecture, Code Quality, Tests, Performance), the outside voice, and the required outputs in full. If you produced findings or the review report from memory without Reading `sections/review-sections.md`, stop and Read it now.
 
-The section has resolved approvals, completed navigation and run its learning hooks. Verify that each permitted persistence step completed; keep forbidden writes explicitly not persisted. Perform the read-only final gate below. If a check fails, report the missing work and stop; do not start success telemetry or exit.
+Perform the read-only final gate below. Chat-only output remains complete and explicitly not persisted; it cannot pass the persisted-report gate. If a check fails, report the missing work and stop; do not start success telemetry or exit.
 
 {{EXIT_PLAN_MODE_GATE}}
 
@@ -185,4 +187,4 @@ After the gate passes, run the preamble's **Telemetry (run last)** command once.
 
 {{BRAIN_CACHE_REFRESH}}
 
-Call ExitPlanMode, then follow the selected next step.
+Once the gate passes, telemetry runs and the cache refresh is dispatched, call ExitPlanMode and follow the selected next step.

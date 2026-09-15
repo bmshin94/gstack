@@ -8,22 +8,68 @@
 
 **Preserve accepted requirements.** Compare the implementation with stated invariants and acceptance criteria. Report gaps and propose remedies that satisfy them, including in HOLD SCOPE when the sketch omits a mechanism. Never close a gap by weakening its guarantee, accepting the violation, or changing a test to expect it. Low frequency, bounded impact and documentation do not satisfy stricter requirements. Requirement changes need explicit authority under the approval rules; until approved, keep the proposal pending and original gap unresolved. Preserve earlier approved changes and explicit authority, but routine auto-decide cannot override user constraints or non-goals. Carry this distinction into findings, tasks and the report.
 
+## CRITICAL RULE — How to ask questions
+Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
+* **One decision unit = one AskUserQuestion call.** Use Step 0D boundaries, not topic labels.
+* Describe the problem concretely, with file and line references.
+* Present 2-3 options, including "do nothing" where reasonable.
+* For each option: effort, risk, and maintenance burden in one line.
+* Before calling AskUserQuestion, draft the recommended option as a complete remedy
+  for this one issue. Its offered description must state the rescue behavior,
+  verification, and failure visibility needed for that fix. Include those details
+  in the option itself. Omit irrelevant work, and keep independent findings and
+  new TODOs in their own questions.
+* **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference.
+* Use the preamble's `D<N>` question heading and A/B/C option labels. Cite the stable ledger ID separately so a reopened question keeps its earlier decision history.
+* An "obvious fix" still needs approval when it is not covered by an exact accepted choice.
+
+## Formatting Rules
+* Keep option labels short; put the complete comparison in the question's brief using 0D and the preamble format.
+* Use **CRITICAL GAP** / **WARNING** / **OK** for scannability.
+
+## Mode Quick Reference
+
+The selected mode changes scope posture, not review coverage. Review every section
+for the accepted scope; Section 11 is skipped only when that scope has no UI.
+
+| Step | SCOPE EXPANSION | SELECTIVE EXPANSION | HOLD SCOPE | SCOPE REDUCTION |
+|------|-----------------|---------------------|------------|-----------------|
+| Scope proposals | Offer additions individually | Offer cherry-picks individually | No expansions | Offer cuts individually |
+| 10x check | Required; additions need approval | Required; additions need approval | Skip | Skip |
+| Platonic ideal | Required | Skip | Skip | Skip |
+| Delight opportunities | At least 5, each opt-in | At least 5, each opt-in | Skip | Skip |
+| Complexity | Review accepted ambition | Review baseline and accepted additions | Simplest correct accepted scope | Minimum valuable scope |
+| Temporal interrogation (0I) | Run | Run | Run | Skip |
+| Error and rescue map | Full accepted scope | Full accepted scope | Full accepted scope | Full remaining scope |
+| Observability and deployment | Review all accepted requirements | Review all accepted requirements | Review all accepted requirements | Review all remaining requirements |
+| Separate CEO archive (0H) | Write | Write | Skip | Skip |
+| Future direction (Section 10) | Review accepted trajectory | Review accepted cherry-picks | Review maintainability; no expansions | Review maintainability of remaining scope |
+| Design (Section 11) | Review if UI scope | Review if UI scope | Review if UI scope | Review if UI scope |
+
+All modes produce approved findings and the required outputs under Step 0's storage policy: save to the permitted active plan, or present in chat as not persisted.
+The separate CEO archive is additional persistence for expansion modes.
+
 ### Working review decisions
 
-Continue Step 0's six-column ledger. Use its owner field for the review section and retain each row's evidence, current/proposed values and exact approval. An approach approves its explicit commitments, not every implementation choice. For each section, follow these three phases:
+Continue Step 0's six-column ledger. Use its owner field for the review section and retain each row's evidence, current/proposed values and exact approval. An approach approves its explicit commitments, not every implementation choice.
+
+At every section's **Decision gate**, complete Analyze → Resolve → Apply before continuing. **Do NOT make any code changes. Review only.**
 
 **Analyze.** Check original input, inspected source and actual approvals before drafting options. Correct source-disproven claims and dependent test/runbook text; the draft cannot authorize baseline changes. Carry contracts and mitigations forward with evidence; later silence does not invalidate them. Surface conflicts with accepted requirements. Unsupported premises stay unknown; unavailable external implementation proves neither failure nor safety. Keep unknown risks, owners and required verification visible; approval does not verify them.
 
-**Resolve.** Use the complete four-step procedure in 0D for each new or reopened decision. Resolve each unit in its owner section; earlier sections cross-reference pending rows. Resolve newly discovered critical risks immediately. Cross-reference an exact settled decision instead of asking it again.
+Before the answer, record only pending issues, evidence and alternatives. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
 
-For tests, carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Test wording alone does not choose test depth. For example, fixing unsafe input handling and improving throughput are separate choices even when both change one helper. Do not invent independent add-ons to fill a third option.
+**Resolve.** Use the complete four-step procedure in 0D for each new or reopened decision. Resolve each unit in its owner section; earlier sections cross-reference pending rows. Resolve newly discovered critical risks immediately.
 
-**Apply.** Update the complete working plan under Step 0's storage policy before advancing:
-1. Before the answer, record only pending issues, evidence and alternatives. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome. For each unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**.
-2. Check every amended commitment against the actual answer or explicit earlier approval. Preserve existing content, approved behavior and its direct implementation/verification, including unchanged success/failure contracts. Surrounding analysis, independent remedies and extra verification depth stay pending. Record only authorized amendments and deferrals in the permitted medium.
-3. Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Carrying a constraint forward does not mean its later section was reviewed. Assemble required outputs after Sections 1–10 and Section 11's findings or no-UI skip are recorded.
+For each unresolved or reopened decision, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Cross-reference an exact settled decision instead of asking it again. If no decision remains, report the findings with their existing dispositions and continue. Say "No issues found" only for zero findings.
 
-Approval settles the planning choice; it does not prove the mitigation is implemented or verified. Retain unresolved choices and supporting findings in the ledger and final report; never call a section issue-free merely because its decisions were already made.
+Use 0D's test rules: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Test wording alone does not choose test depth. For example, fixing unsafe input handling and improving throughput are separate choices even when both change one helper. Do not invent independent add-ons to fill a third option.
+
+**Apply.** Check every amended commitment against the actual answer or explicit earlier approval. Preserve existing content, approved behavior and its direct implementation/verification, including unchanged success/failure contracts. Surrounding analysis, independent remedies and extra verification depth stay pending. Record only authorized amendments and deferrals in the permitted medium; update the complete working plan under Step 0's storage policy before advancing.
+
+Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Carrying a constraint forward does not mean its later section was reviewed. Assemble required outputs after Sections 1–10 and Section 11's findings or no-UI skip are recorded.
+
+Approval settles the planning choice; it does not prove the mitigation is implemented or verified. Retain unresolved choices and supporting findings in the ledger and final report.
 
 ### Section 1: Architecture Review
 Open in your own chat using the Step 0E mode-handoff format and the current ledger dispositions, including actual later scope-answer references. Retain the current mode, rationale and saved-preference attribution when applicable. Keep the original handoff as history; do not reannounce superseded scope as current. Then say `Section 1: Architecture Review`.
@@ -50,8 +96,7 @@ Evaluate and diagram:
 **SELECTIVE EXPANSION:** If any accepted cherry-picks from Step 0G affect the architecture, evaluate their architectural fit here. Flag any that create coupling concerns or don't integrate cleanly — this is a chance to revisit the decision with new information.
 
 Required ASCII diagram: full system architecture showing new components and their relationships to existing ones.
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 2: Error & Rescue Map
 This is the section that catches silent failures. It is not optional.
@@ -80,8 +125,7 @@ Rules for this section:
 * Every rescued error must either: retry with backoff, degrade gracefully with a user-visible message, or re-raise with added context. "Swallow and continue" is almost never acceptable.
 * For each GAP (unrescued error that should be rescued): specify the rescue action and what the user should see.
 * For LLM/AI service calls specifically: what happens when the response is malformed? When it's empty? When it hallucinates invalid JSON? When the model returns a refusal? Each of these is a distinct failure mode.
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 3: Security & Threat Model
 Security is not a sub-bullet of architecture. It gets its own section.
@@ -96,8 +140,7 @@ Evaluate:
 * Audit logging. For sensitive operations: is there an audit trail?
 
 For each finding: threat, likelihood (High/Med/Low), impact (High/Med/Low), and whether the plan mitigates it.
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 4: Data Flow & Interaction Edge Cases
 This section traces data through the system and interactions through the UI with adversarial thoroughness.
@@ -139,8 +182,7 @@ For each node: what happens on each shadow path? Is it tested?
                        | Queue backs up 2 hours | ?        |
 ```
 Flag any unhandled edge case as a gap. For each gap, specify the fix.
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 5: Code Quality Review
 Evaluate:
@@ -152,8 +194,7 @@ Evaluate:
 * Over-engineering check. Any new abstraction solving a problem that doesn't exist yet?
 * Under-engineering check. Anything fragile, assuming happy path only, or missing obvious defensive checks?
 * Cyclomatic complexity. Flag any new method that branches more than 5 times. Propose a refactor.
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 6: Test Review
 Preserve requested or approved coverage without re-asking. Fixed runtime contracts and a settled approach do not approve additional verification scope or depth. For each material verification change, identify the distinct regression existing tests miss and resolve that change before prescribing it in any plan draft.
@@ -200,8 +241,7 @@ Flakiness risk: Flag any test depending on time, randomness, external services, 
 Load/stress test requirements: For any new codepath called frequently or processing significant data.
 
 For LLM/prompt changes: Check CLAUDE.md for the "Prompt/LLM changes" file patterns. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against.
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 7: Performance Review
 Evaluate:
@@ -212,8 +252,7 @@ Evaluate:
 * Background job sizing. For every new job: worst-case payload, runtime, retry behavior?
 * Slow paths. Top 3 slowest new codepaths and estimated p99 latency.
 * Connection pool pressure. New DB connections, Redis connections, HTTP connections?
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 8: Observability & Debuggability Review
 New systems break. This section ensures you can see why.
@@ -229,8 +268,7 @@ Evaluate:
 
 **EXPANSION and SELECTIVE EXPANSION addition:**
 * What observability would make this feature a joy to operate? (For SELECTIVE EXPANSION, include observability for any accepted cherry-picks.)
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 9: Deployment & Rollout Review
 Evaluate:
@@ -245,8 +283,7 @@ Evaluate:
 
 **EXPANSION and SELECTIVE EXPANSION addition:**
 * What deploy infrastructure would make shipping this feature routine? (For SELECTIVE EXPANSION, assess whether accepted cherry-picks change the deployment risk profile.)
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 10: Long-Term Trajectory Review
 Evaluate:
@@ -261,8 +298,7 @@ Evaluate:
 * What comes after this ships? Phase 2? Phase 3? Does the architecture support that trajectory?
 * Platform potential. Does this create capabilities other features can leverage?
 * (SELECTIVE EXPANSION only) Retrospective: Were the right cherry-picks accepted? Did any rejected expansions turn out to be load-bearing for the accepted ones?
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 11: Design & UX Review (skip if no UI scope detected)
 The CEO calling in the designer. Not a pixel-level audit — that's /plan-design-review and /design-review. This is ensuring the plan has design intentionality.
@@ -284,8 +320,20 @@ Evaluate:
 Required ASCII diagram: user flow showing screens/states and transitions.
 
 If this plan has significant UI scope, recommend: "Consider running /plan-design-review for a deep design review of this plan before implementation."
-**Decision gate.** For each unresolved or reopened decision in this section, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Apply the exact accepted choice before advancing. If no decision remains, report the findings with their existing dispositions and continue; cross-reference the working ledger rather than asking again.
-**Reminder: Do NOT make any code changes. Review only.**
+
+**Post-Implementation Design Audit (if UI scope detected):** After implementation, run `/design-review` on the live site to catch visual issues that can only be evaluated with rendered output.
+**Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
+
+## Closing sequence
+
+Follow the remaining blocks in this order:
+1. **Outside Voice:** run the configured review, reconcile its findings through 0D, and record its actual result. Disabled or unavailable voices continue to step 2.
+2. **Resolve remaining TODO choices:** ask each applicable TODO question, using the selected mode's scope rules.
+3. **Approval readiness:** verify the decisions and approved changes. This check requires no report or completion log; stop if it fails.
+4. **Required Outputs:** assemble tasks and summaries, write the review report and pass its Read-back.
+5. **Cleanup and history:** perform permitted cleanup, write Review Log, then display the dashboard.
+6. **Navigation:** choose Next Steps and any docs/designs promotion. Queue the next skill. If an answer changes the plan, resolve it through 0D, repeat Approval readiness, then refresh affected outputs, report Read-back, log and dashboard in that order.
+7. **Learnings:** finish learning and brain write-back, then return to the skeleton once. Its terminal gate verifies the finished artifacts and current approval readiness. Only a passing persisted review proceeds to telemetry, cache refresh and exit.
 
 ### Outside Voice Integration Rule
 
@@ -342,7 +390,7 @@ echo "CODEX_MODE: $_CODEX_MODE"
 ```
 
 Branch on the echoed `CODEX_MODE`:
-- **`disabled`** — the user turned Codex reviews off (`codex_reviews=disabled`). Skip this section entirely; do NOT fall back to a Claude subagent — disabled means no extra review step. Print: "Codex review skipped (codex_reviews disabled). Re-enable: `gstack-config set codex_reviews enabled`."
+- **`disabled`** — the user turned Codex reviews off (`codex_reviews=disabled`). Skip the reviewer invocation; record disabled coverage as directed below; do NOT fall back to a Claude subagent — disabled means no extra review step. Print: "Codex review skipped (codex_reviews disabled). Re-enable: `gstack-config set codex_reviews enabled`."
 - **`not_installed`** — Codex CLI absent. Print: "Codex not installed — falling back to a Claude subagent (fresh context, but the same harness; model identity is unknown). Install Codex for an actual outside-model read: `npm install -g @openai/codex`." Fall back to the Claude subagent path.
 - **`under_codex`** — stale artifact selected its own harness. Print: "Codex outside review unavailable: harness mismatch; no outside process started. Missing coverage. Repair: setup --host codex." Skip the outside invocation and follow the workflow's native-review instructions below. Conflicting inherited harness markers are not grounds to guess another provider.
 - **`not_authed`** — installed but no credentials. Print: "Codex installed but not authenticated — falling back to a Claude subagent (same harness; model identity is unknown). Run `codex login` or set `$CODEX_API_KEY`." Fall back to the Claude subagent path.
@@ -399,6 +447,9 @@ took for granted, missing dependencies or sequencing issues, and strategic
 miscalibration (is this the right thing to build at all?). Be direct. Be terse. No
 compliments. Just the problems.
 
+End with Recommendation: <action> because <specific reason>. If there are no findings, say so and explain why the plan is ready.
+
+
 THE PLAN:
 <plan content>"
 
@@ -445,7 +496,7 @@ bun "$HOME/.claude/skills/gstack/lib/outside-review-result.ts" review "$_OUTSIDE
 echo 'OUTSIDE_STATUS: completed provider=codex host=claude'
 ```
 
-Show the full response in a `tool-output` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing score/severity/completion markers, timeout or CLI failure means `outside_status: unavailable`. Use the caller's fallback; missing coverage is never clean/PASS. After either outcome, delete only your private prompt; scratch cleanup is automatic.
+Show the full response in a `tool-output` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing Recommendation: <action> because <reason> markers, timeout or CLI failure means `outside_status: unavailable`. Use the caller's fallback; missing coverage is never clean/PASS. After either outcome, delete only your private prompt; scratch cleanup is automatic.
 
 Present the full output verbatim:
 
@@ -468,8 +519,7 @@ Immediately before dispatching, check the preflight result again. On
 do not dispatch. Otherwise, use this fallback for missing/broken CLI, failed
 authentication/model selection, a failed preflight, or a failed outside invocation.
 The disabled branch never reaches this fallback.
-On `CODEX_MODE: under_codex`, report the setup repair and
-`outside_status: unavailable`, run no outside CLI, and use the native subagent below.
+Harness mismatch follows this same native fallback after the preflight reports its setup repair; no outside CLI runs.
 A native result never supplies outside coverage.
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
@@ -516,18 +566,16 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-Use the same six-column decision ledger and the four steps of 0D; do not start a second table.
+Use the same six-column decision ledger and the four steps of 0D: check sources and prior answers → record and save pending choices → compare and save options → obtain the actual answer and amend. Record the reviewer and evidence in that ledger; do not start a second table or procedure.
 
-**1. Check sources and prior answers.** Reconcile each outside finding with the original input, inspected source and exact approvals. Correct false premises in the draft and its evidence without changing accepted behavior. Keep factual uncertainty explicit, with its owner and required verification; it does not itself create a new policy requirement. If that uncertainty threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before its occurrence is confirmed. Merely imagining an alternative behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
+**Outside evidence:** Reconcile findings with the original input, inspected source and exact approvals. Correct false premises without changing accepted behavior; factual corrections and confirmations need no behavior-change menu. Keep uncertainty with its owner and required verification. If it threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before confirmation; merely imagining another behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
 
-**2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0D's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0D Step 2.
-
-**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the working rows and comparisons under 0D Step 3 before asking. Use the applicable menu:
+Use 0D's rules for independent choices, fixed/pending commitments, required proof and new test additions. For an outside finding, substitute the applicable menu below for the usual alternatives:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-**4. Ask, record the answer, and amend.** Follow 0D Step 4: one row per call, record its actual answer and scope, then amend only that approved scope. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
+Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
 
 Report every finding, its disposition, required verification and remaining disagreement, including findings that needed only factual correction.
 
@@ -543,51 +591,6 @@ Retain the historical review-log skill ID; add `"host":"claude","outside_provide
 
 
 ---
-
-## Post-Implementation Design Audit (if UI scope detected)
-After implementation, run `/design-review` on the live site to catch visual issues that can only be evaluated with rendered output.
-
-## CRITICAL RULE — How to ask questions
-Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
-* **One decision unit = one AskUserQuestion call.** Use Step 0D boundaries, not topic labels.
-* Describe the problem concretely, with file and line references.
-* Present 2-3 options, including "do nothing" where reasonable.
-* For each option: effort, risk, and maintenance burden in one line.
-* Before calling AskUserQuestion, draft the recommended option as a complete remedy
-  for this one issue. Its offered description must state the rescue behavior,
-  verification, and failure visibility needed for that fix. Include those details
-  in the option itself. Omit irrelevant work, and keep independent findings and
-  new TODOs in their own questions.
-* **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference.
-* Use the preamble's `D<N>` question heading and A/B/C option labels. Cite the stable ledger ID separately so a reopened question keeps its earlier decision history.
-* **Section decisions:** retain all findings, cross-reference settled decisions, and ask once per unresolved or reopened decision. If none remain, report the section's findings and their existing dispositions, then proceed. If there are zero findings, state "No issues, moving on". An "obvious fix" still needs approval when it is not covered by an exact accepted choice.
-
-## Formatting Rules
-* Keep option labels short; put the complete comparison in the question's brief using 0D and the preamble format.
-* After each section, reconcile its findings with the working ledger. Pause for unresolved or reopened decisions; otherwise continue with the existing dispositions visible.
-* Use **CRITICAL GAP** / **WARNING** / **OK** for scannability.
-
-## Mode Quick Reference
-
-The selected mode changes scope posture, not review coverage. Review every section
-for the accepted scope; Section 11 is skipped only when that scope has no UI.
-
-| Step | SCOPE EXPANSION | SELECTIVE EXPANSION | HOLD SCOPE | SCOPE REDUCTION |
-|------|-----------------|---------------------|------------|-----------------|
-| Scope proposals | Offer additions individually | Offer cherry-picks individually | No expansions | Offer cuts individually |
-| 10x check | Required; additions need approval | Required; additions need approval | Skip | Skip |
-| Platonic ideal | Required | Skip | Skip | Skip |
-| Delight opportunities | At least 5, each opt-in | At least 5, each opt-in | Skip | Skip |
-| Complexity | Review accepted ambition | Review baseline and accepted additions | Simplest correct accepted scope | Minimum valuable scope |
-| Temporal interrogation (0I) | Run | Run | Run | Skip |
-| Error and rescue map | Full accepted scope | Full accepted scope | Full accepted scope | Full remaining scope |
-| Observability and deployment | Review all accepted requirements | Review all accepted requirements | Review all accepted requirements | Review all remaining requirements |
-| Separate CEO archive (0H) | Write | Write | Skip | Skip |
-| Future direction (Section 10) | Review accepted trajectory | Review accepted cherry-picks | Review maintainability; no expansions | Review maintainability of remaining scope |
-| Design (Section 11) | Review if UI scope | Review if UI scope | Review if UI scope | Review if UI scope |
-
-All modes produce approved findings and the required outputs under Step 0's storage policy: save to the permitted active plan, or present in chat as not persisted.
-The separate CEO archive is additional persistence for expansion modes.
 
 ## Resolve remaining TODO choices
 
@@ -614,20 +617,12 @@ For each TODO, describe:
 
 Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
 
-## Closing sequence
-
-Complete these stages in order:
-1. **Approval readiness:** check the decisions and approved changes before assembling outputs. This check requires no report or completion log.
-2. **Required Outputs:** assemble tasks and summaries, write the review report and pass its Read-back. Then perform permitted cleanup, write Review Log and display the dashboard.
-3. **Navigation:** choose Next Steps and any docs/designs promotion. Queue the next skill. If an answer changes the plan, resolve it through 0D, repeat Approval readiness, then refresh affected outputs, report Read-back, log and dashboard in that order.
-4. **Learnings:** finish the learning and brain write-back blocks, then return to the skeleton once. Its terminal gate verifies the finished artifacts and current approval readiness before telemetry, cache refresh and exit.
-
 ## Approval readiness
 
 Run this check before Required Outputs and after any substantive late change.
 It checks decisions only; no completion report or log is required yet.
 
-0. Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
+Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
    Never group distinct issues. Setup, mode, approach and navigation are not approval.
    Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
    record why. Deferrals remain unresolved.
@@ -706,7 +701,7 @@ Rules:
 - P1 blocks ship; P2 should land same branch; P3 is a follow-up TODO.
 - If a finding produced no actionable task, do not invent one.
 - If a section had zero findings, emit `_No new tasks from <section>._`
-- Effort uses the AI-compression table from CLAUDE.md.
+- Show human-team and CC+gstack effort estimates. Default task-type ratios (human ÷ CC time): scaffolding ~100x, tests ~50x, features ~30x, bug fix with regression ~20x, architecture ~5x, research ~3x. Adjust to the actual work and state the assumption.
 
 ### JSONL artifact (write when permitted, including zero tasks)
 
@@ -812,7 +807,7 @@ Use an explicitly requested output/report file first. Otherwise use the reviewed
 ### Generate the report
 
 Run `~/.claude/skills/gstack/bin/gstack-review-read` for prior review entries.
-Use the current Completion Summary or DX Scorecard for this review's status and findings;
+Use the current Completion Summary for this review's status and findings;
 apply the Review Log field rules below and add exactly one to its prior run count.
 Do not pre-log this run to populate the report.
 Use prior entries for other reviews, retaining their status, attribution and freshness.
@@ -836,6 +831,8 @@ Each skill logs different fields:
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 
 The current row describes this actual review. Mark an unlogged current run as not persisted; do not present it as a saved dashboard entry.
+
+Display `clean` as CLEAR and `issues_open` as ISSUES OPEN, retaining freshness and not-persisted labels. Other statuses keep their recorded meaning.
 
 Produce this markdown table:
 
@@ -950,6 +947,8 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 **Source attribution:** If the most recent entry for a skill has a \`"via"\` field, append it to the status label in parentheses. Examples: `plan-eng-review` with `via:"autoplan"` shows as "CLEAR (PLAN via /autoplan)". `review` with `via:"ship"` shows as "CLEAR (DIFF via /ship)". Entries without a `via` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
 Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
+
+Display a fresh `clean` result as CLEAR and `issues_open` as ISSUES OPEN. Show missing, stale, disabled or unavailable results explicitly; none implies CLEAR. Keep the logged status unchanged.
 
 Display:
 

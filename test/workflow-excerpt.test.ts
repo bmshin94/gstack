@@ -132,7 +132,11 @@ describe('workflow judge excerpts', () => {
     expect(stages.every(index => index >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     expect(eng.match(/^## Decision procedure$/gm)).toHaveLength(1);
-    expect(eng.slice(eng.indexOf('## Decision procedure'), eng.indexOf('## Review Sections')).match(/^\*\*[1-5]\. /gm)).toHaveLength(5);
+    const procedure = eng.slice(eng.indexOf('## Decision procedure'), eng.indexOf('## Review Sections'));
+    expect(procedure.match(/^### .+$/gm)).toEqual(['### Frame the choices', '### Compare one choice', '### Record and resolve']);
+    expect(procedure).toContain('**Save before asking:**');
+    expect(procedure).toContain('**Ask and wait:**');
+    expect(procedure).toContain('**Apply the answer:**');
     const outputs = ['### TODOS.md updates', '## Approval readiness', '## Required outputs', '## Implementation Tasks',
       '### Unresolved decisions', '### Completion summary', '## Plan File Review Report',
       '### Write to the plan file', '## Review Log'].map(heading => eng.indexOf(heading));
@@ -207,7 +211,7 @@ console.log(JSON.stringify({calls, results}));
   });
 
   test('Eng LLM scope and pending decisions precede the test artifact', () => {
-    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## CRITICAL RULE');
+    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## Section self-check');
     const tests = eng.slice(eng.indexOf('### 3. Test review'), eng.indexOf('### 4. Performance review'));
     const scope = tests.indexOf('### LLM/eval scope');
     const decisions = tests.indexOf('**Step 5. Add missing tests to the plan:**');
@@ -221,7 +225,7 @@ console.log(JSON.stringify({calls, results}));
   });
 
   test('plan review evidence and design approval rules precede their use', () => {
-    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## CRITICAL RULE');
+    const eng = readWorkflowExcerpt('plan-eng-review/SKILL.md', '## BEFORE YOU START:', '## Section self-check');
     expect(eng.indexOf('## Confidence Calibration')).toBeLessThan(eng.indexOf('### 1. Architecture review'));
     expect(eng).toContain('quote the motivating plan requirement');
     expectOutsideReviewControlFlow(eng, '**Construct the plan review prompt**');

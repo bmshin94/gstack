@@ -38,7 +38,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 
 Read \`autoplan-voices\` and \`design-outside-voices\` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
 
-Display:
+${['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName) ? 'Display a fresh `clean` result as CLEAR and `issues_open` as ISSUES OPEN. Show missing, stale, disabled or unavailable results explicitly; none implies CLEAR. Keep the logged status unchanged.\n\n' : ''}Display:
 
 \`\`\`
 +====================================================================+
@@ -96,7 +96,7 @@ ${beforeLog ? `Use an explicitly requested output/report file first. Otherwise u
 ### Generate the report
 
 ${beforeLog ? `Run \`~/.claude/skills/gstack/bin/gstack-review-read\` for prior review entries.
-Use the current Completion Summary or DX Scorecard for this review's status and findings;
+Use the current ${conditionalWrites ? 'Completion Summary' : 'Completion Summary or DX Scorecard'} for this review's status and findings;
 apply the Review Log field rules below and add exactly one to its prior run count.
 Do not pre-log this run to populate the report.
 Use prior entries for other reviews, retaining their status, attribution and freshness.` : `Read the review log output you already have from the Review Readiness Dashboard step above.`}
@@ -123,7 +123,7 @@ ${beforeLog ? (conditionalWrites ? 'The current row describes this actual review
 For the review you just completed, you may use richer details from your own Completion
 Summary. For prior reviews, use the JSONL fields directly — they contain all required data.`}
 
-Produce this markdown table:
+${conditionalWrites ? 'Display `clean` as CLEAR and `issues_open` as ISSUES OPEN, retaining freshness and not-persisted labels. Other statuses keep their recorded meaning.\n\n' : ''}Produce this markdown table:
 
 \\\`\\\`\\\`markdown
 ## GSTACK REVIEW REPORT
@@ -197,7 +197,7 @@ export function generatePlanReviewApprovalCheck(ctx: TemplateContext): string {
 Run this check before Required Outputs and after any substantive late change.
 It checks decisions only; no completion report or log is required yet.
 
-0. Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
+Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
    Never group distinct issues. Setup, mode, approach and navigation are not approval.
    Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
    record why. Deferrals remain unresolved.${ctx.skillName === 'plan-eng-review' ? `
@@ -217,11 +217,12 @@ export function generateExitPlanModeGate(ctx: TemplateContext): string {
   const noApproval = ctx.skillName === 'plan-design-review'
     ? 'DESIGN.md tokens and navigation' : 'Setup, mode, approach and navigation';
   const separateReadiness = ['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName);
-  const approvals = separateReadiness ? `0. Confirm Approval readiness passed for the current decisions. This is a
+  const approvals = separateReadiness ? `Confirm Approval readiness passed for the current decisions. This is a
    read-only verification, not a new approval or output-writing step. If the
-   decisions changed, report the stale verification and stop. A resumed repair
+   decisions changed, report the stale verification and stop before success
+   telemetry or exit. A resumed repair
    starts at Approval readiness, then repeats affected outputs, Read-back,
-   Review Log and dashboard. Do not run success telemetry or exit now.
+   Review Log and dashboard.
 
 ` : ctx.skillName === 'plan-design-review' ? `0. Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
    Never group distinct issues. ${noApproval} are not approval.
@@ -232,7 +233,7 @@ export function generateExitPlanModeGate(ctx: TemplateContext): string {
    log and rerun this gate.
 
 ` : '';
-  if (ctx.skillName === 'plan-ceo-review') return `## EXIT PLAN MODE GATE (BLOCKING)
+  if (separateReadiness) return `## EXIT PLAN MODE GATE (BLOCKING)
 
 If storage restrictions prevented the plan/report or completion log, present the
 full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
@@ -253,7 +254,8 @@ If any check fails, report the missing work and do not call ExitPlanMode. Review
 prose in the plan body cannot replace its separate, terminal structured report.`;
   return `## EXIT PLAN MODE GATE (BLOCKING)
 
-${separateReadiness ? 'Before calling ExitPlanMode, verify the checks below. If any item fails, report the\nmissing work and stop; do not run success telemetry or call ExitPlanMode:' : 'Before calling ExitPlanMode, run this self-check. If any item fails, do the\nmissing work — do NOT call ExitPlanMode:'}
+Before calling ExitPlanMode, run this self-check. If any item fails, do the
+missing work — do NOT call ExitPlanMode:
 
 ${approvals}1. Read the plan file with the Read tool (after your most recent write to it).
 2. Confirm the LAST \`## \` heading in the file is \`## GSTACK REVIEW REPORT\`.
@@ -869,7 +871,7 @@ survived the review scrutiny, overcomplexity (is there a fundamentally simpler
 approach the review was too deep in the weeds to see?), feasibility risks the review
 took for granted, missing dependencies or sequencing issues, and strategic
 miscalibration (is this the right thing to build at all?). Be direct. Be terse. No
-compliments. Just the problems.
+compliments. Just the problems.${needsApprovalReadiness ? '\n\nEnd with Recommendation: <action> because <specific reason>. If there are no findings, say so and explain why the plan is ready.\n' : ''}
 ${ctx.skillName === 'plan-devex-review' ? `
 REVIEW CONTEXT (from the full working list, outside the truncated plan body):
 <requested DX mode and explicit boundaries>
@@ -916,9 +918,9 @@ Immediately before dispatching, check the preflight result again. On
 do not dispatch. Otherwise, use this fallback for missing/broken CLI, failed
 authentication/model selection, a failed preflight, or a failed outside invocation.
 The disabled branch never reaches this fallback.
-On \`CODEX_MODE: ${outsideVoiceFor(ctx).id === 'codex' ? 'under_codex' : 'under_current_harness'}\`, report the setup repair and
+${needsApprovalReadiness ? 'Harness mismatch follows this same native fallback after the preflight reports its setup repair; no outside CLI runs.\nA native result never supplies outside coverage.' : `On \`CODEX_MODE: ${outsideVoiceFor(ctx).id === 'codex' ? 'under_codex' : 'under_current_harness'}\`, report the setup repair and
 \`outside_status: unavailable\`, run no outside CLI, and use the native subagent below.
-A native result never supplies outside coverage.
+A native result never supplies outside coverage.`}
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
 
@@ -975,18 +977,16 @@ Report all findings, dispositions and remaining disagreements after resolving th
 
 ` : ctx.skillName === 'plan-ceo-review' ? `**Cross-model tension:**
 
-Use the same six-column decision ledger and the four steps of 0D; do not start a second table.
+Use the same six-column decision ledger and the four steps of 0D: check sources and prior answers → record and save pending choices → compare and save options → obtain the actual answer and amend. Record the reviewer and evidence in that ledger; do not start a second table or procedure.
 
-**1. Check sources and prior answers.** Reconcile each outside finding with the original input, inspected source and exact approvals. Correct false premises in the draft and its evidence without changing accepted behavior. Keep factual uncertainty explicit, with its owner and required verification; it does not itself create a new policy requirement. If that uncertainty threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before its occurrence is confirmed. Merely imagining an alternative behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
+**Outside evidence:** Reconcile findings with the original input, inspected source and exact approvals. Correct false premises without changing accepted behavior; factual corrections and confirmations need no behavior-change menu. Keep uncertainty with its owner and required verification. If it threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before confirmation; merely imagining another behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
 
-**2. Record the pending choice.** Update the existing row, or add a pending row for a genuine new choice within the requested review or a supported material risk. Factual corrections and confirmations update evidence; they need no behavior-change menu. Apply 0D's separation and approval rules, including its distinction between required proof and new test additions. Record the reviewer and evidence in the same ledger. Save or present pending rows under 0D Step 2.
-
-**3. Compare and save that row's options.** Hold every other commitment fixed or pending in every option; split independently selectable changes. Update the working rows and comparisons under 0D Step 3 before asking. Use the applicable menu:
+Use 0D's rules for independent choices, fixed/pending commitments, required proof and new test additions. For an outside finding, substitute the applicable menu below for the usual alternatives:
 
 - **Policy or implementation:** A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only. Deferring one change does not defer its candidate or authorize a new schedule gate.
 - **Whole-candidate scope:** A) Include; B) Defer; C) Cut; D) Hold. Name the candidate and its current disposition. Revising two candidates takes two rows. Hold stops for discussion without changing the prior disposition. After individual answers, check the assembled set's capacity and dependencies. A conflict returns to the affected candidate's Include/Defer/Cut/Hold row; retain prior answers, report unresolved conflicts and recheck before confirming the set. Never silently trim or replace another candidate. These choices differ in kind, so omit completeness scores.
 
-**4. Ask, record the answer, and amend.** Follow 0D Step 4: one row per call, record its actual answer and scope, then amend only that approved scope. Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
+Keep preserves the current disposition; investigation and deferral do not authorize implementation. In /autoplan, preserve authorized auto-decisions, the audit trail and User Challenge rules; challenges wait for the final gate. One answer does not resolve other pending rows.
 
 Report every finding, its disposition, required verification and remaining disagreement, including findings that needed only factual correction.
 
