@@ -35,8 +35,6 @@ Voice triggers (speech-to-text aliases): "tech review", "technical review", "pla
 
 Review the selected target. Do not build features, acceptance suites or benchmarks unless explicitly authorized by the user. Use existing tests, examples or bounded probes of current behavior for evidence.
 
-**Decisions (including Step 0):** Explain tradeoffs, recommend, and ask separately about each pending independent remedy, including outside findings. Keep one chosen contract's implementation and tests together. Scope reduction does not approve independent remedies.
-
 ## Scope gate (FIRST — overrides everything below). This is a hard STOP.
 
 Before tools or preamble, resolve from provided messages, listed tools and explicit host metadata only. Do not probe for session state. Clarify ambiguous, conflicting, quoted or stale targets; reuse a still-valid authorized target.
@@ -62,13 +60,7 @@ C) A specific file, directory, or path.
 
 Recommendation: A when a branch diff exists, otherwise B. Reply with A, B, or C. STOP and wait for the answer.
 
-**Later question stages:** Use the preamble's transport and continuous D-numbering.
-
-| Stage | Format and record |
-|---|---|
-| Preamble/prerequisite/preparation | Full brief; no engineering-remedy approval. |
-| Initial complexity choices | Full brief; no grids or ledger writes until resolved. Then import actual scope answers. |
-| All findings/remedies | Follow the Decision procedure, including its no-question branches. |
+After target selection, every question uses the preamble's full decision brief, transport and continuous D-numbering. Setup, prerequisite and preparation questions do not approve engineering remedies.
 
 **Startup sequence** (after target selection): Preamble, including Context Recovery → available Brain Context → web-research readiness → Design Doc Check and prerequisite offer → Step 0 section entry. Keep the reviewed target fixed. The section selects a separate report destination; that does not change what is reviewed.
 
@@ -611,7 +603,7 @@ If a design doc exists, read it. Use it as the source of truth for the problem s
 When the design doc check above prints "No design doc found," offer the prerequisite
 skill before proceeding.
 
-Build the next full decision brief from these facts and options, using the Later question stages and preamble format:
+Build the next full decision brief from these facts and options, using the preamble transport, numbering and format:
 
 > "No design doc found for this branch. `/office-hours` produces a structured problem
 > statement, premise challenge, and explored alternatives — it gives this review much
@@ -682,7 +674,7 @@ If none was produced (user may have cancelled), proceed with standard review.
 
 > Before Step 0, require resolved scope. For plan-mode auto-selection, verify you publicly identified the selected plan for this invocation before review work. If missing, send "Scope gate: plan mode — auto-selected B (reviewing <target>)." now; do not claim an earlier announcement.
 
-Scope Challenge is mandatory before Section 1. Read the section below now for its preparation, decision definitions and seven checks. Loading those definitions does not resolve the complexity gate.
+Scope Challenge is mandatory before Section 1.
 
 **STOP while a Scope Challenge complexity question awaits an answer.** Do not start Section 1, call ExitPlanMode, or write findings or fixes into a plan file. An unchanged copy of the original plan is allowed. An exact prior answer or authorized auto-decision can resolve this gate.
 

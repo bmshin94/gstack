@@ -27,10 +27,17 @@ describe('plan report persistence precedes completion logging', () => {
       expect(report).toBeLessThan(log);
       expect(log).toBeLessThan(dashboard);
       expect(template.match(/\{\{PLAN_FILE_REVIEW_REPORT\}\}/g)).toHaveLength(1);
-      expect(template.slice(log, dashboard)).toContain('successful write and Read-back');
-      expect(template.slice(log, dashboard)).toContain(skill === 'plan-eng-review'
-        ? 'On failure, use **Blocked outcome**; do not log completion or an accepted decision'
-        : 'report the error and stop');
+      const logPolicy = template.slice(log, dashboard);
+      if (skill === 'plan-eng-review') {
+        expect(logPolicy).toContain('After successful Read-back');
+        expect(logPolicy).toContain('only when metadata writes are permitted');
+        expect(logPolicy).toContain('show the fields as not persisted');
+        expect(logPolicy).toContain('the dashboard must not count this unlogged run');
+        expect(logPolicy).toContain('FULL_REVIEW for the Scope Challenge result "scope accepted as-is"; SCOPE_REDUCED for "scope reduced per recommendation"');
+      } else {
+        expect(logPolicy).toContain('successful write and Read-back');
+        expect(logPolicy).toContain('report the error and stop');
+      }
     });
   }
   for (const host of ALL_HOST_CONFIGS) {
@@ -63,6 +70,7 @@ describe('plan report persistence precedes completion logging', () => {
           expect(writer).toContain('labeled not persisted');
           expect(writer).toContain('Do not run the file-writing steps below');
           expect(writer).toContain('re-read the plan file and retry once');
+          expect(writer).toContain('Do NOT replace the section in place; delete it and append the new report at EOF');
         }
         expect(report).toContain('prior review entries');
         expect(report).toContain('current Completion Summary');
@@ -114,7 +122,7 @@ describe('plan report persistence precedes completion logging', () => {
   }, 30_000);
 });
 
-test('Eng independent-remedy rule is loaded before Step 0 and retains outside-voice consent', async () => {
+test('Eng loads its one remedy procedure before Scope Challenge findings and retains consent', async () => {
   const outputRoot = mkdtempSync(join(tmpdir(), 'eng-decision-order-'));
   let rendered: { skeleton: string; sections: string };
   try {
@@ -125,7 +133,6 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
       sections: readFileSync(join(outputRoot, 'plan-eng-review/sections/review-sections.md'), 'utf8'),
     };
   } finally { rmSync(outputRoot, { recursive: true, force: true }); }
-  const definition = 'ask separately about each pending independent remedy';
   for (const suffix of ['.tmpl', '']) {
     const skeleton = suffix ? readFileSync(`plan-eng-review/SKILL.md${suffix}`, 'utf8') : rendered.skeleton;
     const sections = suffix ? readFileSync(`plan-eng-review/sections/review-sections.md${suffix}`, 'utf8') : rendered.sections;
@@ -133,13 +140,15 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(reviewBoundary).toBeGreaterThan(skeleton.indexOf('# Plan Review Mode'));
     expect(reviewBoundary).toBeLessThan(skeleton.indexOf('## Scope gate'));
     expect(skeleton.slice(reviewBoundary, skeleton.indexOf('## Scope gate'))).toContain('Use existing tests, examples or bounded probes of current behavior for evidence');
-    const rule = skeleton.indexOf(definition);
+    const rule = sections.indexOf('## Decision procedure');
     expect(rule).toBeGreaterThan(0);
-    expect(rule).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
-    expect(skeleton.slice(rule, rule + 350).replace(/\s+/g, ' ')).toContain("Keep one chosen contract's implementation and tests together");
-    expect((skeleton + sections).split(definition)).toHaveLength(2);
-    expect(skeleton).toContain('Explain tradeoffs, recommend, and ask separately about each pending independent remedy, including outside findings');
-    expect(skeleton).toContain('Scope reduction does not approve independent remedies');
+    expect(rule).toBeLessThan(sections.indexOf('## Scope Challenge'));
+    const procedureBody = sections.slice(rule, sections.indexOf('## Scope Challenge'));
+    expect(sections.match(/^## Decision procedure$/gm)).toHaveLength(1);
+    expect(procedureBody).toContain('Keep a chosen behavior together with its necessary code, tests and docs');
+    expect(procedureBody).toContain('one question for one choice per AskUserQuestion call');
+    expect(procedureBody).toContain('Independent instrumentation, follow-up work, guarantees or policies need separate choices');
+    expect(skeleton).not.toContain('**Decisions (including Step 0):**');
     expect(skeleton).not.toContain('For every issue or recommendation');
     const scope = sections.slice(sections.indexOf('## Scope Challenge'), sections.indexOf('## Review Sections'));
     expect(scope).toContain('8+ files or 2+ new classes/services');
@@ -161,19 +170,18 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(sectionRead).toBeGreaterThan(stop);
     expect(skeleton.slice(stop, sectionRead)).toContain('Do not start Section 1, call ExitPlanMode, or write findings or fixes into a plan file');
     expect(skeleton).toContain('Scope Challenge is mandatory before Section 1');
-    expect(skeleton).toContain('Loading those definitions does not resolve the complexity gate');
+    expect(skeleton.split(suffix ? '{{SECTION:review-sections}}' : '> **STOP.** Before starting the Scope Challenge')).toHaveLength(2);
     expect(scope).toContain('apply only accepted scope changes');
-    expect(sections).toContain('Preparation order: report file and write policy → Anti-shortcut clause → Prior Learnings → Retrospective learning → evidence calibration → Decision procedure');
+    expect(sections).toContain('Preparation order: report file and write policy → Prior Learnings → Retrospective learning → evidence calibration → Decision procedure');
     expect(sections).toContain('Then execute Scope Challenge once before Sections 1–4');
     const preparationOrder = ['## Review record and write policy',
-      suffix ? '{{ANTI_SHORTCUT_CLAUSE}}' : '**Anti-shortcut clause:**',
       suffix ? '{{LEARNINGS_SEARCH}}' : '## Prior Learnings', '## Retrospective learning',
       suffix ? '{{CONFIDENCE_CALIBRATION}}' : '## Confidence Calibration',
       '## Decision procedure', '## Scope Challenge'].map(marker => sections.indexOf(marker));
     expect(preparationOrder.every(position => position >= 0)).toBe(true);
     expect(preparationOrder).toEqual([...preparationOrder].sort((a, b) => a - b));
-    expect(skeleton).toContain('| Initial complexity choices | Full brief; no grids or ledger writes until resolved. Then import actual scope answers. |');
-    expect(skeleton).toContain('| All findings/remedies | Follow the Decision procedure, including its no-question branches. |');
+    expect(sections).not.toContain('{{ANTI_SHORTCUT_CLAUSE}}');
+    expect(sections).not.toContain('**Anti-shortcut clause:**');
     expect(skeleton).not.toContain('STOP while a Step 0 question');
     const calibration = sections.indexOf(suffix ? '{{CONFIDENCE_CALIBRATION}}' : '## Confidence Calibration');
     const procedure = sections.indexOf('## Decision procedure');
@@ -185,14 +193,15 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(scope).toContain('accepted, rejected, deferred or pending');
     expect(scope).toContain('"No issues found" for an empty list');
     expect(scope).toContain('Carry actual scope answers forward; a finding is not approval of its remedy');
-    const stages = skeleton.indexOf('**Later question stages:**');
+    const stages = skeleton.indexOf('After target selection, every question uses');
     const prerequisite = skeleton.indexOf(suffix ? '{{BENEFITS_FROM}}' : '## Prerequisite Skill Offer');
     expect(stages).toBeGreaterThan(0);
     expect(stages).toBeLessThan(prerequisite);
     expect(prerequisite).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
-    expect(skeleton.slice(stages, prerequisite)).toContain("Use the preamble's transport and continuous D-numbering");
-    expect(skeleton.slice(stages, prerequisite)).toContain('| Preamble/prerequisite/preparation | Full brief; no engineering-remedy approval. |');
-    if (!suffix) expect(skeleton.slice(prerequisite)).toContain('Build the next full decision brief from these facts and options, using the Later question stages and preamble format');
+    expect(skeleton.slice(stages, prerequisite)).toContain("the preamble's full decision brief, transport and continuous D-numbering");
+    expect(skeleton.slice(stages, prerequisite)).toContain('Setup, prerequisite and preparation questions do not approve engineering remedies');
+    expect(skeleton).not.toContain('**Later question stages:**');
+    if (!suffix) expect(skeleton.slice(prerequisite)).toContain('Build the next full decision brief from these facts and options, using the preamble transport, numbering and format');
     const engineering = skeleton.indexOf('## Engineering review');
     expect(engineering).toBeGreaterThan(prerequisite);
     expect(engineering).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
@@ -292,7 +301,7 @@ describe('Eng approved-work decision gate', () => {
     expect(options).toContain('Check the entire brief against the grid');
     expect(gate).toContain('Use Write or Edit to save the decision record, current grid and brief');
     expect(gate).toContain('If saving fails, use **Blocked outcome** before asking');
-    expect(template.split('## Review record and write policy')[1]!.split('{{ANTI_SHORTCUT_CLAUSE}}')[0]!).toContain('Honor user and host limits, including an active-plan-only restriction');
+    expect(template.split('## Review record and write policy')[1]!.split('{{LEARNINGS_SEARCH}}')[0]!).toContain('Honor user and host limits, including an active-plan-only restriction');
     expect(gate).toContain('present the same material if report writing is forbidden');
     expect(gate).toContain('one question for one choice per AskUserQuestion call');
     expect(ledger).toContain('State: <pending, or approved>');
@@ -420,7 +429,8 @@ describe('Eng approved-work decision gate', () => {
     expect(bootstrap).toContain('Before tools or preamble, resolve from provided messages, listed tools and explicit host metadata only');
     expect(bootstrap).toContain('Do not probe for session state');
     expect(bootstrap).toContain('No decision brief, D-number, completeness, Question Tuning or ledger');
-    expect(bootstrap).toContain("Use the preamble's transport and continuous D-numbering");
+    expect(bootstrap).toContain("After target selection, every question uses the preamble's full decision brief, transport and continuous D-numbering");
+    expect(bootstrap).toContain('Setup, prerequisite and preparation questions do not approve engineering remedies');
     expect(bootstrap).toContain('Choose listed, enabled MCP AskUserQuestion, otherwise listed native');
     expect(bootstrap).toContain('First tool call = AskUserQuestion (tool_use). Send this exact menu and wait');
     expect(bootstrap).toContain('If a failed call may have surfaced, keep it pending; do not duplicate it');
@@ -442,13 +452,17 @@ describe('Eng approved-work decision gate', () => {
   });
 
   test('the review record covers code inputs and per-artifact write limits before any decision is saved', () => {
-    const policy = template.split('## Review record and write policy')[1]!.split('{{ANTI_SHORTCUT_CLAUSE}}')[0]!;
+    const policyStart = template.indexOf('## Review record and write policy');
+    const policyEnd = template.indexOf('{{LEARNINGS_SEARCH}}', policyStart);
+    expect(policyStart).toBeGreaterThan(0);
+    expect(policyEnd).toBeGreaterThan(policyStart);
+    const policy = template.slice(policyStart, policyEnd);
     expect(template.indexOf('## Review record and write policy')).toBeLessThan(template.indexOf('## Decision procedure'));
     expect(policy).toContain('Review proposed work for a plan, existing behavior for code');
     expect(policy).toContain('For code targets, "plan" below means the recorded proposed remedies, never an implementation file');
     expect(policy).toContain('Apply every test, evidence and output requirement');
     expect(policy).toContain('The **decision ledger** holds records, grids, briefs and actual answers');
-    expect(policy).toContain('Choose one **report file** before ledger writes: the requested report path; otherwise the selected plan file; otherwise a new');
+    expect(policy).toContain('Choose one **report file** before ledger writes: an output/report path explicitly requested by the user; otherwise the selected plan file; otherwise a new');
     expect(policy).toContain('$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md');
     expect(policy).toContain('gstack-paths');
     expect(policy).toContain('gstack-slug');
@@ -467,9 +481,9 @@ describe('Eng approved-work decision gate', () => {
     expect(policy).toContain('If stated write recovery fails, use **Blocked outcome**; never claim persistence or silently switch to chat');
     expect(gate).toContain('under **Review record and write policy** above');
     const log = template.split('## Review Log')[1]!.split('{{REVIEW_DASHBOARD}}')[0]!;
-    expect(log).toContain('only when the reviewed output is persisted and metadata writes\nare permitted');
-    expect(log).toContain('Otherwise show their actual fields in chat as not persisted');
-    expect(log).toContain('it must not be presented as recording this unlogged run');
+    expect(log).toContain('After successful Read-back, run these commands only when metadata writes are permitted');
+    expect(log).toContain('Otherwise show the fields as not persisted');
+    expect(log).toContain('the dashboard must not count this unlogged run');
     expect(log).not.toContain('PLAN MODE EXCEPTION — ALWAYS RUN');
   });
 

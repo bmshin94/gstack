@@ -185,19 +185,30 @@ ${beforeLog ? `4. **Read-back gate:** Read the saved file. Verify the accepted c
    \\\`## \\\` heading in the file before continuing. If it isn't, repeat steps
    2-3 once.`}
 
-Do NOT replace the section in place. The "replace mid-file" path is what allowed
+${ctx.skillName === 'plan-eng-review' ? 'Do NOT replace the section in place; delete it and append the new report at EOF.' : `Do NOT replace the section in place. The "replace mid-file" path is what allowed
 prior versions to leave the report mid-file when an older report already lived
 there — the user then sees a plan whose review report is not at the bottom and
-(correctly) rejects it.`;
+(correctly) rejects it.`}`;
   return ctx.skillName === 'plan-eng-review' ? result.replaceAll('\\`', '`') : result;
 }
 
 /** Approval readiness precedes output; the exit gate only verifies the saved result. */
 export function generatePlanReviewApprovalCheck(ctx: TemplateContext): string {
-  const readinessRecord = ctx.skillName === 'plan-eng-review'
-    ? 'Record `Approval readiness: PASS` with the checked decision IDs and their\nactual answer references in the current decision record. A substantive'
-    : 'Record that readiness passed with the current decision record. A substantive';
-  const check = `## Approval readiness
+  if (ctx.skillName === 'plan-eng-review') return `## Approval readiness
+
+Before Required outputs, check the ledger against every accepted remedy. Each
+must cite its own actual answer, exact prior approval or authorized auto-decision;
+setup, mode, approach and navigation do not count. Carry forward an exact approved
+regression contract. Otherwise, its behavior and assertions need one dedicated
+decision. If approval is missing, mark that draft pending, resolve the choice
+through Decision procedure and repeat this check. Deferrals remain unresolved.
+Only the ledger is needed here; completion outputs and logs come next.
+
+At the end of \`## Decision ledger\`, record \`Approval readiness: PASS\` with the
+checked IDs and actual answer references. A substantive change invalidates this
+result; navigation alone does not. Continue to Required outputs, preserving
+unresolved decisions in the report.`;
+  return `## Approval readiness
 
 Run this check before Required Outputs and after any substantive late change.
 It checks decisions only; no completion report or log is required yet.
@@ -205,16 +216,13 @@ It checks decisions only; no completion report or log is required yet.
 Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
    Never group distinct issues. Setup, mode, approach and navigation are not approval.
    Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
-   record why. Deferrals remain unresolved.${ctx.skillName === 'plan-eng-review' ? `
-   Carry forward an exact approved regression contract. Otherwise settle its
-   behavior and assertions in one dedicated decision before adding it to the plan.` : ''}
+   record why. Deferrals remain unresolved.
    If missing, reset drafts to pending, ask and wait. After the answer, apply only
    its accepted scope and repeat this check before writing completion outputs.
 
-${readinessRecord}
+Record that readiness passed with the current decision record. A substantive
 change invalidates that result; navigation alone does not. Then continue to
 Required Outputs, preserving unresolved decisions in the report.`;
-  return ctx.skillName === 'plan-eng-review' ? check.replace(/^ {3}/gm, '') : check;
 }
 
 export function generateExitPlanModeGate(ctx: TemplateContext): string {
@@ -500,7 +508,7 @@ export function generateBenefitsFrom(ctx: TemplateContext): string {
 When the design doc check above prints "No design doc found," offer the prerequisite
 skill before proceeding.
 
-${ctx.skillName === 'plan-eng-review' ? 'Build the next full decision brief from these facts and options, using the Later question stages and preamble format:' : 'Say to the user via AskUserQuestion:'}
+${ctx.skillName === 'plan-eng-review' ? 'Build the next full decision brief from these facts and options, using the preamble transport, numbering and format:' : 'Say to the user via AskUserQuestion:'}
 
 > "No design doc found for this branch. ${skillList} produces a structured problem
 > statement, premise challenge, and explored alternatives — it gives this review much

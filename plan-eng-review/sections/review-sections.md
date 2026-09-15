@@ -2,13 +2,13 @@
 <!-- Regenerate: bun run gen:skill-docs -->
 ## Review preparation
 
-Preparation order: report file and write policy → Anti-shortcut clause → Prior Learnings → Retrospective learning → evidence calibration → Decision procedure. Then execute Scope Challenge once before Sections 1–4.
+Preparation order: report file and write policy → Prior Learnings → Retrospective learning → evidence calibration → Decision procedure. Then execute Scope Challenge once before Sections 1–4.
 
 ## Review record and write policy
 
 Keep the Scope gate's target fixed. Review proposed work for a plan, existing behavior for code. For code targets, "plan" below means the recorded proposed remedies, never an implementation file. Apply every test, evidence and output requirement.
 
-Choose one **report file** before ledger writes: the requested report path; otherwise the selected plan file; otherwise a new `$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md` (add a suffix on collision). For that default path, run `~/.claude/skills/gstack/bin/gstack-paths` and `~/.claude/skills/gstack/bin/gstack-slug`; use their returned `GSTACK_STATE_ROOT`, `SLUG` and `BRANCH` assignments to form the literal path. If either command fails or a value is absent, that destination is unavailable. Name the reviewed target in its header. Never select an unrelated active plan. Use this file for the ledger, narrative output, report and final gate.
+Choose one **report file** before ledger writes: an output/report path explicitly requested by the user; otherwise the selected plan file; otherwise a new `$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md` (add a suffix on collision). For that default path, run `~/.claude/skills/gstack/bin/gstack-paths` and `~/.claude/skills/gstack/bin/gstack-slug`; use their returned `GSTACK_STATE_ROOT`, `SLUG` and `BRANCH` assignments to form the literal path. If either command fails or a value is absent, that destination is unavailable. Name the reviewed target in its header. Never select an unrelated active plan. Use this file for the ledger, narrative output, report and final gate.
 
 QA Test Plan and task JSONL artifacts retain their specified legacy discovery paths; do not relocate them beside the report.
 
@@ -16,8 +16,6 @@ The **decision ledger** holds records, grids, briefs and actual answers. Its **w
 - Honor user and host limits, including an active-plan-only restriction. Before creating directories or writing, check this file and its directory, Test Plan Artifact, task JSONL, TODOs and logs separately; one permitted path authorizes no other. Do not edit implementation files without explicit authorization.
 - Never write forbidden paths or silently replace a requested destination. Present any unsavable artifact in full as **not persisted**. If the report has no permitted destination, request one when a user can supply it; wait without completion telemetry. If none is permitted, finish the full review in chat as not persisted, then use **Blocked outcome**.
 - If stated write recovery fails, use **Blocked outcome**; never claim persistence or silently switch to chat. Explicitly best-effort logs retain their behavior.
-
-**Anti-shortcut clause:** Use the decision gate for all four sections and outside voice. Retain findings and evidence. Ask only for new or reopened choices and apply their exact answers. Never prewrite unapproved remedies or skip sections or the terminal report.
 
 ## Prior Learnings
 
@@ -33,7 +31,7 @@ else
 fi
 ```
 
-If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
+If `CROSS_PROJECT` is `unset` (first time): Build a full decision brief from these facts and options using the preamble format, then ask and wait:
 
 > gstack can search learnings from your other projects on this machine to find
 > patterns that might apply here. This stays local (no data leaves your machine).
@@ -184,7 +182,7 @@ Required proof of an exact approval is already authorized, including necessary s
 Choose one pending ID. Draft the complete question, recommendation, option labels, descriptions and tradeoffs in the preamble's decision-brief format:
 
 - Describe the problem with file and line references. Offer 2–3 options, including “do nothing” when reasonable; outside-voice findings use that branch's four-option menu.
-- Give each option short labels, effort (human: ~X / CC: ~Y), risk and maintenance burden. Connect the recommendation to an engineering preference above. Recommend the complete option when it costs only marginally more with CC.
+- Give each option short labels, effort (human: ~X / CC: ~Y), risk and maintenance burden. Connect the recommendation to the entrypoint's engineering preferences. Recommend the complete option when it costs only marginally more with CC.
 - Score completeness only within this one decision. Coverage choices vary implementation or proof depth: `Completeness: N/10`, where 10 covers all relevant in-scope edge cases, 7 the happy path and 3 a shortcut. Different approaches receive no score and the line `Note: options differ in kind, not coverage — no completeness score.` Never score bundled policies as more complete or fabricate coverage scores for different approaches.
 
 Make one grid for the complete brief. Give every independently selectable behavior, approach, guarantee or bound affected anywhere in it a row, including fixed and pending choices. Show its current plan value and resulting value/work under every option; cite its approval or mark it pending. Include shared values and recommendations. Use concrete values, not package names.
@@ -226,7 +224,7 @@ Before reviewing, answer:
 1. **What existing code already partially or fully solves each sub-problem?** Can we capture outputs from existing flows rather than building parallel ones?
 2. **What is the minimum set of changes that achieves the stated goal?** Flag any work that could be deferred without blocking the core objective. Be ruthless about scope creep.
 3. **Complexity check:** If the plan touches 8+ files or introduces 2+ new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
-4. **Search check:** For each architectural pattern, infrastructure component, or concurrency approach the plan introduces, research through Aside (Web research runs in Aside, above), one read-only request per pattern:
+4. **Search check:** For each architectural pattern, infrastructure component, or concurrency approach the plan introduces, research through Aside (entrypoint: Web research runs in Aside), one read-only request per pattern:
    - Does the runtime/framework have a built-in? Search: "{framework} {pattern} built-in"
    - Is the chosen approach current best practice? Search: "{pattern} best practice {current year}"
    - Are there known footguns? Search: "{framework} {pattern} pitfalls"
@@ -236,7 +234,7 @@ Before reviewing, answer:
    _aside_exec "Search the web for {framework} {pattern} built-in, {pattern} best practice {current year}, and {framework} {pattern} pitfalls. Read-only: do not sign in, submit, or change anything. Reply with up to 8 bullets, each with its source URL, then stop."
    ```
 
-   Use the readiness result from **Web research runs in Aside**, above. If Aside is unavailable, run the same searches with the WebSearch tool when the host provides it; with neither, skip this check and note: "Search unavailable — proceeding with in-distribution knowledge only."
+   Use the entrypoint's **Web research runs in Aside** readiness result. If Aside is unavailable, run the same searches with the WebSearch tool when the host provides it; with neither, skip this check and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
    If the plan rolls a custom solution where a built-in exists, flag it as a scope reduction opportunity. Annotate recommendations with **[Layer 1]**, **[Layer 2]**, **[Layer 3]**, or **[EUREKA]** (see preamble's Search Before Building section). If you find a eureka moment — a reason the standard approach is wrong for this case — present it as an architectural insight.
 5. **TODOS cross-reference:** Read `TODOS.md` if it exists. Are any deferred items blocking this plan? Can any deferred items be bundled into this PR without expanding scope? Does this plan create new work that should be captured as a TODO?
@@ -255,7 +253,7 @@ These initial scope selectors do not use the later grid or ledger writes. Wait f
 
 1. Explain the excess complexity. Ask about each needed feature cut or deferral separately first.
 2. Compare original and smaller class/module arrangements with the same feature choices. Preserve contracts and approved security, error handling, test and performance fixes in both; leave unapproved fixes pending.
-3. Ask which arrangement to use. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
+3. Offer the concrete original and smaller arrangements as options. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
 
 Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Without a complexity gate, proceed to findings.
 
@@ -286,7 +284,7 @@ Evaluate:
 * DRY violations—be aggressive here.
 * Error handling patterns and missing edge cases (call these out explicitly).
 * Technical debt hotspots.
-* Areas that are fragile or unnecessarily complex, using the engineering preferences above.
+* Areas that are fragile or unnecessarily complex, using the entrypoint's engineering preferences.
 * Existing ASCII diagrams in touched files — are they still accurate after this change?
 
 Resolve this section's new or reopened choices through the Decision procedure. Then report its findings and dispositions and continue.
@@ -757,22 +755,18 @@ Do NOT just append vague bullet points. A TODO without context is worse than no 
 
 ## Approval readiness
 
-Run this check before Required Outputs and after any substantive late change.
-It checks decisions only; no completion report or log is required yet.
+Before Required outputs, check the ledger against every accepted remedy. Each
+must cite its own actual answer, exact prior approval or authorized auto-decision;
+setup, mode, approach and navigation do not count. Carry forward an exact approved
+regression contract. Otherwise, its behavior and assertions need one dedicated
+decision. If approval is missing, mark that draft pending, resolve the choice
+through Decision procedure and repeat this check. Deferrals remain unresolved.
+Only the ledger is needed here; completion outputs and logs come next.
 
-Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
-Never group distinct issues. Setup, mode, approach and navigation are not approval.
-Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
-record why. Deferrals remain unresolved.
-Carry forward an exact approved regression contract. Otherwise settle its
-behavior and assertions in one dedicated decision before adding it to the plan.
-If missing, reset drafts to pending, ask and wait. After the answer, apply only
-its accepted scope and repeat this check before writing completion outputs.
-
-Record `Approval readiness: PASS` with the checked decision IDs and their
-actual answer references in the current decision record. A substantive
-change invalidates that result; navigation alone does not. Then continue to
-Required Outputs, preserving unresolved decisions in the report.
+At the end of `## Decision ledger`, record `Approval readiness: PASS` with the
+checked IDs and actual answer references. A substantive change invalidates this
+result; navigation alone does not. Continue to Required outputs, preserving
+unresolved decisions in the report.
 
 ## Required outputs
 
@@ -1012,18 +1006,11 @@ Use a single delete-then-append flow:
    `## GSTACK REVIEW REPORT` as the last section. If writing or verification fails,
    report the error and follow **Blocked outcome** before Review Log or decision logging.
 
-Do NOT replace the section in place. The "replace mid-file" path is what allowed
-prior versions to leave the report mid-file when an older report already lived
-there — the user then sees a plan whose review report is not at the bottom and
-(correctly) rejects it.
+Do NOT replace the section in place; delete it and append the new report at EOF.
 
 ## Review Log
 
-When a plan/report file is in scope, persist only after its successful write and Read-back
-above. On failure, use **Blocked outcome**; do not log completion or an accepted decision.
-Run the commands below only when the reviewed output is persisted and metadata writes
-are permitted. Otherwise show their actual fields in chat as not persisted. The dashboard
-contains saved history; it must not be presented as recording this unlogged run.
+After successful Read-back, run these commands only when metadata writes are permitted. Otherwise show the fields as not persisted; the dashboard must not count this unlogged run.
 
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-eng-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"MODE","commit":"COMMIT"}'
@@ -1038,7 +1025,7 @@ Substitute values from the Completion Summary:
 - **unresolved**: this review's "Unresolved decisions" count; do not include prior reviews
 - **critical_gaps**: number from "Failure modes: ___ critical gaps flagged"
 - **issues_found**: total issues found across all review sections (Architecture + Code Quality + Performance + Test gaps)
-- **MODE**: FULL_REVIEW / SCOPE_REDUCED
+- **MODE**: FULL_REVIEW for the Scope Challenge result "scope accepted as-is"; SCOPE_REDUCED for "scope reduced per recommendation".
 - **COMMIT**: output of `git rev-parse --short HEAD`
 
 ## Review Readiness Dashboard

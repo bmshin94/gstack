@@ -63,6 +63,30 @@ describe('matchGlob', () => {
 // --- selectTests ---
 
 describe('selectTests', () => {
+  test('learnings rendering selects the Eng workflow consumers without unrelated review cases', () => {
+    expect(fs.readFileSync(path.join(ROOT, 'plan-eng-review/sections/review-sections.md.tmpl'), 'utf8'))
+      .toContain('{{LEARNINGS_SEARCH}}');
+    const consumers = selectTests(['plan-eng-review/sections/review-sections.md'], E2E_TOUCHFILES).selected
+      // These cases use an outside-only excerpt or descriptive Eng metadata.
+      .filter(id => !['outside-plan-disabled-no-fallback', 'plan-ceo-review-prosons-cadence',
+        'plan-review-prosons-format'].includes(id));
+    const existing = ['learnings-show', 'codex-plan-ceo-format-mode', 'codex-plan-ceo-format-approach',
+      'codex-plan-eng-format-coverage', 'codex-plan-eng-format-kind'];
+    const result = selectTests(['scripts/resolvers/learnings.ts'], E2E_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    expect(result.selected.sort()).toEqual([...new Set([...consumers, ...existing])].sort());
+    expect(result.selected).toContain('plan-eng-review');
+    expect(result.selected).toContain('plan-eng-finding-count');
+    expect(result.selected).not.toContain('plan-ceo-review-prosons-cadence');
+    expect(result.selected).not.toContain('outside-plan-disabled-no-fallback');
+  });
+
+  test('learnings rendering selects the Eng judge that consumes the changed instruction', () => {
+    const result = selectTests(['scripts/resolvers/learnings.ts'], LLM_JUDGE_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    expect(result.selected).toEqual(['plan-eng-review/SKILL.md sections']);
+  });
+
   test.each(['bin/gstack-paths', 'bin/gstack-slug', 'scripts/resolvers/design.ts'])(
     'Design artifact dependencies select their native consumers: %s', (file) => {
       const result = selectTests([file], E2E_TOUCHFILES);

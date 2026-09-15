@@ -1838,7 +1838,7 @@ describe('BENEFITS_FROM resolver', () => {
 
   test('the optional Eng prerequisite ends before mandatory engineering review', () => {
     const offer = extractMarkdownSection(engContent, '## Prerequisite Skill Offer');
-    expect(offer).toContain('Build the next full decision brief from these facts and options, using the Later question stages and preamble format');
+    expect(offer).toContain('Build the next full decision brief from these facts and options, using the preamble transport, numbering and format');
     expect(offer).toContain('B) Skip — proceed with standard review');
     expect(offer).toContain('Then proceed normally. Do not re-offer later in the session');
     expect(offer).not.toContain('### Step 0: Scope Challenge');
@@ -2350,28 +2350,38 @@ describe('Design approval reconciliation', () => {
     const gate = extractMarkdownSection(main, '## EXIT PLAN MODE GATE (BLOCKING)');
     const section = fs.readFileSync(path.join(ROOT, 'plan-eng-review/sections/review-sections.md'), 'utf8');
     const readiness = extractMarkdownSection(section, '## Approval readiness');
+    const normalizedReadiness = readiness.replace(/\s+/g, ' ');
     expect(section.indexOf('## Approval readiness')).toBeLessThan(section.indexOf('## Required outputs'));
-    expect(readiness).toContain('no completion report or log is required yet');
-    expect(readiness).toContain('Record `Approval readiness: PASS`');
-    expect(readiness).toContain('checked decision IDs and their');
-    expect(readiness).toContain('actual answer references in the current decision record');
+    expect(normalizedReadiness).toContain('Only the ledger is needed here; completion outputs and logs come next');
+    expect(normalizedReadiness).toContain('At the end of `## Decision ledger`, record `Approval readiness: PASS`');
+    expect(normalizedReadiness).toContain('checked IDs and actual answer references');
+    expect(normalizedReadiness).toContain('A substantive change invalidates this result; navigation alone does not');
     expect(readiness).not.toMatch(/^ {3}\S/m);
     expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
     expect(gate).toContain('read-only verification, not a new approval or output-writing step');
     const approvalParagraph = gate.slice(gate.indexOf('Confirm Approval readiness'), gate.indexOf('Before calling ExitPlanMode'));
     expect(approvalParagraph).not.toMatch(/^ {3}\S/m);
     expect([...gate.matchAll(/^([1-5])\. /gm)].map(match => match[1])).toEqual(['1', '2', '3', '4', '5']);
-    expect(readiness.indexOf('Approvals:')).toBeGreaterThanOrEqual(0);
     expect(gate.indexOf('Confirm Approval readiness')).toBeLessThan(gate.indexOf('1. Read the plan file'));
-    expect(readiness).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
-    expect(readiness).toContain('Never group distinct issues. Setup, mode, approach and navigation are not approval.');
-    expect(readiness).toContain('Honor prior exact decisions and preamble-authorized per-issue auto-decisions;');
-    expect(readiness).toContain('record why. Deferrals remain unresolved.');
-    expect(readiness).toContain('Carry forward an exact approved regression contract.');
-    expect(readiness).toContain('behavior and assertions in one dedicated decision before adding it to the plan.');
+    expect(normalizedReadiness).toContain('check the ledger against every accepted remedy');
+    expect(normalizedReadiness).toContain('Each must cite its own actual answer, exact prior approval or authorized auto-decision');
+    expect(normalizedReadiness).toContain('setup, mode, approach and navigation do not count');
+    expect(normalizedReadiness).toContain('Deferrals remain unresolved');
+    expect(normalizedReadiness).toContain('Carry forward an exact approved regression contract');
+    expect(normalizedReadiness).toContain('Otherwise, its behavior and assertions need one dedicated decision');
     expect(readiness).not.toContain('REGRESSION test is already authorized');
-    expect(readiness).toContain('If missing, reset drafts to pending, ask and wait.');
-    expect(readiness).toContain('repeat this check before writing completion outputs');
+    expect(normalizedReadiness).toContain('If approval is missing, mark that draft pending, resolve the choice through Decision procedure and repeat this check');
+    expect(normalizedReadiness).toContain('Continue to Required outputs, preserving unresolved decisions in the report');
+    // Readiness verifies evidence; the one procedure owns asking and applying.
+    // The procedure contains a fenced H2 ledger example; use its real next step.
+    const decisionStart = section.indexOf('\n## Decision procedure\n');
+    const decisionEnd = section.indexOf('\n## Scope Challenge\n', decisionStart);
+    expect(decisionStart).toBeGreaterThan(0);
+    expect(decisionEnd).toBeGreaterThan(decisionStart);
+    const decisions = section.slice(decisionStart, decisionEnd);
+    expect(decisions).toContain('one question for one choice per AskUserQuestion call');
+    expect(decisions).toContain('If another independent change appears, return to **Frame the choices** and split it before sending');
+    expect(decisions).toContain('Ask and STOP -> Record actual answer -> Apply only accepted scope');
     expect(gate).toContain('report the stale verification and stop');
     expect(gate).toContain('starts at Decision procedure for changed choices, then Approval readiness, then repeats affected outputs, Read-back,');
     expect(gate).toContain('Review Log and dashboard');
@@ -3994,6 +4004,30 @@ describe('LEARNINGS_SEARCH resolver', () => {
     const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
     expect(content).toContain('Enable cross-project learnings');
     expect(content).toContain('project-scoped only');
+  });
+
+  test('Eng clarifies its full brief without changing any host options or other skills', async () => {
+    const { generateLearningsSearch } = await import('../scripts/resolvers/learnings');
+    const { ALL_HOST_CONFIGS } = await import('../hosts');
+    const { HOST_PATHS } = await import('../scripts/resolvers/types');
+    const fullBrief = 'Build a full decision brief from these facts and options using the preamble format, then ask and wait:';
+    for (const host of ALL_HOST_CONFIGS) {
+      const ctx = { skillName: 'plan-eng-review', tmplPath: 'plan-eng-review/SKILL.md.tmpl', host: host.name, paths: HOST_PATHS[host.name]! };
+      const eng = generateLearningsSearch(ctx);
+      const standard = generateLearningsSearch({ ...ctx, skillName: 'review' });
+      expect(generateLearningsSearch({ ...ctx, skillName: 'plan-ceo-review' })).toBe(standard);
+      if (host.learningsMode === 'basic') {
+        expect(eng).toBe(standard);
+        expect(eng).not.toContain('CROSS_PROJECT');
+      } else {
+        expect(eng).toContain(fullBrief);
+        expect(eng.replace(fullBrief, 'Use AskUserQuestion:')).toBe(standard);
+        expect(eng).toContain('A) Enable cross-project learnings (recommended)');
+        expect(eng).toContain('B) Keep learnings project-scoped only');
+        expect(eng).toContain('gstack-config set cross_project_learnings true');
+        expect(eng).toContain('gstack-config set cross_project_learnings false');
+      }
+    }
   });
 
   test('learnings search mentions prior learning applied display format', () => {
