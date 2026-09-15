@@ -36,7 +36,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 
 **Source attribution:** If the most recent entry for a skill has a \\\`"via"\\\` field, append it to the status label in parentheses. Examples: \`plan-eng-review\` with \`via:"autoplan"\` shows as "CLEAR (PLAN via /autoplan)". \`review\` with \`via:"ship"\` shows as "CLEAR (DIFF via /ship)". Entries without a \`via\` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
-Read \`autoplan-voices\` and \`design-outside-voices\` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
+${ctx.skillName === 'plan-ceo-review' ? 'From gstack-review-read output, use entries whose skill is `autoplan-voices` or `design-outside-voices` for the coverage detail below the dashboard.' : 'Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard.'} Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
 
 ${['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName) ? 'Display a fresh `clean` result as CLEAR and `issues_open` as ISSUES OPEN. Show missing, stale, disabled or unavailable results explicitly; none implies CLEAR. Keep the logged status unchanged.\n\n' : ''}Display:
 
@@ -189,7 +189,7 @@ ${ctx.skillName === 'plan-eng-review' ? 'Do NOT replace the section in place; de
 prior versions to leave the report mid-file when an older report already lived
 there — the user then sees a plan whose review report is not at the bottom and
 (correctly) rejects it.`}`;
-  return ctx.skillName === 'plan-eng-review' ? result.replaceAll('\\`', '`') : result;
+  return conditionalWrites ? result.replaceAll('\\`', '`') : result;
 }
 
 /** Approval readiness precedes output; the exit gate only verifies the saved result. */
@@ -208,6 +208,24 @@ At the end of \`## Decision ledger\`, record \`Approval readiness: PASS\` with t
 checked IDs and actual answer references. A substantive change invalidates this
 result; navigation alone does not. Continue to Required outputs, preserving
 unresolved decisions in the report.`;
+  if (ctx.skillName === 'plan-ceo-review') return `## Approval readiness
+
+Check the decision ledger before Required Outputs. For each approved remedy:
+1. Cite its actual answer, exact prior approval or preamble-authorized per-issue
+   auto-decision. Setup, mode and navigation are not remedy approvals; an approach
+   approves only its explicit commitments and their directly required tests.
+2. Confirm that the plan applies only that answer's scope. Independent remedies
+   and additional verification choices need their own rows and answers.
+3. Keep declined, deferred and unanswered changes out of accepted work. Deferrals
+   remain unresolved; keep every unresolved choice visible in the final report.
+
+If a draft lacks approval, mark it pending and use 0D; repeat this check after
+its answer. No report or completion log is needed to run this check.
+
+At the end of the six-column decision ledger, record \`Approval readiness: PASS\`
+with the checked row IDs and their actual answer or approval references. Save or
+present the updated plan under Step 0's storage policy, then continue to Required
+Outputs. A substantive change invalidates this result; navigation alone does not.`;
   return `## Approval readiness
 
 Run this check before Required Outputs and after any substantive late change.
@@ -231,7 +249,13 @@ export function generateExitPlanModeGate(ctx: TemplateContext): string {
   const noApproval = ctx.skillName === 'plan-design-review'
     ? 'DESIGN.md tokens and navigation' : 'Setup, mode, approach and navigation';
   const separateReadiness = ['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName);
-  const approvals = separateReadiness ? `Confirm Approval readiness passed for the current decisions. This is a
+  const approvals = ctx.skillName === 'plan-ceo-review' ? `Verify the ledger's \`Approval readiness: PASS\` still matches the current
+row IDs and answer references. This is read-only; do not repeat its decisions.
+If a substantive change made it stale, stop before success telemetry or exit.
+Resume at 0D for changed choices, then Approval readiness → affected outputs →
+report Read-back → Review Log → dashboard.
+
+` : separateReadiness ? `Confirm Approval readiness passed for the current decisions. This is a
    read-only verification, not a new approval or output-writing step. If the
    decisions changed, report the stale verification and stop before success
    telemetry or exit${ctx.skillName === 'plan-eng-review' ? ' and follow **Blocked outcome**' : ''}. A resumed repair
@@ -905,9 +929,13 @@ THE PLAN:
 
 **If \`CODEX_MODE: ready\` — run ${outsideVoiceFor(ctx).label}:**
 
-Run the selected backend in one foreground Bash invocation (\`run_in_background: false\`,
+${ctx.skillName === 'plan-ceo-review' ? `Run this block only for \`ready\`, in one foreground Bash call
+(\`run_in_background: false\`, \`timeout: 300000\`). Its opening harness guard
+rechecks the fresh shell: exit 78 uses the same Native fallback below, never a
+replacement provider. Finish termination before fallback and consume only
+completed output. Use private temporary paths, with no background jobs.` : `Run the selected backend in one foreground Bash invocation (\`run_in_background: false\`,
 \`timeout: 300000\`). Finish a failed attempt's termination before fallback;
-consume only its completed output. No background jobs or shared temporary paths.
+consume only its completed output. No background jobs or shared temporary paths.`}
 
 ${outsideVoiceInvocation(ctx, { timeoutMs: 300000 })}
 
@@ -930,9 +958,9 @@ ${outsideVoiceFor(ctx).label.toUpperCase()} SAYS (plan review — outside voice)
 Immediately before dispatching, check the preflight result again. On
 \`CODEX_MODE: disabled\`, finish this section with \`outside_status: disabled\`;
 do not dispatch. Otherwise, use this fallback for missing/broken CLI, failed
-authentication/model selection, a failed preflight${ctx.skillName === 'plan-eng-review' ? ' (including harness mismatch)' : ''}, or a failed outside invocation.
+authentication/model selection, a failed preflight${needsApprovalReadiness ? ' (including harness mismatch)' : ''}, or a failed outside invocation.
 The disabled branch never reaches this fallback.
-${ctx.skillName === 'plan-eng-review' ? '' : needsApprovalReadiness ? 'Harness mismatch follows this same native fallback after the preflight reports its setup repair; no outside CLI runs.\nA native result never supplies outside coverage.' : `On \`CODEX_MODE: ${outsideVoiceFor(ctx).id === 'codex' ? 'under_codex' : 'under_current_harness'}\`, report the setup repair and
+${needsApprovalReadiness ? '' : `On \`CODEX_MODE: ${outsideVoiceFor(ctx).id === 'codex' ? 'under_codex' : 'under_current_harness'}\`, report the setup repair and
 \`outside_status: unavailable\`, run no outside CLI, and use the native subagent below.
 A native result never supplies outside coverage.`}
 
@@ -991,7 +1019,7 @@ Report all findings, dispositions and remaining disagreements after resolving th
 
 ` : ctx.skillName === 'plan-ceo-review' ? `**Cross-model tension:**
 
-Use the same six-column decision ledger and the four steps of 0D: check sources and prior answers → record and save pending choices → compare and save options → obtain the actual answer and amend. Record the reviewer and evidence in that ledger; do not start a second table or procedure.
+Record the reviewer and evidence in the same six-column ledger. Use 0D for new or reopened choices, including both saves and the actual answer; do not start a second procedure.
 
 **Outside evidence:** Reconcile findings with the original input, inspected source and exact approvals. Correct false premises without changing accepted behavior; factual corrections and confirmations need no behavior-change menu. Keep uncertainty with its owner and required verification. If it threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before confirmation; merely imagining another behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
 

@@ -38,7 +38,14 @@ test('CEO and Eng describe the actual disabled route and completion validator', 
         // Compact prose must retain the actual wrong-harness execution guard.
         expect(invocation).toContain('exit 78');
         expect(invocation.indexOf('exit 78')).toBeLessThan(invocation.indexOf('_OUTSIDE_TMP=$(mktemp'));
-      } else expect(output).toContain('Harness mismatch follows this same native fallback');
+      } else {
+        const prose = output.replace(/\s+/g, ' ');
+        expect(prose).toContain('a failed preflight (including harness mismatch), or a failed outside invocation');
+        expect(prose).toContain('Its opening harness guard rechecks the fresh shell: exit 78 uses the same Native fallback below, never a replacement provider');
+        expect(prose).toContain('A native result never supplies outside coverage.');
+        expect(invocation).toContain('exit 78');
+        expect(invocation.indexOf('exit 78')).toBeLessThan(invocation.indexOf('_OUTSIDE_TMP=$(mktemp'));
+      }
     }
   }
   expect(validateOutsideReview('Recommendation: proceed because no findings remain.', 'review').completed).toBe(true);

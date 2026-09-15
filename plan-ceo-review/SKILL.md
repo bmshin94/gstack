@@ -903,44 +903,66 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0D. Alternatives (MANDATORY)
 
-**1. Check sources and prior answers.**
-Read the original input, inspected source and actual answers. Correct factual errors, flag conflicts with approvals, and preserve unknowns. Carry exact approvals forward. Reopen only for a concrete contradiction, changed assumption or explicit new user instruction; speculation or reviewer agreement is not enough.
+Use these four steps for new or reopened choices, here and in later sections.
+Mode and scope questions use their menus below and the same answer record.
 
-If no pending approach remains, continue to 0E. Do not invent alternatives or approval to fill the handoff.
+**1. Check sources and prior answers.**
+Read the original input, inspected source and actual answers. Correct factual
+errors, flag approval conflicts and preserve unknowns. Carry exact approvals
+forward. Reopen only for a concrete contradiction, changed assumption or explicit
+new user instruction, never speculation or reviewer agreement.
+If no pending approach remains, continue to 0E; invent neither alternatives nor approval.
 
 **2. Record the pending choice.**
-Give changes separate rows if one can be selected while another stays unchanged. If they must stay together, explain why.
+Give changes separate rows if one can be selected while another stays unchanged;
+explain any necessary coupling. Name the owner. Fill Current and Proposed with
+behavior, limits, test method and coverage.
 
-For tests, distinguish these three cases:
+For tests:
 | Case | Decision |
 |------|----------|
-| Code change and its required regression tests | Keep them together; carry both forward once approved. |
-| Approved change with an open test method or coverage choice | Decide that once; preserve required behavior and approved test requirements in every option. |
-| Proposed tests for existing behavior | Separate them if either can be selected alone. Tests for undecided behavior stay pending. |
+| Code change and required regressions | Keep together; carry both forward once approved. |
+| Approved change with open test method/coverage | Decide once; every option preserves required behavior and approved tests. |
+| Proposed tests for existing behavior | Separate independently selectable additions. Tests for undecided behavior stay pending. |
 
-Fill Current and Proposed with behavior, limits, test method and coverage. Under the storage policy, save this pending row or present the complete updated chat plan before comparing options. Do not prewrite approval or implementation tasks.
+**Save pending rows before comparing options.** Save or present the complete
+updated plan under the storage policy. Do not prewrite approval or implementation tasks.
 
 **3. Compare and save that row's options.**
-Compare 2–3 approaches; prefer 3 for non-trivial plans and explain a lone viable option. Give each a name, 1–2 sentence summary, S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage. Weigh diff size and long-term architecture equally; a rewrite may be better.
+Compare 2–3 approaches; prefer 3 for non-trivial plans and explain a lone viable
+option. Give each a name, 1–2 sentence summary, S/M/L/XL effort,
+low/medium/high risk, 2–3 pros/cons, reuse and verification coverage. Weigh diff
+size and long-term architecture equally; a rewrite may be better.
 
-Check everything promised by each option's label, description and pros/cons. In Proposed, record each commitment as:
-`commitment [source/approval or pending]: current=value; A=value; B=value; C=value`
-Use offered options only; include unchanged, pending and shared values.
+In Proposed, compare every commitment in the labels, descriptions and pros/cons:
 
-Read the grid before asking: can two changes be chosen separately? If so, split them into separate rows. Check shared values too: a new commitment common to all options still needs its own decision if it is independent. A shared test framework does not merge independently selectable test additions. Each option may resolve only one pending choice; keep other commitments fixed or pending. Preserve accepted requirements and their required tests and fixes in every option.
+```text
+Commitment | Source/approval or pending | Current | A | B | C
+```
 
-Save or present the complete updated plan again before asking.
+Use offered options only; include unchanged, pending and shared values. Read the
+grid: split separately selectable changes, including an independent commitment
+shared by all options. A shared test framework does not join independent test
+additions. Each option resolves only this row; keep other commitments fixed or
+pending and preserve accepted requirements with their required tests and fixes.
+Do not invent add-ons to fill an option slot.
+
+**Save the completed comparison before asking.** Save or present the complete
+updated plan under the storage policy.
 
 **4. Ask, record the answer, and amend.**
-Use the preamble's question format, recommendation and preference/session rules. Ask one row per call and cite its ID; recommendations are not approval.
+Use the preamble's format, recommendation and preference/session rules. Ask one
+row per call and cite its ID; recommendations are not approval. If options differ
+in coverage, score this row only: 10 = all edge cases, 7 = happy path, 3 = shortcut. Otherwise
+write: "Note: options differ in kind, not coverage — no completeness score."
 
-If options differ in coverage, score this row only: 10 covers all its edge cases, 7 the happy path, 3 a shortcut. Otherwise write: "Note: options differ in kind, not coverage — no completeness score."
+**STOP for the actual answer, even for a lone option.** Record its reference and
+scope in Exact approval and scope, update Status, and apply only the authorized
+amendments before the next row. Save or present the updated plan. Do not edit code.
 
-**STOP for the actual answer, even for a lone option.** Record its reference and scope in Exact approval and scope, update Status, and apply only the authorized amendments before the next row. Do not edit code.
-
-If all alternatives are declined, continue only when the actual answer keeps a viable current approach. Otherwise leave the row unresolved and stop for new direction. Resolve required approaches before 0E.
-
-Use this procedure for later new or reopened choices, including Outside Voice. Mode and scope questions use their own menus below. Report settled findings; say "No issues, moving on." only when there are zero findings.
+If all alternatives are declined, continue only when the answer keeps a viable
+current approach. Otherwise leave the row unresolved and stop for new direction.
+Resolve required approaches before 0E. Report settled findings; say "No issues, moving on." only for zero findings.
 
 ### 0E. Mode Selection
 The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` changes transport only.
@@ -950,8 +972,8 @@ Count distinct planned file additions, edits and deletions; label uncertain coun
 2. Recommend SCOPE REDUCTION for >15 planned changed files; else SCOPE EXPANSION for greenfield work, SELECTIVE EXPANSION for enhancements, or HOLD SCOPE for bug fixes/refactors. This step recommends a mode; it does not select one.
 3. Resolve that recommendation:
    - When `QUESTION_TUNING: false`, skip the lookup and ask below.
-   - Otherwise check `question_id=plan-ceo-review-mode` through the preamble. Select the recommendation automatically only if that check exits 0 with `AUTO_DECIDE`; emit its marker and log with `auto_decided: true`.
-   - Without that successful check, offer all four modes in one AskUserQuestion, using step 2's recommendation. **STOP for the answer**; the user's choice wins. Use the same ID for its marker and log. Do NOT emit `Completeness: N/10` per option; use 0D's differences-in-kind note.
+   - Otherwise check `question_id=plan-ceo-review-mode` through the preamble. Select the recommendation automatically only if that check exits 0 with `AUTO_DECIDE`; use the automatic handoff below and log with `auto_decided: true`.
+   - Without that successful check, offer all four modes in one AskUserQuestion, using step 2's recommendation. **STOP for the answer**; the user's choice wins. When `QUESTION_TUNING: true`, include `<gstack-qid:plan-ceo-review-mode>` and log that ID. These modes differ in kind, not coverage; do NOT score completeness.
 
 Mode selection grants no approach or scope approval. Preserve approved 0D decisions; obtain explicit approval for any mode-required change. The >15-file threshold recommends a mode; the >8-file check challenges complexity within HOLD SCOPE and SELECTIVE EXPANSION. Neither threshold authorizes a scope cut.
 
@@ -1142,12 +1164,11 @@ If storage restrictions prevented the plan/report or completion log, present the
 full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
 An attempted artifact save that failed still stops the review.
 
-Confirm Approval readiness passed for the current decisions. This is a
-   read-only verification, not a new approval or output-writing step. If the
-   decisions changed, report the stale verification and stop before success
-   telemetry or exit. A resumed repair
-   starts at Approval readiness, then repeats affected outputs, Read-back,
-   Review Log and dashboard.
+Verify the ledger's `Approval readiness: PASS` still matches the current
+row IDs and answer references. This is read-only; do not repeat its decisions.
+If a substantive change made it stale, stop before success telemetry or exit.
+Resume at 0D for changed choices, then Approval readiness → affected outputs →
+report Read-back → Review Log → dashboard.
 
 Before calling ExitPlanMode, verify all five checks:
 1. Read the plan file after your most recent write.

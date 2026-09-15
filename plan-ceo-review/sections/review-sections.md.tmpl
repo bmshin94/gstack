@@ -49,25 +49,41 @@ The separate CEO archive is additional persistence for expansion modes.
 
 ### Working review decisions
 
-Continue Step 0's six-column ledger. Use its owner field for the review section and retain each row's evidence, current/proposed values and exact approval. An approach approves its explicit commitments, not every implementation choice.
+Continue Step 0's six-column ledger, naming the owner section for each row. An
+approach approves its explicit commitments, not every implementation choice.
+At each **Decision gate**, complete Analyze → Resolve → Apply. Review only;
+do not change code.
 
-At every section's **Decision gate**, complete Analyze → Resolve → Apply before continuing. **Do NOT make any code changes. Review only.**
+**Analyze.** Check the original input, inspected source and actual approvals.
+Correct source-disproven claims and their dependent test/runbook text; factual
+correction does not authorize changing approved behavior. Preserve contracts
+and mitigations with their evidence; later silence does not revoke them. Surface
+conflicts with accepted requirements. Leave unsupported premises unknown:
+unavailable implementation proves neither failure nor safety. Keep each unknown
+risk's owner and required verification visible; approval does not verify it.
 
-**Analyze.** Check original input, inspected source and actual approvals before drafting options. Correct source-disproven claims and dependent test/runbook text; the draft cannot authorize baseline changes. Carry contracts and mitigations forward with evidence; later silence does not invalidate them. Surface conflicts with accepted requirements. Unsupported premises stay unknown; unavailable external implementation proves neither failure nor safety. Keep unknown risks, owners and required verification visible; approval does not verify them.
+**Resolve.** Use 0D for each new or reopened choice in its owner section. Earlier
+sections cross-reference those pending rows; newly discovered critical risks
+need immediate resolution. One choice per AskUserQuestion: recommend + WHY and
+**STOP until the user responds**. Cross-reference exact settled decisions instead
+of asking again. Follow 0D's test table; sharing a helper does not combine a safety
+fix with a throughput improvement. Report findings with their dispositions;
+"No issues found" means zero findings, not zero new questions.
 
-Before the answer, record only pending issues, evidence and alternatives. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
+**Apply.** Check every amendment against the actual answer or exact prior
+approval. Preserve existing content and approved behavior, including its required
+implementation, tests and success/failure contracts. Keep independent remedies
+and extra verification depth pending. Before approval, show proposed remedies only as alternatives. Keep them out of
+implementation tasks and do not prescribe them in diagrams or verification steps.
+Save or present the complete updated plan under Step 0's storage policy before
+advancing.
 
-**Resolve.** Use the complete four-step procedure in 0D for each new or reopened decision. Resolve each unit in its owner section; earlier sections cross-reference pending rows. Resolve newly discovered critical risks immediately.
-
-For each unresolved or reopened decision, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Cross-reference an exact settled decision instead of asking it again. If no decision remains, report the findings with their existing dispositions and continue. Say "No issues found" only for zero findings.
-
-Use 0D's test rules: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Test wording alone does not choose test depth. For example, fixing unsafe input handling and improving throughput are separate choices even when both change one helper. Do not invent independent add-ons to fill a third option.
-
-**Apply.** Check every amended commitment against the actual answer or explicit earlier approval. Preserve existing content, approved behavior and its direct implementation/verification, including unchanged success/failure contracts. Surrounding analysis, independent remedies and extra verification depth stay pending. Record only authorized amendments and deferrals in the permitted medium; update the complete working plan under Step 0's storage policy before advancing.
-
-Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Carrying a constraint forward does not mean its later section was reviewed. Assemble required outputs after Sections 1–10 and Section 11's findings or no-UI skip are recorded.
-
-Approval settles the planning choice; it does not prove the mitigation is implemented or verified. Retain unresolved choices and supporting findings in the ledger and final report.
+Record this section's conclusions after its decisions are resolved. Evaluate
+later sections before adding their conclusions or implementation tasks: carrying
+a constraint forward does not mean that section was reviewed. Assemble Required
+Outputs only after Sections 1–10 and Section 11's findings or no-UI skip are
+recorded. Retain unresolved choices in the ledger and final report; approval
+settles the choice, not whether its remedy is implemented or verified.
 
 ### Section 1: Architecture Review
 Open in your own chat using the Step 0E mode-handoff format and the current ledger dispositions, including actual later scope-answer references. Retain the current mode, rationale and saved-preference attribution when applicable. Keep the original handoff as history; do not reannounce superseded scope as current. Then say `Section 1: Architecture Review`.
@@ -195,7 +211,7 @@ Evaluate:
 **Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 6: Test Review
-Preserve requested or approved coverage without re-asking. Fixed runtime contracts and a settled approach do not approve additional verification scope or depth. For each material verification change, identify the distinct regression existing tests miss and resolve that change before prescribing it in any plan draft.
+Carry requested or approved coverage forward, including directly determined tests, without re-asking. For an unresolved test-method choice or additional verification scope/depth, name the distinct regression existing tests miss and resolve that choice through 0D before prescribing it. An approved runtime contract alone does not choose extra verification scope.
 
 Make a complete diagram of every new thing this plan introduces:
 ```
@@ -324,24 +340,22 @@ If this plan has significant UI scope, recommend: "Consider running /plan-design
 
 ## Closing sequence
 
-Follow the remaining blocks in this order:
-1. **Outside Voice:** run the configured review, reconcile its findings through 0D, and record its actual result. Disabled or unavailable voices continue to step 2.
-2. **Resolve remaining TODO choices:** ask each applicable TODO question, using the selected mode's scope rules.
-3. **Approval readiness:** verify the decisions and approved changes. This check requires no report or completion log; stop if it fails.
-4. **Required Outputs:** assemble tasks and summaries, write the review report and pass its Read-back.
-5. **Cleanup and history:** perform permitted cleanup, write Review Log, then display the dashboard.
-6. **Navigation:** choose Next Steps and any docs/designs promotion. Queue the next skill. If an answer changes the plan, resolve it through 0D, repeat Approval readiness, then refresh affected outputs, report Read-back, log and dashboard in that order.
-7. **Learnings:** finish learning and brain write-back, then return to the skeleton once. Its terminal gate verifies the finished artifacts and current approval readiness. Only a passing persisted review proceeds to telemetry, cache refresh and exit.
+Continue through the blocks below in file order:
+1. **Outside Voice:** run the configured review and resolve its findings through 0D. Record disabled or unavailable coverage and continue when no reviewer runs.
+2. **Resolve remaining TODO choices:** use the selected mode's scope rules.
+3. **Approval readiness:** check the ledger and record PASS before writing outputs. Its complete checklist is immediately after the TODO choices; no report or log is needed yet.
+4. **Required Outputs:** assemble tasks and summaries, save the terminal review report and pass its Read-back gate.
+5. **Cleanup and history:** perform permitted cleanup, write Review Log and display the dashboard.
+6. **Navigation:** choose Next Steps and any docs/designs promotion; queue the next skill. A substantive answer returns to 0D → Approval readiness → affected outputs → report Read-back → log → dashboard. Navigation alone does not reopen decisions.
+7. **Learnings:** finish learning and brain write-back. Return to this skill's main `SKILL.md`, at **Section self-check**. Its EXIT gate only verifies completed work and the saved readiness result; it does not ask again. A passing persisted review then runs telemetry, cache refresh and exit.
 
 ### Outside Voice Integration Rule
 
-Outside-voice findings use the same working decision ledger. Before admitting a
-finding to the decision queue, apply Analyze above against original evidence and
-actual approvals. Correct draft-created assurances first; preserve unresolved
-risks and dependencies. Agreement is not new evidence or approval. A newly
-supported material risk can reopen an earlier choice; cite that choice and the
-new evidence. New or reopened decisions still require explicit approval through
-AskUserQuestion before their recommendations become plan amendments.
+Apply Analyze above to each outside finding before adding it to the same ledger.
+Correct unsupported draft claims and preserve unknown risks. Reviewer agreement
+is not new evidence or approval. Reopen a choice only for a supported material
+risk, citing its prior answer and the new evidence; resolve it through 0D before
+amending the plan.
 
 {{CODEX_PLAN_REVIEW}}
 
@@ -426,7 +440,8 @@ Use the full mode name from Step 0E; replace spaces with underscores only in the
 review log's `MODE` field. "System Audit" summarizes repository findings from
 Step 0 and the review sections. "Lake Score" is X/Y: Y counts answered coverage
 choices offering a complete (10/10) option; X counts those choosing it. Exclude
-kind choices and unanswered questions; use `N/A` when Y is zero.
+choices that differ in kind rather than coverage, and unanswered questions; use
+`N/A` when Y is zero.
 
 ```
   +====================================================================+
@@ -487,14 +502,7 @@ Run the commands below only when the reviewed output is persisted and metadata w
 are permitted. Otherwise show their actual fields in chat as not persisted. The dashboard
 contains saved history; it must not be presented as recording this unlogged run.
 
-```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
-~/.claude/skills/gstack/bin/gstack-decision-log '{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill","confidence":8}' 2>/dev/null || true
-```
-
-The second command records the accepted scope as a durable cross-session decision so the next session sees what was settled (and why) without re-litigating it. It writes to `~/.gstack/` (same pattern as review-log), is non-interactive, and is best-effort (`|| true` — never blocks the review). Substitute `SCOPE_SUMMARY` (e.g. "accepted 4 of 6 proposals" for expansion, or "held scope" / "cut 3 items" for HOLD/REDUCTION) and `VERDICT` (the one-line verdict from the summary).
-
-Before running this command, substitute the placeholder values from the Completion Summary you just produced:
+Substitute these values from the Completion Summary before running the commands:
 - **TIMESTAMP**: current UTC ISO 8601 datetime (e.g., 2026-03-16T14:30:00Z)
 - **STATUS**: "clean" if 0 unresolved decisions AND 0 critical gaps; otherwise "issues_open"
 - **unresolved**: number from "Unresolved decisions" in the summary
@@ -504,6 +512,13 @@ Before running this command, substitute the placeholder values from the Completi
 - **scope_accepted**: number from "Scope proposals: ___ accepted" in the summary (0 for HOLD/REDUCTION)
 - **scope_deferred**: number of items deferred to TODOS.md from scope decisions (0 for HOLD/REDUCTION)
 - **COMMIT**: output of `git rev-parse --short HEAD`
+
+The second command records the accepted scope as a durable cross-session decision so the next session sees what was settled (and why) without re-litigating it. It writes to `~/.gstack/` (same pattern as review-log), is non-interactive, and is best-effort (`|| true` — never blocks the review). Substitute `SCOPE_SUMMARY` (e.g. "accepted 4 of 6 proposals" for expansion, or "held scope" / "cut 3 items" for HOLD/REDUCTION) and `VERDICT` (the one-line verdict from the summary).
+
+```bash
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
+~/.claude/skills/gstack/bin/gstack-decision-log '{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill","confidence":8}' 2>/dev/null || true
+```
 
 {{REVIEW_DASHBOARD}}
 
@@ -535,8 +550,9 @@ If promoted and those writes are permitted, copy the CEO plan content to `docs/d
 
 ## Learnings and brain write-back
 
-Finish these review tasks without changing the plan. Then return to the skeleton
-for terminal verification; success telemetry and exit happen there.
+Finish these review tasks without changing the plan. Then return to
+this skill's main `SKILL.md` at **Section self-check** for terminal verification.
+Success telemetry and exit happen there.
 
 {{LEARNINGS_LOG}}
 
@@ -544,4 +560,4 @@ for terminal verification; success telemetry and exit happen there.
 
 {{BRAIN_WRITE_BACK}}
 
-Return to the skeleton's Section self-check and EXIT PLAN MODE GATE now.
+Return to this skill's main `SKILL.md`: Section self-check → EXIT PLAN MODE GATE.

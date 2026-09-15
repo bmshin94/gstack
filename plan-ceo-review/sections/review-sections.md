@@ -51,25 +51,41 @@ The separate CEO archive is additional persistence for expansion modes.
 
 ### Working review decisions
 
-Continue Step 0's six-column ledger. Use its owner field for the review section and retain each row's evidence, current/proposed values and exact approval. An approach approves its explicit commitments, not every implementation choice.
+Continue Step 0's six-column ledger, naming the owner section for each row. An
+approach approves its explicit commitments, not every implementation choice.
+At each **Decision gate**, complete Analyze → Resolve → Apply. Review only;
+do not change code.
 
-At every section's **Decision gate**, complete Analyze → Resolve → Apply before continuing. **Do NOT make any code changes. Review only.**
+**Analyze.** Check the original input, inspected source and actual approvals.
+Correct source-disproven claims and their dependent test/runbook text; factual
+correction does not authorize changing approved behavior. Preserve contracts
+and mitigations with their evidence; later silence does not revoke them. Surface
+conflicts with accepted requirements. Leave unsupported premises unknown:
+unavailable implementation proves neither failure nor safety. Keep each unknown
+risk's owner and required verification visible; approval does not verify it.
 
-**Analyze.** Check original input, inspected source and actual approvals before drafting options. Correct source-disproven claims and dependent test/runbook text; the draft cannot authorize baseline changes. Carry contracts and mitigations forward with evidence; later silence does not invalidate them. Surface conflicts with accepted requirements. Unsupported premises stay unknown; unavailable external implementation proves neither failure nor safety. Keep unknown risks, owners and required verification visible; approval does not verify them.
+**Resolve.** Use 0D for each new or reopened choice in its owner section. Earlier
+sections cross-reference those pending rows; newly discovered critical risks
+need immediate resolution. One choice per AskUserQuestion: recommend + WHY and
+**STOP until the user responds**. Cross-reference exact settled decisions instead
+of asking again. Follow 0D's test table; sharing a helper does not combine a safety
+fix with a throughput improvement. Report findings with their dispositions;
+"No issues found" means zero findings, not zero new questions.
 
-Before the answer, record only pending issues, evidence and alternatives. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome.
+**Apply.** Check every amendment against the actual answer or exact prior
+approval. Preserve existing content and approved behavior, including its required
+implementation, tests and success/failure contracts. Keep independent remedies
+and extra verification depth pending. Before approval, show proposed remedies only as alternatives. Keep them out of
+implementation tasks and do not prescribe them in diagrams or verification steps.
+Save or present the complete updated plan under Step 0's storage policy before
+advancing.
 
-**Resolve.** Use the complete four-step procedure in 0D for each new or reopened decision. Resolve each unit in its owner section; earlier sections cross-reference pending rows. Resolve newly discovered critical risks immediately.
-
-For each unresolved or reopened decision, one decision unit = one AskUserQuestion call. Do NOT batch. Recommend + WHY and **STOP until the user responds**. Cross-reference an exact settled decision instead of asking it again. If no decision remains, report the findings with their existing dispositions and continue. Say "No issues found" only for zero findings.
-
-Use 0D's test rules: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Test wording alone does not choose test depth. For example, fixing unsafe input handling and improving throughput are separate choices even when both change one helper. Do not invent independent add-ons to fill a third option.
-
-**Apply.** Check every amended commitment against the actual answer or explicit earlier approval. Preserve existing content, approved behavior and its direct implementation/verification, including unchanged success/failure contracts. Surrounding analysis, independent remedies and extra verification depth stay pending. Record only authorized amendments and deferrals in the permitted medium; update the complete working plan under Step 0's storage policy before advancing.
-
-Once the current section's decisions have answers, record its review conclusions. Add later sections' review conclusions and implementation tasks only after evaluating those sections and obtaining any needed decisions. Carrying a constraint forward does not mean its later section was reviewed. Assemble required outputs after Sections 1–10 and Section 11's findings or no-UI skip are recorded.
-
-Approval settles the planning choice; it does not prove the mitigation is implemented or verified. Retain unresolved choices and supporting findings in the ledger and final report.
+Record this section's conclusions after its decisions are resolved. Evaluate
+later sections before adding their conclusions or implementation tasks: carrying
+a constraint forward does not mean that section was reviewed. Assemble Required
+Outputs only after Sections 1–10 and Section 11's findings or no-UI skip are
+recorded. Retain unresolved choices in the ledger and final report; approval
+settles the choice, not whether its remedy is implemented or verified.
 
 ### Section 1: Architecture Review
 Open in your own chat using the Step 0E mode-handoff format and the current ledger dispositions, including actual later scope-answer references. Retain the current mode, rationale and saved-preference attribution when applicable. Keep the original handoff as history; do not reannounce superseded scope as current. Then say `Section 1: Architecture Review`.
@@ -197,7 +213,7 @@ Evaluate:
 **Decision gate.** Complete Analyze → Resolve → Apply above for this section before continuing.
 
 ### Section 6: Test Review
-Preserve requested or approved coverage without re-asking. Fixed runtime contracts and a settled approach do not approve additional verification scope or depth. For each material verification change, identify the distinct regression existing tests miss and resolve that change before prescribing it in any plan draft.
+Carry requested or approved coverage forward, including directly determined tests, without re-asking. For an unresolved test-method choice or additional verification scope/depth, name the distinct regression existing tests miss and resolve that choice through 0D before prescribing it. An approved runtime contract alone does not choose extra verification scope.
 
 Make a complete diagram of every new thing this plan introduces:
 ```
@@ -326,24 +342,22 @@ If this plan has significant UI scope, recommend: "Consider running /plan-design
 
 ## Closing sequence
 
-Follow the remaining blocks in this order:
-1. **Outside Voice:** run the configured review, reconcile its findings through 0D, and record its actual result. Disabled or unavailable voices continue to step 2.
-2. **Resolve remaining TODO choices:** ask each applicable TODO question, using the selected mode's scope rules.
-3. **Approval readiness:** verify the decisions and approved changes. This check requires no report or completion log; stop if it fails.
-4. **Required Outputs:** assemble tasks and summaries, write the review report and pass its Read-back.
-5. **Cleanup and history:** perform permitted cleanup, write Review Log, then display the dashboard.
-6. **Navigation:** choose Next Steps and any docs/designs promotion. Queue the next skill. If an answer changes the plan, resolve it through 0D, repeat Approval readiness, then refresh affected outputs, report Read-back, log and dashboard in that order.
-7. **Learnings:** finish learning and brain write-back, then return to the skeleton once. Its terminal gate verifies the finished artifacts and current approval readiness. Only a passing persisted review proceeds to telemetry, cache refresh and exit.
+Continue through the blocks below in file order:
+1. **Outside Voice:** run the configured review and resolve its findings through 0D. Record disabled or unavailable coverage and continue when no reviewer runs.
+2. **Resolve remaining TODO choices:** use the selected mode's scope rules.
+3. **Approval readiness:** check the ledger and record PASS before writing outputs. Its complete checklist is immediately after the TODO choices; no report or log is needed yet.
+4. **Required Outputs:** assemble tasks and summaries, save the terminal review report and pass its Read-back gate.
+5. **Cleanup and history:** perform permitted cleanup, write Review Log and display the dashboard.
+6. **Navigation:** choose Next Steps and any docs/designs promotion; queue the next skill. A substantive answer returns to 0D → Approval readiness → affected outputs → report Read-back → log → dashboard. Navigation alone does not reopen decisions.
+7. **Learnings:** finish learning and brain write-back. Return to this skill's main `SKILL.md`, at **Section self-check**. Its EXIT gate only verifies completed work and the saved readiness result; it does not ask again. A passing persisted review then runs telemetry, cache refresh and exit.
 
 ### Outside Voice Integration Rule
 
-Outside-voice findings use the same working decision ledger. Before admitting a
-finding to the decision queue, apply Analyze above against original evidence and
-actual approvals. Correct draft-created assurances first; preserve unresolved
-risks and dependencies. Agreement is not new evidence or approval. A newly
-supported material risk can reopen an earlier choice; cite that choice and the
-new evidence. New or reopened decisions still require explicit approval through
-AskUserQuestion before their recommendations become plan amendments.
+Apply Analyze above to each outside finding before adding it to the same ledger.
+Correct unsupported draft claims and preserve unknown risks. Reviewer agreement
+is not new evidence or approval. Reopen a choice only for a supported material
+risk, citing its prior answer and the new evidence; resolve it through 0D before
+amending the plan.
 
 ## Outside Voice — Independent Plan Challenge (default-on)
 
@@ -455,9 +469,11 @@ THE PLAN:
 
 **If `CODEX_MODE: ready` — run Codex:**
 
-Run the selected backend in one foreground Bash invocation (`run_in_background: false`,
-`timeout: 300000`). Finish a failed attempt's termination before fallback;
-consume only its completed output. No background jobs or shared temporary paths.
+Run this block only for `ready`, in one foreground Bash call
+(`run_in_background: false`, `timeout: 300000`). Its opening harness guard
+rechecks the fresh shell: exit 78 uses the same Native fallback below, never a
+replacement provider. Finish termination before fallback and consume only
+completed output. Use private temporary paths, with no background jobs.
 
 Write the **complete prompt and context**, including actual plan/spec/source, to a private file. Substitute its shell-quoted path for `<prepared-prompt-file>`; never interpolate user text into shell source. Request a final Recommendation: <action> because <specific reason> line, including an explicit no-findings rationale.
 
@@ -517,10 +533,9 @@ CODEX SAYS (plan review — outside voice):
 Immediately before dispatching, check the preflight result again. On
 `CODEX_MODE: disabled`, finish this section with `outside_status: disabled`;
 do not dispatch. Otherwise, use this fallback for missing/broken CLI, failed
-authentication/model selection, a failed preflight, or a failed outside invocation.
+authentication/model selection, a failed preflight (including harness mismatch), or a failed outside invocation.
 The disabled branch never reaches this fallback.
-Harness mismatch follows this same native fallback after the preflight reports its setup repair; no outside CLI runs.
-A native result never supplies outside coverage.
+
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
 
@@ -566,7 +581,7 @@ Do not record a clean review when no reviewer completed within the accepted wait
 
 **Cross-model tension:**
 
-Use the same six-column decision ledger and the four steps of 0D: check sources and prior answers → record and save pending choices → compare and save options → obtain the actual answer and amend. Record the reviewer and evidence in that ledger; do not start a second table or procedure.
+Record the reviewer and evidence in the same six-column ledger. Use 0D for new or reopened choices, including both saves and the actual answer; do not start a second procedure.
 
 **Outside evidence:** Reconcile findings with the original input, inspected source and exact approvals. Correct false premises without changing accepted behavior; factual corrections and confirmations need no behavior-change menu. Keep uncertainty with its owner and required verification. If it threatens a required outcome, identify the causal mechanism and surface the decision or blocking verification now. A credible material risk can require action before confirmation; merely imagining another behavior is not evidence of a defect. Preserve the requested mode and its authorized scope exploration.
 
@@ -619,19 +634,22 @@ Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough
 
 ## Approval readiness
 
-Run this check before Required Outputs and after any substantive late change.
-It checks decisions only; no completion report or log is required yet.
+Check the decision ledger before Required Outputs. For each approved remedy:
+1. Cite its actual answer, exact prior approval or preamble-authorized per-issue
+   auto-decision. Setup, mode and navigation are not remedy approvals; an approach
+   approves only its explicit commitments and their directly required tests.
+2. Confirm that the plan applies only that answer's scope. Independent remedies
+   and additional verification choices need their own rows and answers.
+3. Keep declined, deferred and unanswered changes out of accepted work. Deferrals
+   remain unresolved; keep every unresolved choice visible in the final report.
 
-Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
-   Never group distinct issues. Setup, mode, approach and navigation are not approval.
-   Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
-   record why. Deferrals remain unresolved.
-   If missing, reset drafts to pending, ask and wait. After the answer, apply only
-   its accepted scope and repeat this check before writing completion outputs.
+If a draft lacks approval, mark it pending and use 0D; repeat this check after
+its answer. No report or completion log is needed to run this check.
 
-Record that readiness passed with the current decision record. A substantive
-change invalidates that result; navigation alone does not. Then continue to
-Required Outputs, preserving unresolved decisions in the report.
+At the end of the six-column decision ledger, record `Approval readiness: PASS`
+with the checked row IDs and their actual answer or approval references. Save or
+present the updated plan under Step 0's storage policy, then continue to Required
+Outputs. A substantive change invalidates this result; navigation alone does not.
 
 ## Required Outputs
 
@@ -756,7 +774,8 @@ Use the full mode name from Step 0E; replace spaces with underscores only in the
 review log's `MODE` field. "System Audit" summarizes repository findings from
 Step 0 and the review sections. "Lake Score" is X/Y: Y counts answered coverage
 choices offering a complete (10/10) option; X counts those choosing it. Exclude
-kind choices and unanswered questions; use `N/A` when Y is zero.
+choices that differ in kind rather than coverage, and unanswered questions; use
+`N/A` when Y is zero.
 
 ```
   +====================================================================+
@@ -816,18 +835,18 @@ Parse each JSONL entry using recorded provenance. Historical source "claude" is 
 
 Each skill logs different fields:
 
-- **plan-ceo-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`mode\`, \`scope_proposed\`, \`scope_accepted\`, \`scope_deferred\`, \`commit\`
+- **plan-ceo-review**: `status`, `unresolved`, `critical_gaps`, `mode`, `scope_proposed`, `scope_accepted`, `scope_deferred`, `commit`
   → Findings: "{scope_proposed} proposals, {scope_accepted} accepted, {scope_deferred} deferred"
   → If scope fields are 0 or missing (HOLD/REDUCTION mode): "mode: {mode}, {critical_gaps} critical gaps"
-- **plan-eng-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`issues_found\`, \`mode\`, \`commit\`
+- **plan-eng-review**: `status`, `unresolved`, `critical_gaps`, `issues_found`, `mode`, `commit`
   → Findings: "{issues_found} issues, {critical_gaps} critical gaps"
-- **plan-design-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`unresolved\`, \`decisions_made\`, \`commit\`
+- **plan-design-review**: `status`, `initial_score`, `overall_score`, `unresolved`, `decisions_made`, `commit`
   → Findings: "score: {initial_score}/10 → {overall_score}/10, {decisions_made} decisions"
-- **plan-devex-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`product_type\`, \`tthw_current\`, \`tthw_target\`, \`mode\`, \`persona\`, \`competitive_tier\`, \`unresolved\`, \`commit\`
+- **plan-devex-review**: `status`, `initial_score`, `overall_score`, `product_type`, `tthw_current`, `tthw_target`, `mode`, `persona`, `competitive_tier`, `unresolved`, `commit`
   → Findings: "score: {initial_score}/10 → {overall_score}/10, TTHW: {tthw_current} → {tthw_target}"
-- **devex-review**: \`status\`, \`overall_score\`, \`product_type\`, \`tthw_measured\`, \`dimensions_tested\`, \`dimensions_inferred\`, \`boomerang\`, \`commit\`
+- **devex-review**: `status`, `overall_score`, `product_type`, `tthw_measured`, `dimensions_tested`, `dimensions_inferred`, `boomerang`, `commit`
   → Findings: "score: {overall_score}/10, TTHW: {tthw_measured}, {dimensions_tested} tested/{dimensions_inferred} inferred"
-- **codex-review**: \`status\`, \`gate\`, \`findings\`, \`findings_fixed\`
+- **codex-review**: `status`, `gate`, `findings`, `findings_fixed`
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 
 The current row describes this actual review. Mark an unlogged current run as not persisted; do not present it as a saved dashboard entry.
@@ -836,17 +855,17 @@ Display `clean` as CLEAR and `issues_open` as ISSUES OPEN, retaining freshness a
 
 Produce this markdown table:
 
-\`\`\`markdown
+```markdown
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | {runs} | {status} | {findings} |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | {runs} | {status} | {findings} |
 | Outside Review | {recorded provider and trigger} | Independent 2nd opinion | {runs} | {outside_status} | {findings} |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | {runs} | {status} | {findings} |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | {runs} | {status} | {findings} |
-| DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
-\`\`\`
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | {runs} | {status} | {findings} |
+| Design Review | `/plan-design-review` | UI/UX gaps | {runs} | {status} | {findings} |
+| DX Review | `/plan-devex-review` | Developer experience gaps | {runs} | {status} | {findings} |
+```
 
 Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are optional (omit when
 empty); **VERDICT** is always present:
@@ -857,13 +876,13 @@ empty); **VERDICT** is always present:
   If Eng Review is not CLEAR and not skipped globally, append "eng review required".
 
 **Unresolved-decisions status (MANDATORY — never omitted; the report's final non-whitespace
-line).** After VERDICT, end the report (content under the \`## GSTACK REVIEW REPORT\`
-heading — a bold label, never a new \`## \` heading; exempt from the "omit when empty"
-rule) with exactly one: the exact unbolded line \`NO UNRESOLVED DECISIONS\` (a bolded one
-does NOT count), OR a \`**UNRESOLVED DECISIONS:**\` header + one bullet per open item
-(last bullet = final line; add \`+ N unresolved from prior reviews\` only when N > 0).
+line).** After VERDICT, end the report (content under the `## GSTACK REVIEW REPORT`
+heading — a bold label, never a new `## ` heading; exempt from the "omit when empty"
+rule) with exactly one: the exact unbolded line `NO UNRESOLVED DECISIONS` (a bolded one
+does NOT count), OR a `**UNRESOLVED DECISIONS:**` header + one bullet per open item
+(last bullet = final line; add `+ N unresolved from prior reviews` only when N > 0).
 This avoids double-counting: list THIS review's open items from context; for prior reviews
-sum \`unresolved\` over the latest fresh row per skill (dashboard 7-day window) after you
+sum `unresolved` over the latest fresh row per skill (dashboard 7-day window) after you
 DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
@@ -877,12 +896,12 @@ Use a single delete-then-append flow:
    accepted changes; include the full review output. Locate any existing
    `## GSTACK REVIEW REPORT` section.
 2. If found, use the Edit tool to DELETE the entire existing section. Match from
-   \`## GSTACK REVIEW REPORT\` through either the next \`## \` heading or end of
+   `## GSTACK REVIEW REPORT` through either the next `## ` heading or end of
    file, whichever comes first. Replace with the empty string. This applies
    regardless of where the section currently lives — mid-file deletion is
    intentional, not a special case. If the Edit fails, report the error and stop before Review Log or decision logging.
 3. If a report was deleted, Read the updated file. Append the new
-   \`## GSTACK REVIEW REPORT\` at EOF. Use Edit to match the suffix
+   `## GSTACK REVIEW REPORT` at EOF. Use Edit to match the suffix
    confirmed by the latest Read, or Write the full file with the report last. Append whether or not a prior report existed.
    "Unresolved Decisions" is not an EOF anchor when other sections follow it.
 4. **Read-back gate:** Read the saved file. Verify the accepted changes, full review
@@ -914,14 +933,7 @@ Run the commands below only when the reviewed output is persisted and metadata w
 are permitted. Otherwise show their actual fields in chat as not persisted. The dashboard
 contains saved history; it must not be presented as recording this unlogged run.
 
-```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
-~/.claude/skills/gstack/bin/gstack-decision-log '{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill","confidence":8}' 2>/dev/null || true
-```
-
-The second command records the accepted scope as a durable cross-session decision so the next session sees what was settled (and why) without re-litigating it. It writes to `~/.gstack/` (same pattern as review-log), is non-interactive, and is best-effort (`|| true` — never blocks the review). Substitute `SCOPE_SUMMARY` (e.g. "accepted 4 of 6 proposals" for expansion, or "held scope" / "cut 3 items" for HOLD/REDUCTION) and `VERDICT` (the one-line verdict from the summary).
-
-Before running this command, substitute the placeholder values from the Completion Summary you just produced:
+Substitute these values from the Completion Summary before running the commands:
 - **TIMESTAMP**: current UTC ISO 8601 datetime (e.g., 2026-03-16T14:30:00Z)
 - **STATUS**: "clean" if 0 unresolved decisions AND 0 critical gaps; otherwise "issues_open"
 - **unresolved**: number from "Unresolved decisions" in the summary
@@ -931,6 +943,13 @@ Before running this command, substitute the placeholder values from the Completi
 - **scope_accepted**: number from "Scope proposals: ___ accepted" in the summary (0 for HOLD/REDUCTION)
 - **scope_deferred**: number of items deferred to TODOS.md from scope decisions (0 for HOLD/REDUCTION)
 - **COMMIT**: output of `git rev-parse --short HEAD`
+
+The second command records the accepted scope as a durable cross-session decision so the next session sees what was settled (and why) without re-litigating it. It writes to `~/.gstack/` (same pattern as review-log), is non-interactive, and is best-effort (`|| true` — never blocks the review). Substitute `SCOPE_SUMMARY` (e.g. "accepted 4 of 6 proposals" for expansion, or "held scope" / "cut 3 items" for HOLD/REDUCTION) and `VERDICT` (the one-line verdict from the summary).
+
+```bash
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
+~/.claude/skills/gstack/bin/gstack-decision-log '{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill","confidence":8}' 2>/dev/null || true
+```
 
 ## Review Readiness Dashboard
 
@@ -946,7 +965,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 
 **Source attribution:** If the most recent entry for a skill has a \`"via"\` field, append it to the status label in parentheses. Examples: `plan-eng-review` with `via:"autoplan"` shows as "CLEAR (PLAN via /autoplan)". `review` with `via:"ship"` shows as "CLEAR (DIFF via /ship)". Entries without a `via` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
-Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
+From gstack-review-read output, use entries whose skill is `autoplan-voices` or `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
 
 Display a fresh `clean` result as CLEAR and `issues_open` as ISSUES OPEN. Show missing, stale, disabled or unavailable results explicitly; none implies CLEAR. Keep the logged status unchanged.
 
@@ -1016,8 +1035,9 @@ If promoted and those writes are permitted, copy the CEO plan content to `docs/d
 
 ## Learnings and brain write-back
 
-Finish these review tasks without changing the plan. Then return to the skeleton
-for terminal verification; success telemetry and exit happen there.
+Finish these review tasks without changing the plan. Then return to
+this skill's main `SKILL.md` at **Section self-check** for terminal verification.
+Success telemetry and exit happen there.
 
 ## Capture Learnings
 
@@ -1086,4 +1106,4 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || tru
 ```
 
 
-Return to the skeleton's Section self-check and EXIT PLAN MODE GATE now.
+Return to this skill's main `SKILL.md`: Section self-check → EXIT PLAN MODE GATE.

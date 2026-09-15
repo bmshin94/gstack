@@ -644,12 +644,8 @@ describe('outside-voice commitment queue', () => {
         const queue = generated.slice(start, end);
         // Each review reuses its own gate; DX retains the generic queue.
         if (skillName === 'plan-ceo-review') {
-          const order = ['check sources and prior answers →', 'record and save pending choices →',
-            'compare and save options →', 'obtain the actual answer and amend']
-            .map(stage => queue.indexOf(stage));
-          expect(order.every(position => position >= 0)).toBe(true);
-          expect(order).toEqual([...order].sort((a, b) => a - b));
-          expect(queue).toContain('same six-column decision ledger and the four steps of 0D');
+          expect(queue).toContain('same six-column ledger. Use 0D for new or reopened choices');
+          expect(queue).toContain('including both saves and the actual answer; do not start a second procedure');
           expect(queue).not.toContain('reference | commitment | current value');
           expect(queue).toContain('original input, inspected source and exact approvals');
           expect(queue).toContain('Correct false premises without changing accepted behavior');
@@ -665,11 +661,12 @@ describe('outside-voice commitment queue', () => {
           expect(queue).toContain("A conflict returns to the affected candidate's Include/Defer/Cut/Hold row");
           expect(queue).toContain('retain prior answers, report unresolved conflicts and recheck before confirming the set');
           expect(queue).toContain('Never silently trim or replace another candidate');
-          const skeleton = readFileSync('plan-ceo-review/SKILL.md.tmpl', 'utf8');
+          const skeleton = readFileSync('plan-ceo-review/SKILL.md.tmpl', 'utf8').replace(/\s+/g, ' ');
           // Delegation must resolve to the complete procedure, including the
           // saved comparison and separate actual answer, without duplicating it.
           const stages = ['**1. Check sources and prior answers.**', '**2. Record the pending choice.**',
-            "**3. Compare and save that row's options.**", '**4. Ask, record the answer, and amend.**'].map(stage => skeleton.indexOf(stage));
+            '**Save pending rows before comparing options.**', "**3. Compare and save that row's options.**",
+            '**Save the completed comparison before asking.**', '**4. Ask, record the answer, and amend.**'].map(stage => skeleton.indexOf(stage));
           expect(stages.every(position => position >= 0)).toBe(true);
           expect(stages).toEqual([...stages].sort((a, b) => a - b));
           expect(skeleton).toContain('Ask one row per call and cite its ID');

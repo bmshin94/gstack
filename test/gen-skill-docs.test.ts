@@ -1171,9 +1171,10 @@ describe('TEST_FAILURE_TRIAGE resolver', () => {
 describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
   const REVIEW_SKILLS = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'codex'];
 
-  test('Eng report example is fenced Markdown, and the original escaped fence is rejected', async () => {
+  for (const [label, skill] of [['Eng', 'plan-eng-review'], ['CEO', 'plan-ceo-review']]) {
+  test(`${label} report example is fenced Markdown, and the original escaped fence is rejected`, async () => {
     const { marked } = await import('marked');
-    const content = readSkillUnion('plan-eng-review');
+    const content = readSkillUnion(skill!);
     const tokens = marked.lexer(content);
     const headings = tokens.filter(token => token.type === 'heading' && token.depth === 2);
     expect(headings.map(token => token.text)).not.toContain('GSTACK REVIEW REPORT');
@@ -1182,7 +1183,7 @@ describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
     expect(example).toBeDefined();
     if (example?.type !== 'code') throw new Error('Missing fenced report example');
     expect(example.text).toContain('| Review | Trigger | Why | Runs | Status | Findings |');
-    expect(example.text).toContain('`/plan-eng-review`');
+    expect(example.text).toContain('`/' + skill + '`');
     // Reproduce the observed literal-backslash delimiters without changing
     // the parser or preprocessing malformed Markdown into valid fences.
     const broken = content.replace(example.raw, example.raw.replaceAll('`', '\\`'));
@@ -1193,6 +1194,7 @@ describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
     expect(brokenTokens.filter(token => token.type === 'heading' && token.depth === 2)
       .map(token => token.text)).toContain('GSTACK REVIEW REPORT');
   });
+  }
 
   test('Eng renderers use real code delimiters without changing confidence rules or report fields', async () => {
     const {generateConfidenceCalibration} = await import('../scripts/resolvers/confidence');
@@ -1209,7 +1211,10 @@ describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
       // example; the preamble does, and is deliberately outside this check.
       for (const output of [confidence, dashboard, report, outside]) expect(output).not.toContain('\\`');
       expect(confidence).toBe(generateConfidenceCalibration({...ctx, skillName: 'plan-ceo-review'}).replaceAll('\\`', '`'));
-      expect(dashboard).toBe(generateReviewDashboard({...ctx, skillName: 'plan-ceo-review'}).replaceAll('\\`', '`'));
+      const ceoDashboard = generateReviewDashboard({...ctx, skillName: 'plan-ceo-review'}).replaceAll('\\`', '`');
+      const ceoVoiceSource = 'From gstack-review-read output, use entries whose skill is `autoplan-voices` or `design-outside-voices` for the coverage detail below the dashboard.';
+      expect(ceoDashboard).toContain(ceoVoiceSource);
+      expect(ceoDashboard.replace(ceoVoiceSource, 'Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard.')).toBe(dashboard);
       for (const field of ['status', 'unresolved', 'critical_gaps', 'issues_found', 'mode', 'commit']) {
         expect(report).toContain('`' + field + '`');
       }
@@ -2309,39 +2314,42 @@ describe('Design approval reconciliation', () => {
     expect(gate).toContain('after your most recent write to it');
   });
 
-  test('CEO blocking Exit checklist rejects setup and approach as issue approval', () => {
+  test('CEO readiness binds actual approvals before its read-only exit verification', () => {
     const main = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/SKILL.md'), 'utf8');
     const check = extractMarkdownSection(main, '## Section self-check');
-    const gate = extractMarkdownSection(main, '## EXIT PLAN MODE GATE (BLOCKING)');
+    const gate = extractMarkdownSection(main, '## EXIT PLAN MODE GATE (BLOCKING)').replace(/\s+/g, ' ');
     const section = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/sections/review-sections.md'), 'utf8');
-    const readiness = extractMarkdownSection(section, '## Approval readiness');
+    const readiness = extractMarkdownSection(section, '## Approval readiness').replace(/\s+/g, ' ');
     expect(section.indexOf('## Approval readiness')).toBeLessThan(section.indexOf('## Required Outputs'));
-    expect(readiness).toContain('no completion report or log is required yet');
-    expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
-    expect(gate).toContain('read-only verification, not a new approval or output-writing step');
-    expect(readiness.indexOf('Approvals:')).toBeGreaterThanOrEqual(0);
-    expect(gate.indexOf('Confirm Approval readiness')).toBeLessThan(gate.indexOf('1. Read the plan file'));
-    expect(readiness).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
-    expect(readiness).toContain("Never group distinct issues.");
-    expect(readiness).toContain('Never group distinct issues. Setup, mode, approach and navigation are not approval.');
-    expect(readiness).toContain('Honor prior exact decisions and preamble-authorized per-issue auto-decisions;');
-    expect(readiness).toContain('preamble-authorized');
-    expect(readiness).toContain('record why. Deferrals remain unresolved.');
-    expect(readiness).toContain('If missing, reset drafts to pending, ask and wait.');
-    expect(readiness).toContain('repeat this check before writing completion outputs');
-    expect(gate).toContain('report the stale verification and stop');
-    expect(gate).toContain('starts at Approval readiness, then repeats affected outputs, Read-back,');
-    expect(gate).toContain('Review Log and dashboard');
+    expect(readiness).toContain('No report or completion log is needed to run this check');
+    expect(readiness).toContain('For each approved remedy:');
+    expect(readiness).toContain('its actual answer, exact prior approval or preamble-authorized per-issue auto-decision');
+    expect(readiness).toContain('Setup, mode and navigation are not remedy approvals');
+    expect(readiness).toContain('an approach approves only its explicit commitments and their directly required tests');
+    expect(readiness).toContain("the plan applies only that answer's scope");
+    expect(readiness).toContain('Independent remedies and additional verification choices need their own rows and answers');
+    expect(readiness).toContain('Keep declined, deferred and unanswered changes out of accepted work');
+    expect(readiness).toContain('Deferrals remain unresolved');
+    expect(readiness).toContain('If a draft lacks approval, mark it pending and use 0D; repeat this check after its answer');
+    expect(readiness).toContain('At the end of the six-column decision ledger, record `Approval readiness: PASS`');
+    expect(readiness).toContain('the checked row IDs and their actual answer or approval references');
+    expect(readiness).toContain('Save or present the updated plan under Step 0');
+    expect(readiness).toContain('A substantive change invalidates this result; navigation alone does not');
+    expect(gate).toContain("Verify the ledger's `Approval readiness: PASS` still matches the current row IDs and answer references");
+    expect(gate).toContain('This is read-only; do not repeat its decisions');
+    expect(gate.indexOf("Verify the ledger's")).toBeLessThan(gate.indexOf('1. Read the plan file'));
+    expect(gate).toContain('If a substantive change made it stale, stop before success telemetry or exit');
+    expect(gate).toContain('Resume at 0D for changed choices, then Approval readiness → affected outputs → report Read-back → Review Log → dashboard');
     expect(check).toContain('Confirm you Read `sections/review-sections.md` and executed its review, required');
     expect(check).toContain('outputs and report from the file, not memory: Sections 1–10 and Section 11');
     expect(check).toContain('findings or no-UI skip.');
     expect(check).toContain('STOP, Read the file and redo the review.');
-    const decisions = main.slice(main.indexOf('### 0D.'), main.indexOf('### 0E.'));
+    const decisions = main.slice(main.indexOf('### 0D.'), main.indexOf('### 0E.')).replace(/\s+/g, ' ');
     expect(decisions).toContain('Ask one row per call and cite its ID');
     expect(decisions).toContain('**STOP for the actual answer, even for a lone option.**');
     expect(decisions).toContain('apply only the authorized amendments before the next row');
     expect(decisions).toContain('Carry exact approvals forward.');
-    expect(decisions).toContain('Report settled findings; say "No issues, moving on." only when there are zero findings.');
+    expect(decisions).toContain('Report settled findings; say "No issues, moving on." only for zero findings.');
   });
 
   test('Eng cannot exit with unasked findings listed only in an unresolved-decisions report', () => {
@@ -4366,9 +4374,9 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
   });
 
   test('0D authority and fresh-approval paths precede mode selection', () => {
-    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8').replace(/\s+/g, ' ');
     const approachIdx = content.indexOf('### 0D.');
-    const presentIdx = content.indexOf("Use the preamble's question format", approachIdx);
+    const presentIdx = content.indexOf("Use the preamble's format", approachIdx);
     const stopIdx = content.indexOf('**STOP for the actual answer, even for a lone option.**', presentIdx);
     const modeIdx = content.indexOf('### 0E. Mode Selection');
     const preludeIdx = content.indexOf('### 0F');
@@ -4377,7 +4385,7 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
     expect(approach).toContain('Read the original input, inspected source and actual answers');
-    expect(approach).toContain('Correct factual errors, flag conflicts with approvals, and preserve unknowns');
+    expect(approach).toContain('Correct factual errors, flag approval conflicts and preserve unknowns');
     expect(approach).toContain('Carry exact approvals forward.');
     expect(content).toContain("the actual instruction or answer reference and its exact scope");
     const reopenRule = 'Reopen only for a concrete contradiction, changed assumption or explicit new user instruction';

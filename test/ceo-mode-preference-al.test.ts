@@ -57,11 +57,15 @@ test('source and both isolated host renders bind the shared check, marker and lo
   expect(s).toContain('check `question_id=plan-ceo-review-mode` through the preamble');
   const automatic=s.split('Select the recommendation automatically')[1]!.split('\n')[0]!;
   expect(automatic).toContain('only if that check exits 0 with `AUTO_DECIDE`');
-  expect(automatic).toContain('emit its marker and log with `auto_decided: true`');
+  expect(automatic).toContain('use the automatic handoff below and log with `auto_decided: true`');
+  const handoff=s.split('**Mode handoff:**')[1]!;
+  expect(handoff).toContain('`'+id+': AUTO_DECIDE`');
+  expect(handoff).toContain('Auto-decided review mode → <selected mode> (your preference)');
   const asked=s.split('Without that successful check,')[1]!.split('\n')[0]!;
   expect(asked).toContain('offer all four modes in one AskUserQuestion');
   expect(asked).toContain('**STOP for the answer**');
-  expect(asked).toContain('Use the same ID for its marker and log');
+  expect(asked).toContain('When `QUESTION_TUNING: true`');
+  expect(asked).toContain('`<gstack-qid:'+id+'>` and log that ID');
   expect(s).not.toContain('plan-ceo-review-mode-selection');
  }
  for(const document of rendered.values()){
@@ -105,8 +109,7 @@ test('only an explicit user selection or enabled successful mode check bypasses 
   expect(s).toContain('the >8-file check challenges complexity within HOLD SCOPE and SELECTIVE EXPANSION');
   expect(s).toContain('Neither threshold authorizes a scope cut');
   expect(s).toContain('Count distinct planned file additions, edits and deletions; label uncertain counts as estimates');
-  expect(s).toContain('Do NOT emit `Completeness: N/10` per option');
-  expect(s).toContain("use 0D's differences-in-kind note");
+  expect(s).toContain('These modes differ in kind, not coverage; do NOT score completeness');
   expect(document).toContain('Note: options differ in kind, not coverage — no completeness score.');
  }
 });
