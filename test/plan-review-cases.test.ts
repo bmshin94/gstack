@@ -108,6 +108,12 @@ describe('plan report persistence precedes completion logging', () => {
       expect(carriers).toHaveLength(plans.length * ALL_HOST_CONFIGS.length);
       for (const carrier of carriers) {
         const content = readFileSync(join(outputRoot, carrier.relativePath), 'utf8');
+        if (carrier.relativePath.includes('plan-eng-review/')) {
+          const dispatch = content.slice(content.indexOf('### Record and resolve'), content.indexOf('## Scope Challenge'));
+          expect(dispatch).toContain('AskUserQuestion({ questions: [currentDecision] })');
+          expect(dispatch.indexOf('**STOP for each pending decision.**')).toBeLessThan(dispatch.indexOf('2. **Apply the answer:**'));
+          expect(dispatch.indexOf('2. **Apply the answer:**')).toBeLessThan(dispatch.indexOf('3. **Refresh the next choice:**'));
+        }
         const report = content.indexOf('\n## Plan File Review Report\n');
         const readback = content.indexOf('**Read-back gate:**', report);
         const log = content.indexOf('\n## Review Log\n');
@@ -147,6 +153,19 @@ test('Eng loads its one remedy procedure before Scope Challenge findings and ret
     expect(sections.match(/^## Decision procedure$/gm)).toHaveLength(1);
     expect(procedureBody).toContain('Keep a chosen behavior together with its necessary code, tests and docs');
     expect(procedureBody).toContain('one question for one choice per AskUserQuestion call');
+    const dispatch = procedureBody.slice(procedureBody.indexOf('### Record and resolve'));
+    const loop = ['1. **Ask and wait:**', 'AskUserQuestion({ questions: [currentDecision] })',
+      '**STOP for each pending decision.**', '2. **Apply the answer:**',
+      '3. **Refresh the next choice:**'].map(step => dispatch.indexOf(step));
+    expect(loop.every(index => index >= 0)).toBe(true);
+    expect(loop).toEqual([...loop].sort((a, b) => a - b));
+    expect(dispatch).toContain('The array contains exactly one question object');
+    expect(dispatch).toContain('Setup and Scope Challenge selectors use the same dispatch order with their own recording rules');
+    expect(dispatch).toContain("Follow the preamble's Tool resolution and failure fallback");
+    expect(dispatch).toContain('Do not queue another call while its answer is pending');
+    expect(dispatch).toContain('Use the updated plan and actual answer to rebuild the next brief');
+    expect(dispatch).toContain('return through **Frame the choices**, **Compare one choice**, and the save step');
+    expect(dispatch).toContain('In /autoplan, use its authorized auto-decisions and audit trail');
     expect(procedureBody).toContain('Independent instrumentation, follow-up work, guarantees or policies need separate choices');
     expect(skeleton).not.toContain('**Decisions (including Step 0):**');
     expect(skeleton).not.toContain('For every issue or recommendation');

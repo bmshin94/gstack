@@ -55,12 +55,14 @@ describe('autoplan phase order (Eng always last)', () => {
 
   test.each(phases)('carved child completion and handoff IDs match the pipeline: %j', ({ child, id, next }) => {
     const section = read(`autoplan/sections/${child}-phase.md.tmpl`);
-    const announced = [...section.matchAll(/^\*\*Phase (\d+(?:\.\d+)?) complete\.\*\*$/gm)].map(m => m[1]);
-    const handoff = section.match(/^Passing to .+$/m)?.[0] ?? '';
-    expect(section).toContain('**Completion message — send only after the shared close steps succeed:**');
+    const shared = read('autoplan/sections/phase-close.md.tmpl');
+    const row = shared.split('\n').find(line => line.startsWith(`| ${child} |`))?.split('|').map(cell => cell.trim());
+    const announced = row ? [row[2]] : [];
+    const handoff = row?.[4] ?? '';
+    expect(section.trim().endsWith('{{SECTION:phase-close}}')).toBe(true);
     const pointer = section.indexOf('{{SECTION:phase-close}}');
     expect(pointer).toBeGreaterThan(section.indexOf('**Close this phase:**'));
-    expect(pointer).toBeLessThan(section.indexOf(`**Phase ${id} complete.**`));
+    expect(section.slice(pointer).trim()).toBe('{{SECTION:phase-close}}');
     const generated = read(`autoplan/sections/${child}-phase.md`);
     expect(generated).toContain('Read `~/.claude/skills/gstack/autoplan/sections/phase-close.md` and execute it');
     expect(announced).toEqual([id]);
@@ -230,10 +232,10 @@ describe('autoplan phase execution checkpoints', () => {
       const section = read(`autoplan/sections/${phase}-phase.md.tmpl`);
       const barrier = section.indexOf('**Close this phase:**');
       const pointer = section.indexOf('{{SECTION:phase-close}}');
-      const announcement = section.indexOf(`\n**Phase ${number} complete.**\n`);
+      const publication = read('autoplan/sections/phase-close.md.tmpl');
       expect(barrier).toBeGreaterThan(-1);
       expect(pointer).toBeGreaterThan(barrier);
-      expect(pointer).toBeLessThan(announcement);
+      expect(publication).toContain(`| ${phase} | ${number} |`);
       expect(section.match(/\{\{SECTION:phase-close\}\}/g)).toHaveLength(1);
       const binding = section.slice(barrier, pointer).replace(/\s+/g, ' ');
       const checkpoint = phase === 'ceo' ? 'CEO_STEP0_CHECKPOINT' : `${phase.toUpperCase()}_INPUT`;
@@ -241,7 +243,7 @@ describe('autoplan phase execution checkpoints', () => {
       expect(binding).toContain("this phase's `methodologyPath`");
       expect(binding).toContain('load the shared close steps afresh, even if read earlier');
       expect(binding).toContain('Keep this checkpoint for this invocation; review exports do not replace it');
-      expect(section.slice(pointer, announcement)).toContain('send only after the shared close steps succeed');
+      expect(section.slice(pointer).trim()).toBe('{{SECTION:phase-close}}');
     }
   });
 
@@ -281,13 +283,43 @@ describe('autoplan phase execution checkpoints', () => {
     expect(close).toContain('continue in the same turn. After Eng, continue to final synthesis/approval');
     expect(close).toContain('Do not wait for a “continue” reply');
     expect(close).not.toContain('This message contains no tool calls');
-    expect(read('autoplan/sections/phase-close.md')).toContain(template.trim());
+    expect(read('autoplan/sections/phase-close.md')).toContain(template.trim()
+      .replaceAll('{{OUTSIDE_LABEL}}', 'Codex').replaceAll('{{NATIVE_LABEL}}', 'Claude'));
+  });
+
+  test('a fresh close contains publication data without recovering the pre-compaction caller', () => {
+    const close = read('autoplan/sections/phase-close.md.tmpl');
+    const rows = [...close.matchAll(/^\| (ceo|design|dx|eng) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
+      .map(match => match.slice(1).map(cell => cell.trim()));
+    expect(rows).toEqual([
+      ['ceo', '1', '6', 'Phase 2 (Design Review)'],
+      ['design', '2', 'rows in the completed design litmus scorecard', 'Phase 2.5 (DX Review) if DX scope was detected; otherwise Phase 3 (Eng Review)'],
+      ['dx', '2.5', '6', 'Phase 3 (Eng Review — the required gate reviews the final amended plan)'],
+      ['eng', '3', '6', 'Phase 4 (Final Gate)'],
+    ]);
+    const publication = close.split('```text\n')[1]?.split('```')[0] ?? '';
+    expect(publication).toContain('**Phase [number] complete.**');
+    expect(publication).toContain('{{OUTSIDE_LABEL}}: [completed: N concerns / unavailable / disabled]');
+    expect(publication).toContain('{{NATIVE_LABEL}} subagent: [completed: N issues / unavailable]');
+    expect(publication).toContain('N/A (voice coverage missing)');
+    expect(publication).toContain('X/[total] native+outside confirmed');
+    expect(publication).toContain('DX overall: [N]/10. TTHW: [N] min → [target] min.');
+    expect(publication).toContain('Passing to [next step].');
+    expect(close.match(/\*\*Phase \[number\] complete\.\*\*/g)).toHaveLength(1);
+    expect(close).not.toMatch(/(?:its exit template|completion-message template from|return to.*template)/i);
+    for (const child of phases) {
+      const caller = read(`autoplan/sections/${child}-phase.md.tmpl`).split('**Close this phase:**')[1]!;
+      expect(caller.trim().endsWith('{{SECTION:phase-close}}')).toBe(true);
+      expect(caller).not.toContain('**Phase ');
+      expect(caller).not.toContain('Passing to ');
+    }
   });
 
   test('Design hands off to conditional DX and DX never requests a future Eng result', () => {
     const design = read('autoplan/sections/design-phase.md.tmpl');
     const dx = read('autoplan/sections/dx-phase.md.tmpl');
-    expect(design).toContain('Passing to Phase 2.5 (DX Review) if DX scope was detected; otherwise Phase 3');
+    expect(read('autoplan/sections/phase-close.md.tmpl')).toContain(
+      '| design | 2 | rows in the completed design litmus scorecard | Phase 2.5 (DX Review) if DX scope was detected; otherwise Phase 3 (Eng Review) |');
     expect(design).not.toContain('> Passing to Phase 3.');
     expect(dx).toContain("Design: <insert Design consensus summary, or 'skipped, no UI scope'>");
     expect(dx).not.toContain('Eng: <insert Eng consensus summary>');

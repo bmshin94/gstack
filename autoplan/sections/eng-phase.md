@@ -155,10 +155,3 @@ read earlier. Use phase `eng`, checkpoint `<ENG_INPUT>`, and this phase's
 
 > **STOP.** Before closing a review phase, after its reviews finish and before announcing completion or loading the next phase (read afresh at each exit), Read `~/.claude/skills/gstack/autoplan/sections/phase-close.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
-
-**Completion message — send only after the shared close steps succeed:**
-
-**Phase 3 complete.**
-Codex: [completed: N concerns / unavailable / disabled]. Claude subagent: [completed: N issues / unavailable].
-Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].
-Passing to Phase 4 (Final Gate).

@@ -721,7 +721,8 @@ describe('plan-ceo-review carve — static ordering', () => {
         'Send its `nativeDispatchPrompt` verbatim as the Agent prompt', 'Native completion barrier:',
         'Outside prompt: inline the full contents of <CEO_INPUT>',
         suffix === '.md.tmpl' ? '{{OUTSIDE_INVOCATION:autoplan}}' : '_OUTSIDE_EXIT=0',
-        'CEO DUAL VOICES — CONSENSUS TABLE:', 'Sections 1-11 —', '**Mandatory outputs from Phase 1:**', '**Phase 1 complete.**']
+        'CEO DUAL VOICES — CONSENSUS TABLE:', 'Sections 1-11 —', '**Mandatory outputs from Phase 1:**', '**Close this phase:**',
+        suffix === '.md.tmpl' ? '{{SECTION:phase-close}}' : 'Read `~/.claude/skills/gstack/autoplan/sections/phase-close.md` and execute it']
         .map(stage => prose.indexOf(stage));
       expect(positions.every(position => position >= 0)).toBe(true);
       expect(positions).toEqual([...positions].sort((a, b) => a - b));

@@ -220,6 +220,7 @@ test('phase progress text permits immediate tool continuation in the same turn',
   for (const phase of ['ceo', 'design', 'dx', 'eng']) {
     const close = source(`autoplan/sections/${phase}-phase.md.tmpl`).split('**Close this phase:**')[1]!;
     expect(close).toContain('{{SECTION:phase-close}}');
-    expect(close).toContain('send only after the shared close steps succeed');
+    expect(close.trim().endsWith('{{SECTION:phase-close}}')).toBe(true);
+    expect(close).not.toContain('**Phase ');
   }
 });
