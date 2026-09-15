@@ -650,12 +650,17 @@ Keep ONE phase active, completing these gates in order:
 3. Consume the native terminal result and apply the phase's failure policy, then
    consume enabled outside results. Complete the phase's remaining primary review
    sections after these results.
-4. Save the full review artifacts and accepted amendments; run the phase's
-   implementation check and readback. This completes the file work.
-5. Emit the phase completion summary as its own visible parent assistant text block,
-   starting with `Phase <number> complete.` Then continue to the next phase's tool
-   calls in the same turn; for Eng, send this text before final synthesis/approval.
-   The same response may contain the summary text followed by tool calls.
+4. Save the full review artifacts and accepted amendments. Run `amend-input` with
+   the phase's amendment checkpoint; its compact result names the current immutable
+   `reviewInputPath` and complete `readRanges`. Read that file through every range,
+   then compare the actual text with every accepted decision and required output.
+   Counts, hashes and keyword probes cannot substitute for this implementation
+   check and readback. Within one phase invocation, keep its amendment checkpoint separate from review exports.
+5. After that verification, emit the phase completion summary as its own visible
+   parent assistant text block, starting with `Phase <number> complete.` This is
+   the next action before any next-phase Read, create or dispatch. Then continue
+   to the next phase's tool calls in the same turn; for Eng, send this text before
+   final synthesis/approval. The response may contain the summary followed by tools.
 Phase notifications, including skips, are progress updates: do not end the turn
 or wait for a "continue" reply at these boundaries.
 A missing gate means the current phase remains open, even if a reviewer finished.
@@ -668,7 +673,7 @@ reconcile saved artifacts and sent conversation messages separately:
 - If native dispatch has not happened, finish any incomplete preliminary work before recovering a voice input.
   If the final voice input does not exist, create it after the preliminary gates.
   Read `snapshot.json` beside that final `<PHASE_INPUT>` and use its `nativeDispatchPrompt` unchanged.
-  Never dispatch `<CEO_STEP0_INPUT>`: it is the draft amendment checkpoint.
+  Never dispatch `<CEO_STEP0_CHECKPOINT>`: it is the stable amendment baseline, not current review input.
   `nativePrompt` is the file's review body, not the Agent prompt. Resume at the first incomplete gate.
 
 Pending is not unavailable. Time/context pressure or your own review never permits
@@ -697,7 +702,7 @@ they have context models lack. Use Decision Classification above.
 - PRODUCE every output the section requires (diagrams, tables, registries, artifacts)
 - IDENTIFY every issue the section is designed to catch
 - DECIDE each issue using the 6 principles (instead of asking the user)
-- LOG each decision; record ALL accepted obligations below and run `amend` before continuing
+- LOG each decision; record ALL accepted obligations below and run `amend-input` before continuing
 - WRITE all required artifacts to disk
 
 **You MUST NOT:**
@@ -716,7 +721,8 @@ flagged (1-2 sentences minimum). Never skip a non-skip-listed section.
 <!-- /autoplan-accepted:ceo -->
 ```
 Phase: `ceo|design|dx|eng`. Record accepted requirements here;
-no analysis/severity/verdict/consensus. No changes: `None: reason`.
+no analysis/severity/verdict/consensus. No accepted requirements: `None: reason`.
+On a rerun, carry forward unchanged accepted requirements; do not replace them with None.
 `amend` checks exact retention atomically; full readback; None unchanged.
 Baseline edits: `create`'s `baselineEdits`. Prior blocks immutable;
 state replacements in current block. Reconcile all decisions with readback.
@@ -1076,6 +1082,16 @@ AskUserQuestion options:
 - C: answer freeform, re-present gate
 - D: make changes, re-run affected phases (scope→1, design→2, dx→2.5, test plan→3, arch→3; a re-run of any earlier phase re-runs Eng after it — the gate always reviews the final plan). Max 3 cycles.
 - E: start over
+
+**Starting an affected-phase rerun:** Keep the current Implementation plan and all
+prior accepted obligations intact. Move that phase's already-applied
+`autoplan-baseline-edits` record verbatim into fenced history in Review record,
+retaining its original source SHA. Create a fresh amendment checkpoint from the
+current plan. For newly approved baseline edits, use that `create` result's
+`baselineEdits.record` and `sourceSha256`; the review projection hash is not the
+baseline identity. Carry forward every unchanged accepted requirement. Never replay old replacements or rewrite their
+historical source SHA. This starts a new phase invocation; compaction resumes the
+existing invocation and its checkpoint. Eng still runs after all prior amendments.
 
 ---
 

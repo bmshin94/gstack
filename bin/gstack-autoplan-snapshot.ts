@@ -712,6 +712,32 @@ export function checkImplementation(phase: string, activePlan: string, snapshotP
   return { phase, activePlan: source, snapshotPath: snapshot, changed, sha256: sha256(implementation), implementation };
 }
 
+/** Keep the amendment baseline separate from the current, complete review input. */
+export function prepareAmendedInput(phase: string, activePlan: string, checkpointPath: string, restorePath: string, methodologyPath: string) {
+  // immutable checkpoint → apply accepted requirements → fresh export → currentness check
+  const amended = amendImplementation(phase, activePlan, checkpointPath);
+  let exported: ReturnType<typeof createSnapshot> | undefined;
+  try {
+    exported = createSnapshot(phase, amended.activePlan, restorePath, methodologyPath);
+    if (exported.sourceSha256 !== amended.sha256) {
+      throw new Error('Export does not match the current amended Implementation plan; prepare a fresh input');
+    }
+    // The fresh snapshot is a readback, not a new baseline for existing edit records.
+    checkImplementation(phase, amended.activePlan, exported.snapshotPath, 'unchanged');
+    const reviewInput = readFileSync(exported.snapshotPath, 'utf8');
+    const reviewInputLines = reviewInput.split('\n').length;
+    return { phase, activePlan: amended.activePlan, checkpointPath: amended.snapshotPath,
+      reviewInputPath: exported.snapshotPath, reviewInputSha256: exported.sha256,
+      reviewInputBytes: Buffer.byteLength(reviewInput), reviewInputLines,
+      sourceSha256: exported.sourceSha256, sourceBytes: exported.sourceBytes,
+      readRanges: methodologyReadRanges(reviewInputLines),
+      limitation: 'Current recorded requirements exported exactly. Successful full Reads, semantic reconciliation, approval and phase completion still require their actual evidence.' };
+  } catch (error) {
+    if (exported) rmSync(dirname(exported.snapshotPath), { recursive: true, force: true });
+    throw error;
+  }
+}
+
 if (import.meta.main) {
   try {
     const [command, ...args] = process.argv.slice(2);
@@ -724,6 +750,9 @@ if (import.meta.main) {
     } else if (command === 'create') {
       if (args.length !== 4 || args.some(arg => !arg)) throw new Error('Usage: create PHASE ACTIVE_PLAN RESTORE_PATH METHODOLOGY_PATH (prepare methodology and Read it completely first)');
       process.stdout.write(JSON.stringify(createSnapshot(args[0]!, args[1]!, args[2]!, args[3]!)) + '\n');
+    } else if (command === 'amend-input') {
+      if (args.length !== 5 || args.some(arg => !arg)) throw new Error('Usage: amend-input PHASE ACTIVE_PLAN CHECKPOINT_PATH RESTORE_PATH METHODOLOGY_PATH');
+      process.stdout.write(JSON.stringify(prepareAmendedInput(args[0]!, args[1]!, args[2]!, args[3]!, args[4]!)) + '\n');
     } else if (command === 'scope') {
       const [activePlan, ...flags] = args;
       if (!activePlan || flags.some(flag => !['--developer-tool', '--agent-primary'].includes(flag)) ||

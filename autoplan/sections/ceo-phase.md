@@ -23,8 +23,8 @@ Complete every Step 0 analysis/output on the loaded skill's SELECTIVE EXPANSION
 route with the overrides above: CEO scope document and 0H Spec Review Loop before
 0I and Review Sections.
 
-**At 0H, apply the accepted decisions before spec review.** Create one amendment
-checkpoint; keep its `snapshotPath` as `<CEO_STEP0_INPUT>`:
+**At 0H, prepare the current input for each spec review.** Create one amendment
+checkpoint; keep its `snapshotPath` as `<CEO_STEP0_CHECKPOINT>` throughout CEO:
 ```bash
 bun "<SNAPSHOT_TOOL>" create ceo "<ACTIVE_PLAN>" "<RESTORE_PATH>" "<methodologyPath>"
 ```
@@ -34,16 +34,23 @@ User Challenges retain the original requirements. Taste is a provisional
 auto-decision; accepted expansions must work without assuming queued changes are
 approved. Keep decision history and pending review work in `Review record`.
 
-Run this before the first spec dispatch and after each accepted spec fix:
+Before every spec dispatch, including after each accepted spec fix, run:
 ```bash
-bun "<SNAPSHOT_TOOL>" amend ceo "<ACTIVE_PLAN>" "<CEO_STEP0_INPUT>"
+bun "<SNAPSHOT_TOOL>" amend-input ceo "<ACTIVE_PLAN>" "<CEO_STEP0_CHECKPOINT>" "<RESTORE_PATH>" "<methodologyPath>"
 ```
-Read back the operative `Implementation plan` and CEO scope summary in full.
+This applies the recorded requirements and exports the complete current
+`Implementation plan`. Keep returned `checkpointPath` as the amendment baseline;
+use returned `reviewInputPath` as `<CEO_SPEC_INPUT>`. Read that file at every
+returned `readRanges` offset/limit through EOF, then read the CEO scope summary in full.
 Reconcile dispositions, scope counts, proposal IDs and actual heading/test references
 between them. Link deferrals to actual TODOs or pending writes. Fix summary drift
 without changing decisions, dropping findings/required fields or inventing references.
-The recorded block alone is not an amended input. Reuse this checkpoint through the
-Spec Review Loop, then create a fresh snapshot below for both voices.
+If the working plan changes, repeat `amend-input` and the readback before dispatch.
+Supply the complete CEO scope summary and `<CEO_SPEC_INPUT>` to the loaded Spec
+Review Loop. The checkpoint is immutable prior state; never supply it as the current
+working plan. A failed preparation is an input failure, not a completed spec review.
+Keep the loop's existing stop conditions and three-launch cap. After the loop,
+create a fresh snapshot below for both voices; it does not replace the amendment checkpoint.
 
 Step 0.5 (Dual Voices): After Step 0's Spec Review Loop, consume the native CEO
 review, then the available outside voice (P6). Present both completed results
@@ -176,19 +183,29 @@ Sections 1-11 — for EACH section, run the evaluation criteria from the loaded 
 
 **Close this phase:**
 
-1. **Save artifacts.** Reconcile full review → EVERY accepted requirement/condition/test
-   in its block. Taste provisional; User Challenges keep original.
+1. **Save artifacts and export current input.** Reconcile full review → EVERY accepted
+   requirement/condition/test in its block. Taste provisional; User Challenges keep
+   original. Keep the amendment checkpoint fixed for this phase invocation; a later
+   review export does not replace the baseline used by accepted edit records.
 ```bash
-bun "<SNAPSHOT_TOOL>" amend ceo "<ACTIVE_PLAN>" "<CEO_INPUT>"
+bun "<SNAPSHOT_TOOL>" amend-input ceo "<ACTIVE_PLAN>" "<CEO_STEP0_CHECKPOINT>" "<RESTORE_PATH>" "<methodologyPath>"
 ```
-2. **Verify.** None: reason checks unchanged. Read back fully; retention ≠ approval/completeness/correctness.
-   Require full skill/section ranges, successful writes/check and terminal reviewer
-   results (unavailable/disabled allowed). When the native review succeeded, match
-   its INPUT. A failed native attempt follows the phase's failure policy without
-   native completion credit; a pending reviewer keeps this phase open.
-3. **Notify the user.** Emit the following summary as its own visible parent assistant text block
-   after the verification results. Saving it in ACTIVE_PLAN or printing it through
-   Bash does not send it to the user.
+2. **Read and verify the current text.** From the successful compact result, Read
+   `reviewInputPath` through every returned `readRanges` entry to EOF. This is the
+   full current Implementation plan; compare its actual text with accepted choices,
+   conditions, tests and required outputs. Counts, hashes, keyword probes and a
+   saved sentence saying "Read-back" do not perform this review. If output is
+   truncated, finish the missing file ranges before continuing.
+   None: reason checks unchanged. Retention verifies bytes, not approval,
+   completeness or correctness. Require full skill/section ranges, successful
+   writes/check and terminal reviewer results (unavailable/disabled allowed).
+   When the native review succeeded, match its INPUT. A failed native attempt
+   follows the phase's failure policy without native completion credit; a pending
+   reviewer keeps this phase open.
+3. **Send the completion message.** After verifying the text, your next action is
+   to emit the following summary as its own visible parent assistant text block.
+   Saving it in ACTIVE_PLAN or printing it through Bash does not send it to the
+   user. Send it before any next-phase Read/create/dispatch.
    After this text, load/create/dispatch the next phase in the same turn:
 
 **Phase 1 complete.**

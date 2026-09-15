@@ -57,7 +57,7 @@ describe('autoplan phase order (Eng always last)', () => {
     const section = read(`autoplan/sections/${child}-phase.md.tmpl`);
     const announced = [...section.matchAll(/^\*\*Phase (\d+(?:\.\d+)?) complete\.\*\*$/gm)].map(m => m[1]);
     const handoff = section.match(/^Passing to .+$/m)?.[0] ?? '';
-    expect(section).toContain('Emit the following summary as its own visible parent assistant text block');
+    expect(section.replace(/\s+/g, ' ')).toContain('emit the following summary as its own visible parent assistant text block');
     expect(announced).toEqual([id]);
     expect([...handoff.matchAll(/Phase (\d+(?:\.\d+)?)/g)].map(m => m[1])).toEqual(next);
     // Catch obsolete Phase 3.5 references anywhere in any carved child,
@@ -199,8 +199,11 @@ describe('autoplan phase execution checkpoints', () => {
     expect(contract.replace(/\s+/g, ' ')).toContain("Consume the native terminal result and apply the phase's failure policy");
     expect(contract.replace(/\s+/g, ' ')).toContain("consume enabled outside results. Complete the phase's remaining primary review sections after these results");
     expect(contract).toContain('Save the full review artifacts and accepted amendments');
-    expect(contract).toContain('implementation check and readback');
-    expect(contract).toContain('Emit the phase completion summary as its own visible parent assistant text block');
+    expect(contract.replace(/\s+/g, ' ')).toContain('implementation check and readback');
+    expect(contract).toContain('reviewInputPath');
+    expect(contract).toContain('readRanges');
+    expect(contract.replace(/\s+/g, ' ')).toContain('next action before any next-phase Read, create or dispatch');
+    expect(contract.replace(/\s+/g, ' ')).toContain('emit the phase completion summary as its own visible parent assistant text block');
     expect(contract.replace(/\s+/g, ' ')).toContain("Then continue to the next phase's tool calls in the same turn");
     expect(contract.replace(/\s+/g, ' ')).toContain('for Eng, send this text before final synthesis/approval');
     expect(contract).toContain('A missing gate means the current phase remains open');
@@ -208,7 +211,12 @@ describe('autoplan phase execution checkpoints', () => {
     expect(contract).toContain('Pending is not unavailable');
     expect(contract).toContain('Time/context pressure or your own review never permits\nskipping native passes or required sections');
     expect(contract).toContain('Never read raw agent transcripts');
-    expect(tmpl).toContain('LOG each decision; record ALL accepted obligations below and run `amend` before continuing');
+    const rerun = tmpl.split('**Starting an affected-phase rerun:**')[1]!.split('---')[0]!.replace(/\s+/g, ' ');
+    expect(rerun).toContain('record verbatim into fenced history');
+    expect(rerun).toContain('retaining its original source SHA');
+    expect(rerun).toContain('`baselineEdits.record` and `sourceSha256`');
+    expect(rerun).toContain('compaction resumes the existing invocation');
+    expect(tmpl).toContain('LOG each decision; record ALL accepted obligations below and run `amend-input` before continuing');
   });
 
   test('each completed phase announces only after persisted full outputs and settled reviewers', () => {
@@ -233,20 +241,26 @@ describe('autoplan phase execution checkpoints', () => {
       expect(checkpoint).toContain('EVERY accepted requirement/condition/test');
       expect(checkpoint).toContain('in its block');
       expect(checkpoint).toContain('Reconcile full review');
-      expect(checkpoint).toContain('Read back fully');
-      expect(checkpoint).toContain('retention ≠ approval/completeness/correctness');
+      expect(checkpoint).toContain('Read `reviewInputPath` through every returned `readRanges` entry to EOF');
+      expect(checkpoint).toContain('full current Implementation plan');
+      expect(checkpoint).toContain('Counts, hashes, keyword probes');
+      expect(checkpoint).toContain('finish the missing file ranges before continuing');
+      expect(checkpoint).toContain('Retention verifies bytes, not approval, completeness or correctness');
       expect(checkpoint).toContain('Taste provisional');
       expect(checkpoint).toContain('User Challenges keep original');
-      expect(checkpoint).toContain(`amend ${phase} "<ACTIVE_PLAN>" "<${phase.toUpperCase()}_INPUT>"`);
+      const amendmentBaseline = phase === 'ceo' ? 'CEO_STEP0_CHECKPOINT' : `${phase.toUpperCase()}_INPUT`;
+      expect(checkpoint).toContain(`amend-input ${phase} "<ACTIVE_PLAN>" "<${amendmentBaseline}>" "<RESTORE_PATH>" "<methodologyPath>"`);
+      expect(checkpoint).toContain('Keep the amendment checkpoint fixed');
       expect(checkpoint).toContain('None: reason checks unchanged');
-      expect(checkpoint).toContain('Emit the following summary as its own visible parent assistant text block');
-      const save = checkpoint.indexOf('1. **Save artifacts.**');
-      const verify = checkpoint.indexOf('2. **Verify.**');
-      const notify = checkpoint.indexOf('3. **Notify the user.**');
+      expect(checkpoint).toContain('emit the following summary as its own visible parent assistant text block');
+      const save = checkpoint.indexOf('1. **Save artifacts and export current input.**');
+      const verify = checkpoint.indexOf('2. **Read and verify the current text.**');
+      const notify = checkpoint.indexOf('3. **Send the completion message.**');
       expect(save).toBeGreaterThan(-1);
       expect(save).toBeLessThan(verify);
       expect(verify).toBeLessThan(notify);
-      expect(checkpoint).toContain('after the verification results');
+      expect(checkpoint).toContain('After verifying the text, your next action');
+      expect(checkpoint).toContain('Send it before any next-phase Read/create/dispatch');
       expect(checkpoint).not.toContain('This message contains no tool calls');
     }
   });
@@ -305,7 +319,8 @@ describe('autoplan current implementation-plan identity', () => {
       expect(section).toContain('Read `snapshot.json` beside `<' + phase.toUpperCase() + '_INPUT>`');
       expect(section).toContain('Reads `nativePromptPath` to EOF');
       expect(section).toContain(`Outside prompt: inline the full contents of <${phase.toUpperCase()}_INPUT>`);
-      expect(section).toContain(`amend ${phase} "<ACTIVE_PLAN>" "<${phase.toUpperCase()}_INPUT>"`);
+      const checkpoint = phase === 'ceo' ? 'CEO_STEP0_CHECKPOINT' : `${phase.toUpperCase()}_INPUT`;
+      expect(section).toContain(`amend-input ${phase} "<ACTIVE_PLAN>" "<${checkpoint}>"`);
       expect(section).toContain('None: reason checks unchanged');
       expect(read('autoplan/SKILL.md.tmpl')).toContain('checks exact retention');
       expect(section).not.toContain('<review_plan_path>');

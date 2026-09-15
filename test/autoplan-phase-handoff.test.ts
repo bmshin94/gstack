@@ -112,9 +112,13 @@ test('the working-plan destination rule leaves conversation messages in the conv
 test('CEO applies Step 0 decisions before each spec dispatch and refreshes the native input afterward', () => {
   const section = source('autoplan/sections/ceo-phase.md.tmpl');
   const preliminary = section.slice(section.indexOf('**At 0H'), section.indexOf('Step 0.5 (Dual Voices)'));
-  expect(preliminary).toContain('`snapshotPath` as `<CEO_STEP0_INPUT>`');
-  expect(preliminary).toContain('before the first spec dispatch and after each accepted spec fix');
-  expect(preliminary).toContain('amend ceo "<ACTIVE_PLAN>" "<CEO_STEP0_INPUT>"');
+  expect(preliminary).toContain('`snapshotPath` as `<CEO_STEP0_CHECKPOINT>`');
+  expect(preliminary).toContain('Before every spec dispatch, including after each accepted spec fix');
+  expect(preliminary).toContain('amend-input ceo "<ACTIVE_PLAN>" "<CEO_STEP0_CHECKPOINT>" "<RESTORE_PATH>" "<methodologyPath>"');
+  expect(preliminary).toContain('use returned `reviewInputPath` as `<CEO_SPEC_INPUT>`');
+  expect(preliminary).toContain('returned `readRanges` offset/limit through EOF');
+  expect(preliminary).toContain('Supply the complete CEO scope summary and `<CEO_SPEC_INPUT>`');
+  expect(preliminary).toContain('three-launch cap');
   expect(preliminary).toContain('User Challenges retain the original requirements');
   expect(section).toContain('create a fresh snapshot below for both voices');
 });
@@ -140,7 +144,7 @@ test('a same-phase draft checkpoint cannot substitute for the post-Step-0 voice 
   expect(final.sha256).not.toBe(draft.sha256);
   const contract = source('autoplan/SKILL.md.tmpl').split('## Sequential Execution')[1]!.split('---')[0]!;
   expect(contract).toContain('finish any incomplete preliminary work before recovering a voice input');
-  expect(contract).toContain('Never dispatch `<CEO_STEP0_INPUT>`');
+  expect(contract).toContain('Never dispatch `<CEO_STEP0_CHECKPOINT>`');
   expect(contract).toContain('If the final voice input does not exist, create it after the preliminary gates');
 });
 
@@ -205,7 +209,7 @@ test('captured parent text and a following tool can share a response without end
 
 test('phase progress text permits immediate tool continuation in the same turn', () => {
   const contract = source('autoplan/SKILL.md.tmpl').split('## Sequential Execution')[1]!.split('---')[0]!;
-  expect(contract).toContain('own visible parent assistant text block');
+  expect(contract.replace(/\s+/g, ' ')).toContain('own visible parent assistant text block');
   expect(contract).toContain('in the same turn');
   expect(contract).not.toContain('This parent response contains no tool calls');
   for (const phase of ['ceo', 'design', 'dx', 'eng']) {
