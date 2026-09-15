@@ -894,3 +894,122 @@ test('compact effort/risk preserves current metadata beside inert quoted history
   const plan=compactTupleB0ca.savedPlan.replace(/\(([SM]), (low|medium) risk\)/g, '"Historical estimate: (XL, high risk)" $&');
   expect(compactCountB0ca(plan).counted).toBe(true);
 });
+
+const comparison6bd = fixture.contextualComparison6bd;
+const comparisonQuestion6bd = () => nativePlanCallFingerprint(clone(comparison6bd.nativeCalls[0]!),0,true);
+const comparisonCount6bd = (plan=comparison6bd.savedPlan,q=comparisonQuestion6bd()) => {
+  const counter=createCeoPaymentFindingCounter(comparison6bd.seed,()=>plan,ceoFirstReviewAUQ);
+  const counted=counter.isReviewAUQ(q);return {counted,trace:counter.trace};
+};
+test('6bd comparison binds the complete actual current report and native answer without seed credit',()=>{
+  expect(createHash('sha256').update(comparison6bd.savedPlan).digest('hex')).toBe(comparison6bd.provenance.reportSha256);
+  expect(Date.parse(comparison6bd.provenance.savedAt)).toBeLessThan(Date.parse(comparison6bd.provenance.questionAt));
+  expect(Date.parse(comparison6bd.provenance.questionAt)).toBeLessThan(Date.parse(comparison6bd.nativeCalls[0]!.answeredAt!));
+  expect(comparisonCount6bd()).toMatchObject({counted:true,trace:[{kind:'recorded-decision',ledgerId:'D1'}]});
+  expect(ceoPaymentFinding(comparisonQuestion6bd(),comparison6bd.seed,comparison6bd.savedPlan)).toBeNull();
+});
+for(const risk of ['low-medium','low–medium','low—medium','low to medium','medium-high','low-high','LOW TO HIGH'])
+  test(`6bd comparison accepts an explicit finite ascending risk interval ${risk}`,()=>{
+    expect(comparisonCount6bd(comparison6bd.savedPlan.replace('low-medium risk',risk+' risk')).counted).toBe(true);
+  });
+for(const risk of ['medium-low','high-low','low-low','low-unknown','unknown-medium','low or medium','low/medium','low-medium-high','not low-medium','at most medium','low-medium and high'])
+  test(`6bd comparison rejects an invalid or ambiguous risk interval ${risk}`,()=>{
+    expect(()=>comparisonCount6bd(comparison6bd.savedPlan.replace('low-medium risk',risk+' risk'))).toThrow(/Unsupported/);
+  });
+for(const label of ['Bypass, as planned','Bypass (as written)','Bypass (as planned)'])
+  test(`6bd comparison resolves the explicit same-row baseline caption ${label}`,()=>{
+    expect(comparisonCount6bd(comparison6bd.savedPlan.replace('**B) Bypass, as written**',`**B) ${label}**`)).counted).toBe(true);
+  });
+test('6bd comparison permits coherent native option reordering while retaining semantic identity',()=>{
+  const q=comparisonQuestion6bd();q.nativeCall!.questions[0]!.options.reverse();reanswer(q);
+  expect(comparisonCount6bd(undefined,q).counted).toBe(true);
+});
+test('6bd comparison preserves instrumental direction without requiring one preposition spelling',()=>{
+  const q=comparisonQuestion6bd();q.nativeCall!.questions[0]!.options[2]!.label='Register through a thin adapter shim';reanswer(q);
+  const plan=comparison6bd.savedPlan.replace('**C) Register through a thin adapter shim**','**C) Register via a thin adapter shim**');
+  expect(comparisonCount6bd(plan,q).counted).toBe(true);
+});
+for(const selected of [0,1,2])test(`6bd comparison binds every offered option with selected index ${selected}`,()=>{
+  const q=comparisonQuestion6bd(),native=q.nativeCall!.questions[0]!;
+  q.nativeCall!.answers={[native.question]:native.options[selected]!.label};
+  expect(comparisonCount6bd(undefined,q).counted).toBe(true);
+});
+for(const [name,change]of Object.entries({
+  'missing baseline attribution':(p:string)=>p.replace('**B) Bypass, as written**','**B) Bypass**'),
+  'foreign current target':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`','New class bypasses `ForeignDispatcher`'),
+  'opposed current action':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`','New class registers with `WebhookDispatcher`'),
+  'negated current action':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`','New class never bypasses `WebhookDispatcher`'),
+  'contracted current negation':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`',"New class doesn't bypass WebhookDispatcher"),
+  'future current value':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`','New class will bypass WebhookDispatcher'),
+  'foreign current attribution':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`','Another plan says its new class bypasses WebhookDispatcher'),
+  'historical current action':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`','Previously the new class bypasses `WebhookDispatcher`'),
+  'quoted current action':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`','"New class bypasses WebhookDispatcher"'),
+  'duplicate current identity':(p:string)=>p.replace('New class bypasses `WebhookDispatcher`','New class bypasses `WebhookDispatcher`; new class bypasses `WebhookDispatcher`'),
+  'saved extra action':(p:string)=>p.replace('**B) Bypass, as written**','**B) Bypass and deploy, as written**'),
+  'foreign source':(p:string)=>p.replaceAll('PLAN.md','OTHER.md'),
+  'ambiguous current source':(p:string)=>p+'\nSource plan: OTHER.md\n',
+  'duplicate current source':(p:string)=>p+'\nSource plan: PLAN.md\n',
+  'foreign comparison owner':(p:string)=>p.replace('### D1 Architecture:','### OTHER Architecture:'),
+  'historical comparison':(p:string)=>p.replace('### D1 Architecture:','### Historical D1 Architecture:'),
+  'quoted comparison':(p:string)=>p.slice(0,p.indexOf('### D1 Architecture:'))+p.slice(p.indexOf('### D1 Architecture:')).split('\n').map(l=>'> '+l).join('\n'),
+  'missing same-option pros':(p:string)=>p.replace('Pros: no coupling','Benefit: no coupling'),
+  'missing same-option cons':(p:string)=>p.replace('Cons: two ways','Tradeoff: two ways'),
+  'missing same-option effort':(p:string)=>p.replace('(M effort, low-medium risk)','(low-medium risk)'),
+  'duplicate risk claims':(p:string)=>p.replace('(M effort, low-medium risk)','(M effort, low-medium risk). (S, low risk)'),
+  'historical range':(p:string)=>p.replace('(M effort, low-medium risk)','Previously, (M effort, low-medium risk)'),
+  'withdrawn range':(p:string)=>p.replace('(M effort, low-medium risk)','(M effort, low-medium risk). This estimate is no longer current'),
+  'retracted record':(p:string)=>p.replace('| unresolved | pending |','| retracted | pending |'),
+}))test(`6bd comparison rejects ${name}`,()=>{
+  const plan=change(comparison6bd.savedPlan);expect(plan).not.toBe(comparison6bd.savedPlan);
+  expect(()=>comparisonCount6bd(plan)).toThrow(/Unsupported/);
+});
+for(const [name,index,label]of [
+  ['missing native baseline',1,'Bypass WebhookDispatcher'],
+  ['native extra action',1,'Bypass WebhookDispatcher and delete the audit log (as written)'],
+  ['native negation',1,'Do not bypass WebhookDispatcher (as written)'],
+  ['foreign native target',1,'Bypass ForeignDispatcher (as written)'],
+  ['different direction',2,'Register from a thin adapter shim'],
+  ['instrumental extra action',2,'Register via a thin adapter shim and deploy'],
+  ['instrumental negation',2,'Register without a thin adapter shim'],
+] as const)test(`6bd comparison rejects ${name}`,()=>{
+  const q=comparisonQuestion6bd();q.nativeCall!.questions[0]!.options[index]!.label=label;reanswer(q);
+  expect(()=>comparisonCount6bd(undefined,q)).toThrow(/Unsupported/);
+});
+test('6bd comparison retains complete authenticated native-call gates',()=>{
+  for(const change of [
+    (q:ReturnType<typeof comparisonQuestion6bd>)=>{q.nativeCall!.answered=false;},
+    (q:ReturnType<typeof comparisonQuestion6bd>)=>{q.nativeCall!.failed=true;},
+    (q:ReturnType<typeof comparisonQuestion6bd>)=>{q.signature='foreign:call';},
+    (q:ReturnType<typeof comparisonQuestion6bd>)=>{q.nativeCall!.answers={};},
+    (q:ReturnType<typeof comparisonQuestion6bd>)=>{q.nativeCall!.unansweredQuestionIndices=[0];},
+    (q:ReturnType<typeof comparisonQuestion6bd>)=>{q.options[1]!.label='not offered';},
+  ]){const q=comparisonQuestion6bd();change(q);expect(()=>comparisonCount6bd(undefined,q)).toThrow(/Invalid/);}
+});
+for(const side of ['saved','native'] as const)for(const correction of [
+  'This option is withdrawn.',
+  'This baseline is no longer current.',
+  'This option is now "withdrawn".',
+  'This option never bypasses WebhookDispatcher.',
+  'Also delete the audit log.',
+  'Then deploy the handler.',
+])test(`6bd comparison rejects ${side} baseline correction: ${correction}`,()=>{
+  let plan=comparison6bd.savedPlan;const q=comparisonQuestion6bd();
+  if(side==='native')q.nativeCall!.questions[0]!.options[1]!.description+=' '+correction;
+  else plan=plan.replace('unless D5 adds tests.','unless D5 adds tests. '+correction);
+  expect(()=>comparisonCount6bd(plan,q)).toThrow(/Unsupported/);
+});
+test('6bd comparison ignores quoted historical baseline corrections',()=>{
+  const q=comparisonQuestion6bd();q.nativeCall!.questions[0]!.options[1]!.description+=' Historical note: "This option is withdrawn."';
+  const plan=comparison6bd.savedPlan.replace('unless D5 adds tests.','unless D5 adds tests. Historical note: "This baseline is no longer current."');
+  expect(comparisonCount6bd(plan,q).counted).toBe(true);
+});
+for(const side of ['saved','native'] as const)for(const correction of [
+  'This option is withdrawn.','This option is now "rejected".',
+  'This option does not register through a thin adapter shim.',
+  'Also delete the audit log.','Then deploy the handler.',
+])test(`6bd comparison rejects ${side} instrumental-option correction: ${correction}`,()=>{
+  let plan=comparison6bd.savedPlan;const q=comparisonQuestion6bd();
+  if(side==='native')q.nativeCall!.questions[0]!.options[2]!.description+=' '+correction;
+  else plan=plan.replace('premature abstraction until a second handler exists.','premature abstraction until a second handler exists. '+correction);
+  expect(()=>comparisonCount6bd(plan,q)).toThrow(/Unsupported/);
+});

@@ -355,14 +355,17 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
         /\b(?:this|that|the) (?:estimate|tuple|rating|metadata|effort|risk) (?:is|was|has been) (?:already |now )?(?:withdrawn|retracted|not current|no longer (?:current|valid)|superseded|historical|quoted)\b/i.test(visible) ||
         !/^(?:\s*[.,;]|\s*$)/.test(after)) return null;
     const fields = match[1]!.split(/\s*[,;]\s*/).map(part => {
-      const forward = /^(effort|risk)\s*:?\s+(\w+)$/i.exec(part.trim());
-      const reverse = /^(\w+)\s+(effort|risk)$/i.exec(part.trim());
+      const forward = /^(effort|risk)\s*:?\s+(.+)$/i.exec(part.trim());
+      const reverse = /^(.+?)\s+(effort|risk)$/i.exec(part.trim());
       return forward ? [forward[1]!.toLowerCase(), forward[2]!] : reverse ? [reverse[2]!.toLowerCase(), reverse[1]!]
         : /^(?:S|M|L|XL)$/i.test(part.trim()) ? ['effort', part.trim()] : [];
     });
     const facts = Object.fromEntries(fields.filter(field => field.length === 2));
+    const risk = /^(low|medium|high)(?:\s*(?:[-–—]|\bto\b)\s*(low|medium|high))?$/i.exec(facts.risk ?? '');
+    const levels = ['low','medium','high'];
     if (fields.length !== 2 || Object.keys(facts).length !== 2 ||
-        !/^(?:S|M|L|XL)$/i.test(facts.effort ?? '') || !/^(?:low|medium|high)$/i.test(facts.risk ?? '')) return null;
+        !/^(?:S|M|L|XL)$/i.test(facts.effort ?? '') || !risk ||
+        (risk[2] && levels.indexOf(risk[1]!.toLowerCase()) >= levels.indexOf(risk[2]!.toLowerCase()))) return null;
     return raw.slice(0, match.index) + `. Effort ${facts.effort}. Risk ${facts.risk}.` + raw.slice(match.index! + match[0].length);
   };
   // The skill requires complete per-option facts, not a GFM option table.
@@ -392,7 +395,8 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
     .filter(word => !['recommended', 'option', 'only', 'plan', 'planned', 'written', 'keep', 'same', 'full'].includes(word));
   // Terminal punctuation and a status suffix are presentation, not a choice.
   const caption = (value: string) => option(value).replace(/^[A-D]:\s*/i, '').replace(/\s*\((?:plan )?as (?:written|planned)\)\.?$/i, '').replace(/[.:]$/, '').trim();
-  const words = (value: string) => caption(value).toLowerCase().match(/[a-z0-9_]+/g) ?? [];
+  const words = (value: string) => (caption(value).toLowerCase().match(/[a-z0-9_]+/g) ?? [])
+    .map(word => word === 'via' ? 'through' : word);
   const completeCaption = (offered: string, saved: string, summary: string) => {
     const a = selector(offered), b = selector(saved);
     if (a && a !== b) return false;
@@ -431,7 +435,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
       const caption = label.replace(/^as (?:planned|written):?\s*/i, '');
       return { generic: !caption, caption };
     }
-    const suffix = /^(.*?)\s*\((?:plan )?as (?:planned|written)\)$/i.exec(label);
+    const suffix = /^(.*?)\s*(?:\((?:plan )?as (?:planned|written)\)|,\s*as (?:planned|written))$/i.exec(label);
     if (suffix) return { generic: false, caption: suffix[1]!.trim() };
     if (/^\((?:plan )?as (?:planned|written)\)(?:\s|[—–-]|$)/i.test(tail)) return { generic: false, caption: label };
     return null;
@@ -483,7 +487,36 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
             return [proseOption([token, ...facts])];
           }).filter(option => option !== null);
           const baselineOption = (offered: string, saved: NonNullable<typeof options[number]>) => {
+            const ownText = (raw:string) => raw
+              .replace(/((?:this|that|the) (?:option|alternative|baseline) (?:is|was|has been)\s+(?:(?:already|now)\s+)?)["“]([^"”\n]+)["”]/gi,'$1$2')
+              .replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g,'');
+            const addedAction = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|\b(?:and|but|also|first|then|now|next|while)\s+)(?:please\s+)?(?:add(?:ing)?|remov(?:e|ing)|delet(?:e|ing)|cut(?:ting)?|drop(?:ping)?|replac(?:e|ing)|rewrit(?:e|ing)|chang(?:e|ing)|alter(?:ing)?|modif(?:y|ying)|enabl(?:e|ing)|disabl(?:e|ing)|implement(?:ing)?|install(?:ing)?|introduc(?:e|ing)|build(?:ing)?|writ(?:e|ing)|record(?:ing)?|captur(?:e|ing)|creat(?:e|ing)|switch(?:ing)?|migrat(?:e|ing)|externaliz(?:e|ing)|refactor(?:ing)?|expand(?:ing)?|reduc(?:e|ing)|deploy(?:ing)?|approv(?:e|ing)|run(?:ning)?)\b/i;
+            const unchanged = (action:string) => [saved.summary.slice(saved.label.length),q.options.find(o=>o.label===offered)?.description ?? ''].every(raw=>{
+              const text=ownText(raw), escaped=action.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+              return current(text) && !addedAction.test(text) &&
+                !/\b(?:this|that|the) (?:option|alternative|baseline) (?:is|was|has been) (?:already |now )?(?:withdrawn|retracted|rejected|superseded|not current|no longer (?:current|valid)|historical|quoted)\b/i.test(text) &&
+                !new RegExp(`\\b(?:not|never|no longer|doesn't|does not|will not)\\s+(?:(?:currently|now|actually)\\s+)?${escaped}(?:s|es)?\\b`,'i').test(text);
+            });
+            if (/\bvia\b/i.test(caption(offered)) !== /\bvia\b/i.test(caption(saved.label)) &&
+                /\bthrough\b/i.test(caption(offered)+' '+caption(saved.label)) && !unchanged(words(offered)[0] ?? '')) return false;
             const baseline = savedBaseline(saved);
+            const offeredBaseline = savedBaseline({label:offered,bindingText:offered});
+            // Both captions explicitly retain this row's current baseline.
+            // A shortened action caption may omit its uniquely owned target;
+            // the current row must supply the whole native action and target,
+            // not another option, quoted history, a negation or a second match.
+            if (baseline && offeredBaseline && !baseline.generic && !offeredBaseline.generic) {
+              const short = baselineWords(baseline.caption), full = baselineWords(offeredBaseline.caption);
+              if (short.length && short.length < full.length && short.every((word,i)=>word===full[i])) {
+                const value=plain(cells[fields.current[0]!]!.text.replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g,''));
+                const valueWords=baselineWords(value);
+                const verb=(word:string)=>word===full[0] || word===full[0]+'s' || (full[0]!.endsWith('s') && word===full[0]+'es');
+                const hits=valueWords.flatMap((word,i)=>verb(word) && full.slice(1).every((next,j)=>valueWords[i+j+1]===next)?[i]:[]);
+                return namedSource && currentContext(tokens.indexOf(table)) && current(value) &&
+                  !/\b(?:not|never|no longer|[a-z]+n['’]t|will|would|could|should|may|might|previously|formerly|historical|hypothetical|if|unless|withdrawn|retracted|superseded|(?:other|another|foreign) (?:plan|project))\b/i.test(value) &&
+                  (!selector(offered) || selector(offered)===selector(saved.label)) && hits.length===1 && unchanged(full[0]!);
+              }
+            }
             if (!baseline || (!baseline.generic && !/^(?:keep|retain|preserve)\b/i.test(baselineCaption(offered))))
               return sameOption(offered, saved.label, selector(offered) ? saved.summary : saved.bindingText);
             const offeredId = selector(offered), savedId = selector(saved.label);
