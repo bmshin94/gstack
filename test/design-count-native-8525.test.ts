@@ -160,3 +160,116 @@ test('an unlabelled source gap still needs a current defect, concrete offered re
     (q:NativePlanQuestionCall['questions'][number])=>{q.header='Setup';},
   ]) {const c=structuredClone(original);mutate(c.questions[0]!);c.answers={[c.questions[0]!.question]:c.questions[0]!.options[0]!.label};expect(isDesignCountFirstReview(fp(c))).toBe(false);}
 });
+
+
+import phaseEntry77 from './fixtures/design-phase-entry-77.json';
+function phaseCalls77() { return structuredClone(phaseEntry77.calls) as NativePlanQuestionCall[]; }
+function phaseSequence77(calls = phaseCalls77()) {
+  let started = false;
+  return calls.map(call => {
+    const f = nativePlanCallFingerprint(call, 0, !started);
+    const phase = planCountQuestionPhase(f, started, designStep0Boundary,
+      isDesignCountFirstReview, isDesignCountSetup, isDesignCompletionHandoff);
+    started = phase.reviewStarted;
+    return { id: call.toolUseId, ...phase };
+  });
+}
+function phaseMutation77(index: number, mutate: (call: NativePlanQuestionCall) => void) {
+  const call = phaseCalls77()[index]!; const before = call.questions[0]!.question;
+  const answer = call.answers![before]!; mutate(call);
+  if (call.questions[0]!.question !== before) call.answers = {[call.questions[0]!.question]: answer};
+  return nativePlanCallFingerprint(call, 0, true);
+}
+
+test('actual77 focus ACK opens review, later learnings stays setup, all six real findings count', () => {
+  const phases = phaseSequence77();
+  expect(phases.slice(0, 3).map(p => p.preReview)).toEqual([true, true, true]);
+  expect(phases[1]!.reviewStarted).toBe(true);
+  expect(phases.slice(3).map(p => p.preReview)).toEqual([false, false, false, false, false, false]);
+  expect(phases.filter(p => !p.preReview)).toHaveLength(6);
+  const calls = phaseCalls77();
+  // These remain setup decisions, never substituted for a substantive finding.
+  expect(isDesignCountFirstReview(nativePlanCallFingerprint(calls[1]!, 0, true))).toBe(false);
+  expect(isDesignCountSetup(nativePlanCallFingerprint(calls[2]!, 0, false))).toBe(true);
+});
+
+test('native focus and learnings classification follows scope actions, not recommendation or order', () => {
+  for (const index of [1,2]) for (const reversed of [false,true]) for (const picked of [0,1]) {
+    const call = phaseCalls77()[index]!; const q=call.questions[0]!;
+    q.options.forEach(o => { o.label=o.label.replace(/\s*\(recommended\)/i,''); });
+    q.options[picked]!.label += ' (recommended)';
+    if(reversed)q.options.reverse();
+    call.answers = {[q.question]:q.options[picked]!.label};
+    const f=nativePlanCallFingerprint(call,0,true);
+    expect(designStep0Boundary(f)).toBe(true);
+    expect(isDesignCountSetup(f)).toBe(true);
+  }
+});
+
+test('equivalent all-seven versus subset focus wording stays a plan-wide setup choice', () => {
+  for(const title of ['Review all 7 design dimensions, or focus on specific areas?', 'Review all 7 dimensions or focus on a subset?', 'Review all 7 design passes, or focus?']) {
+    const f=phaseMutation77(1,c=>{c.questions[0]!.question=c.questions[0]!.question.replace(/^D2[^\n]+/,'D21: '+title);});
+    expect(designStep0Boundary(f)).toBe(true); expect(isDesignCountSetup(f)).toBe(true);
+  }
+});
+
+for (const [name, mutate] of Object.entries({
+  'pending': (c: NativePlanQuestionCall) => { c.answered=false; },
+  'failed': (c: NativePlanQuestionCall) => { c.failed=true; },
+  'missing answer time': (c: NativePlanQuestionCall) => { delete c.answeredAt; },
+  'missing session': (c: NativePlanQuestionCall) => { c.sessionId=''; },
+  'missing call ID': (c: NativePlanQuestionCall) => { c.toolUseId=''; },
+  'partial': (c: NativePlanQuestionCall) => { c.unansweredQuestionIndices=[0]; },
+  'unoffered answer': (c: NativePlanQuestionCall) => { c.answers={[c.questions[0]!.question]:'Unrelated answer'}; },
+  'checkbox': (c: NativePlanQuestionCall) => { c.questions[0]!.multiSelect=true; },
+  'mixed packet': (c: NativePlanQuestionCall) => { c.questions.push({header:'Issue',question:'Approve a new layout?',options:[{label:'Approve'},{label:'Defer'}],multiSelect:false}); },
+  'foreign source': (c: NativePlanQuestionCall) => { c.questions[0]!.question=c.questions[0]!.question.replace('of PLAN.md','of OTHER.md'); },
+  'historical source': (c: NativePlanQuestionCall) => { c.questions[0]!.question=c.questions[0]!.question.replace('Project/branch/task:','Project/branch/task: Historical source:'); },
+  'quoted question': (c: NativePlanQuestionCall) => { c.questions[0]!.question='> '+c.questions[0]!.question; },
+  'additional approval': (c: NativePlanQuestionCall) => { c.questions[0]!.question+='\nApprove all findings?'; },
+  'extra option': (c: NativePlanQuestionCall) => { c.questions[0]!.options.push({label:'Approve deployment'}); },
+  'extra option action': (c: NativePlanQuestionCall) => { c.questions[0]!.options[0]!.label+=' and approve the plan'; c.answers={[c.questions[0]!.question]:c.questions[0]!.options[0]!.label}; },
+})) for(const index of [1,2])test(`native ${index===1?'focus':'learnings'} does not classify ${name} as setup`,()=>{
+  const f=phaseMutation77(index,mutate);
+  expect(designStep0Boundary(f)).toBe(false); expect(isDesignCountSetup(f)).toBe(false);
+});
+
+test('narrow-only, duplicated scope, quoted rating and component rating do not open review',()=>{
+  for(const mutate of [
+    (c:NativePlanQuestionCall)=>{c.questions[0]!.options[0]!.label='Only the 2 listed gaps';},
+    (c:NativePlanQuestionCall)=>{c.questions[0]!.options[1]!.label='All 7 dimensions';},
+    (c:NativePlanQuestionCall)=>{c.questions[0]!.question=c.questions[0]!.question.replace("ELI10: I've rated this plan", "ELI10: Earlier: I've rated this plan");},
+    (c:NativePlanQuestionCall)=>{c.questions[0]!.question=c.questions[0]!.question.replace("rated this plan", "rated this error message");},
+  ]) { const f=phaseMutation77(1,mutate);expect(designStep0Boundary(f)).toBe(false);expect(isDesignCountSetup(f)).toBe(false); }
+  const f=nativePlanCallFingerprint(phaseCalls77()[1]!,0,true);
+  for(const changed of [{...f,signature:'foreign:tool'},{...f,nativeQuestionIndex:1},{...f,options:[...f.options].reverse()}]) {
+    expect(designStep0Boundary(changed)).toBe(false);expect(isDesignCountSetup(changed)).toBe(false);
+  }
+});
+
+for (const suffix of ['Also approve deployment.', 'Approve all findings.', 'Continue the review and deploy to production.', 'Review while deleting the API.'])
+  for (const location of ['question', 'option'] as const) for (const index of [1, 2])
+    test(`native setup rejects mixed current action in ${location}: ${suffix} (${index})`, () => {
+      const f = phaseMutation77(index, c => {
+        if (location === 'question') c.questions[0]!.question += '\n' + suffix;
+        else c.questions[0]!.options[0]!.description += ' ' + suffix;
+      });
+      expect(designStep0Boundary(f)).toBe(false); expect(isDesignCountSetup(f)).toBe(false);
+    });
+for (const index of [1, 2]) test(`native setup rejects contradictory duplicate source (${index})`, () => {
+  const f = phaseMutation77(index, c => { c.questions[0]!.question += '\nProject/branch/task: plan-design-review of OTHER.md.'; });
+  expect(designStep0Boundary(f)).toBe(false); expect(isDesignCountSetup(f)).toBe(false);
+});
+for (const index of [1, 2]) test(`native setup allows quoted examples and negative consequences without approving them (${index})`, () => {
+  const f = phaseMutation77(index, c => {
+    c.questions[0]!.question += '\nExample of a later finding: "Approve deployment." This scope choice does not approve that action.';
+    c.questions[0]!.options[0]!.description += ' ❌ This does not approve deployment. Example: “Approve all findings.”';
+  });
+  expect(designStep0Boundary(f)).toBe(true); expect(isDesignCountSetup(f)).toBe(true);
+});
+
+for (const index of [1, 2]) for (const suffix of ['Also approve the design system.', 'Implement the first dimension.'])
+  test(`native setup rejection cannot fall through to a legacy boundary (${index}): ${suffix}`, () => {
+    const f = phaseMutation77(index, c => { c.questions[0]!.question += '\n' + suffix; });
+    expect(designStep0Boundary(f)).toBe(false); expect(isDesignCountSetup(f)).toBe(false);
+  });

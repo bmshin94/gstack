@@ -1,0 +1,105 @@
+{
+  "source": "77fd0890ddfeaf2bdd6d78183a2d989d9a4e8d4c",
+  "selectionStartedAt": 1789492460129,
+  "selected": {
+    "sessionId": "10bb7da8-3065-4a5d-8a8f-41f156b3cca5",
+    "toolUseId": "toolu_011LRMEtwDvfFastSfoYTxEG",
+    "questions": [
+      {
+        "question": "D1 \u2014 Which review mode should I apply to the saved project views plan?\nProject/branch/task: gstack-plan-count-rTDHRG on main, reviewing PLAN.md (saved views for the project task list).\nELI10: The review can push this plan in four directions: dream bigger, keep the plan but offer a few add-ons you can pick from, keep the plan exactly and hunt for every way it breaks, or shrink it to the bare minimum. The plan is an enhancement to an existing task list with an estimated 8-12 changed files, one new table, and new UI. There is also a real premise question (per-member views vs project-shared views) that a mode with room for cherry-picking can put in front of you without forcing it.\nStakes if we pick wrong: too ambitious and the pilot slips or grows a sharing model nobody asked for; too narrow and the team keeps recreating the same filters because views can't be shared.\nRecommendation: SELECTIVE EXPANSION because this is an enhancement under the 15-file threshold with one strong expansion candidate (shared views) that deserves a yes/no from you, not a default.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: how much appetite you have for adding scope vs hardening exactly what's written.",
+        "header": "Review mode",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "SELECTIVE EXPANSION (recommended)",
+            "description": "\u2705 Hold the current scope and make it bulletproof, then offer 5-6 individually selectable add-ons (shared views, default view, deep links) with effort and risk. \u2705 You decide each one; rejected items land in NOT in scope. \u274c Slightly longer review because each add-on is its own question."
+          },
+          {
+            "label": "HOLD SCOPE",
+            "description": "\u2705 Maximum rigor on exactly the four approach bullets: every error path, edge case, test, and observability gap. \u2705 Fastest path to an implementable plan for the two-week pilot. \u274c The shared-views premise question gets noted but not offered, so the team-level pain may stay unsolved."
+          },
+          {
+            "label": "SCOPE EXPANSION",
+            "description": "\u2705 Envision the 10x version: views as first-class shareable objects, defaults, deep links, digests. \u2705 Best 12-month architecture up front. \u274c Highest risk of over-building before the pilot proves anyone reuses views at all."
+          },
+          {
+            "label": "SCOPE REDUCTION",
+            "description": "\u2705 Strip to the minimum that proves reuse: maybe create + list + apply only, no update endpoint. \u2705 Shortest pilot lead time. \u274c Plan is already small; cuts here risk shipping something too thin to measure."
+          }
+        ]
+      }
+    ],
+    "answered": true,
+    "failed": false,
+    "answers": {
+      "D1 \u2014 Which review mode should I apply to the saved project views plan?\nProject/branch/task: gstack-plan-count-rTDHRG on main, reviewing PLAN.md (saved views for the project task list).\nELI10: The review can push this plan in four directions: dream bigger, keep the plan but offer a few add-ons you can pick from, keep the plan exactly and hunt for every way it breaks, or shrink it to the bare minimum. The plan is an enhancement to an existing task list with an estimated 8-12 changed files, one new table, and new UI. There is also a real premise question (per-member views vs project-shared views) that a mode with room for cherry-picking can put in front of you without forcing it.\nStakes if we pick wrong: too ambitious and the pilot slips or grows a sharing model nobody asked for; too narrow and the team keeps recreating the same filters because views can't be shared.\nRecommendation: SELECTIVE EXPANSION because this is an enhancement under the 15-file threshold with one strong expansion candidate (shared views) that deserves a yes/no from you, not a default.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: how much appetite you have for adding scope vs hardening exactly what's written.": "SCOPE EXPANSION"
+    },
+    "unansweredQuestionIndices": [],
+    "answeredAt": "2026-09-15T17:14:20.164Z"
+  },
+  "proposal": {
+    "sessionId": "10bb7da8-3065-4a5d-8a8f-41f156b3cca5",
+    "toolUseId": "toolu_01UExNnc9avZ81S39cVANhzn",
+    "questions": [
+      {
+        "question": "D2.1 \u2014 P1: Project-shared views. Add, defer, or skip?\nProject/branch/task: gstack-plan-count-rTDHRG on main, expanding the saved views plan (SCOPE EXPANSION, D1).\nELI10: Right now a saved view belongs to one member, so if five people want \"Blocked this sprint\" all five build it. P1 adds a visibility switch (private or project) so one person saves it and the whole project sees it in the picker. Only the owner (and project admins, if that role exists) can edit or delete a shared view. Members still only see tasks they already have access to; sharing a view never widens task visibility. This is the change that turns the feature from a personal convenience into the thing that actually ends the team recreating filters.\nStakes if we pick wrong: skip it and the stated pain (\"team members repeatedly recreate filters\") is solved once per member instead of once per team; add it carelessly and you get an authorization surface where someone edits or deletes a teammate's view.\nRecommendation: A) Add because the plan's own goal is team-level, the cost is one enum column plus one authz branch (human ~2 days / CC ~45 min), and doing it now avoids a migration and backfill later.\nCompleteness: A=10/10 (solves the team pain, owner-only mutation, access rules preserved), B=6/10 (personal views ship, team pain remains until a later migration), C=5/10 (permanently per-member).\nNet: a medium-effort authz surface now vs solving the stated problem only one member at a time.",
+        "header": "P1 shared",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "A) Add to this plan (recommended)",
+            "description": "\u2705 One save removes the filter-rebuilding work for every project member, not just the saver. \u2705 Picker groups private then project views with creator shown; owner-only update/delete. \u274c Adds an authorization branch that needs its own tests (non-owner update, non-member read, admin override)."
+          },
+          {
+            "label": "B) Defer to TODOS.md",
+            "description": "\u2705 Keeps the pilot to the smallest surface and lets reuse data justify sharing later. \u2705 Still worth adding the nullable visibility column now to avoid a later backfill. \u274c Team-level pain persists through the pilot, so the reuse metric may look weak for the wrong reason."
+          },
+          {
+            "label": "C) Skip entirely",
+            "description": "\u2705 Simplest data model and no sharing authz at all. \u2705 Fastest path to shipping exactly what PLAN.md says. \u274c Locks the table into per-member ownership; adding sharing later means a migration plus backfill."
+          }
+        ]
+      }
+    ],
+    "answered": true,
+    "failed": false,
+    "answers": {
+      "D2.1 \u2014 P1: Project-shared views. Add, defer, or skip?\nProject/branch/task: gstack-plan-count-rTDHRG on main, expanding the saved views plan (SCOPE EXPANSION, D1).\nELI10: Right now a saved view belongs to one member, so if five people want \"Blocked this sprint\" all five build it. P1 adds a visibility switch (private or project) so one person saves it and the whole project sees it in the picker. Only the owner (and project admins, if that role exists) can edit or delete a shared view. Members still only see tasks they already have access to; sharing a view never widens task visibility. This is the change that turns the feature from a personal convenience into the thing that actually ends the team recreating filters.\nStakes if we pick wrong: skip it and the stated pain (\"team members repeatedly recreate filters\") is solved once per member instead of once per team; add it carelessly and you get an authorization surface where someone edits or deletes a teammate's view.\nRecommendation: A) Add because the plan's own goal is team-level, the cost is one enum column plus one authz branch (human ~2 days / CC ~45 min), and doing it now avoids a migration and backfill later.\nCompleteness: A=10/10 (solves the team pain, owner-only mutation, access rules preserved), B=6/10 (personal views ship, team pain remains until a later migration), C=5/10 (permanently per-member).\nNet: a medium-effort authz surface now vs solving the stated problem only one member at a time.": "A) Add to this plan (recommended)"
+    },
+    "unansweredQuestionIndices": [],
+    "answeredAt": "2026-09-15T17:16:00.396Z"
+  },
+  "eventTimes": [
+    {
+      "kind": "use",
+      "toolUseId": "toolu_011LRMEtwDvfFastSfoYTxEG",
+      "timestamp": "2026-09-15T17:14:18.988Z"
+    },
+    {
+      "kind": "result",
+      "toolUseId": "toolu_011LRMEtwDvfFastSfoYTxEG",
+      "timestamp": "2026-09-15T17:14:20.164Z"
+    },
+    {
+      "kind": "use",
+      "toolUseId": "toolu_01UExNnc9avZ81S39cVANhzn",
+      "timestamp": "2026-09-15T17:15:58.212Z"
+    },
+    {
+      "kind": "result",
+      "toolUseId": "toolu_01UExNnc9avZ81S39cVANhzn",
+      "timestamp": "2026-09-15T17:16:00.396Z"
+    }
+  ],
+  "provenance": {
+    "projection": "/home/vercel-sandbox/gstack/.context/sep15-ship-consolidation/remaining-paid-90f-repairs/executions/77fd0890ddfeaf2bdd6d78183a2d989d9a4e8d4c/all/run/public-retention/skill-e2e-plan-ceo-mode-routing/plan-ceo-review-mode-1789492297772-BPfUry/latest-public-transcript.json",
+    "sha256": "4367d27895f46a03d47f5b3cc7360db01e07ff83287f51e7838e98f6bc3ca533",
+    "case": "mode \"SCOPE EXPANSION\" routes to its distinctive posture",
+    "firstAttemptStatus": "failed",
+    "actualPassCredit": 0
+  },
+  "resultContentById": {
+    "toolu_011LRMEtwDvfFastSfoYTxEG": "Your questions have been answered: \"D1 \u2014 Which review mode should I apply to the saved project views plan?\nProject/branch/task: gstack-plan-count-rTDHRG on main, reviewing PLAN.md (saved views for the project task list).\nELI10: The review can push this plan in four directions: dream bigger, keep the plan but offer a few add-ons you can pick from, keep the plan exactly and hunt for every way it breaks, or shrink it to the bare minimum. The plan is an enhancement to an existing task list with an estimated 8-12 changed files, one new table, and new UI. There is also a real premise question (per-member views vs project-shared views) that a mode with room for cherry-picking can put in front of you without forcing it.\nStakes if we pick wrong: too ambitious and the pilot slips or grows a sharing model nobody asked for; too narrow and the team keeps recreating the same filters because views can't be shared.\nRecommendation: SELECTIVE EXPANSION because this is an enhancement under the 15-file threshold with one strong expansion candidate (shared views) that deserves a yes/no from you, not a default.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: how much appetite you have for adding scope vs hardening exactly what's written.\"=\"SCOPE EXPANSION\". You can now continue with these answers in mind.",
+    "toolu_01UExNnc9avZ81S39cVANhzn": "Your questions have been answered: \"D2.1 \u2014 P1: Project-shared views. Add, defer, or skip?\nProject/branch/task: gstack-plan-count-rTDHRG on main, expanding the saved views plan (SCOPE EXPANSION, D1).\nELI10: Right now a saved view belongs to one member, so if five people want \"Blocked this sprint\" all five build it. P1 adds a visibility switch (private or project) so one person saves it and the whole project sees it in the picker. Only the owner (and project admins, if that role exists) can edit or delete a shared view. Members still only see tasks they already have access to; sharing a view never widens task visibility. This is the change that turns the feature from a personal convenience into the thing that actually ends the team recreating filters.\nStakes if we pick wrong: skip it and the stated pain (\"team members repeatedly recreate filters\") is solved once per member instead of once per team; add it carelessly and you get an authorization surface where someone edits or deletes a teammate's view.\nRecommendation: A) Add because the plan's own goal is team-level, the cost is one enum column plus one authz branch (human ~2 days / CC ~45 min), and doing it now avoids a migration and backfill later.\nCompleteness: A=10/10 (solves the team pain, owner-only mutation, access rules preserved), B=6/10 (personal views ship, team pain remains until a later migration), C=5/10 (permanently per-member).\nNet: a medium-effort authz surface now vs solving the stated problem only one member at a time.\"=\"A) Add to this plan (recommended)\". You can now continue with these answers in mind."
+  }
+}

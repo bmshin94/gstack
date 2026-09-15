@@ -49,3 +49,56 @@ console.log(JSON.stringify(obs));
     expect(saved.publicTools.some((e:any)=>e.toolUseId==='load'&&e.kind==='result'&&!e.isError)).toBe(true);
   } finally {fs.rmSync(dir,{recursive:true,force:true});}
 },40000);
+
+import structuredMode from './fixtures/auto-decide-structured-77.json';
+test('actual completed slash-mode evidence reaches auto_decided before an idle terminal judge fallback', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-structured-pty-'));
+  const working = path.join(dir, 'repo'); fs.mkdirSync(working);
+  const events = [
+    ...structuredMode.tools.map(e => ({ timestamp: e.timestamp, type: e.kind === 'use' ? 'assistant' : 'user',
+      content: e.kind === 'use'
+        ? [{ type: 'tool_use', id: e.toolUseId, name: e.name, input: e.input }]
+        : [{ type: 'tool_result', tool_use_id: e.toolUseId, content: e.content, is_error: e.isError }] })),
+    ...structuredMode.transcript.assistantMessages.filter(m => Date.parse(m.timestamp) >= structuredMode.options.commandStartedAt)
+      .map(m => ({ timestamp: m.timestamp, type: 'assistant', content: [{ type: 'text', text: m.text }] })),
+  ].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+  const cli = createFakeBunCli(path.join(dir, 'fake-claude'), fakePlanSeedPrelude() + `
+const fs=require('node:fs'),path=require('node:path');
+const args=process.argv.slice(2),id=args[args.indexOf('--session-id')+1];
+let sent=false;
+process.on('gstack-seeded-slash',chunk=>{
+  if(sent||!chunk.toString().includes('/plan-ceo-review'))return;sent=true;
+  const root=path.join(process.env.CLAUDE_CONFIG_DIR,'projects','fixture');fs.mkdirSync(root,{recursive:true});
+  const base=Date.now();
+  setTimeout(()=>{
+    const rows=${JSON.stringify(events)}.map((row,index)=>JSON.stringify({type:row.type,isSidechain:false,cwd:process.cwd(),sessionId:id,timestamp:new Date(base+index+1).toISOString(),message:{role:row.type,content:row.content}}));
+    fs.writeFileSync(path.join(root,id+'.jsonl'),rows.join('\\n')+'\\n');
+    process.stdout.write('Finished the requested step. Idle.\\n');
+  },1200);
+});
+setInterval(()=>{},1000);
+`);
+  try {
+    const runner = pathToFileURL(path.join(import.meta.dir, 'helpers/claude-pty-runner.ts')).href;
+    const childFile = path.join(dir, 'observe.ts');
+    fs.writeFileSync(childFile, `import {runPlanSkillObservation,resolveClaudeBinary} from ${JSON.stringify(runner)};
+if(resolveClaudeBinary()!==process.env.BROWSE_TERMINAL_BINARY)throw new Error('Fake CLI resolution failed');
+const obs=await runPlanSkillObservation({skillName:'plan-ceo-review',inPlanMode:true,initialPlanContent:'# Plan: Auto decision fixture\\n\\nReview this current draft.',cwd:${JSON.stringify(working)},extraArgs:['--disallowedTools','AskUserQuestion'],timeoutMs:12000});
+console.log(JSON.stringify(obs));
+`);
+    const child = Bun.spawn([process.execPath, childFile], { cwd: process.cwd(), env: {
+      ...process.env, BROWSE_TERMINAL_BINARY: cli, EVALS_RUN_ID: 'structured-auto-fake', GSTACK_EVAL_DIR: path.join(dir, 'evidence'),
+    }, stdout: 'pipe', stderr: 'pipe' });
+    const [stdout, stderr, exitCode] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    expect(exitCode, stderr).toBe(0); const observation = JSON.parse(stdout.trim().split('\n').at(-1)!);
+    expect(observation.outcome, JSON.stringify(observation)).toBe('auto_decided');
+    expect(observation.proseAUQEverObserved).toBe(false);
+    expect(observation.waitingEverObserved).toBe(false);
+    expect(observation.nativeAutoDecide.skillToolUseId).toBeUndefined();
+    expect(observation.nativeAutoDecide.questionLogToolUseId).toBe('toolu_01XGmQfqrq5rmsfNNuqGJj5q');
+    const saved = JSON.parse(fs.readFileSync(path.join(observation.artifactDir, 'observation.json'), 'utf8'));
+    expect(saved.native.calls).toEqual([]);
+    expect(saved.nativeAutoDecide.option).toBe('HOLD SCOPE');
+    expect(saved.publicTools.some((e: any) => e.name === 'Skill')).toBe(false);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}, 40000);

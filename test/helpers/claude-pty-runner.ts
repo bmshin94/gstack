@@ -1713,17 +1713,36 @@ export function planCountPrerequisitePick(fp: AskUserQuestionFingerprint, active
       const nativeSkip = q.options.findIndex(option =>
         /^Skip(?:\s*[—–-]\s*proceed)?(?:\s*\(recommended\))?$/i.test(option.label) &&
         /^(?:(?:The\s+)?plan\s+(?:scope\s+)?is\s+(?:already\s+)?(?:precise|clear|well-defined|explicit)\.\s*)?Proceed\s+(?:with\s+standard(?:\s+DX(?:\s+(?:POLISH|EXPANSION|TRIAGE))?)?\s+review|straight\s+to\s+Step\s*0\s+premise\s+challenge\s+and\s+approach\s+alternatives)\.?$/i.test((option.description ?? '').trim()));
-      // A full Skip label can use a comma. Admit that form only from the
-      // bound active tab's direct opposed offer and unconditional review action.
+      // A complete native decision brief can express the option meaning as
+      // pros/cons rather than a single imperative sentence. The owned active
+      // offer and its two opposed actions still define the only allowed skip.
       const offer = q.question.split('?', 1)[0]!.replace(/^D[1-9]\d*\s*[—–:-]\s*/, '').trim();
-      const commaSkip = q.options.findIndex(option =>
-        /^Skip\s*,\s*(?:proceed\s+with\s+)?standard\s+review(?:\s*\(recommended\))?$/i.test(option.label) &&
-        /^Proceed\s+(?:(?:directly|straight)\s+)?(?:with\s+(?:the\s+)?standard\s+review|to\s+Step\s*0\s+of\s+(?:the\s+)?(?:CEO\s+)?review)\.?$/i.test((option.description ?? '').trim()));
-      if (nativeRun >= 0 && commaSkip >= 0 && nativeRun !== commaSkip && call.sessionId && call.toolUseId &&
+      const fullSkip = q.options.findIndex(option =>
+        /^Skip\s*[,—–-]\s*(?:proceed\s+with\s+)?standard\s+review(?:\s*\(recommended\))?$/i.test(option.label));
+      const plainRun = nativeRun >= 0 && /^(?:Build|Create|Produce)\s+(?:a|the)\s+design\s+doc(?:ument)?\s+first[,;]\s*then\s+resume\s+(?:the|standard|CEO)\s+review\.?$/i.test((q.options[nativeRun]!.description ?? '').trim());
+      const plainSkip = fullSkip >= 0 && /^Proceed\s+(?:(?:directly|straight)\s+)?(?:with\s+(?:the\s+)?standard\s+review|to\s+Step\s*0\s+of\s+(?:the\s+)?(?:CEO\s+)?review)\.?$/i.test((q.options[fullSkip]!.description ?? '').trim());
+      const briefMeaning = (description: string, meaning: RegExp, skip: boolean): boolean => {
+        const rows = description.trim().replace(/(^|\s)[-*]\s+(?=[✅❌])/g, '$1')
+          .split(/\r?\n|\s+(?=[✅❌])/).map(row => row.trim()).filter(Boolean);
+        // Source quotations, appended imperatives and changed/conditional
+        // actions cannot borrow the unconditional meaning of an earlier pro.
+        if (rows.length < 2 || rows.some(row => !/^(?:[-*]\s+)?[✅❌]\s+\S/.test(row)) ||
+            !rows.some(row => /^(?:[-*]\s+)?❌/.test(row))) return false;
+        const body = rows.map(row => row.replace(/^(?:[-*]\s+)?[✅❌]\s+/, '')).join('\n');
+        if (/(?:^|[.!?;]\s*|\n|\b(?:and|then|while)\s+(?:(?:also|then)\s+)?)(?:Do\s+not|Don't|Never|No\s+review\b|(?:Accept|Approv|Remov|Delet|Deploy|Ignor|Rewrit|Disabl)[a-z]*\b|First\s+run\b)/im.test(body) ||
+            /\b(?:will\s+not|won't|cannot|does\s+not|doesn't)\s+(?:run|proceed|continue|produce|create|build|review)\b/i.test(body) ||
+            (skip && /\b(?:after|before|unless|only\s+if|if)\b|\brun\s*\/office-hours\b/i.test(body))) return false;
+        return rows.some(row => /^(?:[-*]\s+)?✅/.test(row) && meaning.test(row.replace(/^(?:[-*]\s+)?✅\s+/, '')));
+      };
+      const runBrief = nativeRun >= 0 && briefMeaning(q.options[nativeRun]!.description ?? '',
+        /^(?:Produce|Create|Build)s?\s+(?:a|the)\s+(?:structured\s+)?(?:design\s+doc(?:ument)?|problem\s+statement)\b/i, false);
+      const skipBrief = fullSkip >= 0 && briefMeaning(q.options[fullSkip]!.description ?? '',
+        /^(?:Proceed|Continue)s?\s+(?:(?:directly|straight)\s+)?with\s+(?:the\s+)?standard\s+review\b|^Goes\s+(?:directly|straight)\s+to\s+(?:the\s+)?(?:engineering\s+)?findings\b/i, true);
+      if (nativeRun >= 0 && fullSkip >= 0 && nativeRun !== fullSkip && call.sessionId && call.toolUseId &&
           q.question.split('?').length === 2 &&
-          /^Run\s*\/office-hours\s+(?:now|first),?\s+or\s+proceed\s+with\s+(?:the\s+)?standard\s+review$/i.test(offer) &&
-          /^(?:Build|Create|Produce)\s+(?:a|the)\s+design\s+doc(?:ument)?\s+first[,;]\s*then\s+resume\s+(?:the|standard|CEO)\s+review\.?$/i.test((q.options[nativeRun]!.description ?? '').trim()) &&
-          !/\b(?:must|need\s+to|have\s+to)\s+(?:run|complete|finish)\s*\/office-hours\b|(?:\/office-hours|design\s+doc(?:ument)?)\s+(?:is\s+)?(?:required|mandatory)\b|\breview\s+is\s+(?:forbidden|blocked)\b/i.test(q.question)) return commaSkip + 1;
+          /^(?:No\s+design\s+doc\s+(?:found|exists)(?:\s+for\s+(?:this|the)\s+(?:branch|project))?[.:]\s*)?Run\s*\/office-hours\s+(?:now|first),?\s+or\s+proceed\s+with\s+(?:the\s+)?standard\s+review$/i.test(offer) &&
+          ((plainRun && plainSkip) || (runBrief && skipBrief)) &&
+          !/\b(?:must|need\s+to|have\s+to)\s+(?:run|complete|finish)\s*\/office-hours\b|(?:\/office-hours|design\s+doc(?:ument)?)\s+(?:is\s+)?(?:required|mandatory)\b|\breview\s+is\s+(?:forbidden|blocked)\b/i.test(q.question)) return fullSkip + 1;
       if (nativeRun >= 0 && nativeSkip >= 0 && nativeRun !== nativeSkip) return nativeSkip + 1;
     }
   }
@@ -3770,8 +3789,54 @@ export const engStep0Boundary: Step0BoundaryPredicate = (fp) =>
   // plan-eng-review-idempotency, plan-eng-review-todos-e2e-concurrent.
   /gstack-qid:\s*(?:plan-)?eng-review-/i.test(fp.promptSnippet);
 
+/** Completed plan-wide focus and local-learnings choices remain setup, even when asked late. */
+export const designReviewSetupAUQ: Step0BoundaryPredicate = (fp) => {
+  const call = fp.nativeCall;
+  if (call?.answered !== true || call.failed !== false || !call.sessionId || !call.toolUseId ||
+      call.questions.length !== 1 || !Array.isArray(call.unansweredQuestionIndices) || call.unansweredQuestionIndices.length ||
+      !Number.isFinite(Date.parse(call.answeredAt ?? '')) || fp.signature !== `${call.sessionId}:${call.toolUseId}` ||
+      (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0)) return false;
+  const q = call.questions[0]!;
+  if (q.multiSelect || q.options.length !== 2 || new Set(q.options.map(o => o.label)).size !== 2 ||
+      Object.keys(call.answers ?? {}).length !== 1 || q.options.filter(o => o.label === call.answers?.[q.question]).length !== 1 ||
+      fp.options.length !== 2 || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label)) return false;
+  const text = q.question.trim();
+  const title = text.split(/\r?\n/, 1)[0]!.replace(/^D[1-9]\d*\s*[—–:-]\s*/i, '');
+  const sources = [...text.matchAll(/^Project\/branch\/task:\s*([^\n]+)$/gm)];
+  const source = sources[0]?.[1] ?? '';
+  // Setup never approves another product action. Quoted examples and negative
+  // consequences are explanatory; current imperative clauses remain decisions.
+  const explanatory = [text, ...q.options.map(o => o.description ?? '')].join('\n')
+    .replace(/`+[^`]*`+|"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’/g, '')
+    .replace(/[✅❌*]/g, '');
+  if (/(?:^|[.!?;:\n]|\b(?:and|while))\s*(?:(?:also|please|then|now)\s+)*(?:approv(?:e|ing)|deploy(?:ing)?|implement(?:ing)?|ship(?:ping)?|merg(?:e|ing)|delet(?:e|ing))\b/im.test(explanatory)) return false;
+  if (sources.length !== 1 || (text.match(/\?/g)?.length ?? 0) !== 1 || /```|~~~|^\s*>/m.test(text) ||
+      !/\bplan-design-review of PLAN\.md\b/i.test(source) ||
+      /\b(?:historical|archived|quoted|example|foreign|other|another|previous)\b/i.test(source)) return false;
+  const labels = q.options.map(o => o.label.trim().replace(/^[A-Z][).:]\s+/i, '')
+    .replace(/\s*\(recommended\)\s*$/i, ''));
+  if (/^(?:Learnings|Cross-project)$/i.test(q.header.trim()) &&
+      /^Enable cross[- ]project learnings(?: search)?\?$/i.test(title) &&
+      labels.some(label => /^Enable cross[- ]project learnings$/i.test(label)) &&
+      labels.some(label => /^Keep learnings project[- ]scoped(?: only)?$/i.test(label))) {
+    // Reuse the existing native cross-project premise/owned answer classifier.
+    return engSetupAUQ(fp);
+  }
+  return /^(?:Focus|Review focus)$/i.test(q.header.trim()) &&
+    /^Review all 7 (?:design )?(?:dimensions|passes),? or focus(?: on (?:specific areas|a subset))?\?$/i.test(title) &&
+    /^ELI10:\s*I['’]ve rated this plan (?:10(?:\.0+)?|[0-9](?:\.\d+)?)\/10 on design completeness\./mi.test(text) &&
+    labels.some(label => /^(?:Review )?All 7 (?:design )?(?:dimensions|passes)$/i.test(label)) &&
+    labels.some(label => /^(?:Only (?:the )?[1-6](?: listed)? (?:gaps|areas|dimensions|passes)|Focus on (?:specific areas|a subset))$/i.test(label));
+};
+
 export const designStep0Boundary: Step0BoundaryPredicate = (fp) => {
   const call = fp.nativeCall;
+  // Recognized native setup owns both acceptance and rejection. An invalid
+  // packet cannot borrow "design system" or "first dimension" from its body.
+  if (call?.questions.some(q => /^(?:Focus|Review focus|Learnings|Cross-project)$/i.test(q.header.trim()) &&
+      /Review all 7 (?:design )?(?:dimensions|passes),? or focus|Enable cross[- ]project learnings/i.test(q.question))) {
+    return designReviewSetupAUQ(fp);
+  }
   const questions = call
     ? call.questions.filter(q => !call.answered || call.answers?.[q.question]).map(q => q.question)
     : [fp.promptSnippet];
@@ -4514,14 +4579,14 @@ export async function runPlanSkillObservation(opts: {
       }
 
       // Terminal classification retains precedence (including actual questions
-      // and writes). Only an unclassified frame may use exact owned native prose.
+      // and writes). Only an unclassified frame may use owned native auto-decision evidence.
       if (scopeSessionId) {
         nativeAutoDecide = findNativeAutoDecision(scopeTranscript, scopeTools, {
-          skillName: opts.skillName, sessionId: scopeSessionId, commandStartedAt, now: Date.now(),
+          skillName: opts.skillName, sessionId: scopeSessionId, commandStartedAt, now: Date.now(), proseQuestionObserved: proseAUQEverObserved,
         });
         if (nativeAutoDecide) return {
           outcome: 'auto_decided',
-          summary: 'owned native session emitted the exact AUTO_DECIDE preference annotation after loading the invoked skill',
+          summary: 'owned native session completed the saved-preference auto-decision',
           evidence: visible.slice(-2000), elapsedMs: Date.now() - startedAt,
           ...highWaterFlags(),
         };

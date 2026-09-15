@@ -510,3 +510,131 @@ test('captured five retry C remains incomplete, with its final-byte limitation e
   expect(row.savedPlan).toContain('**C) Raw fragment as written.** Effort S. Risk high. Fails invariant');
   expect(() => baselineCount90f(row, baselineQuestion90f(row))).toThrow(/Unsupported/);
 });
+
+const literalProposal77 = baselineFixture90f.cases[3]!;
+const literalQuestion77 = () => nativePlanCallFingerprint(clone(literalProposal77.call), 0, true);
+const literalCount77 = (plan = literalProposal77.savedPlan, seed = literalProposal77.seed!, question = literalQuestion77()) =>
+  createCeoPaymentFindingCounter(seed, () => plan, ceoFirstReviewAUQ).isReviewAUQ(question);
+const literalCell77 = '| "None planned." | unresolved | pending |';
+const replaceLiteral77 = (value: string) => literalProposal77.savedPlan.replace(literalCell77, `| ${value} | unresolved | pending |`);
+
+test('quoted current proposal: exact77 saved row and complete comparison bind the acknowledged decision', () => {
+  const p = literalProposal77.provenance;
+  expect(createHash('sha256').update(literalProposal77.savedPlan).digest('hex')).toBe(p.requiredExcerptSha256);
+  expect(createHash('sha256').update(literalProposal77.seed!).digest('hex')).toBe(p.sourceExcerptSha256);
+  expect(Date.parse(p.successfulPriorMutations[0]!.acknowledgedAt)).toBeLessThan(Date.parse(p.requestAt));
+  expect(Date.parse(p.requestAt)).toBeLessThan(Date.parse(literalProposal77.call.answeredAt!));
+  expect(p.limitation).toContain('original attempt failed');
+  expect(literalProposal77.originalError).toContain('Unsupported current CEO decision');
+  expect(literalCount77()).toBe(true);
+});
+for (const [open, close] of [['"', '"'], ["'", "'"], ['“', '”'], ['‘', '’']])
+  test(`quoted current proposal: paired ${open}${close} preserves the exact source value`, () => {
+    expect(literalCount77(replaceLiteral77(`${open}None planned.${close}`))).toBe(true);
+  });
+for (const value of ['No automated tests are planned.', 'Test coverage comes from manual staging replay.', "None planned. We'll rely on the existing integration suite catching regressions."])
+  test(`quoted current proposal: complete current source prose ${value}`, () => {
+    expect(literalCount77(replaceLiteral77(`"${value}"`), `## Tests\n${value}`)).toBe(true);
+  });
+for (const [name, source] of Object.entries({
+  'missing source': '',
+  'different current proposal': '## Tests\nAutomated tests are planned.',
+  'case-normalized text is not exact source': '## Tests\nnone planned.',
+  'only a substring': '## Tests\nNo automated tests are planned. None planned is an old label.',
+  'negated attribution': '## Tests\nIt is not true that None planned.',
+  'historical source heading': '## Historical proposal\nNone planned.',
+  'historical source ancestor': '## Historical proposal\n### Tests\nNone planned.',
+  'historical source prose': '## Tests\nPreviously None planned.',
+  'quoted source paragraph': '## Tests\n"None planned."',
+  'source blockquote': '## Tests\n> None planned.',
+  'source code fence': '## Tests\n```text\nNone planned.\n```',
+  'inline code only': '## Tests\n`None planned.`',
+  'unsupported reported attribution': '## Tests\nThe previous author said "None planned."',
+  'ambiguous repeated source': '## Tests\nNone planned.\n\n## Alternative\nNone planned.',
+})) test(`quoted current proposal rejects ${name}`, () => {
+  expect(() => literalCount77(literalProposal77.savedPlan, source)).toThrow(/Unsupported/);
+});
+for (const value of ['"None"', '"None planned"', '"None planned." or perhaps not', '"None planned.”', '"Previously None planned."', '"As proposed: None planned."'])
+  test(`quoted current proposal rejects partial or attributed cell ${value}`, () => {
+    expect(() => literalCount77(replaceLiteral77(value))).toThrow(/Unsupported/);
+  });
+for (const [name, mutate] of Object.entries({
+  'foreign row source': (s: string) => s.replaceAll('PLAN.md', 'OTHER.md'),
+  'contradictory declared source': (s: string) => s.replace('Plan under review: PLAN.md', 'Plan under review: OTHER.md'),
+  'inactive row': (s: string) => s.replace('| unresolved | pending |', '| historical | pending |'),
+  'completed pending alternative': (s: string) => s.replace('| unresolved | pending |', '| approved | prior answer |'),
+  'missing owned row': (s: string) => s.replace(/^\| D-TESTS \(user\).*\n/m, ''),
+  'historical owned ledger': (s: string) => s.replace('| ID', '## Historical decisions\n\n| ID'),
+  'foreign comparison': (s: string) => s.replace('### D-TESTS:', '### D-OTHER:'),
+  'historical comparison': (s: string) => s.replace('### D-TESTS:', '### Historical D-TESTS:'),
+  'missing saved comparison': (s: string) => s.split('### D-TESTS:')[0]!,
+  'missing option B': (s: string) => s.replace(/^\| B\. None planned.*\n/m, ''),
+  'missing option C facts': (s: string) => s.replace('| medium | Cheap;', '| medium | ;').replace('| Misses every failure path (mail raise, DB raise, unknown user, injection-shaped id); a green happy path hides a broken error map. |', '| |'),
+  'quoted whole report': (s: string) => s.split('\n').map(line => '> ' + line).join('\n'),
+})) test(`quoted current proposal preserves ${name} rejection`, () => {
+  const plan = mutate(literalProposal77.savedPlan); expect(plan).not.toBe(literalProposal77.savedPlan);
+  expect(() => literalCount77(plan)).toThrow(/Unsupported/);
+});
+test('quoted current proposal still requires the original native answer and unique callback identity', () => {
+  const question = literalQuestion77(); question.nativeCall!.answered = false;
+  expect(() => literalCount77(literalProposal77.savedPlan, literalProposal77.seed!, question)).toThrow(/Invalid/);
+  const counter = createCeoPaymentFindingCounter(literalProposal77.seed!, () => literalProposal77.savedPlan, ceoFirstReviewAUQ);
+  const answered = literalQuestion77();
+  expect(() => counter.isReviewAUQ(answered, [answered.nativeCall!])).toThrow(/duplicated/);
+  answered.options[1]!.label = 'A different baseline';
+  expect(() => counter.isReviewAUQ(answered)).toThrow(/Invalid/);
+});
+
+for (const source of [
+  '## Tests\nNone planned. This statement is no longer current; new tests are required.',
+  '## Tests\nNone planned. This proposal is withdrawn; new tests are required.',
+  '## Tests\nAn archived proposal follows. None planned.',
+  '## Archived proposal\n### Tests\nNone planned.',
+]) test(`quoted current proposal rejects explicit withdrawal or archival context: ${source}`, () => {
+  expect(() => literalCount77(literalProposal77.savedPlan, source)).toThrow(/Unsupported/);
+});
+
+const tupleProposal77 = baselineFixture90f.cases[4]!;
+const tupleQuestion77 = () => nativePlanCallFingerprint(clone(tupleProposal77.call), 0, true);
+const tupleCount77 = (plan = tupleProposal77.savedPlan, question = tupleQuestion77()) =>
+  createCeoPaymentFindingCounter(tupleProposal77.seed!, () => plan, ceoFirstReviewAUQ).isReviewAUQ(question);
+const withTuples77 = (value: string) => tupleProposal77.savedPlan.replaceAll('(S effort, low risk)', value);
+test('owned effort/risk tuple: exact77 retry has complete same-option facts before its native ACK', () => {
+  const p = tupleProposal77.provenance;
+  expect(createHash('sha256').update(tupleProposal77.savedPlan).digest('hex')).toBe(p.requiredExcerptSha256);
+  expect(Date.parse(p.successfulPriorMutations[0]!.acknowledgedAt)).toBeLessThan(Date.parse(p.requestAt));
+  expect(Date.parse(p.requestAt)).toBeLessThan(Date.parse(tupleProposal77.call.answeredAt!));
+  expect(tupleProposal77.originalError).toContain('Unsupported current CEO decision');
+  expect(tupleCount77()).toBe(true);
+});
+for (const tuple of ['(S effort, low risk)', '(effort M, risk medium)', '(low risk, L effort)', '(risk high, effort XL)', '(Effort: S, Risk: low)', '(XL effort; medium risk)'])
+  test(`owned effort/risk tuple accepts complete dimension ordering ${tuple}`, () => {
+    expect(tupleCount77(withTuples77(tuple))).toBe(true);
+  });
+for (const tuple of ['(S effort)', '(low risk)', '(XS effort, low risk)', '(S effort, unknown risk)', '(S effort, M effort)', '(S effort, not low risk)', '(not S effort, low risk)', 'not (S effort, low risk)', 'not currently (S effort, low risk)', '(S effort, low risk) is not current', '"(S effort, low risk)"', '`(S effort, low risk)`', '(S effort, low risk). Effort L', '(S effort, low risk) (L effort, high risk)', '(S effort, low risk) (L effort, unknown risk)'])
+  test(`owned effort/risk tuple rejects missing, quoted, negated or conflicting metadata ${tuple}`, () => {
+    expect(() => tupleCount77(withTuples77(tuple))).toThrow(/Unsupported/);
+  });
+for (const [name, mutate] of Object.entries({
+  'B own pros missing': (s: string) => s.replace('Pros: keeps the "raw SQL" shape', 'Notes: keeps the "raw SQL" shape'),
+  'B own cons missing': (s: string) => s.replace('Cons: SQL text lives', 'Notes: SQL text lives'),
+  'A own pros missing': (s: string) => s.replace('Pros: no SQL text', 'Notes: no SQL text'),
+  'A own cons missing': (s: string) => s.replace('Cons: none material', 'Notes: none material'),
+  'B metadata borrowed from A': (s: string) => {
+    const at = s.indexOf('- **B)'); return s.slice(0, at) + s.slice(at).replace('(S effort, low risk)', '');
+  },
+  'metadata only in quoted child': (s: string) => s.replaceAll('(S effort, low risk)', '\n  > (S effort, low risk)\n'),
+  'foreign source': (s: string) => s.replaceAll('PLAN.md', 'OTHER.md'),
+  'missing current row': (s: string) => s.replace(/^\| R2 \(user\).*\n/m, ''),
+  'comparison owned by another row': (s: string) => s.replace('#### R2 comparison:', '#### R9 comparison:'),
+  'historical comparison': (s: string) => s.replace('#### R2 comparison:', '#### Historical R2 comparison:'),
+})) test(`owned effort/risk tuple preserves ${name} rejection`, () => {
+  const plan = mutate(tupleProposal77.savedPlan); expect(plan).not.toBe(tupleProposal77.savedPlan);
+  expect(() => tupleCount77(plan)).toThrow(/Unsupported/);
+});
+test('owned effort/risk tuple never bypasses native identity or ACK validation', () => {
+  const question = tupleQuestion77(); question.nativeCall!.answered = false;
+  expect(() => tupleCount77(tupleProposal77.savedPlan, question)).toThrow(/Invalid/);
+  const stale = tupleQuestion77(); stale.options[1]!.label = 'Different native option';
+  expect(() => tupleCount77(tupleProposal77.savedPlan, stale)).toThrow(/Invalid/);
+});

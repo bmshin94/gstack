@@ -22,5 +22,24 @@
       }
     ]
   },
-  "actualAnswer": "Yes, run outside design voices (recommended)"
+  "actualAnswer": "Yes, run outside design voices (recommended)",
+  "sameLineExplanation77": {
+    "source": "77fd0890ddfeaf2bdd6d78183a2d989d9a4e8d4c",
+    "toolUseId": "toolu_01XjmV9JV3Rb4HWv6zH8eSjK",
+    "question": {
+      "question": "Want outside design voices before the detailed review? Codex evaluates against OpenAI's design hard rules + litmus checks; a Claude subagent does an independent completeness review.\n\nD5 — Outside design voices\nProject/branch/task: main branch, plan-design-review of the User Dashboard Page plan, Variant A approved.\nELI10: Before I walk the 7 design passes myself, I can bring in two independent reviewers: Codex (scores the plan against hard-rejection rules like generic card grids, plus 7 litmus checks) and a fresh Claude subagent that hasn't seen my notes. Where they disagree with me, both views get surfaced in the relevant pass.\nStakes if we pick wrong: skipping means my findings rest on one reviewer; running adds a few minutes and Codex may not be installed here.\nRecommendation: No, proceed without — this is a taste call, no strong preference either way; the wireframe already anchors slop risk and hierarchy for an app-UI page.\nNote: options differ in kind, not coverage — no completeness score.\nNet: cross-model second opinion vs. the shortest path to a fixed plan.",
+      "header": "Voices",
+      "multiSelect": false,
+      "options": [
+        {
+          "label": "No, proceed without (recommended)",
+          "description": "✅ Straight into the 7 passes with the approved mockup as anchor. ✅ Fewest steps to a fixed plan. ❌ Findings rest on one reviewer; no cross-model check on slop risk or hierarchy."
+        },
+        {
+          "label": "Yes, run outside design voices",
+          "description": "✅ Codex hard-rule + litmus scorecard plus an independent Claude completeness read. ✅ Disagreements surface with both perspectives in the relevant pass. ❌ Adds a few minutes; Codex may be missing here, in which case only the Claude voice runs and it's tagged single-model."
+        }
+      ]
+    }
+  }
 }

@@ -32,6 +32,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/eng-finding-retry-budget.test.ts', ['plan-ceo-finding-count', 'plan-ceo-split-overflow', 'plan-design-finding-count', 'plan-devex-finding-count', 'plan-eng-finding-count', 'plan-eng-multi-finding-batching', 'autoplan-chain-pty']],
     ['test/design-count-native-8525.test.ts', ['plan-design-finding-count']],
     ['test/fixtures/design-count-native-8525.json', ['plan-design-finding-count']],
+    ['test/fixtures/design-phase-entry-77.json', ['plan-design-finding-count']],
+    ['test/fixtures/ceo-expansion-pacing-77.json', ['plan-ceo-mode-routing']],
     ['test/eng-published-navigation.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-published-navigation.json', ['plan-eng-finding-count']],
     ['test/fixtures/disabled-retained-record.json', ['outside-plan-disabled-no-fallback']],
@@ -162,7 +164,7 @@ test('native fixture dependencies include the migrated auto-decision caller', ()
   const expected = [
     'auto-decide-preserved', 'autoplan-chain-pty',
     'plan-ceo-finding-count', 'plan-ceo-finding-floor', 'plan-ceo-mode-routing', 'plan-ceo-split-overflow',
-    'plan-design-finding-count', 'plan-design-finding-floor',
+    'plan-design-finding-count', 'plan-design-finding-floor', 'plan-design-with-ui-scope',
     'plan-devex-finding-count', 'plan-devex-finding-floor',
     'plan-eng-finding-count', 'plan-eng-finding-floor', 'plan-eng-multi-finding-batching',
   ];
@@ -296,5 +298,27 @@ test('native compact-boundary ancestry selects every consuming callback', () => 
     expect(selected.reason).toBe('diff');
     expect(selected.selected.sort()).toEqual(expected);
     expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+});
+
+
+test('same-plan expansion disposition replay selects the existing mode helper consumers', () => {
+  for (const dependency of ['test/ceo-mode-expansion-disposition.test.ts', 'test/fixtures/ceo-expansion-disposition-77.json']) {
+    expect([...selectTests([dependency], E2E_TOUCHFILES).selected].sort()).toEqual(['plan-ceo-finding-count', 'plan-ceo-mode-routing']);
+    expect(selectTests([dependency], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+});
+
+
+test('structured auto-decision evidence selects every native observer', () => {
+  const expected = ['auto-decide-preserved', 'conductor-prose', 'plan-ceo-review-plan-mode',
+    'plan-design-review-plan-mode', 'plan-devex-review-plan-mode', 'plan-eng-review-plan-mode', 'plan-mode-no-op'];
+  for (const file of ['test/auto-decide-structured.test.ts', 'test/fixtures/auto-decide-structured-77.json']) {
+    expect([...selectTests([file], E2E_TOUCHFILES).selected].sort()).toEqual(expected);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+  for (const file of ['bin/gstack-question-log', 'bin/gstack-question-preference']) {
+    const producers = selectTests([file], E2E_TOUCHFILES).selected;
+    for (const id of expected) expect(producers).toContain(id);
   }
 });

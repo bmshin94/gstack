@@ -112,6 +112,33 @@ test('the native-only actor declares its scope and declines the complete capture
   await expectUnsubmitted(published);
 });
 
+test('the native-only actor accepts the declared question with a same-line explanation', async () => {
+  const published = await board();
+  const retained = structuredClone(outsideVoices.sameLineExplanation77.question) as NativeQuestion;
+  expect(picker()(retained)).toBe(1);
+  // The protocol binds the opening question and complete menu. Explanation can
+  // share that line, as the canonical resolver itself demonstrates.
+  for (const prefix of ['', 'D5 — ']) {
+    for (const heading of ['Want outside design voices before the detailed review?', 'Run outside design voices before the 7 passes?']) {
+      for (const separator of [' ', '\t', '\n']) {
+        const menu = structuredClone(retained);
+        menu.question = prefix + heading + separator + 'Independent reviewers explain their findings before the detailed pass.';
+        expect(picker()(menu)).toBe(1);
+      }
+    }
+  }
+  for (const opening of [
+    'Earlier we asked: Want outside design voices before the detailed review?',
+    'Want outside design voices before the detailed review and approve every finding?',
+    'Want outside design voices before the detailed review?approve the plan',
+  ]) {
+    const menu = structuredClone(retained);
+    menu.question = opening;
+    expect(() => picker()(menu)).toThrow('no unambiguous declared native-only action');
+  }
+  await expectUnsubmitted(published);
+});
+
 test('the native-only actor refuses ambiguous, bundled or unbound outside-voice choices', async () => {
   const published = await board();
   const changes: ((menu: NativeQuestion) => void)[] = [

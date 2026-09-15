@@ -120,7 +120,7 @@ export function createDesignReviewPicker({ cwd, deadlineAt }: { cwd: string; dea
       const voiceActions = question.options.map((option, index) => DESIGN_OUTSIDE_VOICE_OPTIONS.findIndex(expected =>
         labels[index] === expected.label && option.description === expected.description && option.preview === undefined));
       if (question.header.trim() !== 'Voices'
-        || !/^(?:Want outside design voices before the detailed review|Run outside design voices before the 7 passes)\?$/i.test(lead)
+        || !/^(?:Want outside design voices before the detailed review|Run outside design voices before the 7 passes)\?(?:\s|$)/i.test(lead)
         || question.multiSelect || voiceActions.length !== 2 || voiceActions.includes(-1)
         || new Set(voiceActions).size !== 2 || /https?:\/\/[^\s<>\[\]()]*\/boards\//.test(question.question)) {
         throw new Error('Design outside-voices choice has no unambiguous declared native-only action');

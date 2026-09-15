@@ -421,7 +421,11 @@ function hasAnsweredExpansionPosture(
     const dispositions = question.options.map(option => {
       const label = option.label.trim().replace(/^[A-D][):.]\s*/i, '')
         .replace(/\s*\(recommended\)\s*$/i, '').toLowerCase();
-      if (/^(?:include|add to (?:(?:this|the) plan['’]s )?scope)$/.test(label)) return 'include';
+      // The current proposal can be included in this plan or its scope.
+      // Keep the complete local target: another plan, conditions, negation,
+      // proposed future approval or an appended action are not inclusion.
+      if (/^include(?: in (?:scope|(?:this|the) plan(?:['’]s scope)?))?$/.test(label) ||
+          /^add to (?:scope|(?:this|the) plan(?:['’]s scope)?)$/.test(label)) return 'include';
       if (/^defer to todos(?:\.md)?$/.test(label)) return 'defer';
       if (/^(?:skip|cut)(?: entirely| (?:this proposal|from (?:this |the )?scope))?$/.test(label)) return 'skip';
       if (expansionDiscussionControl(label, option.description ?? '')) return 'pause';
@@ -505,34 +509,47 @@ function barlessPostureSubmit(visible: string, packet: PosturePacket): boolean {
  * This selects a walkthrough only: no candidate receives a scope disposition. */
 function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]): number | null {
   const title = q.question.split('\n')[0]!;
-  const count = /\b([1-9]\d*)\s+(?:expansion\s+)?candidates?\b/i.exec(title);
+  const cardinals = 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty'.split(' ');
+  const countToken = `(?:[1-9]\\d*|${cardinals.join('|')})`;
+  const numberOf = (value: string) => /^\d+$/.test(value) ? Number(value) : cardinals.indexOf(value.toLowerCase()) + 1;
+  // A supported single-word count cannot be the tail of a larger cardinal.
+  const countTail = new RegExp(`(?:[\\w-]|\\b(?:${countToken}|zero|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|trillion)(?:\\s+and)?\\s+)$`, 'i');
+  const wholeCount = (text: string, match: RegExpExecArray) => !countTail.test(text.slice(0, match.index));
+  const count = new RegExp(`\\b(${countToken})\\s+(?:expansion\\s+)?(?:candidates?|proposals?)\\b`, 'i').exec(title);
   const rationale = /ELI10:\s*([\s\S]*?)(?=Stakes if (?:we pick )?wrong:)/i.exec(q.question)?.[1] ?? '';
-  const inventory = /\b([1-9]\d*)\s+(?:adjacent improvements|candidate expansions|expansion candidates|items|candidates)\s*:\s*([^.!?\n]+)[.!?]/i.exec(rationale);
-  if (!count || !inventory || count[1] !== inventory[1] ||
+  const inventory = new RegExp(`\\b(${countToken})\\s+(?:adjacent improvements|candidate expansions|expansion candidates|items|candidates|proposals)\\s*:\\s*([^.!?\\n]+)[.!?]`, 'i').exec(rationale);
+  if (!count || !inventory || !wholeCount(title, count) || !wholeCount(rationale, inventory) ||
+      numberOf(count[1]!) !== numberOf(inventory[1]!) ||
       /\b(?:example|quoted|historical|previously|formerly|if|unless)\b/i.test(rationale.slice(0, inventory.index))) return null;
   const ids = [...inventory[2]!.matchAll(/(?:^|[,;]\s*|\band\s+)([A-Z])([1-9]\d*)\s+/g)];
-  const n = Number(count[1]), prefix = ids[0]?.[1];
+  const n = numberOf(count[1]!), prefix = ids[0]?.[1];
   if (!Number.isSafeInteger(n) || n < 2 || ids.length !== n || !prefix ||
       ids.some((id, i) => id[1] !== prefix || Number(id[2]) !== i + 1)) return null;
   const options = [...q.question.matchAll(/(?:^|\n)([A-D])[):.]\s+[^\n]+/g)];
-  if (options.length !== q.options.length || new Set(options.map(o => o[1])).size !== options.length) return null;
+  // Native option descriptions carry the comparison. Some briefs repeat it
+  // inline; when present that repetition must still contain the complete menu.
+  if (options.length && (options.length !== q.options.length || new Set(options.map(o => o[1])).size !== options.length)) return null;
   const netAt = q.question.lastIndexOf('\nNet:');
-  if (netAt <= options.at(-1)!.index!) return null;
+  if (netAt < 0 || (options.length && netAt <= options.at(-1)!.index!)) return null;
+  const optionsAt = options[0]?.index ?? netAt;
   const menu = (value: string) => value.replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi, '');
   const scopeEffect = /\b(?:approv\w*|authori[sz]\w*|accept\w*|commit\w*|adopt\w*|implement\w*|add(?:s|ed|ing)?|includ\w*|remov\w*|delet\w*|drop\w*|cut(?:s|ting)?|skip\w*|defer\w*|merg\w*|ship\w*|deploy\w*|enabl\w*|disabl\w*)\b/i;
   // An unconditional or selected-choice effect cannot hide in another option.
-  if (/\b(?:regardless|whichever|choosing|selecting|picking|any choice|every choice)\b[^.!?\n]*\b(?:approv\w*|authori[sz]\w*|commit\w*|add(?:s|ed|ing)?|delet\w*|drop\w*|skip\w*|defer\w*|merg\w*)\b/i.test(q.question)) return null;
+  if (/\b(?:regardless|whichever|choosing|selecting|picking|any choice|every choice)\b[^.!?\n]*\b(?:approv\w*|authori[sz]\w*|commit\w*|add(?:s|ed|ing)?|delet\w*|drop\w*|skip\w*|defer\w*|merg\w*)\b/i.test(q.question + '\n' + q.options.map(o => o.description ?? '').join('\n'))) return null;
   // Feature titles may describe Update or delete behavior. Explicit actor
   // grants, imperative dispositions and current approval status are different:
   // none may hide inside the inventory or its surrounding rationale.
-  const premise = menu(q.question.slice(0, options[0]!.index));
+  const premise = menu(q.question.slice(0, optionsAt));
   const disposition = '(?:approved|accepted|authorized|authorised|adopted|committed|deferred|skipped|rejected|excluded|in scope|out of scope)';
   if (/\b(?:we|I|you|this (?:answer|choice|selection))\s+(?:(?:now|hereby|already|automatically|will)\s+)*(?:approv\w*|accept\w*|authori[sz]\w*|adopt\w*|commit\w*|defer\w*|skip\w*|reject\w*|exclude\w*|add\w*|include\w*|remove\w*|drop\w*|merge\w*|ship\w*)\b/i.test(premise) ||
       new RegExp(`\\b(?:already|now|hereby|automatically|is|are|was|were|has been|have been)\\s+(?:(?:already|now|hereby|automatically)\\s+)*${disposition}\\b`, 'i').test(premise) ||
       new RegExp(`\\b(?:all|every|these|those)(?:\\s+\\w+){0,3}\\s+${disposition}\\b|[([]\\s*${disposition}\\b`, 'i').test(premise) ||
       /(?:^|[;:.])\s*(?:approve|accept|authorize|authorise|adopt|commit|defer|skip|reject|exclude|add|include|remove|drop|merge|ship)\s+(?:all|every|these|those|[A-Z][1-9]\d*)\b/im.test(premise)) return null;
-  const common = menu(q.question.slice(0, options[0]!.index) + q.question.slice(netAt))
+  const common = menu(q.question.slice(0, optionsAt) + q.question.slice(netAt))
     .replace(inventory[0], '')
+    // A prior approach choice is setup context, not a disposition for any
+    // candidate. Keep every other approval statement in the effect veto.
+    .replace(/^Project\/branch\/task:[^\n]+/gim, context => context.replace(/\bapproach [A-D] approved\b/gi, ''))
     .replace(/\bnothing gets (?:cut|dropped|removed|omitted) silently\b/gi, '');
   if (scopeEffect.test(common)) return null;
   const candidates = q.options.flatMap((o, index) => {
@@ -542,14 +559,24 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
     const rawDescription = o.description ?? '';
     const description = menu(rawDescription.replace(/"[^"\n]*"|“[^”\n]*”|`[^`\n]*`/g, '')).trim();
     const option = options.findIndex(option => option[1] === id);
-    if (!id || option < 0 || numbers.length !== 1 || Number(numbers[0]) !== n ||
+    if (!id || (options.length && option < 0) || numbers.some(value => Number(value) !== n) || numbers.length > 1 ||
         !/\b(?:full|complete|all)\b/i.test(label) || !/\b(?:split|walkthrough|per[- ]item|one[- ]by[- ]one)\b/i.test(label) ||
-        !/\bquestions?\b/i.test(label) ||
-        !/\bone\s+question per (?:candidate|item|proposal)\b/i.test(description) ||
-        !new RegExp(`\\b${prefix}1\\s*(?:through|to|[-–—])\\s*${prefix}${n}\\b`).test(description)) return [];
-    const ownBrief = q.question.slice(options[option]!.index!, options[option + 1]?.index ?? netAt);
-    const own = menu(label + '\n' + rawDescription + '\n' + ownBrief);
-    if (/```|~~~|^\s*>|\b(?:not|never|without|except|excluding|omit\w*|narrow\w*|batch\w*|subset|shortlist|groups?)\b/im.test(label + '\n' + description) ||
+        /\b(?:if|unless|previously|formerly|historical|example)\b/i.test(label + '\n' + description)) return [];
+    const candidateRange = numbers.length === 1 && /\bquestions?\b/i.test(label) &&
+      /\bone\s+question per (?:candidate|item|proposal)\b/i.test(description) &&
+      new RegExp(`\\b${prefix}1\\s*(?:through|to|[-–—])\\s*${prefix}${n}\\b`).test(description);
+    // A Dk.0 pacing choice can instead bind N sequential questions Dk.1–Dk.N
+    // to the N-item inventory. The later final confirmation is another prompt.
+    const chain = /^D([1-9]\d*)\.0\b/.exec(title)?.[1];
+    const sequence = chain && new RegExp(`\\b(${countToken})\\s+sequential questions\\s+D${chain}\\.1\\s*(?:through|to|[-–—])\\s*D${chain}\\.${n}\\b`, 'i').exec(description);
+    const questionRange = /\bone per (?:candidate|item|proposal)\b/i.test(label) && sequence &&
+      wholeCount(description, sequence) && numberOf(sequence[1]!) === n &&
+      (description.match(/\bD[1-9]\d*\.[1-9]\d*\b/g)?.length ?? 0) === 2;
+    if (!candidateRange && !questionRange) return [];
+    const ownBrief = option < 0 ? '' : q.question.slice(options[option]!.index!, options[option + 1]?.index ?? netAt);
+    const own = menu(label + '\n' + rawDescription + '\n' + ownBrief)
+      .replace(/\bnothing is (?:dropped|removed|skipped) or merged on your behalf\b/gi, '');
+    if (/```|~~~|^\s*>|\b(?:not|never|without|except|excluding|stop\w*|omit\w*|narrow\w*|batch\w*|subset|shortlist|groups?)\b/im.test(label + '\n' + description) ||
         scopeEffect.test(own)) return [];
     return [index + 1];
   });

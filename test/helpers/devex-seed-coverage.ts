@@ -93,11 +93,22 @@ function explainedReversedSignatures(q: NativePlanQuestion, title: string): bool
 function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
   const rawTitle = q.question.split('\n')[0]!.trim().replace(/^D\s*\d+\s*[—–:-]\s*/i, '');
   const title = rawTitle.replace(/`([^`\n]+)`/g, '$1');
+  // Recording later work after the current repair is settled is a backlog
+  // disposition, not the required decision about the current seeded gap.
+  if (/^(?:TODO|Follow[- ]up)\s*[:—–-]/i.test(title) &&
+      /\b(?:later|future) release\b|\bbacklog\b/i.test(title)) return [];
   const questionMarks = title.match(/\?/g)?.length ?? 0;
   const upgradeVocabulary = /\b(?:alias|warning|compatibility|deprecat\w*|migration|remov\w*|rename|keep)\b/i.test(title);
   // A named method becoming its replacement is a transition even when the
   // title asks about a soft landing. Its own explanation must establish the gap.
   const upgradeTransition = !upgradeVocabulary && /\bClient\.evaluate\(\) becomes Client\.run\(\)/i.test(title);
+  // A question may name the journey problem and put its asserted source facts
+  // in ELI10. Topic words alone never supply either defect or its remedy.
+  const explainedAuthentication = /^(?:(?:Authentication (?:error|failure)|API[- ]key (?:error|failure|rejection)):\s*)?(?:what|how)\b/i.test(title) &&
+    /\b(?:API[- ]key|authentication)\b/i.test(title) && /\b(?:rejected|invalid|error|failure)\b/i.test(title);
+  const explainedUpgrade = !upgradeVocabulary && !upgradeTransition && /\bClient\.evaluate\(\)/.test(title) &&
+    (/\bupgrade\b/i.test(title) || /Client\.run\(\)/.test(title));
+  const explainedSubject = explainedAuthentication || explainedUpgrade;
   // Journey labels, possessives and a positive inclusive aside format the
   // asserted subject. Keep the original title for all meaning/currentness checks.
   // These six stages come from the skill's journey trace. A decision may span
@@ -141,7 +152,7 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
   // object; do not erase a negation of the quickstart's own reference or gate.
   const absentReference = /\b(?:points?|references?) (?:at|to) (?:examples\/first_eval\.py|(?:a|the) (?:file|example)),? (?:which|that) (?:is not (?:shipped|in (?:the )?(?:package|wheel)(?: or (?:the )?(?:release )?examples archive)?)|does not (?:ship|exist))[.?]?$/i.test(assertionTitle);
   const newAssertion = nominalDefect || signatureDeclaration || reversedTuples || absentReference || opaqueAuthentication || vanishingUpgrade;
-  const guardedDeclaration = Boolean(stage || newAssertion || upgradeTransition);
+  const guardedDeclaration = Boolean(stage || newAssertion || upgradeTransition || explainedSubject);
   const polarityTitle = absentReference ? title.replace(/\bdoes not (ship|exist)([.?]?)$/i, 'is absent$2') : title;
   // Punctuation cannot route a newly admitted asserted family around its
   // ownership checks; an offered alternate still resolves the same decision.
@@ -159,7 +170,7 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
       /\b(?:report|summary|recap)\b[^?]*\b(?:mention|include|reference|list)\b|\b(?:mention|include|reference|list)\b[^?]*\b(?:report|summary|recap)\b/i.test(title)) return [];
   let offered = q.options;
   let signatureOptions = q.options;
-  if (declaration || upgradeTransition) {
+  if (declaration || upgradeTransition || explainedSubject) {
     const currentProse = (text: string, offeredAction = false) => {
       // In a tuple decision, a semicolon also separates current assertions.
       // Quotations and fenced examples are still removed as whole statements.
@@ -187,6 +198,56 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
         /\bnot (?:a )?current (?:finding|issue|defect)\b/i.test(currentProse(preface))) return [];
     const current = currentProse(q.question);
     const approval = /\b(?:if|once|when|unless) (?:approved|accepted)|\b(?:after|pending) approval\b/i;
+    if (explainedSubject) {
+      const project = lines.filter(line => /^Project\/branch\/task:/.test(line));
+      const raw = (lines[explanation] ?? '').replace(/^ELI10:\s*/, '');
+      if (explanation < 1 || lines.filter(line => /^ELI10:/.test(line)).length !== 1 ||
+          project.length !== 1 || !/^Project\/branch\/task:\s*EvalKit\b/i.test(project[0]!) ||
+          /\b(?:other|another|foreign|different) (?:project|SDK|codebase|repository)\b/i.test(project[0]!) ||
+          /^[>"“'‘\x60]|^(?:Source|Quoted|Historical|Earlier|Example|Hypothetical|Assuming|Provided)\b/i.test(raw) ||
+          approval.test(current)) return [];
+      // Preserve the exact error payload as data, while whole quoted/fenced
+      // explanations are still removed by the existing prose guard.
+      const marker = 'GSTACK_OWNED_AUTH_LITERAL';
+      if (raw.includes(marker)) return [];
+      const literal = /(?<![\w.])(\x60?)AuthError\((["'])request failed\2\)\1/g;
+      const literalCount = [...raw.matchAll(literal)].length;
+      const asserted = currentProse(raw.replace(literal, marker)
+        .replace(/\x60((?:Client\.|client\.)?(?:evaluate|run)\((?:\.\.\.)?\))\x60/g, '$1'));
+      const sourceStatus = currentProse(q.question.replace(/(^|[.!?\n]\s*)((?:Correction:\s*)?(?:this|that|the) (?:statement|evidence|source claim) (?:is|was|has been) )["“'‘\x60](withdrawn|rejected|cancelled|canceled|superseded|historical|hypothetical|(?:not|no longer) current)["”'’\x60]/gi, '$1$2$3'));
+      if (/(?:^|[.!?\n]\s*)(?:Previously|Earlier|Historically)\b/i.test(asserted) ||
+          /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:this|that|the) (?:statement|evidence|source claim) (?:is|was|has been) (?:withdrawn|rejected|cancelled|canceled|superseded|historical|hypothetical|(?:not|no longer) current)\b/i.test(sourceStatus)) return [];
+      const sentences = asserted.split(/(?<=[.!?])\s+/);
+      const ownsSource = (fact: string) => {
+        const citations = (project[0]! + ' ' + fact).match(/[\w./-]+\.md:\d+(?:[-–]\d+)?/g) ?? [];
+        return citations.length > 0 && citations.every(citation => citation.startsWith('docs/api.md:'));
+      };
+      if (explainedAuthentication) {
+        const index = sentences.findIndex(sentence => /GSTACK_OWNED_AUTH_LITERAL/.test(sentence));
+        const fact = sentences[index] ?? '', preceding = sentences[index - 1] ?? '';
+        const event = /^(?:(?:If|When) (.+),\s*)?(?:(?:the )?SDK (?:raises|throws)|they (?:get|receive)) GSTACK_OWNED_AUTH_LITERAL(?:\s*\([\w./-]+\.md:\d+(?:[-–]\d+)?\))?\.?$/i.exec(fact);
+        const condition = event?.[1]?.replace(/\bnot exported\b/gi, 'missing');
+        const states = condition?.replace(/^(?:that|the|an? API) key is\s+/i, '');
+        const keyState = states && states !== condition &&
+          /\b(?:stale|mistyped|revoked|rejected|missing|invalid)\b/i.test(states) &&
+          states.replace(/\b(?:stale|mistyped|revoked|rejected|missing|invalid|or|and|simply)\b|[\s,]/gi, '') === '';
+        const pastedKey = condition && /^they (?:paste|enter) it wrong(?:,? or it was revoked)?$/i.test(condition) &&
+          /^(?:The first thing a developer does after the demo is|The developer) (?:paste|pastes|enter|enters) a key\.$/i.test(preceding);
+        const ambiguity = sentences[index + 1] ?? '';
+        if (literalCount !== 1 || !event || !ownsSource(fact) ||
+            (condition && !keyState && !pastedKey) ||
+            !/^(?:['‘]?request failed['’]?|(?:this|the) (?:error|message)|That) could mean\b[^.?!]*\b(?:DNS|proxy|rate limit|key|network|server)\b/i.test(ambiguity)) return [];
+      } else {
+        const [baseline = '', transition = ''] = sentences;
+        const namedTransition = /^(?:Version 1|v1) (?:exposes|provides) Client\.evaluate\(\)\.$/i.test(baseline) &&
+          /^(?:2\.0|v2) renames (?:it|Client\.evaluate\(\)) to Client\.run\(\) and (?:deletes|removes|drops) (?:the )?old (?:name|method)\b/i.test(transition) &&
+          /\bno alias\b/i.test(transition) && /\bno warning\b/i.test(transition) && /\bno migration guide\b/i.test(transition);
+        const runtimeBreak = /^(?:Your persona|The developer) (?:wires EvalKit into|uses EvalKit in) production CI\.$/i.test(baseline) &&
+          /^When they (?:bump|upgrade) to (?:2\.0|v2), every client\.evaluate\(\.\.\.\) call (?:dies|fails) with a generic AttributeError that names nothing about run\(\)\./i.test(transition);
+        if ((!namedTransition && !runtimeBreak) || !ownsSource(transition) ||
+          /\b(?:if|unless|assuming|provided|might|may|could|would|historical|hypothetical|not|never|no longer)\b/i.test(transition)) return [];
+      }
+    }
     if (upgradeTransition) {
       if (/^ELI10:\s*>/.test(lines[explanation] ?? '')) return [];
       const namedCurrent = currentProse(q.question.replace(/`([A-Za-z_$][\w.$]*(?:\(\))?)`/g, '$1'));
@@ -210,11 +271,13 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
     const action = (text: string) => currentProse(text.replace(/`([A-Za-z_$][\w.$/-]*(?:\([^`\n]*\))?)`/g, '$1'), true);
     signatureOptions = offered.filter(option => {
       const text = `${option.label}\n${option.description ?? ''}`, prose = currentProse(text, true);
-      if (upgradeTransition && (approval.test(prose) || /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:do not|don't|never) (?:keep|add|preserve|provide|retain) (?:the |a |an )?(?:compatibility )?alias\b/i.test(prose))) return false;
+      if ((upgradeTransition || explainedSubject) && (approval.test(prose) || /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:do not|don't|never) (?:keep|add|preserve|provide|retain) (?:the |a |an )?(?:compatibility )?alias\b/i.test(prose))) return false;
       if (reversedTuples && (approval.test(prose) ||
         /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:do not|don't|never) (?:align|unify|standardize|change|make|require) (?:either|both|the|these) (?:functions?|signatures?|arguments?)\b/i.test(prose))) return false;
       if (guardedDeclaration && /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:this|that|the) (?:option|action|correction) (?:is|was|has been) (?:cancelled|canceled|superseded|withdrawn|rejected|(?:not|no longer) current)\b/i.test(prose)) return false;
       if (guardedDeclaration && /^(?:Assuming|Provided)\b/im.test(prose)) return false;
+      if (explainedSubject && /(?:^|[.!?\n]\s*)(?:this|that|the) (?:option|action|correction) (?:applies|belongs) to (?:an? )?(?:other|another|foreign|different) (?:project|SDK|codebase|repository)\b/i.test(prose)) return false;
+      if (explainedSubject && /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:(?:do not|don't|never) (?:keep|retain|add|include|emit|provide|forward|call)|(?:this|that|the) (?:option|action|correction) does not (?:keep|retain|add|include|emit|provide|forward|call))\b/i.test(prose)) return false;
       if (decision && new RegExp(`(?:^|[.!?\\n]\\s*)(?:Correction:\\s*)?D\\s*${decision[1]} (?:is|was|has been) (?:withdrawn|rejected|cancelled|canceled|superseded|(?:not|no longer) current)\\b`, 'i').test(prose)) return false;
       return !/^(?:>|"|“)|^`[^`]*`$/.test(option.label.trim()) && !sourceFrame.test(prose) &&
         !/(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:this|the) (?:option|action|correction) (?:is|was|has been) (?:withdrawn|rejected|cancelled)\b/i.test(prose);
@@ -223,6 +286,22 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
     offered = signatureOptions.map(option => ({ ...option, label: action(option.label), description: action(option.description ?? '') }));
   }
   const options = offered.map(o => `${o.label} ${o.description ?? ''}`);
+  // New explained questions require one complete current correction. Labels
+  // cannot lend a missing cause, warning or migration path to another option.
+  const explainedRemedy = offered.some(option => {
+    const text = option.description ?? '';
+    const action = text.split(/\n[✅❌]/)[0]!;
+    if (/\b(?:if|unless|assuming|provided|historical|hypothetical)\b/i.test(action) ||
+        /\b(?:other|another|foreign|different) (?:project|SDK|codebase|repository)\b/i.test(action) ||
+        /(?:^|[.!?\n]\s*)(?:do not|don't|never) (?:keep|retain|add|include|emit|provide|forward|call)\b/i.test(action)) return false;
+    if (explainedAuthentication) return (
+      /^(?:(?:Keep|Retain) the AuthError class\.\s*Message|AuthError) (?:gains|includes)\b[^.]*\bcode\b[^.]*\bcause\b[^.]*\bfix\b/i.test(action) ||
+      /^Stable code EVALKIT_AUTH_INVALID_KEY,\s*cause,\s*(?:console URL )?fix\b/i.test(action)) &&
+      !/\b(?:no|without|not)\b[^.]*\b(?:code|cause|fix)\b/i.test(action);
+    return (/^(?:Client\.)?evaluate\(\) (?:stays|remains) as (?:a |an )?(?:thin |deprecated |compatibility )?(?:wrapper|alias) that (?:calls|forwards to) Client\.run\(\) and emits DeprecationWarning\b/i.test(action) ||
+      /^evaluate\(\) delegates to run\(\) with DeprecationWarning naming run\(\) and (?:3\.0|v3)\b/i.test(action)) &&
+      /\bmigration (?:guide|section)\b/i.test(action) && !/\b(?:no|without|not)\b[^.]*\b(?:alias|wrapper|warning|migration (?:guide|section))\b/i.test(action);
+  });
   const ownUpgradeAlias = (option: string) => !(upgradeTransition || vanishingUpgrade) || (
     /(?<![\w.])(?:Client\.)?evaluate\(\) (?:stays|remains) (?:as )?(?:a |an )?(?:thin |deprecated |compatibility )?alias\b|\b(?:keep|retain|preserve) (?<![\w.])(?:Client\.)?evaluate\(\) as (?:a |an )?(?:deprecated |compatibility )?alias\b/i.test(option) &&
     !/\b(?:no |without (?:a )?)(?:compatibility )?alias\b|\b(?:do not|don't|never) (?:keep|retain|preserve) (?:Client\.)?evaluate\(\)/i.test(option));
@@ -246,15 +325,15 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
       (!declaration || reversedTuples || /\b(?:reversed|opposite|swapped|inconsistent)\b/i.test(title)) &&
       (options.some(o => (!reversedTuples || /\bboth functions\b|\brun_eval\b[^\n]*\brun_batch\b/i.test(o)) &&
         /\b(?:align|unify|standardize|keyword|swap)\b/i.test(o) && /\b(?:order|dataset|arguments?|positional)\b/i.test(o)) || directAction('align|unify|standardize|enforce|make')))) found.push('reversed-arguments');
-  if ((opaqueAuthentication || /\bAuthError\b|\binvalid API key\b/i.test(title)) &&
-      /\b(?:error|message|code|cause|fix|guidance|opaque|explain)\b|request failed/i.test(title) &&
+  if ((explainedAuthentication || opaqueAuthentication || /\bAuthError\b|\binvalid API key\b/i.test(title)) &&
+      (explainedAuthentication || /\b(?:error|message|code|cause|fix|guidance|opaque|explain)\b|request failed/i.test(title)) &&
       (!declaration || opaqueAuthentication || /\b(?:no (?:cause|fix|explanation|code)|opaque)\b|request failed/i.test(title)) &&
-      (options.some(o => (!opaqueAuthentication || /\bAuthError\b/i.test(o)) && (/\bcodes?\b/i.test(o) || /^(?:[A-D]\)\s*)?Coded\b/i.test(o)) && /\b(?:cause|fix|link)\b/i.test(o)) || directAction('add|include|explain|replace|report|give'))) found.push('opaque-auth-error');
+      (explainedAuthentication ? explainedRemedy : (options.some(o => (!opaqueAuthentication || /\bAuthError\b/i.test(o)) && (/\bcodes?\b/i.test(o) || /^(?:[A-D]\)\s*)?Coded\b/i.test(o)) && /\b(?:cause|fix|link)\b/i.test(o)) || directAction('add|include|explain|replace|report|give')))) found.push('opaque-auth-error');
   if (/Client\.evaluate\b/i.test(title) &&
       /Client\.run\b|\b(?:v\d+|version \d+|alias|deprecation|migration)\b/i.test(title) &&
-      (upgradeVocabulary || upgradeTransition) &&
+      (upgradeVocabulary || upgradeTransition || explainedUpgrade) &&
       (!declaration || /\b(?:no |without (?:a )?)(?:compatibility )?(?:alias|warning|migration (?:guide|path))\b/i.test(title)) &&
-      (options.some(o => ownUpgradeAlias(o) && /\balias\b/i.test(o) && /\b(?:warning|DeprecationWarning|migration)\b/i.test(o)) || directAction('keep|add|preserve|provide|retain'))) found.push('breaking-upgrade');
+      (explainedUpgrade ? explainedRemedy : (options.some(o => ownUpgradeAlias(o) && /\balias\b/i.test(o) && /\b(?:warning|DeprecationWarning|migration)\b/i.test(o)) || directAction('keep|add|preserve|provide|retain')))) found.push('breaking-upgrade');
   return found;
 }
 

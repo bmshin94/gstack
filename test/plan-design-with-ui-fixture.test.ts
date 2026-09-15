@@ -156,6 +156,17 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
       unansweredQuestionIndices: [], answers: { [outsideVoices.question.question]: 'No, proceed without' } }, 1000, false);
     expect(opts.isReviewAUQ(declinedVoices)).toBe(false);
     expect(opts.pickAUQ(declinedVoices, declinedVoices, context)).toBeNull();
+    const explainedQuestion = outsideVoices.sameLineExplanation77.question;
+    const explainedCall = { ...voicesCall, toolUseId: 'outside-voices-explanation-replay', questions: [explainedQuestion] };
+    const explainedPending = nativePlanCallFingerprint(explainedCall, 1000, false);
+    explainedPending.nativeQuestionIndex = 0;
+    expect(opts.pickAUQ(explainedPending, explainedPending, context)).toBe(1);
+    expect(pickerQuestion).toEqual(explainedQuestion);
+    expect(opts.isReviewAUQ(explainedPending)).toBe(false);
+    const explainedDeclined = nativePlanCallFingerprint({ ...explainedCall, answered: true,
+      unansweredQuestionIndices: [], answers: { [explainedQuestion.question]: 'No, proceed without (recommended)' } }, 1000, false);
+    expect(opts.isReviewAUQ(explainedDeclined)).toBe(false);
+    expect(opts.pickAUQ(explainedDeclined, explainedDeclined, context)).toBeNull();
     const unboundBoard = {...pending, nativeCall: undefined, options: [{index: 1, label: 'Submitted'}]};
     expect(() => opts.pickAUQ(unboundBoard, unboundBoard, context)).toThrow('requires an owned native question');
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ calls, cwd: cwd, seeded: true }));

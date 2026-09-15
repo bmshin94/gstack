@@ -50,6 +50,29 @@ function current(value: string): boolean {
   return !/^[\x60\"'“‘]/.test(value.trim()) && !/\bno (?:current )?(?:defect|gap|issue|problem)\b/i.test(value) && !/^(?:example|quoted|historical|source|hypothetical|previously|formerly|if|unless)\b/i.test(value.trim()) &&
     !/\b(?:this|that|the) (?:finding|issue|decision|defect|assessment|remedy) (?:is|was|has been) (?:already |now )?(?:resolved|fixed|withdrawn|retracted|not current|superseded|historical|quoted)\b/i.test(value);
 }
+// A whole quoted ledger value can cite the supplied plan's current prose.
+// Authenticate its complete paragraph/sentence, not a substring or a quote
+// elsewhere. This does not turn quoted evidence into a seeded defect.
+function quotedSourceProposal(value: string, sourcePlan: string): boolean {
+  const quoted = /^(?:"([^"\n]+)"|'([^'\n]+)'|“([^”\n]+)”|‘([^’\n]+)’)$/u.exec(value.trim());
+  const literal = quoted?.slice(1).find(part => part !== undefined);
+  if (!literal || !current(literal)) return false;
+  const activeSource = (text: string) => current(text) &&
+    !/\b(?:withdrawn|retracted|superseded|obsolete|historical|archiv(?:ed|al)|(?:no longer|not) current)\b/i.test(text);
+  const headings: Array<{ depth: number; text: string }> = [];
+  let matches = 0;
+  for (const token of marked.lexer(sourcePlan)) {
+    if (token.type === 'heading') {
+      while (headings.length && headings.at(-1)!.depth >= token.depth) headings.pop();
+      headings.push({ depth: token.depth, text: plain(token.text) });
+    }
+    if (token.type !== 'paragraph' || !headings.every(h => activeSource(h.text))) continue;
+    const text = token.raw.trim();
+    if (!activeSource(text)) continue;
+    matches += text === literal ? 1 : text.split(/(?<=[.!?])\s+/).filter(sentence => sentence === literal).length;
+  }
+  return matches === 1;
+}
 const mentions = (text: string, id: string) => text.split(/[^A-Za-z0-9_.-]+/).some(token => token.replace(/[.:]$/, '') === id);
 
 function ownedAnswer(fp: AskUserQuestionFingerprint): NativePlanQuestionCall | null {
@@ -190,7 +213,7 @@ function todoDecision(fp: AskUserQuestionFingerprint): boolean {
 /** Count other real choices by their saved decision identity, not a defect
  * vocabulary. A row alone is insufficient: its own complete comparison must
  * bind every offered native option. This grants count credit, not approval. */
-function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { ledgerId: string; phase: string } | null {
+function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sourcePlan: string): { ledgerId: string; phase: string } | null {
   const call = ownedAnswer(fp);
   if (!call) return null;
   const q = call.questions[0]!, question = prose(q.question);
@@ -217,13 +240,40 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
   const namedSource = sourceRecords.length === 1 && sourceRecords[0] === 'PLAN.md';
   const inheritedSource = (evidence: string) => namedSource &&
     /\bEvidence:\s*plan text\b|\bplan\s+§\s*\S|\bplan\s+sections?\s+\S|^Plan(?: contract)?:\s*\S/i.test(evidence);
+  // The same option may give both dimensions as a parenthesized tuple,
+  // with the value before or after its field. Normalize only complete,
+  // operative tuples; the ordinary field inventory still rejects duplicates.
+  const optionFacts = (raw: string) => {
+    const visible = raw.replace(/`+[^`]*`+|"[^"\n]*"|“[^”\n]*”|(?<![\p{L}\p{N}])'[^'\n]*'(?![\p{L}\p{N}])|‘[^’\n]*’/gu,
+      match => ' '.repeat(match.length));
+    const firstTradeoff = visible.search(/\b(?:Pros|Cons)\s*:/i);
+    const claims = [...visible.matchAll(/\(([^()]+)\)/g)].filter(match =>
+      (firstTradeoff < 0 || match.index! < firstTradeoff) && /\beffort\b/i.test(match[1]!) && /\brisk\b/i.test(match[1]!));
+    if (!claims.length) return raw;
+    if (claims.length !== 1) return null;
+    const match = claims[0]!, before = visible.slice(0, match.index).trimEnd();
+    const after = visible.slice(match.index! + match[0].length);
+    if (/\b(?:not|never|no longer|previously|formerly|historical|hypothetical|quoted)(?:\s+(?:currently|now|actually|exactly|only|still|just))*$/i.test(before) ||
+        !/^(?:\s*[.,;]|\s*$)/.test(after)) return null;
+    const fields = match[1]!.split(/\s*[,;]\s*/).map(part => {
+      const forward = /^(effort|risk)\s*:?\s+(\w+)$/i.exec(part.trim());
+      const reverse = /^(\w+)\s+(effort|risk)$/i.exec(part.trim());
+      return forward ? [forward[1]!.toLowerCase(), forward[2]!] : reverse ? [reverse[2]!.toLowerCase(), reverse[1]!] : [];
+    });
+    const facts = Object.fromEntries(fields.filter(field => field.length === 2));
+    if (fields.length !== 2 || Object.keys(facts).length !== 2 ||
+        !/^(?:S|M|L|XL)$/i.test(facts.effort ?? '') || !/^(?:low|medium|high)$/i.test(facts.risk ?? '')) return null;
+    return raw.slice(0, match.index) + `. Effort ${facts.effort}. Risk ${facts.risk}.` + raw.slice(match.index! + match[0].length);
+  };
   // The skill requires complete per-option facts, not a GFM option table.
   // Code and quoted children cannot supply a prose/list option's fields.
   const proseOption = (parts: readonly any[]) => {
     const paragraphs = parts.filter(part => part.type === 'paragraph' || part.type === 'text');
     const first = paragraphs[0];
     if (!first) return null;
-    const text = paragraphs.map(part => plain(part.raw)).join('\n').trim();
+    const normalized = optionFacts(paragraphs.map(part => part.raw).join('\n'));
+    if (normalized === null) return null;
+    const text = plain(normalized);
     const label = first.tokens?.[0]?.type === 'strong' ? plain(first.tokens[0].text)
       : /^([A-D][).:]\s+.+?)\s+[—–-]\s+/i.exec(text)?.[1]
         ?? /^([A-D][).:]\s+.+?)[.:]\s+/i.exec(text)?.[1];
@@ -296,15 +346,19 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
     for (const cells of table.rows) {
       const read = (key: keyof typeof fields) => plain(cells[fields[key][0]!]!.text);
       const id = read('id').split(/\s/, 1)[0]!.replace(/[.:]$/, '');
+      const quotedProposal = !current(read('proposed')) && /^(?:unresolved|reopened)\b/i.test(read('status')) &&
+        (!sourceRecords.length || namedSource) && currentContext(tokens.indexOf(table)) &&
+        quotedSourceProposal(cells[fields.proposed[0]!]!.text, sourcePlan);
       if (!id || !mentions(title, id) || !/^(?:unresolved|reopened|approved|deferred|declined)\b/i.test(read('status')) ||
           !read('current') || !read('proposed') || read('current') === read('proposed') ||
-          !current(read('evidence')) || !current(read('proposed'))) continue;
+          !current(read('evidence')) || (!current(read('proposed')) && !quotedProposal)) continue;
       if (!/\bPLAN\.md\b/.test(read('evidence')) && !inheritedSource(read('evidence'))) continue;
       const anchors = tokens.flatMap((t, i) =>
         (t.type === 'heading' && current(plain(t.text)) && mentions(plain(t.text), id)) ||
         (t.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(t.raw)) && mentions(plain(t.raw), id)) ? [i] : []);
       let matchedPhase: string | undefined;
       for (const start of anchors) {
+        if (quotedProposal && !currentContext(start)) continue;
         const anchor = tokens[start]!;
         let end = start + 1;
         while (end < tokens.length && !(tokens[end]!.type === 'heading' &&
@@ -375,6 +429,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
         }
         for (const comparison of tokens.slice(start + 1, end)) {
           if (comparison.type !== 'table') continue;
+          if (quotedProposal && !currentContext(tokens.indexOf(comparison))) continue;
           const headers = comparison.header.map(c => plain(c.text));
           // The declared commitment grid transposes the option table: each
           // complete alternative is a column. Its saved effort/risk row and
@@ -441,7 +496,7 @@ export function createCeoPaymentFindingCounter(seedPlan: string, readPlan: () =>
       const plan = readPlan();
       const finding = ceoPaymentFinding(fp, seedPlan, plan);
       if (finding) { trace.push(finding); return true; }
-      const decision = recordedDecision(fp, plan);
+      const decision = recordedDecision(fp, plan, seedPlan);
       if (decision) { trace.push({ signature: fp.signature, kind: 'recorded-decision', ...decision }); return true; }
       if (todoDecision(fp)) { trace.push({ signature: fp.signature, kind: 'additional-current-decision' }); return true; }
       if (existingFinding(fp)) { trace.push({ signature: fp.signature, kind: 'existing-finding' }); return true; }

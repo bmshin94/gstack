@@ -446,3 +446,76 @@ test('descriptive Update and delete feature titles remain supported',()=>{
   expect(ceoExpansionPacingChoice(f.viewport,state().transcript,f.selectedAt)?.index).toBe(1);
 });
 });
+
+import nativePacing77 from './fixtures/ceo-expansion-pacing-77.json';
+describe('native option descriptions bind the complete candidate walkthrough',()=>{
+  const f=nativePacing77;
+  function state(){const transcript=structuredClone(f.transcript);return{transcript,pacing:transcript.calls.at(-1)!};}
+  function pane(c:any){const q=c.questions[0];return ['☐ '+q.header,q.question,...q.options.map((o:any,i:number)=>`${i?' ':'❯'} ${i+1}. ${o.label}`),'4. Type something.','5. Chat about this','Enter to select · ↑/↓ to navigate · Esc to cancel'].join('\n');}
+  function choose(e=state(),screen=pane(e.pacing)){return ceoExpansionPacingChoice(screen,e.transcript as any,f.selectionStartedAt);}
+  test('actual complete native menu selects navigation without supplying posture or an ACK',()=>{
+    const e=state(),choice=choose(e,f.viewport)!;
+    expect(choice?.index).toBe(1);
+    expect(ceoExpansionPacingReady('Next proposal',e.transcript as any,choice,f.events as any)).toBe(false);
+    expect(hasNativePostAnswerCeoPosture(e.transcript as any,'SCOPE EXPANSION',/expansion|10x|delight|dream/i,f.selectionStartedAt,f.events as any)).toBe(false);
+  });
+  const positive={
+    'numeric count presentation':(q:any)=>{q.question=q.question.replaceAll('Eight','8').replaceAll('eight','8');q.options[0].description=q.options[0].description.replaceAll('Eight','8');},
+    'mixed word and numeric counts':(q:any)=>{q.question=q.question.replace('Eight expansion','8 expansion');q.options[0].description=q.options[0].description.replace('Eight sequential','8 sequential');},
+    'different complete candidate prefix':(q:any)=>{q.question=q.question.replace(/\bE(?=\d)/g,'P');},
+    'different question chain identity':(q:any)=>{q.question=q.question.replace('D4.0','D12.0');q.options[0].description=q.options[0].description.replaceAll('D4.','D12.');},
+    'reordered native choices':(q:any)=>{q.options.reverse();},
+    'explicit candidate range without duplicated option prose':(q:any)=>{q.options[0].label='A: Full split, 8 questions (recommended)';q.options[0].description='One question per candidate, E1 through E8.';},
+    'one per proposal label':(q:any)=>{q.options[0].label=q.options[0].label.replace('one per item','one per proposal');},
+    'no prior approach annotation':(q:any)=>{q.question=q.question.replace(', approach C approved','');},
+  };
+  for(const [name,mutate] of Object.entries(positive))test(name,()=>{
+    const e=state();mutate(e.pacing.questions[0]);expect(choose(e)?.index).toBe(name==='reordered native choices'?3:1);
+  });
+  const negative={
+    'hyphenated larger count cannot be read as its last digit':(q:any)=>{q.question=q.question.replaceAll('Eight','Twenty-eight').replaceAll('eight','twenty-eight');q.options[0].description=q.options[0].description.replaceAll('Eight','Twenty-eight');},
+    'spaced larger count cannot be read as its last digit':(q:any)=>{q.question=q.question.replaceAll('Eight','Twenty eight').replaceAll('eight','twenty eight');q.options[0].description=q.options[0].description.replaceAll('Eight','Twenty eight');},
+    'unsupported tens in title are not a single count':(q:any)=>{q.question=q.question.replace('Eight expansion','Thirty eight expansion');},
+    'unsupported tens in inventory are not a single count':(q:any)=>{q.question=q.question.replace('eight candidates:','forty eight candidates:');},
+    'unsupported tens in sequence are not a single count':(q:any)=>{q.options[0].description=q.options[0].description.replace('Eight sequential','Ninety eight sequential');},
+    'conjoined cardinal is not its last component':(q:any)=>{q.question=q.question.replace('Eight expansion','One hundred and eight expansion');},
+    'wrong title count':(q:any)=>{q.question=q.question.replace('Eight expansion','Seven expansion');},
+    'wrong inventory count':(q:any)=>{q.question=q.question.replace('eight candidates:','seven candidates:');},
+    'missing candidate':(q:any)=>{q.question=q.question.replace(', E8 views feeding digests/dashboards','');},
+    'duplicate candidate':(q:any)=>{q.question=q.question.replace('E8 views feeding','E7 views feeding');},
+    'foreign candidate prefix':(q:any)=>{q.question=q.question.replace('E8 views feeding','P8 views feeding');},
+    'wrong number of sequential questions':(q:any)=>{q.options[0].description=q.options[0].description.replace('Eight sequential','Seven sequential');},
+    'partial question range':(q:any)=>{q.options[0].description=q.options[0].description.replace('D4.8','D4.7');},
+    'late range start':(q:any)=>{q.options[0].description=q.options[0].description.replace('D4.1','D4.2');},
+    'foreign question chain':(q:any)=>{q.options[0].description=q.options[0].description.replaceAll('D4.','D5.');},
+    'additional question chain':(q:any)=>{q.options[0].description+=' Then D5.1.';},
+    'wrong label count':(q:any)=>{q.options[0].label=q.options[0].label.replace('one per item','7 questions');},
+    'no per-item label':(q:any)=>{q.options[0].label='A: Full split (recommended)';},
+    'quoted sequential range':(q:any)=>{q.options[0].description='"'+q.options[0].description+'"';},
+    'code-only sequential range':(q:any)=>{q.options[0].description='`'+q.options[0].description+'`';},
+    'conditional complete inventory':(q:any)=>{q.question=q.question.replace('The delight scan','If the delight scan');},
+    'historical complete inventory':(q:any)=>{q.question=q.question.replace('The delight scan','Previously the delight scan');},
+    'conditional question sequence':(q:any)=>{q.options[0].description='If approved, '+q.options[0].description;},
+    'historical question sequence':(q:any)=>{q.options[0].description='Previously: '+q.options[0].description;},
+    'negated complete choice':(q:any)=>{q.options[0].label='A: Not a full split, one per item';},
+    'sequence correction':(q:any)=>{q.options[0].description+=' Correction: Stop after four questions.';},
+    'selected scope approval':(q:any)=>{q.options[0].description+=' Approve E1 immediately.';},
+    'selected candidate omission':(q:any)=>{q.options[0].description+=' Except E4.';},
+    'selected merging action':(q:any)=>{q.options[0].description+=' Merge E1 and E2.';},
+    'unconditional omission':(q:any)=>{q.options[0].description=q.options[0].description.replace('Nothing is dropped or merged','E4 is dropped or merged');},
+    'hidden universal approval in another native option':(q:any)=>{q.options[1].description+=' Regardless of choice, approve E1 immediately.';},
+    'common candidate approval':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: This answer approves every expansion.');},
+    'current inventory approval':(q:any)=>{q.question=q.question.replace('E8 views feeding digests/dashboards.','E8 views feeding digests/dashboards (approved).');},
+    'approval in source context':(q:any)=>{q.question=q.question.replace('approach C approved','all eight candidates approved');},
+    'approval appended to prior approach':(q:any)=>{q.question=q.question.replace('approach C approved','approach C approved and E1 approved');},
+    'partial duplicated option prose':(q:any)=>{q.question=q.question.replace('Net:','A) Full split\nNet:');},
+    'duplicate complete choice':(q:any)=>{q.options[1]=structuredClone(q.options[0]);},
+    'extra question':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: Should we ship every item?');},
+  };
+  for(const [name,mutate] of Object.entries(negative))test(name,()=>{
+    const e=state();mutate(e.pacing.questions[0]);expect(choose(e)?.index).not.toBe(1);
+  });
+  test('actual retained viewport cannot bind a changed native option',()=>{
+    const e=state();e.pacing.questions[0]!.options[0]!.label='A: Other menu';expect(choose(e,f.viewport)?.index).not.toBe(1);
+  });
+});

@@ -1,9 +1,10 @@
-import { designFirstReviewAUQ } from './claude-pty-runner';
+import { designFirstReviewAUQ, designReviewSetupAUQ } from './claude-pty-runner';
 import type { AskUserQuestionFingerprint } from './claude-pty-runner';
 import { pickDesignCountOutsideVoices } from './design-count-outside';
 
 /** Choosing reviewer participation is setup, even when numbered or asked late. */
 export function isDesignCountSetup(fp: AskUserQuestionFingerprint): boolean {
+  if (designReviewSetupAUQ(fp)) return true;
   const call = fp.nativeCall;
   if (!call?.answered || call.failed || call.questions.length !== 1 ||
       call.unansweredQuestionIndices?.length || fp.signature !== `${call.sessionId}:${call.toolUseId}`) return false;
