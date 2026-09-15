@@ -74,6 +74,30 @@ describe('floor-check scope-gate exclusion (acceptance-condition regression)', (
     expect(isScopeGateQuestionVisible(GATE_NATIVE_RENDER)).toBe(true);
   });
 
+  test('captured native gate still counts when option B mentions the already-pasted draft', () => {
+    // Public card captured from Claude Code 2.1.251 on 2026-09-15, attempt 3.
+    // Mentioning the acknowledged draft does not make a real scope question disappear.
+    const capturedCard = [
+      '☐ Scope ',
+      '',
+      'What should I review?',
+      '',
+      '❯1.A) Branch diff',
+      'The current branch diff — the work in progress on this branch.',
+      '2.B)Plan/designdoc',
+      "A plan or design doc I'll paste or point you to (e.g. the ZephyrLedgerWidget draft above).",
+      ' 3. C) Specific path',
+      '     A specific file,directory, or path.',
+      '4. Type something.',
+      '────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────',
+      '  5.Chataboutthis',
+      '',
+      'Enter to select· ↑/↓ tonavgate · Escto cancel',
+    ].join('\n');
+
+    expect(isScopeGateQuestionVisible(capturedCard)).toBe(true);
+  });
+
   test('prose gate render trips the prose-AUQ arm — the exclusion catches that form too', () => {
     expect(isProseAUQVisible(GATE_PROSE_RENDER)).toBe(true);
     expect(isPermissionDialogVisible(GATE_PROSE_RENDER)).toBe(false);
