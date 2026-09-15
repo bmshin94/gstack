@@ -476,3 +476,236 @@ describe('reported original coordination violation with an owned finding citatio
     ['accepted stale consequence', finding + '\n\nA subsequent stale read is permitted by the amended contract.'],
   ])('rejects %s', (_name, text) => expect(hasStaleFillRaceFinding(text)).toBe(false));
 });
+
+// Exact public Write at d30620e8, session 59f999d1-de6b-4c67-ae6c-210efa05f0cc,
+// toolu_01CWeW6wi4V6YEMNtd5dVdz2 acknowledged at native line 3343.
+// PLAN.md SHA-256 577b669134977a17c779765c4a979a5fc1e9bc672cd77948d04d6bf066bfd7ff:
+// retained requirement lines 38-40, current amendment 45-50, earlier-caller allowance 229.
+// The recorded paid failure remains a failure; these are free detector regressions.
+describe('attributed original coordination premise with a current freshness finding', () => {
+  const evidence = "- A read already in progress when a write commits may return its earlier DB\n  snapshot to that caller. Every read begun after that write completes must\n  observe the committed version. TTL expiry is not a substitute for this rule.\n\n## Proposed wrapper integration\nKeep the current read-through repository interface and shared adapters.\n**[Amended: D1]** The original sketch stated \"no additional version checks or\ncoordination between a cache fill and a write\". That is withdrawn: the review\nshowed it violates the freshness invariant above (schedule in Section 4). The\naccepted ordering rules are:";
+  const allowance = "Waiters coalesced on R1 receive V1 \u2014 permitted by PLAN.md:27-28 (they began before W completed)";
+  const withAllowance = (claim = allowance) => evidence + '\n\n## Assessment of D1\n' + claim + '.';
+  test('accepts the captured current assertion against its retained requirement', () => {
+    expect(hasStaleFillRaceFinding(evidence)).toBe(true);
+    expect(hasStaleFillRaceFinding(withAllowance())).toBe(true);
+  });
+  test('preserves premise ownership through equivalent labels, quotes and rule wording', () => {
+    for (const text of [
+      evidence.replaceAll('D1', 'F7'),
+      evidence.replace('original sketch', 'original wrapper'),
+      evidence.replace('original sketch', 'original implementation'),
+      evidence.replace('"no additional', '“no additional').replace('a write"', 'a write”'),
+      evidence.replace('no additional version checks or\ncoordination', 'no coordination'),
+      evidence.replace('That is withdrawn: the review\nshowed it violates', 'This is withdrawn: the review shows it breaks'),
+      evidence.replace('freshness invariant above', 'retained read-after-write contract above'),
+      evidence.replace('Every read begun', 'Every read started').replace('that write completes', 'the write returns').replace('committed version', 'committed value'),
+      evidence.replace(' (schedule in Section 4)', ''),
+    ]) expect(hasStaleFillRaceFinding(text)).toBe(true);
+  });
+  test('requires the original missing coordination and the reviewer current assertion together', () => {
+    for (const text of [
+      evidence.replace('no additional version checks or\ncoordination', 'coordination'),
+      evidence.replace('cache fill and a write', 'cache hit and a read'),
+      evidence.replace('original sketch stated', 'original sketch may have stated'),
+      evidence.replace('That is withdrawn:', 'That is retained:'),
+      evidence.replace('showed it violates', 'did not show it violates'),
+      evidence.replace('showed it violates', 'showed another wrapper violates'),
+      evidence.replace('showed it violates', 'showed it might violate'),
+      evidence.replace('freshness invariant', 'formatting invariant'),
+      evidence.replace('Section 4).', 'Section 4)?'),
+      evidence.replace('That is withdrawn:', '\n\n## Other finding\nThat is withdrawn:'),
+      evidence.replace('That is withdrawn:', '| That is withdrawn:'),
+      evidence.replace('**[Amended: D1]**', 'If approved: **[Amended: D1]**'),
+    ]) expect(hasStaleFillRaceFinding(text)).toBe(false);
+  });
+  test('requires a retained current requirement from this plan', () => {
+    const finding = evidence.slice(evidence.indexOf('## Proposed wrapper integration'));
+    for (const text of [
+      finding,
+      evidence.replace('Every read begun after that write completes must\n  observe the committed version.', 'Later reads may observe an earlier value.'),
+      evidence.replace('must\n  observe', 'might\n  observe'),
+      evidence.replace('Every read begun', 'Not every read begun'),
+      evidence.replace('## Proposed wrapper integration', 'This rule is withdrawn.\n\n## Proposed wrapper integration'),
+      '## Finding F9: unrelated cache\n' + evidence,
+      '## Historical source\n' + evidence.slice(0, evidence.indexOf('## Proposed wrapper integration')) + '\n## Current review\n' + finding,
+      '> Every read begun after that write completes must observe the committed version.\n\n' + finding,
+      '"Every read begun after that write completes must observe the committed version."\n\n' + finding,
+      'For another cache. Every read begun after that write completes must observe the committed version.\n\n' + finding,
+    ]) expect(hasStaleFillRaceFinding(text)).toBe(false);
+  });
+  test('does not promote copied, fenced or quoted review assertions', () => {
+    for (const text of [
+      'Source:\n\n' + evidence,
+      'Earlier review:\n\n' + evidence,
+      '## Hypothetical example\n' + evidence,
+      'The following is a quoted source excerpt.\n\n' + evidence,
+      evidence.split('\n').map(line => '> ' + line).join('\n'),
+      evidence.split('\n').map(line => '    ' + line).join('\n'),
+      '````text\n' + evidence + '\n````',
+      '~~~text\n' + evidence + '\n~~~',
+      evidence.replace('**[Amended: D1]**', '"Copied sentence. **[Amended: D1]**') + '"',
+      evidence.replace('**[Amended: D1]**', 'Example of report format:\n\n**[Amended: D1]**'),
+      evidence.replace('That is withdrawn:', '"That is withdrawn:').replace('Section 4).', 'Section 4)."'),
+      evidence.replace('The original sketch', '`The original sketch').replace('Section 4).', 'Section 4).`'),
+    ]) expect(hasStaleFillRaceFinding(text)).toBe(false);
+  });
+  test('same-finding rejection and stale-result permission remain failures', () => {
+    for (const tail of [
+      'D1 is rejected.', 'D1 is "withdrawn".', 'This finding is dismissed.',
+      '| D1 | Withdrawn |', '| D1 | "rejected" |',
+      'A subsequent stale read is permitted by the amended contract.',
+      'This stale-fill behavior is accepted.', 'No coordination is required.',
+    ]) expect(hasStaleFillRaceFinding(withAllowance() + '\n\n## Assessment of D1\n' + tail)).toBe(false);
+  });
+  test('foreign or copied rejections do not override the current finding', () => {
+    for (const tail of [
+      '## Assessment of D2\nD2 is rejected.',
+      '## Assessment of D2\n| D2 | Withdrawn |',
+      '## Historical assessment\nD1 is withdrawn.',
+      '## Assessment of D1\n> D1 is rejected.',
+    ]) expect(hasStaleFillRaceFinding(evidence + '\n\n' + tail)).toBe(true);
+  });
+  test('coalesced earlier callers may use different symbolic writer and snapshot names', () => {
+    for (const text of [
+      allowance.replaceAll('R1', 'R17').replaceAll('V1', 'snapshot-A').replaceAll('W ', 'W9 '),
+      allowance.replace('Waiters', 'Readers').replace('began', 'started').replace('W completed', 'the write returned'),
+      allowance.replace('Waiters coalesced on R1', 'Callers').replace('receive', 'observe').replace('permitted by PLAN.md:27-28', 'allowed'),
+    ]) expect(hasStaleFillRaceFinding(withAllowance(text))).toBe(true);
+  });
+  test('earlier-call allowance cannot credit a later reader, uncertain ordering or a fill', () => {
+    for (const text of [
+      allowance.replace('before W', 'after W'),
+      allowance.replace('they began', 'they never began'),
+      allowance.replace('they began', 'they may have begun'),
+      allowance.replace('they began', 'another reader began'),
+      allowance.replace('before W completed', 'before R2 completed'),
+      allowance.replace('Waiters', 'Later readers'),
+      allowance.replace('receive V1', 'fill the cache with V1'),
+      allowance.replace('receive V1', 'return V1 to later callers'),
+      allowance.replace('W completed)', 'W completed only if the write failed)'),
+      allowance + ' and later readers may reuse V1',
+      allowance + '. A subsequent stale read is permitted',
+      allowance + '. The stale cache fill is acceptable',
+    ]) expect(hasStaleFillRaceFinding(withAllowance(text))).toBe(false);
+  });
+});
+
+
+describe('attributed coordination phrase classes and ownership', () => {
+  // Independently written forms: no captured sentence, schedule schema or fixed parenthetical.
+  const reports = [
+    `## Retained contract
+  Any request started after the write returns shall receive the committed value.
+
+  ## Wrapper review
+  [Amended: F8] Our original wrapper assumed “cache population proceeds without synchronization with writes”.
+  We reject that assumption. Our review established that this approach contradicts the existing freshness guarantee.`,
+    `## Existing contract
+  All reads that begin after write completion must return the newly committed version.
+
+  ## Implementation review
+  [Amended: D4] The proposed implementation specifies "no coordination for writes and cache fills".
+  This proposal was rejected. Review found it fails to preserve the read-after-write requirement.`,
+    `## Contract retained
+  Once a write has completed, new reads must see the value it committed.
+
+  ## Current review
+  [Amended: F3] The current sketch states "cache fills and writes run without coordination".
+  That sketch breaks the current freshness rule.`,
+    `## Required behavior
+  The retained requirement: all requests that start after that write finishes are required to receive the committed snapshot.
+
+  ## Current review
+  [Amended: D17] Our original implementation assumed "cache repopulation and writes lacked ordering guards".
+  That assumption has been retracted. The implementation does not preserve the existing freshness contract.`,
+  ];
+
+  for (const [index, report] of reports.entries()) {
+    test(`phrase classes recognize independent current review form ${index + 1}`, () => expect(hasStaleFillRaceFinding(report)).toBe(true));
+  }
+
+  test('the attributed premise and direct violation need no fixed rejection sentence or above reference', () => {
+    expect(hasStaleFillRaceFinding(reports[0]!.replace('We reject that assumption. ', ''))).toBe(true);
+    expect(hasStaleFillRaceFinding(reports[1]!.replace('This proposal was rejected. ', ''))).toBe(true);
+    expect(hasStaleFillRaceFinding(reports[2]!.replace('That sketch breaks', 'We found that this sketch violates'))).toBe(true);
+  });
+
+  test('different finding and artifact subjects cannot borrow the attributed premise', () => {
+    for (const text of [
+      reports[0]!.replace('We reject that assumption.', 'Another unrelated finding concerns replica lag.'),
+      reports[0]!.replace('this approach contradicts', 'another approach contradicts'),
+      reports[0]!.replace('this approach contradicts', 'the implementation contradicts'),
+      reports[1]!.replace('Review found it fails', 'Review found another issue fails'),
+      reports[2]!.replace('That sketch breaks', 'It is unclear whether that sketch breaks'),
+      reports[2]!.replace('That sketch breaks', 'It is false that that sketch breaks'),
+      reports[2]!.replace('That sketch breaks', 'That sketch does not break'),
+    ]) expect(hasStaleFillRaceFinding(text)).toBe(false);
+  });
+
+  test('normative freshness rules cannot be replaced by conditional or permissive statements', () => {
+    for (const report of reports) {
+      for (const text of [
+        report.replace(/shall receive|must return|must see|are required to receive/, 'may receive'),
+        report.startsWith('## Contract retained') ? report.replace('Once a write has completed', 'Before a write has completed') : report.replace('after', 'before'),
+        report.replace('committed value', 'earlier value').replace('newly committed version', 'old version').replace('the value it committed', 'an older snapshot').replace('committed snapshot', 'stale snapshot'),
+      ]) expect(hasStaleFillRaceFinding(text)).toBe(false);
+    }
+  });
+
+  test('quoted current assertions, source owners and split findings remain closed across phrase forms', () => {
+    for (const report of reports) {
+      const assertion = report.slice(report.lastIndexOf('\n') + 1);
+      for (const text of [
+        '> ' + report.replaceAll('\n', '\n> '),
+        '````text\n' + report + '\n````',
+        '## Historical source\n' + report.replaceAll('## ', '### '),
+        report.replace(assertion, '"' + assertion + '"'),
+        report.replace(assertion, '### Unrelated finding F99\n' + assertion),
+      ]) expect(hasStaleFillRaceFinding(text)).toBe(false);
+    }
+  });
+
+  const finding = reports[0]!;
+  const withAllowance = (claim: string) => finding + '\n\n## Assessment of F8\n' + claim;
+  const earlierAllowances = [
+    'The coalesced readers receive their earlier snapshot; that return is permitted because they started before the write completed.',
+    'Readers coalesced on R8 return SNAPSHOT_X (allowed, because each call began before W9 returned).',
+    'Waiters that began before write completion are permitted to receive V7.',
+  ];
+
+  test('earlier-group permission depends on ownership and chronology rather than exact punctuation', () => {
+    for (const claim of earlierAllowances) expect(hasStaleFillRaceFinding(withAllowance(claim))).toBe(true);
+  });
+
+  test('earlier-group phrases cannot permit a fill, another caller or uncertain start', () => {
+    for (const claim of [
+      earlierAllowances[0]!.replace('before the write completed', 'after the write completed'),
+      earlierAllowances[0]!.replace('they started', 'another reader started'),
+      earlierAllowances[0]!.replace('they started', 'they might have started'),
+      earlierAllowances[0]!.replace('receive their earlier snapshot', 'store their earlier snapshot in the cache'),
+      earlierAllowances[1]!.replace('each call began', 'some other call began'),
+      earlierAllowances[1]!.replace('W9 returned', 'R3 returned'),
+      earlierAllowances[2]!.replace('before write completion', 'before another write completed'),
+      earlierAllowances[2]!.replace('receive V7', 'return V7 to future callers'),
+      earlierAllowances[0]!.replace(/\.$/, ' and future consumers may reuse that snapshot.'),
+    ]) expect(hasStaleFillRaceFinding(withAllowance(claim))).toBe(false);
+  });
+
+  test('a legitimate earlier group never overrides a same-finding rejection or accepted stale fill', () => {
+    for (const allowance of earlierAllowances) {
+      expect(hasStaleFillRaceFinding(withAllowance(allowance) + '\nF8 is rejected.')).toBe(false);
+      expect(hasStaleFillRaceFinding(withAllowance(allowance) + '\nA later stale read is permitted.')).toBe(false);
+      expect(hasStaleFillRaceFinding(withAllowance(allowance) + '\nThis stale-fill behavior is accepted.')).toBe(false);
+      expect(hasStaleFillRaceFinding(withAllowance(allowance) + '\n\n## Assessment of F9\nF9 is rejected.')).toBe(true);
+    }
+  });
+
+
+  test('current assertions cannot attribute the retained-rule violation to a different finding', () => {
+    const report = reports[2]!;
+    expect(hasStaleFillRaceFinding(report.replace('freshness rule.', 'freshness rule (see F3).'))).toBe(true);
+    expect(hasStaleFillRaceFinding(report.replace('freshness rule.', 'freshness rule (see F9).'))).toBe(false);
+    expect(hasStaleFillRaceFinding(report.replace('freshness rule.', 'freshness rule (see D3).'))).toBe(false);
+  });
+});

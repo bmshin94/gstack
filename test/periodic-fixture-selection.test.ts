@@ -4,10 +4,18 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
+    ['test/plan-design-sdk-fixture.test.ts', ['plan-design-review-plan-mode']],
+    ['test/design-count-native-issue-fields.test.ts', ['plan-design-finding-count']],
+    ['test/fixtures/design-count-native-issue-fields.json', ['plan-design-finding-count']],
+    ['test/helpers/ceo-payment-findings.ts', ['plan-ceo-finding-count']],
+    ['test/ceo-payment-findings.test.ts', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-payment-ledger-decisions.json', ['plan-ceo-finding-count']],
+    ['test/setup-gbrain-remote-caller.test.ts', ['setup-gbrain-remote']],
+    ['test/skill-fixture.test.ts', ['journey-ideation', 'journey-plan-eng', 'journey-debug', 'journey-qa', 'journey-code-review', 'journey-ship', 'journey-docs', 'journey-retro', 'journey-design-system', 'journey-visual-qa']],
     ['test/agent-sdk-runner.test.ts', ['brain-privacy-gate', 'setup-gbrain-remote', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', ...OVERLAY_FIXTURES.map(fixture => `overlay-harness-${fixture.id}`)]],
     ['test/office-hours-writeback-env.test.ts', ['office-hours-brain-writeback']],
     ['test/review-army-budget.test.ts', ['review-army-red-team', 'review-army-consensus']],
-    ['test/helpers/setup-gbrain-sandbox.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
+    ['test/helpers/setup-gbrain-sandbox.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'setup-gbrain-remote']],
     ['test/helpers/setup-gbrain-fixture-command.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['test/fixtures/autoplan-caller.fixture.test.ts', ['autoplan-chain-pty']],
     ['test/gstack-paths.test.ts', ['autoplan-chain-pty', 'carve-section-loading', 'design-html-slop-gate']],
@@ -85,7 +93,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
 });
 
 test('shared attempt regressions select periodic callers and the gate report case', () => {
-  const periodic = ['office-hours-forcing-energy', 'office-hours-builder-wildness', 'office-hours-brain-writeback', 'plan-ceo-review-format-mode', 'plan-ceo-review-format-approach', 'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'review-army-red-team'];
+  const periodic = ['office-hours-forcing-energy', 'office-hours-builder-wildness', 'office-hours-brain-writeback', 'plan-ceo-review-format-mode', 'plan-ceo-review-format-approach', 'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'setup-gbrain-remote', 'review-army-red-team'];
   const result = selectTests(['test/office-hours-attempt.test.ts'], E2E_TOUCHFILES);
   expect(result.reason).toBe('diff');
   expect(result.selected.sort()).toEqual([...periodic, 'plan-review-report'].sort());

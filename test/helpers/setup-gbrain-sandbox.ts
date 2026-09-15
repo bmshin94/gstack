@@ -24,7 +24,7 @@ const ROOT = path.resolve(import.meta.dir, '..', '..');
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const read = (file: string) => fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
 const OMITTED = '[Public diagnostics omitted: redaction limit]';
-function redactPublicValue(value: unknown, token: string, unsafe = () => {}): any {
+export function redactPublicValue(value: unknown, token: string, unsafe = () => {}): any {
   if (typeof value === 'string') {
     const redacted = redactFindingSpans(value.replaceAll(token, '[REDACTED_FIXTURE_TOKEN]'), { repoVisibility: 'private' });
     if (redacted === null) { unsafe(); return OMITTED; }
@@ -37,7 +37,7 @@ function redactPublicValue(value: unknown, token: string, unsafe = () => {}): an
 }
 
 /** Retain the prior Path 4 public projection; SDK private fields are never read. */
-function publicEvents(events: readonly unknown[]): unknown[] {
+export function publicEvents(events: readonly unknown[]): unknown[] {
   return events.flatMap((event: any) => {
     if (event.type === 'system' && event.subtype === 'init') return [{
       type: event.type, subtype: event.subtype, session_id: event.session_id,

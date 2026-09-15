@@ -382,7 +382,7 @@ describe('CEO finding fixture establishes scope before launch', () => {
 // Main owns both distinct and paired registrations in this file. Select the
 // actual case and replace only its native count boundary; report/band checks
 // and the output-directory finally stay live.
-test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw', 'native-error'])('native count registration: %s', scenario => {
+test.each(['success5', 'success7', 'success-paired', 'below', 'above', 'missing-report', 'trailing-report', 'timeout', 'throw', 'native-error', 'unknown-current'])('native count registration: %s', scenario => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ceo-count-body-')));
   const script = path.join(root, 'registration.test.ts');
   const factsPath = path.join(root, 'facts.json');
@@ -393,6 +393,7 @@ import * as path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import * as runner from ${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))};
 import {createPlanCountFixture} from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-count-fixture.ts'))};
+const captured = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(ROOT, 'test/fixtures/ceo-payment-ledger-decisions.json'))}, 'utf8'));
 const original = {...runner}, scenario = ${JSON.stringify(scenario)}, paired = scenario === 'success-paired';
 let calls = 0;
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({describeE2ETier:tier=>{expect(tier).toBe('periodic');return describe;}}));
@@ -427,6 +428,23 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     } finally {fixture.cleanup();}
     facts.validated=true;fs.writeFileSync(${JSON.stringify(factsPath)},JSON.stringify(facts));
     if(scenario==='throw')throw new Error('controlled count observation failure');
+    if(!paired){
+      expect(typeof opts.isReviewAUQ).toBe('function');
+      const prior=[];
+      for(const [index,item] of captured.captures.entries()){
+        if(item.savedPlan)fs.writeFileSync(target,item.savedPlan);
+        const call=structuredClone(item.call);
+        const fp=original.nativePlanCallFingerprint(call,index,true);
+        expect(opts.isReviewAUQ(fp,prior)).toBe(item.kind==='seeded-remedy'||item.call.questions[0].header==='TODO-1');
+        prior.push(call);
+      }
+      if(scenario==='unknown-current'){
+        const call=structuredClone(captured.captures[2].call),q=call.questions[0];
+        q.question='D99 — Should we change the billing currency?';call.answers={[q.question]:q.options[0].label};call.toolUseId+='-extra';
+        opts.isReviewAUQ(original.nativePlanCallFingerprint(call,99,true),prior);
+      }
+    }
+    if(scenario==='missing-report')fs.rmSync(target,{force:true});
     if(scenario!=='missing-report')fs.writeFileSync(target,'# Reviewed plan\\n\\n## GSTACK REVIEW REPORT\\nVERDICT: APPROVED\\n'+(scenario==='trailing-report'?'\\n## Unreviewed tail\\n':''));
     return {outcome:scenario==='timeout'?'timeout':scenario==='native-error'?'transcript_unavailable':'plan_ready',
       reviewCount:{success5:5,success7:7,'success-paired':2,below:3,above:8}[scenario]??5,
@@ -452,7 +470,8 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-finding-c
       'missing-report':'D19 FAIL: agent did not produce expected plan file',
       'trailing-report':'trailing ## heading(s) after GSTACK REVIEW REPORT',
       timeout:'finding-count FAILED: outcome=timeout',throw:'controlled count observation failure',
-      'native-error':'finding-count FAILED: outcome=transcript_unavailable'};
+      'native-error':'finding-count FAILED: outcome=transcript_unavailable',
+      'unknown-current':'cannot exclude it from the 4–7 count'};
     if(failures[scenario])expect(output).toContain(failures[scenario]);
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 },20_000);

@@ -1,0 +1,149 @@
+import { marked } from 'marked';
+import type { AskUserQuestionFingerprint } from './claude-pty-runner';
+import type { NativePlanQuestionCall } from './plan-count-transcript';
+
+type Seed = 'dispatcher' | 'lookup' | 'email' | 'tests' | 'orders';
+type Finding = { seed: Seed; ledgerId: string; phase: string; signature: string };
+const plain = (value: string) => value.replace(/[`*_]/g, '').trim();
+const option = (value: string) => plain(value).replace(/^[A-D][).]\s*/, '').replace(/\s*\(recommended\)$/i, '');
+
+// Finite obligations from this fixture's supplied plan. These match the
+// behavior under discussion, not decision numbers, option labels, class names
+// chosen for a remedy, or a particular generated sentence.
+const obligations: Array<{ seed: Seed; subject: RegExp; defect: RegExp; remedy: RegExp }> = [
+  { seed: 'dispatcher', subject: /\b(?:dispatcher|WebhookDispatcher|routing)\b/i,
+    defect: /\b(?:bypass\w*|skip\w*|separate (?:entry|routing)|second (?:path|front door|routing))\b/i,
+    remedy: /\b(?:register\w*|reus\w*|route\w*|single routing|one routing)\b/i },
+  { seed: 'lookup', subject: /\b(?:SQL|query|lookup|userId|DB|database|parameter)\b/i,
+    defect: /\b(?:raw|concatenat\w*|interpolat\w*|glue\w*|splice\w*)\b/i,
+    remedy: /\b(?:bound parameter|bind\w*|parameteriz\w*|prepared statement|ORM|find_by)\b/i },
+  { seed: 'email', subject: /\b(?:mail|email|notification|receipt)\b/i,
+    defect: /\b(?:no error handling|propagat\w*|escape\w*|unhandled|uncaught|rethrow\w*)\b/i,
+    remedy: /\b(?:rescue|catch|handle|isolate|isolation|enqueue|queue|background job)\b/i },
+  { seed: 'tests', subject: /\b(?:tests?|coverage|suite)\b/i,
+    defect: /\b(?:no (?:automated )?tests?|none planned|never (?:runs|executes)|no (?:automated )?coverage)\b/i,
+    remedy: /\b(?:add|write|implement|handler|unit|integration|regression)\b/i },
+  { seed: 'orders', subject: /\b(?:orders?|query|queries)\b/i,
+    defect: /\b(?:per-order|one query per order|N\+1|(?:fetch\w*|quer\w*)[^.]*loop)\b/i,
+    remedy: /\b(?:batch\w*|single (?:orders )?query|one (?:bound-parameter )?query|bulk)\b/i },
+];
+
+// Use only current prose. Quoted/code blocks never supply a defect, remedy,
+// or ledger. Inline code identifiers retain their literal technical names.
+function prose(value: string): string {
+  return marked.lexer(value).filter(t => !['code', 'blockquote', 'html'].includes(t.type))
+    .map(t => plain(t.raw)).join('\n');
+}
+function current(value: string): boolean {
+  return !/^[\x60\"'“‘]/.test(value.trim()) && !/\bno (?:current )?(?:defect|gap|issue|problem)\b/i.test(value) && !/^(?:example|quoted|historical|source|hypothetical|previously|formerly|if|unless)\b/i.test(value.trim()) &&
+    !/\b(?:this|that|the) (?:finding|issue|decision|defect|assessment|remedy) (?:is|was|has been) (?:already |now )?(?:resolved|fixed|withdrawn|retracted|not current|superseded|historical|quoted)\b/i.test(value);
+}
+const mentions = (text: string, id: string) => text.split(/[^A-Za-z0-9_.-]+/).some(token => token.replace(/[.:]$/, '') === id);
+
+function ownedAnswer(fp: AskUserQuestionFingerprint): NativePlanQuestionCall | null {
+  const call = fp.nativeCall;
+  if (!call?.sessionId || !call.toolUseId || call.answered !== true || call.failed !== false ||
+    fp.signature !== `${call.sessionId}:${call.toolUseId}` || call.questions.length !== 1 ||
+    (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0) ||
+    !Array.isArray(call.unansweredQuestionIndices) || call.unansweredQuestionIndices.length ||
+    !Number.isFinite(Date.parse(call.answeredAt ?? '')) || Object.keys(call.answers ?? {}).length !== 1) return null;
+  const q = call.questions[0]!;
+  if (q.multiSelect || q.options.length < 2 || q.options.length > 4 ||
+    new Set(q.options.map(o => o.label)).size !== q.options.length ||
+    !q.options.some(o => o.label === call.answers?.[q.question]) ||
+    fp.options.length !== q.options.length || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label)) return null;
+  return call;
+}
+
+/** Source requires Current/Proposed/Status/evidence and a cited row ID. It
+ * does not require heading depth, column order, a Dn(ledger ID) title, or
+ * native option wording. Pending is valid: the actual ACK precedes the next Edit. */
+export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: string, savedPlan: string): Finding | null {
+  const call = ownedAnswer(fp);
+  if (!call) return null;
+  const q = call.questions[0]!;
+  const question = prose(q.question);
+  const explanation = /^ELI10:\s*(.+)$/m.exec(question)?.[1] ?? question;
+  if (!question.trim() || !current(question) || !current(explanation)) return null;
+  const options = q.options.map(o => prose(`${o.label}\n${o.description ?? ''}`)).filter(current);
+  const tokens = marked.lexer(savedPlan);
+  const matches: Finding[] = [];
+  for (const table of tokens.filter(t => t.type === 'table')) {
+    if (table.type !== 'table') continue;
+    const column = (meaning: RegExp) => table.header.map((c, i) => meaning.test(plain(c.text)) ? i : -1).filter(i => i >= 0);
+    const fields = { id: column(/^(?:ID|Decision)\b/i), current: column(/^Current\b/i),
+      proposed: column(/^Proposed\b/i), status: column(/^Status\b/i), evidence: column(/\b(?:Contract|Evidence)\b/i) };
+    if (Object.values(fields).some(indices => indices.length !== 1)) continue;
+    for (const cells of table.rows) {
+      const read = (key: keyof typeof fields) => plain(cells[fields[key][0]!]!.text);
+      const owner = read('id'), id = owner.split(/\s/, 1)[0]!.replace(/[.:]$/, '');
+      if (!id || !mentions(question, id) || !/^(?:unresolved|approved|reopened|deferred|declined)\b/i.test(read('status')) || !/\bPLAN\.md\b/.test(read('evidence'))) continue;
+      // A row can contain its proposals directly or cite a separate saved
+      // comparison bearing the same ID. Heading spelling/depth is immaterial.
+      const blocks = tokens.map((t, i) => t.type === 'heading' && mentions(plain(t.text), id) ? i : -1).filter(i => i >= 0);
+      const proposals: Array<{ body: string; phase: string }> = [{ body: read('proposed'), phase: 'ledger row' }];
+      for (const start of blocks) {
+        const heading = tokens[start]!;
+        if (heading.type !== 'heading') continue;
+        let end = start + 1;
+        while (end < tokens.length && !(tokens[end]!.type === 'heading' && (tokens[end] as any).depth <= heading.depth)) end++;
+        const preceding = tokens.slice(0, start).filter(t => t.type === 'heading' && t.depth < heading.depth).at(-1);
+        proposals.push({ body: prose(tokens.slice(start + 1, end).map(t => t.raw).join('')), phase: preceding?.type === 'heading' ? preceding.text : heading.text });
+      }
+      for (const spec of obligations) {
+        const row = `${owner} ${read('evidence')} ${read('current')}`;
+        if (!spec.subject.test(seedPlan) || !spec.defect.test(seedPlan) || !spec.subject.test(row) ||
+          !spec.defect.test(read('current')) || !spec.subject.test(question) || !spec.defect.test(explanation)) continue;
+        const operative = options.some(o => spec.remedy.test(o) && spec.subject.test(o));
+        const proposal = proposals.find(p => current(p.body) && spec.remedy.test(p.body) && spec.subject.test(p.body));
+        if (operative && proposal) matches.push({ seed: spec.seed, ledgerId: id, phase: proposal.phase, signature: fp.signature });
+      }
+    }
+  }
+  return matches.length === 1 ? matches[0]! : null;
+}
+
+function setupQuestion(fp: AskUserQuestionFingerprint): boolean {
+  const call = ownedAnswer(fp);
+  if (!call) return false;
+  const q = call.questions[0]!;
+  const title = prose(q.question).split('\n')[0]!;
+  const labels = q.options.map(o => option(o.label));
+  if (/\b(?:skill routing|routing rules)\b/i.test(title) && /\bCLAUDE\.md\b/i.test(title))
+    return labels.length === 2 && labels.some(l => /\b(?:add|enable|include|append)\b.*\brouting\b/i.test(l)) && labels.some(l => /\b(?:no thanks|skip|manually|manual)\b/i.test(l));
+  if (/\bcross[- ]project learnings\b/i.test(title) && /\b(?:enable|search)\b/i.test(title))
+    return labels.length === 2 && labels.some(l => /\benable\b.*\bcross[- ]project\b/i.test(l)) && labels.some(l => /\bproject[- ]scoped\b/i.test(l));
+  const modes = labels.map(l => l.match(/\b(?:SCOPE EXPANSION|SELECTIVE EXPANSION|HOLD SCOPE|SCOPE REDUCTION)\b/g));
+  if (labels.length === 4 && modes.every(found => found?.length === 1) && new Set(modes.flat()).size === 4) return true;
+  if (/\b(?:scope|review target)\b/i.test(title) && labels.some(l => /skip\s+interview|plan\s+immediately/i.test(l))) return true;
+  if (/\boffice-hours\b/i.test(title) && labels.length === 2 && labels.some(l => /\brun\b.*office-hours/i.test(l)) && labels.some(l => /^skip\b/i.test(l))) return true;
+  const remedyEvidence = obligations.some(spec => spec.subject.test(q.question) && spec.defect.test(q.question) &&
+    q.options.some(o => spec.remedy.test(`${o.label} ${o.description ?? ''}`)));
+  return !remedyEvidence && /\b(?:which|choose|select)\b.*\bapproach\b/i.test(title) && /^Approach$/i.test(q.header);
+}
+function todoDecision(fp: AskUserQuestionFingerprint): boolean {
+  const q = fp.nativeCall!.questions[0]!;
+  return /\bTODO(?:S\.md|s|[- ]\d+)?\b/i.test(q.header + ' ' + q.question.split('\n')[0]) &&
+    q.options.some(o => /^(?:add|build|implement|remove|defer|skip)\b/i.test(option(o.label)));
+}
+
+/** Fixture-local metric adapter. It never advances the shared phase boundary.
+ * Every real current question, including repeated remedies, still counts
+ * toward the original 4–7 band. Unknown decisions fail closed. */
+export function createCeoPaymentFindingCounter(seedPlan: string, readPlan: () => string,
+  existingFinding: (fp: AskUserQuestionFingerprint) => boolean) {
+  const trace: Array<Finding | { signature: string; kind: 'setup' | 'existing-finding' | 'additional-current-decision' }> = [];
+  return {
+    trace,
+    isReviewAUQ(fp: AskUserQuestionFingerprint, priorCalls: readonly NativePlanQuestionCall[] = []): boolean {
+      if (!ownedAnswer(fp) || priorCalls.some(call => `${call.sessionId}:${call.toolUseId}` === fp.signature))
+        throw new Error(`Invalid or duplicated completed native decision: ${fp.signature}`);
+      if (setupQuestion(fp)) { trace.push({ signature: fp.signature, kind: 'setup' }); return false; }
+      const finding = ceoPaymentFinding(fp, seedPlan, readPlan());
+      if (finding) { trace.push(finding); return true; }
+      if (todoDecision(fp)) { trace.push({ signature: fp.signature, kind: 'additional-current-decision' }); return true; }
+      if (existingFinding(fp)) { trace.push({ signature: fp.signature, kind: 'existing-finding' }); return true; }
+      throw new Error(`Unsupported current CEO decision; cannot exclude it from the 4–7 count: ${fp.signature}`);
+    },
+  };
+}

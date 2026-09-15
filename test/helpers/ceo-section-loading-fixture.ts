@@ -365,7 +365,7 @@ function structuredFindingAssessment(prose: string[], finding: number, traceEnd:
     if (assertedOwner(prose, i) && (sameId.test(line) || namedAssessment || followingTrace)) {
       // A current table can put a scalar verdict in the cited finding's row.
       // Normalize that owned status only, never borrow a neighboring row.
-      const status = /^\|\s*(F[1-9]\d*)\s*\|\s*["“']?(withdrawn|rejected|dismissed)\b/i.exec(line);
+      const status = /^\|\s*([FD][1-9]\d*)\s*\|\s*["“']?(withdrawn|rejected|dismissed)\b/i.exec(line);
       assessment.push(status && ids.includes(status[1]!) ? `${status[1]} is ${status[2]}. ${line}` : line);
     }
   }
@@ -692,6 +692,61 @@ function assertedProseOwner(prose: string[], index: number): boolean {
   return !owners.some(owner => owner.source);
 }
 
+/** A retained rule must require committed values for reads begun after write completion. */
+function retainsPostWriteFreshness(text: string): boolean {
+  const writer = '(?:(?:the|that|a)\\s+)?write\\s+(?:(?:has|had)\\s+)?(?:completes?|completed|returns?|returned|finishes?|finished|commits?|committed)';
+  const boundary = `(?:${writer}|(?:the\\s+)?write\\s+(?:completion|return|commit))`;
+  const reads = '(?:(?:every|all|any|new|later|future|subsequent)\\s+)?(?:reads?|requests?|callers?)';
+  const starts = '(?:(?:that|which)\\s+)?(?:begun|started|begins?|starts?)';
+  const obligation = '(?:must|shall|are\\s+required\\s+to)\\s+(?:observe|return|see|receive)';
+  const committed = '(?:(?:the\\s+)?(?:(?:newly|latest)\\s+)?committed\\s+(?:version|value|snapshot)|the\\s+value\\s+it\\s+committed)';
+  const afterRead = new RegExp(`^${reads}\\s+${starts}\\s+after\\s+${boundary}\\s+${obligation}\\s+${committed}$`, 'i');
+  const afterWrite = new RegExp(`^(?:once|after)\\s+${writer},?\\s+${reads}\\s+${obligation}\\s+${committed}$`, 'i');
+  return text.split(/[.!?](?:\s+|$)/).some(sentence => {
+    const claim = sentence.trim().replace(/^[-*]\s+/, '').replace(/^(?:the\s+)?retained\s+(?:rule|contract|invariant|requirement)\s*:\s*/i, '');
+    return !/\b(?:not|never|may|might|could|if|unless|except)\b/i.test(claim) && (afterRead.test(claim) || afterWrite.test(claim));
+  });
+}
+
+/** Quote only the attributed premise; the review's current conclusion must remain asserted prose. */
+function attributedCoordinationClaim(text: string): { id: string } | undefined {
+  const premise = /(?:^|[.;]\s+)\[Amended:\s*([DF][1-9]\d*)\]\s+(?:(?:the|our)\s+)?(?:original|current|proposed)\s+(sketch|wrapper|implementation)\s+(?:stated|states|assumed|assumes|specified|specifies|proposed|proposes)\s+(?:that\s+)?(["“])([^"“”]+)(["”])/i.exec(text);
+  if (!premise || !((premise[3] === '"' && premise[5] === '"') || (premise[3] === '“' && premise[5] === '”'))) return;
+  const quoted = premise[4]!;
+  const absence = /\b(?:no|without|lacks?|lacked|omits?|omitted)\s+(?:(?:additional|extra)\s+)?(?:version\s+checks\s+(?:or|and)\s+)?(?:coordination|synchroni[sz]ation|ordering\s+guards?)\b/i.exec(quoted);
+  if (!absence || !/\bcache\s+(?:fills?|population|repopulation)\b|\b(?:re)?populat\w*\s+(?:the\s+)?cache\b/i.test(quoted) || !/\bwrites?\b/i.test(quoted)
+    || /\b(?:if|unless|whether|might|may|could|not|never|another|different|unrelated)\b/i.test(quoted.replace(absence[0], '')) || /[?!|]/.test(quoted)) return;
+  const unquoted = text.replace(premise[3] + quoted + premise[5], '[premise]');
+  if (/["“”|]/.test(unquoted) || /\b(?:if|unless|whether|might|may|could|hypothetical|example|template|quoted)\b/i.test(unquoted)) return;
+  const remaining = text.slice(premise.index + premise[0].length);
+  const authority = '(?:(?:(?:the|our)\\s+)?review\\s+(?:showed|shows|found|finds|established|demonstrated|concluded)(?:\\s+that)?\\s+|we\\s+(?:found|established|demonstrated|concluded)(?:\\s+that)?\\s+)?';
+  const subject = '(this|that|it|(?:this|that|the)\\s+(sketch|wrapper|implementation|proposal|approach|assumption))';
+  const violation = '(?:violates|breaks|contradicts|fails\\s+to\\s+(?:satisfy|preserve)|does\\s+not\\s+(?:satisfy|preserve))';
+  const requirement = '(?:the\\s+)?(?:(?:retained|existing|current)\\s+)?(?:freshness|read[- ]after[- ]write)\\s+(?:invariant|contract|rule|guarantee|requirement)';
+  const conclusion = new RegExp(`(?:^|[.;:]\\s+)${authority}${subject}\\s+${violation}\\s+${requirement}(?:\\s+above)?(?:\\s+\\(([^)]*)\\))?[.!](?=\\s|$)`, 'i').exec(remaining);
+  if (!conclusion || (conclusion[2] && /^(?:sketch|wrapper|implementation)$/i.test(conclusion[2]) && conclusion[2].toLowerCase() !== premise[2]!.toLowerCase())) return;
+  if ([...(conclusion[3] ?? '').matchAll(/\b[DF][1-9]\d*\b/gi)].some(reference => reference[0].toUpperCase() !== premise[1]!.toUpperCase())) return;
+  // A directly following conclusion refers to this premise. An intervening
+  // sentence can only explicitly reject that same premise, not introduce F2.
+  const bridge = remaining.slice(0, conclusion.index).replace(/^[.\s]+|[.;:\s]+$/g, '');
+  const rejected = /^(?:this|that|it)(?:\s+(?:statement|premise|proposal|approach|assumption|sketch|wrapper|implementation))?\s+(?:is|was|has\s+been)\s+(?:withdrawn|rejected|retracted|discarded|superseded)$|^(?:we|(?:the|our)\s+review)\s+(?:withdraw|reject|retract|discard)\s+(?:this|that)\s+(?:statement|premise|proposal|approach|assumption)$/i;
+  if (bridge && !rejected.test(bridge)) return;
+  return { id: premise[1]! };
+}
+
+/** Permission belongs only to a receiving group whose members began before the writer finished. */
+function permitsEarlierGroupReturn(claim: string, fillPattern: RegExp): boolean {
+  const group = /^(?:(?:the|these)\s+)?(?:(?:coalesced|already[- ]pending)\s+)?(?:waiters|readers|callers)(?:\s+coalesced\s+on\s+R[1-9]\d*)?\b/i.exec(claim.trim());
+  if (!group || !/\b(?:receive|return|observe|see)\b/i.test(claim) || !/\b(?:permitted|allowed|acceptable)\b/i.test(claim)
+    || fillPattern.test(claim) || /\b(?:next|later|subsequent|new|fresh|future)\s+(?:read\w*|request\w*|caller\w*)\b/i.test(claim)
+    || /\b(?:if|unless|whether|might|could|never|not|after|and|also)\b|\bmay\s+have\b/i.test(claim)) return false;
+  const writer = '(?:(?:(?:the|that)\\s+)?write|W(?:[1-9]\\d*)?)\\s+(?:(?:has|had)\\s+)?(?:completed|returned|committed|settled|finished)|(?:the\\s+)?write\\s+(?:completion|return|commit)';
+  const sameGroup = '(?:they|each\\s+(?:call|read|request)|all\\s+(?:of\\s+)?(?:these\\s+)?(?:calls|reads|requests|callers|readers|waiters))';
+  const ordering = new RegExp(`\\b${sameGroup}\\s+(?:began|started)\\s+before\\s+(?:${writer})\\b`, 'i');
+  const relative = new RegExp(`^\\s+(?:that|who)\\s+(?:began|started)\\s+before\\s+(?:${writer})\\b`, 'i');
+  return ordering.test(claim) || relative.test(claim.trim().slice(group[0].length));
+}
+
 function hasProseStaleFillFinding(report: string): boolean {
   // Copied source, diagrams and quoted examples cannot supply a finding.
   let fence: { char: string; length: number } | null = null;
@@ -725,8 +780,34 @@ function hasProseStaleFillFinding(report: string): boolean {
     // between cache fills and writes that violates read-after-write freshness.
     // That is independent evidence even when the old-value trace is a diagram.
     // Inline source cannot supply the assertion; the amendment label is metadata.
-    const coordinationText = normalize(block.replace(/`([^`]*)`/g, (_span, body: string) =>
-      /^\[Amended:[^\]]+\]$/.test(body) ? body : '[literal]'));
+    const literalSafeBlock = block.replace(/`([^`]*)`/g, (_span, body: string) =>
+      /^\[Amended:[^\]]+\]$/.test(body) ? body : '[literal]');
+    const coordinationText = normalize(literalSafeBlock);
+    // An attributed quote can establish what the original sketch proposed;
+    // the reviewer must independently reject it against the retained rule.
+    // Do not promote an arbitrary quoted finding, or infer a missing contract.
+    const attributed = attributedCoordinationClaim(normalize(literalSafeBlock.replace(/^#{1,6}[^\n]*(?:\n|$)/, '')));
+    const retainedFreshness = attributed && blocks.slice(0, index).some((prior, priorIndex) => {
+      const priorLines = blocks.slice(0, priorIndex + 1).flatMap(part => part.split('\n'));
+      if (!assertedProseOwner(priorLines, priorLines.length - 1)) return false;
+      // A different finding's requirement is not the retained plan contract.
+      const headings: Array<{ level: number; title: string }> = [];
+      for (const line of priorLines) {
+        const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+        if (!heading) continue;
+        while (headings.length && headings.at(-1)!.level >= heading[1]!.length) headings.pop();
+        headings.push({ level: heading[1]!.length, title: heading[2]! });
+      }
+      if (headings.some(heading => /\b[DF][1-9]\d*\b/i.test(heading.title))) return false;
+      const requirement = normalize(prior.replace(/^#{1,6}[^\n]*(?:\n|$)/, '').replace(/`[^`]*`|"(?:[^"\\]|\\.)*"|“[^”]*”/g, '[literal]'));
+      const intervening = normalize(blocks.slice(priorIndex, index).join(' '));
+      if (/\b(?:another|different|separate|unrelated|other)\s+(?:cache|key|entry)\b/i.test(requirement)
+        || /\b(?:this|that|the)\s+(?:(?:freshness|read[- ]after[- ]write)\s+)?(?:invariant|contract|rule)\s+(?:is|was|remains)\s+(?:withdrawn|rejected|dismissed|no\s+longer\s+(?:required|retained))\b/i.test(intervening)) return false;
+      return retainsPostWriteFreshness(requirement);
+    });
+    const attributedGap = Boolean(attributed && retainedFreshness)
+      && !/\b(?:if|unless|whether|might|may|could|hypothetical|example|template|quoted)\b/i.test(coordinationText)
+      && !/\b(?:example|template|source|quoted|format)\b[^.]*:\s*$/i.test(blocks[index - 1] ?? '');
     const premise = /(?:^|[.;]\s+)(?:\[Amended:[^\]]{1,80}\]\s*)?(?:the\s+)?(?:original|current|proposed)\s+(sketch|wrapper|implementation)\s+(?:(?:had|has|proposed)\s+no\s+coordination\s+between\s+(?:an?\s+)?cache\s+fill\s+and\s+(?:an?\s+)?write\b|stated\s+that\s+no\s+coordination\s+between\s+(?:an?\s+)?cache\s+fill\s+and\s+(?:an?\s+)?write\s+was\s+proposed\b)/i.exec(coordinationText);
     const citedConclusion = /(?:^|[.;]\s+)Review\s+(?:showed|shows)\s+that\s+(sketch|wrapper|implementation)\s+(?:violates|breaks)\s+the\s+(?:retained\s+)?read[- ]after[- ]write\s+(?:rule|contract|guarantee|invariant)\s+\(see\s+(F[1-9]\d*)\)(?:[.!](?=\s|$)|$)/i.exec(coordinationText);
     // The reviewer can assert the original coordination violation directly,
@@ -739,7 +820,7 @@ function hasProseStaleFillFinding(report: string): boolean {
       && !coordinationText.slice(premise.index, conclusion.index).includes('|')
       && !/["“”]|\b(?:if|example|template|quoted)\b/i.test(text)
       && !/\b(?:example|template|source|quoted|format)\b[^.]*:\s*$/i.test(blocks[index - 1] ?? '');
-    if ((!stale || !inFlight || !read || !fill || !invalidation || !ordering) && !coordinationGap) return false;
+    if ((!stale || !inFlight || !read || !fill || !invalidation || !ordering) && !coordinationGap && !attributedGap) return false;
 
     // A neighboring explanation/remedy belongs to this paragraph only until
     // another named finding/section/table row begins. In particular, a
@@ -748,9 +829,11 @@ function hasProseStaleFillFinding(report: string): boolean {
     const independent = /^(?:#{1,6}(?:\s|\d)|\d+\.\s|[-*]\s|\||(?:[*_]+)?(?:Finding\b|Section\s|P[0-3]\b))/i.test(next);
     const explicitId = /^\|\s*(F[1-9]\d*)\s*\|/.exec(text)?.[1]
       ?? (coordinationGap && conclusion === citedConclusion ? citedConclusion?.[2] : undefined)
-      ?? (coordinationGap && conclusion === reportedViolation ? reportedViolation?.[1] : undefined);
+      ?? (coordinationGap && conclusion === reportedViolation ? reportedViolation?.[1] : undefined)
+      ?? (attributedGap ? attributed!.id : undefined);
     const assessment = explicitId
-      ? structuredFindingAssessment(lines, owners.length - 1, owners.length - 1, [explicitId], assertedProseOwner).join(' ')
+      ? structuredFindingAssessment(lines, owners.length - 1, owners.length - 1, [explicitId], assertedProseOwner)
+        .map(line => attributedGap && /^#{1,6}\s/.test(line) ? line + '.' : line).join(' ')
       : '';
     const context = text + (independent ? '' : ' ' + normalize(next)) + ' ' + normalize(assessment);
     const findingId = explicitId ?? 'F[1-9]\\d*';
@@ -798,6 +881,7 @@ function hasProseStaleFillFinding(report: string): boolean {
         || (!proposedPrevention && /\b(?:cannot|can't|never|does not|doesn't|will not|won't|did not|didn't|is not|isn't|was not|wasn't|has not|hasn't|had not|hadn't)\s+(?:\w+\s+){0,3}restor\w*\b/i.test(claim))
         || /\bno\s+(?:fix|change|coordination|guard)\s+(?:is\s+)?(?:needed|required)\b/i.test(claim);
       if (!dismissal) continue;
+      if (attributedGap && permitsEarlierGroupReturn(claim, fillPattern)) continue;
       const originalCaller = /\b(?:original|already[- ]pending)\s+(?:pending\s+)?(?:caller|reader|request)\b|\bpending\s+caller\b/i.test(claim);
       // A finding can name versions instead of calling them "old". Explicit
       // start-before-commit and return-to-own-caller evidence scopes this
@@ -810,6 +894,6 @@ function hasProseStaleFillFinding(report: string): boolean {
         && !fillPattern.test(claim) && !/\b(?:next|later|subsequent|new|fresh|future)\s+(?:read\w*|request\w*|caller\w*)\b/i.test(claim);
       if (!(onlyEarlierReturn && subsequentRead && (violation || remedy || explicitlyEarlierCall))) return false;
     }
-    return finding || subsequentRead || remedy;
+    return finding || subsequentRead || remedy || attributedGap;
   });
 }

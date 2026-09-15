@@ -378,3 +378,38 @@ describe('real-skill pins: body/head extraction used by E2E fixtures', () => {
     }
   });
 });
+
+// Execute only the actual installation function, never the paid module setup.
+test('routing catalog contains installed project names without a request-to-skill answer key', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'test/skill-routing-e2e.test.ts'), 'utf8');
+  const start = source.indexOf('function installSkills(tmpDir: string)');
+  const end = source.indexOf('/** Init a git repo', start);
+  expect(start).toBeGreaterThan(0); expect(end).toBeGreaterThan(start);
+  const installed = new Map<string, string>([
+    [path.join(ROOT, 'SKILL.md'), '---\nname: gstack\ndescription: Route project workflows.\n---\n'],
+    [path.join(ROOT, 'review/SKILL.md'), '---\nname: review\ndescription: Deliberately unrelated photography text.\n---\n'],
+    [path.join(ROOT, 'qa/SKILL.md'), '---\nname: qa\ndescription: Test browser flows.\n---\n'],
+  ]);
+  const writes = new Map<string, string>();
+  const fixtureRoot = path.join(os.tmpdir(), 'routing-catalog-no-files-written');
+  const mockFs = {
+    existsSync: (file: string) => installed.has(file),
+    mkdirSync: () => {},
+    writeFileSync: (file: string, content: string) => writes.set(file, content),
+  };
+  const compiled = new Bun.Transpiler({ loader: 'ts' }).transformSync(source.slice(start, end) + '\ninstallSkills(fixtureRoot);');
+  new Function('ROOT', 'fs', 'path', 'extractSkillHead', 'fixtureRoot', compiled)(
+    ROOT, mockFs, path, (file: string) => installed.get(file), fixtureRoot,
+  );
+  const instructions = writes.get(path.join(fixtureRoot, 'CLAUDE.md'))!;
+  expect(instructions).toContain('installed gstack skills: gstack, qa, review.');
+  expect(instructions).toContain("built-in skills are outside this project's workflow");
+  expect(instructions).toContain('matching the request to the skill descriptions');
+  expect(instructions).not.toContain('photography');
+  expect(instructions).not.toContain('code-review');
+  expect(instructions).not.toContain('ship');
+  expect(instructions).not.toContain("I'm about to merge");
+  expect(writes.get(path.join(fixtureRoot, '.claude/skills/review/SKILL.md')))
+    .toBe(installed.get(path.join(ROOT, 'review/SKILL.md')));
+  expect(writes.size).toBe(4);
+});

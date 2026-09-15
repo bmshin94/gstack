@@ -311,6 +311,74 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
       !call.answeredAt || !Number.isFinite(Date.parse(call.answeredAt))) return false;
   const q = call.questions[0]!;
   const lines = q.question.trim().split('\n');
+  const gapIssue = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*) \(G([1-9]\d*)\): ([^?]+)\?$/.exec(lines[0]!);
+  if (gapIssue) {
+    const [, issueNumber, gapNumber, subject] = gapIssue;
+    const headerIssue = /\bIssue ([1-9]\d*)\b/i.exec(q.header);
+    if (!q.header.trim() || (headerIssue && headerIssue[1] !== issueNumber) ||
+        /^(?:focus|scope|setup|routing|learnings|outside(?: design)? voices|next steps?)\b/i.test(q.header.trim()) ||
+        /<gstack-qid:/i.test(q.question) || q.multiSelect || q.options.length < 2 || q.options.length > 4 ||
+        fp.options.length !== q.options.length || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) ||
+        !q.options.some(o => o.label === call.answers?.[q.question])) return false;
+
+    // The issue and option IDs bind a decision; its descriptive menu header
+    // and the wording/line count of each decision field do not supply evidence.
+    const ids = q.options.map(o => new RegExp(`^(${issueNumber}[A-Z])(?:[).:]?\\s+)`).exec(o.label)?.[1]);
+    if (ids.some(id => !id) || new Set(ids).size !== ids.length) return false;
+    const fields = ['Project/branch/task:', 'ELI10:', 'Stakes if we pick wrong:', 'Recommendation:', 'Completeness:', 'Net:'];
+    const positions = fields.map(field => q.question.indexOf(field));
+    if (positions.some((position, i) => position < 0 || q.question.lastIndexOf(fields[i]!) !== position ||
+        (i > 0 && position <= positions[i - 1]!)) || q.question.slice(0, positions[0]).trim() !== lines[0]) return false;
+    const values = fields.map((field, i) => q.question.slice(positions[i]! + field.length, positions[i + 1] ?? q.question.length).trim());
+    const sourceOnly = /^(?:[>"“`]|Historical|Previously|Hypothetical|Quoted|Source|Archived|Earlier|Example|If|When|Once|Unless|Assuming|Provided|Pending approval)\b|^[>"“`]/i;
+    const inactive = /(?:^|[.!?;]\s+|\n)(?:Correction:\s*)?(?:(?:this|the) (?:finding|gap|issue|amendment|fix|decision)|G[1-9]\d*|Issue [1-9]\d*) (?:is|was|has been) (?:already |now )?["'‘“`]*(?:withdrawn|resolved|closed|superseded|hypothetical|not current|no longer current)\b|\bno current (?:defect|gap|finding|issue)\b/i;
+    const current = (value: string) => value.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
+      .replace(/^\s*>.*$/gm, '').replace(/"[^"\n]+"|“[^”\n]+”|`[^`\n]+`|'[^'\n]+'|‘[^’\n]+’/g,
+        (quoted, index, source) => /^(?:withdrawn|resolved|closed|superseded|hypothetical|not current|no longer current)$/i.test(quoted.slice(1, -1)) &&
+          /\b(?:(?:this|the) (?:finding|gap|issue|amendment|fix|decision)|G[1-9]\d*|Issue [1-9]\d*) (?:is|was|has been) (?:already |now )?$/i.test(source.slice(0, index))
+          ? quoted.slice(1, -1) : '');
+    if (values.some(value => !value || sourceOnly.test(value)) || inactive.test(current(q.question)) ||
+        !/^\S[\s\S]*\bPLAN\.md\b/.test(values[0]!) ||
+        !ids.some(id => values[3]!.startsWith(`${id} `))) return false;
+    const assessment = current(values[1]!);
+    if (/\b(?:historical|archived|hypothetical|quoted)\b|\b(?:not|isn't) (?:the )?current\b/i.test(assessment) ||
+        !/\b(?:now|today|currently|proposed)\b/i.test(assessment)) return false;
+
+    // Recognize the fixture's design-defect classes, not a G-number or a
+    // prescribed sentence: ambiguous hierarchy, absent pending feedback,
+    // inconsistent type/spacing, or unreadable error contrast. Every class
+    // still needs a concrete native remedy and its own opposed open gap.
+    const classes: Array<{ subject: RegExp; defect: RegExp; remedy: RegExp }> = [
+      { subject: /\b(?:distinguished|primary|header)\b/i,
+        defect: /\bbuttons?\b[^.!?]*(?:look identical|share (?:the )?same visual weight)/i,
+        remedy: /\bfilled\b[^;\n]*#[0-9a-f]{6}[^;\n]*(?:white|black)\b[^\n]*\bghost\b/i },
+      { subject: /\b(?:pending|request|loading)\b/i,
+        defect: /\b(?:page|request|button)\b[^.!?]*(?:just sits|freezes|no (?:visible )?(?:feedback|signal|indicator))/i,
+        remedy: /\b(?:inline )?spinner\b[^\n]*\baria-busy\s*=\s*true\b[^\n]*\breduced.motion\b/i },
+      { subject: /\b(?:type|typography|labels|headings)\b/i,
+        defect: /\b(?:form|labels?|type)\b[^.!?]*(?:no (?:consistent )?rule|no consistent role|inconsisten\w*|accidental)/i,
+        remedy: /\b\d+px\b[^\n]*\blabels?\b[^\n]*\b\d+px\b[^\n]*\bheadings?\b/i },
+      { subject: /\b(?:spacing|rhythm|gaps)\b/i,
+        defect: /\b(?:form|gaps?|spacing)\b[^.!?]*(?:no rule|without a spacing rule|random|inconsisten\w*)/i,
+        remedy: /\bsections?\s+\d+px\b[^\n]*\bfield groups?\s+\d+px\b[^\n]*\blabel.to.input\s+\d+px\b/i },
+      { subject: /\b(?:errors?|contrast|colou?rs?)\b/i,
+        defect: /\b(?:error|text|contrast)\b[^.!?]*(?:fails? WCAG|below (?:WCAG|AA)|cannot read|can't read)/i,
+        remedy: /#[0-9a-f]{6}\b[^\n]*#[0-9a-f]{6}\b[^\n]*\b(?:icon|text)\b/i },
+    ];
+    const kind = classes.find(kind => kind.subject.test(subject!) && kind.defect.test(assessment));
+    if (!kind || /\b(?:do not|don't|does not|doesn't) look identical\b/i.test(assessment)) return false;
+    return q.options.some((option, index) => {
+      const body = option.description?.trim() ?? '';
+      if (sourceOnly.test(body) || inactive.test(current(body)) || !kind.remedy.test(current(body)) ||
+          !values[3]!.startsWith(`${ids[index]} `)) return false;
+      return q.options.some((other, otherIndex) => {
+        const declined = other.description?.trim() ?? '';
+        return other !== option && /^(?:Keep|Leave|Defer|Decline|No)\b/i.test(other.label.replace(new RegExp(`^${ids[otherIndex]}[).:]?\\s+`), '')) &&
+          !sourceOnly.test(declined) && !inactive.test(current(declined)) &&
+          new RegExp(`\\b(?:gap\\s+)?G${gapNumber}\\s+(?:stays|remains|is)\\s+(?:open|unresolved)\\b`, 'i').test(current(declined));
+      });
+    });
+  }
   const issue = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*): (.+)\?$/.exec(lines[0]!);
   if (!issue || q.header.trim() !== `Issue ${issue[1]}` || lines.length !== 7 ||
       !/^Project\/branch\/task: [^\n,]+ on [^\n,]+, PLAN\.md design review, Pass [1-7] [A-Za-z][A-Za-z &()-]+\.$/.test(lines[1]!) ||

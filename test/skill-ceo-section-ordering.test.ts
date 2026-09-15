@@ -64,6 +64,26 @@ test('CEO handoff carries all answered rows instead of one synthetic approach', 
   expect(section).toContain('Keep the original handoff as history; do not reannounce superseded scope as current');
 });
 
+// Guards the missing public handoff instruction, not model compliance or posture detection.
+test('CEO mode handoff applies the selected mode before the next question', () => {
+  const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
+  const selection = source.split('### 0E. Mode Selection')[1]!.split('### 0F.')[0]!;
+  const handoffStart = selection.indexOf('**Mode handoff:**');
+  const routeStart = selection.indexOf("Follow the selected mode's route:");
+  expect(handoffStart).toBeGreaterThan(0);
+  expect(routeStart).toBeGreaterThan(handoffStart);
+  const handoff = selection.slice(handoffStart, routeStart);
+  const instruction = handoff.split('\n')[0]!;
+  expect(instruction).toMatch(/before the next scope or review question/i);
+  expect(instruction).toMatch(/chat message.*how.*mode applies to this plan.*why/i);
+  const formats = handoff.split('\n').filter(line => line.startsWith('- '));
+  expect(formats).toHaveLength(2);
+  for (const format of formats) {
+    expect(format).toContain('<Application and rationale>');
+    expect(format).toContain('<rows or none>');
+  }
+});
+
 test('SELECTIVE baseline cuts preserve prior answers until their own scope decision', () => {
   const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   const modeWork = source.split('### 0G.')[1]!.split('### 0H.')[0]!;

@@ -66,6 +66,9 @@ describe('office-hours fixture completion', () => {
     expect(instructions).toContain('complete every required phase and preserve all findings');
     expect(instructions).toContain('completed round files and any actual unreviewed failure');
     expect(instructions).toContain('persist the complete managed Spec Review section');
+    expect(instructions).toContain('Write the complete diagnostic, premise challenge, alternatives, independent opinion and rationale into the design');
+    expect(instructions).toContain('write the full relationship closing and handoff directly into REPORT.md');
+    expect(instructions.indexOf('Delivery throughout this non-interactive run')).toBeLessThan(compose);
     expect(instructions).toContain('A failed command remains a failure');
   });
 

@@ -447,7 +447,9 @@ Build a user dashboard that shows account stats, recent activity, and settings.
 
 Review the plan in ./plan.md. This plan has several design gaps — it uses vague language like "clean, modern UI" and "cards and icons", mentions a "hero section with gradient" (AI slop), and doesn't specify empty states, error states, loading states, responsive behavior, or accessibility.
 
-Skip the preamble bash block. Skip any AskUserQuestion calls — this is non-interactive. Rate each design dimension 0-10 and explain what would make it a 10. Then EDIT plan.md to add the missing design decisions (interaction state table, empty states, responsive behavior, etc.).
+Skip the preamble bash block. Skip any AskUserQuestion calls — this is non-interactive. Review all 7 design passes. Rate each scored design dimension 0-10 and explain what would make it a 10; preserve the unresolved-decisions pass and every required design decision. EDIT plan.md to add the missing design decisions (interaction state table, empty states, responsive behavior, etc.) and the full required review report, including those ratings and explanations.
+
+Persist that complete plan and review with Write before publishing a completed walkthrough or saying a fix is applied. Read plan.md back to verify the saved changes. Then return a brief, concrete summary of the design changes; do not repeat the full review in the response. The detailed review belongs in the edited plan. This changes delivery order only: execute every required pass and lazy-section Read, and retain all required report fields, design decisions, diagrams, ratings, and explanations.
 
 IMPORTANT: Do NOT try to browse any URLs or use a browse binary. This is a plan review, not a live site audit. Just read the plan file, review it, and edit it to fix the gaps.`,
         workingDirectory: reviewDir,

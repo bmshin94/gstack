@@ -219,6 +219,7 @@ describe('selectTests', () => {
       'plan-review-prosons-neutral-neg': 'periodic',
       'setup-gbrain-bad-token': 'periodic',
       'setup-gbrain-path4-local-pglite': 'periodic',
+      'setup-gbrain-remote': 'periodic',
       'review-army-red-team': 'periodic',
       'review-coverage-audit': 'gate',
       'plan-eng-coverage-audit': 'gate',

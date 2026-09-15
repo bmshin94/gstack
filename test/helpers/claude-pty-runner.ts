@@ -2093,6 +2093,28 @@ export function hasNativePlanTerminal(
       Date.parse(final.timestamp) <= Date.now() &&
       hasCompletePlanReport(expectedPlanPath, Math.max(startedAt, ...modifyingAnswers),
         Date.parse(final.timestamp), false, 'Design')) return true;
+  // The host's typed completion status is another supported delivery format.
+  // Bind it to a saved artifact in that same current section, rather than
+  // requiring the surrounding explanation to repeat one sentence verbatim.
+  // A separate Eng shipping gate can remain pending after Design completes.
+  const completionHeadings = lines.map((line, index) =>
+    /^(?:#{1,6}\s+)?(?:\*\*)?Completion(?:\s+summary)?(?:\*\*)?:?\s*$/i.test(line.trim()) ? index : -1)
+    .filter(index => index >= 0);
+  if (completionHeadings.length === 1) {
+    const start = completionHeadings[0]!;
+    const preceding = lines.slice(0, start).filter(line => line.trim()).at(-1) ?? '';
+    const section = lines.slice(start + 1);
+    const status = section.filter(line => /^\s*(?:\*\*)?STATUS:/i.test(line));
+    const saved = section.map(line => designClosureText(line, expectedPlanPath))
+      .filter(line => /^(?:[-*]\s+)?Plan (?:written|saved) to\b/i.test(line.trim()));
+    if (!section.some(line => /^#{1,6}\s/.test(line)) &&
+        !/\b(?:example|sample|template|historical|previous|earlier|quote|source|emit|print)\b.*[:：]\s*$/i.test(preceding) &&
+        status.length === 1 && /^\s*(?:\*\*)?STATUS:\s*DONE(?:\*\*)?\s*$/i.test(status[0]!) &&
+        saved.length === 1 && new RegExp(`^(?:[-*]\\s+)?Plan (?:written|saved) to ${escapedPlanPath}(?:[.!](?:\\s|$)|\\s|$)`, 'i').test(saved[0]!.trim()) &&
+        !conflictingDesignClosure(designText) && Date.parse(final.timestamp) <= Date.now() &&
+        hasCompletePlanReport(expectedPlanPath, Math.max(startedAt, ...modifyingAnswers),
+          Date.parse(final.timestamp), false, 'Design')) return true;
+  }
   const summary = lines.findIndex(line => /^(?:#{1,6}\s*)?(?:\*\*)?Completion\s+summary(?:\*\*)?\s*:?[ \t]*$/i.test(line.trim()));
   const preceding = lines.slice(0, summary).filter(line => line.trim()).at(-1) ?? '';
   if (summary < 0 || /\b(?:example|sample|template|quote|emit|print)\b.*[:：]\s*$/i.test(preceding)) return false;
