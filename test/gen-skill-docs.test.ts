@@ -4387,7 +4387,7 @@ describe('scope-gate exceptions drift-guard', () => {
   // instead of drifting. The real fix (shared {{SCOPE_GATE}} resolver) is a
   // filed TODO — this guard is the stopgap that makes the duplication safe.
   const START_MARKER = '**Exceptions — check in this order, BEFORE asking:**';
-  const END_MARKER = 'in any mode — it is a hard STOP.';
+  const END_MARKER = 'When no exception above applied:';
 
   function extractExceptionsBlock(skill: string): string {
     const md = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');

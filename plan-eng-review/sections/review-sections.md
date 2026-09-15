@@ -2,7 +2,7 @@
 <!-- Regenerate: bun run gen:skill-docs -->
 ## Review preparation
 
-After Step 0 resolves scope, complete Prior Learnings, Retrospective learning and Confidence Calibration below. Then use the Decision procedure throughout Sections 1–4 and the outside review.
+Complete Prior Learnings, Retrospective learning and Confidence Calibration below, then present Step 0 findings. Continue through the four review sections and Outside Voice using the Decision procedure.
 
 ## Review record and write policy
 
@@ -12,8 +12,6 @@ The **decision ledger** is the collection of decision records, grids, briefs and
 - Use the requested report file, otherwise the reviewed plan, for the ledger and narrative outputs. For a code review with neither, present the complete review in chat. Do not edit reviewed implementation files unless the user explicitly authorized that work.
 - Check user and host write limits separately for that document, the Test Plan Artifact, task JSONL, TODOs and logs. A permitted plan write does not authorize another path. If a path is forbidden, present the complete artifact as **not persisted** and do not attempt that write.
 - If a save still fails after any recovery explicitly specified by its writer, report it and stop. Do not replace failed persistence with a success claim or silently switch to chat. Explicitly best-effort logs retain their documented behavior.
-
-**Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-4) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
 **Anti-shortcut clause:** Use the decision gate for all four sections and outside voice. Retain findings and evidence. Ask only for new or reopened choices and apply their exact answers. Never prewrite unapproved remedies or skip sections or the terminal report.
 
@@ -124,15 +122,34 @@ confirms it IS a real issue, that is a calibration event. Your initial confidenc
 too low. Log the corrected pattern as a learning so future reviews catch it with
 higher confidence.
 
+## Step 0 findings
+
+Present the Scope Challenge's findings now, using Confidence Calibration above. Number each finding, give its severity, confidence and source, and record its accepted, rejected, deferred or pending disposition. Use "No issues found" for an empty list. Carry actual scope answers forward; a finding is not approval of its remedy.
+
 ## Decision procedure
 
-**Decision gate (all sections and outside voice):** Start this after Step 0 resolves scope. For each new or reopened choice, **Frame → Compare → Record and resolve** below. Use the same procedure throughout Sections 1–4, the outside review and late changes.
+**Decision gate (all sections and outside voice):** Read the request, relevant source and actual answers. Follow this route for Step 0 findings, Sections 1–4, Outside Voice and late changes:
+
+```text
+Finding + evidence + actual answers
+  |
+  +-- Fact/correction only, or exact approval still covers all needed work?
+  |     Yes -> record evidence and disposition; carry approved work -> next finding
+  |            No new question or comparison grid.
+  |
+  +-- New or reopened independent choice?
+        Frame choices -> Compare one choice in its grid -> Save the brief
+        -> Ask and STOP -> Record actual answer -> Apply only accepted scope
+        -> next pending choice (or next finding when none remain)
+```
+
+For previously approved work, use the no-question path only while that approval still applies. Concrete new risks, contradictory evidence or changed assumptions use the pending-choice path. The stages below specify that path; they are not a ceremony for every finding.
 
 Keep three identities distinct: number each finding with severity, confidence and source; give each independently selectable choice a stable decision ID (one finding may need several IDs); use the preamble's `D<N>` question title and `A)`, `B)`, `C)` option labels for its brief. Link the question to its finding and decision record. A reopened choice keeps its decision ID and gets a new question number. Test stars rate existing test quality, not findings or decisions.
 
 ### Frame the choices
 
-Read the request, relevant source and actual answers. Each decision record needs:
+Each decision record needs:
 
 | Field | Record |
 |---|---|
@@ -188,7 +205,7 @@ Jitter without a cap is meaningful despite being omitted. Ask about R1 with R2 s
 
 **Save before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if no writable plan is in scope. If saving fails, report the error and stop before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
 
-**Ask and wait:** Send the audited brief without substantive additions: one question for one choice per AskUserQuestion call. An obvious fix still needs an answer unless exact prior approval covers it. While waiting, do not apply the remedy, enter the next section or call ExitPlanMode.
+**Ask and wait:** Send the audited brief without substantive additions: one question for one choice per AskUserQuestion call. An obvious fix still needs an answer unless exact prior approval covers it. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode.
 
 **Apply the answer:** Record the actual option, answer reference and accepted scope separately from draft options. Apply only those amendments to the working plan with a scoped Edit before taking the next choice; present them in read-only mode. Update its decision record and leave others unchanged. Hold the chosen value fixed and ask the next pending choice if still relevant; record why an irrelevant choice needs no question.
 
@@ -196,7 +213,7 @@ Retain unresolved risks and required verification; resolve remaining risk or saf
 
 ## Review Sections (after scope is agreed)
 
-Evaluate all four sections in order. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode. Findings already covered by exact approval need no repeat question.
+Resolve any pending Step 0 choices through the Decision procedure before Section 1; carry exact prior answers without re-asking. Evaluate all four sections in order (Architecture → Code Quality → Tests → Performance), with at most 8 top issues per section. Never condense, abbreviate, or skip any review section (1-4), including for strategy, spec or infrastructure plans. Evaluate even a section with zero findings; report "No issues found" and continue. The Decision procedure governs pending choices.
 
 ### 1. Architecture review
 Evaluate:

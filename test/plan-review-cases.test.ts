@@ -143,13 +143,20 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(resume).toBeGreaterThan(stop);
     expect(skeleton.slice(stop, resume)).toContain('Do not start Section 1, call ExitPlanMode, or write findings or fixes into a plan file');
     expect(skeleton.slice(resume)).toContain('apply only accepted scope changes');
-    expect(skeleton.slice(resume)).toContain('Complete Review preparation, then present a **Step 0 findings** list before Section 1');
+    expect(skeleton.slice(resume)).toContain('apply only accepted scope changes and follow the Read directive below');
     expect(skeleton.slice(resume)).toContain('Take the same route if complexity did not trigger the gate');
-    expect(sections).toContain('complete Prior Learnings, Retrospective learning and Confidence Calibration below');
-    const presentation = skeleton.slice(resume, skeleton.indexOf('{{SECTION:review-sections}}') < 0 ? skeleton.indexOf('## Section self-check') : skeleton.indexOf('{{SECTION:review-sections}}'));
-    expect(presentation).toContain('Use the numbered finding format and Confidence Calibration from the review section');
+    const sectionRead = skeleton.indexOf(suffix ? '{{SECTION:review-sections}}' : '> **STOP.** Before running the 4-section review');
+    expect(sectionRead).toBeGreaterThan(resume);
+    expect(skeleton.slice(resume, sectionRead)).not.toContain('Complete Review preparation');
+    expect(sections).toContain('Complete Prior Learnings, Retrospective learning and Confidence Calibration below, then present Step 0 findings');
+    const calibration = sections.indexOf(suffix ? '{{CONFIDENCE_CALIBRATION}}' : '## Confidence Calibration');
+    const findings = sections.indexOf('## Step 0 findings');
+    expect(0 < calibration && calibration < findings && findings < sections.indexOf('## Decision procedure')).toBe(true);
+    const presentation = sections.slice(findings, sections.indexOf('## Decision procedure'));
+    expect(presentation).toContain('Number each finding, give its severity, confidence and source');
     expect(presentation).toContain('accepted, rejected, deferred or pending');
     expect(presentation).toContain('"No issues found" for an empty list');
+    expect(presentation).toContain('Carry actual scope answers forward; a finding is not approval of its remedy');
     const prerequisite = skeleton.indexOf('The Prerequisite Skill Offer below uses');
     expect(prerequisite).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
     expect(skeleton.slice(prerequisite)).toContain("the preamble's complete decision-brief format and the next `D<N>` number");
@@ -158,7 +165,9 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(inventory).toBeGreaterThan(0);
     expect(inventory).toBeLessThan(sections.indexOf('### 1. Architecture review'));
     const boundary = sections.slice(inventory, sections.indexOf('### 1. Architecture review')).replace(/\s+/g, ' ');
-    expect(boundary).toContain('Start this after Step 0 resolves scope');
+    expect(boundary).toContain('Read the request, relevant source and actual answers');
+    expect(boundary).toContain('Follow this route for Step 0 findings, Sections 1–4, Outside Voice and late changes');
+    expect(boundary).toContain('Resolve any pending Step 0 choices through the Decision procedure before Section 1; carry exact prior answers without re-asking');
     expect(boundary).toContain('Could one change be accepted while another keeps its approved value or stays undecided?');
     expect(boundary).toContain('If yes, assign separate IDs, even within one function, issue or patch');
     expect(boundary).toContain("list the remedy's behaviors, implementation approaches, guarantees and bounds as current → proposed values");
@@ -248,11 +257,20 @@ describe('Eng approved-work decision gate', () => {
     expect(options).toContain('Check the entire brief against the grid');
     expect(gate).toContain('Use Write or Edit to save the decision record, current grid and brief');
     expect(gate).toContain('If saving fails, report the error and stop before asking');
-    expect(template.split('## Review record and write policy')[1]!.split('**Anti-skip rule:**')[0]!).toContain('Check user and host write limits separately');
+    expect(template.split('## Review record and write policy')[1]!.split('{{ANTI_SHORTCUT_CLAUSE}}')[0]!).toContain('Check user and host write limits separately');
     expect(gate).toContain('present the same material if no writable plan is in scope');
     expect(gate).toContain('one question for one choice per AskUserQuestion call');
     expect(gate).toContain('`pending`, or `approved` with the actual option, answer reference and exact scope');
     expect(gate).toContain('Pending remedies are not accepted work');
+    const flow = gate.split('```text')[1]!.split('```')[0]!;
+    expect(flow).toContain('Fact/correction only, or exact approval still covers all needed work?');
+    expect(flow).toContain('Yes -> record evidence and disposition; carry approved work -> next finding');
+    expect(flow).toContain('No new question or comparison grid');
+    expect(flow).toContain('New or reopened independent choice?');
+    expect(flow).toContain('Frame choices -> Compare one choice in its grid -> Save the brief');
+    expect(flow).toContain('Ask and STOP -> Record actual answer -> Apply only accepted scope');
+    expect(gate).toContain('Concrete new risks, contradictory evidence or changed assumptions use the pending-choice path');
+    expect(gate).toContain('they are not a ceremony for every finding');
   });
 
   test('assigns independent row IDs before constructing the final question', () => {
@@ -294,8 +312,8 @@ describe('Eng approved-work decision gate', () => {
       const body = source.replace('{{TEST_COVERAGE_AUDIT_PLAN}}', () => generateTestCoverageAuditPlan({} as TemplateContext));
       const sectionRule = template.split('## Review Sections (after scope is agreed)')[1]!.split('### 1. Architecture review')[0]!;
       expect(sectionRule).toContain('Evaluate all four sections in order');
-      expect(sectionRule).toContain('**STOP for each pending decision.**');
-      expect(sectionRule).toContain('Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode');
+      expect(gate).toContain('**STOP for each pending decision.**');
+      expect(gate).toContain('Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode');
       if (number === '3') {
         expect(body).toContain("Run the decision gate for this section's new or reopened choices");
         expect(body).toContain('**STOP for each pending decision.**');
@@ -365,10 +383,19 @@ describe('Eng approved-work decision gate', () => {
     expect(bootstrap).toContain('do not auto-select a target from guessed session state');
     expect(bootstrap).toContain('The preamble includes Context Recovery. Run it after scope resolves');
     expect(bootstrap).toContain('None of those startup steps may choose a different review target');
+    const namedTarget = bootstrap.indexOf('**User-named target (outside plan mode):**');
+    const headless = bootstrap.indexOf('**Headless or spawned session without a target:**');
+    expect(0 < namedTarget && namedTarget < headless && headless < bootstrap.indexOf('**Initial question transport')).toBe(true);
+    const pending = bootstrap.slice(headless, bootstrap.indexOf('**Initial question transport'));
+    expect(pending).toContain('neither rule above supplies an unambiguous target');
+    expect(pending).toContain('Scope pending: provide a plan/path or explicitly request branch diff');
+    expect(pending).toContain('STOP. Do not run the preamble or review tools');
+    expect(pending).toContain('The session type does not choose a target or approve work');
+    expect(skeleton).toContain('Copy required command, output and question formats exactly. Apply Voice to newly composed prose');
   });
 
   test('the review record covers code inputs and per-artifact write limits before any decision is saved', () => {
-    const policy = template.split('## Review record and write policy')[1]!.split('**Anti-skip rule:**')[0]!;
+    const policy = template.split('## Review record and write policy')[1]!.split('{{ANTI_SHORTCUT_CLAUSE}}')[0]!;
     expect(template.indexOf('## Review record and write policy')).toBeLessThan(template.indexOf('## Decision procedure'));
     expect(policy).toContain('for a branch diff or code path, review that existing code');
     expect(policy).toContain('without inventing a plan document');
