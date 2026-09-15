@@ -4,6 +4,12 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
+    ['test/fixtures/ceo-onboarding-packet-90f.json', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-baseline-alternatives-90f.json', ['plan-ceo-finding-count']],
+    ['test/fixtures/eng-structure-choice-90f.json', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-idp-choice-90f.json', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-legacy-declaration-90f.json', ['plan-eng-finding-count']],
+    ['test/fixtures/design-completion-envelope-90f.json', ['plan-design-finding-count']],
     ['test/eng-native-seed-contract.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-native-seed-contract-6f.json', ['plan-eng-finding-count']],
     ['test/review-count-markdown.test.ts', ['plan-eng-finding-count', 'plan-design-finding-count', 'plan-eng-multi-finding-batching']],

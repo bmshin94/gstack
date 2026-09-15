@@ -4,10 +4,106 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { hasNativePlanCompletion, hasNativePlanTerminal, isPlanReadyVisible, classifyPlanCountFrame } from './helpers/claude-pty-runner';
+import { hasNativePlanCompletion, hasNativePlanTerminal, isPlanReadyVisible, classifyPlanCountFrame, isNumberedOptionListVisible, isPermissionDialogVisible, isProseAUQVisible, assertReviewReportAtBottom } from './helpers/claude-pty-runner';
 import type { PlanCountTranscript } from './helpers/plan-count-transcript';
 import capturedL from './fixtures/devex-review-l-calls.json';
 import designStatusCapture from './fixtures/design-count-native-issue-fields.json';
+import designEnvelope from './fixtures/design-completion-envelope-90f.json';
+
+describe('captured Design completion envelope', () => {
+  function completedEnvelope() {
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'design-completion-envelope-'));
+    const file=path.join(dir,'design-review.md');
+    const transcript=structuredClone(designEnvelope.transcript) as PlanCountTranscript;
+    const final=transcript.assistantMessages.at(-1)!;
+    final.text=final.text.replaceAll(designEnvelope.originalPlanPath,file);
+    const write=(report=designEnvelope.report)=>{fs.writeFileSync(file,report);fs.utimesSync(file,designEnvelope.reportMtimeMs/1000,designEnvelope.reportMtimeMs/1000);};write();
+    const check=()=>hasNativePlanTerminal(transcript,file,designEnvelope.startedAt,'completion_summary');
+    return {file,transcript,final,write,check,cleanup:()=>fs.rmSync(dir,{recursive:true,force:true})};
+  }
+  test('saved report annotation and punctuated DONE retain the manual plan-mode handoff',()=>{
+    const f=completedEnvelope();try {
+      expect(classifyPlanCountFrame(designEnvelope.screen)).toBeNull();
+      expect(hasNativePlanCompletion(f.transcript,f.file,designEnvelope.startedAt)).toBe(false);
+      expect(f.check()).toBe(true);
+      expect(hasNativePlanTerminal(f.transcript,f.file,designEnvelope.startedAt,'plan_ready')).toBe(false);
+    }finally{f.cleanup();}
+  });
+  test('the actual runner branch recognizes the idle native envelope without answering an exit gate',()=>{
+    const f=completedEnvelope();try {
+      const source=fs.readFileSync(path.join(import.meta.dir,'helpers/claude-pty-runner.ts'),'utf8');
+      const expression=/const nativeSummary = ([\s\S]+?);\n      const terminalFrame/.exec(source)?.[1];expect(expression).toBeTruthy();
+      const evaluate=new Function('opts','nativeCompletion','renderedFrame','visible','transcript','startedAt','administrative',
+        'isNumberedOptionListVisible','isPermissionDialogVisible','isProseAUQVisible','hasNativePlanTerminal',`return (${expression});`);
+      const screen=designEnvelope.screen.replaceAll(designEnvelope.originalPlanPath,f.file);
+      const check=()=>evaluate({expectedPlanPath:f.file},hasNativePlanCompletion(f.transcript,f.file,designEnvelope.startedAt),classifyPlanCountFrame(screen),screen,f.transcript,
+        designEnvelope.startedAt,new Set(),isNumberedOptionListVisible,isPermissionDialogVisible,isProseAUQVisible,hasNativePlanTerminal);
+      expect(check()).toBe(true);
+      const paid=fs.readFileSync(path.join(import.meta.dir,'skill-e2e-plan-design-finding-count.test.ts'),'utf8');
+      const start=paid.indexOf("        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome))");
+      const end=paid.indexOf('\n      } finally {',start);expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
+      const validate=new Function('fs','planPath','obs','FLOOR','CEILING','assertReviewReportAtBottom',new Bun.Transpiler({loader:'ts'}).transformSync(paid.slice(start,end)));
+      const obs={outcome:'completion_summary',reviewCount:5,step0Count:3,elapsedMs:0,fingerprints:[],evidence:screen};
+      expect(()=>validate(fs,f.file,obs,4,7,assertReviewReportAtBottom)).not.toThrow();
+      expect(()=>validate(fs,f.file,{...obs,outcome:'timed_out'},4,7,assertReviewReportAtBottom)).toThrow('finding-count FAILED');
+      expect(()=>validate(fs,f.file,{...obs,reviewCount:3},4,7,assertReviewReportAtBottom)).toThrow('BAND FAIL');
+      expect(()=>validate(fs,f.file,{...obs,reviewCount:8},4,7,assertReviewReportAtBottom)).toThrow('BAND FAIL');
+      f.transcript.calls[0]!.answered=false;expect(check()).toBe(false);
+    }finally{f.cleanup();}
+  });
+  for(const [name,edit] of Object.entries({
+    'exclamation status':(s:string)=>s.replace('STATUS: DONE.','STATUS: DONE!'),
+    'status without extra closure':(s:string)=>s.replace(/\*\*STATUS: DONE\.\*\*[^\n]+/,'STATUS: DONE.'),
+    'equivalent read-only closure':(s:string)=>s.replace('No unresolved decisions. Staying in plan mode; nothing outside the plan file was edited.','No open design findings. Remaining in plan mode; no implementation has been started.'),
+    'equivalent persisted annotation':(s:string)=>s.replace('report is the last section, read-back verified','saved; review report is the final heading; verified by readback'),
+    'report field':(s:string)=>s.replace('- Plan: ','- Report: '),
+  }))test('completion envelope accepts '+name,()=>{
+    const f=completedEnvelope();try{f.final.text=edit(f.final.text);expect(f.check()).toBe(true);}finally{f.cleanup();}
+  });
+  for(const [name,edit] of Object.entries({
+    'foreign path':(s:string)=>s.replace('design-review.md','other-review.md'),
+    'path in quoted prose':(s:string)=>s.replace(/(- Plan: )(.+)/,'$1"$2"'),
+    'second path':(s:string)=>s.replace('(report is the last section, read-back verified)','(report is the last section, read-back verified) /other/plan.md'),
+    'second artifact field':(s:string)=>s+'\n- Report: /other/plan.md (saved)',
+    'historical annotation':(s:string)=>s.replace('read-back verified','historical example'),
+    'conditional annotation':(s:string)=>s.replace('read-back verified','read-back verified if approved'),
+    'pending read-back':(s:string)=>s.replace('read-back verified','read-back pending'),
+    'negated save':(s:string)=>s.replace('report is the last section, read-back verified','not saved'),
+    'quoted annotation':(s:string)=>s.replace('report is the last section, read-back verified','"saved"'),
+    'pending status':(s:string)=>s.replace('STATUS: DONE.','STATUS: PENDING.'),
+    'quoted status':(s:string)=>s.replace('**STATUS: DONE.**','`STATUS: DONE.`'),
+    'conditional status':(s:string)=>s.replace('STATUS: DONE.','STATUS: DONE if approved.'),
+    'pending native action':(s:string)=>s.replace('No unresolved decisions. Staying in plan mode; nothing outside the plan file was edited.','Please approve the remaining design choice.'),
+    'implementation action':(s:string)=>s.replace('Staying in plan mode','Starting implementation now'),
+    'conditional plan-mode closure':(s:string)=>s.replace('Staying in plan mode','Staying in plan mode until you approve the remaining decision'),
+    'unresolved qualifier':(s:string)=>s.replace('No unresolved decisions.','No unresolved decisions except the contrast issue.'),
+    'current reopened report':(s:string)=>s+'\nThe report is withdrawn.',
+    'current pending design':(s:string)=>s+'\nDesign review remains unresolved.',
+    'current quoted failure':(s:string)=>s+'\nThe report is "failed".',
+    'quoted full envelope':(s:string)=>'> '+s.replaceAll('\n','\n> '),
+    'historical envelope':(s:string)=>'Historical example:\n\n'+s,
+    'repeated status':(s:string)=>s+'\nSTATUS: BLOCKED',
+  }))test('completion envelope rejects '+name,()=>{
+    const f=completedEnvelope();try{f.final.text=edit(f.final.text);expect(f.check()).toBe(false);}finally{f.cleanup();}
+  });
+  test('the real envelope still requires completed owned calls and its fresh completed Design report',()=>{
+    const f=completedEnvelope();try {
+      const original=structuredClone(f.transcript);
+      for(const edit of [(t:PlanCountTranscript)=>{t.calls[0]!.answered=false;},(t:PlanCountTranscript)=>{t.calls[0]!.failed=true;},
+        (t:PlanCountTranscript)=>{t.calls[0]!.sessionId='foreign';},(t:PlanCountTranscript)=>{t.calls.at(-1)!.answeredAt=f.final.timestamp;},
+        (t:PlanCountTranscript)=>{t.assistantMessages.at(-1)!.timestamp='2999-01-01T00:00:00Z';},
+        (t:PlanCountTranscript)=>{t.planReadyRequests=[{sessionId:t.calls[0]!.sessionId,toolUseId:'failed-exit',timestamp:f.final.timestamp,failed:true}];}]){
+        Object.assign(f.transcript,structuredClone(original));edit(f.transcript);expect(f.check()).toBe(false);
+      }
+      Object.assign(f.transcript,structuredClone(original));
+      for(const body of ['# Draft',designEnvelope.report+'\n## Further work',designEnvelope.report.replace('DESIGN CLEARED','NOT CLEARED'),
+        designEnvelope.report.replace('NO UNRESOLVED DECISIONS','**UNRESOLVED DECISIONS:**\n- Missing decision')]){f.write(body);expect(f.check()).toBe(false);}
+      f.write();fs.utimesSync(f.file,1,1);expect(f.check()).toBe(false);
+      fs.utimesSync(f.file,Date.parse(f.final.timestamp)/1000+1,Date.parse(f.final.timestamp)/1000+1);expect(f.check()).toBe(false);
+      fs.rmSync(f.file);expect(f.check()).toBe(false);
+    }finally{f.cleanup();}
+  });
+});
 
 const CAPTURED_CALL = {
   "sessionId": "b5c582af-870e-48ac-ac1e-c85458932136",

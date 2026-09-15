@@ -1,6 +1,9 @@
 import {expect, test} from 'bun:test';
 import captured from './fixtures/eng-native-seed-contract-6f.json';
+import goldenDeclaration from './fixtures/eng-legacy-declaration-90f.json';
+import idpChoice from './fixtures/eng-idp-choice-90f.json';
 import {evaluateEngSeedCoverage, isEngSeedDecisionAUQ} from './helpers/eng-seeded-coverage';
+import structureChoice from './fixtures/eng-structure-choice-90f.json';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -12,6 +15,134 @@ const transcript=()=>structuredClone(captured.transcript) as PlanCountTranscript
 const evaluate=(calls=transcript().calls, plan=captured.report)=>evaluateEngSeedCoverage(
   {...transcript(),calls,assistantMessages:[]},plan,captured.startedAt,captured.finishedAt);
 const seeds=[[4,'complexity'],[5,'shared-cache'],[7,'swallowed-errors'],[9,'sequential-idp']] as const;
+
+test('current counted alternatives own a complexity reduction without borrowing the preceding fold',()=>{
+  const call=structuredClone(structureChoice.calls[1]) as NativePlanQuestionCall;
+  const result=evaluateEngSeedCoverage({status:'ready',calls:[call],assistantMessages:[]},'',0,Date.parse(structureChoice.captureAt));
+  expect(result.decisions).toEqual({complexity:`${call.sessionId}:${call.toolUseId}`});
+});
+
+const structureCall=()=>structuredClone(structureChoice.calls[1]) as NativePlanQuestionCall;
+const structureResult=(call=structureCall())=>evaluateEngSeedCoverage({status:'ready',calls:[call],assistantMessages:[]},'',0,Date.parse(structureChoice.captureAt));
+const alterStructure=(edit:(q:NativePlanQuestionCall['questions'][number])=>void)=>{
+  const call=structureCall();edit(call.questions[0]!);
+  call.answers={[call.questions[0]!.question]:call.questions[0]!.options[0]!.label};return call;
+};
+for(const [name,edit] of Object.entries({
+  'renamed title':(q:any)=>{q.question=q.question.replace('Which class/module arrangement for the remaining new units?','Which structure should the remaining components use?');},
+  'classes instead of units':(q:any)=>{q.options.forEach((o:any)=>{o.label=o.label.replace(' units:',' classes:');});},
+  'reordered inventory':(q:any)=>{q.question=q.question.replace('AuthBroker, SessionMint, AuthCache and RequestPolicy','RequestPolicy, AuthCache, AuthBroker and SessionMint');},
+  'reordered choices':(q:any)=>{q.options.reverse();},
+  'word counts':(q:any)=>{q.options[0].label=q.options[0].label.replace('3 units:','Three components:');q.options[1].label=q.options[1].label.replace('4 units:','Four components:');},
+  'quoted old withdrawal':(q:any)=>{q.question+='\nEarlier note: "D6 is reopened."';},
+  'prior fold omitted':(q:any)=>{q.question=q.question.replace('after D4 (strangler) and D5 (TokenStore folded), ','').replace('drops the new-unit count from 5 to 3','drops the remaining class count from 4 to 3');},
+}))test('current structure comparison accepts '+name,()=>expect(structureResult(alterStructure(edit)).decisions.complexity).toBeDefined());
+for(const [name,edit] of Object.entries({
+  'foreign plan':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','OTHER.md');},
+  'foreign plan directory':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','archive/PLAN.md');},
+  'quoted current source':(q:any)=>{q.question=q.question.replace(/^Project\/branch\/task: (.+)$/m,'Project/branch/task: "$1"');},
+  'historical source':(q:any)=>{q.question=q.question.replace('Project/branch/task: ','Project/branch/task: Historical example: ');},
+  'quoted explanation':(q:any)=>{q.question=q.question.replace(/^ELI10: (.+)$/m,'ELI10: "$1"');},
+  'missing current inventory':(q:any)=>{q.question=q.question.replace('AuthBroker, SessionMint, AuthCache and RequestPolicy','the previous classes');},
+  'foreign current component':(q:any)=>{q.question=q.question.replace('AuthCache and RequestPolicy','OtherCache and RequestPolicy');},
+  'duplicated current component':(q:any)=>{q.question=q.question.replace('AuthBroker, SessionMint, AuthCache and RequestPolicy','AuthBroker, SessionMint, AuthBroker and RequestPolicy');},
+  'no current lifecycle defect':(q:any)=>{q.question=q.question.replace('so a class adds ceremony without adding safety','so either approach is equally necessary');},
+  'independent current lifecycle':(q:any)=>{q.question+='\nCorrection: RequestPolicy now requires an independent lifecycle.';},
+  'missing baseline option':(q:any)=>{q.options[1].label='Discuss the arrangement';},
+  'reversed option counts':(q:any)=>{q.options[0].label=q.options[0].label.replace('3 units:','4 units:');q.options[1].label=q.options[1].label.replace('4 units:','3 units:');},
+  'equal option counts':(q:any)=>{q.options[0].label=q.options[0].label.replace('3 units:','4 units:');},
+  'duplicate reduced inventory':(q:any)=>{q.options[0].label=q.options[0].label.replace('AuthBroker, SessionMint, AuthCache','AuthBroker, SessionMint, AuthBroker');},
+  'foreign reduced component':(q:any)=>{q.options[0].label=q.options[0].label.replace('AuthCache','OtherCache');},
+  'unrelated removed component':(q:any)=>{q.options[0].label=q.options[0].label.replace('AuthBroker, SessionMint, AuthCache','RequestPolicy, SessionMint, AuthCache');},
+  'pure function borrowed from other option':(q:any)=>{q.options[1].description+=' Pure function.';q.options[0].description=q.options[0].description.replace('pure function','method');},
+  'pure function borrowed from question':(q:any)=>{q.question+='\nNet: use a pure function.';q.options[0].description=q.options[0].description.replace('pure function','method');},
+  'quoted reduced remedy':(q:any)=>{q.options[0].label='"'+q.options[0].label+'"';q.options[0].description='"'+q.options[0].description.replaceAll('\n',' ')+'"';},
+  'negated conversion':(q:any)=>{q.options[0].description+='\nDo not convert RequestPolicy.';},
+  'retained lifecycle':(q:any)=>{q.options[0].description+='\nRequestPolicy still retains its lifecycle.';},
+  'retained class':(q:any)=>{q.options[0].description+='\nRequestPolicy is still a class.';},
+  'mutable result':(q:any)=>{q.options[0].description+='\nThe result is not an immutable type.';},
+  'deferred remedy':(q:any)=>{q.options[0].description+='\nThis remedy is deferred.';},
+  'quoted deferred remedy':(q:any)=>{q.options[0].description+='\nThis remedy is "deferred".';},
+  'reopened decision':(q:any)=>{q.question+='\nD6 is reopened.';},
+  'quoted reopened decision':(q:any)=>{q.question+='\nD6 is "reopened".';},
+  'withdrawn decision':(q:any)=>{q.question+='\nThis decision is withdrawn.';},
+  'conditional decision':(q:any)=>{q.question=q.question.replace('ELI10: ','ELI10: If approved, ');},
+}))test('current structure comparison rejects '+name,()=>expect(structureResult(alterStructure(edit)).decisions).toEqual({}));
+test('structure decision needs its own current native completion and stable guard identity',()=>{
+  const call=structureCall(),finished=Date.parse(structureChoice.captureAt);
+  const guard=(c=call,prior:NativePlanQuestionCall[]=[])=>isEngSeedDecisionAUQ(nativePlanCallFingerprint(c,0,true),prior,0,finished);
+  expect(guard()).toBe(true);
+  expect(guard(call,[structuredClone(structureChoice.calls[0]) as NativePlanQuestionCall])).toBe(true);
+  expect(guard(call,[call])).toBe(false);
+  for(const edit of [(c:any)=>{c.answered=false;},(c:any)=>{c.failed=true;},(c:any)=>{c.answers={};},(c:any)=>{c.unansweredQuestionIndices=[0];},(c:any)=>{c.answeredAt=new Date(finished+1).toISOString();}]){
+    const invalid=structureCall();edit(invalid);expect(guard(invalid)).toBe(false);expect(structureResult(invalid).decisions).toEqual({});
+  }
+  const alien=structuredClone(structureChoice.calls[0]) as NativePlanQuestionCall;alien.sessionId+='-foreign';expect(guard(call,[alien])).toBe(false);
+  const both=structureCall();both.questions.push(transcript().calls[5]!.questions[0]!);both.answers={...both.answers,...transcript().calls[5]!.answers};
+  expect(guard(both)).toBe(false);expect(structureResult(both).decisions).toEqual({});
+});
+const idpCall=()=>structuredClone(idpChoice.call) as NativePlanQuestionCall;
+const idpResult=(call=idpCall())=>evaluateEngSeedCoverage({status:'ready',calls:[call],assistantMessages:[]},'',0,Date.parse(idpChoice.captureAt));
+const alterIdp=(edit:(q:NativePlanQuestionCall['questions'][number])=>void)=>{
+  const call=idpCall();edit(call.questions[0]!);
+  call.answers={[call.questions[0]!.question]:call.questions[0]!.options[0]!.label};return call;
+};
+test('IDP choice owns its current sequential defect and concurrent bounded remedy',()=>{
+  const call=idpCall();expect(idpResult(call).decisions).toEqual({'sequential-idp':`${call.sessionId}:${call.toolUseId}`});
+});
+for(const [name,edit] of Object.entries({
+  'numeric count':(q:any)=>{q.question=q.question.replaceAll('five','5');},
+  'current ordering vocabulary':(q:any)=>{q.question=q.question.replace('Today the five checks run one after another','Currently the five calls run sequentially');},
+  'plain Promise.all with same timeout':(q:any)=>{q.options[0].label=q.options[0].label.replace('Promise.allSettled','Promise.all');},
+  'reordered choices':(q:any)=>{q.options.reverse();},
+  'timeout in same description':(q:any)=>{q.options[0].description+=' Every call has a per-call timeout of 2000 ms.';q.options[0].label=q.options[0].label.replace(' + per-call timeout (default 2000 ms)','');},
+  'quoted earlier cancellation':(q:any)=>{q.question+='\nEarlier note: "D13 is deferred."';},
+  'planned future concurrency':(q:any)=>{q.question+='\nUnder the proposed option, the five IDP calls run concurrently.';},
+  'parallel scheduling title':(q:any)=>{q.question=q.question.replace('issued concurrently','issued in parallel');},
+}))test('IDP choice accepts '+name,()=>expect(idpResult(alterIdp(edit)).decisions['sequential-idp']).toBeDefined());
+for(const [name,edit] of Object.entries({
+  'foreign source':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','OTHER.md');},
+  'foreign source directory':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','archive/PLAN.md');},
+  'quoted source':(q:any)=>{q.question=q.question.replace(/^Project\/branch\/task: (.+)$/m,'Project/branch/task: "$1"');},
+  'historical source':(q:any)=>{q.question=q.question.replace('Project/branch/task: ','Project/branch/task: Historical example: ');},
+  'quoted current defect':(q:any)=>{q.question=q.question.replace(/^ELI10: (.+)$/m,'ELI10: "$1"');},
+  'unrelated title':(q:any)=>{q.question=q.question.replace('How should the five IDP validation calls be issued concurrently?','Which monitoring dashboard should we use?');},
+  'dependent source calls':(q:any)=>{q.question=q.question.replace('five independent IDP calls','five dependent IDP calls');},
+  'missing current ordering':(q:any)=>{q.question=q.question.replace('Today the five checks run one after another','The five checks have no specified ordering');},
+  'reversed current ordering':(q:any)=>{q.question=q.question.replace('Today the five checks run one after another','Today the five checks run concurrently');},
+  'current parallel correction':(q:any)=>{q.question+='\nCorrection: the five IDP calls already run concurrently.';},
+  'current dependency correction':(q:any)=>{q.question+='\nCorrection: the IDP calls are not independent.';},
+  'no offered timeout':(q:any)=>{q.options[0]={label:'Promise.allSettled',description:'Launch all calls concurrently and report every result.'};},
+  'timeout borrowed from sequential choice':(q:any)=>{q.options[0]={label:'Promise.allSettled',description:'Launch all calls concurrently and report every result.'};q.options[2].description+=' Per-call timeout 2000 ms.';},
+  'timeout borrowed from question':(q:any)=>{q.options[0]={label:'Promise.allSettled',description:'Launch all calls concurrently and report every result.'};q.question+='\nRecommendation: per-call timeout.';},
+  'only sequential timeout remedy':(q:any)=>{q.options[0]={label:'Keep the five calls sequential with per-call timeout',description:'Run each call after the previous call completes.'};},
+  'same-option no timeout':(q:any)=>{q.options[0].description+='\nCorrection: no per-call timeout.';},
+  'same-option sequential correction':(q:any)=>{q.options[0].description+='\nCorrection: keep the five calls sequential.';},
+  'same-option no concurrency':(q:any)=>{q.options[0].description+='\nDo not use Promise.allSettled.';},
+  'same-option negated timeout addition':(q:any)=>{q.options[0].description+='\nDo not add a per-call timeout.';},
+  'same-option calls remain sequential':(q:any)=>{q.options[0].description+='\nCorrection: The IDP calls remain sequential.';},
+  'parallel title foreign source':(q:any)=>{q.question=q.question.replace('issued concurrently','issued in parallel').replaceAll('PLAN.md','OTHER.md');},
+  'parallel title without timeout':(q:any)=>{q.question=q.question.replace('issued concurrently','issued in parallel');q.options[0]={label:'Promise.allSettled',description:'Launch all calls concurrently and report every result.'};},
+  'parallel title sequential correction':(q:any)=>{q.question=q.question.replace('issued concurrently','issued in parallel');q.options[0].description+='\nCorrection: The IDP calls remain sequential.';},
+  'quoted offered remedy':(q:any)=>{q.options[0].label='"'+q.options[0].label+'"';q.options[0].description='"'+q.options[0].description.replaceAll('\n',' ')+'"';},
+  'conditional remedy':(q:any)=>{q.options[0].description='If approved, '+q.options[0].description;},
+  'withdrawn decision':(q:any)=>{q.question+='\nD13 is withdrawn.';},
+  'reopened decision':(q:any)=>{q.question+='\nD13 is reopened.';},
+  'scalar quoted deferred decision':(q:any)=>{q.question+='\nD13 is "deferred".';},
+  'deferred offered remedy':(q:any)=>{q.options[0].description+='\nThis remedy is deferred.';},
+  'scalar quoted pending remedy':(q:any)=>{q.options[0].description+='\nThis remedy is "pending".';},
+}))test('IDP choice rejects '+name,()=>expect(idpResult(alterIdp(edit)).decisions).toEqual({}));
+test('IDP choice requires its own completed native answer and distinct seed identity',()=>{
+  const call=idpCall(),finished=Date.parse(idpChoice.captureAt);
+  const guard=(c=call,prior:NativePlanQuestionCall[]=[])=>isEngSeedDecisionAUQ(nativePlanCallFingerprint(c,0,true),prior,0,finished);
+  expect(guard()).toBe(true);expect(guard(call,[call])).toBe(false);
+  for(const edit of [(c:any)=>{c.answered=false;},(c:any)=>{c.failed=true;},(c:any)=>{c.answers={};},(c:any)=>{c.unansweredQuestionIndices=[0];},(c:any)=>{c.answeredAt=new Date(finished+1).toISOString();}]){
+    const invalid=idpCall();edit(invalid);expect(guard(invalid)).toBe(false);expect(idpResult(invalid).decisions).toEqual({});
+  }
+  const foreign=structuredClone(transcript().calls[5]) as NativePlanQuestionCall;foreign.sessionId+='-foreign';expect(guard(call,[foreign])).toBe(false);
+  const bundled=idpCall();bundled.questions.push(transcript().calls[5]!.questions[0]!);bundled.answers={...bundled.answers,...transcript().calls[5]!.answers};
+  expect(guard(bundled)).toBe(false);expect(idpResult(bundled).decisions).toEqual({});
+});
 for(const [index,seed] of seeds) test('actual native decision owns '+seed,()=>{
   expect(Object.keys(evaluate([transcript().calls[index]!],'').decisions)).toEqual([seed]);
 });
@@ -105,6 +236,89 @@ const declaration=/^\*\*CRITICAL regression contract \(D9\):\*\*.+$/m.exec(captu
 const baselineTask=/^- \[ \] \*\*T1[^\n]+\n(?:  - [^\n]+\n?)+/m.exec(captured.report)![0];
 const minimalBaseline=()=>`# Current reviewed plan\n\n## Tests\n${declaration}\n\n## Implementation Tasks\n${baselineTask}`;
 const regression=(plan:string)=>evaluate([],plan).regression;
+const goldenPlan = () => goldenDeclaration.report;
+const goldenContract = /^\*\*Regression contract[^\n]*\n.*?(?=\n\n)/ms.exec(goldenPlan())![0];
+const goldenTask = /^- \[ \] \*\*T9[^\n]*\n(?:  - [^\n]+\n?)+/m.exec(goldenPlan())![0];
+const goldenLedger = goldenPlan().slice(goldenPlan().indexOf('### R5:'));
+test('the final 90f declaration binds named legacy outcomes to its required task and unchanged baseline', () => {
+  expect(goldenDeclaration.reportSha256).toBe('d4ae545eec013da903b5b3c0b459f9f8d2543ea838001271bd7c82b27ac848c3');
+  expect(goldenDeclaration.originalOutcome).toBe('seed_coverage_failed');
+  expect(goldenDeclaration.nativeCall.toolUseId).toBe('toolu_01DszoYCjnkNfCj5FxaZJsjQ');
+  expect(goldenDeclaration.nativeCall.answered).toBe(true);
+  expect(regression(goldenPlan())).toBe('plan');
+});
+for (const [name, edit] of Object.entries({
+  'missing declaration': (s:string) => s.replace(goldenContract, ''),
+  'missing task': (s:string) => s.replace(goldenTask, ''),
+  'missing ledger': (s:string) => s.replace(goldenLedger, ''),
+  'missing required status': (s:string) => s.replace('R5, D11, Iron Rule', 'R5, D11'),
+  'negated required status': (s:string) => s.replace('R5, D11, Iron Rule', 'R5, D11, not Iron Rule'),
+  'optional declaration': (s:string) => s.replace('Regression contract (', 'Optional regression contract ('),
+  'conditional capture': (s:string) => s.replace('fixtures pinning current', 'fixtures if approved pinning current'),
+  'future outcome oracle': (s:string) => s.replace('pinning current outputs', 'pinning proposed outputs'),
+  'foreign legacy target': (s:string) => s.replaceAll('legacyAuthFlow', 'otherAuthFlow'),
+  'wrong reviewed source': (s:string) => s.replace('Reviewed target: `PLAN.md`', 'Reviewed target: `OTHER.md`'),
+  'wrong reviewed branch': (s:string) => s.replace('on `main`', 'on `feature`'),
+  'conflicting reviewed source': (s:string) => s + '\n## Current ownership\nReviewed target: OTHER.md on main\n',
+  'foreign finding source': (s:string) => s.replaceAll('PLAN.md:', 'archive/PLAN.md:'),
+  'noncritical finding': (s:string) => s.replace('Finding: T1, P1 CRITICAL', 'Finding: T1, P2'),
+  'negated critical finding': (s:string) => s.replace('Finding: T1, P1 CRITICAL', 'Finding: T1, P1 not CRITICAL'),
+  'pending ownership': (s:string) => s.replace('State: approved', 'State: pending'),
+  'duplicate owner': (s:string) => s + '\n' + goldenLedger,
+  'wrong record owner': (s:string) => s.replace('### R5:', '### R15:'),
+  'duplicate finding': (s:string) => s.replace('State: approved', 'Finding: T1, P1 CRITICAL, PLAN.md:14\nState: approved'),
+  'different decision answer': (s:string) => s.replace('A (D11)', 'A (D12)'),
+  'selected option omits characterization': (s:string) => s.replace('Actual answer: A', 'Actual answer: B'),
+  'selected option has negated characterization': (s:string) => s.replace('Options: A) Characterization', 'Options: A) No characterization'),
+  'duplicate offered identity': (s:string) => s.replace('; B) Parity + routing only', '; A) Parity + routing only'),
+  'missing named preservation': (s:string) => s.replace(/^Behavior to preserve.+$/m, ''),
+  'flagged outcome ownership': (s:string) => s.replace('Behavior to preserve (legacy tenants, flag off)', 'Behavior to preserve (flagged tenants, flag on)'),
+  'missing accepted scope': (s:string) => s.replace(/^Accepted scope:.+$/m, ''),
+  'conditional accepted scope': (s:string) => s.replace('Accepted scope: (1)', 'Accepted scope: If approved, (1)'),
+  'wrong task decision': (s:string) => s.replace('Tests — T1 (PLAN.md:14-16, :27-28), D11', 'Tests — T1 (PLAN.md:14-16, :27-28), D12'),
+  'mixed task decisions': (s:string) => s.replace('Tests — T1 (PLAN.md:14-16, :27-28), D11', 'Tests — T1 (PLAN.md:14-16, :27-28), D11, D12'),
+  'foreign task source': (s:string) => s.replace('Tests — T1 (PLAN.md:14-16', 'Tests — T1 (archive/PLAN.md:14-16'),
+  'negated critical task': (s:string) => s.replace('T9 (P1 CRITICAL', 'T9 (P1 not CRITICAL'),
+  'noncritical task': (s:string) => s.replace('T9 (P1 CRITICAL', 'T9 (P2'),
+  'negated task': (s:string) => s.replace('Write the `legacyAuthFlow`', 'Do not write the `legacyAuthFlow`'),
+  'optional task': (s:string) => s.replace('Write the `legacyAuthFlow`', 'Optionally write the `legacyAuthFlow`'),
+  'task count alone': (s:string) => s.replace('Write the `legacyAuthFlow` characterization suite (6 golden fixtures)', 'Create a suite (6 golden fixtures)'),
+  'wrong task count': (s:string) => s.replace('suite (6 golden fixtures)', 'suite (5 golden fixtures)'),
+  'missing task files': (s:string) => s.replace(/^  - Files:.+$/m, ''),
+  'foreign task files': (s:string) => s.replace('legacyAuthFlow.characterization.test', 'otherAuthFlow.characterization.test'),
+  'missing task verification': (s:string) => s.replace(/^  - Verify:.+$/m, ''),
+  'different baseline': (s:string) => s.replace('unmodified main', 'unmodified feature'),
+  'modified baseline': (s:string) => s.replace('unmodified main', 'modified main'),
+  'post-refactor baseline': (s:string) => s.replace('before any refactor lands', 'after any refactor lands'),
+  'negated baseline': (s:string) => s.replace('suite green on', 'suite not green on'),
+  'conditional baseline': (s:string) => s.replace('suite green on', 'if convenient, suite green on'),
+  'duplicate task': (s:string) => s.replace(goldenTask, goldenTask + '\n' + goldenTask),
+  'neighbor task baseline': (s:string) => s.replace('  - Verify:', '- [ ] **T99** — Other tests\n  - Verify:'),
+  'quoted declaration': (s:string) => s.replace(goldenContract, goldenContract.split('\n').map(l => '> ' + l).join('\n')),
+  'fenced task': (s:string) => s.replace(goldenTask, '```\n' + goldenTask + '\n```'),
+  'historical ledger': (s:string) => s.replace('## Review ledger', '## Historical review ledger'),
+  'task withdrawal': (s:string) => s + '\n## Current amendments\nT9 is withdrawn.\n',
+  'decision withdrawal': (s:string) => s + '\n## Current amendments\nD11 is withdrawn.\n',
+  'record withdrawal': (s:string) => s + '\n## Current amendments\nR5 is withdrawn.\n',
+  'baseline reversed': (s:string) => s + '\n## Current amendments\nlegacyAuthFlow will be changed before T9.\n',
+})) test('owned legacy declaration rejects ' + name, () => expect(regression(edit(goldenPlan()))).toBeUndefined());
+for (const outcome of ['valid', 'expired', 'revoked', 'malformed token', 'suspended tenant', 'IDP unavailable']) {
+  for (const owner of ['declaration', 'preservation', 'scope']) test('owned legacy declaration retains ' + outcome + ' in ' + owner, () => {
+    const source = goldenPlan();
+    const field = owner === 'declaration' ? goldenContract : owner === 'preservation'
+      ? /^Behavior to preserve.+$/m.exec(source)![0] : /^Accepted scope:.+$/m.exec(source)![0];
+    const mutated = field.replace(new RegExp('\\b' + outcome + '(?:s)?(?:[,;] )?'), '');
+    expect(mutated).not.toBe(field);
+    expect(regression(source.replace(field, mutated))).toBeUndefined();
+  });
+}
+test('owned legacy declarations support equivalent oracle verbs, selected identities and optional function parentheses', () => {
+  for (const verb of ['recording existing', 'capturing prior']) expect(regression(goldenPlan().replace('pinning current', verb))).toBe('plan');
+  expect(regression(goldenPlan().replace('Options: A)', 'Options: D)').replace('Actual answer: A (D11)', 'Actual answer: D (D11)'))).toBe('plan');
+  expect(regression(goldenPlan().replaceAll('`legacyAuthFlow`', '`legacyAuthFlow()`').replace('Write the', 'Implement the')
+    .replace('suite green on unmodified main before any refactor lands', 'suite passes on untouched main before the rewrite begins'))).toBe('plan');
+  expect(regression(goldenPlan() + '\n## Other suite\nBilling characterization suite is withdrawn.\n')).toBe('plan');
+});
 test('the captured legacy contract and its owned task are sufficient without unrelated report text',()=>expect(regression(minimalBaseline())).toBe('plan'));
 for(const [name,edit] of Object.entries({
   'missing declaration':(s:string)=>s.replace(declaration,''),

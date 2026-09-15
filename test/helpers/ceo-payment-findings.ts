@@ -67,6 +67,32 @@ function ownedAnswer(fp: AskUserQuestionFingerprint): NativePlanQuestionCall | n
   return call;
 }
 
+/** Setup may share one native packet. Authenticate the complete answer and
+ * every offered tab before excluding it; a mixed setup/review packet is not setup. */
+function ownedSetupPacket(fp: AskUserQuestionFingerprint): boolean {
+  const call = fp.nativeCall;
+  if (!call?.sessionId || !call.toolUseId || call.answered !== true || call.failed !== false ||
+      fp.signature !== `${call.sessionId}:${call.toolUseId}` || fp.nativeQuestionIndex !== undefined ||
+      call.questions.length < 2 || call.questions.length > 4 ||
+      !Array.isArray(call.unansweredQuestionIndices) || call.unansweredQuestionIndices.length ||
+      !Number.isFinite(Date.parse(call.answeredAt ?? '')) ||
+      Object.keys(call.answers ?? {}).length !== call.questions.length ||
+      new Set(call.questions.map(q => q.question)).size !== call.questions.length) return false;
+  const options = call.questions.flatMap(q => q.options.map((o, i) => ({ index: i + 1, label: o.label })));
+  if (fp.options.length !== options.length || !fp.options.every((o, i) =>
+      o.index === options[i]!.index && o.label === options[i]!.label)) return false;
+  if (!call.questions.every(q => !q.multiSelect && q.options.length >= 2 && q.options.length <= 4 &&
+      new Set(q.options.map(o => o.label)).size === q.options.length &&
+      typeof call.answers?.[q.question] === 'string' && q.options.some(o => o.label === call.answers[q.question]))) return false;
+  // These per-question views feed only the bare content classifiers. The
+  // original packet above owns authentication; a view is never a recorded call.
+  return call.questions.every(q => setupQuestionContent({
+    ...fp, promptSnippet: `${q.header} ${q.question}`,
+    options: q.options.map((o, i) => ({ index: i + 1, label: o.label })),
+    nativeCall: { ...call, questions: [q], answers: { [q.question]: call.answers?.[q.question]! } },
+  }));
+}
+
 /** Source requires Current/Proposed/Status/evidence and a cited row ID. It
  * does not require heading depth, column order, a Dn(ledger ID) title, or
  * native option wording. Pending is valid: the actual ACK precedes the next Edit. */
@@ -132,13 +158,16 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
 function setupQuestion(fp: AskUserQuestionFingerprint): boolean {
   const call = ownedAnswer(fp);
   if (!call) return false;
-  const q = call.questions[0]!;
+  return setupQuestionContent(fp);
+}
+function setupQuestionContent(fp: AskUserQuestionFingerprint): boolean {
+  const q = fp.nativeCall!.questions[0]!;
   const title = prose(q.question).split('\n')[0]!;
   const labels = q.options.map(o => option(o.label));
   if (/\b(?:skill routing|routing rules)\b/i.test(title) && /\bCLAUDE\.md\b/i.test(title))
     return labels.length === 2 && labels.some(l => /\b(?:add|enable|include|append)\b.*\brouting\b/i.test(l)) && labels.some(l => /\b(?:no thanks|skip|manually|manual)\b/i.test(l));
-  // Reuse the native scope interaction classifier under ownedAnswer's
-  // stricter identity checks; setup needs no working-plan file yet.
+  // Authentication belongs to the complete original packet or single-call
+  // wrapper; setup content needs no working-plan file yet.
   if (prose(q.question).trim() && current(prose(q.question)) && engSetupAUQ(fp)) return true;
   // Preserve the existing label-wrapper contract; the shared predicate
   // expects unnumbered action labels while this older route accepts wrappers.
@@ -234,6 +263,29 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
     Boolean(selector(offered) && selector(offered) === selector(saved) &&
       labelWords(offered).some(word => labelWords(saved + ' ' + summary).includes(word))) ||
     (!selector(offered) && completeCaption(offered, saved, summary));
+  // A saved "as planned" alternative names the owned baseline. Resolve that
+  // reference before ordinary caption matching; a letter or a shared word is
+  // insufficient, and retaining a baseline cannot silently append an action.
+  const baselineCaption = (value: string) => option(value).replace(/^[A-D]:\s*/i, '').replace(/[.]$/, '').trim();
+  const baselineWords = (value: string) => baselineCaption(value).toLowerCase().match(/[a-z0-9_]+/g) ?? [];
+  const sameBaseline = (a: string, b: string) => baselineCaption(a).replace(/\s+/g, ' ').toLowerCase() ===
+    baselineCaption(b).replace(/\s+/g, ' ').toLowerCase();
+  const retainedCaption = (value: string) => baselineCaption(value)
+    .replace(/^(?:keep|retain|preserve)\s+/i, '')
+    .replace(/^as (?:planned|written):\s*/i, '')
+    .replace(/\s*\((?:plan )?as (?:planned|written)\)$/i, '');
+  const savedBaseline = (saved: { label: string; bindingText: string }) => {
+    const label = baselineCaption(saved.label);
+    const tail = saved.bindingText.slice(saved.label.length).trim();
+    if (/^as (?:planned|written)\b/i.test(label)) {
+      const caption = label.replace(/^as (?:planned|written):?\s*/i, '');
+      return { generic: !caption, caption };
+    }
+    const suffix = /^(.*?)\s*\((?:plan )?as (?:planned|written)\)$/i.exec(label);
+    if (suffix) return { generic: false, caption: suffix[1]!.trim() };
+    if (/^\((?:plan )?as (?:planned|written)\)(?:\s|[—–-]|$)/i.test(tail)) return { generic: false, caption: label };
+    return null;
+  };
   const matches: Array<{ ledgerId: string; phase: string }> = [];
   for (const table of tokens.filter(t => t.type === 'table')) {
     if (table.type !== 'table') continue;
@@ -274,8 +326,48 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
             }) ? details.items.flatMap(item => item.tokens.filter(part => part.type === 'text' || part.type === 'paragraph')) : [];
             return [proseOption([token, ...facts])];
           }).filter(option => option !== null);
+          const baselineOption = (offered: string, saved: NonNullable<typeof options[number]>) => {
+            const baseline = savedBaseline(saved);
+            if (!baseline || (!baseline.generic && !/^(?:keep|retain|preserve)\b/i.test(baselineCaption(offered))))
+              return sameOption(offered, saved.label, selector(offered) ? saved.summary : saved.bindingText);
+            const offeredId = selector(offered), savedId = selector(saved.label);
+            if (offeredId && offeredId !== savedId) return false;
+            const retained = retainedCaption(offered);
+            if (!baseline.generic) {
+              if (!sameBaseline(retained, baseline.caption)) return false;
+              // The concrete caption itself identifies the unchanged plan
+              // alternative in this source-bound row's complete comparison.
+              return baselineWords(baseline.caption).length >= 2;
+            }
+            if (!offeredId || offeredId !== savedId || (baseline.caption && !sameBaseline(retained, baseline.caption))) return false;
+            const alternatives = [...read('proposed').matchAll(/(?:^|\s)([A-D])[).:]\s+(.+?)(?=\s[A-D][).:]\s|$)/g)];
+            const own = alternatives.filter(match => match[1] === savedId);
+            if (own.length !== 1 || !sameBaseline(retained, own[0]![2]!)) return false;
+            // A generic caption is resolved by the same-letter Proposed
+            // alternative AND its unchanged Current column in the owned grid.
+            // The complete prose option still owns effort/risk/pros/cons.
+            return section.some(token => {
+              if (token.type !== 'table' || !currentContext(tokens.indexOf(token))) return false;
+              const headers = token.header.map(cell => plain(cell.text));
+              const identity = (header: string) => /^[A-D]$/.test(header) ? header : selector(header);
+              const ids = headers.map(identity), baselineIndex = ids.indexOf(savedId);
+              const currentIndex = headers.findIndex(header => /^Current$/i.test(header));
+              const contractIndex = headers.findIndex(header => /^Commitment$/i.test(header));
+              const sourceIndex = headers.findIndex(header => /^Source(?:\b|\/)/i.test(header));
+              const optionIndices = ids.flatMap((id, i) => id ? [i] : []);
+              if (headers.length !== q.options.length + 3 || optionIndices.length !== q.options.length ||
+                  new Set(optionIndices.map(i => ids[i])).size !== q.options.length || baselineIndex < 0 ||
+                  currentIndex < 0 || contractIndex < 0 || sourceIndex < 0) return false;
+              const rawRows = token.raw.trimEnd().split('\n').slice(2);
+              const rows = token.rows.map(row => row.map(cell => plain(cell.text)));
+              return rows.length > 0 && rows.every((row, index) => /(^|[^\\])\|/.test(rawRows[index] ?? '') &&
+                row.length === headers.length && row.every(cell => cell && current(cell)) &&
+                row[baselineIndex]!.toLowerCase() === row[currentIndex]!.toLowerCase()) &&
+                rows.some(row => optionIndices.some(i => row[i]!.toLowerCase() !== row[currentIndex]!.toLowerCase()));
+            });
+          };
           const matched = q.options.map(offered => options.flatMap((saved, index) =>
-            saved!.complete && sameOption(offered.label, saved!.label, selector(offered.label) ? saved!.summary : saved!.bindingText) ? [index] : []));
+            saved!.complete && baselineOption(offered.label, saved!) ? [index] : []));
           if (options.length === q.options.length && matched.every(found => found.length === 1) &&
               new Set(matched.flat()).size === q.options.length) {
             matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
@@ -342,9 +434,10 @@ export function createCeoPaymentFindingCounter(seedPlan: string, readPlan: () =>
   return {
     trace,
     isReviewAUQ(fp: AskUserQuestionFingerprint, priorCalls: readonly NativePlanQuestionCall[] = []): boolean {
-      if (!ownedAnswer(fp) || priorCalls.some(call => `${call.sessionId}:${call.toolUseId}` === fp.signature))
+      const setupPacket = ownedSetupPacket(fp);
+      if ((!ownedAnswer(fp) && !setupPacket) || priorCalls.some(call => `${call.sessionId}:${call.toolUseId}` === fp.signature))
         throw new Error(`Invalid or duplicated completed native decision: ${fp.signature}`);
-      if (setupQuestion(fp)) { trace.push({ signature: fp.signature, kind: 'setup' }); return false; }
+      if (setupPacket || setupQuestion(fp)) { trace.push({ signature: fp.signature, kind: 'setup' }); return false; }
       const plan = readPlan();
       const finding = ceoPaymentFinding(fp, seedPlan, plan);
       if (finding) { trace.push(finding); return true; }

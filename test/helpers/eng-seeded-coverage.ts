@@ -115,6 +115,10 @@ function seedSubjects(q: NativePlanQuestionCall['questions'][number]): Seed[] {
       options.some(o => /^Flatten \+ typed errors\b/.test(o.label) && /\bLinear pipeline, typed error classes, one fail-closed boundary\b/.test(o.description) ||
         /^Rethrow, one outer catch$/.test(o.label) && /\brethrow typed errors; outer catch denies\b/.test(o.description)) ? [explainedSeed] : [];
   }
+  // Scheduling questions name the proposed execution mode in the title. Even
+  // when it says "parallel", their current defect and bounded remedy belong
+  // to the owned explanation, not the generic direct-action shortcut below.
+  if (/^How (?:should|will|do) (?:the )?(?:five|5) (?:IDP|identity provider)(?: validation)? calls? (?:be )?(?:issued|run|executed|scheduled)\b/i.test(decisionTitle)) return explainedSeedSubjects(q);
   const offered = q.options.map(o => `${o.label} ${o.description ?? ''}`).join('\n');
   const directAction = title.match(/\b(?:should|shall|can|do|would)\s+(?:we|I)\s+([^?]+)\?\s*$/i)?.[1];
   const action = (re: RegExp) => re.test(offered) || Boolean(directAction && new RegExp(`^(?:${re.source})`, re.flags).test(directAction));
@@ -270,6 +274,62 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
   const ownsPlan = citations.length > 0 && citations.every(file => file === 'PLAN.md') &&
     !/\b(?:other|another|different|foreign|historical|quoted|copied) (?:plan|source|review)\b/i.test(metadata[0]!);
   if (ownsPlan) {
+    // A concurrency choice can put today's ordering defect in ELI10 while
+    // its metadata describes the planned repair. Bind both to these five
+    // independent IDP calls; timeout coverage must belong to the same option.
+    const idpPending = '(?:reopened|deferred|pending|undecided|not required)';
+    const idpCurrent = (raw: string) => current(raw.replace(new RegExp(
+      `(${owner} (?:is|was|has been) )["“'‘\\x60](${idpPending})["”'’\\x60]`, 'gi'), '$1$2'));
+    const idpActive = (raw: string) => active(idpCurrent(raw)) && !new RegExp(
+      `\\b${owner} (?:is|was|has been) ${idpPending}\\b`, 'i').test(idpCurrent(raw));
+    const idpCalls = '(?:the )?(?:(?:five|5) )?(?:(?:IDP|identity provider)(?: validation)? )?(?:calls|checks|requests)';
+    const changedOrdering = new RegExp(`(?:^|[.!?;]\\s+|\\n)(?:Correction:\\s*)?${idpCalls} (?:are |run |now |already |currently )*(?:concurrent(?:ly)?|parallel|in parallel|no longer sequential|dependent|not independent)\\b`, 'i');
+    if (/\b(?:IDP|identity provider)(?: validation)? calls?\b/i.test(title)
+        && /\b(?:five|5) independent (?:IDP|identity provider)(?: validation)? calls?\b/i.test(metadata[0]!)
+        && /\b(?:today|currently|right now)[,:]? (?:the )?(?:five|5) (?:checks|calls|requests) (?:run|are|execute|are issued|are executed) (?:still )?(?:one after another|sequentially|sequential|in sequence|in series)\b/i.test(explanation)
+        && !changedOrdering.test(text) && idpActive(q.question)
+        && q.options.filter(o => idpActive(`${o.label}\n${o.description ?? ''}`)).some(o => {
+          const option = idpCurrent(`${o.label}\n${o.description ?? ''}`);
+          return /\bPromise\.all(?:Settled)?\b|\b(?:run|issue|launch|execute)\b[^.!?\n]*\b(?:concurrently|in parallel)\b/i.test(option)
+            && /\bper[- ]call timeout\b|\btimeout (?:for|on) each call\b/i.test(option)
+            && !/\b(?:no|without) (?:per[- ]call )?timeouts?\b|\btimeouts? (?:is |are |will be )?(?:disabled|omitted|removed|not enforced)\b/i.test(option)
+            && !/\b(?:do not|don't|never) (?:add|use|enforce|set|apply) (?:a )?(?:per[- ]call )?timeout\b/i.test(option)
+            && !/\b(?:keep|retain|leave|run|issue|execute)\b[^.!?\n]*\b(?:sequential(?:ly)?|one after another|in series)\b|\b(?:calls|checks|requests) (?:still |will |must )*(?:remain|stay) sequential\b|\b(?:do not|don't|never) (?:use Promise\.all(?:Settled)?|parallelize|parallelise)\b/i.test(option);
+        })) ids.push('sequential-idp');
+    // A later structure choice can reduce the current inventory again. Its
+    // two options must enumerate the same retained services and differ by
+    // exactly one unnecessary lifecycle class. Earlier decisions and the
+    // cumulative before/after count are context, not evidence for this call.
+    const identifiers = '([A-Z][A-Za-z0-9_]*(?:(?:,\\s*(?:and\\s+)?|\\s+and\\s+|\\s*\\+\\s*)[A-Z][A-Za-z0-9_]*)+)';
+    const namesIn = (list: string) => list.split(/,\s*(?:and\s+)?|\s+and\s+|\s*\+\s*/);
+    const declared = new RegExp(`\\bplan (?:still )?(?:introduces|adds|contains|retains|has) ${identifiers}(?=\\s*(?:[.(;]|$))`, 'i').exec(metadata[0]!);
+    const present = declared ? namesIn(declared[1]!) : [];
+    const sameNames = (a: string[], b: string[]) => a.length === b.length && new Set(a).size === a.length && b.every(name => a.includes(name));
+    const unsettled = '(?:reopened|deferred|pending|undecided|not required)';
+    const settledStructure = (raw: string) => !new RegExp(`\\b${owner} (?:is|was|has been) ${unsettled}\\b`, 'i').test(current(raw.replace(
+      new RegExp(`(${owner} (?:is|was|has been) )["“'‘\\x60](${unsettled})["”'’\\x60]`, 'gi'), '$1$2')));
+    const structureOptions = q.options.map(o => `${o.label}\n${o.description ?? ''}`).filter(settledStructure).map(current).filter(active);
+    const counted = structureOptions.map(option => {
+      const heading = option.split('\n')[0]!;
+      const match = new RegExp(`^(?:[A-D][):.]\\s*)?(?:(?:Keep|Retain|Use|Reduce to)\\s+)?(one|two|three|four|five|six|seven|eight|nine|[1-9]\\d*) (?:new )?(?:units|classes|components)(?::\\s*|\\s*\\(\\s*)${identifiers}`, 'i').exec(heading);
+      if (!match) return;
+      const count = counts[match[1]!.toLowerCase()] ?? Number(match[1]);
+      const names = namesIn(match[2]!);
+      return count === names.length && new Set(names).size === count ? { option, names, count } : undefined;
+    }).filter((choice): choice is { option: string; names: string[]; count: number } => Boolean(choice));
+    const lifecycleUnits = ['AuthBroker', 'SessionMint', 'AuthCache'];
+    const statefulPolicy = /\bRequestPolicy (?:now |already )?(?:has|requires) (?:its own |an? independent |an? )?(?:lifecycle|mutable state|independent behavior)\b/i;
+    if (/\b(?:class(?:es)?|modules?|arrangement|structure|units|components|inventory)\b/i.test(title)
+        && sameNames(present, [...lifecycleUnits, 'RequestPolicy'])
+        && /\bRequestPolicy\b[^.!?]*\bclass\b[^.!?]*\blifecycle\b/i.test(explanation)
+        && /\bclass (?:adds|creates|requires|brings) (?:ceremony|complexity|a lifecycle)\b/i.test(explanation)
+        && !statefulPolicy.test(text) && settledStructure(q.question)
+        && counted.some(choice => sameNames(choice.names, present) && /\bRequestPolicy class\b/i.test(choice.option))
+        && counted.some(choice => sameNames(choice.names, lifecycleUnits)
+          && /\bRequestPolicy (?:as|becomes|is expressed as|is replaced (?:by|with)) (?:an? )?(?:(?:plain|immutable|typed|data|value)\s+)+(?:type|value|config)\b/i.test(choice.option)
+          && /\bpure function\b/i.test(choice.option)
+          && !statefulPolicy.test(choice.option)
+          && !/\b(?:do not|don't|never) (?:convert|demote|make|turn|replace)\b|\bnot (?:an? )?(?:plain|immutable|pure|stateless)\b|\bRequestPolicy (?:is |will be |still |now )*(?:remains?|stays?|retains?|requires?) (?:an? |its )?(?:class|lifecycle|mutable state)\b|\bRequestPolicy (?:(?:is|will be|now|still|already|remains|stays)\s+)+(?:an? )?(?:class|stateful|mutable)\b/i.test(choice.option))) ids.push('complexity');
     // Validate subject, current defect and one complete offered remedy as
     // separate facts. Sentence order and a particular result type are not
     // evidence; the native brief's owned PLAN.md references are.
@@ -699,35 +759,83 @@ function declaredLegacyCharacterization(text: string): boolean {
   for (const section of current.filter(s => /^Tests(?: \([^\n]*\))?$/i.test(s.title))) {
     for (const paragraph of section.body.join('\n').split(/\n\s*\n/)) {
       const claim = unquoted(paragraph).replace(/\s+/g, ' ').trim();
-      const contract = /^(?:CRITICAL|mandatory|required) regression contract \((D[1-9]\d*)\):\s*/i.exec(claim);
-      const cases = /\bone test per (?:current|existing|prior) outcome:\s*([^.!?]+)[.!?]/i.exec(claim)?.[1]?.split(',').map(value => value.trim()) ?? [];
+      const contract = /^(?:(CRITICAL|mandatory|required) )?regression contract \(([^)]+)\):\s*/i.exec(claim);
+      const decisions = contract?.[2]?.match(/\bD[1-9]\d*\b/g) ?? [];
+      const records = contract?.[2]?.match(/\bR[1-9]\d*\b/g) ?? [];
+      if (!contract || decisions.length !== 1 || records.length > 1 ||
+          (!contract[1] && !/\bIron Rule\b/i.test(contract[2]!)) || /\b(?:not|no|optional|proposed)\b/i.test(contract[2]!)) continue;
+      const decision = decisions[0]!, record = records[0];
+      const outcomeNames = (value: string) => value.split(/[,;]/).map(name => name.trim().toLowerCase().replace(/\btokens\b/g, 'token'));
+      const sameOutcomes = (a: string[], b: string[]) => a.length > 1 && a.length === b.length &&
+        a.every(name => name && b.includes(name)) && new Set(a).size === a.length && new Set(b).size === b.length;
+      const listed = /(?:^|\n)[1-9]\d*[.)]\s+legacyAuthFlow(?:\(\))? characterization suite:\s*(?:golden )?fixtures (?:pinning|recording|capturing) (?:current|existing|prior) outputs for\s+([^.!?]+)[.!?]/i.exec(unquoted(paragraph));
+      const listedCases = listed ? outcomeNames(listed[1]!) : [];
+      // The selected source-bound ledger owns this outcome inventory. The
+      // test list, accepted scope and task count must all retain that inventory.
+      const ownedGolden = Boolean(record && listed && current.filter(s => s.title.startsWith(record + ':')).length === 1 && current.some(s => {
+        if (!s.title.startsWith(record + ':') || !/\bregression contract\b/i.test(s.title) || !/\blegacyAuthFlow\b/.test(s.title)) return false;
+        const body = unquoted(s.body.join('\n'));
+        const field = (name: string) => [...body.matchAll(new RegExp(`^${name}: ([^\\n]+(?:\\n(?!\\s*$|[A-Z][\\w ]*:|Question\\b|\\|)[^\\n]+)*)`, 'gm'))].map(m => m[1]!.replace(/\s+/g, ' ').trim());
+        const findings = field('Finding'), states = field('State'), answers = field('Actual answer'), scopes = field('Accepted scope');
+        const questions = [...body.matchAll(/^Question (D[1-9]\d*):/gm)];
+        const preserved = /(?:^|\n)Behavior to preserve \(legacy tenants, flag off\): identical accept\/deny outcome and session shape for ([^.!?]+)[.!?]/i.exec(body);
+        const accepted = scopes.length === 1 ? /(?:^|;\s*)\([1-9]\d*\) legacyAuthFlow(?:\(\))? characterization suite with (?:golden )?fixtures for ([^.!?]+?)(?=;\s*\([1-9]\d*\)|$)/i.exec(scopes[0]!) : null;
+        const chosen = answers.length === 1 ? new RegExp(`^([A-D]) \\(${decision}\\)$`).exec(answers[0]!)?.[1] : undefined;
+        const questionFields = field('Question ' + decision);
+        const optionText = questionFields.length === 1 ? (questionFields[0]!.split('Options:')[1] ?? '').trim() : '';
+        const offered = [...optionText.matchAll(/(?:^|;\s*)([A-D])\) ([^;]+)/g)];
+        const selected = offered.filter(option => option[1] === chosen);
+        const selectedCharacterization = offered.length >= 2 && offered.length <= 4 && new Set(offered.map(o => o[1])).size === offered.length &&
+          selected.length === 1 && ['characterization', 'parity', 'routing'].every(kind => new RegExp(`\\b${kind}\\b`, 'i').test(selected[0]![2]!)) &&
+          !/\b(?:no|not|never|without|optional|if|unless)\b/i.test(selected[0]![2]!);
+        const source = findings.length === 1 && /\bCRITICAL\b/.test(findings[0]!) && !/\b(?:not|non)[ -]CRITICAL\b/i.test(findings[0]!) && /(?<![\w./-])PLAN\.md:\d/.test(findings[0]!);
+        return source && states.length === 1 && states[0] === 'approved' && questions.length === 1 && questions[0]![1] === decision &&
+          selectedCharacterization && preserved && accepted &&
+          sameOutcomes(listedCases, outcomeNames(preserved[1]!)) && sameOutcomes(listedCases, outcomeNames(accepted[1]!)) &&
+          !sourceFrame(body) && !withdrawn(body, record) && !/\b(?:if approved|pending approval|optional|hypothetical|unproven)\b/i.test(scopes[0]!);
+      }));
+      const cases = listed ? listedCases : /\bone test per (?:current|existing|prior) outcome:\s*([^.!?]+)[.!?]/i.exec(claim)?.[1]?.split(',').map(value => value.trim()) ?? [];
       const baseline = /\b(?:written and green|written and passing|implemented and green) on ([A-Za-z][\w/-]*) BEFORE (?:the )?(?:Phase [1-9]\d* )?flag (?:wrap|wrapper) (?:lands|is added)\b/i.exec(claim);
-      if (!contract || !baseline || !cases.length || cases.some(value => !value) || new Set(cases).size !== cases.length || suiteWithdrawn || withdrawn(claim) ||
-          !/\bcharacterization suite (?:at|for) (?:the )?legacyAuthFlow\(\)(?: boundary)?\b/i.test(claim) ||
+      if ((!listed && !baseline) || (listed && !ownedGolden) || !cases.length || cases.some(value => !value) || new Set(cases).size !== cases.length || suiteWithdrawn || withdrawn(claim) ||
+          (!listed && !/\bcharacterization suite (?:at|for) (?:the )?legacyAuthFlow\(\)(?: boundary)?\b/i.test(claim)) ||
           /\b(?:maybe|might|could|if|unless|optional|hypothetical|unproven)\b/i.test(claim)) continue;
       for (const tasks of current.filter(s => s.title === 'Implementation Tasks')) {
         for (const task of tasks.body.join('\n').split(/\n(?=-\s)/)) {
           const body = unquoted(task), first = body.split('\n')[0] ?? '';
           const id = /^- (?:\[[ xX]\] )?(T[1-9]\d*)\b/.exec(first)?.[1];
-          const outcomeCount = /\(([1-9]\d*) outcomes?\b/.exec(first)?.[1];
+          const outcomeCount = /\(([1-9]\d*) (?:outcomes?|golden fixtures)\b/.exec(first)?.[1];
+          const verifies = [...body.matchAll(/^\s+- Verify: ([^\n]+)$/gm)];
+          const files = [...body.matchAll(/^\s+- Files: ([^\n]+)$/gm)];
+          const taskSources = [...body.matchAll(/^\s+- Surfaced by: ([^\n]+)$/gm)];
+          const taskDecisions = taskSources.length === 1 ? taskSources[0]![1]!.match(/\bD[1-9]\d*\b/g) ?? [] : [];
+          const reviewedTargets = current.flatMap(s => [...unquoted(s.body.join('\n')).matchAll(/^Reviewed target: ([^\n]+)$/gm)]);
+          const baselineVerified = listed
+            ? /\bCRITICAL\b/.test(first) && !/\b(?:not|non)[ -]CRITICAL\b/i.test(first) && verifies.length === 1 &&
+              /^suite (?:green|passing|passes) on (?:unmodified|untouched) main before (?:any|the) (?:refactor|rewrite|change) (?:lands|begins)$/i.test(verifies[0]![1]!) &&
+              files.length === 1 && /(?:^|[, ]+)[\w/.-]*legacyAuthFlow\.characterization\.test(?:\.[jt]s)?(?=,|$)/.test(files[0]![1]!) &&
+              reviewedTargets.length === 1 && /^PLAN\.md(?:\s|$)[^\n]*\bon main\b/.test(reviewedTargets[0]![1]!) &&
+              taskSources.length === 1 && /(?<![\w./-])PLAN\.md:\d/.test(taskSources[0]![1]!) &&
+              taskDecisions.length === 1 && taskDecisions[0] === decision &&
+              current.filter(s => s.title === 'Implementation Tasks').flatMap(s => s.body.join('\n').split(/\n(?=-\s)/))
+                .filter(t => new RegExp(`^- (?:\\[[ xX]\\] )?${id}\\b`).test(t)).length === 1
+            : baseline && new RegExp(`\\bland it (?:green|passing) on ${baseline[1]} before (?:any|the) flag (?:wrap|wrapper)\\b`, 'i').test(first) &&
+              new RegExp(`^\\s+- Verify: suite passes on unmodified ${baseline[1]}; each of the ${cases.length} outcomes has one test[\\t ]*$`, 'm').test(body);
           if (!id || sourceFrame(body) || withdrawn(body, id) ||
-              /\b(?:do not|don't|never|skip|defer|optional|if|unless|hypothetical|unproven)\b/i.test(body) ||
-              !/\b(?:Write|Add|Implement) (?:the )?legacyAuthFlow\(\) characterization suite\b/i.test(first) ||
+              /\b(?:do not|don't|never|skip|defer|optionally?|if|unless|hypothetical|unproven)\b/i.test(body) ||
+              !/\b(?:Write|Add|Implement) (?:the )?legacyAuthFlow(?:\(\))? characterization suite\b/i.test(first) ||
               Number(outcomeCount) !== cases.length ||
-              !new RegExp(`\\bland it (?:green|passing) on ${baseline[1]} before (?:any|the) flag (?:wrap|wrapper)\\b`, 'i').test(first) ||
-              !new RegExp(`^\\s+- Surfaced by: [^\\n]*\\b${contract[1]}\\b`, 'm').test(body) ||
-              !new RegExp(`^\\s+- Verify: suite passes on unmodified ${baseline[1]}; each of the ${cases.length} outcomes has one test[\\t ]*$`, 'm').test(body)) continue;
-          const owners = `(?:${id}|${contract[1]}|(?:this|the|that) (?:(?:legacy|baseline|regression|characterization) )?(?:suite|verification|requirement))`;
+              !baselineVerified || !new RegExp(`^\\s+- Surfaced by: [^\\n]*\\b${decision}\\b`, 'm').test(body)) continue;
+          const owners = `(?:${id}|${decision}|${record ? record + '|' : ''}(?:this|the|that) (?:(?:legacy|baseline|regression|characterization) )?(?:suite|verification|requirement))`;
           const inactiveStatus = '(?:withdrawn|cancelled|canceled|rejected|deferred|superseded|optional|not current|(?:not|no longer) (?:required|needed))';
           const cancelled = current.some(s => {
             const named = /^(.*?)\b(?:regression|characterization)\s+(?:suite|tests?)\b/i.exec(s.title)?.[1]?.trim();
             const foreign = Boolean(named && !/^(?:(?:current|final|required|updated)\s*)*(?:legacy(?:AuthFlow\(\))?)?[\s:—-]*$/i.test(named));
-            if (foreign && !new RegExp(`\\b(?:${id}|${contract[1]}|legacyAuthFlow)\\b`).test(s.body.join(' '))) return false;
+            if (foreign && !new RegExp(`\\b(?:${id}|${decision}|${record ? record + '|' : ''}legacyAuthFlow)\\b`).test(s.body.join(' '))) return false;
             const raw = s.body.join('\n').replace(new RegExp(`(${owners} (?:is|was|has been) )["“'‘\x60](${inactiveStatus})["”'’\x60]`, 'gi'), '$1$2');
             return unquoted(raw).split(/\n|[.!?;]\s+/).some(line => !sourceFrame(line) &&
               (new RegExp(`\\b${owners} (?:is|was|has been) ${inactiveStatus}\\b`, 'i').test(line) ||
                new RegExp(`(?:do not|don't|never|skip|defer|cancel) (?:run |write |add |verify )?${owners}\\b`, 'i').test(line) ||
-               new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|will be) (?:modified|changed|rewritten) before ${id}\\b`, 'i').test(line)));
+               new RegExp(`\\blegacyAuthFlow(?:\\(\\))? (?:is|will be) (?:modified|changed|rewritten) before ${id}\\b`, 'i').test(line)));
           });
           if (!cancelled) return true;
         }

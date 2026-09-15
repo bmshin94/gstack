@@ -235,3 +235,70 @@ for (const [claim, expected] of [
   call.answers = { [call.questions[0]!.question]: call.questions[0]!.options[0]!.label };
   expect(zeroAbsenceFinding(question)?.seed === 'tests').toBe(expected);
 });
+
+import onboardingFixture from './fixtures/ceo-onboarding-packet-90f.json';
+const onboarding = () => nativePlanCallFingerprint(clone(onboardingFixture.call), 0, true);
+const setupCounter = () => createCeoPaymentFindingCounter('', () => { throw new Error('setup must not read a report'); }, ceoFirstReviewAUQ);
+const refreshPacket = (fp: ReturnType<typeof onboarding>) => {
+  fp.nativeCall!.answers = Object.fromEntries(fp.nativeCall!.questions.map(q => [q.question, q.options[0]!.label]));
+  fp.options = fp.nativeCall!.questions.flatMap(q => q.options.map((o, i) => ({ index: i + 1, label: o.label })));
+};
+
+test('actual acknowledged two-question onboarding packet is excluded only after complete packet validation', () => {
+  const fp = onboarding(), counter = setupCounter();
+  expect(fp.nativeCall!.questions.map(q => q.header)).toEqual(['Routing', 'Learnings']);
+  expect(counter.isReviewAUQ(fp)).toBe(false);
+  expect(counter.trace).toEqual([{ signature: fp.signature, kind: 'setup' }]);
+  expect(() => counter.isReviewAUQ(fp, [fp.nativeCall!])).toThrow(/duplicated/);
+  expect(ceoPaymentFinding(fp, fixture.seed, saved())).toBeNull(); // never a single review record
+  for (const q of fp.nativeCall!.questions) {
+    const call = { ...clone(fp.nativeCall!), questions: [q], answers: { [q.question]: fp.nativeCall!.answers[q.question]! } };
+    expect(setupCounter().isReviewAUQ(nativePlanCallFingerprint(call, 0, true))).toBe(false);
+  }
+});
+
+test('native onboarding accepts complete packets through four questions regardless of tab order', () => {
+  const fp = onboarding(); fp.nativeCall!.questions.reverse(); refreshPacket(fp);
+  expect(setupCounter().isReviewAUQ(fp)).toBe(false);
+  for (const header of ['Scope', 'Mode']) {
+    const q = clone(fp.nativeCall!.questions[0]!);
+    q.header = header; q.question = header === 'Scope' ? 'D8 — Which review target should we use?' : 'D9 — Which review mode should we use?';
+    q.options = (header === 'Scope' ? ['Skip interview and plan immediately', 'Describe the idea inline'] :
+      ['HOLD SCOPE', 'SELECTIVE EXPANSION', 'SCOPE EXPANSION', 'SCOPE REDUCTION']).map(label => ({ label, description: '' }));
+    fp.nativeCall!.questions.push(q); refreshPacket(fp);
+    expect(setupCounter().isReviewAUQ(fp)).toBe(false);
+  }
+});
+
+for (const [name, mutate] of Object.entries({
+  'unacknowledged packet': (fp: any) => { fp.nativeCall.answered = false; },
+  'failed packet': (fp: any) => { fp.nativeCall.failed = true; },
+  'foreign signature': (fp: any) => { fp.signature = 'foreign:call'; },
+  'missing session': (fp: any) => { fp.nativeCall.sessionId = ''; fp.signature = ':' + fp.nativeCall.toolUseId; },
+  'missing tool identity': (fp: any) => { fp.nativeCall.toolUseId = ''; fp.signature = fp.nativeCall.sessionId + ':'; },
+  'unfinished second tab': (fp: any) => { fp.nativeCall.unansweredQuestionIndices = [1]; },
+  'missing unanswered inventory': (fp: any) => { delete fp.nativeCall.unansweredQuestionIndices; },
+  'missing acknowledgment time': (fp: any) => { delete fp.nativeCall.answeredAt; },
+  'invalid acknowledgment time': (fp: any) => { fp.nativeCall.answeredAt = 'invalid'; },
+  'tab-only index': (fp: any) => { fp.nativeQuestionIndex = 0; },
+  'out-of-bounds tab index': (fp: any) => { fp.nativeQuestionIndex = 9; },
+  'missing second answer': (fp: any) => { delete fp.nativeCall.answers[fp.nativeCall.questions[1].question]; },
+  'foreign answer key': (fp: any) => { const q = fp.nativeCall.questions[1]; delete fp.nativeCall.answers[q.question]; fp.nativeCall.answers.other = q.options[0].label; },
+  'extra answer': (fp: any) => { fp.nativeCall.answers.other = 'extra'; },
+  'unoffered second answer': (fp: any) => { fp.nativeCall.answers[fp.nativeCall.questions[1].question] = 'not offered'; },
+  'duplicate question identity': (fp: any) => { fp.nativeCall.questions[1].question = fp.nativeCall.questions[0].question; refreshPacket(fp); },
+  'multiselect second tab': (fp: any) => { fp.nativeCall.questions[1].multiSelect = true; },
+  'duplicate second-tab options': (fp: any) => { fp.nativeCall.questions[1].options[1].label = fp.nativeCall.questions[1].options[0].label; refreshPacket(fp); },
+  'one second-tab option': (fp: any) => { fp.nativeCall.questions[1].options.pop(); refreshPacket(fp); },
+  'five second-tab options': (fp: any) => { for (const label of ['other3', 'other4', 'other5']) fp.nativeCall.questions[1].options.push({ label }); refreshPacket(fp); },
+  'stale second-tab label': (fp: any) => { fp.options.at(-1).label = 'stale'; },
+  'stale second-tab index': (fp: any) => { fp.options.at(-1).index = 4; },
+  'missing second-tab options': (fp: any) => { fp.options.splice(2); },
+  'mixed setup and review': (fp: any) => { fp.nativeCall.questions[1] = clone(seeded[0]!.call.questions[0]!); refreshPacket(fp); },
+  'two review questions': (fp: any) => { fp.nativeCall.questions = [clone(seeded[0]!.call.questions[0]!), clone(seeded[1]!.call.questions[0]!)]; refreshPacket(fp); },
+  'five native questions': (fp: any) => { for (let i = 0; i < 3; i++) { const q = clone(fp.nativeCall.questions[0]); q.question += ' ' + i; fp.nativeCall.questions.push(q); } refreshPacket(fp); },
+})) test(`onboarding packet rejects ${name} without reading or counting a review`, () => {
+  const fp = onboarding(), counter = setupCounter(); mutate(fp);
+  expect(() => counter.isReviewAUQ(fp)).toThrow(/Invalid or duplicated completed native decision/);
+  expect(counter.trace).toEqual([]);
+});

@@ -447,3 +447,66 @@ for (const [name, mutate] of Object.entries({
 })) test(`adjacent metadata list still rejects ${name}`, () => {
   expect(() => metadataListDecision(mutate(metadataListFixture.savedPlan))).toThrow(/Unsupported current CEO decision/);
 });
+
+import baselineFixture90f from './fixtures/ceo-baseline-alternatives-90f.json';
+const baselineCases90f = baselineFixture90f.cases.slice(0, 2);
+const baselineQuestion90f = (row = baselineCases90f[0]!) => nativePlanCallFingerprint(clone(row.call), 0, true);
+const baselineCount90f = (row = baselineCases90f[0]!, question = baselineQuestion90f(row), plan = row.savedPlan) =>
+  createCeoPaymentFindingCounter('', () => plan, ceoFirstReviewAUQ).isReviewAUQ(question);
+for (const row of baselineCases90f) test(`captured90f ${row.name}: owned baseline comparison binds every native alternative`, () => {
+  expect(createHash('sha256').update(row.savedPlan).digest('hex')).toBe(row.provenance.requiredExcerptSha256);
+  expect(row.originalError).toContain('Unsupported current CEO decision');
+  expect(baselineCount90f(row)).toBe(true);
+});
+for (const row of baselineCases90f) for (const verb of ['Keep', 'Retain', 'Preserve'])
+  test(`baseline reference ${row.name} accepts ${verb} without changing its meaning`, () => {
+    const question = baselineQuestion90f(row), q = question.nativeCall!.questions[0]!;
+    q.options.find(o => /\bKeep\b/.test(o.label))!.label = q.options.find(o => /\bKeep\b/.test(o.label))!.label.replace('Keep', verb);
+    reanswer(question); expect(baselineCount90f(row, question)).toBe(true);
+  });
+for (const row of baselineCases90f) for (const [name, change] of Object.entries({
+  'extra action': (label: string) => label + ' and delete customer records',
+  'changed negation': (label: string) => label.replace('Keep', 'Do not keep'),
+  'inserted negation operator': (label: string) => label.replace('only', '!= only').replace('raw SQL', 'raw != SQL'),
+  'narrowed scope': (label: string) => label.replace('Keep', 'Keep only for admins'),
+  'unrelated reference with same letter': (label: string) => label.replace(/Keep.*/, 'Keep as planned: delete records'),
+})) test(`baseline reference ${row.name} rejects ${name}`, () => {
+  const question = baselineQuestion90f(row), o = question.nativeCall!.questions[0]!.options.find(o => /\bKeep\b/.test(o.label))!;
+  o.label = change(o.label); reanswer(question);
+  expect(() => baselineCount90f(row, question)).toThrow(/Unsupported/);
+});
+for (const row of baselineCases90f) for (const [name, change] of Object.entries({
+  'missing owned row': (s: string) => s.replace(/^\| D\d+ \(user\).*\n/m, ''),
+  'foreign source': (s: string) => s.replaceAll('PLAN.md', 'other.md'),
+  'inactive row': (s: string) => s.replace('| unresolved |', '| historical |'),
+  'missing option pros': (s: string) => s.replaceAll('Pros:', 'Benefits:'),
+  'missing option cons': (s: string) => s.replaceAll('Cons:', 'Notes:'),
+  'missing effort': (s: string) => s.replaceAll(/Effort S|effort S/g, 'Work S'),
+  'quoted report': (s: string) => s.split('\n').map(line => '> ' + line).join('\n'),
+  'fenced report': (s: string) => '```md\n' + s + '\n```',
+})) test(`baseline comparison ${row.name} rejects ${name}`, () => {
+  const plan = change(row.savedPlan); expect(plan).not.toBe(row.savedPlan);
+  expect(() => baselineCount90f(row, baselineQuestion90f(row), plan)).toThrow(/Unsupported/);
+});
+const genericBaseline90f = baselineCases90f[1]!;
+for (const [name, change] of Object.entries({
+  'foreign same-letter proposal': (s: string) => s.replace('A) truthy only.', 'A) delete records.'),
+  'generic letter-only proposal': (s: string) => s.replace('A) truthy only.', 'A) unchanged.'),
+  'same-letter proposal adds scope': (s: string) => s.replace('A) truthy only.', 'A) truthy only and delete records.'),
+  'baseline commitment changes': (s: string) => s.replace('PLAN.md | yes | yes | implied', 'PLAN.md | yes | no | implied'),
+  'baseline current omitted': (s: string) => s.replace('PLAN.md | yes | yes | implied', 'PLAN.md | | yes | implied'),
+  'baseline option cell omitted': (s: string) => s.replace('PLAN.md | yes | yes | implied', 'PLAN.md | yes | | implied'),
+  'duplicate grid identity': (s: string) => s.replace('Current | A | B | C', 'Current | A | A | C'),
+  'grid under another decision': (s: string) => s.replace('### D1 comparison', '### D9 comparison'),
+  'missing grid': (s: string) => s.replace(/^\| Commitment.*\n(?:\|.*\n)*/m, ''),
+  'generic saved caption gains action': (s: string) => s.replace('A) As planned —', 'A) As planned: truthy only and delete records —'),
+})) test(`generic baseline identity rejects ${name}`, () => {
+  const plan = change(genericBaseline90f.savedPlan); expect(plan).not.toBe(genericBaseline90f.savedPlan);
+  expect(() => baselineCount90f(genericBaseline90f, baselineQuestion90f(genericBaseline90f), plan)).toThrow(/Unsupported/);
+});
+test('captured five retry C remains incomplete, with its final-byte limitation explicit', () => {
+  const row = baselineFixture90f.cases[2]!;
+  expect(row.provenance.limitation).toContain('later report writes cannot be ruled out');
+  expect(row.savedPlan).toContain('**C) Raw fragment as written.** Effort S. Risk high. Fails invariant');
+  expect(() => baselineCount90f(row, baselineQuestion90f(row))).toThrow(/Unsupported/);
+});

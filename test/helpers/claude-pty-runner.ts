@@ -2113,7 +2113,11 @@ export function hasNativePlanTerminal(
     const section = lines.slice(start + 1);
     const plain = section.map(line => line.replace(/\*\*/g, '').trim());
     const status = plain.filter(line => /^(?:[-*]\s+)?STATUS:/i.test(line));
-    const done = /^(?:[-*]\s+)?STATUS:\s*DONE(?:\s+[—–:-]\s+(.+))?\s*$/i.exec(status[0] ?? '');
+    const done = /^(?:[-*]\s+)?STATUS:\s*DONE(?:\s+[—–:-]\s+(.+)|[.!](?:\s+(.*))?)?\s*$/i.exec(status[0] ?? '');
+    // A punctuated status may close with resolved-decision/read-only facts.
+    // These clauses establish no new permission, next action or plan-mode exit.
+    const harmlessClosure = !done?.[2] || done[2].split(/[.;!]\s*/).filter(Boolean).every(clause =>
+      /^(?:No (?:unresolved|open|pending) (?:design )?(?:decisions|issues|findings)|(?:(?:I am|We are) )?(?:Staying|Remaining) in plan mode|Nothing outside (?:the )?(?:plan|report) file (?:was|has been) (?:edited|changed|modified)|No implementation (?:was|has been) (?:started|performed)|Implementation (?:has not started|was not started))$/i.test(clause.trim()));
     const pathFields = plain.filter(line => /^(?:[-*]\s+)?(?:Plan (?:written|saved) to\b|(?:What changed|Plan|Report|Output|Artifact):)/i.test(line));
     const saved = pathFields.filter(line => {
       const value = line.replace(/^[-*]\s+/, '').replace(/^(?:What changed|Plan|Report|Output|Artifact):\s*/i, '').trim();
@@ -2126,13 +2130,17 @@ export function hasNativePlanTerminal(
       const current = value.replace(/`([^`\n]+)`/g, (_, v: string) => paths.includes(v) ? v : '')
         .replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'(?!\w)|‘[^’\n]*’/g, '');
       const token = paths[0]!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const annotation = new RegExp(`^${token}\\s+\\(([^()\\n]+)\\)[.!]?$`, 'i').exec(current)?.[1];
+      const verifiedAnnotation = annotation && annotation.split(/[,;]\s*/).every(clause =>
+        /^(?:(?:review )?report is (?:the )?(?:last|final) (?:section|heading)|saved|written|read[- ]?back verified|verified by read[- ]?back)$/i.test(clause.trim()));
       return new RegExp(`^Plan (?:written|saved) to ${token}(?:[.!](?:\\s|$)|\\s|$)`, 'i').test(current) ||
+        Boolean(verifiedAnnotation) ||
         new RegExp(`^${token}\\s+(?:now\\s+)?(?:contains|carries|includes|records)\\s+`, 'i').test(current) &&
           /\b(?:review report|reviewed plan)\b/i.test(current);
     });
     if (!section.some(line => /^#{1,6}\s/.test(line)) &&
         !/\b(?:example|sample|template|historical|previous|earlier|quote|source|emit|print)\b.*[:：]\s*$/i.test(preceding) &&
-        status.length === 1 && done && !DESIGN_CLOSURE_PROVISIONAL.test(done[1] ?? '') &&
+        status.length === 1 && done && harmlessClosure && !DESIGN_CLOSURE_PROVISIONAL.test(done[1] ?? '') &&
         pathFields.length === 1 && saved.length === 1 &&
         !conflictingDesignClosure(designText) && Date.parse(final.timestamp) <= Date.now() &&
         hasCompletePlanReport(expectedPlanPath, Math.max(startedAt, ...modifyingAnswers),
