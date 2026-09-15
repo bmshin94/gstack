@@ -126,6 +126,10 @@ function seedSubjects(q: NativePlanQuestionCall['questions'][number]): Seed[] {
   if (q.question.includes('\n') && (/\bTokenStore\b/.test(decisionTitle) && /\bAuthCache\b/.test(decisionTitle) &&
       /\b(?:arrangement|arranged|structure|components?|classes?)\b/i.test(decisionTitle) ||
       /^Rewrite validateAndDispatch\(\)\s+(?:with|using|into|to)\b/i.test(decisionTitle))) return explainedSeedSubjects(q);
+  // A whole-candidate scope choice carries the class-count problem in its
+  // current explanation; a bare component name cannot own a generic shortcut.
+  if (q.question.includes('\n') && /^TokenStore\s*:/.test(decisionTitle) &&
+      /\b(?:this|the current) PR\b/i.test(decisionTitle)) return explainedSeedSubjects(q);
   const offered = q.options.map(o => `${o.label} ${o.description ?? ''}`).join('\n');
   const directAction = title.match(/\b(?:should|shall|can|do|would)\s+(?:we|I)\s+([^?]+)\?\s*$/i)?.[1];
   const action = (re: RegExp) => re.test(offered) || Boolean(directAction && new RegExp(`^(?:${re.source})`, re.flags).test(directAction));
@@ -324,6 +328,30 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     const inventoryCount = currentInventory ? counts[currentInventory[1]!.toLowerCase()] ?? Number(currentInventory[1]) : 0;
     const ownedStoreChoice = /\b(?:arrangement|arranged|structure|components?|classes?)\b/i.test(title) && /\bTokenStore\b/.test(title) && /\bAuthCache\b/.test(title);
     const independentStore = /\bTokenStore (?:now |already )?(?:has|requires|provides) (?:a documented |an? )?(?:independent|distinct|separate) (?:persistence )?(?:purpose|behavior|state|contract)\b|\bTokenStore is (?:no longer|not) (?:redundant|a duplicate)\b/i;
+    // Removing one undefined class is also a complexity decision. Its own
+    // counted baseline and one complete removal/retained-store alternative
+    // establish the reduction, without borrowing a later inventory summary.
+    const candidateScope = /^TokenStore\s*:/.test(title) && /\b(?:this|the current) PR\b/i.test(title) &&
+      /\b(?:keep|include|retain)\b/i.test(title) && /\b(?:defer|cut|remove|drop)\b/i.test(title);
+    if (candidateScope) {
+      const listed = /\bplan (?:lists|includes) TokenStore as one of (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new classes\b/i.exec(explanation);
+      const count = listed ? counts[listed[1]!.toLowerCase()] ?? Number(listed[1]) : 0;
+      const removedAlready = /\bTokenStore (?:is |has been )?(?:already |now )?(?:removed|cut|dropped|deferred|not included|no longer included) (?:from|in) (?:this |the )?PR\b/i;
+      const alternative = structureOptions.some(option => {
+        const [label, ...rest] = option.split('\n'), description = rest.join('\n');
+        return /^(?:[A-D][):.]\s*)?(?:Defer|Cut|Remove|Drop)(?: TokenStore)?(?: \(recommended\))?$/i.test(label!) &&
+          (/\b(?:removes?|drops?|cuts?) (?:an? undefined |this |the )class from (?:this |the )?PR\b/i.test(description) ||
+            /\bone fewer (?:file\/class|class(?: and file)?)\b/i.test(description)) &&
+          /\badapter remains the (?:single|only) source of truth for (?:cached )?tokens\b|\btoken storage is the adapter's job\b/i.test(description) &&
+          !/\b(?:never|does not|doesn't|will not|won't) (?:removes?|drops?|cuts?)\b|\bnot one fewer (?:file\/class|class(?: and file)?)\b/i.test(description) &&
+          !/\bTokenStore (?:still |now |will )*(?:remains?|stays?|is retained) in (?:this |the )?PR\b|\b(?:keep|retain|include) TokenStore in (?:this |the )?PR\b/i.test(option);
+      });
+      return count > 1 && settledStructure(q.question) && !independentStore.test(text) && !removedAlready.test(text) &&
+        /\bnever (?:says|states|describes) (?:what it does|its (?:purpose|responsibility|contract))\b|\bhas no (?:stated|defined|documented) (?:purpose|responsibility|contract)\b/i.test(explanation) &&
+        /\bexisting (?:cache )?adapter already (?:stores|holds) tokens\b/i.test(explanation) &&
+        /\bhandles (?:expiry and invalidation|invalidation and expiry)\b/i.test(explanation) &&
+        structureOptions.some(option => /^(?:[A-D][):.]\s*)?(?:Include|Keep|Retain)(?: TokenStore)?(?: \(recommended\))?\n/i.test(option)) && alternative ? ['complexity'] : [];
+    }
     if (ownedStoreChoice && settledStructure(q.question) && inventoryCount === 4 &&
         sameNames(inventoryNames, ['AuthBroker', 'SessionMint', 'AuthCache', 'TokenStore']) &&
         /\bAuthCache (?:is|is described as) a facade over the existing (?:cache )?adapter\b/i.test(explanation) &&

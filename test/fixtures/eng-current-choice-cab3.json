@@ -67,5 +67,44 @@
       "unansweredQuestionIndices": [],
       "answeredAt": "2026-09-15T19:15:49.638Z"
     }
-  ]
+  ],
+  "wholeCandidateRetry": {
+    "captureAt": "2026-09-15T19:58:22.814Z",
+    "call": {
+      "sessionId": "604c616f-edb2-4d04-bf37-deef45a62a4b",
+      "toolUseId": "toolu_01NSY8J9owjma5iAZPpaXjmb",
+      "questions": [
+        {
+          "question": "D4 — TokenStore: keep it in this PR, or defer/cut it?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; complexity gate (12 files, 4-5 new classes).\nELI10: The plan lists `TokenStore` as one of 4 new classes (PLAN.md:35) but never says what it does. The existing cache adapter already stores tokens keyed by tenant/issuer/audience/policy version and handles expiry and invalidation (PLAN.md:7-13). A second token-holding class next to it is either a duplicate or an unstated new responsibility. Either way it should not ship on an undefined spec.\nStakes if we pick wrong: include it undefined and you get a class that overlaps the adapter, two sources of truth for tokens, and a new place for the revocation race to hide; cut it if it is actually load-bearing and the broker has nowhere to put minted tokens.\nRecommendation: B (Defer) because nothing else in the plan references TokenStore, the adapter already covers token storage, and deferring keeps the door open once its responsibility is written down.\nNote: options differ in kind, not coverage — no completeness score.\nNet: trade one undefined class now for a plan that only builds things it can describe. Whole-candidate scope; other candidates unchanged.",
+          "header": "TokenStore",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "B) Defer (recommended)",
+              "description": "✅ Removes an undefined class from this PR; nothing else in the plan depends on it (human: ~0 / CC: ~0)\n✅ Adapter remains the single source of truth for cached tokens, so the revocation path stays one-hop\n❌ If TokenStore was meant to hold something the adapter cannot (e.g. refresh tokens), that gap resurfaces mid-implementation"
+            },
+            {
+              "label": "A) Include",
+              "description": "✅ Preserves the original plan shape if you already know its responsibility (tell me what it is)\n✅ No re-planning; the class count stays as written\n❌ Ships a class with no written contract; reviewers cannot check it against anything, and it likely duplicates the adapter"
+            },
+            {
+              "label": "C) Cut",
+              "description": "✅ Cleanest plan: token storage is the adapter's job, full stop\n✅ One fewer file/class in the 12-file diff\n❌ Harder to revive later than a deferral if a real need appears"
+            },
+            {
+              "label": "D) Hold",
+              "description": "✅ Stops the chain so you can explain what TokenStore is before any structure decision\n✅ No disposition changes until we talk\n❌ Review pauses here until you reply"
+            }
+          ]
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D4 — TokenStore: keep it in this PR, or defer/cut it?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; complexity gate (12 files, 4-5 new classes).\nELI10: The plan lists `TokenStore` as one of 4 new classes (PLAN.md:35) but never says what it does. The existing cache adapter already stores tokens keyed by tenant/issuer/audience/policy version and handles expiry and invalidation (PLAN.md:7-13). A second token-holding class next to it is either a duplicate or an unstated new responsibility. Either way it should not ship on an undefined spec.\nStakes if we pick wrong: include it undefined and you get a class that overlaps the adapter, two sources of truth for tokens, and a new place for the revocation race to hide; cut it if it is actually load-bearing and the broker has nowhere to put minted tokens.\nRecommendation: B (Defer) because nothing else in the plan references TokenStore, the adapter already covers token storage, and deferring keeps the door open once its responsibility is written down.\nNote: options differ in kind, not coverage — no completeness score.\nNet: trade one undefined class now for a plan that only builds things it can describe. Whole-candidate scope; other candidates unchanged.": "B) Defer (recommended)"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T19:37:23.037Z"
+    }
+  }
 }

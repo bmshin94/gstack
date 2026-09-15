@@ -512,3 +512,72 @@ test('cab3 owned remedies reject explicit contradictory retention and silent err
   expect(cab3Result(cab3Change(index,q=>{q.options[0]!.description+='\nEarlier note: "'+tail+'"';}))[index===0?'complexity':'swallowed-errors']).toBeDefined();
  }
 });
+
+// A whole-candidate scope question can remove one current undefined class;
+// it need not restate an arrangement decision or borrow a later cumulative count.
+const wholeCandidate=()=>structuredClone(currentChoiceCab3.wholeCandidateRetry.call) as NativePlanQuestionCall;
+const wholeFinished=Date.parse(currentChoiceCab3.wholeCandidateRetry.captureAt);
+const wholeResult=(call=wholeCandidate())=>evaluateEngSeedCoverage({status:'ready',calls:[call],assistantMessages:[]},'',0,wholeFinished).decisions;
+const wholeChange=(edit:(q:NativePlanQuestionCall['questions'][number])=>void)=>{const c=wholeCandidate();edit(c.questions[0]!);c.answers={[c.questions[0]!.question]:c.questions[0]!.options[0]!.label};return c;};
+test('whole-candidate complexity: actual owned class removal needs no prior or later decision',()=>{
+ const c=wholeCandidate();expect(wholeResult(c)).toEqual({complexity:`${c.sessionId}:${c.toolUseId}`});
+ expect(isEngSeedDecisionAUQ(nativePlanCallFingerprint(c,0,true),[],0,wholeFinished)).toBe(true);
+ for(const option of c.questions[0]!.options){c.answers={[c.questions[0]!.question]:option.label};expect(wholeResult(c).complexity).toBeDefined();}
+});
+test('whole-candidate complexity: presentation and equivalent current alternatives preserve identity',()=>{
+ for(const edit of [
+  (q:any)=>{q.question=q.question.replaceAll('`','');},
+  (q:any)=>{q.question=q.question.replace('TokenStore: keep it in this PR, or defer/cut it?','TokenStore: include it in the current PR or remove it?');},
+  (q:any)=>{q.question=q.question.replace('one of 4 new classes','one of four new classes');},
+  (q:any)=>{q.options.reverse();},
+  (q:any)=>{q.question=q.question.replace(/^D4 — /,'D42: ');},
+  (q:any)=>{q.question+='\nEarlier note: "TokenStore has an independent persistence purpose."';},
+ ])expect(wholeResult(wholeChange(edit)).complexity).toBeDefined();
+});
+test('whole-candidate complexity: current source, baseline and defect cannot be borrowed',()=>{
+ for(const edit of [
+  (q:any)=>{q.question=q.question.replaceAll('PLAN.md','OTHER.md');},
+  (q:any)=>{q.question=q.question.replaceAll('PLAN.md','archive/PLAN.md');},
+  (q:any)=>{q.question=q.question.replace(/^Project\/branch\/task: (.+)$/m,'Project/branch/task: "$1"');},
+  (q:any)=>{q.question=q.question.replace('Project/branch/task: ','Project/branch/task: Historical example: ');},
+  (q:any)=>{q.question=q.question.replace(/^ELI10: (.+)$/m,'ELI10: "$1"');},
+  (q:any)=>{q.question=q.question.replace('ELI10: ','ELI10: If approved, ');},
+  (q:any)=>{q.question=q.question.replace(/^([^\n]+)/,'"$1"');},
+  (q:any)=>{q.question=q.question.replace('one of 4 new classes','one of 1 new classes');},
+  (q:any)=>{q.question=q.question.replace('as one of 4 new classes','as an existing class');},
+  (q:any)=>{q.question=q.question.replace('but never says what it does','and defines its independent persistence contract');},
+  (q:any)=>{q.question=q.question.replace('already stores tokens keyed by','does not store tokens keyed by');},
+  (q:any)=>{q.question+='\nCorrection: TokenStore has a documented independent persistence purpose.';},
+  (q:any)=>{q.question+='\nCorrection: TokenStore is already removed from this PR.';},
+  (q:any)=>{q.question+='\nThis decision is reopened.';},
+  (q:any)=>{q.question+='\nThis decision is "reopened".';},
+  (q:any)=>{q.question+='\nThis finding applies only if approved.';},
+ ])expect(wholeResult(wholeChange(edit))).toEqual({});
+});
+test('whole-candidate complexity: removal and retained store belong to the same current option',()=>{
+ const reductions=(q:any)=>q.options.filter((o:any)=>/^(?:B|C)\)/.test(o.label));
+ for(const edit of [
+  (q:any)=>{for(const o of reductions(q))o.description='No current remedy.';},
+  (q:any)=>{for(const o of reductions(q))o.description='"'+o.description.replaceAll('\n',' ')+'"';},
+  (q:any)=>{for(const o of reductions(q))o.description+='\nThis remedy is withdrawn.';},
+  (q:any)=>{for(const o of reductions(q))o.description+='\nDo not remove TokenStore.';},
+  (q:any)=>{for(const o of reductions(q))o.description+='\nTokenStore remains in this PR.';},
+  (q:any)=>{for(const o of reductions(q))o.description+='\nThis remedy applies only if approved.';},
+  (q:any)=>{q.options[0].description='Removes this class from the PR.';q.options[2].description='Adapter remains the single source of truth for cached tokens.';},
+  (q:any)=>{q.options=q.options.filter((o:any)=>!o.label.startsWith('A) Include'));},
+  (q:any)=>{for(const o of q.options)o.label=o.label.replace(/Defer|Cut/g,'Keep');},
+ ])expect(wholeResult(wholeChange(edit))).toEqual({});
+});
+test('whole-candidate complexity: native completion, session ownership and one-seed deduplication remain required',()=>{
+ const c=wholeCandidate(),guard=(x=c,prior:NativePlanQuestionCall[]=[])=>isEngSeedDecisionAUQ(nativePlanCallFingerprint(x,0,true),prior,0,wholeFinished);
+ expect(guard()).toBe(true);expect(guard(c,[c])).toBe(false);
+ for(const edit of [(x:any)=>{x.answered=false;},(x:any)=>{x.failed=true;},(x:any)=>{x.answers={};},(x:any)=>{x.unansweredQuestionIndices=[0];},(x:any)=>{x.answeredAt=new Date(wholeFinished+1).toISOString();}]){const x=wholeCandidate();edit(x);expect(guard(x)).toBe(false);expect(wholeResult(x)).toEqual({});}
+ const foreign=wholeCandidate();foreign.sessionId+='-foreign';foreign.toolUseId+='-other';expect(guard(c,[foreign])).toBe(false);
+ const other=wholeCandidate();other.toolUseId+='-other';expect(guard(c,[other])).toBe(false);
+});
+
+for(const tail of ['This option never removes an undefined class from this PR.','This is not one fewer file/class.'])
+ test('whole-candidate complexity: declarative negation '+tail,()=>{
+  const x=wholeChange(q=>{for(const o of q.options.filter(o=>/^(?:B|C)\)/.test(o.label)))o.description=tail+' Adapter remains the single source of truth for cached tokens.';});
+  expect(wholeResult(x)).toEqual({});
+ });
