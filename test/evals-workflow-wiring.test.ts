@@ -22,7 +22,7 @@
 import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildRunManifest, parseCliOptions, isOverlayTestFile, OVERLAY_MAX_ACTIVE_SHARDS, resolvePaidShardTimeoutMs } from '../scripts/test-paid-shards';
+import { buildRunManifest, parseCliOptions, isOverlayTestFile, OVERLAY_MAX_ACTIVE_SHARDS, paidShardWallUpperBoundMs } from '../scripts/test-paid-shards';
 
 const ROOT = path.join(import.meta.dir, '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -169,8 +169,7 @@ describe('evals-periodic.yml sliced-lane wiring', () => {
       const files = manifest.entries.filter(entry => entry.status === 'planned' && entry.slice === slice).map(entry => entry.file);
       const normal = files.filter(file => !isOverlayTestFile(file));
       const overlay = files.filter(isOverlayTestFile);
-      const bound = (group: string[], jobs: number) => Math.ceil(group.length / jobs)
-        * Math.max(0, ...group.map(file => resolvePaidShardTimeoutMs([file], explicitWall)));
+      const bound = (group: string[], jobs: number) => paidShardWallUpperBoundMs(group, jobs, explicitWall);
       return (bound(normal, executorOptions.jobs) + bound(overlay, Math.min(executorOptions.jobs, OVERLAY_MAX_ACTIVE_SHARDS))) / 60_000;
     });
     expect(Math.max(...allowances)).toBeGreaterThan(0);

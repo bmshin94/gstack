@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { AUTOPLAN_CHAIN_BUDGET } from '../helpers/eval-budgets';
 import * as runner from '../helpers/claude-pty-runner';
 import * as nativeTranscript from '../helpers/plan-count-transcript';
+import { ownedNativeReviewStateRoot } from '../helpers/plan-count-fixture';
 
 if (process.env.AUTOPLAN_CALLER_SCENARIO) {
   const root = path.resolve(import.meta.dir, '../..');
@@ -38,7 +39,7 @@ if (process.env.AUTOPLAN_CALLER_SCENARIO) {
         observeAutoplanArtifacts: true, approveAutoplanArtifactEdits: true });
       return {
         hermeticConfigDir: path.join(cwd, '.native'),
-        hermeticSkillStateRoot: opts.env.GSTACK_HOME,
+        autoplanArtifactStateRoot: ownedNativeReviewStateRoot(opts.autoplanArtifactState, opts.env),
         mark: () => 0, exited: () => false, exitCode: () => null,
         rawOutput: () => '', visibleText: () => '', visibleSince: () => '',
         startAutoplanArtifactEditApproval: (at: number) => { facts.approvalStartedAt = at; },

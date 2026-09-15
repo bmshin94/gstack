@@ -4,6 +4,22 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
+    ['test/autoplan-owned-state.test.ts', ['autoplan-chain-pty']],
+    ['test/fixtures/autoplan-owned-state-edit.json', ['autoplan-chain-pty']],
+    ['test/eng-finding-retry-budget.test.ts', ['plan-ceo-finding-count', 'plan-ceo-split-overflow', 'plan-design-finding-count', 'plan-devex-finding-count', 'plan-eng-finding-count', 'plan-eng-multi-finding-batching', 'autoplan-chain-pty']],
+    ['test/design-count-native-8525.test.ts', ['plan-design-finding-count']],
+    ['test/fixtures/design-count-native-8525.json', ['plan-design-finding-count']],
+    ['test/eng-published-navigation.test.ts', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-published-navigation.json', ['plan-eng-finding-count']],
+    ['test/fixtures/disabled-retained-record.json', ['outside-plan-disabled-no-fallback']],
+    ['test/ceo-native-ledger-replay.test.ts', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-native-ledger-8525.json', ['plan-ceo-finding-count']],
+    ['test/ceo-mode-pending-submit.test.ts', ['plan-ceo-mode-routing']],
+    ['test/fixtures/ceo-mode-pending-submit.json', ['plan-ceo-mode-routing']],
+    ['test/fixtures/ceo-fill-lifetime.json', ['plan-ceo-section-loading']],
+    ['test/fixtures/eng-current-ledger-seeds.json', ['plan-eng-finding-count']],
+    ['test/eng-batching-native-replay.test.ts', ['plan-eng-multi-finding-batching']],
+    ['test/fixtures/eng-batching-native-8525.json', ['plan-eng-multi-finding-batching']],
     ['test/plan-design-sdk-fixture.test.ts', ['plan-design-review-plan-mode']],
     ['test/design-count-native-issue-fields.test.ts', ['plan-design-finding-count']],
     ['test/fixtures/design-count-native-issue-fields.json', ['plan-design-finding-count']],
@@ -93,7 +109,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
 });
 
 test('shared attempt regressions select periodic callers and the gate report case', () => {
-  const periodic = ['office-hours-forcing-energy', 'office-hours-builder-wildness', 'office-hours-brain-writeback', 'plan-ceo-review-format-mode', 'plan-ceo-review-format-approach', 'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'setup-gbrain-remote', 'review-army-red-team'];
+  const periodic = ['plan-design-review-plan-mode', 'office-hours-forcing-energy', 'office-hours-builder-wildness', 'office-hours-brain-writeback', 'plan-ceo-review-format-mode', 'plan-ceo-review-format-approach', 'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'setup-gbrain-remote', 'review-army-red-team'];
   const result = selectTests(['test/office-hours-attempt.test.ts'], E2E_TOUCHFILES);
   expect(result.reason).toBe('diff');
   expect(result.selected.sort()).toEqual([...periodic, 'plan-review-report'].sort());

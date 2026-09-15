@@ -10,7 +10,7 @@ export function isEngCompletionHandoff(fp: AskUserQuestionFingerprint, reviewedP
       !Array.isArray(call.unansweredQuestionIndices) || call.unansweredQuestionIndices.length ||
       (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0) ||
       Object.keys(call.answers ?? {}).length !== 1 || !Number.isFinite(Date.parse(call.answeredAt ?? ''))) return false;
-  if (isApprovedMaintenanceRecap(fp, reviewedPlan, priorCalls) || isPublishedPrerequisiteHandoff(fp, reviewedPlan)) return true;
+  if (isPublishedReadyNavigation(fp, reviewedPlan) || isApprovedMaintenanceRecap(fp, reviewedPlan, priorCalls) || isPublishedPrerequisiteHandoff(fp, reviewedPlan)) return true;
   const q = call.questions[0]!;
   if (q.multiSelect || q.header.trim() !== 'Next steps' || q.options.length !== 2 ||
       fp.options.length !== 2 || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) ||
@@ -170,4 +170,93 @@ function isPublishedPrerequisiteHandoff(fp: AskUserQuestionFingerprint, reviewed
     !/\b(?:the )?author no longer needs to confirm Context\b|\bContext confirmation is (?:not required|cancelled|withdrawn)\b/i.test(prerequisiteOwner) &&
     !withdrawn(tasks.slice(taskStart, nextTask), `T${task[1]}`) &&
     !/\bno characterization tests (?:are )?required\b|\bcharacterization tests are (?:not required|cancelled|withdrawn)\b/i.test(tasks.slice(taskStart, nextTask));
+}
+
+/** A completed ready/optional-review menu may recap the already-published task
+ * and lane catalog. This classifies administration; the runner still proves the
+ * owned, fresh report and the later native ExitPlanMode independently. */
+function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan: string): boolean {
+  const call = fp.nativeCall!, q = call.questions[0]!;
+  const compact = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const label = (s: string) => compact(s).replace(/^(?:[1-9]\d*)?[A-Z][).:]\s*/, '').replace(/\s*\((?:recommended|optional)\)$/i, '');
+  if (q.multiSelect || !/^Next(?: steps?)?$/i.test(q.header.trim()) || q.options.length !== 2 || fp.options.length !== 2 ||
+      !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) ||
+      !q.options.some(o => o.label === call.answers?.[q.question])) return false;
+  const ready = q.options.find(o => /^Ready to implement(?: [—–-] run \/ship when done)?$/i.test(label(o.label)));
+  const ceo = q.options.find(o => /^Run \/plan-ceo-review(?: first)?$/i.test(label(o.label)));
+  if (!ready || !ceo) return false;
+  // Only the current prose can assert completion; quoted examples cannot.
+  const body = compact(q.question.replace(/"[^"]*"|“[^”]*”/g, '')).replace(/^D[1-9]\d*\s*[—–:-]\s*/i, '');
+  // Keep raw instructions for vetoes: quoted commands cannot disappear merely
+  // because quoted text cannot establish positive completion evidence.
+  const context = [q.question, ...q.options.map(o => `${o.label}\n${o.description ?? ''}`)].join('\n');
+  // These are assertions about a finished review and an action-only next-step
+  // choice, not a required seven-line transcript or a particular risk sentence.
+  const eng = String.raw`(?:(?:the |this )?(?:eng(?:ineering)? review|eng gate)|this review|the review|the verdict|all required reviews)`;
+  const complete = String.raw`(?:clear(?:ed)?|complete[d]?|done|finished)`;
+  if (!/\b(?:what(?:['’]s| is)? (?:the )?next|next steps?|where (?:do|should) we go)\b/i.test(body) ||
+      !new RegExp(String.raw`\b${eng}\s+(?:(?:is|are|has been|have been)\s+)?(?:now\s+)?${complete}\b`, 'i').test(body) ||
+      !/\b(?:navigation|routing) only\b|\bonly (?:selects?|chooses?|changes?) (?:the )?next (?:step|workflow|review)\b/i.test(body) ||
+      !/\b(?:approves?|authorizes?|adds?|makes?) no (?:new )?(?:implementation|scope) (?:changes?|work)\b|\b(?:does not|doesn't|will not|won't|neither) (?:authorize|approve|add|change|alter|modify)(?: nor (?:authorize|approve|add|change|alter|modify))? (?:any )?(?:new )?(?:implementation|scope|requirements?|work)\b|\bwithout (?:any )?(?:new )?(?:implementation|scope) changes?\b/i.test(body)) return false;
+  if (/`{3}|~{3}|(?:^|\n)\s*>|\b(?:example|sample|quoted|historical)\s*:/i.test(context) ||
+      new RegExp(String.raw`\b${eng}\b[^.!?;\n]{0,100}\b(?:not|never|incomplete|unfinished|pending|withdrawn|superseded|cancelled|canceled|reopened)\b`, 'i').test(context) ||
+      new RegExp(String.raw`\b${eng}\s+(?:will|would|may|might|can|could|should)\s+(?:be |become )?${complete}\b`, 'i').test(context) ||
+      new RegExp(String.raw`\b${eng}\b[^.!?;\n]{0,100}\b${complete}\b[^.!?;\n]{0,100}\b(?:if|when|once|unless|provided|assuming|after)\b`, 'i').test(context) ||
+      new RegExp(String.raw`\b(?:if|when|once|unless|provided|assuming)\b[^.!?;\n]{0,100}\b${eng}\b[^.!?;\n]{0,60}\b${complete}\b`, 'i').test(context)) return false;
+  // Finite offered actions are navigation. Descriptions may explain their
+  // tradeoffs, but cannot append a new implementation command or obligation.
+  const proposedWork = /\b(?:new|additional|extra)\s+(?:implementation|scope|requirement|task|dependency|feature|datastore|database|cache|test|prerequisite)\b|\b(?:must|shall|should|needs? to|have to|has to|required to)\s+(?!run \/plan-ceo-review\b|run \/ship\b)[a-z]/i;
+  const implementationAction = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|before (?:implementation|building|review))\s+)(?:please\s+)?(?:add|remove|delete|cut|drop|replace|rewrite|change|alter|modify|enable|disable|implement|install|introduce|build|write|record|capture|create|switch|migrate|externalize|refactor|expand|reduce)\b/i;
+  // An explicit negative is inert only within its clause; appended work after
+  // a conjunction or punctuation remains subject to the same action checks.
+  const actionContext=context.replace(/\b(?:approves?|authorizes?|adds?|makes?) no (?:new )?(?:implementation|scope) (?:changes?|work)\b/gi,'')
+    .replace(/\b(?:does not|doesn't|will not|won't|neither) (?:authorize|approve|add|change|alter|modify)(?: nor (?:authorize|approve|add|change|alter|modify))? (?:any )?(?:new )?(?:implementation|scope|requirements?|work)(?: changes?)?\b/gi,'')
+    .replace(/\bwithout (?:any )?(?:new )?(?:implementation|scope) changes?\b/gi,'');
+  if(proposedWork.test(actionContext)||implementationAction.test(actionContext)||/\brun\s+(?!\/(?:ship|plan-ceo-review)\b)/i.test(actionContext))return false;
+  const taskRefs=[...context.matchAll(/\bT([1-9]\d*)(?:\s*(?:[–-]|through|to)\s*T([1-9]\d*))?\b/g)];
+  if(!taskRefs.length)return false;
+  const laneRefs=[...context.matchAll(/\blanes?\s+([A-Z](?:\s*\+\s*[A-Z])*(?:(?:,?\s*then\s+|\s*→\s*)[A-Z](?:\s*\+\s*[A-Z])*)*)/g)];
+  if(!laneRefs.length)return false;
+  // Only active, unfenced sections own a recap. A copied report/task list cannot.
+  const published: string[] = [];
+  let fence: { marker: string; length: number } | undefined;
+  for (const line of reviewedPlan.split(/\r?\n/)) {
+    if (fence) {
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (close && close[1]![0] === fence.marker && close[1]!.length >= fence.length) fence = undefined;
+      continue;
+    }
+    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (open && (open[1]![0] !== '`' || !open[2]!.includes('`'))) { fence = {marker:open[1]![0]!,length:open[1]!.length}; continue; }
+    if (!/^(?: {4}|\t| {0,3}>)/.test(line)) published.push(line);
+  }
+  if (fence) return false;
+  const section = (heading: string) => {
+    const starts=published.flatMap((line,i)=>line.toLowerCase()===`## ${heading}`.toLowerCase()?[i]:[]);
+    if(starts.length!==1)return undefined;
+    const start=starts[0]!;
+    if(/[:：]$|\b(?:example|sample|hypothetical|template|quoted)\b/i.test(published.slice(0,start).filter(s=>s.trim()).at(-1)??''))return undefined;
+    const end=published.findIndex((line,i)=>i>start&&/^#{1,2} /.test(line));
+    return published.slice(start+1,end<0?undefined:end).join('\n');
+  };
+  const tasks=section('Implementation Tasks'), lanes=section('Worktree parallelization strategy'), report=section('GSTACK REVIEW REPORT');
+  if(!tasks||!lanes||!report||!/\| Eng Review \|[^\n]*\| CLEAR(?: \([^\n|]*\))? \|/.test(report)||
+      !/^(?:[-*] )?(?:\*\*)?VERDICT:(?:\*\*)? ENG CLEARED\b/m.test(report)||
+      report.trim().split('\n').at(-1)!=='NO UNRESOLVED DECISIONS')return false;
+  const entries=[...tasks.matchAll(/^- \[ \] \*\*T([1-9]\d*)\b[^\n]+/gm)];
+  for(const ref of taskRefs) {
+    const first=Number(ref[1]),last=Number(ref[2]??ref[1]);
+    if(last<first||last-first+1>entries.length)return false;
+    for(let id=first;id<=last;id++) {
+      const own=entries.filter(e=>Number(e[1])===id);
+      if(own.length!==1)return false;
+      const end=entries.find(e=>e.index!>own[0]!.index!)?.index??tasks.length;
+      if(new RegExp(`\\bT${id}\\b[^.!?\\n]*\\b(?:withdrawn|cancelled|canceled|rejected|not approved|pending approval)\\b`,'i').test(tasks.slice(own[0]!.index!,end)))return false;
+    }
+  }
+  const groups=(text:string)=>[...text.matchAll(/\b[A-Z](?:\s*\+\s*[A-Z])*\b/g)].map(m=>m[0].replace(/\s/g,''));
+  const execution=lanes.split('\n').filter(line=>/^Execution:/.test(line));
+  return execution.length===1 && laneRefs.every(ref=>
+    JSON.stringify(groups(execution[0]!))===JSON.stringify(groups(ref[1]!)) &&
+    groups(ref[1]!).flatMap(s=>s.split('+')).every(id=>new RegExp(`\\bLane ${id}:`).test(lanes)));
 }

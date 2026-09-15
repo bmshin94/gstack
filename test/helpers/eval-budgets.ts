@@ -62,6 +62,27 @@ export const AUTOPLAN_CHAIN_BUDGET = {
   reason: 'One command must complete CEO, Design, DX and Eng, including native reviews and amendment handoffs.',
 } as const;
 
+/** Whole-file supervision must cover each existing attempt and its retry.
+ * These six fixtures already allow 25 minutes per case; the old 30-minute
+ * wall could kill a second attempt after five minutes. No case budget grows.
+ * Reserve the sequential upper bound even when Bun runs sibling cases together.
+ */
+export const FINDING_RETRY_BUDGETS = [
+  { file: 'test/skill-e2e-plan-ceo-finding-count.test.ts', cases: 2 },
+  { file: 'test/skill-e2e-plan-ceo-split-overflow.test.ts', cases: 1 },
+  { file: 'test/skill-e2e-plan-design-finding-count.test.ts', cases: 1 },
+  { file: 'test/skill-e2e-plan-devex-finding-count.test.ts', cases: 1 },
+  { file: 'test/skill-e2e-plan-eng-finding-count.test.ts', cases: 1 },
+  { file: 'test/skill-e2e-plan-eng-multi-finding-batching.test.ts', cases: 1 },
+].map(({ file, cases }) => ({
+  file, cases,
+  id: `${file.slice('test/skill-e2e-'.length, -'.test.ts'.length)}-existing-retry-v1`,
+  testMs: 1_500_000,
+  retries: 1,
+  shardReserveMs: AUTOPLAN_CHAIN_BUDGET.shardReserveMs,
+  shardMs: cases * 1_500_000 * 2 + AUTOPLAN_CHAIN_BUDGET.shardReserveMs,
+}));
+
 /** The only registered over-tier test budget; arbitrary per-file escapes fail. */
 export function assertPaidTestBudget(file: string, ms: number): void {
   if (!Number.isSafeInteger(ms) || ms <= 0 ||

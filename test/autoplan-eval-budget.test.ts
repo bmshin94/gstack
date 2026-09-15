@@ -7,7 +7,7 @@ import {
   planPaidShards, resolvePaidShardBudget, retriesForFiles, runPaidShard,
   verifySliceResults, type PaidRunManifest, type SliceResult,
 } from '../scripts/test-paid-shards';
-import { AUTOPLAN_CHAIN_BUDGET as budget, assertPaidTestBudget, ALL_TIERS, PTY_LONG_MS } from './helpers/eval-budgets';
+import { AUTOPLAN_CHAIN_BUDGET as budget, FINDING_RETRY_BUDGETS, assertPaidTestBudget, ALL_TIERS, PTY_LONG_MS } from './helpers/eval-budgets';
 
 test('the one specified exception fits nested supervision and both unchanged retries', () => {
   for (const ms of [budget.workMs, budget.sessionMs, budget.testMs, budget.shardMs]) {
@@ -61,7 +61,7 @@ function results(manifest: PaidRunManifest): SliceResult[] {
   return Array.from({ length: manifest.sliceCount }, (_, index) => ({ version: 1, tier: manifest.tier,
     sliceIndex: index + 1, sliceCount: manifest.sliceCount,
     outcomes: manifest.entries.filter(e => e.status === 'planned' && e.slice === index + 1).map(e => ({
-      files: [e.file], status: 'passed', exitCode: 0, elapsedMs: 1, executedTests: 1, skippedTests: 0,
+      files: [e.file], status: 'passed', exitCode: 0, elapsedMs: 1, executedTests: FINDING_RETRY_BUDGETS.find(b => b.file === e.file)?.cases ?? 1, skippedTests: 0,
       ...(e.budget ? { budget: e.budget } : {}),
     })),
   }));

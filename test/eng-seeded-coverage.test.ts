@@ -1,3 +1,4 @@
+import ledgerSeedFixture from './fixtures/eng-current-ledger-seeds.json';
 import { describe, expect, test } from 'bun:test';
 import captured from './fixtures/eng-count-ad-v2.json';
 import af from './fixtures/eng-first-category-af.json';
@@ -273,4 +274,105 @@ describe('batching caller counts completed issue decisions across setup boundari
     const quoted = issue(1); question(quoted, quoted.questions[0]!.question + '\n`This decision is withdrawn.`');
     expect(check(quoted)).toBe(true);
   });
+});
+
+describe('current facade decision and accepted legacy baseline ledger', () => {
+const fixture = ledgerSeedFixture;
+const check = evaluateEngSeedCoverage;
+const clone=<T>(value:T):T=>structuredClone(value);
+const call=()=>clone(fixture.complexityCall);
+const answerAt=Date.parse(fixture.complexityCall.answeredAt);
+const complexity=(value=call())=>check({status:'ready',calls:[value],assistantMessages:[]},'',0,answerAt+1).decisions.complexity;
+const alter=(change:(question:any)=>void)=>{const c=call(),q=c.questions[0]!,old=q.question,index=q.options.findIndex(o=>o.label===c.answers[old]);change(q);c.answers={[q.question]:q.options[index]!.label};return c;};
+const regression=(plan:string)=>check({status:'ready',calls:[],assistantMessages:[]},plan,0,1).regression;
+const plan=fixture.legacyPlan;
+const task=(id:string)=>new RegExp(`^- \\[ \\] \\*\\*${id} [^\\n]+\\n(?:  [^\\n]*(?:\\n|$))*`,'m').exec(plan)![0];
+const t1=task('T1'), t9=task('T9');
+
+test('the complete current D8 and R7/T1/T9 evidence works in isolation',()=>{expect(complexity()).toBeDefined();expect(regression(plan)).toBe('plan');});
+
+for(const [name,change] of Object.entries({
+ 'title layout synonym':(q:any)=>{q.question=q.question.replace('Class arrangement:','Class layout:');},
+ 'numeric inventory':(q:any)=>{q.question=q.question.replace('four new classes:','4 new classes:');},
+ 'larger consistently bound inventory':(q:any)=>{q.question=q.question.replace('four new classes: AuthBroker, SessionMint, RequestPolicy and AuthCache','five new classes: AuthBroker, SessionMint, RequestPolicy, SessionAudit and AuthCache');q.options[0].label=q.options[0].label.replace('3 classes','4 classes');q.options[1].label=q.options[1].label.replace('4 classes','5 classes');},
+ 'removal action synonym':(q:any)=>{q.options[0].label=q.options[0].label.replace('Drop the facade','Remove AuthCache facade');},
+ 'option letters reordered':(q:any)=>{q.options[0].label=q.options[0].label.replace('B)','A)');q.options[1].label=q.options[1].label.replace('A)','B)');},
+ 'question ordinal changes':(q:any)=>{q.question=q.question.replace(/^D8 /,'D38 ');},
+}))test(`complexity presentation preserves ownership: ${name}`,()=>expect(complexity(alter(change))).toBeDefined());
+
+for(const [name,change] of Object.entries({
+ 'missing inventory':(q:any)=>{q.question=q.question.replace(/After D6\/D7 the plan has four new classes:[^.]+\./,'');},
+ 'inventory count mismatch':(q:any)=>{q.question=q.question.replace('four new classes:','five new classes:');},
+ 'duplicate inventory component':(q:any)=>{q.question=q.question.replace('RequestPolicy and AuthCache','AuthBroker and AuthCache');},
+ 'no current unchanged-rule assertion':(q:any)=>{q.question=q.question.replace('keeps every rule unchanged','changes the validity rules');},
+ 'no redundant-facade finding':(q:any)=>{q.question=q.question.replace('a pass-through','an independent policy engine');},
+ 'different component title':(q:any)=>{q.question=q.question.replace(/^D8 — Class arrangement: keep the AuthCache/,'D8 — Class arrangement: keep the BillingCache');},
+ 'foreign baseline component':(q:any)=>{q.question=q.question.replace('AuthBroker, SessionMint, RequestPolicy','AuthWorker, SessionWorker, RequestPolicy');},
+ 'wrong reduced count':(q:any)=>{q.options[0].label=q.options[0].label.replace('3 classes','4 classes');},
+ 'wrong retained count':(q:any)=>{q.options[1].label=q.options[1].label.replace('4 classes','5 classes');},
+ 'no direct existing adapter':(q:any)=>{q.options[0].description=q.options[0].description.replace('existing, tested adapter interface directly','new independent token store');},
+ 'quoted title':(q:any)=>{q.question='>'+q.question;},
+ 'quoted explanation':(q:any)=>{q.question=q.question.replace('ELI10: ','ELI10: Source: ');},
+ 'withdrawn decision':(q:any)=>{q.question+='\nD8 is withdrawn.';},
+ 'withdrawn option':(q:any)=>{q.options[0].description+='\nThis option is withdrawn.';},
+ 'conditional option':(q:any)=>{q.options[0].description+='\nIf approved, drop it.';},
+ 'later independent purpose':(q:any)=>{q.question+='\nCorrection: AuthCache now has independent behavior.';},
+}))test(`complexity rejects unsupported evidence: ${name}`,()=>expect(complexity(alter(change))).toBeUndefined());
+for(const [name,change] of Object.entries({
+ 'unanswered':(c:any)=>{c.answered=false;},'failed':(c:any)=>{c.failed=true;},'pending tab':(c:any)=>{c.unansweredQuestionIndices=[0];},'no answer':(c:any)=>{c.answers={};},'unoffered answer':(c:any)=>{c.answers[c.questions[0].question]='Delete all code';},'late answer':(c:any)=>{c.answeredAt=new Date(answerAt+2).toISOString();},
+}))test(`complexity requires actual native completion: ${name}`,()=>{const c=call();change(c);expect(complexity(c)).toBeUndefined();});
+
+for(const [name,change] of Object.entries({
+ 'all ownership IDs renamed':(s:string)=>s.replace(/\bR7\b/g,'Ledger7').replace(/\bD12\b/g,'D32').replace(/\bT1\b/g,'T21').replace(/\bT9\b/g,'T29'),
+ 'punctuated ledger identity':(s:string)=>s.replace(/\bR7\b/g,'Risk.7'),
+ 'verification action synonym':(s:string)=>s.replace('Assert accept/reject outcome','Verify accept/reject outcome'),
+ 'ordinary filename':(s:string)=>s.replace('legacyAuthFlow.characterization.test.*','tests/auth/prior.test.ts'),
+ 'record action':(s:string)=>s.replace('capture golden tests','record golden tests').replace('Capture the 10-case','Record the 10-case'),
+ 'wrapped accepted scope':(s:string)=>s.replace('Accepted scope: before any rewrite, capture','Accepted scope: before any rewrite,\n capture').replace('Assert accept/reject','\nAssert accept/reject'),
+ 'HTTP status label':(s:string)=>s.replace('error class/status per case','error class/HTTP status per case'),
+ 'unformatted source':(s:string)=>s.replace(/[`*]/g,''),
+}))test(`legacy baseline presentation remains bound: ${name}`,()=>expect(regression(change(plan))).toBe('plan'));
+
+for(const [name,change] of Object.entries({
+ 'no mandatory rule':(s:string)=>s.replace('(REGRESSION RULE)','(optional idea)'),
+ 'no critical requirement':(s:string)=>s.replace('CRITICAL/P1','P2'),
+ 'no current accepted scope':(s:string)=>s.replace(/^Accepted scope:.*$/m,''),
+ 'no actual answer':(s:string)=>s.replace(/^Actual answer:.*$/m,''),
+ 'wrong answered question':(s:string)=>s.replace('** (D12)','** (D99)'),
+ 'unselected baseline option':(s:string)=>s.replace('Actual answer: **A,','Actual answer: **B,'),
+ 'duplicate accepted scope':(s:string)=>s.replace(/^Accepted scope:.*$/m,x=>x+'\n'+x),
+ 'capture after rewrite':(s:string)=>s.replace('Accepted scope: before any rewrite','Accepted scope: after the rewrite'),
+ 'wrong legacy target':(s:string)=>s.replace(/legacyAuthFlow/g,'otherAuthFlow'),
+ 'case count mismatch':(s:string)=>s.replace('Accepted scope: before any rewrite, capture golden tests from the running `legacyAuthFlow()` for: valid token; expired;','Accepted scope: before any rewrite, capture golden tests from the running `legacyAuthFlow()` for: valid token;'),
+ 'no outcome assertion':(s:string)=>s.replace('Assert accept/reject outcome and error class/status per case.','Assert error class/status per case.'),
+ 'no error class assertion':(s:string)=>s.replace('error class/status per case','status per case'),
+ 'no status assertion':(s:string)=>s.replace('error class/status per case','error class per case'),
+ 'no same suite replay':(s:string)=>s.replace('Replay the suite against the new path.','Write unrelated new tests.'),
+ 'no caller coverage':(s:string)=>s.replace('add one integration test per caller path','add one smoke test'),
+ 'missing baseline task':(s:string)=>s.replace(t1,''),
+ 'duplicate baseline task':(s:string)=>s.replace(t1,t1+t1),
+ 'punctuation cannot match another ledger identity':(s:string)=>s.replace('### R7:', '### Risk.7:').replace('R7/D12','RiskX7/D12'),
+ 'wrong ledger linkage':(s:string)=>s.replace('R7/D12','R8/D12'),
+ 'wrong question linkage':(s:string)=>s.replace('R7/D12','R7/D13'),
+ 'missing task files':(s:string)=>s.replace(/^  - Files: new.*$/m,''),
+ 'missing baseline verification':(s:string)=>s.replace(/^  - Verify: matrix.*$/m,''),
+ 'new-path-only verification':(s:string)=>s.replace('matrix green against legacy','matrix green against new path'),
+ 'no green baseline':(s:string)=>s.replace('matrix green against legacy','matrix fails against legacy'),
+ 'no green parity':(s:string)=>s.replace('replayed green against new path before swap','replayed failing against new path before swap'),
+ 'missing removal gate':(s:string)=>s.replace(t9,''),
+ 'wrong replayed suite':(s:string)=>s.replace('only after T1 replays green','only after T8 replays green'),
+ 'deletion before replay':(s:string)=>s.replace('only after T1 replays green','before T1 replays green'),
+ 'missing caller replay':(s:string)=>s.replace('T1 suite + per-caller integration tests green on the new path','T1 suite green on the new path'),
+ 'historical ledger':(s:string)=>s.replace('## Decision ledger','## Historical decision ledger'),
+ 'quoted accepted scope':(s:string)=>s.replace(/^Accepted scope:.*$/m,x=>'> '+x),
+ 'literal accepted scope':(s:string)=>s.replace(/^Accepted scope:.*$/m,x=>'`'+x.replaceAll('`','')+'`'),
+ 'source verification':(s:string)=>s.replace('  - Verify: matrix','  Source:\n  - Verify: matrix'),
+ 'conditional verification':(s:string)=>s.replace('  - Verify: matrix','  If approved:\n  - Verify: matrix'),
+ 'withdrawn ledger state':(s:string)=>s.replace('State: pending','State: withdrawn'),
+ 'changed baseline assertions':(s:string)=>s+'\n## Current assessment\nT1 assertions are changed.\n',
+ 'legacy changed before baseline':(s:string)=>s+'\n## Current assessment\nlegacyAuthFlow() is rewritten before T1.\n',
+}))test(`legacy baseline rejects missing or revoked obligations: ${name}`,()=>{const changed=change(plan);expect(changed).not.toBe(plan);expect(regression(changed)).toBeUndefined();});
+for(const id of ['R7','D12','T1','T9'])for(const status of ['withdrawn','optional','not current'])test(`current ${id} ${status} revokes this baseline`,()=>expect(regression(plan+`\n## Current assessment\n${id} is "${status}".\n`)).toBeUndefined());
+for(const text of ['\n## Historical assessment\nR7 is withdrawn.','\n## Current assessment\n"T1 is withdrawn."','\n## Payment regression suite\nThe regression suite is withdrawn.','\n## Current assessment\nT88 is withdrawn.'])test(`unowned or unrelated cancellation cannot revoke current baseline: ${text}`,()=>expect(regression(plan+text)).toBe('plan'));
+
 });

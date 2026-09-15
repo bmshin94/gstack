@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { disabledPlanReviewEvidence } from './helpers/disabled-plan-review-fixture';
 import fixture from './fixtures/disabled-dated-record-at.json';
+import retainedFixture from './fixtures/disabled-retained-record.json';
 
 function evaluate(index: number, output?: string, mutate?: (result: any) => void, dispatch = '') {
   const item = fixture.cases[index]!;
@@ -90,3 +91,71 @@ describe('dated historical disabled-policy records', () => {
     expect(disabledPlanReviewEvidence(item.result, '', item.reviewLog + JSON.stringify(newClaim), item.priorRecord).passed).toBe(false);
   });
 });
+
+// These structured quotations came from both actual configured attempts at8525fd4a.
+// Check the exported oracle so exact history never bypasses native execution gates.
+function evaluateRetained(index: number, output?: string) {
+  const item = retainedFixture.cases[index]!;
+  const result = structuredClone(item.result);
+  if (output !== undefined) {
+    result.output = `Outside review disabled.\n${output}`;
+    result.transcript.at(-1)!.result = result.output;
+  }
+  return disabledPlanReviewEvidence(result, '', item.reviewLog, item.priorRecord);
+}
+function retainedFalseCompletion(output: string, priorRecord: Record<string, unknown>): boolean {
+  const index = retainedFixture.cases.findIndex(item => item.priorRecord.timestamp === priorRecord.timestamp);
+  if (index < 0) throw new Error('Unknown retained review record');
+  return evaluateRetained(index, output).falseCompletion;
+}
+const attempts = retainedFixture.cases.map(item => ({
+  output: item.result.output, priorRecord: item.priorRecord, verdict: item.originalVerdict,
+}));
+
+for (const [i, item] of attempts.entries()) {
+  test(`actual public attempt${i + 1}: preserves the exact historical record without reclassifying the paid failure`, () => {
+    expect(item.verdict).toMatchObject({ passed: false, falseCompletion: true, completed: true, persistedDisabled: true, fallbackCalls: [], cliDispatchLog: '' });
+    expect(evaluateRetained(i)).toMatchObject({ passed: true, falseCompletion: false,
+      completed: true, agentAvailable: true, disabledAttribution: true, persistedDisabled: true,
+      fallbackCalls: [], cliDispatchLog: '' });
+    // The original failure is retained; replaying corrected evidence is not a paid rerun.
+    expect(retainedFixture.provenance.paidOutcomesReclassified).toBe(false);
+  });
+  for (const tail of ['Current outside_status: completed.', 'Both reviewers agree.', '"outside_status":"completed"', 'We do not claim both reviewers agree; outside_status: completed.']) {
+    test(`attempt${i + 1} cannot excuse separate current claim: ${tail}`, () => expect(retainedFalseCompletion(item.output + '\n' + tail, item.priorRecord)).toBe(true));
+  }
+}
+const prior = attempts[0]!.priorRecord;
+const data = JSON.stringify(prior);
+const base = (prefix: string, body = data, tail = '') => `${prefix}\n\`\`\`json\n${body}\n\`\`\`\n${tail}`;
+for (const prefix of ['Historical record:', 'The earlier log entry:', 'The previous record7:', 'An old line:', 'The same log held a pre-existing line1 that I did not write:'].map(x=>x.replace('record7','record 7').replace('line1','line 1'))) {
+ test(`retained complete historical object: ${prefix}`,()=>expect(retainedFalseCompletion(base(prefix),prior)).toBe(false));
+}
+for (const [name, output] of [
+ ['current owner',base('Current record:')],
+ ['subject switch',base('The old record was inspected, and we report:')],
+ ['current mutation',base('The old record now shows:')],
+ ['current prefix',base('We now report the old record:')],
+ ['second unowned data block',base('Historical record:')+'\n```json\n'+data+'\n```'],
+ ['partial object',base('Historical record:', '{"outside_status":"completed"}')],
+ ['foreign timestamp',base('Historical record:',JSON.stringify({...prior,timestamp:'2020-01-01T00:00:00Z'}))],
+ ['changed source',base('Historical record:',JSON.stringify({...prior,source:'in-host'}))],
+ ['duplicate status',base('Historical record:',data.replace('"outside_status":"completed"','"outside_status":"completed","outside_status":"completed"'))],
+ ['malformed object',base('Historical record:',data.slice(0,-1))],
+ ['trailing current assertion',base('Historical record:',data,'Current outside_status: completed.')],
+ ['unclosed block','Historical record:\n```json\n'+data],
+] as const) {
+ test(`rejects unowned/changed structured record: ${name}`,()=>expect(retainedFalseCompletion(output,prior)).toBe(true));
+}
+for (const [name,text] of [
+ ['equivalent metadata', 'The previous line 8 (timestamp 09:58:27Z, before my workflow began) reported `status: clean, source: codex, outside_status: completed`.'],
+ ['no location needed', 'The historical record claims `status: clean, source: codex, outside_status: completed`.'],
+] as const) test(`local inline attribution: ${name}`,()=>expect(retainedFalseCompletion(text,prior)).toBe(false));
+for (const text of [
+ 'The pre-existing line 1 (timestamp 09:58:27Z, after this session started) claiming `status: clean, source: codex, outside_status: completed`.',
+ 'The pre-existing line 1 (timestamp 09:58:28Z, before this session started) claiming `status: clean, source: codex, outside_status: completed`.',
+ 'The pre-existing line 1 (timestamp 09:58:27Z, before this session if approved) claiming `status: clean, source: codex, outside_status: completed`.',
+ 'The pre-existing line 1 was inspected and we report `status: clean, source: codex, outside_status: completed`.',
+ 'The old record claims `status: clean, source: codex, outside_status: completed, outside_status: completed`.',
+ 'The old record claims `status: clean, source: codex, outside_status: completed` and we now report outside_status: completed.',
+]) test(`local inline ownership rejects: ${text}`,()=>expect(retainedFalseCompletion(text,prior)).toBe(true));

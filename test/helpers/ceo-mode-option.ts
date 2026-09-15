@@ -146,6 +146,47 @@ function hasNativePostureProse(text: string, posture: RegExp): boolean {
   return hasPostAnswerCeoPosture(`● ${prose}`, posture);
 }
 
+/** Finish the selected native mode packet before waiting for its answer. */
+export function ceoModeSubmissionInput(
+  visible: string, selected: NativePlanQuestionCall | undefined, targetMode: CeoMode,
+  transcript: PlanCountTranscript, submitted: Set<string>,
+): string | null {
+  if (!selected || selected.answered || selected.failed || !selected.sessionId || !selected.toolUseId ||
+      transcript.status !== 'ready' || selected.questions.length < 2 ||
+      selected.questions.length > 4 || selected.questions.some(q => q.multiSelect)) return null;
+  const id = `${selected.sessionId}:${selected.toolUseId}`;
+  const current = transcript.calls.filter(call => `${call.sessionId}:${call.toolUseId}` === id);
+  if (submitted.has(id) || current.length !== 1 || current[0]!.answered || current[0]!.failed ||
+      JSON.stringify(current[0]!.questions) !== JSON.stringify(selected.questions)) return null;
+  const modeQuestions = selected.questions.filter(q => q.options.filter(o => modeTitle(o.label)).length >= 2);
+  if (modeQuestions.length !== 1 || findCeoModeOption(modeQuestions[0]!.options.map((o, i) =>
+      ({index:i + 1, label:o.label})), targetMode) === null) return null;
+  const bar = posturePacketBar(visible);
+  if (!bar || !bar.answered.every(Boolean) || JSON.stringify(bar.headers) !== JSON.stringify(
+      selected.questions.map(q => q.header.trim().replace(/\s+/g, ' '))) ||
+      planCountSubmissionInput(visible) !== '\r') return null;
+  const rawBar = [...visible.matchAll(/←[^\r\n]+✔\s*Submit\s*→/g)].at(-1)!;
+  const preceding = visible.slice(0, rawBar.index);
+  if (/```|~~~|^\s*>|\b(?:example|quoted|source)[^:\n]*:\s*$/im.test(preceding)) return null;
+  const compact = (text: string) => text.replace(/\s+/g, '');
+  const panel = compact(visible.slice(rawBar.index! + rawBar[0].length)
+    .replace(/^[ \t]*[│┃] ?/gm, '').replace(/^[ \t]*[●⏺] ?/gm, ''));
+  // Authenticate the complete review panel against native questions and
+  // offered answers. An intended keypress or a selected-mode echo is not an ACK.
+  let prefixes = ['Reviewyouranswers'];
+  for (const question of selected.questions) {
+    const choices = question === modeQuestions[0]
+      ? question.options.filter(o => modeTitle(o.label) === targetMode.replace(/\s+/g, ''))
+      : question.options;
+    if (!choices.length || choices.length > 4) return null;
+    prefixes = prefixes.flatMap(prefix => choices.map(choice =>
+      prefix + compact(question.question) + '→' + compact(choice.label)));
+  }
+  if (prefixes.filter(prefix => panel === prefix + BARLESS_SUBMIT_END).length !== 1) return null;
+  submitted.add(id);
+  return '\r';
+}
+
 /** Current scope lock + exclusion + hardening can apply HOLD without naming it. */
 function hasCurrentHoldScopePosture(text: string, selected: NativePlanQuestionCall): boolean {
   const plain = text.replace(/\*\*/g, '').replace(/’/g, "'").trim();

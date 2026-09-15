@@ -28,7 +28,7 @@ import * as path from 'path';
 import { stripVTControlCharacters } from 'node:util';
 import { hermeticChildEnv, hermeticSkillsConfigDir, isHermeticEnabled } from './hermetic-env';
 import { withHermeticSkillRuntime } from './hermetic-skill-runtime';
-import { createPlanCountFixture } from './plan-count-fixture';
+import { createPlanCountFixture, ownedNativeReviewStateRoot, type NativeReviewState } from './plan-count-fixture';
 import { createPlanCountSnapshotWriter } from './plan-count-artifacts';
 import { nativeSeededPlanSelection } from './plan-scope-selection';
 import { readPlanFloorTarget, type PlanFloorTargetDelivery } from './plan-floor-target';
@@ -131,6 +131,8 @@ export interface ClaudePtyOptions {
   observeAutoplanArtifacts?: boolean;
   /** AP-only exact artifact Edit approvals; inactive until the owner starts its command. */
   approveAutoplanArtifactEdits?: boolean;
+  /** Explicit disposable state from createNativeReviewState; ambient env grants no ownership. */
+  autoplanArtifactState?: NativeReviewState;
   /** Working directory. Default: process.cwd(). The repo cwd has the gstack
    *  skill registry and trusted-folder cookie, so most tests want this. */
   cwd?: string;
@@ -196,6 +198,8 @@ export interface ClaudePtySession {
   pendingPlanReadyFile?: string;
   pendingQuestionFile?: string;
   pendingAutoplanArtifactFile?: string;
+  /** The same validated root bound into the artifact hook, distinct from legacy HOME/.gstack. */
+  autoplanArtifactStateRoot?: string;
   startAutoplanArtifactEditApproval?: (commandStartedAt: number) => void;
   pendingFilePermissionFiles?: Array<{ expected: string; file: string }>;
   /**
@@ -2093,24 +2097,39 @@ export function hasNativePlanTerminal(
       Date.parse(final.timestamp) <= Date.now() &&
       hasCompletePlanReport(expectedPlanPath, Math.max(startedAt, ...modifyingAnswers),
         Date.parse(final.timestamp), false, 'Design')) return true;
-  // The host's typed completion status is another supported delivery format.
-  // Bind it to a saved artifact in that same current section, rather than
-  // requiring the surrounding explanation to repeat one sentence verbatim.
-  // A separate Eng shipping gate can remain pending after Design completes.
+  // Typed Design completion owns a current status and saved artifact. Markdown
+  // headings/field emphasis and explanatory prose are presentation, not a
+  // second approval or a substitute for the strict native/report checks.
   const completionHeadings = lines.map((line, index) =>
-    /^(?:#{1,6}\s+)?(?:\*\*)?Completion(?:\s+summary)?(?:\*\*)?:?\s*$/i.test(line.trim()) ? index : -1)
+    /^(?:#{1,6}\s+)?(?:\*\*)?(?:Completion(?:\s+summary)?|(?:Design\s+)?Review\s+(?:complete|completion(?:\s+summary)?))(?:\*\*)?:?\s*$/i.test(line.replace(/\*\*/g, '').trim()) ? index : -1)
     .filter(index => index >= 0);
   if (completionHeadings.length === 1) {
     const start = completionHeadings[0]!;
     const preceding = lines.slice(0, start).filter(line => line.trim()).at(-1) ?? '';
     const section = lines.slice(start + 1);
-    const status = section.filter(line => /^\s*(?:\*\*)?STATUS:/i.test(line));
-    const saved = section.map(line => designClosureText(line, expectedPlanPath))
-      .filter(line => /^(?:[-*]\s+)?Plan (?:written|saved) to\b/i.test(line.trim()));
+    const plain = section.map(line => line.replace(/\*\*/g, '').trim());
+    const status = plain.filter(line => /^(?:[-*]\s+)?STATUS:/i.test(line));
+    const done = /^(?:[-*]\s+)?STATUS:\s*DONE(?:\s+[—–:-]\s+(.+))?\s*$/i.exec(status[0] ?? '');
+    const pathFields = plain.filter(line => /^(?:[-*]\s+)?(?:Plan (?:written|saved) to\b|(?:What changed|Plan|Report|Output|Artifact):)/i.test(line));
+    const saved = pathFields.filter(line => {
+      const value = line.replace(/^[-*]\s+/, '').replace(/^(?:What changed|Plan|Report|Output|Artifact):\s*/i, '').trim();
+      if (DESIGN_CLOSURE_PROVISIONAL.test(value) || /^(?:[>"“'‘]|`{3}|~{3})/.test(value)) return false;
+      // The expected absolute path or its exact basename identifies this one
+      // caller-owned report. Reject foreign/ambiguous paths before stripping
+      // Markdown; a filename hidden in quoted prose supplies no authority.
+      const paths = [...value.matchAll(/[^\s`"'<>()[\]{};,]+\.md(?=$|[\s`"'.,;:)])/g)].map(m => m[0]);
+      if (paths.length !== 1 || ![expectedPlanPath, path.basename(expectedPlanPath)].includes(paths[0]!)) return false;
+      const current = value.replace(/`([^`\n]+)`/g, (_, v: string) => paths.includes(v) ? v : '')
+        .replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'(?!\w)|‘[^’\n]*’/g, '');
+      const token = paths[0]!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`^Plan (?:written|saved) to ${token}(?:[.!](?:\\s|$)|\\s|$)`, 'i').test(current) ||
+        new RegExp(`^${token}\\s+(?:now\\s+)?(?:contains|carries|includes|records)\\s+`, 'i').test(current) &&
+          /\b(?:review report|reviewed plan)\b/i.test(current);
+    });
     if (!section.some(line => /^#{1,6}\s/.test(line)) &&
         !/\b(?:example|sample|template|historical|previous|earlier|quote|source|emit|print)\b.*[:：]\s*$/i.test(preceding) &&
-        status.length === 1 && /^\s*(?:\*\*)?STATUS:\s*DONE(?:\*\*)?\s*$/i.test(status[0]!) &&
-        saved.length === 1 && new RegExp(`^(?:[-*]\\s+)?Plan (?:written|saved) to ${escapedPlanPath}(?:[.!](?:\\s|$)|\\s|$)`, 'i').test(saved[0]!.trim()) &&
+        status.length === 1 && done && !DESIGN_CLOSURE_PROVISIONAL.test(done[1] ?? '') &&
+        pathFields.length === 1 && saved.length === 1 &&
         !conflictingDesignClosure(designText) && Date.parse(final.timestamp) <= Date.now() &&
         hasCompletePlanReport(expectedPlanPath, Math.max(startedAt, ...modifyingAnswers),
           Date.parse(final.timestamp), false, 'Design')) return true;
@@ -3840,6 +3859,13 @@ export async function launchClaudePty(
     }
   }
 
+  let autoplanArtifactStateRoot = hermeticSkillStateRoot;
+  if (opts.autoplanArtifactState !== undefined) {
+    if (!opts.observeAutoplanArtifacts || !hermeticSkillStateRoot)
+      throw new Error('Explicit Autoplan artifact state requires the seeded hermetic launcher');
+    autoplanArtifactStateRoot = ownedNativeReviewStateRoot(opts.autoplanArtifactState, childEnv);
+  }
+
   // Construction must succeed before any CLI can be spawned.
   const screen = opts.observeScreen ? await createPtyScreen(cols, rows) : undefined;
   let screenClosing: Promise<void> | undefined;
@@ -3859,8 +3885,8 @@ export async function launchClaudePty(
     if (opts.observeSetupQuestions && hermetic && childEnv.CLAUDE_CONFIG_DIR) {
       pendingQuestion = createPendingQuestionRecorder(cwd, childEnv.CLAUDE_CONFIG_DIR);
     }
-    if (opts.observeAutoplanArtifacts && hermetic && childEnv.CLAUDE_CONFIG_DIR && hermeticSkillStateRoot) {
-      pendingArtifact = createAutoplanArtifactRecorder(cwd, childEnv.CLAUDE_CONFIG_DIR, hermeticSkillStateRoot,
+    if (opts.observeAutoplanArtifacts && hermetic && childEnv.CLAUDE_CONFIG_DIR && autoplanArtifactStateRoot) {
+      pendingArtifact = createAutoplanArtifactRecorder(cwd, childEnv.CLAUDE_CONFIG_DIR, autoplanArtifactStateRoot,
         opts.approveAutoplanArtifactEdits === true);
     }
     if (opts.observeFilePermissions && hermetic && childEnv.CLAUDE_CONFIG_DIR) {
@@ -4072,6 +4098,7 @@ export async function launchClaudePty(
     pendingPlanReadyFile: pendingExit?.file,
     pendingQuestionFile: pendingQuestion?.file,
     pendingAutoplanArtifactFile: pendingArtifact?.file,
+    autoplanArtifactStateRoot: pendingArtifact ? autoplanArtifactStateRoot : undefined,
     startAutoplanArtifactEditApproval: pendingArtifact?.startEditApproval,
     pendingFilePermissionFiles: pendingFiles.map(({ expected, recorder }) => ({ expected, file: recorder.file })),
     close,

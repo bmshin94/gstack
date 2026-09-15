@@ -635,6 +635,26 @@ function hasOrderedStaleFillOperations(text: string, sourceText = text): boolean
   const later = String.raw`(?:(?:every|all|the)\s+)?(?:later|next|new|subsequent)\s+readers?\s+(?:sees?|gets?|observes?|receives?)\s+(?:the\s+)?(?:stale|old|outdated)\s+(?:data|value|snapshot)`;
   const findingPrefix = String.raw`(?:(?:F[1-9]\d*|(?:Finding|Issue)\s+[1-9]\d*)\s*[—–:-]\s*)?(?:P[0-3]\s*[—–:-]\s*)?`;
   const sequence = new RegExp(String.raw`^${findingPrefix}${read}${separator}${write}${separator}${fill}${separator}${later}(?=[\s.!?;]|$)`, 'i');
+  // A fill's lifetime can establish overlap without splitting its synchronous
+  // JS continuation. Its start precedes one write, and that same fill stores
+  // the pre-write snapshot after that write; a returned value alone is not a fill.
+  const lifetimeSubject = String.raw`(?:(?:a|the|this|original|same)\s+)?(?:cache\s+)?fill(?:\s+(?:that|which))?`;
+  const starts = String.raw`(?:started|began|starts|begins)`;
+  const writer = String.raw`(?:(?:a|the|that|this)\s+)?write(?:\s+(?:commits?|completes?|settles?|returns?))?`;
+  const sameWriter = String.raw`(?:it|(?:that|the\s+same|that\s+same|the)\s+write)(?:\s+(?:commits?|completes?|settles?|returns?))?`;
+  const storage = String.raw`(?:\s+(?:caches|stores)|,\s*(?:caching|storing))\s+(?:the\s+)?(?:old|stale|pre[- ](?:write|commit))\s+(?:snapshot|value|data)`;
+  const lifetime = new RegExp(String.raw`\b${lifetimeSubject}\s+${starts}\s+before\s+${writer}\s+and\s+(?:stored|stores|completed|completes|finished|finishes)\s+after\s+${sameWriter}${storage}\b`, 'i');
+  const lifetimeCells = sourceText.replace(/`[^`]*`|"(?:[^"\\]|\\.)*"|“[^”]*”/g, '[literal]')
+    .replace(/[*_]/g, '').replace(/\s+/g, ' ').split(/\s*\|\s*/);
+  if (lifetimeCells.some(cell => cell.split(/[.!?](?:\s+|$)/).some(claim => {
+    const matched = lifetime.exec(claim);
+    if (!matched) return false;
+    // Negated, hypothetical, quoted and prevention descriptions do not assert
+    // this execution. Never join temporal fragments across quoted source.
+    return !/\b(?:if|unless|whether|might|may|could|not|never|no\s+longer|example|template|hypothetical|historical|quoted|copied|source|prevent\w*|avoid\w*|impossible)\b/i.test(claim)
+      && !/[?"“”]/.test(claim)
+      && !/\b(?:another|different|separate|unrelated|other)\s+(?:cache|key|entry|fill|write)\b/i.test(claim);
+  }))) return true;
   // An asserted schedule can name the read's resolution and store separately.
   // All four operations must remain in one cell and in their causal order;
   // quoted requirements may follow, but inline code cannot supply operations.

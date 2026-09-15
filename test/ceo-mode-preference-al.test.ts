@@ -57,7 +57,7 @@ test('source and both isolated host renders bind the shared check, marker and lo
   expect(s).toContain('check `question_id=plan-ceo-review-mode` through the preamble');
   const automatic=s.split('Select the recommendation automatically')[1]!.split('\n')[0]!;
   expect(automatic).toContain('only if that check exits 0 with `AUTO_DECIDE`');
-  expect(automatic).toContain('use the automatic handoff below and log with `auto_decided: true`');
+  expect(automatic).toContain('use the automatic handoff in step 4');
   const handoff=s.split('**Mode handoff:**')[1]!;
   expect(handoff).toContain('`'+id+': AUTO_DECIDE`');
   expect(handoff).toContain('Auto-decided review mode → <selected mode> (your preference)');
@@ -65,7 +65,16 @@ test('source and both isolated host renders bind the shared check, marker and lo
   expect(asked).toContain('offer all four modes in one AskUserQuestion');
   expect(asked).toContain('**STOP for the answer**');
   expect(asked).toContain('When `QUESTION_TUNING: true`');
-  expect(asked).toContain('`<gstack-qid:'+id+'>` and log that ID');
+  expect(asked).toContain('`<gstack-qid:'+id+'>`');
+  const logging=handoff.split('After the handoff, use the preamble to log')[1]!.split('If 0D')[0]!.replace(/\s+/g,' ');
+  expect(logging).toContain('`'+id+'`: `auto_decided: true` for automatic selection');
+  expect(logging).toContain('for an asked question, log its ID only when `QUESTION_TUNING: true`');
+  expect(s.indexOf('4. **Mode handoff:**')).toBeGreaterThan(s.indexOf('3. Resolve that recommendation:'));
+  expect(handoff).toContain('After either an explicit choice or step 3');
+  expect(handoff).toContain('your next response is a brief chat message before tools and before the next scope or review question');
+  expect(s.slice(0,s.indexOf('4. **Mode handoff:**'))).not.toMatch(/\blog (?:with|that ID)\b/);
+  expect(handoff.indexOf('After the handoff, use the preamble to log')).toBeGreaterThan(handoff.indexOf('- Other selections:'));
+  expect(handoff.indexOf("Follow the selected mode's route:")).toBeGreaterThan(handoff.indexOf('After the handoff, use the preamble to log'));
   expect(s).not.toContain('plan-ceo-review-mode-selection');
  }
  for(const document of rendered.values()){

@@ -43,7 +43,7 @@ import {
   type AskUserQuestionFingerprint,
   type ClaudePtySession,
 } from './helpers/claude-pty-runner';
-import { hasNativePostAnswerCeoPosture, nextCeoModeNavigation, nextCeoPostureContinuation } from './helpers/ceo-mode-option';
+import { ceoModeSubmissionInput, hasNativePostAnswerCeoPosture, nextCeoModeNavigation, nextCeoPostureContinuation } from './helpers/ceo-mode-option';
 import { createPlanCountFixture } from './helpers/plan-count-fixture';
 import { readPlanCountTranscript, type NativePublicToolEvent, type PlanCountTranscript } from './helpers/plan-count-transcript';
 import { readPendingQuestion, pendingQuestionRecorderStatus } from './helpers/plan-count-pending-question';
@@ -219,6 +219,7 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
           let transcript: PlanCountTranscript = { status: 'missing', calls: [], assistantMessages: [] };
           let continuedQuestion = false;
           const seenDownstream = new Set<string>();
+          const submittedModePackets = new Set<string>();
           while (Date.now() - start < budgetMs) {
             await Bun.sleep(2500);
             if (session.exited()) {
@@ -238,6 +239,8 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
             }
             const currentInput = await session.currentScreen();
             capture('awaiting_posture', currentInput, transcript);
+            const modeSubmit = ceoModeSubmissionInput(currentInput, question.nativeCall, c.mode, transcript, submittedModePackets);
+            if (modeSubmit !== null) { session.send(modeSubmit); continue; }
             const pendingQuestion = readPendingQuestion(session.pendingQuestionFile, fixture.cwd,
               session.hermeticConfigDir, selectionStartedAt, transcript);
             const continuation = nextCeoPostureContinuation(currentInput, transcript,

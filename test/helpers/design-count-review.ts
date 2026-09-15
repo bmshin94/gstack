@@ -311,8 +311,19 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
       !call.answeredAt || !Number.isFinite(Date.parse(call.answeredAt))) return false;
   const q = call.questions[0]!;
   const lines = q.question.trim().split('\n');
-  const gapIssue = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*) \(G([1-9]\d*)\): ([^?]+)\?$/.exec(lines[0]!);
-  if (gapIssue) {
+  const namedGap = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*) \(G([1-9]\d*)\): ([^?]+)\?$/.exec(lines[0]!);
+  const fieldIssue = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*)(?: \(Pass ([1-7])(?:, [A-Za-z][A-Za-z &/-]*)?\))?: ([^?]+)\?$/.exec(lines[0]!);
+  const source = /^Project\/branch\/task: (.+)$/m.exec(q.question)?.[1] ?? '';
+  const sourceGaps = [...source.matchAll(/\bgap G([1-9]\d*)\b/gi)];
+  const ownGap = sourceGaps[0]?.[1];
+  // The native Issue/option IDs own the current decision. A pass can be in
+  // its title or source field, and a G label is optional. If a G is present,
+  // another source row cannot lend this question its identity or evidence.
+  const scopedIssue = fieldIssue && (fieldIssue[2] || /\bPass [1-7]\b/.test(source)) && sourceGaps.length <= 1 &&
+    [...q.question.matchAll(/\bG([1-9]\d*)\b/g)].every(m => m[1] === ownGap)
+    ? [fieldIssue[0], fieldIssue[1], ownGap, fieldIssue[3]] : null;
+  const gapIssue = namedGap ?? scopedIssue;
+  if (gapIssue && (() => {
     const [, issueNumber, gapNumber, subject] = gapIssue;
     const headerIssue = /\bIssue ([1-9]\d*)\b/i.exec(q.header);
     if (!q.header.trim() || (headerIssue && headerIssue[1] !== issueNumber) ||
@@ -339,6 +350,7 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
           ? quoted.slice(1, -1) : '');
     if (values.some(value => !value || sourceOnly.test(value)) || inactive.test(current(q.question)) ||
         !/^\S[\s\S]*\bPLAN\.md\b/.test(values[0]!) ||
+        (scopedIssue && !/\bPLAN\.md\b/.test(current(values[0]!.replace(/`PLAN\.md`/g, 'PLAN.md')))) ||
         !ids.some(id => values[3]!.startsWith(`${id} `))) return false;
     const assessment = current(values[1]!);
     if (/\b(?:historical|archived|hypothetical|quoted)\b|\b(?:not|isn't) (?:the )?current\b/i.test(assessment) ||
@@ -350,7 +362,7 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
     // still needs a concrete native remedy and its own opposed open gap.
     const classes: Array<{ subject: RegExp; defect: RegExp; remedy: RegExp }> = [
       { subject: /\b(?:distinguished|primary|header)\b/i,
-        defect: /\bbuttons?\b[^.!?]*(?:look identical|share (?:the )?same visual weight)/i,
+        defect: /\b(?:look identical|share (?:the )?same visual weight)\b/i,
         remedy: /\bfilled\b[^;\n]*#[0-9a-f]{6}[^;\n]*(?:white|black)\b[^\n]*\bghost\b/i },
       { subject: /\b(?:pending|request|loading)\b/i,
         defect: /\b(?:page|request|button)\b[^.!?]*(?:just sits|freezes|no (?:visible )?(?:feedback|signal|indicator))/i,
@@ -375,10 +387,14 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
         const declined = other.description?.trim() ?? '';
         return other !== option && /^(?:Keep|Leave|Defer|Decline|No)\b/i.test(other.label.replace(new RegExp(`^${ids[otherIndex]}[).:]?\\s+`), '')) &&
           !sourceOnly.test(declined) && !inactive.test(current(declined)) &&
-          new RegExp(`\\b(?:gap\\s+)?G${gapNumber}\\s+(?:stays|remains|is)\\s+(?:open|unresolved)\\b`, 'i').test(current(declined));
+          (new RegExp(`\\b(?:gap\\s+)?G${gapNumber}\\s+(?:stays|remains|is)\\s+(?:open|unresolved)\\b`, 'i').test(current(declined)) ||
+            (!!scopedIssue && (/\bthe gap (?:stays|remains|is) (?:open|unresolved)\b/i.test(current(declined)) ||
+              /\b(?:plan|design|page|header)\b[^.!?]*\b(?:keeps|retains|leaves|ships)\b[^.!?]*\bDESIGN\.md violation\b/i.test(current(declined))) &&
+              [...q.options.flatMap(o => [...`${o.label} ${o.description ?? ''}`.matchAll(/\bG([1-9]\d*)\b/g)])]
+                .every(m => m[1] === gapNumber)));
       });
     });
-  }
+  })()) return true;
   const issue = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*): (.+)\?$/.exec(lines[0]!);
   if (!issue || q.header.trim() !== `Issue ${issue[1]}` || lines.length !== 7 ||
       !/^Project\/branch\/task: [^\n,]+ on [^\n,]+, PLAN\.md design review, Pass [1-7] [A-Za-z][A-Za-z &()-]+\.$/.test(lines[1]!) ||

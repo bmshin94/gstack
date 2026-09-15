@@ -188,6 +188,24 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
   const explanation = explanations[0]!, subject = metadata[0] + ' ' + explanation;
   const options = q.options.map(o => current(`${o.label}\n${o.description ?? ''}`)).filter(active);
   const ids: Seed[] = [];
+  // A structure-only decision can remove one redundant facade after earlier
+  // scope decisions have reduced the inventory. Bind the current inventory,
+  // unchanged adapter behavior and both class counts to this one question.
+  const counts: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
+  const inventory = /\bplan (?:has|contains|retains|introduces|adds) ([1-9]\d*|one|two|three|four|five|six|seven|eight|nine) new classes:\s*([A-Za-z][\w]*(?:(?:,\s*|\s+and\s+|\s*\+\s*)[A-Za-z][\w]*)+)\./i.exec(explanation);
+  const components = inventory?.[2]?.split(/,\s*|\s+and\s+|\s*\+\s*/) ?? [];
+  const componentCount = inventory ? (counts[inventory[1]!.toLowerCase()] ?? Number(inventory[1])) : 0;
+  const facadeReduction = /\bclass(?:es)?\b/i.test(title) && /\bAuthCache\b/.test(title) && /\bfacade\b/i.test(title)
+    && inventory && components.length === componentCount && new Set(components).size === componentCount
+    && ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => components.includes(name))
+    && /\bAuthCache\b[^\n]{0,160}\bfacade over the existing adapter\b/i.test(explanation)
+    && /\b(?:keeps every rule unchanged|adds no behavior|no new behavior)\b/i.test(explanation)
+    && /\b(?:pass-through|pure forwarder)\b/i.test(explanation)
+    && !/\bAuthCache (?:now |already )?(?:adds|provides|has) (?:independent|distinct|new) (?:behavior|rules|policy)|\bAuthCache is no longer (?:a )?(?:pass-through|pure forwarder)\b/i.test(text)
+    && options.some(option => new RegExp(`^(?:[A-D][):.]\\s*)?(?:Drop|Remove|Cut) (?:the |AuthCache )?facade[: ,—–-]+${componentCount - 1} (?:new )?classes\\b`, 'i').test(option)
+      && /\bAuthBroker and SessionMint (?:depend on|use) the existing,? (?:tested )?adapter (?:interface )?directly\b/i.test(option))
+    && options.some(option => new RegExp(`^(?:[A-D][):.]\\s*)?(?:Keep|Retain) AuthCache facade[: ,—–-]+${componentCount} (?:new )?classes\\b`, 'i').test(option));
+  if (facadeReduction) ids.push('complexity');
   // Step 0 may name the complexity decision in its title and put the concrete
   // inventory in its own explanation. The reduction and retained backing
   // store must belong to one current option, opposed by that same inventory.
@@ -261,12 +279,38 @@ function completedDecision(call: NativePlanQuestionCall, startedAt: number, fini
 function batchingIssueNumber(call: NativePlanQuestionCall): string | undefined {
   if (!completedDecision(call, 0, Date.now()) || call.questions.length !== 1) return;
   const q = call.questions[0]!;
-  const issue = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*)\s*:\s*\S[^\n]*$/i.exec(q.question.split('\n')[0]!)?.[1];
-  if (!issue || !new RegExp(`^(?:Arch(?:itecture)?|Code quality|Tests?|Testing|Performance|Security)(?: ${issue})?$`, 'i').test(q.header.trim())) return;
-  const optionIds = q.options.map(o => /^([1-9]\d*)([A-D])[.):]\s+\S/i.exec(o.label));
-  if (optionIds.some(id => id?.[1] !== issue) || new Set(optionIds.map(id => id![2]!.toUpperCase())).size !== q.options.length) return;
+  const title = q.question.split('\n')[0]!;
+  const legacy = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*)\s*:\s*\S[^\n]*$/i.exec(title)?.[1];
+  let issue = legacy, currentOwner = legacy ? `Issue ${legacy}` : '';
+  if (legacy) {
+    if (!new RegExp(`^(?:Arch(?:itecture)?|Code quality|Tests?|Testing|Performance|Security)(?: ${legacy})?$`, 'i').test(q.header.trim())) return;
+    const optionIds = q.options.map(o => /^([1-9]\d*)([A-D])[.):]\s+\S/i.exec(o.label));
+    if (optionIds.some(id => id?.[1] !== legacy) || new Set(optionIds.map(id => id![2]!.toUpperCase())).size !== q.options.length) return;
+  } else {
+    // The current ledger uses stable R IDs and a new D number for each ask.
+    // Earlier briefs may instead cite their current finding in task metadata.
+    // Bind only that owned identity, never D alone or a later recap of others.
+    const decision = /^D([1-9]\d*)\s*[—–:-]\s+(?:(R[1-9]\d*)\s*:\s*)?\S/.exec(title);
+    const lines = prose(q.question, true).split('\n').filter(line => line.trim());
+    const metadata = lines[1]?.replace(/"[^"\n]*"|“[^”\n]*”/g, '') ?? '';
+    const explanation = (lines[2] ?? '').replace(/"[^"\n]*"|“[^”\n]*”/g, '');
+    if (!decision || !/^Project\/branch\/task: \S/.test(metadata) || !/\bPLAN\.md\b/.test(metadata) ||
+        lines.filter(line => /^Project\/branch\/task:/.test(line)).length !== 1 ||
+        lines.filter(line => /^ELI10:/.test(line)).length !== 1 || !/^ELI10: \S/.test(explanation) ||
+        /^ELI10:\s*(?:".*"|“.*”)\s*$/.test(lines[2] ?? '') ||
+        /^ELI10: (?:source|quoted|historical|example|hypothetical)\b/i.test(explanation) ||
+        /\b(?:copied|quoted|historical)\s+(?:(?:source|quoted)\s+)?(?:example|excerpt|text|material)\b/i.test(metadata) ||
+        q.options.some(option => !prose(option.description ?? '', true).trim())) return;
+    const finding = /(?:^|[,;]\s*)finding (F[1-9]\d*)\s*\(PLAN\.md:[1-9]\d*(?:[-–][1-9]\d*)?\)/i.exec(metadata)?.[1];
+    if (decision[2]) {
+      if (!new RegExp(`^${decision[2]}\\b`).test(q.header.trim())) return;
+      issue = `record:${decision[2]}`;
+    } else if (finding) issue = `finding:${finding.toUpperCase()}`;
+    else return;
+    currentOwner = `${decision[2] ?? finding}|D${decision[1]}`;
+  }
   // Owned scalar statuses remain current prose; a whole code example does not.
-  const owner = `(?:(?:this|the|that) (?:issue|finding|decision)|Issue ${issue})`;
+  const owner = `(?:(?:this|the|that) (?:issue|finding|decision)|${currentOwner})`;
   const statusPrefix = `(?:^|[.!?;]\\s+|\\n)(?:Correction:\\s*)?${owner} (?:is|was|has been) `;
   const scalarOwner = new RegExp(`${statusPrefix}$`, 'i');
   const text = q.question.replace(/`([^`\n]+)`/g, (span, body: string, at: number, source: string) =>
@@ -1095,7 +1139,7 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
   });
   // Required test lists may give each suite its own inline label instead of
   // a heading. Keep that bullet's body separate from adjacent test requirements.
-  const declarations: Array<{ title: string; body: string[]; inlineRequired?: boolean }> = [...current];
+  const declarations: Array<{ title: string; body: string[]; inlineRequired?: boolean; ledger?: { row: string; question: string; caseCount: number } }> = [...current];
   for (const section of current.filter(s => /\b(?:required|mandatory) tests?\b/i.test(s.title))) {
     const blocks = section.body.join('\n').split(/\n(?=- )/);
     for (const block of blocks) {
@@ -1104,8 +1148,34 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
         declarations.push({ title: match[1]!, body: [match[1]!, match[2]!], inlineRequired: true });
     }
   }
+  // A required ledger row can publish the selected baseline in Accepted scope.
+  // Its finding/rule, offered answer and later task remain separate evidence;
+  // an unselected comparison-grid column cannot authorize the requirement.
+  for (const section of current) {
+    const row = /^([A-Za-z][\w.-]*):/.exec(section.title)?.[1];
+    if (!row || !/\blegacyAuthFlow\b/.test(section.title) || !/\bREGRESSION RULE\b/i.test(section.title)) continue;
+    const body = section.body.join('\n');
+    const fields = (name: string) => [...body.matchAll(new RegExp(`^${name}: ([^\\n]+(?:\\n(?!\\s*$|[A-Z][\\w ]*:|Question\\b|\\|)[^\\n]+)*)`, 'gm'))];
+    const scopes = fields('Accepted scope'), answers = fields('Actual answer'), states = fields('State');
+    const questions = [...body.matchAll(/^Question (D[1-9]\d*):/gm)];
+    if (scopes.length !== 1 || answers.length !== 1 || questions.length !== 1
+        || !/^Finding: [^\n]*\bCRITICAL\b/m.test(body) || framed(body)
+        || states.some(state => new RegExp(`^(?:${inactive})$`, 'i').test(flat(unquoted(state[1]!))))) continue;
+    const question = questions[0]![1]!, answer = flat(unquoted(answers[0]![1]!)), scope = flat(unquoted(scopes[0]![1]!));
+    const choice = /^([A-D])[,)]?\s/.exec(answer)?.[1];
+    const offered = choice ? [...body.matchAll(new RegExp(`^${choice}\\) ([^\\n]+)$`, 'gm'))] : [];
+    if (!choice || offered.length !== 1 || !answer.endsWith(`(${question})`) || !owned(scopes[0]![0])
+        || !/\bcharacterization\b/i.test(offered[0]![1]!) || !/\bbefore (?:the )?rewrite\b/i.test(offered[0]![1]!)) continue;
+    const capture = /^before (?:any|the) (?:rewrite|refactor|change), (?:capture|record|pin) (?:golden|characterization) tests from (?:the )?(?:running|unmodified|untouched|current) legacyAuthFlow\(\) for:\s*([^.!?]+)\./i.exec(scope);
+    const cases = capture?.[1]?.split(/;\s*/).map(value => value.trim()) ?? [];
+    if (!capture || cases.length < 2 || new Set(cases).size !== cases.length
+        || !/\b(?:Assert|Verify|Check) accept\/reject outcome and error class\/(?:HTTP )?status per case\./i.test(scope)
+        || !/\b(?:Replay|Run|Execute) the (?:same )?suite against the new path\./i.test(scope)
+        || !/\b(?:add|write) one integration test per caller path\b/i.test(scope)) continue;
+    declarations.push({ title: section.title, body: [scopes[0]![0]], ledger: { row, question, caseCount: cases.length } });
+  }
   for (const declaration of declarations) {
-    const requiredRule = /\b(?:mandatory|critical|required)\b/i.test(unquoted(declaration.title));
+    const requiredRule = Boolean(declaration.ledger) || /\b(?:mandatory|critical|required)\b/i.test(unquoted(declaration.title));
     if (!/\b(?:regression|characterization)\b/i.test(declaration.title) || !requiredRule
         || /\b(?:not|never|no longer) (?:mandatory|critical|required)\b/i.test(declaration.title) || approval.test(unquoted(declaration.title)) || /\b(?:if|when|once|unless) accepted\b/i.test(unquoted(declaration.title))) continue;
     const body = declaration.body.join('\n').trim(), text = flat(unquoted(body));
@@ -1195,7 +1265,23 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
             && new RegExp(`\\b${id}\\b`).test(first) && /\b(?:untouched|unmodified) legacy path\b/i.test(first)
             && /\bfirst\b/i.test(first);
         });
-      const scopedBaseline = linkedBaseline || committedBaseline || orderedBaseline || inlineBaseline;
+      // The selected ledger scope supplies the pre-rewrite golden oracle;
+      // the bound task verifies it on legacy/new paths, and a separate removal
+      // task explicitly waits for that same suite to replay green.
+      const ledger = declaration.ledger;
+      const ledgerRow = ledger?.row.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const ledgerTasks = ledger ? tasks.filter(other => other.match && other.match[1] !== id && owned(other.body)
+        && !framed(other.preceding) && new RegExp(`\\bdelete legacyAuthFlow\\(\\) only after ${id} replays green\\b`, 'i').test(unquoted(other.match![2]!))
+        && [...other.body.matchAll(/^  - Verify: (.+)$/gm)].length === 1
+        && new RegExp(`^  - Verify: ${id} suite \\+ per-caller integration tests green on the new path$`, 'im').test(other.body)) : [];
+      const ledgerBaseline = ledger && ledgerTasks.length === 1
+        && tasks.filter(other => other.match?.[1] === ledgerTasks[0]!.match![1]).length === 1
+        && new RegExp(`\\b(?:Capture|Record|Pin) the ${ledger.caseCount}-case characterization matrix from legacyAuthFlow\\(\\)(?=\\s|$)`).test(title)
+        && new RegExp(`^  - Surfaced by: [^\\n]*\\b${ledgerRow}/${ledger.question}\\b`, 'm').test(task.body)
+        && /(?:^|,\s*)(?:new\s+)?[A-Za-z][\w/.-]*\.test(?:\.[jt]s|\.(?=,|$))/.test(taskFiles[0]![1]!)
+        && runs.length === 2 && /^(?:matrix|suite) green against (?:the )?legacy$/i.test(runs[0]!)
+        && /^(?:replayed|rerun) green against (?:the )?new path before (?:swap|replacement|cutover)$/i.test(runs[1]!);
+      const scopedBaseline = linkedBaseline || committedBaseline || orderedBaseline || inlineBaseline || ledgerBaseline;
       if (!scopedBaseline && !scheduledVerification) continue;
       // An explicit ordered step provides the old-code oracle; matching a task label alone cannot.
       const baseline = scopedBaseline || current.filter(s => /^Verification(?: \([^)]*\))?$/i.test(s.title)).some(s => {
@@ -1209,7 +1295,7 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
         });
       });
       if (!baseline) continue;
-      const subject = `(?:${id}(?: (?:baseline )?verification)?|(?:this|the) (?:(?:legacy|baseline) )?(?:(?:regression|characterization) )?(?:suite|test|requirement|verification))`;
+      const subject = `(?:${ledgerBaseline ? `${ledgerRow}|${ledger!.question}|${ledgerTasks[0]!.match![1]}|` : ''}${id}(?: (?:baseline )?verification)?|(?:this|the) (?:(?:legacy|baseline) )?(?:(?:regression|characterization) )?(?:suite|test|requirement|verification))`;
       const cancelled = current.some(s => {
         if (/\b(?:history|historical|source|quoted|example)\b/i.test(s.title)) return false;
         const named = /^(.*?)\b(?:regression|characterization)\s+(?:suite|tests?)\b/i.exec(s.title)?.[1]?.trim();

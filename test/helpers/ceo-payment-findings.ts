@@ -1,5 +1,5 @@
 import { marked } from 'marked';
-import type { AskUserQuestionFingerprint } from './claude-pty-runner';
+import { engSetupAUQ, type AskUserQuestionFingerprint } from './claude-pty-runner';
 import type { NativePlanQuestionCall } from './plan-count-transcript';
 
 type Seed = 'dispatcher' | 'lookup' | 'email' | 'tests' | 'orders';
@@ -26,6 +26,7 @@ const obligations: Array<{ seed: Seed; subject: RegExp; defect: RegExp; remedy: 
   { seed: 'orders', subject: /\b(?:orders?|query|queries)\b/i,
     defect: /\b(?:per-order|one query per order|N\+1|(?:fetch\w*|quer\w*)[^.]*loop)\b/i,
     remedy: /\b(?:batch\w*|single (?:orders )?query|one (?:bound-parameter )?query|bulk)\b/i },
+
 ];
 
 // Use only current prose. Quoted/code blocks never supply a defect, remedy,
@@ -67,6 +68,8 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
   if (!question.trim() || !current(question) || !current(explanation)) return null;
   const options = q.options.map(o => prose(`${o.label}\n${o.description ?? ''}`)).filter(current);
   const tokens = marked.lexer(savedPlan);
+  const namedSourcePlan = tokens.some(t => t.type === 'paragraph' &&
+    /(?:^|\n)Source plan:\s*PLAN\.md\b/.test(plain(t.raw)));
   const matches: Finding[] = [];
   for (const table of tokens.filter(t => t.type === 'table')) {
     if (table.type !== 'table') continue;
@@ -77,7 +80,9 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
     for (const cells of table.rows) {
       const read = (key: keyof typeof fields) => plain(cells[fields[key][0]!]!.text);
       const owner = read('id'), id = owner.split(/\s/, 1)[0]!.replace(/[.:]$/, '');
-      if (!id || !mentions(question, id) || !/^(?:unresolved|approved|reopened|deferred|declined)\b/i.test(read('status')) || !/\bPLAN\.md\b/.test(read('evidence'))) continue;
+      const sourceBound = /\bPLAN\.md\b/.test(read('evidence')) ||
+        (namedSourcePlan && /\bEvidence:\s*plan text\b/i.test(read('evidence')));
+      if (!id || !mentions(question, id) || !/^(?:unresolved|approved|reopened|deferred|declined)\b/i.test(read('status')) || !sourceBound) continue;
       // A row can contain its proposals directly or cite a separate saved
       // comparison bearing the same ID. Heading spelling/depth is immaterial.
       const blocks = tokens.map((t, i) => t.type === 'heading' && mentions(plain(t.text), id) ? i : -1).filter(i => i >= 0);
@@ -92,8 +97,14 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
       }
       for (const spec of obligations) {
         const row = `${owner} ${read('evidence')} ${read('current')}`;
+        // Current holds existing/approved behavior. A correct baseline can
+        // still have a defective pending alternative in Proposed; keep that
+        // defect bound to this active row, not a copied comparison elsewhere.
+        const pendingDefect = /^(?:unresolved|reopened)\b/i.test(read('status')) &&
+          current(read('proposed')) && spec.subject.test(read('proposed')) && spec.defect.test(read('proposed'));
         if (!spec.subject.test(seedPlan) || !spec.defect.test(seedPlan) || !spec.subject.test(row) ||
-          !spec.defect.test(read('current')) || !spec.subject.test(question) || !spec.defect.test(explanation)) continue;
+          !(spec.defect.test(read('current')) || pendingDefect) ||
+          !spec.subject.test(question) || !spec.defect.test(explanation)) continue;
         const operative = options.some(o => spec.remedy.test(o) && spec.subject.test(o));
         const proposal = proposals.find(p => current(p.body) && spec.remedy.test(p.body) && spec.subject.test(p.body));
         if (operative && proposal) matches.push({ seed: spec.seed, ledgerId: id, phase: proposal.phase, signature: fp.signature });
@@ -111,6 +122,11 @@ function setupQuestion(fp: AskUserQuestionFingerprint): boolean {
   const labels = q.options.map(o => option(o.label));
   if (/\b(?:skill routing|routing rules)\b/i.test(title) && /\bCLAUDE\.md\b/i.test(title))
     return labels.length === 2 && labels.some(l => /\b(?:add|enable|include|append)\b.*\brouting\b/i.test(l)) && labels.some(l => /\b(?:no thanks|skip|manually|manual)\b/i.test(l));
+  // Reuse the native scope interaction classifier under ownedAnswer's
+  // stricter identity checks; setup needs no working-plan file yet.
+  if (prose(q.question).trim() && current(prose(q.question)) && engSetupAUQ(fp)) return true;
+  // Preserve the existing label-wrapper contract; the shared predicate
+  // expects unnumbered action labels while this older route accepts wrappers.
   if (/\bcross[- ]project learnings\b/i.test(title) && /\b(?:enable|search)\b/i.test(title))
     return labels.length === 2 && labels.some(l => /\benable\b.*\bcross[- ]project\b/i.test(l)) && labels.some(l => /\bproject[- ]scoped\b/i.test(l));
   const modes = labels.map(l => l.match(/\b(?:SCOPE EXPANSION|SELECTIVE EXPANSION|HOLD SCOPE|SCOPE REDUCTION)\b/g));
@@ -127,20 +143,85 @@ function todoDecision(fp: AskUserQuestionFingerprint): boolean {
     q.options.some(o => /^(?:add|build|implement|remove|defer|skip)\b/i.test(option(o.label)));
 }
 
+/** Count other real choices by their saved decision identity, not a defect
+ * vocabulary. A row alone is insufficient: its own complete comparison must
+ * bind every offered native option. This grants count credit, not approval. */
+function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { ledgerId: string; phase: string } | null {
+  const call = ownedAnswer(fp);
+  if (!call) return null;
+  const q = call.questions[0]!, question = prose(q.question);
+  if (!question.trim() || !current(question)) return null;
+  const title = question.split('\n')[0]!;
+  const tokens = marked.lexer(savedPlan);
+  const namedSource = tokens.some(t => t.type === 'paragraph' && /(?:^|\n)Source plan:\s*PLAN\.md\b/.test(plain(t.raw)));
+  const selector = (label: string) => /^([A-D])[.):]\s*/i.exec(plain(label))?.[1]?.toUpperCase();
+  const labelWords = (label: string) => (option(label).toLowerCase().match(/[a-z][a-z0-9_]{3,}/g) ?? [])
+    .filter(word => !['recommended', 'option', 'only', 'plan', 'planned', 'written', 'keep', 'same', 'full'].includes(word));
+  const sameOption = (offered: string, saved: string, summary: string) => option(offered).toLowerCase() === option(saved).toLowerCase() ||
+    Boolean(selector(offered) && selector(offered) === selector(saved) &&
+      labelWords(offered).some(word => labelWords(saved + ' ' + summary).includes(word)));
+  const matches: Array<{ ledgerId: string; phase: string }> = [];
+  for (const table of tokens.filter(t => t.type === 'table')) {
+    if (table.type !== 'table') continue;
+    const index = (meaning: RegExp) => table.header.flatMap((cell, i) => meaning.test(plain(cell.text)) ? [i] : []);
+    const fields = { id: index(/^(?:ID|Decision)\b/i), evidence: index(/\b(?:Contract|Evidence)\b/i),
+      current: index(/^Current\b/i), proposed: index(/^Proposed\b/i), status: index(/^Status\b/i) };
+    if (Object.values(fields).some(found => found.length !== 1)) continue;
+    for (const cells of table.rows) {
+      const read = (key: keyof typeof fields) => plain(cells[fields[key][0]!]!.text);
+      const id = read('id').split(/\s/, 1)[0]!.replace(/[.:]$/, '');
+      if (!id || !mentions(title, id) || !/^(?:unresolved|reopened|approved|deferred|declined)\b/i.test(read('status')) ||
+          !read('current') || !read('proposed') || read('current') === read('proposed') ||
+          !current(read('evidence')) || !current(read('proposed'))) continue;
+      if (!/\bPLAN\.md\b/.test(read('evidence')) && !(namedSource && /\bEvidence:\s*plan text\b/i.test(read('evidence')))) continue;
+      const anchors = tokens.flatMap((t, i) =>
+        (t.type === 'heading' && current(plain(t.text)) && mentions(plain(t.text), id)) ||
+        (t.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(t.raw)) && mentions(plain(t.raw), id)) ? [i] : []);
+      let matchedPhase: string | undefined;
+      for (const start of anchors) {
+        const anchor = tokens[start]!;
+        let end = start + 1;
+        while (end < tokens.length && !(tokens[end]!.type === 'heading' &&
+          (anchor.type !== 'heading' || (tokens[end] as any).depth <= anchor.depth))) end++;
+        for (const comparison of tokens.slice(start + 1, end)) {
+          if (comparison.type !== 'table') continue;
+          const headers = comparison.header.map(c => plain(c.text));
+          const optionColumn = headers.findIndex(h => /^(?:Option|Approach)\b/i.test(h));
+          if (optionColumn < 0 || !['effort', 'risk', 'pros', 'cons'].every(h => headers.some(v => v.toLowerCase() === h)) ||
+              comparison.rows.length !== q.options.length || comparison.rows.some(row => row.some(cell => !plain(cell.text)))) continue;
+          const saved = comparison.rows.map(row => plain(row[optionColumn]!.text));
+          const summaryColumn = headers.findIndex(h => /^(?:Summary|Description|Approach)$/i.test(h));
+          const matched = q.options.map(offered => saved.flatMap((label, i) => sameOption(offered.label, label,
+            summaryColumn < 0 ? '' : plain(comparison.rows[i]![summaryColumn]!.text)) ? [i] : []));
+          if (matched.every(found => found.length === 1) && new Set(matched.flat()).size === q.options.length) {
+            matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
+          }
+        }
+      }
+      if (matchedPhase) matches.push({ ledgerId: id, phase: matchedPhase });
+    }
+  }
+  return matches.length === 1 ? matches[0]! : null;
+}
+
 /** Fixture-local metric adapter. It never advances the shared phase boundary.
  * Every real current question, including repeated remedies, still counts
  * toward the original 4–7 band. Unknown decisions fail closed. */
 export function createCeoPaymentFindingCounter(seedPlan: string, readPlan: () => string,
   existingFinding: (fp: AskUserQuestionFingerprint) => boolean) {
-  const trace: Array<Finding | { signature: string; kind: 'setup' | 'existing-finding' | 'additional-current-decision' }> = [];
+  const trace: Array<Finding | { signature: string; kind: 'setup' | 'existing-finding' | 'additional-current-decision' } |
+    { signature: string; kind: 'recorded-decision'; ledgerId: string; phase: string }> = [];
   return {
     trace,
     isReviewAUQ(fp: AskUserQuestionFingerprint, priorCalls: readonly NativePlanQuestionCall[] = []): boolean {
       if (!ownedAnswer(fp) || priorCalls.some(call => `${call.sessionId}:${call.toolUseId}` === fp.signature))
         throw new Error(`Invalid or duplicated completed native decision: ${fp.signature}`);
       if (setupQuestion(fp)) { trace.push({ signature: fp.signature, kind: 'setup' }); return false; }
-      const finding = ceoPaymentFinding(fp, seedPlan, readPlan());
+      const plan = readPlan();
+      const finding = ceoPaymentFinding(fp, seedPlan, plan);
       if (finding) { trace.push(finding); return true; }
+      const decision = recordedDecision(fp, plan);
+      if (decision) { trace.push({ signature: fp.signature, kind: 'recorded-decision', ...decision }); return true; }
       if (todoDecision(fp)) { trace.push({ signature: fp.signature, kind: 'additional-current-decision' }); return true; }
       if (existingFinding(fp)) { trace.push({ signature: fp.signature, kind: 'existing-finding' }); return true; }
       throw new Error(`Unsupported current CEO decision; cannot exclude it from the 4–7 count: ${fp.signature}`);

@@ -1,3 +1,4 @@
+import lifetimeFixture from './fixtures/ceo-fill-lifetime.json';
 import { describe, expect, test } from 'bun:test';
 import {
   CACHE_READ_WRITE_SKETCH,
@@ -707,5 +708,108 @@ describe('attributed coordination phrase classes and ownership', () => {
     expect(hasStaleFillRaceFinding(report.replace('freshness rule.', 'freshness rule (see F3).'))).toBe(true);
     expect(hasStaleFillRaceFinding(report.replace('freshness rule.', 'freshness rule (see F9).'))).toBe(false);
     expect(hasStaleFillRaceFinding(report.replace('freshness rule.', 'freshness rule (see D3).'))).toBe(false);
+  });
+});
+
+describe('current fill-lifetime overlap', () => {
+  const lifetime = 'a fill that started before a write and stored after it caches the pre-write snapshot';
+  const current = (text: string, suffix = '') => `### Current findings\n\nWithout coordination, ${text}, violating the retained read-after-write rule. ${suffix}`;
+
+  test('captured current lifetime claim is independent of the ambiguous inline schedule', () => {
+    expect(hasStaleFillRaceFinding(lifetimeFixture.claim)).toBe(true);
+    expect(hasStaleFillRaceFinding(lifetimeFixture.ambiguousFinding)).toBe(false);
+  });
+
+  test.each([
+    lifetime,
+    'the cache fill which began before the write and completed after that write, storing the old value',
+    'a fill that begins before a write and finishes after the same write stores the stale data',
+    'the original fill starts before this write and completes after that same write caches the pre-write snapshot',
+    'the fill began before the write completes and stored after it settles caches the pre-write value',
+  ])('recognizes an explicit same-fill lifetime: %s', text => {
+    expect(hasStaleFillRaceFinding(current(text))).toBe(true);
+  });
+
+  test.each(['F1', 'R7', 'BUG-cache', '17'])('current ownership does not depend on row-ID spelling: %s', id => {
+    expect(hasStaleFillRaceFinding(`### Current findings\n\n| ${id} | CRITICAL GAP | ${current(lifetime).split('\n\n')[1]} |`)).toBe(true);
+  });
+
+  test.each([
+    ['starts after the write', lifetime.replace('started before', 'started after')],
+    ['stores before the write', lifetime.replace('stored after', 'stored before')],
+    ['different writer', lifetime.replace('after it', 'after another write')],
+    ['different filling actor', lifetime.replace('and stored', 'and another fill stored')],
+    ['foreign key', lifetime.replace('a fill', 'a fill for another key')],
+    ['return to original caller only', lifetime.replace('stored after it caches', 'returned after it with')],
+    ['fresh value', lifetime.replace('pre-write snapshot', 'committed snapshot')],
+    ['missing start', lifetime.replace('that started before a write and ', '')],
+    ['missing late storage', lifetime.replace('and stored after it ', '')],
+    ['missing cache storage', lifetime.replace('caches the pre-write snapshot', 'returns the pre-write snapshot')],
+    ['explicit conditional', 'if ' + lifetime],
+    ['explicit hypothesis', 'hypothetical execution: ' + lifetime],
+    ['possible execution only', 'it might be that ' + lifetime],
+    ['negated execution', 'it is not true that ' + lifetime],
+    ['prevented execution', 'the guard prevents ' + lifetime],
+    ['impossible execution', 'it is impossible that ' + lifetime],
+    ['quoted execution', '"' + lifetime + '"'],
+    ['code literal execution', '`' + lifetime + '`'],
+    ['quote cannot join phase fragments', lifetime.replace('and stored after it', 'and "stored after it"')],
+    ['second subject cannot inherit write', lifetime.replace('after it', 'after a separate write')],
+  ])('rejects incomplete or unasserted overlap: %s', (_name, text) => {
+    expect(hasStaleFillRaceFinding(current(text))).toBe(false);
+  });
+
+  test.each([
+    ['quoted block', current(lifetime).split('\n').map(line => '> ' + line).join('\n')],
+    ['fenced block', '```text\n' + current(lifetime) + '\n```'],
+    ['unclosed fence', '~~~text\n' + current(lifetime)],
+    ['source heading', current(lifetime).replace('Current findings', 'Quoted source')],
+    ['historical owner', current(lifetime).replace('Current findings', 'Historical review')],
+    ['source introduction', 'Source:\n' + current(lifetime).replace('Current findings', 'Findings')],
+    ['accepted staleness', current(lifetime, 'This staleness is the accepted consistency model.')],
+    ['later stale read permitted', current(lifetime, 'Later stale reads are permitted by the contract.')],
+    ['current prevention', current(lifetime, 'The current wrapper cannot refill old data after invalidation.')],
+    ['finding withdrawn', current(lifetime, 'This finding is withdrawn.')],
+    ['finding rejected', current(lifetime, 'This finding is rejected.')],
+    ['no repair required', current(lifetime, 'No guard is required.')],
+  ])('preserves current ownership and dismissal: %s', (_name, text) => {
+    expect(hasStaleFillRaceFinding(text)).toBe(false);
+  });
+
+  const seeded = () => {
+    const events: string[] = [];
+    let cached: string | undefined;
+    let releaseRead!: () => void;
+    const pendingRead = new Promise<string>(resolve => { releaseRead = () => { events.push('DB read v1 completes'); resolve('v1'); }; });
+    const cache = {
+      get: () => cached,
+      set: (_key: string, value: string) => { events.push('cache set ' + value); cached = value; },
+      delete: () => { events.push('cache delete'); cached = undefined; },
+    };
+    const repository = {
+      read: () => pendingRead,
+      write: async () => { events.push('DB write commits v2'); return 'v2'; },
+    };
+    const functions = new Function('cache', 'repository', CACHE_READ_WRITE_SKETCH + '\nreturn { readProfile, writeProfile };')(cache, repository);
+    return { events, releaseRead, ...functions } as { events: string[]; releaseRead: () => void; readProfile: (key: string) => Promise<string>; writeProfile: (key: string, update: unknown) => Promise<string> };
+  };
+
+  test('the actual seeded wrapper can fill a pre-write snapshot when its pending read completes after the writer', async () => {
+    const fixture = seeded();
+    const original = fixture.readProfile('profile');
+    await fixture.writeProfile('profile', {});
+    fixture.releaseRead();
+    expect(await original).toBe('v1');
+    expect(await fixture.readProfile('profile')).toBe('v1');
+    expect(fixture.events).toEqual(['DB write commits v2', 'cache delete', 'DB read v1 completes', 'cache set v1']);
+  });
+
+  test('the seeded await continuation stores synchronously before a later writer invalidates it', async () => {
+    const fixture = seeded();
+    const original = fixture.readProfile('profile');
+    fixture.releaseRead();
+    expect(await original).toBe('v1');
+    await fixture.writeProfile('profile', {});
+    expect(fixture.events).toEqual(['DB read v1 completes', 'cache set v1', 'DB write commits v2', 'cache delete']);
   });
 });

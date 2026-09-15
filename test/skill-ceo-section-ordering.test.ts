@@ -79,6 +79,20 @@ test('CEO mode handoff applies the selected mode before the next question', () =
   const instruction = handoff.split('\n')[0]!;
   expect(instruction).toMatch(/before the next scope or review question/i);
   expect(instruction).toMatch(/chat message.*how.*mode applies to this plan.*why/i);
+  expect(selection).toContain('4. **Mode handoff:**');
+  expect(selection).toContain('Use an explicit user mode choice and skip steps 2–3');
+  expect(instruction).toContain('After either an explicit choice or step 3');
+  expect(instruction).toContain('your next response is a brief chat message before tools');
+  const selectionSteps = selection.slice(0, handoffStart);
+  expect(selectionSteps).toContain('only if that check exits 0 with `AUTO_DECIDE`');
+  expect(selectionSteps).toContain('**STOP for the answer**');
+  expect(selectionSteps).not.toMatch(/\blog (?:with|that ID)\b/);
+  const loggingStart = handoff.indexOf('After the handoff, use the preamble to log');
+  expect(loggingStart).toBeGreaterThan(handoff.indexOf('- Other selections:'));
+  expect(loggingStart).toBeLessThan(handoff.indexOf('Mode selection grants no approach or scope approval'));
+  const logging = compactProse(handoff.slice(loggingStart));
+  expect(logging).toContain('`auto_decided: true` for automatic selection');
+  expect(logging).toContain('for an asked question, log its ID only when `QUESTION_TUNING: true`');
   const formats = handoff.split('\n').filter(line => line.startsWith('- '));
   expect(formats).toHaveLength(2);
   for (const format of formats) {

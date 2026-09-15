@@ -4,14 +4,35 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { getHermeticDirs } from './hermetic-env';
 
-/** Disposable config for evals that explicitly cover native review only. */
-export function createNativeReviewState(): {
+export interface NativeReviewState {
   env: Record<string, string>;
   cleanup(): void;
-} {
+}
+const ownedNativeReviewStates = new WeakMap<NativeReviewState, {
+  root: string; realRoot: string; dev: number; ino: number;
+}>();
+
+/** Only an explicit live constructor-owned state can grant Autoplan artifacts. */
+export function ownedNativeReviewStateRoot(state: NativeReviewState, env: Record<string, string | undefined>): string {
+  const owned = ownedNativeReviewStates.get(state);
+  if (!owned || env.GSTACK_HOME !== owned.root || env.GSTACK_STATE_ROOT !== owned.root)
+    throw new Error('Autoplan artifacts require the matching owned native review state');
+  const stat = fs.lstatSync(owned.root);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== owned.dev || stat.ino !== owned.ino ||
+      fs.realpathSync(owned.root) !== owned.realRoot)
+    throw new Error('Autoplan native review state was replaced');
+  return owned.root;
+}
+
+/** Disposable config for evals that explicitly cover native review only. */
+export function createNativeReviewState(): NativeReviewState {
   const sharedState = getHermeticDirs().gstackHome;
   const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-native-review-state-'));
-  const cleanup = () => fs.rmSync(stateRoot, { recursive: true, force: true });
+  let state: NativeReviewState | undefined;
+  const cleanup = () => {
+    if (state) ownedNativeReviewStates.delete(state);
+    fs.rmSync(stateRoot, { recursive: true, force: true });
+  };
   try {
     for (const entry of fs.readdirSync(sharedState, { withFileTypes: true })) {
       // Keep onboarding seeds; never copy sibling review logs/artifacts.
@@ -25,7 +46,10 @@ export function createNativeReviewState(): {
       .replace(/^codex_reviews:.*(?:\r?\n|$)/gm, '');
     fs.writeFileSync(path.join(stateRoot, 'config.yaml'), config + '\ncodex_reviews: disabled\n');
     // Readers and onboarding writers must agree on the owned state.
-    return { env: { GSTACK_HOME: stateRoot, GSTACK_STATE_ROOT: stateRoot }, cleanup };
+    state = { env: { GSTACK_HOME: stateRoot, GSTACK_STATE_ROOT: stateRoot }, cleanup };
+    const stat = fs.lstatSync(stateRoot);
+    ownedNativeReviewStates.set(state, { root: stateRoot, realRoot: fs.realpathSync(stateRoot), dev: stat.dev, ino: stat.ino });
+    return state;
   } catch (error) {
     cleanup();
     throw error;

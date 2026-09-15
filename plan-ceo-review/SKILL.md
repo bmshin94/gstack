@@ -972,16 +972,20 @@ Count distinct planned file additions, edits and deletions; label uncertain coun
 2. Recommend SCOPE REDUCTION for >15 planned changed files; else SCOPE EXPANSION for greenfield work, SELECTIVE EXPANSION for enhancements, or HOLD SCOPE for bug fixes/refactors. This step recommends a mode; it does not select one.
 3. Resolve that recommendation:
    - When `QUESTION_TUNING: false`, skip the lookup and ask below.
-   - Otherwise check `question_id=plan-ceo-review-mode` through the preamble. Select the recommendation automatically only if that check exits 0 with `AUTO_DECIDE`; use the automatic handoff below and log with `auto_decided: true`.
-   - Without that successful check, offer all four modes in one AskUserQuestion, using step 2's recommendation. **STOP for the answer**; the user's choice wins. When `QUESTION_TUNING: true`, include `<gstack-qid:plan-ceo-review-mode>` and log that ID. These modes differ in kind, not coverage; do NOT score completeness.
+   - Otherwise check `question_id=plan-ceo-review-mode` through the preamble. Select the recommendation automatically only if that check exits 0 with `AUTO_DECIDE`; use the automatic handoff in step 4.
+   - Without that successful check, offer all four modes in one AskUserQuestion, using step 2's recommendation. **STOP for the answer**; the user's choice wins. When `QUESTION_TUNING: true`, include `<gstack-qid:plan-ceo-review-mode>`. These modes differ in kind, not coverage; do NOT score completeness.
 
-Mode selection grants no approach or scope approval. Preserve approved 0D decisions; obtain explicit approval for any mode-required change. The >15-file threshold recommends a mode; the >8-file check challenges complexity within HOLD SCOPE and SELECTIVE EXPANSION. Neither threshold authorizes a scope cut.
-
-**Mode handoff:** Before the next scope or review question, send a brief chat message explaining how the selected mode applies to this plan and why. Include every governing approved row's ID, answer reference and accepted scope. Do not collapse several choices into one approach.
+4. **Mode handoff:** After either an explicit choice or step 3, your next response is a brief chat message before tools and before the next scope or review question. Explain how the mode applies to this plan and why. Include every governing approved row's ID, answer reference and accepted scope. Do not collapse several choices into one approach.
 - `plan-ceo-review-mode: AUTO_DECIDE`: `Auto-decided review mode → <selected mode> (your preference). Change with /plan-tune. Approved decisions: <rows or none>. <Application and rationale>.`
 - Other selections: `Mode: <selected mode>; approved decisions: <rows or none>. <Application and rationale>.`
 
+After the handoff, use the preamble to log `plan-ceo-review-mode`:
+`auto_decided: true` for automatic selection; for an asked question, log its ID
+only when `QUESTION_TUNING: true`.
+
 If 0D needed no new choice, say "No new approach decision was needed"; carry prior approvals forward. Ask before changing the mode.
+
+Mode selection grants no approach or scope approval. Preserve approved 0D decisions; obtain explicit approval for any mode-required change. The >15-file threshold recommends a mode; the >8-file check challenges complexity within HOLD SCOPE and SELECTIVE EXPANSION. Neither threshold authorizes a scope cut.
 
 Follow the selected mode's route:
 

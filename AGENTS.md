@@ -170,6 +170,9 @@ When fixing failures or preparing `/ship`, follow this order:
    failed edit is not a reason to test the unchanged input again.
 6. Declare a fixture actor’s supported interactions before the model starts.
    Keep its answers and permission handling within that declared interface.
+   Bind artifact ownership to the same isolated state passed to the child;
+   ambient environment paths do not establish ownership. Check whole-file and
+   CI supervision against every case and configured retry, not just one attempt.
    Preflight the actual launcher: required binaries, isolated state, display when
    needed, explicit test tier, selection, and expected executed-case counts.
    Verify required tool execution with a no-cost smoke check under that launch
@@ -186,7 +189,10 @@ When fixing failures or preparing `/ship`, follow this order:
    Preserve exit status through logging. Use the documented detached runner and
    eval lock. Review the final launcher after edits; preparation and `--list`
    modes must not start monitors, retainers, or test processes. Verify this with
-   a before/after process check. Skipped or unstarted cases
+   a before/after process check. During long runs, inspect the last public tool
+   result and pending permission state; diagnose a blocked actor before waiting
+   through its deadline. Preserve cancellation separately from a test verdict.
+   Skipped or unstarted cases
    do not satisfy coverage; preserve configured retries and every attempt.
 7. Prove all known repairs with focused tests, including affected paid cases.
    Rerun a failed case only after a concrete repair or a demonstrated launch
