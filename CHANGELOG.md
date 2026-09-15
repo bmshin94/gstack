@@ -19,6 +19,74 @@
 - Review fixtures provide the application context and independent contracts their assertions require, declare supported editing and feedback interfaces, and verify existing rollback behavior. The DX count scenario covers a bounded onboarding decision checkpoint and defers independent roadmap work. Design evaluations submit real board feedback before acknowledging it and grant image reads only inside their owned artifact directory. Sol evaluations generate skills in private storage without replacing checkout caches. Native fixtures match complete permission text and offered handoff choices. Shared helper and source-template dependencies select the affected evaluations; overlay tests distinguish correctness from performance measurements.
 - Contributor instructions require focused reproductions and adjacent checks before paid evaluations, independent scheduling, launcher preflight with executed-case counts, reuse of passing checks with unchanged inputs, and one full free-suite acceptance run after the code is frozen. Recurring parser failures require checking the supported input class against the pinned runtime.
 
+## [1.87.3.0] - 2026-09-15
+
+**Changed code needs another pass.**
+**Review freshness now checks both ends.**
+
+A green review now stays attached to the code that was there when the pass began. `/review` and `/ship` capture that content before reading it, then compare again when the pass finishes. If fixes changed the files, another pass has to review those fixes before the dashboard can call the result CURRENT. Older log-only records remain visible, but cannot stand in for a completed code review.
+
+A clean result requires a completed pass on unchanged content with no unresolved findings. A stopped or nonconverged run cannot clear the code-review row just because its commit has not moved.
+
+### The three numbers that matter
+
+Source: scenarios in `test/review-start-evidence.test.ts`, checked against released v1.87.0.0 and this version. Run `bun test test/review-start-evidence.test.ts` to verify current behavior. These are false CURRENT grades across five deterministic cases, not production incident estimates.
+
+| Cases incorrectly graded CURRENT | Before | After | Δ |
+|---|---:|---:|---:|
+| Mid-review edits: tracked and untracked source | 2 | 0 | -2 |
+| Log-only result without a captured review start | 1 | 0 | -1 |
+| Codex advisory findings: none or only some resolved | 2 | 0 | -2 |
+
+The old stamp could certify a review after its own fixes changed the tree. Those cases now stay STALE or UNVERIFIED, including an advisory-only Codex pass that leaves findings unresolved.
+
+### What this means for developers
+
+You can distinguish a completed, unchanged pass from a run that still needs attention before merging. Plan reviews keep their existing rules; they assess the plan rather than the checked-out source. Completion is still reviewer-reported, not proof that an LLM read every file. Run `/review` again after fixes and use the new result when preparing to ship.
+
+### Itemized changes
+
+#### Fixed
+
+- **Review freshness no longer certifies unreviewed fixes.** `/review` and `/ship` bind each diff pass to the content captured before it starts. Edits during review, incomplete passes, and older log-only records stay stale or unverified in the readiness dashboard and `/land-and-deploy`, even when HEAD has not moved. Plan-review evidence keeps its existing freshness rules.
+- **Codex readiness keeps unresolved findings visible.** Passing the critical-findings gate does not make a review CURRENT while advisory findings remain open. The gate's severity policy is unchanged.
+
+## [1.87.2.0] - 2026-09-15
+
+**Headless commands stop closing your logged-in browser.**
+**Other projects leave it alone.**
+
+Keep a headed GStack Browser open while another project uses headless browse commands. Starting, stopping, or disconnecting that project's headless daemon no longer kills the process holding your headed profile or removes its locks. The shared-profile cleanup now runs only for headed sessions, which actually use that profile. Headed startup keeps its stale-lock recovery.
+
+### The three numbers that matter
+
+Source: `bun test browse/test/chromium-profile-isolation.test.ts`, running the same nine-case regression suite against unchanged main and this release. Its headless CLI cases pair a real daemon with a controlled live process holding another project's profile locks. The headed startup controls use a stub daemon.
+
+| Metric | Before | After | Δ |
+|---|---|---|---|
+| Isolation suite cases passing | 3 of 9 | 9 of 9 | +6 |
+| Isolation suite cases failing | 6 of 9 | 0 of 9 | -6 |
+| Headed startup controls passing | 2 of 2 | 2 of 2 | Unchanged |
+
+The six previously failing cases now pass without deleting the foreign locks or killing their holder. Both explicit `--headed` and `BROWSE_HEADED=1` still clear stale locks before launch.
+
+This release separates headless cleanup from the shared headed profile. It does not give two headed sessions separate profiles, and it does not fix production Chromium process-identity capture. Tests that supply a recorded process identity verify its cleanup behavior; they are not evidence that a real launch records that identity.
+
+### What this means for multi-project work
+
+You can leave one browser open for work that needs your logins while another project starts or stops its own headless daemon. That removes the cross-project cleanup path behind the disappearing-window report, without claiming a solution for two headed browsers sharing one profile. Upgrade gstack and keep using your existing headed connection.
+
+### Itemized changes
+
+#### Fixed
+
+- Headless daemon startup, stop, disconnect, and crash cleanup leave another project's headed browser and shared profile locks alone. Headed launches retain stale-lock cleanup. (#2817)
+
+#### For contributors
+
+- Added nine regression cases for shared-profile isolation, including cleanup with a supplied recorded process identity. Production identity capture is not validated by those fixtures.
+- Extended only the outer deadline of the native Windows USERPROFILE integration test to 120 seconds. Its assertions and subprocess timeouts are unchanged.
+
 ## [1.87.1.0] - 2026-09-15
 
 **Two vulnerable dependencies are fixed.**
