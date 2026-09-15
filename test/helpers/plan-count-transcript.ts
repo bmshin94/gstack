@@ -187,6 +187,14 @@ export function readPlanCountTranscript(configDir: string, cwd: string,
                 record.parentUuid === null) ancestry.add(record.uuid);
           }
           if (continuation) ancestry.add(record.uuid);
+          // Native compaction resets parentUuid but links its prior owned
+          // append-order ancestry through logicalParentUuid. Summary text does
+          // not establish ownership, and an arbitrary reset cannot seed a root.
+          const compactContinuation = parentMetadata && record.type === 'system' &&
+            record.subtype === 'compact_boundary' && record.parentUuid === null &&
+            record.message == null && nativeUuid(record.logicalParentUuid) &&
+            ancestry.has(record.logicalParentUuid) && !ancestry.has(record.uuid);
+          if (compactContinuation) ancestry.add(record.uuid);
           if ((record.cwd !== cwd && !continuation) || record.isSidechain !== false ||
               !object(record.message) || !Array.isArray(record.message.content)) continue;
           matched = true;

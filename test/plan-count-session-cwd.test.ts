@@ -113,3 +113,59 @@ for(const [name,change] of Object.entries({
 }))test(`cwd continuation does not bypass ${name}`,()=>{
  const r=rows();change(r);expect(designAudit(read(r).events)?.passed).toBe(false);
 });
+
+// Native90f compact boundaries reset parentUuid and retain the owned parent
+// in logicalParentUuid. Summary timestamps can precede their boundary slightly;
+// append-order graph metadata, not summary prose, connects the next tool turn.
+function compactRows():any[]{
+ const r=rows();r[2].parentUuid=uuid(21);
+ r.splice(2,0,{...record(20,null),type:'system',subtype:'compact_boundary',logicalParentUuid:uuid(2),message:undefined},
+  {...record(21,20,cwd,'user'),isCompactSummary:true,timestamp:'2026-09-11T01:23:54.550Z',message:{role:'user',content:'Context summary; not an announcement or tool result.'}});
+ return r;
+}
+test('compact boundary retains changed-cwd tool request, ACK and actual phase text',()=>{
+ const {events,transcript}=read(compactRows());
+ expect(events.map(e=>e.toolUseId)).toEqual(['read-owned','read-owned','dispatch']);
+ expect(designAudit(events)?.passed).toBe(true);
+ expect(autoplanPhaseCompletions(transcript,0)).toEqual([{phase:1,ts:Date.parse(time)}]);
+});
+test('compact boundary can repeat on the same owned append-order ancestry',()=>{
+ const r=compactRows();r.push({...record(30,null,archive),type:'system',subtype:'compact_boundary',logicalParentUuid:uuid(6),message:undefined},
+  {...record(31,30,archive,'user'),isCompactSummary:true,message:{role:'user',content:'Phase 3 complete. Quoted prior context only.'}},
+  record(32,31,archive,'assistant',[{type:'text',text:'Phase 2 complete.'}]));
+ expect(autoplanPhaseCompletions(read(r).transcript,0).map(x=>x.phase)).toEqual([1,2]);
+});
+for(const [name,change] of Object.entries({
+ 'missing owned origin':(r:any[])=>r.shift(),
+ 'foreign owned origin':(r:any[])=>r[0].cwd='/other/fixture',
+ 'rootless later reset':(r:any[])=>{r[0].parentUuid=uuid(99);},
+ 'unknown logical parent':(r:any[])=>r[2].logicalParentUuid=uuid(99),
+ 'missing logical parent':(r:any[])=>delete r[2].logicalParentUuid,
+ 'invalid logical parent':(r:any[])=>r[2].logicalParentUuid='prior-message',
+ 'unowned prior session parent':(r:any[])=>{r[1].sessionId='foreign-session';},
+ 'foreign boundary session':(r:any[])=>r[2].sessionId='foreign-session',
+ 'sidechain boundary':(r:any[])=>r[2].isSidechain=true,
+ 'agent boundary':(r:any[])=>r[2].agentId='child',
+ 'missing boundary scope':(r:any[])=>delete r[2].isSidechain,
+ 'relative boundary cwd':(r:any[])=>r[2].cwd='relative',
+ 'invalid boundary time':(r:any[])=>r[2].timestamp='unknown',
+ 'missing boundary time':(r:any[])=>delete r[2].timestamp,
+ 'missing boundary UUID':(r:any[])=>delete r[2].uuid,
+ 'stale reused boundary UUID':(r:any[])=>r[2].uuid=uuid(2),
+ 'wrong boundary type':(r:any[])=>r[2].type='assistant',
+ 'wrong boundary subtype':(r:any[])=>r[2].subtype='summary',
+ 'unknown non-null parent':(r:any[])=>r[2].parentUuid=uuid(99),
+ 'body masquerading as boundary':(r:any[])=>r[2].message={role:'user',content:[{type:'text',text:'compact_boundary logicalParentUuid='+uuid(2)}]},
+ 'quoted boundary source':(r:any[])=>{const text=JSON.stringify(r[2]);r[2]={...record(20,null),message:{role:'assistant',content:[{type:'text',text}]}};},
+}))test('compact boundary rejects '+name,()=>{
+ const r=compactRows();change(r);const {events,transcript}=read(r);
+ expect(events.some(e=>e.toolUseId==='read-owned')).toBe(false);
+ expect(autoplanPhaseCompletions(transcript,0)).toEqual([]);
+ expect(designAudit(events)?.passed).toBe(false);
+});
+test('compact boundary does not admit a foreign later root or bypass failed methodology',()=>{
+ const foreign=compactRows();foreign.unshift(record(99,null,'/other/fixture','user'));
+ expect(read(foreign).events.some(e=>e.toolUseId==='read-owned')).toBe(false);
+ const failed=compactRows();failed[5].message.content[0].is_error=true;
+ expect(designAudit(read(failed).events)?.passed).toBe(false);
+});

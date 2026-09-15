@@ -281,3 +281,20 @@ test('Design native-only actor capture selects its gate case', () => {
   expect(result.selected).toEqual(['plan-design-with-ui-scope']);
   expect(E2E_TIERS['plan-design-with-ui-scope']).toBe('gate');
 });
+
+
+test('native compact-boundary ancestry selects every consuming callback', () => {
+  const expected = [
+    'plan-ceo-mode-routing', 'autoplan-chain-pty', 'plan-ceo-finding-count',
+    'plan-eng-finding-count', 'plan-design-finding-count', 'plan-devex-finding-count',
+    'plan-eng-multi-finding-batching', 'plan-ceo-split-overflow',
+    'plan-design-with-ui-scope', 'plan-design-review-plan-mode', 'plan-eng-review-plan-mode',
+    'auto-decide-preserved', 'conductor-prose',
+  ].sort();
+  for (const file of ['test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts']) {
+    const selected = selectTests([file], E2E_TOUCHFILES);
+    expect(selected.reason).toBe('diff');
+    expect(selected.selected.sort()).toEqual(expected);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+});
