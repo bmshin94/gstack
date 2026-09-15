@@ -108,6 +108,26 @@ describe('selectTests', () => {
     },
   );
 
+  test.each(['lib/cso/cli.ts', 'lib/cso/state.ts', 'test/cso-cli.test.ts', 'test/cso-snapshot-state.test.ts'])(
+    'CSO runtime and report regressions select all three audit cases: %s', (file) => {
+      const result = selectTests([file], E2E_TOUCHFILES);
+      expect(result.reason).toBe('diff');
+      expect(result.selected.sort()).toEqual(['cso-diff-mode', 'cso-full-audit', 'cso-infra-scope']);
+      expect(E2E_TIERS['cso-diff-mode']).toBe('gate');
+      expect(E2E_TIERS['cso-full-audit']).toBe('periodic');
+      expect(E2E_TIERS['cso-infra-scope']).toBe('periodic');
+    },
+  );
+
+  test.each(['lib/redact-engine.ts', 'lib/redact-patterns.ts'])(
+    'shared redaction changes retain CSO audit consumers: %s', (file) => {
+      const result = selectTests([file], E2E_TOUCHFILES);
+      for (const id of ['cso-diff-mode', 'cso-full-audit', 'cso-infra-scope']) {
+        expect(result.selected).toContain(id);
+      }
+    },
+  );
+
   test.each(['test/helpers/coverage-audit.ts', 'test/coverage-audit.test.ts'])(
     'coverage-audit validation changes select all three gate cases: %s', (file) => {
       const result = selectTests([file], E2E_TOUCHFILES);

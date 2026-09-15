@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.87.1.0] - 2026-09-14
+## [1.87.1.0] - 2026-09-15
 
 ### Fixed
 - `/health` preserves checker exit statuses and complete diagnostics, shows missing coverage, and reports `N/A` when no checks run. Trends compare results with the same coverage.
@@ -13,7 +13,7 @@
 - `/autoplan` loads each review's complete instructions, waits for asynchronous reviewers to finish, carries approved decisions between phases, and verifies phase order and completion. Native review drivers acknowledge current questions and permissions promptly, reject stale frames and late completions, and recognize the offered manual handoff.
 - `/office-hours` preserves structured review evidence through completion, keeps supported handoff content when replacing review sections, and develops distinct builder ideas. `/setup-gbrain` handles fresh state, remote-only sharing declines, and interrupted attempts without leaking fixture state.
 - Terminal sessions drain output before reporting completion. Browser shutdown cleans up only the configured server instance. Pairing fixtures use checked ports and bounded cleanup. Deprecated-flag scans exclude workspace caches before searching and propagate command and filesystem failures.
-- CSO rejects a remote Docker endpoint with the correct diagnostic even when Docker is not installed.
+- CSO public reports redact repository roots regardless of their path, while private snapshots retain the identity needed for verification. CSO also rejects a remote Docker endpoint with the correct diagnostic even when Docker is not installed.
 
 ### Changed
 - Review fixtures provide the application context and independent contracts their assertions require, declare supported editing and feedback interfaces, and verify existing rollback behavior. The DX count scenario covers a bounded onboarding decision checkpoint and defers independent roadmap work. Design evaluations submit real board feedback before acknowledging it and grant image reads only inside their owned artifact directory. Sol evaluations generate skills in private storage without replacing checkout caches. Native fixtures match complete permission text and offered handoff choices. Shared helper and source-template dependencies select the affected evaluations; overlay tests distinguish correctness from performance measurements.
