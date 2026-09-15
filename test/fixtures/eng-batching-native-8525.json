@@ -810,5 +810,374 @@
       ],
       "expectedSeparateDecisions": 8
     }
-  ]
+  ],
+  "headerOwned6bd": {
+    "source": "6bd82935896f84464d900e1a9b2e32c1e06e4e8a",
+    "attempt": "plan-eng-review-1789511099277-TSpILR",
+    "originalOutcome": {
+      "outcome": "plan_ready",
+      "reviewCount": 0,
+      "assertion": "BATCHING REGRESSION: reviewCount=0 < FLOOR=3"
+    },
+    "provenance": "Exact complete public native questions and ACKs from the failed first attempt; no private transcript. Header-only stable R identity is under test, not saved-brief completeness.",
+    "expectedSeparateDecisions": 7,
+    "calls": [
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_012c6aTw1BxZm4HUCRj4ZYBp",
+        "questions": [
+          {
+            "question": "D1 \u2014 Add gstack skill routing rules to this project's CLAUDE.md?\nProject/branch/task: gstack-plan-count fixture, branch main, starting /plan-eng-review of PLAN.md.\nELI10: gstack skills work best when the project's CLAUDE.md tells the assistant which skill to reach for (bugs \u2192 /investigate, ship \u2192 /ship, etc.). Without it, you invoke skills by hand each time. This is a one-time setup prompt per project.\nStakes if we pick wrong: Minor either way. Adding it means one more section in CLAUDE.md; skipping it means manual skill invocation.\nRecommendation: A because routing rules are cheap and make later sessions pick the right skill automatically. Note: plan mode is active, so the CLAUDE.md append + commit would happen after plan mode exits, not now.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: automatic skill routing vs. zero changes to CLAUDE.md.",
+            "header": "Routing",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Add routing rules to CLAUDE.md (recommended)",
+                "description": "\u2705 Future sessions auto-route requests to the right gstack skill without you naming it. \u2705 One short appended section; committed as a chore commit once plan mode exits. \u274c Adds ~15 lines to CLAUDE.md that you may not want in a fixture repo."
+              },
+              {
+                "label": "No thanks, I'll invoke skills manually",
+                "description": "\u2705 CLAUDE.md stays exactly as-is; nothing committed. \u2705 Records routing_declined so this prompt never repeats for this project. \u274c You have to remember and type skill names yourself each time."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D1 \u2014 Add gstack skill routing rules to this project's CLAUDE.md?\nProject/branch/task: gstack-plan-count fixture, branch main, starting /plan-eng-review of PLAN.md.\nELI10: gstack skills work best when the project's CLAUDE.md tells the assistant which skill to reach for (bugs \u2192 /investigate, ship \u2192 /ship, etc.). Without it, you invoke skills by hand each time. This is a one-time setup prompt per project.\nStakes if we pick wrong: Minor either way. Adding it means one more section in CLAUDE.md; skipping it means manual skill invocation.\nRecommendation: A because routing rules are cheap and make later sessions pick the right skill automatically. Note: plan mode is active, so the CLAUDE.md append + commit would happen after plan mode exits, not now.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: automatic skill routing vs. zero changes to CLAUDE.md.": "Add routing rules to CLAUDE.md (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:26:03.405Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_01DFZ4r65dcR3rdFqhL662tG",
+        "questions": [
+          {
+            "question": "D2 \u2014 Run /office-hours first, or go straight into the engineering review?\nProject/branch/task: branch main, reviewing PLAN.md \"Add background job retry framework\"; no design doc exists for this branch.\nELI10: The plan is four short paragraphs and never says why retries are needed now, what job library is in use, or what delivery guarantee the business needs. /office-hours produces a structured problem statement, challenges the premise, and lists explored alternatives (~10 min). That gives this review sharper input. The design doc is per-feature, not per-product.\nStakes if we pick wrong: Skipping means the review has to infer intent (e.g. whether at-most-once delivery was a real requirement) and may ask you more questions. Running it costs ~10 minutes before the review starts.\nRecommendation: B because the plan's issues are visible enough to review directly, and each open assumption can be surfaced as a decision during the review itself.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: 10 minutes of structured problem framing vs. starting the review now with assumptions surfaced as we go.",
+            "header": "Prereq",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Skip \u2014 proceed with standard review (recommended)",
+                "description": "\u2705 Review starts immediately; open assumptions become explicit decision briefs instead of blocking. \u2705 Plan is short enough that the missing context can be asked inline. \u274c No written problem statement or explored-alternatives record for future readers."
+              },
+              {
+                "label": "Run /office-hours now",
+                "description": "\u2705 Produces a design doc with problem statement, premise challenge and alternatives before review. \u2705 Forces the 'why retries, why now, what guarantee' questions up front. \u274c Adds ~10 minutes before any engineering findings appear."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D2 \u2014 Run /office-hours first, or go straight into the engineering review?\nProject/branch/task: branch main, reviewing PLAN.md \"Add background job retry framework\"; no design doc exists for this branch.\nELI10: The plan is four short paragraphs and never says why retries are needed now, what job library is in use, or what delivery guarantee the business needs. /office-hours produces a structured problem statement, challenges the premise, and lists explored alternatives (~10 min). That gives this review sharper input. The design doc is per-feature, not per-product.\nStakes if we pick wrong: Skipping means the review has to infer intent (e.g. whether at-most-once delivery was a real requirement) and may ask you more questions. Running it costs ~10 minutes before the review starts.\nRecommendation: B because the plan's issues are visible enough to review directly, and each open assumption can be surfaced as a decision during the review itself.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: 10 minutes of structured problem framing vs. starting the review now with assumptions surfaced as we go.": "Skip \u2014 proceed with standard review (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:26:15.433Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_01A5yMwHZHpoU2nCtDGx3byw",
+        "questions": [
+          {
+            "question": "D3 \u2014 Retry mechanism: library retry hooks with a custom curve, or a hand-rolled scheduler in each worker?\nProject/branch/task: branch main, PLAN.md:6-8 proposes a custom exponential-backoff scheduler inline in 5 workers instead of the job library's built-in retry hooks.\nELI10: The plan wants \"full control over the curve\" (how long to wait between attempts). Every mainstream job library lets you plug in your own delay function while it keeps doing the hard parts: remembering attempt counts across process restarts, scheduling the delayed run, capping attempts, dead-lettering, and showing the retry in the queue dashboard. Rewriting that scheduling yourself means re-solving those in 5 workers, and if the library's own retry stays on, attempts multiply (3 app retries x 3 library retries = 9 deliveries).\nStakes if we pick wrong: Custom path: a worker crash mid-backoff loses the retry (in-memory timer), retries are invisible in ops tooling, and webhook receivers can get 9 deliveries. Library path: if the library's hook truly cannot express the curve you want, you discover that after wiring it.\nRecommendation: A because the stated requirement (custom curve) is satisfied by a backoff function, and the library already owns durability, caps and observability. [Layer 1] Effort: A (human: ~1 day / CC: ~20 min), B (human: ~1 week / CC: ~2 h plus ongoing maintenance), C (human: ~2 h / CC: ~10 min).\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: own one pure function vs. own a scheduler in 5 places.",
+            "header": "R1 Retry",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Library retry hooks + one custom backoff function (recommended)",
+                "description": "\u2705 Attempt count, delayed dispatch, max attempts and dead-letter handling stay durable and visible in the library's tooling. \u2705 Curve, cap and jitter live in one pure, unit-testable function shared by all 5 workers. \u274c Requires confirming the library hook accepts a per-job delay function; if it only takes fixed presets, revisit."
+              },
+              {
+                "label": "Custom inline scheduler as planned",
+                "description": "\u2705 Zero dependence on library retry semantics; curve is fully yours. \u2705 No need to read the library's retry API first. \u274c Must disable library retries everywhere or attempts multiply; in-process timers lose retries on crash; retries invisible to queue UI; 5x maintenance surface."
+              },
+              {
+                "label": "Investigate the library hook first, then decide",
+                "description": "\u2705 Bounded probe: read the library's backoff/retry API and confirm it takes a custom delay function and exposes attempt number. \u2705 Removes the one unknown in option A before committing. \u274c Adds a short delay; R1 stays pending and R2 to R4 briefs are drafted against an undecided mechanism."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D3 \u2014 Retry mechanism: library retry hooks with a custom curve, or a hand-rolled scheduler in each worker?\nProject/branch/task: branch main, PLAN.md:6-8 proposes a custom exponential-backoff scheduler inline in 5 workers instead of the job library's built-in retry hooks.\nELI10: The plan wants \"full control over the curve\" (how long to wait between attempts). Every mainstream job library lets you plug in your own delay function while it keeps doing the hard parts: remembering attempt counts across process restarts, scheduling the delayed run, capping attempts, dead-lettering, and showing the retry in the queue dashboard. Rewriting that scheduling yourself means re-solving those in 5 workers, and if the library's own retry stays on, attempts multiply (3 app retries x 3 library retries = 9 deliveries).\nStakes if we pick wrong: Custom path: a worker crash mid-backoff loses the retry (in-memory timer), retries are invisible in ops tooling, and webhook receivers can get 9 deliveries. Library path: if the library's hook truly cannot express the curve you want, you discover that after wiring it.\nRecommendation: A because the stated requirement (custom curve) is satisfied by a backoff function, and the library already owns durability, caps and observability. [Layer 1] Effort: A (human: ~1 day / CC: ~20 min), B (human: ~1 week / CC: ~2 h plus ongoing maintenance), C (human: ~2 h / CC: ~10 min).\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: own one pure function vs. own a scheduler in 5 places.": "Library retry hooks + one custom backoff function (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:27:21.097Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_01EnSgrdxokQ84of6pQoGFCb",
+        "questions": [
+          {
+            "question": "D4 \u2014 What delivery guarantee should webhooks have once retries exist, and what does the regression test assert?\nProject/branch/task: branch main, PLAN.md:16-18 rewrites processWebhookJob() and drops the at-most-once guarantee with no regression test.\nELI10: Today a webhook is sent once; if it fails, it's gone. Retrying means a receiver can get the same event twice (network drops after their 200, worker never sees it, retries). Receivers can only dedupe if every attempt carries the same idempotency key or event id. You have to choose the contract on purpose, and the regression test is the proof that the rewrite honors it. This question settles both: which behavior is preserved, which is intentionally changed, and what the acceptance assertions are.\nStakes if we pick wrong: Silent at-least-once without a key = duplicate side effects at receivers (double charges, double emails) that look like their bug. Excluding webhooks from retries = transient outages still drop events, so the feature does not help the job most likely to need it.\nRecommendation: A because at-least-once with a stable idempotency key is the industry contract for webhooks (Stripe, GitHub) and it is the only option where retries help and receivers can stay correct. Effort: A (human: ~2 days / CC: ~30 min), B (human: ~half day / CC: ~10 min), C (human: ~1 day / CC: ~15 min).\nCompleteness: A=10/10, B=7/10, C=3/10\nNet: correct-under-retry webhooks vs. keeping the old contract vs. retries with an unstated duplicate risk.",
+            "header": "R3 Webhook",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "At-least-once + idempotency key, full regression contract (recommended)",
+                "description": "\u2705 Every attempt sends the same Idempotency-Key/event id; receivers can dedupe; transient failures are recovered. \u2705 Regression tests assert: retry keeps the key; success = exactly one POST; 4xx = no retry; exhausted = dead-letter, no further POST. \u274c Requires the key to be generated at enqueue time (not per attempt) and documented for receivers."
+              },
+              {
+                "label": "Preserve at-most-once: exclude webhook job from retries",
+                "description": "\u2705 Existing contract untouched; regression test asserts exactly one POST per job, ever. \u2705 Smallest change to processWebhookJob(). \u274c Webhooks, the job most hurt by transient outages, gain nothing from this framework; failures still need a manual replay path."
+              },
+              {
+                "label": "At-least-once, no idempotency key, document only",
+                "description": "\u2705 Fastest path; retries work for webhooks immediately. \u2705 Only two assertions needed (retry scheduled, one POST on success). \u274c Receivers cannot distinguish a retry from a new event; duplicate side effects are guaranteed under network partitions."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D4 \u2014 What delivery guarantee should webhooks have once retries exist, and what does the regression test assert?\nProject/branch/task: branch main, PLAN.md:16-18 rewrites processWebhookJob() and drops the at-most-once guarantee with no regression test.\nELI10: Today a webhook is sent once; if it fails, it's gone. Retrying means a receiver can get the same event twice (network drops after their 200, worker never sees it, retries). Receivers can only dedupe if every attempt carries the same idempotency key or event id. You have to choose the contract on purpose, and the regression test is the proof that the rewrite honors it. This question settles both: which behavior is preserved, which is intentionally changed, and what the acceptance assertions are.\nStakes if we pick wrong: Silent at-least-once without a key = duplicate side effects at receivers (double charges, double emails) that look like their bug. Excluding webhooks from retries = transient outages still drop events, so the feature does not help the job most likely to need it.\nRecommendation: A because at-least-once with a stable idempotency key is the industry contract for webhooks (Stripe, GitHub) and it is the only option where retries help and receivers can stay correct. Effort: A (human: ~2 days / CC: ~30 min), B (human: ~half day / CC: ~10 min), C (human: ~1 day / CC: ~15 min).\nCompleteness: A=10/10, B=7/10, C=3/10\nNet: correct-under-retry webhooks vs. keeping the old contract vs. retries with an unstated duplicate risk.": "At-least-once + idempotency key, full regression contract (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:28:30.808Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_01DPt6svJyY5mVvNHAc6Npx6",
+        "questions": [
+          {
+            "question": "D5 \u2014 Should the backoff curve include jitter?\nProject/branch/task: branch main, PLAN.md:6-8 wants a custom exponential curve but never says whether delays are randomized.\nELI10: If 500 jobs fail together because a downstream service blipped, plain exponential backoff has all 500 retry at the exact same moments (1s, 2s, 4s...), hitting the recovering service in waves. Jitter picks a random delay between 0 and the exponential ceiling so the retries spread out. It is a one-line change inside computeBackoff() and makes the curve non-deterministic, so tests inject the random source.\nStakes if we pick wrong: Without jitter a downstream outage can be prolonged by your own retry storms. With jitter the only cost is a seeded random in tests.\nRecommendation: A because full jitter is the documented best practice (AWS, Google) and costs one line plus an injectable RNG. Effort: A (human: ~1 h / CC: ~3 min), B (human: 0 / CC: 0).\nCompleteness: A=10/10, B=7/10\nNet: spread-out retries vs. a deterministic curve that is easier to eyeball but stampedes.",
+            "header": "R5 Jitter",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Full jitter (recommended)",
+                "description": "\u2705 delay = random(0, min(cap, base * 2^attempt)); retries from a mass failure spread evenly instead of arriving in synchronized waves. \u2705 Tests pass an injected RNG so assertions stay deterministic. \u274c Individual delays are no longer predictable from the attempt number alone when reading logs."
+              },
+              {
+                "label": "No jitter, pure exponential",
+                "description": "\u2705 Delay is a pure function of attempt number; trivially readable in logs and tests. \u2705 Zero extra code. \u274c Synchronized retry waves after any shared downstream failure; the classic thundering-herd pitfall."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D5 \u2014 Should the backoff curve include jitter?\nProject/branch/task: branch main, PLAN.md:6-8 wants a custom exponential curve but never says whether delays are randomized.\nELI10: If 500 jobs fail together because a downstream service blipped, plain exponential backoff has all 500 retry at the exact same moments (1s, 2s, 4s...), hitting the recovering service in waves. Jitter picks a random delay between 0 and the exponential ceiling so the retries spread out. It is a one-line change inside computeBackoff() and makes the curve non-deterministic, so tests inject the random source.\nStakes if we pick wrong: Without jitter a downstream outage can be prolonged by your own retry storms. With jitter the only cost is a seeded random in tests.\nRecommendation: A because full jitter is the documented best practice (AWS, Google) and costs one line plus an injectable RNG. Effort: A (human: ~1 h / CC: ~3 min), B (human: 0 / CC: 0).\nCompleteness: A=10/10, B=7/10\nNet: spread-out retries vs. a deterministic curve that is easier to eyeball but stampedes.": "Full jitter (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:28:56.404Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_01Md1KcaYFJjgriNx7PX4eq7",
+        "questions": [
+          {
+            "question": "D6 \u2014 What is the maximum single backoff delay (the cap)?\nProject/branch/task: branch main, PLAN.md:6-8 curve has no stated base or ceiling.\nELI10: Exponential growth gets silly fast: with a 1-second base, attempt 12 waits over an hour and attempt 20 waits 12 days. A cap says \"never wait longer than X between attempts\" so a long outage is retried at a steady rhythm instead of one attempt per week. The cap also bounds how long a job can be 'in retry' once you multiply it by max attempts (next question).\nStakes if we pick wrong: Too low a cap keeps hammering a downed service; too high (or none) means a webhook event from a 20-minute outage might not be redelivered for hours.\nRecommendation: A because 1 s base / 5 min cap recovers from typical outages within minutes and, with a modest attempt count, bounds total retry time to under an hour. Effort is identical across options (one constant).\nCompleteness: A=10/10, B=10/10, C=3/10\nNet: minutes-scale redelivery vs. hours-scale vs. unbounded.",
+            "header": "R6 Cap",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Base 1 s, cap 5 min (recommended)",
+                "description": "\u2705 Ceiling sequence 1s,2s,4s...256s,300s: recovers from short blips in seconds and steady-states at 5 min for longer outages. \u2705 Total retry window stays under an hour for ~10 attempts, easy to reason about in alerts. \u274c A multi-hour downstream outage exhausts attempts and dead-letters; needs a replay path (covered by R7)."
+              },
+              {
+                "label": "Base 1 s, cap 1 h",
+                "description": "\u2705 Survives long downstream outages with fewer attempts before dead-letter. \u2705 Fewer wasted calls during a prolonged outage. \u274c Webhook consumers may wait an hour between redelivery attempts; time-sensitive events arrive late."
+              },
+              {
+                "label": "No cap, pure exponential",
+                "description": "\u2705 Simplest formula; nothing to tune. \u2705 Matches the plan as written (\"same shape as the library version\"). \u274c Attempt 12+ waits hours to days; a job can sit in retry effectively forever."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D6 \u2014 What is the maximum single backoff delay (the cap)?\nProject/branch/task: branch main, PLAN.md:6-8 curve has no stated base or ceiling.\nELI10: Exponential growth gets silly fast: with a 1-second base, attempt 12 waits over an hour and attempt 20 waits 12 days. A cap says \"never wait longer than X between attempts\" so a long outage is retried at a steady rhythm instead of one attempt per week. The cap also bounds how long a job can be 'in retry' once you multiply it by max attempts (next question).\nStakes if we pick wrong: Too low a cap keeps hammering a downed service; too high (or none) means a webhook event from a 20-minute outage might not be redelivered for hours.\nRecommendation: A because 1 s base / 5 min cap recovers from typical outages within minutes and, with a modest attempt count, bounds total retry time to under an hour. Effort is identical across options (one constant).\nCompleteness: A=10/10, B=10/10, C=3/10\nNet: minutes-scale redelivery vs. hours-scale vs. unbounded.": "Base 1 s, cap 5 min (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:29:21.972Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_017iFghPNGrzbLuQZaMsBr87",
+        "questions": [
+          {
+            "question": "D7 \u2014 How many attempts before a job is dead-lettered, and what happens then?\nProject/branch/task: branch main, PLAN.md never states a max attempt count or what happens when retries run out.\nELI10: Retries must stop somewhere or a permanently broken job loops forever. When they stop, the job should land in the library's failed/dead-letter set where an operator can see it and re-enqueue it after the downstream is fixed. Without an alert, dead-lettered webhooks pile up silently and nobody notices until a customer asks where their events went.\nStakes if we pick wrong: Too few attempts drops events during a normal 10-minute outage. Too many with no alert means events sit dead for days unnoticed.\nRecommendation: A because 10 attempts under the 5-min cap gives a ~19-minute retry window (covers typical outages), and the alert plus documented replay step is what makes 3am operable. Effort: A (human: ~half day / CC: ~10 min), B (human: ~1 h / CC: ~2 min).\nCompleteness: A=10/10, B=7/10\nNet: bounded, observable failure with a replay path vs. a long silent tail.",
+            "header": "R7 Attempts",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "10 attempts, dead-letter + alert + documented replay (recommended)",
+                "description": "\u2705 Worst-case retry window ~19 min; exhausted jobs land in the library failed set and a metric/alert fires on dead-letter count > 0. \u2705 Runbook line: re-enqueue from failed set after downstream recovers; idempotency key (R3) makes replay safe. \u274c One more metric and alert rule to wire and test."
+              },
+              {
+                "label": "25 attempts, dead-letter, no alert",
+                "description": "\u2705 Survives longer outages (~2 h window) before giving up. \u2705 No alerting work in this change. \u274c Silent failure: dead-lettered events are only found by someone looking; 2 h of hammering a downed service."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D7 \u2014 How many attempts before a job is dead-lettered, and what happens then?\nProject/branch/task: branch main, PLAN.md never states a max attempt count or what happens when retries run out.\nELI10: Retries must stop somewhere or a permanently broken job loops forever. When they stop, the job should land in the library's failed/dead-letter set where an operator can see it and re-enqueue it after the downstream is fixed. Without an alert, dead-lettered webhooks pile up silently and nobody notices until a customer asks where their events went.\nStakes if we pick wrong: Too few attempts drops events during a normal 10-minute outage. Too many with no alert means events sit dead for days unnoticed.\nRecommendation: A because 10 attempts under the 5-min cap gives a ~19-minute retry window (covers typical outages), and the alert plus documented replay step is what makes 3am operable. Effort: A (human: ~half day / CC: ~10 min), B (human: ~1 h / CC: ~2 min).\nCompleteness: A=10/10, B=7/10\nNet: bounded, observable failure with a replay path vs. a long silent tail.": "10 attempts, dead-letter + alert + documented replay (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:29:49.557Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_01A5eARTguHqwNDTo9661fjP",
+        "questions": [
+          {
+            "question": "D8 \u2014 Extract the retry envelope into one shared module now, or leave 5 copies and refactor later?\nProject/branch/task: branch main, PLAN.md:11-13 keeps the retry envelope copy-pasted across 5 worker files.\nELI10: After the decisions so far, the 'envelope' is a small set of things every worker needs identically: the backoff function, the constants (1 s base, 5 min cap, 10 attempts), the rule for which errors are retryable, and the attempt log line. Five copies means five places to drift: one worker gets a different cap, one forgets the idempotency header, one logs attempts differently so dashboards disagree. Extracting is one file plus five one-line imports.\nStakes if we pick wrong: Leaving copies invites silent config drift and quintuples the test surface. Extracting costs about ten minutes with CC and nothing later.\nRecommendation: A because DRY is an explicit preference here, the extraction is mechanical, and the shared module is also where the retry state diagram comment lives. Effort: A (human: ~half day / CC: ~10 min), B (human: 0 now, ~1 day later / CC: 0 now).\nCompleteness: A=10/10, B=3/10\nNet: one source of truth for retry behavior vs. five that will drift.",
+            "header": "R2 DRY",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Extract jobs/retry.ts now (recommended)",
+                "description": "\u2705 One module exports computeBackoff, retryOptions, isRetryable, logAttempt; all 5 workers import it, so R5-R7 values exist exactly once. \u2705 Unit tests written once; per-worker tests shrink to 'uses retryOptions'. \u274c Touches all 5 worker files in this change (already touched by the rewrite anyway)."
+              },
+              {
+                "label": "Leave 5 copies, refactor later",
+                "description": "\u2705 No cross-worker import to review; each worker stays self-contained. \u2705 Matches the plan as written. \u274c Five copies of the cap/attempts constants and isRetryable rule drift independently; 'later' has no owner or trigger."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D8 \u2014 Extract the retry envelope into one shared module now, or leave 5 copies and refactor later?\nProject/branch/task: branch main, PLAN.md:11-13 keeps the retry envelope copy-pasted across 5 worker files.\nELI10: After the decisions so far, the 'envelope' is a small set of things every worker needs identically: the backoff function, the constants (1 s base, 5 min cap, 10 attempts), the rule for which errors are retryable, and the attempt log line. Five copies means five places to drift: one worker gets a different cap, one forgets the idempotency header, one logs attempts differently so dashboards disagree. Extracting is one file plus five one-line imports.\nStakes if we pick wrong: Leaving copies invites silent config drift and quintuples the test surface. Extracting costs about ten minutes with CC and nothing later.\nRecommendation: A because DRY is an explicit preference here, the extraction is mechanical, and the shared module is also where the retry state diagram comment lives. Effort: A (human: ~half day / CC: ~10 min), B (human: 0 now, ~1 day later / CC: 0 now).\nCompleteness: A=10/10, B=3/10\nNet: one source of truth for retry behavior vs. five that will drift.": "Extract jobs/retry.ts now (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:30:23.176Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_015KttLdZVbPUDQ6b4AfCGLt",
+        "questions": [
+          {
+            "question": "D9 \u2014 How deep should the webhook regression proof go: unit tests with mocks only, or unit tests plus one real-queue E2E?\nProject/branch/task: branch main, proving the D4 webhook contract for the rewritten processWebhookJob().\nELI10: Unit tests with a mocked HTTP client and a mocked retry hook prove your code calls the hook correctly. They cannot prove the library actually re-dispatches the job with the same idempotency key after a delay, or that a dead-lettered job really shows up in the failed set. One end-to-end test runs the real library in test mode against a stub HTTP receiver and walks the four assertions for real. That is the integration point where mocking hides failures (API \u2192 queue \u2192 worker \u2192 receiver).\nStakes if we pick wrong: Mocks-only can pass while the real hook ignores your backoff function or drops the header on redispatch; you find out from a customer. E2E costs a slower test (seconds) and a stub receiver fixture.\nRecommendation: A because this is exactly the flow the E2E decision matrix flags (3+ components, integration point, data-delivery guarantee) and CC writes the fixture in minutes. Effort: A (human: ~2 days / CC: ~30 min), B (human: ~1 day / CC: ~15 min).\nCompleteness: A=10/10, B=7/10\nNet: proof the real queue honors the contract vs. proof your code asks it to.",
+            "header": "R8 Depth",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Unit tests + one real-queue E2E (recommended)",
+                "description": "\u2705 E2E: enqueue -> stub receiver returns 503 then 200 -> asserts 2 POSTs, identical Idempotency-Key, delay came from computeBackoff (injected rng), then 4xx and exhaustion cases. \u2705 Catches library-level surprises (hook signature, header loss on redispatch, failed-set behavior). \u274c Needs the library runnable in test mode (in-memory or ephemeral backend) and adds a few seconds to CI."
+              },
+              {
+                "label": "Unit tests with mocked HTTP and mocked hook only",
+                "description": "\u2705 Fast, deterministic, no external test backend needed. \u2705 Still covers all four D4 assertions at the code level. \u274c Cannot detect a library that ignores the custom backoff or drops headers on retry; the contract is asserted, not demonstrated."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D9 \u2014 How deep should the webhook regression proof go: unit tests with mocks only, or unit tests plus one real-queue E2E?\nProject/branch/task: branch main, proving the D4 webhook contract for the rewritten processWebhookJob().\nELI10: Unit tests with a mocked HTTP client and a mocked retry hook prove your code calls the hook correctly. They cannot prove the library actually re-dispatches the job with the same idempotency key after a delay, or that a dead-lettered job really shows up in the failed set. One end-to-end test runs the real library in test mode against a stub HTTP receiver and walks the four assertions for real. That is the integration point where mocking hides failures (API \u2192 queue \u2192 worker \u2192 receiver).\nStakes if we pick wrong: Mocks-only can pass while the real hook ignores your backoff function or drops the header on redispatch; you find out from a customer. E2E costs a slower test (seconds) and a stub receiver fixture.\nRecommendation: A because this is exactly the flow the E2E decision matrix flags (3+ components, integration point, data-delivery guarantee) and CC writes the fixture in minutes. Effort: A (human: ~2 days / CC: ~30 min), B (human: ~1 day / CC: ~15 min).\nCompleteness: A=10/10, B=7/10\nNet: proof the real queue honors the contract vs. proof your code asks it to.": "Unit tests + one real-queue E2E (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:31:16.877Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_01HeEfK7Ko8RFy3LFHUGJMs1",
+        "questions": [
+          {
+            "question": "D10 \u2014 Cache the dependency graph across retries, measure first, or leave the recompute as-is?\nProject/branch/task: branch main, PLAN.md:21-23 re-fetches the payload and recomputes the dependency graph on every retry attempt.\nELI10: When a job fails and retries, the plan reloads the whole payload from the database and rebuilds its dependency graph from scratch, up to 10 times per job now that max attempts is 10. If the graph is cheap this is noise. If it is not, every downstream outage turns into a database load spike on top of the retry storm. The catch: nobody has measured it, and the fixture repo has no code to inspect.\nStakes if we pick wrong: Caching an unchanging graph is safe but adds a serialized field and an invalidation rule for something that may cost 2 ms. Ignoring it means possibly 10x DB reads exactly during incidents.\nRecommendation: B because the finding is medium confidence with zero measurements; a one-line timing log per attempt turns the next outage into data and costs almost nothing. Effort: A (human: ~1 day / CC: ~20 min), B (human: ~1 h / CC: ~5 min), C (0).\nCompleteness: A=10/10, B=7/10, C=3/10\nNet: optimize now on a guess vs. instrument now and optimize on evidence vs. ignore.",
+            "header": "R4 Perf",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Cache graph on the job record, keyed by payload hash",
+                "description": "\u2705 Retries skip the payload fetch and graph build; invalidation by payload hash keeps it correct if the payload changes. \u2705 Removes DB read amplification during the exact moments the system is already degraded. \u274c Adds job-data size and an invalidation path to test before anyone has shown the recompute is expensive."
+              },
+              {
+                "label": "Instrument first: log compute time + payload bytes per attempt (recommended)",
+                "description": "\u2705 One structured log line in logAttempt (graph_ms, payload_bytes) produces real numbers from the first incident. \u2705 Decision to cache becomes a follow-up TODO with an explicit trigger (e.g. p95 graph_ms > 50 or payload > 100 KB). \u274c First real outage still pays the recompute cost; caching is deferred, not done."
+              },
+              {
+                "label": "Leave as-is, no instrumentation",
+                "description": "\u2705 Zero additional work in this change. \u2705 Matches the plan as written. \u274c No data ever arrives, so the question stays a guess; retry-time DB load is invisible."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D10 \u2014 Cache the dependency graph across retries, measure first, or leave the recompute as-is?\nProject/branch/task: branch main, PLAN.md:21-23 re-fetches the payload and recomputes the dependency graph on every retry attempt.\nELI10: When a job fails and retries, the plan reloads the whole payload from the database and rebuilds its dependency graph from scratch, up to 10 times per job now that max attempts is 10. If the graph is cheap this is noise. If it is not, every downstream outage turns into a database load spike on top of the retry storm. The catch: nobody has measured it, and the fixture repo has no code to inspect.\nStakes if we pick wrong: Caching an unchanging graph is safe but adds a serialized field and an invalidation rule for something that may cost 2 ms. Ignoring it means possibly 10x DB reads exactly during incidents.\nRecommendation: B because the finding is medium confidence with zero measurements; a one-line timing log per attempt turns the next outage into data and costs almost nothing. Effort: A (human: ~1 day / CC: ~20 min), B (human: ~1 h / CC: ~5 min), C (0).\nCompleteness: A=10/10, B=7/10, C=3/10\nNet: optimize now on a guess vs. instrument now and optimize on evidence vs. ignore.": "Cache graph on the job record, keyed by payload hash"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:32:18.105Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_011CYkxw3NjPbK7ga3XBLizm",
+        "questions": [
+          {
+            "question": "D11 \u2014 TODO: audit the other 4 workers' side effects for idempotency now that retries make them at-least-once?\nProject/branch/task: branch main; retries are being enabled on all 5 workers, but only the webhook worker's delivery contract (R3) was decided.\nELI10: Turning on retries changes every worker from 'runs once' to 'may run more than once.' We settled how the webhook worker stays correct under that (stable idempotency key). The other four workers have side effects too (writes, emails, charges, whatever they do), and if any of them is not safe to re-run, a retry duplicates that effect. Nobody has looked.\nWhat: Review each of the 4 non-webhook workers for non-idempotent side effects and add a guard (idempotency key, upsert, or exclusion from retries).\nWhy: Prevents duplicate side effects the moment retries ship.\nPros: Closes the gap R3 closed for webhooks; the shared jobs/retry.ts makes per-worker exclusion a one-line option.\nCons: Requires reading 4 handlers; may surface work that grows the change.\nContext: Retries approved via library hook (D3), 10 attempts (D7). Start from each worker's handler and list its writes/external calls; classify each as idempotent, needs-key, or exclude-from-retry.\nDepends on: T1 (jobs/retry.ts) for the exclusion mechanism. Effort: M (human: ~1 day / CC: ~30 min).\nStakes if we pick wrong: Skipping = duplicate side effects in whichever worker is not idempotent, discovered in production. Building now grows this PR.\nRecommendation: C because enabling retries without knowing the handlers are safe to re-run is shipping the bug the framework is supposed to prevent; auditing 4 handlers is under an hour with CC.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: know every worker is retry-safe before retries ship vs. find out after.",
+            "header": "TODO 1",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Build it now in this PR instead of deferring (recommended)",
+                "description": "\u2705 Retries ship only after all 5 workers are known retry-safe; adds one task to the plan. \u2705 Exclusion or keying reuses jobs/retry.ts already in scope. \u274c Widens the change if a handler turns out to need real idempotency work."
+              },
+              {
+                "label": "Add to TODOS.md",
+                "description": "\u2705 Captured with full context and priority so it is not lost. \u2705 Keeps this change focused on the framework and the webhook path. \u274c Retries go live on 4 unaudited workers in the meantime."
+              },
+              {
+                "label": "Skip \u2014 not valuable enough",
+                "description": "\u2705 No extra work or tracking. \u2705 Appropriate only if you already know all 4 handlers are idempotent. \u274c If that assumption is wrong, a retry duplicates a side effect with no record that the risk was considered."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D11 \u2014 TODO: audit the other 4 workers' side effects for idempotency now that retries make them at-least-once?\nProject/branch/task: branch main; retries are being enabled on all 5 workers, but only the webhook worker's delivery contract (R3) was decided.\nELI10: Turning on retries changes every worker from 'runs once' to 'may run more than once.' We settled how the webhook worker stays correct under that (stable idempotency key). The other four workers have side effects too (writes, emails, charges, whatever they do), and if any of them is not safe to re-run, a retry duplicates that effect. Nobody has looked.\nWhat: Review each of the 4 non-webhook workers for non-idempotent side effects and add a guard (idempotency key, upsert, or exclusion from retries).\nWhy: Prevents duplicate side effects the moment retries ship.\nPros: Closes the gap R3 closed for webhooks; the shared jobs/retry.ts makes per-worker exclusion a one-line option.\nCons: Requires reading 4 handlers; may surface work that grows the change.\nContext: Retries approved via library hook (D3), 10 attempts (D7). Start from each worker's handler and list its writes/external calls; classify each as idempotent, needs-key, or exclude-from-retry.\nDepends on: T1 (jobs/retry.ts) for the exclusion mechanism. Effort: M (human: ~1 day / CC: ~30 min).\nStakes if we pick wrong: Skipping = duplicate side effects in whichever worker is not idempotent, discovered in production. Building now grows this PR.\nRecommendation: C because enabling retries without knowing the handlers are safe to re-run is shipping the bug the framework is supposed to prevent; auditing 4 handlers is under an hour with CC.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: know every worker is retry-safe before retries ship vs. find out after.": "Build it now in this PR instead of deferring (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:33:13.843Z"
+      },
+      {
+        "sessionId": "1cd09ec3-4a4b-40dd-9515-beaf790355e4",
+        "toolUseId": "toolu_01QajVnE1UmhaEEoidqFZojz",
+        "questions": [
+          {
+            "question": "D12 \u2014 Review complete. What next?\nProject/branch/task: branch main, PLAN.md eng review CLEARED (SCOPE_REDUCED, 0 unresolved). Report saved to gstack-test-plan-eng-batching.md; test plan artifact and tasks JSONL saved under ~/.gstack.\nELI10: The plan is reviewed, every open choice has an answer, and the implementation task list T0-T6 is written. This question only picks the next navigation step; it approves no further plan changes.\nStakes if we pick wrong: None that is hard to undo; you can run any review later.\nRecommendation: A because no UI scope exists and the change is infrastructure, so the required review is done.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: start building vs. add an optional strategy pass first.",
+            "header": "Next",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Ready to implement \u2014 run /ship when done (recommended)",
+                "description": "\u2705 Exit plan mode and start with T1 (jobs/retry.ts), then lanes B/C/D in parallel. \u2705 T0 (CLAUDE.md routing rules) lands as the first small commit once plan mode exits. \u274c No second-opinion pass unless you re-enable codex_reviews."
+              },
+              {
+                "label": "Run /plan-ceo-review first",
+                "description": "\u2705 Scope and strategy pass on whether a retry framework is the right investment now. \u2705 Useful if the at-least-once change affects customer-facing commitments. \u274c Optional for infra work; delays implementation."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D12 \u2014 Review complete. What next?\nProject/branch/task: branch main, PLAN.md eng review CLEARED (SCOPE_REDUCED, 0 unresolved). Report saved to gstack-test-plan-eng-batching.md; test plan artifact and tasks JSONL saved under ~/.gstack.\nELI10: The plan is reviewed, every open choice has an answer, and the implementation task list T0-T6 is written. This question only picks the next navigation step; it approves no further plan changes.\nStakes if we pick wrong: None that is hard to undo; you can run any review later.\nRecommendation: A because no UI scope exists and the change is infrastructure, so the required review is done.\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: start building vs. add an optional strategy pass first.": "Ready to implement \u2014 run /ship when done (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-15T22:35:17.945Z"
+      }
+    ]
+  }
 }

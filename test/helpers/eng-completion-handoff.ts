@@ -352,12 +352,23 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   // A completed two-route menu need not repeat a no-change disclaimer. Its
   // settled decisions, sole remaining workflow choice and named reviewed plan
   // supply the same boundary; task ownership and new-work vetoes still apply.
-  const completedChoice = /\b(?:all decisions (?:are )?(?:answered|settled)|every decision (?:is )?(?:answered|settled))\b/i.test(body) &&
+  const metadata = [...q.question.matchAll(/^Project\/branch\/task: ([^\n]+)$/gm)];
+  const currentScope = metadata.length === 1 ? /^([^\s,;]+), (PLAN\.md) ["“]([^"”\n]+)["”](?:;|$)/.exec(metadata[0]![1]!) : null;
+  const catalogMenu = /\b(?:0|no) unresolved decisions\b/i.test(body)
+    && /\b(?:navigation|routing) only\b/i.test(body)
+    && /\bnothing (?:here )?(?:changes|alters|modifies) (?:the|this) plan (?:or|and) (?:its|the) tasks\b|\b(?:the|this) plan and its tasks remain unchanged\b/i.test(body);
+  if (catalogMenu && !currentScope) return false;
+  const catalogChoice = Boolean(catalogMenu && currentScope);
+  if (catalogChoice && (
+      [...metadata[0]![1]!.matchAll(/[^\s,;"“”]+\.md\b/g)].some(m=>m[0]!=='PLAN.md')
+      || /\b(?:review|eng gate|verdict) (?:is |has been |remains? )?(?:no longer|not) (?:clear|complete|done|finished)\b|\b[1-9]\d* unresolved decisions\b/i.test(statusContext)
+      || /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|while)\s+)(?:approve|deploy)(?:ing)?\b/i.test(statusContext))) return false;
+  const completedChoice = Boolean(catalogChoice) || /\b(?:all decisions (?:are )?(?:answered|settled)|every decision (?:is )?(?:answered|settled))\b/i.test(body) &&
     /\b(?:the only question left is whether to (?:start building|implement) or (?:first )?get (?:a )?(?:strategy-level second look|strategy review)|only the next (?:step|workflow) remains: implementation or an optional strategy review)\b/i.test(body);
   const namedPlans = [...q.question.matchAll(/\breviewed\s+[\w./-]+\.md\s+["“]([^"”\n]+)["”]/gi)];
   if (!/\b(?:what(?:['’]s| is)? (?:the )?next|next steps?|where (?:do|should) we go)\b/i.test(body) ||
       !new RegExp(String.raw`\b${eng}\s+(?:(?:is|are|has been|have been)\s+)?(?:now\s+)?${complete}\b`, 'i').test(body) ||
-      !(explicitNavigation || completedChoice && namedPlans.length === 1)) return false;
+      !(explicitNavigation || completedChoice && (namedPlans.length === 1 || catalogChoice))) return false;
   if (/`{3}|~{3}|(?:^|\n)\s*>|\b(?:example|sample|quoted|historical)\s*:/i.test(context) ||
       new RegExp(String.raw`\b${eng}\b[^.!?;\n]{0,100}\b(?:not|never|incomplete|unfinished|pending|withdrawn|superseded|cancelled|canceled|reopened)\b`, 'i').test(context) ||
       new RegExp(String.raw`\b${eng}\s+(?:will|would|may|might|can|could|should)\s+(?:be |become )?${complete}\b`, 'i').test(context) ||
@@ -391,9 +402,15 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
     if (!/^(?: {4}|\t| {0,3}>)/.test(line)) published.push(line);
   }
   if (fence) return false;
-  if (!explicitNavigation) {
+  if (!explicitNavigation || catalogChoice) {
     const titles = published.filter(line => /^# /.test(line));
-    if (titles.length !== 1 || compact(titles[0]!.replace(/^# (?:Plan: )?/i, '').replace(/\s+\(reviewed\)$/i, '')) !== compact(namedPlans[0]![1]!)) return false;
+    const named = catalogChoice ? currentScope![3]! : namedPlans[0]![1]!;
+    if (titles.length !== 1 || compact(titles[0]!.replace(/^# (?:Plan: )?/i, '').replace(/\s+\(reviewed\)$/i, '')) !== compact(named)) return false;
+    if (catalogChoice) {
+      const targets = published.filter(line => /^Reviewed target:/.test(line));
+      const target = targets.length === 1 ? /^Reviewed target: `?([\w./-]+\.md)`? \(repo root, branch `?([^`\s)]+)`?\)/.exec(targets[0]!) : null;
+      if (!target || target[1] !== currentScope![2] || target[2] !== currentScope![1]) return false;
+    }
   }
   const section = (heading: string) => {
     const starts=published.flatMap((line,i)=>line.toLowerCase()===`## ${heading}`.toLowerCase()?[i]:[]);

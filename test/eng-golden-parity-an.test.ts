@@ -2,6 +2,51 @@ import { expect, test } from 'bun:test';
 import { evaluateEngSeedCoverage } from './helpers/eng-seeded-coverage';
 import { E2E_TOUCHFILES, selectTests } from './helpers/touchfiles';
 import fixture from './fixtures/eng-golden-parity-an.json';
+import heldPackets from './fixtures/eng-native-packets-b955.json';
+const heldLegacy=heldPackets.held6bd;
+const heldLegacyCheck=(plan=heldLegacy.plan)=>evaluateEngSeedCoverage(heldLegacy.transcript as any,plan,heldLegacy.startedAt,heldLegacy.finishedAt).regression;
+test('held6bd legacy: approved required oracle links current legacy body, before-change task and green baseline',()=>expect(heldLegacyCheck()).toBe('plan'));
+test('held6bd legacy: current required characterization heading and equivalent baseline fields',()=>expect(heldLegacyCheck(heldLegacy.plan.replace('R5: Regression coverage for legacyAuthFlow() current behavior','R5: Characterization tests for legacyAuthFlow()').replace('pins current\noutcomes for:','records existing\noutcomes for:').replace('suite green on unmodified legacy body','tests pass on untouched legacy implementation'))).toBe('plan'));
+for(const [name,edit] of Object.entries({
+ 'reopened current row':(s:string)=>s+'\n## Current amendment\nR5 is reopened.\n',
+ 'pending current verification':(s:string)=>s+'\n## Current amendment\nT1 is pending approval.\n',
+ 'negated current selected answer':(s:string)=>s.replace('Actual answer: A — characterization + differential harness','Actual answer: A — no characterization + differential harness'),
+ 'unrelated current answer':(s:string)=>s.replace('Actual answer: A — characterization + differential harness','Actual answer: A — implement a cache'),
+}))test('held6bd legacy current approval rejects '+name,()=>expect(heldLegacyCheck(edit(heldLegacy.plan))).toBeUndefined());
+for(const [name,edit] of Object.entries({
+ 'duplicate owned ledger':(s:string)=>s.replace('### R6:','### R5: Regression coverage for legacyAuthFlow() current behavior\nState: pending\n\n### R6:'),
+ 'duplicate required scope':(s:string)=>s.replace('Accepted scope: (1) `legacyAuthFlow.characterization.test`','Accepted scope: withdrawn\nAccepted scope: (1) `legacyAuthFlow.characterization.test`'),
+ 'quoted foreign current citation':(s:string)=>s.replace('Finding: T1, P1 (CRITICAL)','Finding: T1, P1 (CRITICAL), source "OTHER.md:1"'),
+ 'optional current baseline':(s:string)=>s+'\n## Current amendment\nT1 is optional.\n',
+ 'baseline after rewrite':(s:string)=>s.replace('against the current body, before any other change','against the changed body, after the rewrite'),
+ 'changed current scope order':(s:string)=>s.replace('legacy body BEFORE any delegation is\nadded','legacy body AFTER delegation is\nadded'),
+ 'mismatched case count':(s:string)=>s.replace('tests for the 8 input classes','tests for the 7 input classes'),
+ 'duplicate corpus outcome':(s:string)=>s.replace(/(Accepted scope: \(1\)[\s\S]*?outcomes for: valid token, expired), revoked/,'$1, expired'),
+}))test('held6bd legacy current class rejects '+name,()=>{const changed=edit(heldLegacy.plan);expect(changed).not.toBe(heldLegacy.plan);expect(heldLegacyCheck(changed)).toBeUndefined();});
+test('held6bd legacy: consistently renumbered current row and task retain ownership',()=>expect(heldLegacyCheck(heldLegacy.plan.replaceAll('R5','R15').replaceAll('D11','D21').replaceAll('T1 (','T11 ('))).toBe('plan'));
+test('held6bd legacy: unrelated and historical withdrawals are inert',()=>expect(heldLegacyCheck(heldLegacy.plan+'\n## Notes\nEarlier note: "T1 is withdrawn."\n## Payment regression suite\nThe suite is withdrawn.\n')).toBe('plan'));
+for(const [name,edit] of Object.entries({
+ 'historical owner':(s:string)=>s.replace('### R5: Regression coverage','### Historical R5: Regression coverage'),
+ 'foreign source':(s:string)=>s.replaceAll('PLAN.md:','OTHER.md:'),
+ 'foreign same basename':(s:string)=>s.replaceAll('PLAN.md:','archive/PLAN.md:'),
+ 'missing required finding':(s:string)=>s.replace('Finding: T1, P1 (CRITICAL)','Finding: T1, P2'),
+ 'unapproved row':(s:string)=>s.replace(/(### R5:[\s\S]*?)State: approved/,'$1State: pending'),
+ 'wrong answer owner':(s:string)=>s.replace('(D11 answer)','(D10 answer)'),
+ 'unknown selected option':(s:string)=>s.replace('Actual answer: A — characterization','Actual answer: C — characterization'),
+ 'missing selected option':(s:string)=>s.replace('Options: A) Characterization tests plus a','Options: C) Characterization tests plus a'),
+ 'missing baseline file':(s:string)=>s.replace('  - Files: auth/legacyAuthFlow.characterization.test','  - Files: auth/otherFlow.characterization.test'),
+ 'foreign task directory':(s:string)=>s.replace('  - Files: auth/legacyAuthFlow.characterization.test','  - Files: other/legacyAuthFlow.characterization.test'),
+ 'missing same-row task link':(s:string)=>s.replace('  - Surfaced by: Tests — finding 1 (R5/D11)','  - Surfaced by: Tests — finding 1 (R9/D11)'),
+ 'modified verification':(s:string)=>s.replace('suite green on unmodified legacy body','suite green on modified legacy body'),
+ 'missing green verification':(s:string)=>s.replace('suite green on unmodified legacy body','suite red on unmodified legacy body'),
+ 'current task withdrawal':(s:string)=>s+'\n## Current amendment\nT1 is withdrawn.\n',
+ 'current row withdrawal':(s:string)=>s+'\n## Current amendment\nR5 is not required.\n',
+ 'quoted current withdrawal':(s:string)=>s+'\n## Current amendment\nThis baseline verification is "cancelled".\n',
+ 'reversed current order':(s:string)=>s+'\n## Current amendment\nlegacyAuthFlow() is changed before T1.\n',
+ 'changed baseline expectations':(s:string)=>s+'\n## Current amendment\nChange T1 assertions.\n',
+ 'same-task duplicate':(s:string)=>s.replace('- [ ] **T2 (','- [ ] **T1 ('),
+ 'quoted current plan':(s:string)=>'```md\n'+s+'\n```',
+}))test('held6bd legacy rejects '+name,()=>{const changed=edit(heldLegacy.plan);expect(changed).not.toBe(heldLegacy.plan);expect(heldLegacyCheck(changed)).toBeUndefined();});
 const times = fixture.calls.map(call => Date.parse(call.answeredAt));
 const check = (plan = fixture.compact) => evaluateEngSeedCoverage(
   { status: 'ready', calls: fixture.calls, assistantMessages: [] }, plan, Math.min(...times) - 1, Math.max(...times) + 1);

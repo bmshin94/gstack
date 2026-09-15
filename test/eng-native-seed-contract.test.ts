@@ -3,8 +3,92 @@ import captured from './fixtures/eng-native-seed-contract-6f.json';
 import goldenDeclaration from './fixtures/eng-legacy-declaration-90f.json';
 import idpChoice from './fixtures/eng-idp-choice-90f.json';
 import {evaluateEngSeedCoverage, isEngSeedDecisionAUQ} from './helpers/eng-seeded-coverage';
+import {isEngCompletionHandoff} from './helpers/eng-completion-handoff';
 import structureChoice from './fixtures/eng-structure-choice-90f.json';
 import nativePackets from './fixtures/eng-native-packets-b955.json';
+
+const held6bd=nativePackets.held6bd;
+const heldStructure=()=>structuredClone(held6bd.transcript.calls.find(c=>c.toolUseId==='toolu_01C1daapitaDzziNHqrVQ9qb')!);
+const heldStructureResult=(c=heldStructure())=>evaluateEngSeedCoverage({status:'ready',calls:[c],assistantMessages:[]},'',held6bd.startedAt,held6bd.finishedAt).decisions;
+const changeHeldStructure=(edit:(q:any)=>void)=>{const c=heldStructure(),q=c.questions[0]!,chosen=q.options.findIndex(o=>o.label===c.answers[q.question]);edit(q);c.answers={[q.question]:q.options[chosen]!.label};return c;};
+test('held6bd structure: actual independently answered four-to-three store consolidation',()=>expect(heldStructureResult()).toEqual({complexity:'8351cb8b-b2d3-424a-8420-137a5ea5be83:toolu_01C1daapitaDzziNHqrVQ9qb'}));
+for(const [name,edit] of Object.entries({
+ 'same components named as classes':(q:any)=>{q.question=q.question.replace('four things:','four classes:');q.options.forEach((o:any)=>o.label=o.label.replace('components','classes'));},
+ 'explicit duplicate responsibility':(q:any)=>{q.question=q.question.replace('TokenStore is never described, and its name says it does what the adapter already does.','TokenStore has no documented purpose. Its name duplicates the existing adapter\'s job.');},
+ 'same owned facade responsibility':(q:any)=>{q.options[0].description=q.options[0].description.replace('Exactly one place owns tenant-key construction and invalidation calls on top of the existing adapter','One facade owns tenant-key construction and invalidation over the existing adapter');},
+}))test('held6bd structure class accepts '+name,()=>expect(heldStructureResult(changeHeldStructure(edit)).complexity).toBeDefined());
+for(const [name,edit] of Object.entries({
+ 'wrong fold destination':(q:any)=>{q.options[0].label=q.options[0].label.replace('into AuthCache','into OtherCache');},
+ 'two different current inventories':(q:any)=>{q.question=q.question.replace('Stakes if','ELI10: The plan adds three components: AuthBroker, SessionMint, AuthCache.\nStakes if');},
+ 'current duplicate claim retracted':(q:any)=>{q.question+='\nCorrection: TokenStore does not duplicate the adapter.';},
+ 'current responsibility independent':(q:any)=>{q.question+='\nCorrection: TokenStore has a documented independent contract.';},
+ 'new independent work':(q:any)=>{q.options[0].description+=' Also add Redis.';},
+ 'subordinate new work':(q:any)=>{q.options[0].description+=' Fold TokenStore while disabling tenant validation.';},
+ 'same-option negated owner':(q:any)=>{q.options[0].description+=' No single facade owns invalidation.';},
+}))test('held6bd structure class rejects '+name,()=>expect(heldStructureResult(changeHeldStructure(edit))).toEqual({}));
+
+test('held6bd whole captured callback: native ACKs, navigation freshness and all unchanged final assertions',()=>{
+ const h=structuredClone(held6bd),t=h.transcript as PlanCountTranscript;
+ const source=fs.readFileSync(path.join(import.meta.dir,'skill-e2e-plan-eng-finding-count.test.ts'),'utf8');
+ const start=source.indexOf("        if (!['plan_ready', 'completion_summary'].includes(obs.outcome))"),end=source.indexOf('\n      } finally {',start);
+ expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
+ const validate=new Function('fs','planPath','obs','startedAt','evaluateEngSeedCoverage','assertReviewReportAtBottom',new Bun.Transpiler({loader:'ts'}).transformSync(source.slice(start,end)));
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eng-held-captured-')),file=path.join(dir,'report.md'),now=Date.now;
+ try{
+  Date.now=()=>h.finishedAt;
+  // Only this synthetic file receives the captured timestamp. The owned paid
+  // report and its cancelled outcome remain immutable.
+  const write=(body=h.plan)=>{fs.writeFileSync(file,body);fs.utimesSync(file,h.reportMtimeMs/1000,h.reportMtimeMs/1000);};write();
+  const admin=new Set<string>();let reviews=0;
+  t.calls.forEach((call,index)=>{const fp=nativePlanCallFingerprint(call,0,false);if(isEngCompletionHandoff(fp,h.plan,t.calls.slice(0,index)))admin.add(fp.signature);if(isEngSeedDecisionAUQ(fp,t.calls.slice(0,index),h.startedAt,h.finishedAt))reviews++;});
+  expect([...admin]).toEqual(['8351cb8b-b2d3-424a-8420-137a5ea5be83:toolu_01Jzx8JVh6SV9sLe9RgMP7GF']);expect(reviews).toBe(4);
+  expect(hasNativePlanTerminal(t,file,h.startedAt,'plan_ready',admin)).toBe(true);
+  expect(hasNativePlanTerminal(t,file,h.startedAt,'plan_ready',new Set())).toBe(false);
+  const obs={outcome:'plan_ready',transcript:t,reviewCount:reviews,step0Count:0,fingerprints:[],elapsedMs:h.finishedAt-h.startedAt,evidence:'Captured public native ExitPlanMode'};
+  const check=(input=obs)=>validate(fs,file,input,h.startedAt,evaluateEngSeedCoverage,assertReviewReportAtBottom);
+  expect(()=>check()).not.toThrow();
+  expect(()=>check({...obs,outcome:'cancelled'})).toThrow('finding-count FAILED');
+  for(const mutate of [
+   (copy:PlanCountTranscript)=>{copy.planReadyRequests=[];},
+   (copy:PlanCountTranscript)=>{copy.planReadyRequests![0]!.failed=true;},
+   (copy:PlanCountTranscript)=>{copy.calls[6]!.answeredAt=t.calls.at(-1)!.answeredAt;},
+   (copy:PlanCountTranscript)=>{copy.calls[6]!.answered=false;copy.calls[6]!.unansweredQuestionIndices=[0];},
+  ]){const copy=structuredClone(t);mutate(copy);expect(hasNativePlanTerminal(copy,file,h.startedAt,'plan_ready',admin)).toBe(false);}
+  const missing=structuredClone(obs);missing.transcript.calls=missing.transcript.calls.filter(c=>c.toolUseId!=='toolu_01C1daapitaDzziNHqrVQ9qb');expect(()=>check(missing)).toThrow('SEED COVERAGE FAIL');
+  write(h.plan.replace('suite green on unmodified legacy body','suite red on unmodified legacy body'));expect(()=>check()).toThrow('SEED COVERAGE FAIL');
+  write(h.plan+'\n## Unreviewed work\n');expect(()=>check()).toThrow('D19 FAIL');
+  expect(h.actualOutcome).toBe('cancelled_no_pass_or_failure_credit');
+ }finally{Date.now=now;fs.rmSync(dir,{recursive:true,force:true});}
+});
+for(const [name,edit] of Object.entries({
+ 'numeric inventory':(q:any)=>{q.question=q.question.replace('four things:','4 components:');},
+ 'independent title':(q:any)=>{q.question=q.question.replace(q.question.split('\n')[0],'D23 — Which component arrangement should the token layer use?');},
+ 'reordered options':(q:any)=>{q.options.reverse();},
+ 'historical contradiction':(q:any)=>{q.question+='\nEarlier note: "TokenStore now has an independent purpose."';},
+}))test('held6bd structure accepts '+name,()=>expect(heldStructureResult(changeHeldStructure(edit)).complexity).toBeDefined());
+for(const [name,edit] of Object.entries({
+ 'foreign source':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','OTHER.md');},
+ 'same-basename foreign source':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','archive/PLAN.md');},
+ 'duplicated source':(q:any)=>{q.question+='\nProject/branch/task: OTHER.md';},
+ 'quoted explanation':(q:any)=>{q.question=q.question.replace(/^ELI10: (.+)$/m,'ELI10: "$1"');},
+ 'conditional evidence':(q:any)=>{q.question=q.question.replace('ELI10: ','ELI10: If approved, ');},
+ 'withdrawn choice':(q:any)=>{q.question+='\nThis decision is withdrawn.';},
+ 'reopened choice':(q:any)=>{q.question+='\nThis decision is "reopened".';},
+ 'false count':(q:any)=>{q.question=q.question.replace('four things:','five things:');},
+ 'duplicate inventory':(q:any)=>{q.question=q.question.replace('AuthBroker, SessionMint, AuthCache, and TokenStore','AuthBroker, SessionMint, AuthCache, and AuthCache');},
+ 'foreign retained service':(q:any)=>{q.options[0].label=q.options[0].label.replace('SessionMint','OtherService');},
+ 'equal counts':(q:any)=>{q.options[0].label=q.options[0].label.replace('3 components:','4 components:');},
+ 'no keep alternative':(q:any)=>{q.options[1]={label:'Discuss storage',description:'No arrangement.'};},
+ 'no fold':(q:any)=>{q.options[0].label=q.options[0].label.replace('(fold TokenStore into AuthCache)','');},
+ 'remedy borrowed':(q:any)=>{q.options[1].description+=' '+q.options[0].description;q.options[0].description='Undecided storage.';},
+ 'quoted remedy':(q:any)=>{q.options[0].description='"'+q.options[0].description+'"';},
+ 'independent current store':(q:any)=>{q.question+='\nCorrection: TokenStore now has a documented independent purpose.';},
+ 'store retained':(q:any)=>{q.options[0].description+=' But keep TokenStore as a separate class.';},
+ 'negated fold':(q:any)=>{q.options[0].description+=' Do not fold TokenStore.';},
+ 'declarative negated fold':(q:any)=>{q.options[0].description+=' This option never folds TokenStore into AuthCache.';},
+ 'adapter replaced':(q:any)=>{q.options[0].description+=' Replace the existing adapter.';},
+ 'foreign remedy':(q:any)=>{q.options[0].description+=' This remedy applies to another project.';},
+}))test('held6bd structure rejects '+name,()=>expect(heldStructureResult(changeHeldStructure(edit))).toEqual({}));
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';

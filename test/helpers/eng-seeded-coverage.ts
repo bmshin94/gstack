@@ -359,10 +359,11 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     // A current store-consolidation choice may follow a separate feature cut.
     // Its own counted inventory and opposed keep/remove options establish the
     // reduction; neither the earlier approval nor the cumulative count does.
-    const currentInventory = new RegExp(`\\bplan (?:still )?(?:adds|contains|retains|has) (one|two|three|four|five|six|seven|eight|nine|[1-9]\\d*) (?:new )?components:\\s*${identifiers}\\.`, 'i').exec(explanation);
+    const inventories = [...explanation.matchAll(new RegExp(`\\bplan (?:still )?(?:adds|contains|retains|has) (one|two|three|four|five|six|seven|eight|nine|[1-9]\\d*) (?:new )?(?:components|classes|things):\\s*${identifiers}\\.`, 'gi'))];
+    const currentInventory = inventories.length === 1 ? inventories[0] : undefined;
     const inventoryNames = currentInventory ? namesIn(currentInventory[2]!) : [];
     const inventoryCount = currentInventory ? counts[currentInventory[1]!.toLowerCase()] ?? Number(currentInventory[1]) : 0;
-    const ownedStoreChoice = /\b(?:arrangement|arranged|structure|components?|classes?)\b/i.test(title) && /\bTokenStore\b/.test(title) && /\bAuthCache\b/.test(title);
+    const ownedStoreChoice = /\b(?:arrangement|arranged|structure|components?|classes?)\b/i.test(title);
     const independentStore = /\bTokenStore (?:now |already )?(?:has|requires|provides) (?:a documented |an? )?(?:independent|distinct|separate) (?:persistence )?(?:purpose|behavior|state|contract)\b|\bTokenStore is (?:no longer|not) (?:redundant|a duplicate)\b/i;
     // Removing one undefined class is also a complexity decision. Its own
     // counted baseline and one complete removal/retained-store alternative
@@ -388,18 +389,29 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
         /\bhandles (?:expiry and invalidation|invalidation and expiry)\b/i.test(explanation) &&
         structureOptions.some(option => /^(?:[A-D][):.]\s*)?(?:Include|Keep|Retain)(?: TokenStore)?(?: \(recommended\))?\n/i.test(option)) && alternative ? ['complexity'] : [];
     }
-    if (ownedStoreChoice && settledStructure(q.question) && inventoryCount === 4 &&
+    const repeatedStore = /\bTokenStore (?:is never (?:described|specified|defined)|has no (?:stated|defined|documented) (?:purpose|responsibility|contract))\b/i.test(explanation)
+      && /\b(?:its name|TokenStore(?:'s)? (?:name|role)) (?:says it does what the adapter already does|duplicates (?:the )?(?:existing )?adapter's (?:job|role|responsibility))\b/i.test(explanation);
+    const changedStore = /\bTokenStore (?:does not|doesn't|no longer) duplicates? (?:the )?(?:existing )?adapter\b/i;
+    if (ownedStoreChoice && settledStructure(q.question) && !changedStore.test(text) && inventoryCount === 4 &&
         sameNames(inventoryNames, ['AuthBroker', 'SessionMint', 'AuthCache', 'TokenStore']) &&
         /\bAuthCache (?:is|is described as) a facade over the existing (?:cache )?adapter\b/i.test(explanation) &&
-        /\badapter\b[^.!?]*\balready stores tokens\b/i.test(explanation) &&
-        /\bTokenStore (?:is |a |makes |becomes )*(?:a )?(?:third layer doing the adapter's job|redundant (?:token )?store|duplicate (?:token )?store)\b/i.test(explanation) &&
+        /\badapter\b[^.!?]*\balready (?:stores tokens|keys, expires and invalidates tokens)\b/i.test(explanation) &&
+        (/\bTokenStore (?:is |a |makes |becomes )*(?:a )?(?:third layer doing the adapter's job|redundant (?:token )?store|duplicate (?:token )?store)\b/i.test(explanation) ||
+          repeatedStore) &&
         !independentStore.test(text) &&
-        structureOptions.some(option => new RegExp(`^(?:[A-D][):.]\\s*)?(?:${inventoryCount}|four) components:\\s*(?:keep|retain) TokenStore separate\\b`, 'i').test(option)) &&
+        structureOptions.some(option => {
+          if (new RegExp(`^(?:[A-D][):.]\\s*)?(?:${inventoryCount}|four) (?:components|classes):\\s*(?:keep|retain) TokenStore separate\\b`, 'i').test(option)) return true;
+          const kept = new RegExp(`^(?:[A-D][):.]\\s*)?(?:${inventoryCount}|four) (?:components|classes)(?: as planned)?:\\s*${identifiers}(?:\\n|$)`, 'i').exec(option);
+          return kept && sameNames(namesIn(kept[1]!), inventoryNames);
+        }) &&
         structureOptions.some(option => {
           const head = option.split('\n')[0]!;
-          const match = new RegExp(`^(?:[A-D][):.]\\s*)?(three|3) components:\\s*${identifiers};\\s*(?:drop|remove|fold) TokenStore\\b`, 'i').exec(head);
+          const match = new RegExp(`^(?:[A-D][):.]\\s*)?(three|3) (?:components|classes):\\s*${identifiers}(?:;\\s*(?:drop|remove|fold) TokenStore\\b| \\((?:fold|merge) TokenStore into AuthCache\\)(?: \\((?:recommended|optional)\\))?$)`, 'i').exec(head);
           return match && sameNames(namesIn(match[2]!), ['AuthBroker', 'SessionMint', 'AuthCache']) &&
-            /\bAuthCache facade\s*\+\s*existing adapter is the single token store\b/i.test(option) &&
+            (/\bAuthCache facade\s*\+\s*existing adapter is the single token store\b/i.test(option) ||
+              /\b(?:Exactly )?one (?:place|facade) owns tenant-key construction and invalidation(?: calls)? (?:on top of|over) the existing adapter\b/i.test(option)) &&
+            !/\b(?:never|does not|doesn't|will not|won't) (?:folds?|drops?|removes?|merges?|consolidates?) TokenStore\b|\b(?:replace|remove|drop) the existing adapter\b|\b(?:other|another|foreign|different) (?:function|method|issue|project|remedy)\b/i.test(option) &&
+            !/\b(?:no|not a) single (?:place|facade) owns (?:tenant-key construction|invalidation)\b|\b(?:also|then|while|and) (?:add(?:ing)?|creat(?:e|ing)|implement(?:ing)?|install(?:ing)?|enabl(?:e|ing)|disabl(?:e|ing)|deploy(?:ing)?)\b/i.test(option) &&
             !independentStore.test(option) && !/\b(?:keep|retain|leave) TokenStore (?:as )?(?:a )?(?:separate|second|independent) (?:token )?(?:store|class|component)\b/i.test(option) &&
             !/\b(?:do not|don't|never) (?:drop|remove|fold|merge|consolidate) TokenStore\b|\bTokenStore (?:still |now |will )*(?:remains?|stays?|is retained as) (?:a )?(?:separate|second|independent) (?:token )?(?:store|class|component)\b/i.test(option);
         })) ids.push('complexity');
@@ -540,10 +552,10 @@ function batchingIssueNumber(call: NativePlanQuestionCall): string | undefined {
     // Earlier briefs may instead cite their current finding in task metadata.
     // Bind only that owned identity, never D alone or a later recap of others.
     const decision = /^D([1-9]\d*)\b/.exec(title);
-    // D owns this ask; one R shared by its title and header owns the choice.
-    // Their placement and punctuation are presentation, not identity.
+    // D owns this ask. R can be shared by the title/header or live in the
+    // header alone when this question names one current source document.
     const recordIds = [...prose(title, true).replace(/"[^"\n]*"|“[^”\n]*”/g, '').matchAll(/\bR[1-9]\d*\b/g)].map(match => match[0]);
-    const recordId = recordIds.length === 1 ? recordIds[0] : undefined;
+    let recordId = recordIds.length === 1 ? recordIds[0] : undefined;
     const lines = prose(q.question, true).split('\n').filter(line => line.trim());
     const metadata = lines[1]?.replace(/"[^"\n]*"|“[^”\n]*”/g, '') ?? '';
     const explanation = (lines[2] ?? '').replace(/"[^"\n]*"|“[^”\n]*”/g, '');
@@ -556,8 +568,33 @@ function batchingIssueNumber(call: NativePlanQuestionCall): string | undefined {
         q.options.some(option => !prose(option.description ?? '', true).trim())) return;
     const finding = /(?:^|[,;]\s*)finding (F[1-9]\d*)\s*\(PLAN\.md:[1-9]\d*(?:[-–][1-9]\d*)?\)/i.exec(metadata)?.[1];
     if (recordIds.length > 1 || /\b(?:copied|quoted|historical|example|hypothetical)\b/i.test(title)) return;
+    if (!recordId && !finding) {
+      const header = q.header.trim();
+      const ids = [...header.matchAll(/\bR[1-9]\d*\b/g)].map(match => match[0]);
+      const sources = [...metadata.matchAll(/\b[\w./-]+\.md(?::[1-9]\d*(?:[-–][1-9]\d*)?)?\b/g)].map(match => match[0]);
+      // This native form carries the complete tradeoff in each option.
+      // Short aliases for a comparison in the question/report must keep using
+      // the saved-ledger path; the header cannot replace that authority.
+      const completeOptions = q.options.every(option => {
+        const description = prose(option.description ?? '', true).replace(/"[^"\n]*"|“[^”\n]*”/g, '').trim();
+        const blocks = [...description.matchAll(/([✅❌])\s*([^✅❌]+)/g)];
+        return description.startsWith('✅') && blocks.every(block => /[A-Za-z0-9]/.test(block[2]!)) &&
+          blocks.filter(block => block[1] === '✅').length >= 2 && blocks.some(block => block[1] === '❌');
+      });
+      if (!completeOptions || lines.some(line => /^(?:Options?:\s*)?[A-D][).:]\s+\S/.test(line))) return;
+      // A bare D number, a quoted/foreign R, or an unrelated source mention
+      // cannot supply identity. Native ACK/options and current-status checks
+      // below remain the same as the title-owned route.
+      if (ids.length !== 1 || !new RegExp(`^${ids[0]}(?:\\s+[A-Za-z]|\\s*[—–:-]\\s*[A-Za-z])`).test(header) ||
+          /\bR[1-9]\d*\b/.test(title) || /[\r\n`"“”]/.test(header) ||
+          [...title.matchAll(/\bD[1-9]\d*\b/g)].length !== 1 ||
+          /\b(?:copied|quoted|historical|history|example|hypothetical|withdrawn|cancelled|canceled|rejected|superseded|resolved|closed|not current|no longer current)\b/i.test(header) ||
+          sources.length !== 1 || !/^PLAN\.md(?::[1-9]\d*(?:[-–][1-9]\d*)?)?$/.test(sources[0]!)) return;
+      recordId = ids[0];
+    }
     if (recordId) {
-      if (!new RegExp(`^${recordId}\\b`).test(q.header.trim())) return;
+      const headerIds = [...q.header.matchAll(/\bR[1-9]\d*\b/g)].map(match => match[0]);
+      if (!new RegExp(`^${recordId}\\b`).test(q.header.trim()) || headerIds.length !== 1 || headerIds[0] !== recordId) return;
       issue = `record:${recordId}`;
     } else if (finding) issue = `finding:${finding.toUpperCase()}`;
     else return;
@@ -1753,6 +1790,57 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
       preceding: text.slice(0, text.indexOf(body)).trim().split('\n').at(-1) ?? '',
       match: /^- (?:\[[ xX]\] )?(T[1-9]\d*)(?: \([^\n)]*\))? [—–:-] (.+)(?:\n|$)/.exec(body) }));
   });
+  // A source-owned approved row may publish a before-change characterization
+  // corpus while its task carries the legacy component, file and green run.
+  // Those fields form one requirement; the action need not repeat the target.
+  const values = (body: string, name: string) => [...body.matchAll(new RegExp(
+    `^${name}:\\s*([^]*?)(?=^(?:  - )?[A-Z][\\w /-]*:|$(?![^]))`, 'gm'))].map(m => flat(m[1]!));
+  const number = (value: string) => /^\d+$/.test(value) ? Number(value) : 'zero one two three four five six seven eight nine ten'.split(' ').indexOf(value.toLowerCase());
+  for (const record of current) {
+    const row = /^([A-Z][1-9]\d*): (?:Regression coverage|Characterization tests?|Regression contract) for legacyAuthFlow\(\)(?: current (?:behavior|outcomes))?$/i.exec(record.title)?.[1];
+    if (!row || current.filter(s=>s.title.startsWith(row+':')).length!==1) continue;
+    const rawBody=record.body.join('\n'), body = unquoted(rawBody);
+    const finding=values(body,'Finding'), state=values(body,'State'), answer=values(body,'Actual answer'), scope=values(body,'Accepted scope');
+    const questions=[...body.matchAll(/^Question (D[1-9]\d*):\s*([^]*?)(?=^Actual answer:)/gm)];
+    const sourceFinding=values(rawBody,'Finding').join(' ');
+    if ([finding,state,answer,scope].some(v=>v.length!==1) || questions.length!==1 || state[0]!=='approved'
+        || !/\bCRITICAL\b/.test(finding[0]!) || !/\bcoverage is required\b/i.test(finding[0]!)
+        || !/(?<![\w./-])PLAN\.md:[1-9]\d*/.test(finding[0]!)
+        || /(?:[\w.-]+\/)+PLAN\.md|(?<![\w./-])(?!PLAN\.md\b)[\w.-]+\.md\b/.test(sourceFinding)
+        || framed(body) || !owned(scope[0]!)) continue;
+    const decision=questions[0]![1]!, chosen=/^([A-D])\s+[—–-]\s+characterization\b/i.exec(answer[0]!)?.[1];
+    const offered=[...flat(questions[0]![2]!).matchAll(/\b([A-D])\) (.*?)(?=;\s*[A-D]\)|\s+Completeness:|$)/g)];
+    const selected=offered.filter(m=>m[1]===chosen);
+    if (offered.length<2 || offered.length>4 || new Set(offered.map(m=>m[1])).size!==offered.length || selected.length!==1
+        || !/\bcharacterization tests?\b/i.test(selected[0]![2]!) || !owned(selected[0]![2]!)
+        || !answer[0]!.endsWith(`(${decision} answer)`)) continue;
+    const baseline=/(?:^|\(1\) )([A-Za-z][\w/.-]*\.characterization\.test(?:\.[jt]s)?) (?:pins|records|captures) (?:current|existing|prior) outcomes for: (.+?)\. Written against the legacy (?:body|implementation) BEFORE any (?:delegation|change) is added\b/i.exec(scope[0]!);
+    if (!baseline || !/(?:^|\/)legacyAuthFlow\.characterization\.test(?:\.[jt]s)?$/.test(baseline[1]!)) continue;
+    const cases=baseline[2]!.split(/,\s*(?![^()]*\))/).map(value=>value.trim());
+    if(cases.length<2 || cases.some(value=>!value) || new Set(cases).size!==cases.length)continue;
+    for(const task of allTasks.filter(t=>t.section==='Implementation Tasks'&&t.match)) {
+      const id=task.match![1]!, title=unquoted(task.match![2]!);
+      const action=/^([A-Za-z][\w/-]*\/legacyAuthFlow) [—–] (?:Write|Add|Record|Capture) characterization tests for (?:the )?(one|two|three|four|five|six|seven|eight|nine|ten|[1-9]\d*) input classes against (?:the )?(?:current|unchanged) body, before any other change$/i.exec(title);
+      const files=values(task.body,'  - Files'),verify=values(task.body,'  - Verify'),source=values(task.body,'  - Surfaced by');
+      if(!action || number(action[2]!)!==cases.length || allTasks.filter(t=>t.match?.[1]===id).length!==1
+          || files.length!==1 || verify.length!==1 || source.length!==1
+          || !source[0]!.includes(`(${row}/${decision})`) || !owned(task.body) || framed(task.preceding)
+          || files[0]!==action[1]+'.characterization.test' || !files[0]!.endsWith('/'+baseline[1]!)
+          || !/^(?:suite|tests) (?:green|pass(?:es)?) on (?:unmodified|untouched|unchanged) legacy (?:body|implementation)$/i.test(verify[0]!))continue;
+      const currentStatus=`(?:${inactive}|reopened|pending approval|not approved)`;
+      const owner=`(?:${id}|${row}|${decision}|(?:this|the) (?:(?:legacy|characterization|regression) )?(?:suite|tests?|requirement|baseline verification))`;
+      const cancelled=current.some(section=>{
+        if(/\b(?:historical|history|example|quoted)\b/i.test(section.title))return false;
+        const foreign=/\bregression suite\b/i.test(section.title)&&! /\blegacy\b/i.test(section.title);
+        const raw=section.body.join('\n').replace(new RegExp(`(${owner} (?:is|are|was|were|has been|have been) )["“'‘](${currentStatus})["”'’]`,'gi'),'$1$2');
+        return unquoted(raw).split(/\n|[.!?;]\s+/).some(line=>!framed(line)&&(!foreign||new RegExp(`\\b(?:${id}|${row}|${decision}|legacyAuthFlow)\\b`).test(line))&&(
+          new RegExp(`\\b${owner} (?:is|are|was|were|has been|have been) ${currentStatus}\\b`,'i').test(line)
+          || new RegExp(`\\b(?:skip|cancel|withdraw|defer) ${owner}\\b|\\b(?:change|update|rewrite|replace|regenerate) ${owner} (?:assertions|expectations|expected outcomes)\\b`,'i').test(line)
+          || new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|will be) (?:changed|modified|rewritten) before ${id}\\b`,'i').test(line)));
+      });
+      if(!cancelled)return true;
+    }
+  }
   // Required test lists may give each suite its own inline label instead of
   // a heading. Keep that bullet's body separate from adjacent test requirements.
   const declarations: Array<{ title: string; body: string[]; inlineRequired?: boolean; ledger?: { row: string; question: string; caseCount: number } }> = [...current];

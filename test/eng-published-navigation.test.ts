@@ -6,6 +6,51 @@ import a from './fixtures/eng-published-navigation.json';
 import {isEngCompletionHandoff} from './helpers/eng-completion-handoff';
 import {nativePlanCallFingerprint,hasNativePlanTerminal,planCountQuestionPhase} from './helpers/claude-pty-runner';
 import type {NativePlanQuestionCall,PlanCountTranscript} from './helpers/plan-count-transcript';
+import heldPackets from './fixtures/eng-native-packets-b955.json';
+const heldNavigation=()=>{const h=structuredClone(heldPackets.held6bd);return {...h,call:h.transcript.calls.at(-1)!,priorCalls:h.transcript.calls.slice(0,-1)};};
+function heldNavigationCheck(name:string,expected:boolean,edit?:(x:any)=>void){test('held6bd navigation '+name,()=>{const x=heldNavigation();edit?.(x);expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);});}
+heldNavigationCheck('actual completed owned menu',true);
+heldNavigationCheck('reordered options',true,x=>x.call.questions[0].options.reverse());
+heldNavigationCheck('optional CEO chosen',true,x=>x.call.answers[x.call.questions[0].question]=x.call.questions[0].options[1].label);
+heldNavigationCheck('equivalent no-change scope',true,x=>question(x,s=>s.replace('nothing here changes the plan or its tasks','the plan and its tasks remain unchanged')));
+heldNavigationCheck('equivalent settled status',true,x=>question(x,s=>s.replace('0 unresolved decisions','no unresolved decisions')));
+heldNavigationCheck('historical completion correction is inert',true,x=>question(x,s=>s+'\nEarlier note: "The review is no longer clear."'));
+for(const [name,edit] of Object.entries({
+ 'foreign branch':(x:any)=>question(x,s=>s.replace('main, PLAN.md','other, PLAN.md')),
+ 'foreign source':(x:any)=>question(x,s=>s.replace('main, PLAN.md','main, OTHER.md')),
+ 'foreign title':(x:any)=>{x.plan=x.plan.replace('# Plan: Multi-tenant Auth Refactor','# Plan: Other Refactor');},
+}))heldNavigationCheck('owned current catalog cannot bypass '+name+' with legacy disclaimer',false,x=>{question(x,s=>s+'\nIt does not change implementation.');edit(x);});
+for(const [name,edit] of Object.entries({
+ 'current no-longer-complete correction':(x:any)=>question(x,s=>s+'\nCorrection: The review is no longer clear.'),
+ 'current newly unresolved count':(x:any)=>question(x,s=>s+'\nCorrection: There are 2 unresolved decisions.'),
+ 'duplicate reviewed target':(x:any)=>{x.plan=x.plan.replace('Reviewed target:', 'Reviewed target: `OTHER.md` (repo root, branch `main`)\nReviewed target:');},
+ 'conflicting source in metadata':(x:any)=>question(x,s=>s.replace('; eng review CLEAR','; OTHER.md applies; eng review CLEAR')),
+ 'implementation approval':(x:any)=>{x.call.questions[0].options[0].description+=' Also approve deployment.';},
+ 'deployment action':(x:any)=>{x.call.questions[0].options[1].description+=' Then deploy to production.';},
+}))heldNavigationCheck('current class rejects '+name,false,edit);
+for(const [name,edit] of Object.entries({
+ 'foreign primary plan':(x:any)=>question(x,s=>s.replace('main, PLAN.md','main, OTHER.md')),
+ 'foreign branch':(x:any)=>question(x,s=>s.replace('main, PLAN.md','other, PLAN.md')),
+ 'foreign title':(x:any)=>{x.plan=x.plan.replace('# Plan: Multi-tenant Auth Refactor','# Plan: Another Refactor');},
+ 'duplicate source':(x:any)=>question(x,s=>s+'\nProject/branch/task: main, OTHER.md "Other"'),
+ 'comparison does not own source':(x:any)=>question(x,s=>s.replace('main, PLAN.md','main, OTHER.md Other; compare PLAN.md')),
+ 'foreign reviewed target':(x:any)=>{x.plan=x.plan.replace('Reviewed target: `PLAN.md`','Reviewed target: `OTHER.md`');},
+ 'unanswered':(x:any)=>{x.call.answered=false;x.call.unansweredQuestionIndices=[0];},
+ 'missing ACK':(x:any)=>{delete x.call.answeredAt;},
+ 'unpublished interior task':(x:any)=>{x.plan=x.plan.replace('**T3 (','**T33 (');},
+ 'new task':(x:any)=>question(x,s=>s.replace('T1-T9','T1-T10')),
+ 'current incomplete':(x:any)=>question(x,s=>s+'\nCorrection: The review is incomplete.'),
+ 'current reopened':(x:any)=>question(x,s=>s+'\nCorrection: One decision is reopened.'),
+ 'current quoted status':(x:any)=>question(x,s=>s+'\nCorrection: The review is "pending".'),
+ 'conditional completion':(x:any)=>question(x,s=>s.replace('eng review CLEAR','eng review CLEAR if more tests pass')),
+ 'report unresolved':(x:any)=>{x.plan=x.plan.replace('NO UNRESOLVED DECISIONS','One unresolved decision');},
+ 'quoted report':(x:any)=>{x.plan='```md\n'+x.plan+'\n```';},
+ 'new ready action':(x:any)=>{x.call.questions[0].options[0].description+=' Also add Redis.';},
+ 'new optional action':(x:any)=>{x.call.questions[0].options[1].description+=' Then replace the database.';},
+ 'new arbitrary command':(x:any)=>{x.call.questions[0].options[0].description+=' Run ./deploy.sh.';},
+ 'new quoted command':(x:any)=>{x.call.questions[0].options[0].description+=' Also "write a cache adapter".';},
+ 'explicit wrong lane':(x:any)=>{x.call.questions[0].options[0].description+=' Lanes A then Z.';},
+}))heldNavigationCheck('rejects '+name,false,edit);
 const plan=a.plan;
 function check(name:string,expected:boolean,mutate?:(x:any)=>void) {
  test(name,()=>{
