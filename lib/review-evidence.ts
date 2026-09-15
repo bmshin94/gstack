@@ -61,7 +61,8 @@ export function reviewFreshness(rec: Record<string, any>, currentWtree: string):
   if (!currentWtree || currentWtree === 'unknown' || rec.wtree !== currentWtree) {
     return { status: 'STALE', reason: 'working-tree content differs from reviewed content' };
   }
-  if (rec.status !== 'clean' || rec.issues_found > 0 || rec.critical > 0) {
+  if (rec.status !== 'clean' || rec.issues_found > 0 || rec.critical > 0 ||
+      (rec.skill === 'codex-review' && rec.findings > (rec.findings_fixed ?? 0))) {
     return { status: 'UNVERIFIED', reason: 'review has unresolved findings or did not finish clean' };
   }
   return { status: 'CURRENT', reason: 'completed clean pass on unchanged content' };

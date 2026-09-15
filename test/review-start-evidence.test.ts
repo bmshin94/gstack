@@ -138,6 +138,21 @@ describe('review start/end binding (#2803)', () => {
     expect(log(rerun, { skill: 'codex-review' }).review_freshness.status).toBe('CURRENT');
   });
 
+  for (const [findings, findings_fixed, freshness] of [
+    [2, 0, 'UNVERIFIED'],
+    [2, 1, 'UNVERIFIED'],
+    [2, 2, 'CURRENT'],
+    [0, 0, 'CURRENT'],
+  ] as const) {
+    test(`Codex gate pass with ${findings_fixed}/${findings} findings resolved grades ${freshness}`, () => {
+      const token = cli('gstack-review-log', ['--start', 'codex-review']);
+      const row = log(token, { skill: 'codex-review', status: 'clean', gate: 'pass', findings, findings_fixed });
+      expect(row.review_binding.state).toBe('verified');
+      expect(row.gate).toBe('pass');
+      expect(row.review_freshness.status).toBe(freshness);
+    });
+  }
+
   test('legacy diff rows cannot use log-time wtree or HEAD; plan evidence is unchanged', () => {
     log(undefined, { skill: 'plan-eng-review', completed: undefined, converged: undefined });
     const file = findFilesBySuffix(home, '-reviews.jsonl')[0];
