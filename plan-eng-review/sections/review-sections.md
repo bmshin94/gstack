@@ -2,16 +2,16 @@
 <!-- Regenerate: bun run gen:skill-docs -->
 ## Review preparation
 
-Complete Prior Learnings, Retrospective learning and Confidence Calibration below, then present Step 0 findings. Continue through the four review sections and Outside Voice using the Decision procedure.
+Resolve the Scope Challenge complexity gate before executing this section. Complete Prior Learnings, Retrospective learning and Confidence Calibration below, then present Step 0 findings. The decision ledger and full grid/save-before-ask procedure start here, for those findings and all later review choices.
 
 ## Review record and write policy
 
-Keep the target selected at the Scope gate. For a plan, review its proposed work; for a branch diff or code path, review that existing code and record proposed remedies without inventing a plan document. References to the plan below mean the selected proposal, or the proposed work recorded during a code review.
+Keep the target selected at the Scope gate. For a plan, review its proposed work; for a branch diff or code path, review that existing code and record proposed remedies without inventing a plan document. Below, "plan" or "plan document" means that recorded proposal for a code target. Apply every test, evidence and output requirement to it.
 
 The **decision ledger** is the collection of decision records, grids, briefs and actual answers defined below. Its **write/read-only rules** apply to every review artifact:
 - Use the requested report file, otherwise the reviewed plan, for the ledger and narrative outputs. For a code review with neither, present the complete review in chat. Do not edit reviewed implementation files unless the user explicitly authorized that work.
 - Check user and host write limits separately for that document, the Test Plan Artifact, task JSONL, TODOs and logs. A permitted plan write does not authorize another path. If a path is forbidden, present the complete artifact as **not persisted** and do not attempt that write.
-- If a save still fails after any recovery explicitly specified by its writer, report it and stop. Do not replace failed persistence with a success claim or silently switch to chat. Explicitly best-effort logs retain their documented behavior.
+- If a save still fails after its writer's stated recovery, use the entrypoint's **Blocked outcome**. Never claim persistence succeeded or silently switch to chat. Explicitly best-effort logs retain their documented behavior.
 
 **Anti-shortcut clause:** Use the decision gate for all four sections and outside voice. Retain findings and evidence. Ask only for new or reopened choices and apply their exact answers. Never prewrite unapproved remedies or skip sections or the terminal report.
 
@@ -203,7 +203,7 @@ Jitter without a cap is meaningful despite being omitted. Ask about R1 with R2 s
 
 ### Record and resolve
 
-**Save before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if no writable plan is in scope. If saving fails, report the error and stop before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
+**Save before asking:** Use Write or Edit to save the decision record, current grid and brief under **Review record and write policy** above. Preserve other content and approvals; present the same material if no writable plan is in scope. If saving fails, use **Blocked outcome** before asking. An old comparison or critic's recommendation cannot replace this audit. Any change to outcomes, work or meaning returns to **Compare one choice**: audit and save the revision first.
 
 **Ask and wait:** Send the audited brief without substantive additions: one question for one choice per AskUserQuestion call. An obvious fix still needs an answer unless exact prior approval covers it. **STOP for each pending decision.** Wait for its answer before applying that remedy, moving to the next section or calling ExitPlanMode.
 
@@ -718,7 +718,8 @@ Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
    If missing, reset drafts to pending, ask and wait. After the answer, apply only
    its accepted scope and repeat this check before writing completion outputs.
 
-Record that readiness passed with the current decision record. A substantive
+Record `Approval readiness: PASS` with the checked decision IDs and their
+actual answer references in the current decision record. A substantive
 change invalidates that result; navigation alone does not. Then continue to
 Required Outputs, preserving unresolved decisions in the report.
 
@@ -937,7 +938,7 @@ DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
 
-If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Otherwise save only accepted changes, keeping unresolved choices pending:
+If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Then follow **Blocked outcome** in the entrypoint. Otherwise save only accepted changes, keeping unresolved choices pending:
 
 The report must always be the LAST section of the plan file — never mid-file.
 Use a single delete-then-append flow:
@@ -958,7 +959,7 @@ Use a single delete-then-append flow:
 4. **Read-back gate:** Read the saved file. Verify the accepted changes, full review
    output, current review row, verdict and final unresolved-decisions status, with
    `## GSTACK REVIEW REPORT` as the last section. If writing or verification fails,
-   report the error and stop before Review Log or decision logging.
+   report the error and follow **Blocked outcome** before Review Log or decision logging.
 
 Do NOT replace the section in place. The "replace mid-file" path is what allowed
 prior versions to leave the report mid-file when an older report already lived
@@ -968,7 +969,7 @@ there — the user then sees a plan whose review report is not at the bottom and
 ## Review Log
 
 When a plan/report file is in scope, persist only after its successful write and Read-back
-above. On failure, report the error and stop; do not log completion or an accepted decision.
+above. On failure, use **Blocked outcome**; do not log completion or an accepted decision.
 Run the commands below only when the reviewed output is persisted and metadata writes
 are permitted. Otherwise show their actual fields in chat as not persisted. The dashboard
 contains saved history; it must not be presented as recording this unlogged run.

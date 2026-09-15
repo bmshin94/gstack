@@ -48,7 +48,7 @@ describe('workflow judge file bundle', () => {
     expect(entry.content).toContain('## Scope gate');
     expect(entry.content).toContain('## Section self-check');
     expect(entry.content).toContain('## EXIT PLAN MODE GATE (BLOCKING)');
-    expect(entry.content.trimEnd()).toMatch(/Once the gate passes,[^\n]*call ExitPlanMode[^\n]*\.$/);
+    expect(entry.content.trimEnd()).toMatch(/After success telemetry and cache dispatch, call ExitPlanMode[^\n]*\.$/);
   });
 
   test('preserves the exact entrypoint excerpt and each complete section in sorted named files', () => {

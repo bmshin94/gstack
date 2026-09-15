@@ -157,7 +157,7 @@ DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
 
-${beforeLog ? (conditionalWrites ? 'If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Otherwise save only accepted changes, keeping unresolved choices pending:' : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
+${beforeLog ? (conditionalWrites ? `If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed.${ctx.skillName === 'plan-eng-review' ? ' Then follow **Blocked outcome** in the entrypoint.' : ''} Otherwise save only accepted changes, keeping unresolved choices pending:` : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.`}
 
@@ -180,7 +180,7 @@ ${beforeLog ? `1. Read the existing plan/report, if present. Preserve its conten
 ${beforeLog ? `4. **Read-back gate:** Read the saved file. Verify the accepted changes, full review
    output, current review row, verdict and final unresolved-decisions status, with
    \`## GSTACK REVIEW REPORT\` as the last section. If writing or verification fails,
-   report the error and stop before Review Log or decision logging.` : `4. Verify with the Read tool that \\\`## GSTACK REVIEW REPORT\\\` is the last
+   ${ctx.skillName === 'plan-eng-review' ? 'report the error and follow **Blocked outcome** before Review Log or decision logging.' : 'report the error and stop before Review Log or decision logging.'}` : `4. Verify with the Read tool that \\\`## GSTACK REVIEW REPORT\\\` is the last
    \\\`## \\\` heading in the file before continuing. If it isn't, repeat steps
    2-3 once.`}
 
@@ -192,6 +192,9 @@ there — the user then sees a plan whose review report is not at the bottom and
 
 /** Approval readiness precedes output; the exit gate only verifies the saved result. */
 export function generatePlanReviewApprovalCheck(ctx: TemplateContext): string {
+  const readinessRecord = ctx.skillName === 'plan-eng-review'
+    ? 'Record `Approval readiness: PASS` with the checked decision IDs and their\nactual answer references in the current decision record. A substantive'
+    : 'Record that readiness passed with the current decision record. A substantive';
   return `## Approval readiness
 
 Run this check before Required Outputs and after any substantive late change.
@@ -206,7 +209,7 @@ Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
    If missing, reset drafts to pending, ask and wait. After the answer, apply only
    its accepted scope and repeat this check before writing completion outputs.
 
-Record that readiness passed with the current decision record. A substantive
+${readinessRecord}
 change invalidates that result; navigation alone does not. Then continue to
 Required Outputs, preserving unresolved decisions in the report.`;
 }
@@ -220,7 +223,7 @@ export function generateExitPlanModeGate(ctx: TemplateContext): string {
   const approvals = separateReadiness ? `Confirm Approval readiness passed for the current decisions. This is a
    read-only verification, not a new approval or output-writing step. If the
    decisions changed, report the stale verification and stop before success
-   telemetry or exit. A resumed repair
+   telemetry or exit${ctx.skillName === 'plan-eng-review' ? ' and follow **Blocked outcome**' : ''}. A resumed repair
    starts at Approval readiness, then repeats affected outputs, Read-back,
    Review Log and dashboard.
 
@@ -236,8 +239,8 @@ export function generateExitPlanModeGate(ctx: TemplateContext): string {
   if (separateReadiness) return `## EXIT PLAN MODE GATE (BLOCKING)
 
 If storage restrictions prevented the plan/report or completion log, present the
-full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
-An attempted artifact save that failed still stops the review.
+full chat report as not persisted; do not call ExitPlanMode or claim this gate passed${ctx.skillName === 'plan-eng-review' ? ', and follow **Blocked outcome**' : ''}.
+An attempted artifact save that failed still stops the review${ctx.skillName === 'plan-eng-review' ? ' via **Blocked outcome**' : ''}.
 
 ${approvals}Before calling ExitPlanMode, verify all five checks:
 1. Read the plan file after your most recent write.
@@ -250,8 +253,7 @@ ${approvals}Before calling ExitPlanMode, verify all five checks:
 5. Confirm \`gstack-review-log\` was called and \`gstack-review-read\` ran at
    least once. Do not substitute an unlogged chat review for saved completion.
 
-If any check fails, report the missing work and do not call ExitPlanMode. Review
-prose in the plan body cannot replace its separate, terminal structured report.`;
+If any check fails, report the missing work and do not call ExitPlanMode${ctx.skillName === 'plan-eng-review' ? ' and follow **Blocked outcome**' : ''}. ${ctx.skillName === 'plan-eng-review' ? 'Body prose cannot replace the separate terminal structured report.' : 'Review\nprose in the plan body cannot replace its separate, terminal structured report.'}`;
   return `## EXIT PLAN MODE GATE (BLOCKING)
 
 Before calling ExitPlanMode, run this self-check. If any item fails, do the

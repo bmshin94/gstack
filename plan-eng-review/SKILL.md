@@ -595,7 +595,7 @@ fi
 ```
 If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why.
 
-The Prerequisite Skill Offer below uses the preamble's complete decision-brief format and the next `D<N>` number (`D1` if it is the first question after startup). Its quoted text explains the choice; it is not an alternative question format. Running or skipping that prerequisite does not approve engineering remedies.
+The Prerequisite Skill Offer below uses the preamble's complete decision-brief format and the next `D<N>` number (`D1` first). Its quote is choice content, not a format. Running or skipping that prerequisite does not approve engineering remedies.
 
 ## Prerequisite Skill Offer
 
@@ -698,15 +698,15 @@ Before reviewing, answer:
    - How will users download or install it (GitHub Releases, package manager, container registry)?
    If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
 
-At 8+ files or 2+ new classes/services, STOP before section work. Use the preamble's question rules:
+At 8+ files or 2+ new classes/services, STOP before section work. Use the preamble's decision-brief format for this complexity gate:
 
 1. Explain the excess complexity. Ask about each needed feature cut or deferral separately first.
 2. Compare original and smaller class/module arrangements with the same feature choices. Preserve contracts and approved security, error handling, test and performance fixes in both; leave unapproved fixes pending.
 3. Ask which arrangement to use. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
 
-**STOP while a Step 0 question awaits an answer.** Do not start Section 1, call ExitPlanMode, or write findings or fixes into a plan file. An unchanged copy of the original plan is allowed. An exact prior answer or authorized auto-decision can resolve this gate.
+**STOP while a Scope Challenge complexity question awaits an answer.** Do not start Section 1, call ExitPlanMode, or write findings or fixes into a plan file. An unchanged copy of the original plan is allowed. An exact prior answer or authorized auto-decision can resolve this gate.
 
-After the gate resolves, apply only accepted scope changes and follow the Read directive below. The loaded section starts with preparation and calibration, then presents Step 0 findings before Section 1. Take the same route if complexity did not trigger the gate.
+After the gate resolves, apply only accepted scope changes and follow the Read directive below. Take the same route if complexity did not trigger the gate.
 
 **Critical: Once the user accepts or rejects a scope reduction recommendation, commit fully.** Do not re-argue for smaller scope during later review sections. Do not silently reduce scope or skip planned components.
 
@@ -715,20 +715,22 @@ After the gate resolves, apply only accepted scope changes and follow the Read d
 
 ## Section self-check (before you finish)
 
-Confirm you Read the review section the Section index named, and executed every review section (Architecture, Code Quality, Tests, Performance), the outside voice, and the required outputs in full. If you produced findings or the review report from memory without Reading `sections/review-sections.md`, stop and Read it now.
+Verify you Read `sections/review-sections.md` and fully executed Architecture, Code Quality, Tests, Performance, Outside Voice and required outputs. Read and execute any work done from memory before the final gate.
 
-Perform the read-only final gate below. Chat-only output remains complete and explicitly not persisted; it cannot pass the persisted-report gate. If a check fails, report the missing work and stop; do not start success telemetry or exit.
+**Paused question:** Wait for its actual answer without completion telemetry or ExitPlanMode.
+
+**Blocked outcome:** Report `BLOCKED`, missing path/work, attempts and the resume requirement. Complete chat-only output stays **not persisted** and cannot pass the persisted-report gate. Unavailable report persistence, unrecovered saves and failed gates use this route. With startup values and an available, permitted telemetry command, run **Telemetry (run last)** once: `OUTCOME=error`, actual `ERROR_MESSAGE`/`FAILED_STEP`. Stop without ExitPlanMode. Resume at the failed step; repeat affected outputs/read-back/logs.
 
 ## EXIT PLAN MODE GATE (BLOCKING)
 
 If storage restrictions prevented the plan/report or completion log, present the
-full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
-An attempted artifact save that failed still stops the review.
+full chat report as not persisted; do not call ExitPlanMode or claim this gate passed, and follow **Blocked outcome**.
+An attempted artifact save that failed still stops the review via **Blocked outcome**.
 
 Confirm Approval readiness passed for the current decisions. This is a
    read-only verification, not a new approval or output-writing step. If the
    decisions changed, report the stale verification and stop before success
-   telemetry or exit. A resumed repair
+   telemetry or exit and follow **Blocked outcome**. A resumed repair
    starts at Approval readiness, then repeats affected outputs, Read-back,
    Review Log and dashboard.
 
@@ -743,10 +745,9 @@ Before calling ExitPlanMode, verify all five checks:
 5. Confirm `gstack-review-log` was called and `gstack-review-read` ran at
    least once. Do not substitute an unlogged chat review for saved completion.
 
-If any check fails, report the missing work and do not call ExitPlanMode. Review
-prose in the plan body cannot replace its separate, terminal structured report.
+If any check fails, report the missing work and do not call ExitPlanMode and follow **Blocked outcome**. Body prose cannot replace the separate terminal structured report.
 
-After the gate passes, run the preamble's **Telemetry (run last)** command once. Make no further plan or approval changes between verification and exit. Then start the non-blocking cache refresh below.
+After the gate passes: **Telemetry (run last)** once with `OUTCOME=success`, then cache refresh. Make no further plan or approval changes between verification and exit.
 
 ## Brain Cache Background Refresh
 
@@ -761,4 +762,4 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || tru
 ```
 
 
-Once the gate passes, telemetry runs and the cache refresh is dispatched, call ExitPlanMode and follow the selected next step.
+After success telemetry and cache dispatch, call ExitPlanMode for the selected next step.

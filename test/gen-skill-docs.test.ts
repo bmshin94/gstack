@@ -2239,6 +2239,9 @@ describe('Design approval reconciliation', () => {
     const readiness = extractMarkdownSection(section, '## Approval readiness');
     expect(section.indexOf('## Approval readiness')).toBeLessThan(section.indexOf('## Required outputs'));
     expect(readiness).toContain('no completion report or log is required yet');
+    expect(readiness).toContain('Record `Approval readiness: PASS`');
+    expect(readiness).toContain('checked decision IDs and their');
+    expect(readiness).toContain('actual answer references in the current decision record');
     expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
     expect(gate).toContain('read-only verification, not a new approval or output-writing step');
     expect(readiness.indexOf('Approvals:')).toBeGreaterThanOrEqual(0);
@@ -2255,6 +2258,10 @@ describe('Design approval reconciliation', () => {
     expect(gate).toContain('report the stale verification and stop');
     expect(gate).toContain('starts at Approval readiness, then repeats affected outputs, Read-back,');
     expect(gate).toContain('Review Log and dashboard');
+    expect(gate).toContain('and follow **Blocked outcome**');
+    const report = extractMarkdownSection(section, '### Write to the plan file');
+    expect(report).toContain('Then follow **Blocked outcome** in the entrypoint.');
+    expect(report).toContain('report the error and follow **Blocked outcome** before Review Log or decision logging');
   });
 
   test('approval entry does not alter other review Exit checklists', () => {
@@ -4357,7 +4364,7 @@ describe('EXIT PLAN MODE GATE placement', () => {
         expect(telemetry).toBeLessThan(tail.indexOf('## Brain Cache Background Refresh'));
         expect(tail).toContain(skill === 'plan-ceo-review' ? 'Passed with a verified persisted report' : 'After the gate passes');
         const finalHandoff = tail.slice(tail.indexOf('## Brain Cache Background Refresh'));
-        expect(finalHandoff).toContain(skill === 'plan-ceo-review' ? 'Only after a passing gate: call ExitPlanMode' : 'Once the gate passes, telemetry runs and the cache refresh is dispatched, call ExitPlanMode');
+        expect(finalHandoff).toContain(skill === 'plan-ceo-review' ? 'Only after a passing gate: call ExitPlanMode' : 'After success telemetry and cache dispatch, call ExitPlanMode');
         expect(tail).not.toContain('short-circuit when no plan file exists');
         expect(tail).toContain('full chat report as not persisted; do not call ExitPlanMode');
       } else {
