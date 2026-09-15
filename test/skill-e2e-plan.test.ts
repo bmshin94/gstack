@@ -1,11 +1,13 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { JUDGE_MS, CAPTURE_MS, CAPTURE_LONG_MS, PTY_MS } from './helpers/eval-budgets';
 import { runSkillTest } from './helpers/session-runner';
+import { EvalCollector } from './helpers/eval-store';
+import { OFFICE_HOURS_BUN_GRACE_MS, runRecordedOfficeHoursAttempt } from './helpers/office-hours-attempt';
 import {
   ROOT, browseBin, runId, evalsEnabled,
   describeIfSelected, testConcurrentIfSelected,
   copyDirSync, setupBrowseShims, logCost, recordE2E,
-  createEvalCollector, finalizeEvalCollector,
+  finalizeEvalCollector,
 } from './helpers/e2e-helpers';
 import { judgePosture } from './helpers/llm-judge';
 import { extractSkillSections } from './helpers/skill-fixture';
@@ -15,7 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const evalCollector = createEvalCollector('e2e-plan');
+const evalCollector = evalsEnabled ? new EvalCollector('e2e', undefined, 'plan') : null;
 
 // --- Plan CEO Review E2E ---
 
@@ -652,18 +654,26 @@ Write your summary to ${benefitsDir}/benefits-summary.md`,
 // to the bottom of the plan file (the living review status footer).
 
 describeIfSelected('Plan Review Report E2E', ['plan-review-report'], () => {
-  let planDir: string;
+  test('/plan-eng-review writes GSTACK REVIEW REPORT to plan file', async () => {
+    let planDir: string | undefined;
+    try {
+      await runRecordedOfficeHoursAttempt({
+        collector: evalCollector, name: '/plan-review-report', suite: 'Plan Review Report E2E',
+        model: 'claude-opus-4-7', budgetMs: CAPTURE_LONG_MS,
+        run: async signal => {
+          planDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-review-report-'));
+          const run = (cmd: string, args: string[]) => {
+            const result = spawnSync(cmd, args, { cwd: planDir, stdio: 'pipe', timeout: 5000 });
+            if (result.error || result.status !== 0) {
+              throw new Error(`plan-review-report fixture ${cmd}: ${result.error?.message || result.stderr?.toString() || `exit ${result.status}`}`);
+            }
+          };
 
-  beforeAll(() => {
-    planDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-review-report-'));
-    const run = (cmd: string, args: string[]) =>
-      spawnSync(cmd, args, { cwd: planDir, stdio: 'pipe', timeout: 5000 });
+          run('git', ['init', '-b', 'main']);
+          run('git', ['config', 'user.email', 'test@test.com']);
+          run('git', ['config', 'user.name', 'Test']);
 
-    run('git', ['init', '-b', 'main']);
-    run('git', ['config', 'user.email', 'test@test.com']);
-    run('git', ['config', 'user.name', 'Test']);
-
-    fs.writeFileSync(path.join(planDir, 'plan.md'), `# Plan: Add Notifications System
+          fs.writeFileSync(path.join(planDir, 'plan.md'), `# Plan: Add Notifications System
 
 ## Context
 We're building a real-time notification system for our SaaS app.
@@ -685,100 +695,87 @@ We're building a real-time notification system for our SaaS app.
 - Max notifications stored per user?
 `);
 
-    run('git', ['add', '.']);
-    run('git', ['commit', '-m', 'add plan']);
+          run('git', ['add', '.']);
+          run('git', ['commit', '-m', 'add plan']);
 
-    // Copy plan-eng-review skill
-    fs.mkdirSync(path.join(planDir, 'plan-eng-review'), { recursive: true });
-    fs.copyFileSync(
-      path.join(ROOT, 'plan-eng-review', 'SKILL.md'),
-      path.join(planDir, 'plan-eng-review', 'SKILL.md'),
-    );
-    // Carved skills (v2 plan T9): copy sections/ so the review workflow + report template are present.
-    { const _sec = path.join(ROOT, 'plan-eng-review', 'sections'); if (fs.existsSync(_sec)) fs.cpSync(_sec, path.join(planDir, 'plan-eng-review', 'sections'), { recursive: true }); }
-  });
+          // Copy plan-eng-review skill
+          fs.mkdirSync(path.join(planDir, 'plan-eng-review'), { recursive: true });
+          fs.copyFileSync(
+            path.join(ROOT, 'plan-eng-review', 'SKILL.md'),
+            path.join(planDir, 'plan-eng-review', 'SKILL.md'),
+          );
+          // The canonical report section is required, not an optional host cache.
+          fs.cpSync(path.join(ROOT, 'plan-eng-review', 'sections'),
+            path.join(planDir, 'plan-eng-review', 'sections'), { recursive: true });
 
-  afterAll(() => {
-    try { fs.rmSync(planDir, { recursive: true, force: true }); } catch {}
-  });
-
-  test('/plan-eng-review writes GSTACK REVIEW REPORT to plan file', async () => {
-    const result = await runSkillTest({
-      prompt: `Read plan-eng-review/SKILL.md for the review workflow.
+          return runSkillTest({
+            prompt: `Read plan-eng-review/SKILL.md and plan-eng-review/sections/review-sections.md for the review workflow and canonical report format.
 
 Read plan.md — that's the plan to review. This is a standalone plan document, not a codebase — skip any codebase exploration steps.
 
 Proceed directly to the full review. Skip any AskUserQuestion calls — this is non-interactive.
 Skip the preamble bash block, lake intro, telemetry, and contributor mode sections.
 
-CRITICAL REQUIREMENT: plan.md IS the plan file for this review session. After completing your review, you MUST write a "## GSTACK REVIEW REPORT" section to the END of plan.md, exactly as described in the "Plan File Review Report" section of SKILL.md. If gstack-review-read is not available or returns NO_REVIEWS, write the placeholder table with all five review rows (CEO, Codex, Eng, Design, DX). The report MUST end with the mandatory unresolved-decisions status as its final line — the exact unbolded line NO UNRESOLVED DECISIONS when nothing is open, or a "**UNRESOLVED DECISIONS:**" block of bullets when items remain. Nothing may follow it. Use the Edit tool to append to plan.md — do NOT overwrite the existing plan content.
+CRITICAL REQUIREMENT: plan.md IS the plan file for this review session. After completing your review, you MUST write a "## GSTACK REVIEW REPORT" section to the END of plan.md, exactly as described in the "Plan File Review Report" section of plan-eng-review/sections/review-sections.md. Use that canonical table, with all five review rows and honest not-run entries when review history is unavailable. The report MUST end with the mandatory unresolved-decisions status as its final line — the exact unbolded line NO UNRESOLVED DECISIONS when nothing is open, or a "**UNRESOLVED DECISIONS:**" block of bullets when items remain. Nothing may follow it. Use the Edit tool to append to plan.md — do NOT overwrite the existing plan content.
 
 This review report at the bottom of the plan is the MOST IMPORTANT deliverable of this test.`,
-      workingDirectory: planDir,
-      maxTurns: 20,
-      timeout: CAPTURE_LONG_MS,
-      testName: 'plan-review-report',
-      runId,
-      model: 'claude-opus-4-7',
-    });
+            workingDirectory: planDir,
+            maxTurns: 20,
+            timeout: CAPTURE_LONG_MS,
+            testName: 'plan-review-report',
+            runId, signal,
+            model: 'claude-opus-4-7',
+          });
+        },
+        validate: result => {
+          logCost('/plan-eng-review report', result);
+          expect(['success', 'error_max_turns']).toContain(result.exitReason);
 
-    logCost('/plan-eng-review report', result);
-    recordE2E(evalCollector, '/plan-review-report', 'Plan Review Report E2E', result, {
-      passed: ['success', 'error_max_turns'].includes(result.exitReason),
-    });
+          // Verify the review report was written to the plan file
+          const planContent = fs.readFileSync(path.join(planDir!, 'plan.md'), 'utf-8');
 
-    // Transient API failure escape hatch: when the SDK returns error_api with
-    // zero turns / zero tokens, the API call died before the model ever ran —
-    // no skill code executed, no file was written. Bun retries the test up to
-    // 3x; if every attempt hits the same API hiccup, surface a warning and
-    // treat as inconclusive rather than gating the build on Anthropic
-    // availability. Logic regressions still surface as success/error_max_turns
-    // with a missing artifact, which the downstream assertions catch.
-    if (result.exitReason === 'error_api' && result.costEstimate?.turnsUsed === 0) {
-      console.warn('[transient] /plan-review-report: error_api with 0 turns — treating as inconclusive (likely Anthropic API hiccup, see CLAUDE.md eval-blame protocol)');
-      return;
+          // Original plan content should still be present
+          expect(planContent).toContain('# Plan: Add Notifications System');
+          expect(planContent).toContain('WebSocket');
+
+          // Review report section must exist
+          expect(planContent).toContain('## GSTACK REVIEW REPORT');
+
+          // Report should be at the bottom of the file
+          const reportIndex = planContent.lastIndexOf('## GSTACK REVIEW REPORT');
+          const afterReport = planContent.slice(reportIndex);
+
+          // Should contain the review table with standard rows
+          expect(afterReport).toMatch(/\|\s*Review\s*\|/);
+          expect(afterReport).toContain('CEO Review');
+          expect(afterReport).toContain('Eng Review');
+          expect(afterReport).toContain('Design Review');
+
+          // Mandatory unresolved-decisions status (plan-flag-unresolved-issues): the report's
+          // final non-whitespace line must be the unresolved status — the exact sentinel or a
+          // bullet of an UNRESOLVED DECISIONS block, with nothing (CODEX/CROSS-MODEL/VERDICT/
+          // prose) after it.
+          expect(afterReport).toContain('UNRESOLVED DECISIONS');
+          // Compute from afterReport (the report section to EOF), not the whole file, so a
+          // mid-file report surfaces the real trailing content in the failure message.
+          const nonEmpty = afterReport.split('\n').map(l => l.trim()).filter(l => l !== '');
+          const lastLine = nonEmpty[nonEmpty.length - 1];
+          const isSentinel = lastLine === 'NO UNRESOLVED DECISIONS';
+          const isUnresolvedBullet =
+            /^[-*]\s+/.test(lastLine) && !/VERDICT/i.test(lastLine) && afterReport.includes('UNRESOLVED DECISIONS:');
+          expect(
+            isSentinel || isUnresolvedBullet,
+            `report must end with the unresolved-decisions status; last line was: ${lastLine}`,
+          ).toBe(true);
+
+          console.log('Plan review report found at bottom of plan.md (ends with unresolved status)');
+        },
+      });
+    } finally {
+      // Each configured retry owns a pristine plan and finishes cleanup first.
+      if (planDir) try { fs.rmSync(planDir, { recursive: true, force: true }); } catch {}
     }
-    expect(['success', 'error_max_turns']).toContain(result.exitReason);
-
-    // Verify the review report was written to the plan file
-    const planContent = fs.readFileSync(path.join(planDir, 'plan.md'), 'utf-8');
-
-    // Original plan content should still be present
-    expect(planContent).toContain('# Plan: Add Notifications System');
-    expect(planContent).toContain('WebSocket');
-
-    // Review report section must exist
-    expect(planContent).toContain('## GSTACK REVIEW REPORT');
-
-    // Report should be at the bottom of the file
-    const reportIndex = planContent.lastIndexOf('## GSTACK REVIEW REPORT');
-    const afterReport = planContent.slice(reportIndex);
-
-    // Should contain the review table with standard rows
-    expect(afterReport).toMatch(/\|\s*Review\s*\|/);
-    expect(afterReport).toContain('CEO Review');
-    expect(afterReport).toContain('Eng Review');
-    expect(afterReport).toContain('Design Review');
-
-    // Mandatory unresolved-decisions status (plan-flag-unresolved-issues): the report's
-    // final non-whitespace line must be the unresolved status — the exact sentinel or a
-    // bullet of an UNRESOLVED DECISIONS block, with nothing (CODEX/CROSS-MODEL/VERDICT/
-    // prose) after it.
-    expect(afterReport).toContain('UNRESOLVED DECISIONS');
-    // Compute from afterReport (the report section to EOF), not the whole file, so a
-    // mid-file report surfaces the real trailing content in the failure message.
-    const nonEmpty = afterReport.split('\n').map(l => l.trim()).filter(l => l !== '');
-    const lastLine = nonEmpty[nonEmpty.length - 1];
-    const isSentinel = lastLine === 'NO UNRESOLVED DECISIONS';
-    const isUnresolvedBullet =
-      /^[-*]\s+/.test(lastLine) && !/VERDICT/i.test(lastLine) && afterReport.includes('UNRESOLVED DECISIONS:');
-    expect(
-      isSentinel || isUnresolvedBullet,
-      `report must end with the unresolved-decisions status; last line was: ${lastLine}`,
-    ).toBe(true);
-
-    console.log('Plan review report found at bottom of plan.md (ends with unresolved status)');
-  }, CAPTURE_LONG_MS);
+  }, CAPTURE_LONG_MS + OFFICE_HOURS_BUN_GRACE_MS);
 });
 
 // --- Codex Offering E2E ---

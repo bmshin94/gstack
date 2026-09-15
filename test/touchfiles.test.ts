@@ -203,6 +203,7 @@ describe('selectTests', () => {
       'review-coverage-audit': 'gate',
       'plan-eng-coverage-audit': 'gate',
       'ship-coverage-audit': 'gate',
+      'plan-review-report': 'gate',
     };
     expect(result.selected.sort()).toEqual(Object.keys(expected).sort());
     for (const [id, tier] of Object.entries(expected)) expect(E2E_TIERS[id]).toBe(tier);

@@ -7,7 +7,6 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/agent-sdk-runner.test.ts', ['brain-privacy-gate', 'setup-gbrain-remote', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', ...OVERLAY_FIXTURES.map(fixture => `overlay-harness-${fixture.id}`)]],
     ['test/office-hours-writeback-env.test.ts', ['office-hours-brain-writeback']],
     ['test/review-army-budget.test.ts', ['review-army-red-team', 'review-army-consensus']],
-    ['test/office-hours-attempt.test.ts', ['office-hours-forcing-energy', 'office-hours-builder-wildness', 'office-hours-brain-writeback', 'plan-ceo-review-format-mode', 'plan-ceo-review-format-approach', 'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'review-army-red-team']],
     ['test/helpers/setup-gbrain-sandbox.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['test/helpers/setup-gbrain-fixture-command.ts', ['setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite']],
     ['test/fixtures/autoplan-caller.fixture.test.ts', ['autoplan-chain-pty']],
@@ -83,6 +82,15 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
       for (const id of expected) expect(E2E_TIERS[id]).toBe('periodic');
     });
   }
+});
+
+test('shared attempt regressions select periodic callers and the gate report case', () => {
+  const periodic = ['office-hours-forcing-energy', 'office-hours-builder-wildness', 'office-hours-brain-writeback', 'plan-ceo-review-format-mode', 'plan-ceo-review-format-approach', 'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'review-army-red-team'];
+  const result = selectTests(['test/office-hours-attempt.test.ts'], E2E_TOUCHFILES);
+  expect(result.reason).toBe('diff');
+  expect(result.selected.sort()).toEqual([...periodic, 'plan-review-report'].sort());
+  for (const id of periodic) expect(E2E_TIERS[id]).toBe('periodic');
+  expect(E2E_TIERS['plan-review-report']).toBe('gate');
 });
 
 test('decision-log CLI and validator select the demonstrated DX consumer without global or quality fanout', () => {

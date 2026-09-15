@@ -142,6 +142,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'scripts/resolvers/testing.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/review.ts', 'test/plan-review-cases.test.ts'
   ],
   'plan-review-report':        [
+    'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts',
+    'test/plan-review-report-recording.test.ts', 'test/fixtures/plan-review-report-public.json',
     'scripts/resolvers/learnings.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json", 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
