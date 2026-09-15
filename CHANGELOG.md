@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.87.3.0] - 2026-09-15
+
+### Fixed
+
+- **Review freshness no longer certifies unreviewed fixes.** `/review` and `/ship` bind each diff pass to the content captured before it starts. Edits during review, incomplete passes, and older log-only records stay stale or unverified in the readiness dashboard and `/land-and-deploy`, even when HEAD has not moved. Plan-review evidence keeps its existing freshness rules.
+
 ## [1.87.0.0] - 2026-09-11
 
 **`/cso` now distinguishes verified vulnerabilities from hypotheses and coverage gaps, and qualified comprehensive audits can produce replayable repair bundles without changing your working branch.**
