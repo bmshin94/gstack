@@ -4,6 +4,7 @@ import {hasNativePostAnswerCeoPosture,nextCeoModeNavigation} from './helpers/ceo
 import {capturePlanCountQuestion,nativePlanCallFingerprint,planCountPrerequisitePick,planCountQuestionInput} from './helpers/claude-pty-runner';
 import {readPlanCountTranscript,type NativePublicToolEvent,type NativePlanQuestionCall} from './helpers/plan-count-transcript';
 import captured from './fixtures/ceo-mode-full-ad.json';
+import kindCapture from './fixtures/ceo-expansion-posture-kind-dacc.json';
 import {E2E_TOUCHFILES,selectTests} from './helpers/touchfiles';
 const pattern=/\b(expansion|10x|delight|dream|cathedral|opt[\s-]?in)\b/i;
 function replay(i:number){
@@ -116,4 +117,73 @@ describe('full AD HOLD retry completed sequencing rationale',()=>{
 
 test('the exact full AD regressions select their periodic caller',()=>{
  for(const file of ['test/ceo-mode-full-ad.test.ts','test/fixtures/ceo-mode-full-ad.json']) expect(selectTests([file],E2E_TOUCHFILES,[]).selected).toEqual(['plan-ceo-mode-routing']);
+});
+
+
+describe('completed expansion disposition classes from the retained dacc public questions', () => {
+  // Request/answer content is captured. The envelopes and chronology below are
+  // synthetic: missing original JSONL timestamps must never become E2E evidence.
+  function current(kind: 'retry' | 'meta' | 'unanswered' = 'retry') {
+    const e = replay(1), decision = e.transcript.calls[1]!;
+    decision.questions = [structuredClone(kind === 'meta' ? kindCapture.firstMetaQuestion
+      : kind === 'unanswered' ? kindCapture.firstUnansweredQuestion : kindCapture.retryQuestion)];
+    e.events[2]!.input = { questions: decision.questions };
+    decision.answers = { [decision.questions[0]!.question]: kind === 'meta'
+      ? kindCapture.firstMetaAnswer : kindCapture.retryAnswer };
+    if (kind === 'unanswered') { decision.answered = false; delete decision.answers; e.events.pop(); }
+    return e;
+  }
+  function amend(e: ReturnType<typeof current>, fn: (q: NativePlanQuestionCall['questions'][number]) => void) {
+    const d=e.transcript.calls[1]!,q=d.questions[0]!,answer=d.answers?.[q.question];
+    fn(q);e.events[2]!.input={questions:d.questions};d.answers={[q.question]:answer!};
+  }
+  test('the exact acknowledged Include content supplies posture in a synthetic ownership envelope', () => {
+    const e=current();expect(kindCapture.actualOutcome).toContain('Both EXPANSION attempts failed');
+    expect(e.transcript.assistantMessages.every(m=>Date.parse(m.timestamp)<e.item.selectedAt!)).toBe(true);
+    expect(match(e)).toBe(true);
+  });
+  test.each(['canonical three','reordered','curly scenario','coverage scores','defer','cut'] as const)('%s preserves a substantive completed choice', kind => {
+    const e=current();amend(e,q=>{
+      if(kind==='canonical three'){
+        q.options=q.options.slice(0,3).map((o,i)=>({...o,label:["A) Add to this plan's scope (recommended)",'B) Defer to TODOS.md','C) Skip'][i]!}));
+      }
+      if(kind==='reordered')q.options.reverse();
+      if(kind==='curly scenario')q.question=q.question.replace('"can you share your view?"','“can you share your view?”');
+      if(kind==='coverage scores')q.question=q.question.replace('Note: options differ in kind, not coverage — no completeness score.','Completeness: A=10/10, B=7/10, C=3/10');
+    });
+    const d=e.transcript.calls[1]!,q=d.questions[0]!;
+    if(kind==='canonical three')d.answers={[q.question]:q.options[0]!.label};
+    if(kind==='defer')d.answers={[q.question]:q.options[1]!.label};
+    if(kind==='cut')d.answers={[q.question]:q.options[2]!.label};
+    expect(match(e)).toBe(true);
+  });
+  test.each(['meta','unanswered'] as const)('the original %s does not supply completed expansion evidence', kind=>{
+    expect(match(current(kind))).toBe(false);
+  });
+  test.each(['pending','selected pause','only pause','missing core','extra action','duplicate disposition',
+    'generic continuation','second question','quoted decision','fenced decision','mixed packet',
+    'multiselect','missing comparison','invalid score','both comparison branches','wrong mode','missing reply'] as const)(
+    '%s is not a completed expansion decision', kind=>{
+      const e=current();amend(e,q=>{
+        if(kind==='only pause')q.options=[q.options[3]!];
+        if(kind==='missing core')q.options.splice(1,1);
+        if(kind==='extra action')q.options[3]!.label='Remove the CI gate';
+        if(kind==='duplicate disposition')q.options[3]!.label='Add to scope';
+        if(kind==='generic continuation')q.question=q.question.replace(/^D3\.1[^\n]+/,'D3.1 — Continue the review?');
+        if(kind==='second question')q.question=q.question.replace('\nStakes if', '\nShould we remove access checks?\nStakes if');
+        if(kind==='quoted decision')q.question=q.question.split('\n').map(l=>'> '+l).join('\n');
+        if(kind==='fenced decision')q.question='```text\n'+q.question+'\n```';
+        if(kind==='multiselect')q.multiSelect=true;
+        if(kind==='missing comparison')q.question=q.question.replace('Note: options differ in kind, not coverage — no completeness score.','No comparison.');
+        if(kind==='invalid score')q.question=q.question.replace('Note: options differ in kind, not coverage — no completeness score.','Completeness: A=11/10, B=7/10, C=3/10');
+        if(kind==='both comparison branches')q.question=q.question.replace('\nNet:','\nCompleteness: A=10/10, B=7/10, C=3/10\nNet:');
+      });
+      const d=e.transcript.calls[1]!,q=d.questions[0]!;
+      if(kind==='pending')d.answered=false;
+      if(kind==='selected pause')d.answers={[q.question]:q.options[3]!.label};
+      if(kind==='mixed packet'){d.questions.push({...structuredClone(q),question:'Remove access checks?'});e.events[2]!.input={questions:d.questions};}
+      if(kind==='wrong mode'){const m=e.transcript.calls[0]!;m.answers={[m.questions[0]!.question]:'HOLD SCOPE'};}
+      if(kind==='missing reply')e.events.pop();
+      expect(match(e)).toBe(false);
+    });
 });

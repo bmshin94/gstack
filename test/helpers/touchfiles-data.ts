@@ -285,6 +285,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'scripts/resolvers/tasks-section.ts'
   ],
   'plan-ceo-mode-routing':       [
+    'test/fixtures/ceo-expansion-posture-kind-dacc.json',
     'test/ceo-mode-pending-submit.test.ts', 'test/fixtures/ceo-mode-pending-submit.json',
     "test/plan-count-session-cwd.test.ts",
 
@@ -341,6 +342,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/section-capture-native-tools.test.ts', 'test/carve-section-loading*.test.ts', 'test/helpers/carve-section-case.ts', 'test/codex-carve-fixture.test.ts', 'test/carve-section-sharding.test.ts', 'test/carve-section-loading-browse.test.ts', 'test/carve-section-loading-codex.test.ts', 'test/carve-section-loading-design-consultation.test.ts', 'test/carve-section-loading-design-html.test.ts', 'test/carve-section-loading-design-shotgun.test.ts', 'test/carve-section-loading-document-release.test.ts', 'test/carve-section-loading-land-and-deploy.test.ts', 'test/carve-section-loading-plan-design-review.test.ts', 'test/carve-section-loading-plan-devex-review.test.ts', 'test/carve-section-loading-plan-eng-review.test.ts', 'test/carve-section-loading-qa.test.ts', 'test/carve-section-loading-retro.test.ts', 'test/carve-section-loading-review.test.ts', 'test/carve-section-loading-setup-gbrain.test.ts', 'test/carve-section-loading-spec.test.ts', 'test/design-html-section-completion.test.ts', 'test/fixtures/design-html-section-complete.md', 'scripts/resolvers/testing.ts', 'test/helpers/carve-plan-fixture.ts', 'test/carve-plan-fixture.test.ts', 'test/fixtures/carve-existing-repository/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'test/plan-review-cases.test.ts'
   ],
   'autoplan-chain-pty':          [
+    'test/eng-test-plan-edit-approval.test.ts',
+    'test/fixtures/eng-test-plan-edit-dacc.json',
     'test/autoplan-owned-state.test.ts', 'test/fixtures/autoplan-owned-state-edit.json',
     'test/eng-finding-retry-budget.test.ts','scripts/resolvers/learnings.ts', 'test/gstack-brain-context-load.test.ts',
     "test/plan-count-session-cwd.test.ts",
@@ -381,6 +384,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'plan-ceo-finding-count':      [
     'test/eng-finding-retry-budget.test.ts',
     'test/ceo-native-ledger-replay.test.ts', 'test/fixtures/ceo-native-ledger-8525.json',
+    'test/fixtures/ceo-recorded-decisions-dacc95ea.json',
     'test/helpers/ceo-payment-findings.ts', 'test/ceo-payment-findings.test.ts', 'test/fixtures/ceo-payment-ledger-decisions.json',
     "test/plan-count-session-cwd.test.ts",
 
@@ -408,6 +412,15 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'test/helpers/ceo-paired-fixture.ts', 'test/ceo-paired-payment-fixture.test.ts', 'test/fixtures/ceo-paired-option-values.json', 'test/fixtures/paired-payment/**', 'test/fixtures/ceo-existing-payment/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/tasks-section.ts'
   ],
   'plan-eng-finding-count':      [
+    'test/eng-test-plan-edit-approval.test.ts',
+    'test/fixtures/eng-test-plan-edit-dacc.json',
+    'test/helpers/autoplan-artifact-recorder.ts',
+    'test/helpers/autoplan-artifact-permission.ts',
+    'test/helpers/autoplan-artifact-digest.ts',
+    'test/autoplan-artifact-recorder.test.ts',
+    'test/autoplan-artifact-permission.test.ts',
+    'test/autoplan-edit-digests-al.test.ts',
+    'test/fixtures/autoplan-edit-digests-al.json',
     'test/eng-finding-retry-budget.test.ts',
     'test/eng-published-navigation.test.ts', 'test/fixtures/eng-published-navigation.json',
     'test/fixtures/eng-current-ledger-seeds.json',
@@ -548,6 +561,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'plan-eng-multi-finding-batching': [
     'test/eng-finding-retry-budget.test.ts',
     'test/eng-batching-native-replay.test.ts', 'test/fixtures/eng-batching-native-8525.json',
+    'test/eng-batching-saved-ledger.test.ts', 'test/fixtures/eng-batching-saved-ledger-dacc.json',
     'scripts/resolvers/learnings.ts',
     'test/helpers/eng-seeded-coverage.ts', 'test/eng-seeded-coverage.test.ts',
     "test/plan-count-session-cwd.test.ts",

@@ -110,7 +110,8 @@ async function fixture(modes: Mode[], budget = 300_000) {
     }, toSkillTestResult, passThroughNonAskUserQuestion, resolveClaudeBinary: () => '/not-executed/injected-query',
     runRecordedOfficeHoursAttempt, OFFICE_HOURS_BUN_GRACE_MS, publicEvents, redactPublicValue, resolveEvalModel,
     EvalCollector: class { addTest(row: any) { rows.push({ ...row, attempt: rows.length + 1 }); } async finalize() {} },
-    process: { env: { ...process.env, GSTACK_EVAL_DIR: evidenceRoot } },
+    // Inject only the three environment inputs read by the extracted paid callback.
+    process: { env: { GSTACK_EVAL_DIR: evidenceRoot, PATH: process.env.PATH, EVALS_MODEL: process.env.EVALS_MODEL } },
     buildSetupGbrainFixture: (sections: string[]) => {
       if (modes[callIndex] === 'slow-setup') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, budget + 20);
       return buildSetupGbrainFixture(sections);

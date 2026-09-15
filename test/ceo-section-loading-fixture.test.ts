@@ -119,6 +119,72 @@ describe('pre-write snapshot vocabulary in the actual U finding', () => {
 });
 
 describe('CEO section-loading cache fixture', () => {
+  test('declared absence decoding and atomic write failure do not add independent wrapper defects', async () => {
+    const missing = Object.freeze({ found: false });
+    const absent = Symbol('adapter-private absence');
+    const stored = new Map<string, unknown>();
+    const cache = {
+      get: (key: string) => stored.get(key) === absent ? missing : stored.get(key),
+      set: (key: string, value: unknown) => stored.set(key, value === missing ? absent : value),
+      delete: (key: string) => stored.delete(key),
+    };
+    const rejected = new Error('atomic write rejected before commit');
+    let reads = 0;
+    const repository = {
+      read: async () => { reads++; return missing; },
+      write: async () => { throw rejected; },
+    };
+    const { readProfile, writeProfile } = new Function('cache', 'repository',
+      CACHE_READ_WRITE_SKETCH + '\nreturn { readProfile, writeProfile };')(cache, repository);
+    expect(await readProfile('tenant:missing')).toBe(missing);
+    expect(stored.get('tenant:missing')).toBe(absent);
+    expect(await readProfile('tenant:missing')).toBe(missing);
+    expect(reads).toBe(1);
+    await expect(writeProfile('tenant:missing', { found: true })).rejects.toBe(rejected);
+    expect(await readProfile('tenant:missing')).toBe(missing);
+    expect(reads).toBe(1);
+    expect(CEO_SECTION_CACHE_PLAN).toContain('every\n  rejected promise guarantees no commit');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('cache.get decodes it back to the same absent-result DTO');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('cannot fill the new one');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('does not coordinate\nan ordinary DB write');
+  });
+
+  test.each([false, true])('rollout publication fences admitted old writes: %s', async (fenceWrites) => {
+    let stored = 'old';
+    let releaseWrite!: () => void;
+    const gate = new Promise<void>(resolve => { releaseWrite = resolve; });
+    const repository = {
+      read: async () => stored,
+      write: async (_key: string, value: string) => { await gate; stored = value; return value; },
+    };
+    const instance = () => new Function('cache', 'repository',
+      CACHE_READ_WRITE_SKETCH + '\nreturn { readProfile, writeProfile };')(new Map(), repository);
+    const old = instance();
+    const writing = old.writeProfile('tenant:profile', 'new');
+    let published = false;
+    const publish = async () => {
+      if (fenceWrites) await writing;
+      published = true;
+      return instance();
+    };
+    const publishing = publish();
+    await Promise.resolve();
+    expect(published).toBe(!fenceWrites);
+    if (!fenceWrites) {
+      const next = await publishing;
+      expect(await next.readProfile('tenant:profile')).toBe('old');
+      releaseWrite(); await writing;
+      // The initial isolation-only contract still permits a stale new cache.
+      expect(await next.readProfile('tenant:profile')).toBe('old');
+    } else {
+      releaseWrite(); await writing;
+      const next = await publishing;
+      expect(await next.readProfile('tenant:profile')).toBe('new');
+    }
+    expect(CEO_SECTION_CACHE_PLAN).toContain('awaits every admitted old-instance write');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('fresh single-flight cohort before admitting new work');
+  });
+
   test('the exact proposed wrapper retains a reproducible stale-fill race', async () => {
     let releaseRead!: (value: string) => void;
     let stored = 'old';

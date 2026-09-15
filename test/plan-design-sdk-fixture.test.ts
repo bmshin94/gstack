@@ -14,7 +14,7 @@ const id = 'plan-design-review-plan-mode';
 // Same source-evaluation pattern as plan-tune-cathedral-fixture.test.ts: run
 // the real suite registration and selected callback, without importing paid
 // initialization. All filesystem mutations stay in this standalone fixture.
-async function exercise(mode: 'success' | 'max-turns' | 'first-timeout' | 'second-timeout' | 'empty-summary' | 'write-failure' | 'unchanged-seed' | 'no-additions' | 'short-plan' | 'api-error' | 'plan-read-failure' | 'attempt-deadline') {
+async function exercise(mode: 'success' | 'max-turns' | 'first-timeout' | 'second-timeout' | 'saved-timeout' | 'empty-summary' | 'write-failure' | 'unchanged-seed' | 'no-additions' | 'short-plan' | 'api-error' | 'plan-read-failure' | 'attempt-deadline') {
   const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-design-free-')));
   const home = path.join(scratch, 'home'); fs.mkdirSync(home);
   const env = { PATH: process.env.PATH ?? '', HOME: home, GIT_CONFIG_NOSYSTEM: '1',
@@ -87,9 +87,9 @@ async function exercise(mode: 'success' | 'max-turns' | 'first-timeout' | 'secon
       expect(opts.publicStreamDiagnostics).toBe(true);
       expect(opts.signal).toBeInstanceOf(AbortSignal); sdkSignal = opts.signal;
       expect(opts.signal.aborted).toBe(false);
-      // Complete actual prompt bytes from the failing 8525 source, not selected snippets.
+      // Bind the complete actual compact-delivery prompt, not selected snippets.
       expect(new Bun.CryptoHasher('sha256').update(opts.prompt).digest('hex'))
-        .toBe('d13c09baee76075030f9e9bd064f4c5a5b91807965fd5d2a52a895f8b53d4ee5');
+        .toBe('2fa957ab9d56850a1629a845d6fe0ee5a1cb7c0843ab6555b621971d270604cb');
       expect(opts.testName).toBe(id); expect(opts.maxTurns).toBe(15); expect(opts.timeout).toBe(CAPTURE_MS);
       for (const key of ['model', 'tools', 'allowedTools', 'appendSystemPrompt', 'env']) expect(opts).not.toHaveProperty(key);
       expect(opts.prompt).toContain('Review the plan in ./plan.md');
@@ -102,7 +102,17 @@ async function exercise(mode: 'success' | 'max-turns' | 'first-timeout' | 'secon
       expect(opts.prompt).toContain('Read plan.md back to verify the saved changes');
       expect(opts.prompt).toContain('Then return a brief, concrete summary');
       expect(opts.prompt).toContain('execute every required pass and lazy-section Read');
-      expect(opts.prompt).toContain('retain all required report fields, design decisions, diagrams, ratings, and explanations');
+      expect(opts.prompt).toContain('Retain all required report fields, design decisions, diagrams, ratings, and explanations');
+      expect(opts.prompt).toContain('use the canonical tables and decision IDs');
+      expect(opts.prompt).toContain('Specify each design requirement once');
+      expect(opts.prompt).toContain('instead of repeating that specification');
+      expect(opts.prompt).toContain('concise score rationales and 10/10 explanations');
+      const ordered = ['Read every lazy section', 'Review all 7 design passes',
+        'EDIT plan.md', 'Keep the saved review compact',
+        'Persist that complete plan and review with Write', 'Read plan.md back',
+        'Then return a brief, concrete summary'].map(text => opts.prompt.indexOf(text));
+      expect(ordered.every(index => index >= 0)).toBe(true);
+      expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
       expect(opts.prompt).toContain('Do NOT try to browse any URLs');
       inputVerified = true; launched = true;
       if (mode === 'attempt-deadline') return await new Promise((_resolve, reject) => {
@@ -111,8 +121,8 @@ async function exercise(mode: 'success' | 'max-turns' | 'first-timeout' | 'secon
       // Captured public attempts at d306: both ended by announcing the still
       // pending write. The terminal result/output were absent; timeout retains
       // its real failure meaning, regardless of that unpersisted walkthrough.
-      const timedOut = mode === 'first-timeout' || mode === 'second-timeout';
-      if (!timedOut && mode !== 'unchanged-seed') {
+      const timedOut = mode === 'first-timeout' || mode === 'second-timeout' || mode === 'saved-timeout';
+      if ((!timedOut || mode === 'saved-timeout') && mode !== 'unchanged-seed') {
         if (mode === 'write-failure') throw new Error('controlled plan write failure');
         const reviewed = mode === 'no-additions' ? initial + '\nReviewed prose remains unspecified.\n'
           : mode === 'short-plan' ? 'Interaction state: empty, loading and error.'
@@ -196,4 +206,12 @@ test('legacy Design aggregate deadline cancels its owned runner and records one 
   expect(result.rows).toHaveLength(1);
   expect(result.rows[0]).toMatchObject({ passed: false, exit_reason: 'timeout', cost_usd: 0 });
   expect(result.rows[0]!.error).toContain('cost and usage unavailable');
+});
+
+test('legacy Design rejects timeout after the complete saved plan, without granting terminal success', async () => {
+  const result = await exercise('saved-timeout');
+  expect(result.saved).toContain('Interaction state table');
+  expect(result.resultError).toBeDefined();
+  expect(result.rows).toHaveLength(1);
+  expect(result.rows[0]).toMatchObject({ passed: false, exit_reason: 'timeout' });
 });

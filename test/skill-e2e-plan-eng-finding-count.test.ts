@@ -88,6 +88,7 @@ describeE2E('/plan-eng-review seeded issue coverage (periodic)', () => {
           slashCommand: '/plan-eng-review',
           followUpPrompt: planEng5Findings(planPath),
           expectedPlanPath: planPath,
+          approveEngTestPlanEdits: true,
           isLastStep0AUQ: engStep0Boundary,
           isSetupAUQ: engSetupAUQ,
           isFirstReviewAUQ: engFirstReviewAUQ,

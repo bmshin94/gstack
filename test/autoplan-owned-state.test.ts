@@ -112,6 +112,7 @@ try{
    await session.waitFor('STATE_READY',{timeoutMs:2000,pollMs:20});
    const r=JSON.parse(fs.readFileSync(${JSON.stringify(result)},'utf8'));
    r.file=session.pendingAutoplanArtifactFile;r.actor=session.autoplanArtifactStateRoot;r.legacy=session.hermeticSkillStateRoot;
+   r.qa=session.autoplanEngTestPlanStateRoot;
    r.metadata=JSON.parse(fs.readFileSync(r.file,'utf8'));r.caller=state.env.GSTACK_HOME;
    fs.writeFileSync(${JSON.stringify(result)},JSON.stringify(r));
  }
@@ -125,6 +126,8 @@ try{
     expect(r.actor).toBe(r.metadata.stateRoot);
     if(variant==='owned'){expect(r.actor).toBe(r.caller);expect(r.home).toBe(r.actor);expect(r.state).toBe(r.actor);expect(r.legacy).not.toBe(r.actor);}
     else {expect(r.actor).toBe(r.legacy);expect(r.actor).not.toBe(r.caller);}
+    expect(r.qa).toBe(variant==='owned'?r.legacy:undefined);
+    expect(r.metadata.engTestPlanRoot).toBe(r.qa);
     const settings=JSON.parse(r.args[r.args.indexOf('--settings')+1]);
     for(const entries of Object.values(settings.hooks) as any[])expect(entries[0].hooks[0].command).toContain(r.actor);
     expect(r.args[r.args.indexOf('--add-dir',r.args.indexOf('--add-dir')+1)+1]).toBe(r.legacy);

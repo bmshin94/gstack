@@ -147,3 +147,177 @@ describe('native numbered design gaps with complete decision fields', () => {
     }
   });
 });
+
+
+describe('dacc95ea current Issue decisions without a G or Pass label', () => {
+  const actual = () => structuredClone(captured.dacc95eaFirstAttempt.calls) as NativePlanQuestionCall[];
+  for (const index of [2, 3, 4, 5, 6]) test(`actual retained Issue ${index - 1} independently starts review`, () => {
+    expect(accepts(actual()[index]!)).toBe(true);
+  });
+  test('actual eight-call phase replay preserves two setup calls and six later decisions', () => {
+    let started = false;
+    const input = actual(), before = JSON.stringify(input);
+    const phases = input.map(call => {
+      const phase = planCountQuestionPhase(fingerprint(call), started, designStep0Boundary,
+        isDesignCountFirstReview, isDesignCountSetup, isDesignCompletionHandoff);
+      started = phase.reviewStarted;
+      return phase;
+    });
+    expect(phases.map(phase => phase.preReview)).toEqual([true, true, false, false, false, false, false, false]);
+    expect(phases.filter(phase => phase.administrative)).toHaveLength(0);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+});
+
+
+describe('dacc95ea numbered Finding decisions with an owned detailed comparison', () => {
+  const actual = () => structuredClone(captured.dacc95eaRetry.calls) as NativePlanQuestionCall[];
+  for (const index of [3, 4, 5, 6, 7]) test(`actual retained Finding call ${index - 2} independently starts review`, () => {
+    expect(accepts(actual()[index]!)).toBe(true);
+  });
+  test('nine retained retry calls preserve three setup calls and six later decisions', () => {
+    let started = false;
+    const input = actual(), before = JSON.stringify(input);
+    const phases = input.map(call => {
+      const phase = planCountQuestionPhase(fingerprint(call), started, designStep0Boundary,
+        isDesignCountFirstReview, isDesignCountSetup, isDesignCompletionHandoff);
+      started = phase.reviewStarted;
+      return phase;
+    });
+    expect(phases.map(phase => phase.preReview)).toEqual([true, true, true, false, false, false, false, false, false]);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+});
+
+
+describe('current native design decision boundaries', () => {
+  const specimens = () => [
+    ...structuredClone(captured.dacc95eaFirstAttempt.calls).slice(2, 7),
+    ...structuredClone(captured.dacc95eaRetry.calls).slice(3, 8),
+  ] as NativePlanQuestionCall[];
+  const edit = (input: NativePlanQuestionCall, mutate: (q: Question) => void) => {
+    const call = structuredClone(input), q = call.questions[0]!;
+    mutate(q); call.answers = { [q.question]: q.options[0]!.label }; return call;
+  };
+  for (const [name, mutate] of Object.entries({
+    'whole quoted brief': (q: Question) => { q.question = q.question.split('\n').map(line => '> ' + line).join('\n'); },
+    'whole fenced brief': (q: Question) => { q.question = '\x60\x60\x60md\n' + q.question + '\n\x60\x60\x60'; },
+    'historical preface': (q: Question) => { q.question = 'Historical example:\n' + q.question; },
+    'foreign source': (q: Question) => { q.question = q.question.replaceAll('PLAN.md', 'OTHER.md'); },
+    'quoted source': (q: Question) => { q.question = q.question.replaceAll('PLAN.md', '"PLAN.md"'); },
+    'conditional assessment': (q: Question) => { q.question = q.question.replace('ELI10: ', 'ELI10: If approved later, '); },
+    'quoted assessment': (q: Question) => { q.question = q.question.replace(/^ELI10: (.+)$/m, 'ELI10: "$1"'); },
+    'duplicate assessment': (q: Question) => { q.question += '\nELI10: Another assessment.'; },
+    'explicitly closed gap': (q: Question) => { q.question += '\nThis finding is now resolved.'; },
+    'withdrawn current scalar': (q: Question) => { q.question += '\nThis finding is "withdrawn".'; },
+    'setup header': (q: Question) => { q.header = 'Focus'; },
+    'wrong header identity': (q: Question) => { q.header = 'Issue 99'; },
+    'wrong option identity': (q: Question) => { q.options[0]!.label = q.options[0]!.label.replace(/^\d+/, '99'); },
+    'foreign recommendation': (q: Question) => { q.question = q.question.replace(/^Recommendation: \d+[A-Z]/m, 'Recommendation: 99A'); },
+    'withdrawn remedy': (q: Question) => { q.options[0]!.description += '\nThis amendment is withdrawn.'; },
+    'closed deferral': (q: Question) => { q.options.at(-1)!.description += '\nThis gap is now closed.'; },
+  })) test('both captured classes reject ' + name, () => {
+    for (const call of specimens()) expect(accepts(edit(call, mutate))).toBe(false);
+  });
+  test('every offered answer and recommendation-first ordering retains the same owned decision', () => {
+    for (const input of specimens()) {
+      const call = structuredClone(input), q = call.questions[0]!;
+      q.options.reverse();
+      for (const option of q.options) { call.answers = { [q.question]: option.label }; expect(accepts(call)).toBe(true); }
+    }
+  });
+  for (const [name, mutate] of Object.entries({
+    unanswered: (c: NativePlanQuestionCall) => { c.answered = false; },
+    failed: (c: NativePlanQuestionCall) => { c.failed = true; },
+    'pending index': (c: NativePlanQuestionCall) => { c.unansweredQuestionIndices = [0]; },
+    'missing timestamp': (c: NativePlanQuestionCall) => { delete c.answeredAt; },
+    'unoffered answer': (c: NativePlanQuestionCall) => { c.answers = { [c.questions[0]!.question]: 'Recommendation A' }; },
+    'multiple questions': (c: NativePlanQuestionCall) => { c.questions.push(structuredClone(c.questions[0]!)); },
+  })) test('both captured classes reject native ' + name, () => {
+    for (const call of specimens()) { mutate(call); expect(accepts(call)).toBe(false); }
+  });
+  test('the expanded comparison must keep complete current option ownership', () => {
+    const original = specimens()[5]!;
+    for (const mutate of [
+      (q: Question) => { q.question = q.question.replace(/\nPros \/ cons:[\s\S]*?\nNet:/, '\nNet:'); },
+      (q: Question) => { q.question = q.question.replace(/(\nPros \/ cons:\n)([\s\S]*?)(\nNet:)/, '$1\x60\x60\x60md\n$2\n\x60\x60\x60$3'); },
+      (q: Question) => { q.question = q.question.replace(/(\nPros \/ cons:\n)/, '$1Historical example:\n'); },
+      (q: Question) => { q.question = q.question.replace(/^1A\)/m, '99A)'); },
+      (q: Question) => { q.question = q.question.replace(/^1B\)/m, '1A)'); },
+      (q: Question) => { q.question = q.question.replace(/\n1C\)[\s\S]*?\nNet:/, '\nNet:'); },
+    ]) expect(accepts(edit(original, mutate))).toBe(false);
+  });
+  test('only the bound native decision status can withdraw its current finding', () => {
+    for (const original of specimens()) {
+      const title = original.questions[0]!.question.split('\n')[0]!;
+      const owner = /^D[1-9]\d*/.exec(title)?.[0] ?? /Finding [1-9]\d*/.exec(title)![0];
+      for (const status of ['withdrawn', '"withdrawn"', '\x60withdrawn\x60']) {
+        expect(accepts(edit(original, q => { q.question += `\n${owner} is ${status}.`; }))).toBe(false);
+      }
+      expect(accepts(edit(original, q => { q.question += `\nPrior note: "${owner} is withdrawn."`; }))).toBe(true);
+      expect(accepts(edit(original, q => { q.question += `\n> ${owner} is withdrawn.`; }))).toBe(true);
+    }
+  });
+  test('a conforming contrast ratio cannot borrow a low-contrast classification', () => {
+    const original = specimens()[2]!;
+    expect(accepts(edit(original, q => { q.question = q.question.replaceAll('3:1', '4.5:1'); }))).toBe(false);
+  });
+});
+
+
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { createHash } from 'node:crypto';
+import { classifyPlanCountFrame, hasNativePlanTerminal, isQuestionlessNativePlanExit, assertReviewReportAtBottom } from './helpers/claude-pty-runner';
+import type { PlanCountTranscript } from './helpers/plan-count-transcript';
+
+test('full first attempt reaches owned completion and passes every unchanged paid callback assertion', () => {
+  const actual = captured.dacc95eaFirstAttempt, ending = actual.completion;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'design-dacc-completion-'));
+  const file = path.join(dir, path.basename(ending.provenance.file));
+  const transcript: PlanCountTranscript = { status: 'ready', calls: structuredClone(actual.calls) as NativePlanQuestionCall[],
+    assistantMessages: structuredClone(ending.assistantMessages), planReadyRequests: structuredClone(ending.planReadyRequests) };
+  const startedAt = Math.min(...transcript.calls.map(call => Date.parse(call.answeredAt!))) - 1_000;
+  const modifiedAt = Date.parse(ending.provenance.mutations.at(-1)!.at) / 1_000;
+  const write = (body = ending.report) => { fs.writeFileSync(file, body); fs.utimesSync(file, modifiedAt, modifiedAt); };
+  let started = false; const counts = { step0: 0, review: 0, administrative: 0 }, nonReview = new Set<string>();
+  const fingerprints = transcript.calls.map(call => {
+    const fp = fingerprint(call), phase = planCountQuestionPhase(fp, started, designStep0Boundary,
+      isDesignCountFirstReview, isDesignCountSetup, isDesignCompletionHandoff);
+    started = phase.reviewStarted;
+    counts[phase.administrative ? 'administrative' : phase.preReview ? 'step0' : 'review']++;
+    if (phase.preReview || phase.administrative) nonReview.add(fp.signature);
+    return { ...fp, preReview: phase.preReview };
+  });
+  const caller = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-plan-design-finding-count.test.ts'), 'utf8');
+  const constants = /^const N = .+;\nconst FLOOR = .+;\nconst CEILING = .+;/m.exec(caller)![0];
+  // Bind the actual callback's complete validation block, without importing
+  // the paid registration or changing its assertions, prompt or work limits.
+  const start = caller.indexOf("        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome))");
+  const end = caller.indexOf('\n      } finally {', start);
+  expect(start).toBeGreaterThan(0); expect(end).toBeGreaterThan(start);
+  const validate = new Function('fs', 'planPath', 'obs', 'assertReviewReportAtBottom',
+    new Bun.Transpiler({ loader: 'ts' }).transformSync(constants + '\n' + caller.slice(start, end)));
+  try {
+    write();
+    expect(createHash('sha256').update(ending.report).digest('hex')).toBe(ending.reportSha256);
+    expect(counts).toEqual({ step0: 2, review: 6, administrative: 0 });
+    const frame = classifyPlanCountFrame(ending.screen);
+    expect(frame).toBe('plan_ready');
+    expect(hasNativePlanTerminal(transcript, file, startedAt, 'plan_ready')).toBe(true);
+    expect(isQuestionlessNativePlanExit(transcript, file, startedAt, ending.screen, nonReview)).toBe(false);
+    expect(assertReviewReportAtBottom(ending.report).ok).toBe(true);
+    const replayed = { outcome: frame, step0Count: counts.step0, reviewCount: counts.review, fingerprints, elapsedMs: 0, evidence: ending.screen };
+    expect(() => validate(fs, file, replayed, assertReviewReportAtBottom)).not.toThrow();
+    for (const [delta, error] of [
+      [{ outcome: 'no_review_questions' }, 'finding-count FAILED'],
+      [{ reviewCount: 3 }, 'BAND FAIL (below floor)'],
+      [{ reviewCount: 8 }, 'BAND FAIL (above ceiling)'],
+    ] as const) expect(() => validate(fs, file, { ...replayed, ...delta }, assertReviewReportAtBottom)).toThrow(error);
+    write(ending.report + '\n## Work after report\n');
+    expect(() => validate(fs, file, replayed, assertReviewReportAtBottom)).toThrow('D19 FAIL');
+    write(); fs.rmSync(file);
+    expect(() => validate(fs, file, replayed, assertReviewReportAtBottom)).toThrow('D19 FAIL');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

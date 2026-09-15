@@ -312,14 +312,17 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
   const q = call.questions[0]!;
   const lines = q.question.trim().split('\n');
   const namedGap = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*) \(G([1-9]\d*)\): ([^?]+)\?$/.exec(lines[0]!);
-  const fieldIssue = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*)(?: \(Pass ([1-7])(?:, [A-Za-z][A-Za-z &/-]*)?\))?: ([^?]+)\?$/.exec(lines[0]!);
+  const findingIssue = /^([1-9]\d*)\s*[—–:-]\s*Finding ([1-9]\d*) \(([A-Za-z][A-Za-z &/-]*)\): ([^?]+)\?$/i.exec(lines[0]!);
+  const fieldIssue = /^(?:D[1-9]\d*\s*[—–:-]\s*)?Issue ([1-9]\d*)(?: \(Pass ([1-7])(?:, [A-Za-z][A-Za-z &/-]*)?\))?: ([^?]+)\?$/.exec(lines[0]!) ??
+    (findingIssue ? [findingIssue[0], findingIssue[1], undefined, `${findingIssue[3]}: ${findingIssue[4]}`] : null);
   const source = /^Project\/branch\/task: (.+)$/m.exec(q.question)?.[1] ?? '';
   const sourceGaps = [...source.matchAll(/\bgap G([1-9]\d*)\b/gi)];
   const ownGap = sourceGaps[0]?.[1];
+  const nativeIssue = fieldIssue && (q.header.trim() === `Issue ${fieldIssue[1]}` || findingIssue);
   // The native Issue/option IDs own the current decision. A pass can be in
   // its title or source field, and a G label is optional. If a G is present,
   // another source row cannot lend this question its identity or evidence.
-  const scopedIssue = fieldIssue && (fieldIssue[2] || /\bPass [1-7]\b/.test(source)) && sourceGaps.length <= 1 &&
+  const scopedIssue = fieldIssue && (fieldIssue[2] || /\bPass [1-7]\b/.test(source) || nativeIssue) && sourceGaps.length <= 1 &&
     [...q.question.matchAll(/\bG([1-9]\d*)\b/g)].every(m => m[1] === ownGap)
     ? [fieldIssue[0], fieldIssue[1], ownGap, fieldIssue[3]] : null;
   const gapIssue = namedGap ?? scopedIssue;
@@ -343,52 +346,89 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
     const values = fields.map((field, i) => q.question.slice(positions[i]! + field.length, positions[i + 1] ?? q.question.length).trim());
     const sourceOnly = /^(?:[>"“`]|Historical|Previously|Hypothetical|Quoted|Source|Archived|Earlier|Example|If|When|Once|Unless|Assuming|Provided|Pending approval)\b|^[>"“`]/i;
     const inactive = /(?:^|[.!?;]\s+|\n)(?:Correction:\s*)?(?:(?:this|the) (?:finding|gap|issue|amendment|fix|decision)|G[1-9]\d*|Issue [1-9]\d*) (?:is|was|has been) (?:already |now )?["'‘“`]*(?:withdrawn|resolved|closed|superseded|hypothetical|not current|no longer current)\b|\bno current (?:defect|gap|finding|issue)\b/i;
+    const namedOwner = findingIssue ? `Finding ${findingIssue[2]}` : /^D[1-9]\d*/.exec(lines[0]!)?.[0];
+    const namedStatusPrefix = new RegExp(`(?:^|[.!?;]\\s+|\\n)(?:Correction:\\s*)?${namedOwner ?? '(?!)'} (?:is|was|has been) (?:already |now )?$`, 'i');
+    const namedInactive = new RegExp(namedStatusPrefix.source.replace(/\$$/, '') +
+      '["\'‘“`]*(?:withdrawn|resolved|closed|superseded|hypothetical|not current|no longer current)\\b', 'i');
+    const inactiveCurrent = (text: string) => inactive.test(text) || namedInactive.test(text);
     const current = (value: string) => value.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
       .replace(/^\s*>.*$/gm, '').replace(/"[^"\n]+"|“[^”\n]+”|`[^`\n]+`|'[^'\n]+'|‘[^’\n]+’/g,
         (quoted, index, source) => /^(?:withdrawn|resolved|closed|superseded|hypothetical|not current|no longer current)$/i.test(quoted.slice(1, -1)) &&
-          /\b(?:(?:this|the) (?:finding|gap|issue|amendment|fix|decision)|G[1-9]\d*|Issue [1-9]\d*) (?:is|was|has been) (?:already |now )?$/i.test(source.slice(0, index))
+          (/\b(?:(?:this|the) (?:finding|gap|issue|amendment|fix|decision)|G[1-9]\d*|Issue [1-9]\d*) (?:is|was|has been) (?:already |now )?$/i.test(source.slice(0, index)) || namedStatusPrefix.test(source.slice(0, index)))
           ? quoted.slice(1, -1) : '');
-    if (values.some(value => !value || sourceOnly.test(value)) || inactive.test(current(q.question)) ||
+    if (values.some(value => !value || sourceOnly.test(value)) || inactiveCurrent(current(q.question)) ||
         !/^\S[\s\S]*\bPLAN\.md\b/.test(values[0]!) ||
+        /\b(?:planning|review|workflow) setup\b|\b(?:setup|onboarding|routing|posture|learnings) (?:stage|phase|step|decision)\b/i.test(current(values[0]!)) ||
         (scopedIssue && !/\bPLAN\.md\b/.test(current(values[0]!.replace(/`PLAN\.md`/g, 'PLAN.md')))) ||
         !ids.some(id => values[3]!.startsWith(`${id} `))) return false;
     const assessment = current(values[1]!);
     if (/\b(?:historical|archived|hypothetical|quoted)\b|\b(?:not|isn't) (?:the )?current\b/i.test(assessment) ||
-        !/\b(?:now|today|currently|proposed)\b/i.test(assessment)) return false;
+        (!nativeIssue && !/\b(?:now|today|currently|proposed)\b/i.test(assessment))) return false;
+
+    // The complete comparison may live in the current native brief while
+    // the rendered menu uses short captions. Keep each detail block bound
+    // to its own native option ID; never pool evidence across alternatives.
+    const detailedOptions = new Map<string, string>();
+    const details = values[4]!.split(/\n(?:Pros\s*\/\s*cons|Options):\s*\n/i);
+    if (nativeIssue && details.length === 2) {
+      const body = details[1]!;
+      const starts = [...body.matchAll(/^([1-9]\d*[A-Z])[).:]\s+\S/gm)];
+      if (starts.length === ids.length && starts.every(start => ids.includes(start[1])) &&
+          new Set(starts.map(start => start[1])).size === ids.length &&
+          !body.split('\n').some(line => sourceOnly.test(line.trim()))) {
+        for (const [index, start] of starts.entries()) {
+          detailedOptions.set(start[1]!, body.slice(start.index, starts[index + 1]?.index ?? body.length));
+        }
+      }
+    }
 
     // Recognize the fixture's design-defect classes, not a G-number or a
     // prescribed sentence: ambiguous hierarchy, absent pending feedback,
     // inconsistent type/spacing, or unreadable error contrast. Every class
     // still needs a concrete native remedy and its own opposed open gap.
     const classes: Array<{ subject: RegExp; defect: RegExp; remedy: RegExp }> = [
-      { subject: /\b(?:distinguished|primary|header)\b/i,
-        defect: /\b(?:look identical|share (?:the )?same visual weight)\b/i,
+      { subject: /\b(?:distinguished|primary|header|hierarchy)\b/i,
+        defect: /\b(?:look (?:the )?(?:same|identical)|share (?:the )?same visual weight|visually identical)\b/i,
         remedy: /\bfilled\b[^;\n]*#[0-9a-f]{6}[^;\n]*(?:white|black)\b[^\n]*\bghost\b/i },
       { subject: /\b(?:pending|request|loading)\b/i,
-        defect: /\b(?:page|request|button)\b[^.!?]*(?:just sits|freezes|no (?:visible )?(?:feedback|signal|indicator))/i,
+        defect: /\b(?:page|request|button)\b[^.!?]*(?:just sits|freezes|no (?:visible )?(?:feedback|signal|indicator))|\b(?:shows?|gives?) no (?:pending |visible )?(?:feedback|signal|indicator)\b|\bnothing changes\b/i,
         remedy: /\b(?:inline )?spinner\b[^\n]*\baria-busy\s*=\s*true\b[^\n]*\breduced.motion\b/i },
       { subject: /\b(?:type|typography|labels|headings)\b/i,
-        defect: /\b(?:form|labels?|type)\b[^.!?]*(?:no (?:consistent )?rule|no consistent role|inconsisten\w*|accidental)/i,
-        remedy: /\b\d+px\b[^\n]*\blabels?\b[^\n]*\b\d+px\b[^\n]*\bheadings?\b/i },
+        defect: /\b(?:form|labels?|type)\b[^.!?]*(?:no (?:consistent )?(?:rule|role)|inconsisten\w*|accidental|(?:three|[3-9]\d*) sizes)/i,
+        remedy: /\b\d+px\b[^\n]*\blabels?\b[^\n]*\b\d+px\b[^\n]*\b(?:headings?|h[1-6])\b/i },
       { subject: /\b(?:spacing|rhythm|gaps)\b/i,
-        defect: /\b(?:form|gaps?|spacing)\b[^.!?]*(?:no rule|without a spacing rule|random|inconsisten\w*)/i,
-        remedy: /\bsections?\s+\d+px\b[^\n]*\bfield groups?\s+\d+px\b[^\n]*\blabel.to.input\s+\d+px\b/i },
+        defect: /\b(?:form|gaps?|spacing)\b[^.!?]*(?:no rule|without a spacing rule|random|inconsisten\w*)|\b(?:uneven|mixed|inconsistent|random) (?:spacing|gaps)\b/i,
+        remedy: /\bsections?\s+\d+px\b[^\n]*\bfield groups?\s+\d+px\b[^\n]*\blabel(?:\W*to\W*|\W+)(?:input|control)\s+\d+px\b/i },
       { subject: /\b(?:errors?|contrast|colou?rs?)\b/i,
         defect: /\b(?:error|text|contrast)\b[^.!?]*(?:fails? WCAG|below (?:WCAG|AA)|cannot read|can't read)/i,
         remedy: /#[0-9a-f]{6}\b[^\n]*#[0-9a-f]{6}\b[^\n]*\b(?:icon|text)\b/i },
     ];
-    const kind = classes.find(kind => kind.subject.test(subject!) && kind.defect.test(assessment));
+    // A numbered current Issue may state its gap in the title, then explain
+    // its impact in ELI10. Source/status/field ownership still apply to both.
+    const assertedGap = nativeIssue ? `${current(subject!)}\n${assessment}` : assessment;
+    const lowContrast = nativeIssue && /\b(?:error|contrast|message|text)\b/i.test(subject!) &&
+      [...assertedGap.matchAll(/(?:\bat\b|\babout\b|\bapproximately\b|~)\s*([0-9]+(?:\.[0-9]+)?)\s*:\s*1\b/gi)]
+        .some(match => Number(match[1]) < 4.5) && /\b(?:WCAG|AA)\b/.test(assessment);
+    const kind = classes.find((kind, index) => kind.subject.test(subject!) &&
+      (kind.defect.test(assertedGap) || index === 4 && lowContrast));
     if (!kind || /\b(?:do not|don't|does not|doesn't) look identical\b/i.test(assessment)) return false;
     return q.options.some((option, index) => {
       const body = option.description?.trim() ?? '';
-      if (sourceOnly.test(body) || inactive.test(current(body)) || !kind.remedy.test(current(body)) ||
+      const detail = detailedOptions.get(ids[index]!) ?? '';
+      const remedy = nativeIssue ? current(`${option.label}\n${body}\n${detail}`) : current(body);
+      if (sourceOnly.test(body) || inactiveCurrent(remedy) || !kind.remedy.test(remedy) ||
           !values[3]!.startsWith(`${ids[index]} `)) return false;
       return q.options.some((other, otherIndex) => {
-        const declined = other.description?.trim() ?? '';
+        const declined = `${other.description?.trim() ?? ''}\n${detailedOptions.get(ids[otherIndex]!) ?? ''}`.trim();
         return other !== option && /^(?:Keep|Leave|Defer|Decline|No)\b/i.test(other.label.replace(new RegExp(`^${ids[otherIndex]}[).:]?\\s+`), '')) &&
-          !sourceOnly.test(declined) && !inactive.test(current(declined)) &&
+          !sourceOnly.test(declined) && !inactiveCurrent(current(declined)) &&
           (new RegExp(`\\b(?:gap\\s+)?G${gapNumber}\\s+(?:stays|remains|is)\\s+(?:open|unresolved)\\b`, 'i').test(current(declined)) ||
-            (!!scopedIssue && (/\bthe gap (?:stays|remains|is) (?:open|unresolved)\b/i.test(current(declined)) ||
+            (!!scopedIssue && (/\b(?:the |[a-z-]+ )?gap (?:stays|remains|is) (?:open|unresolved)\b/i.test(current(declined)) ||
+              (!!nativeIssue && /\b(?:known|documented) (?:WCAG )?AA failure ships\b/i.test(current(declined)) && /\bstays open\b/i.test(current(declined))) ||
+              (!!nativeIssue && /\b(?:stays|remains) (?:open|unresolved)\b/i.test(current(declined)) &&
+                !/\b(?:other|another|different|unrelated) (?:gap|issue|finding|decision)\b/i.test(current(declined)) &&
+                [...current(declined).matchAll(/\bIssue ([1-9]\d*)\b/gi)].every(match => match[1] === issueNumber)) ||
+              (!!nativeIssue && /^Record as unresolved[.;]/i.test(current(declined))) ||
               /\b(?:plan|design|page|header)\b[^.!?]*\b(?:keeps|retains|leaves|ships)\b[^.!?]*\bDESIGN\.md violation\b/i.test(current(declined))) &&
               [...q.options.flatMap(o => [...`${o.label} ${o.description ?? ''}`.matchAll(/\bG([1-9]\d*)\b/g)])]
                 .every(m => m[1] === gapNumber)));

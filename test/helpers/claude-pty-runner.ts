@@ -37,7 +37,7 @@ import { readPlanCountTranscript, unresolvedPlanQuestionCalls, type NativePlanQu
 import { createPendingExitRecorder, withPendingExit, isCurrentPlanApprovalScreen } from './plan-count-pending-exit';
 import { createPendingQuestionRecorder, readPendingQuestion } from './plan-count-pending-question';
 import { createFilePermissionRecorder, currentFilePermissionBinding, type FilePermissionEpoch } from './plan-count-file-permission';
-import { createAutoplanArtifactRecorder } from './autoplan-artifact-recorder';
+import { createAutoplanArtifactRecorder, autoplanArtifactRecorderStatus, autoplanArtifactApprovalBoundary } from './autoplan-artifact-recorder';
 import { trustDialogInput } from './pty-trust-dialog';
 import { createPtyScreen } from './pty-screen';
 import { isRecordedDxManualNavigation } from './dx-selected-navigation';
@@ -131,6 +131,8 @@ export interface ClaudePtyOptions {
   observeAutoplanArtifacts?: boolean;
   /** AP-only exact artifact Edit approvals; inactive until the owner starts its command. */
   approveAutoplanArtifactEdits?: boolean;
+  /** Restrict an opted-in artifact approval hook to the owned Eng QA test plan. */
+  engTestPlanArtifactOnly?: boolean;
   /** Explicit disposable state from createNativeReviewState; ambient env grants no ownership. */
   autoplanArtifactState?: NativeReviewState;
   /** Working directory. Default: process.cwd(). The repo cwd has the gstack
@@ -200,6 +202,8 @@ export interface ClaudePtySession {
   pendingAutoplanArtifactFile?: string;
   /** The same validated root bound into the artifact hook, distinct from legacy HOME/.gstack. */
   autoplanArtifactStateRoot?: string;
+  /** Legacy QA namespace from this launcher; native artifacts retain their own root. */
+  autoplanEngTestPlanStateRoot?: string;
   startAutoplanArtifactEditApproval?: (commandStartedAt: number) => void;
   pendingFilePermissionFiles?: Array<{ expected: string; file: string }>;
   /**
@@ -3866,6 +3870,9 @@ export async function launchClaudePty(
     autoplanArtifactStateRoot = ownedNativeReviewStateRoot(opts.autoplanArtifactState, childEnv);
   }
 
+  const autoplanEngTestPlanStateRoot = opts.approveAutoplanArtifactEdits && opts.autoplanArtifactState !== undefined
+    ? hermeticSkillStateRoot : undefined;
+
   // Construction must succeed before any CLI can be spawned.
   const screen = opts.observeScreen ? await createPtyScreen(cols, rows) : undefined;
   let screenClosing: Promise<void> | undefined;
@@ -3887,7 +3894,7 @@ export async function launchClaudePty(
     }
     if (opts.observeAutoplanArtifacts && hermetic && childEnv.CLAUDE_CONFIG_DIR && autoplanArtifactStateRoot) {
       pendingArtifact = createAutoplanArtifactRecorder(cwd, childEnv.CLAUDE_CONFIG_DIR, autoplanArtifactStateRoot,
-        opts.approveAutoplanArtifactEdits === true);
+        opts.approveAutoplanArtifactEdits === true, opts.engTestPlanArtifactOnly === true, autoplanEngTestPlanStateRoot);
     }
     if (opts.observeFilePermissions && hermetic && childEnv.CLAUDE_CONFIG_DIR) {
       for (const expected of new Set(opts.observeFilePermissions)) {
@@ -4099,6 +4106,7 @@ export async function launchClaudePty(
     pendingQuestionFile: pendingQuestion?.file,
     pendingAutoplanArtifactFile: pendingArtifact?.file,
     autoplanArtifactStateRoot: pendingArtifact ? autoplanArtifactStateRoot : undefined,
+    autoplanEngTestPlanStateRoot: pendingArtifact ? autoplanEngTestPlanStateRoot : undefined,
     startAutoplanArtifactEditApproval: pendingArtifact?.startEditApproval,
     pendingFilePermissionFiles: pendingFiles.map(({ expected, recorder }) => ({ expected, file: recorder.file })),
     close,
@@ -4594,6 +4602,7 @@ export interface PlanSkillCountObservation {
     | 'ceiling_reached'
     | 'silent_write'
     | 'transcript_unavailable'
+    | 'artifact_permission_failed'
     | 'no_review_questions'
     | 'exited'
     | 'timeout';
@@ -4668,6 +4677,8 @@ export async function runPlanSkillCounting(opts: {
   /** Observe this caller-owned disposable plan for permission identity only.
    * Does not impose the expectedPlanPath terminal-report contract. */
   permissionPlanPath?: string;
+  /** Declared actor support for the required QA artifact; no other state path gains approval. */
+  approveEngTestPlanEdits?: boolean;
   /** Per-skill predicate: which answered AUQ is the last Step-0 question. */
   isLastStep0AUQ: Step0BoundaryPredicate;
   /** Optional positive identity for a first finding when no final setup AUQ was emitted. */
@@ -4718,6 +4729,8 @@ export async function runPlanSkillCounting(opts: {
   /** Override the spawned model. Defaults via launchClaudePty's chain. */
   model?: string;
 }): Promise<PlanSkillCountObservation> {
+  if (opts.approveEngTestPlanEdits && (opts.skillName !== 'plan-eng-review' || !opts.expectedPlanPath))
+    throw Error('Eng test-plan approval requires the Eng caller and its explicit report');
   const budgetStarted = performance.now();
   const startedAt = Date.now();
   const defaultPick = opts.defaultPick ?? 1;
@@ -4762,6 +4775,7 @@ export async function runPlanSkillCounting(opts: {
       observePlanReady: true,
       observeSetupQuestions: opts.observeSetupQuestions,
       observeFilePermissions: permissionPaths.length ? [...new Set(permissionPaths)] : undefined,
+      ...(opts.approveEngTestPlanEdits ? { observeAutoplanArtifacts: true, approveAutoplanArtifactEdits: true, engTestPlanArtifactOnly: true } : {}),
     });
   } catch (error) {
     fixture.cleanup();
@@ -4824,6 +4838,10 @@ export async function runPlanSkillCounting(opts: {
   try {
     if (await waitForWork(8000)) { // boot grace is part of the total budget
       session.mark();
+      if (opts.approveEngTestPlanEdits) {
+        if (!session.startAutoplanArtifactEditApproval) throw Error('Owned Eng test-plan approval hook unavailable');
+        session.startAutoplanArtifactEditApproval(Date.now());
+      }
       session.send(`${opts.slashCommand}\r`);
     }
 
@@ -4836,6 +4854,24 @@ export async function runPlanSkillCounting(opts: {
         : { status: 'error', calls: [], assistantMessages: [], error: 'Claude count session has no isolated transcript directory' };
       transcript = withPendingExit(transcript, session.pendingPlanReadyFile, fixture.cwd,
         session.hermeticConfigDir, startedAt, visible);
+      if (opts.approveEngTestPlanEdits) {
+        const status = autoplanArtifactRecorderStatus(session.pendingAutoplanArtifactFile, fixture.cwd,
+          session.hermeticConfigDir, session.autoplanArtifactStateRoot);
+        const boundary = autoplanArtifactApprovalBoundary(status);
+        if (boundary === 'failed') return snapshot('artifact_permission_failed',
+          `Owned Eng QA test-plan approval failed: ${JSON.stringify(status)}`, visible);
+        // Native approval owns this Edit. Never answer its repaint or count a
+        // metadata-only pending request; resume only after its actual result.
+        if (boundary === 'pending') {
+          if (Date.now() - lastCheckpointAt >= 30_000) {
+            lastCheckpointAt = Date.now();
+            const saved = capture({ state: 'artifact_pending', elapsedMs: Date.now() - startedAt,
+              fingerprints, step0Count, reviewCount, administrativeCount, transcript, artifactStatus: status });
+            if (saved.artifactError) console.error(`PTY artifact write failed: ${saved.artifactError}`);
+          }
+          continue;
+        }
+      }
       if (transcript.status === 'error') {
         return snapshot('transcript_unavailable', transcript.error!, visible);
       }

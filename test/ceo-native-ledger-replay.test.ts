@@ -207,3 +207,103 @@ test('known onboarding and scope menus cannot borrow a saved decision row for fi
   q.nativeCall!.questions[0]!.options = ['SCOPE EXPANSION', 'SELECTIVE EXPANSION', 'HOLD SCOPE', 'SCOPE REDUCTION'].map(label => ({ label })); reanswer(q);
   expect(genericCounter().isReviewAUQ(q)).toBe(false);
 });
+
+import currentFixture from './fixtures/ceo-recorded-decisions-dacc95ea.json';
+
+const currentFp = (row = currentFixture.cases[1]!) =>
+  nativePlanCallFingerprint(clone(row.call) as any, Date.parse(row.call.answeredAt), true);
+const countCurrent = (question = currentFp(), plan = currentFixture.cases[1]!.savedPlan, seed = currentFixture.cases[1]!.seed) =>
+  createCeoPaymentFindingCounter(seed, () => plan, ceoFirstReviewAUQ).isReviewAUQ(question);
+
+for (const row of currentFixture.cases) test(`captured dacc95ea ${row.name} counts its owned saved decision`, () => {
+  expect(createHash('sha256').update(row.savedPlan).digest('hex')).toBe(row.savedPlanSha256);
+  expect(Date.parse(row.successfulPriorMutations.at(-1)!.completedAt)).toBeLessThan(Date.parse(row.questionIssuedAt));
+  expect(Date.parse(row.questionIssuedAt)).toBeLessThanOrEqual(Date.parse(row.call.answeredAt));
+  expect(countCurrent(currentFp(row), row.savedPlan, row.seed)).toBe(true);
+});
+
+
+const pairedCurrent = currentFixture.cases[1]!;
+const optionsStart = pairedCurrent.savedPlan.indexOf('- **A)');
+const beforeOptions = pairedCurrent.savedPlan.slice(0, optionsStart);
+const optionBody = pairedCurrent.savedPlan.slice(optionsStart, pairedCurrent.savedPlan.indexOf('\nRecommendation:', optionsStart));
+const afterOptions = pairedCurrent.savedPlan.slice(pairedCurrent.savedPlan.indexOf('\nRecommendation:', optionsStart));
+const replaceOptions = (body: string) => beforeOptions + body + afterOptions;
+const sourceLine = pairedCurrent.savedPlan.split('\n').find(line => line.startsWith('Working plan for'))!;
+const currentOptions = optionBody.split(/\n(?=- \*\*[A-C]\))/);
+
+for (const [name, plan] of Object.entries({
+  'standalone source metadata': pairedCurrent.savedPlan.replace(sourceLine, 'Source plan: PLAN.md.'),
+  'source-plan label in current metadata': pairedCurrent.savedPlan.replace('Source: `PLAN.md`', 'Source plan: `PLAN.md`'),
+  'review-target source metadata': pairedCurrent.savedPlan.replace('Source: `PLAN.md`', 'Plan under review: `PLAN.md`'),
+  'source section citations': pairedCurrent.savedPlan.replaceAll('plan §', 'plan section '),
+  'paragraph alternatives': replaceOptions(currentOptions.map(block => block.replace(/^- /, '')).join('\n\n')),
+  'plain list labels': replaceOptions(optionBody.replaceAll('**', '')),
+  'named effort and risk fields': replaceOptions(optionBody.replaceAll('Effort S', 'Effort estimate: S').replaceAll('Risk low', 'Risk level: low').replaceAll('Risk high', 'Risk level: high')),
+  'risk before effort': replaceOptions(optionBody.replace('Effort S (~6 lines).\n  Risk low.', 'Risk low. Effort S (~6 lines).')),
+  'line-separated typed facts': replaceOptions(optionBody.replace(/\.\s+(?=Effort|Risk|Pros:|Cons:)/g, '\n  ')),
+  'semicolon-separated typed facts': replaceOptions(optionBody.replace(/\.\s+(?=Effort|Risk|Pros:|Cons:)/g, '; ')),
+})) test(`owned prose comparison accepts ${name}`, () => expect(countCurrent(currentFp(), plan)).toBe(true));
+
+for (const [name, plan] of Object.entries({
+  'source missing': pairedCurrent.savedPlan.replace(sourceLine, 'Working plan; source unavailable.'),
+  'foreign source': pairedCurrent.savedPlan.replace('Source: `PLAN.md`', 'Source: `OTHER.md`'),
+  'source in unrelated prose': pairedCurrent.savedPlan.replace(sourceLine, 'An unrelated example elsewhere mentions PLAN.md.'),
+  'quoted source paragraph': pairedCurrent.savedPlan.replace(sourceLine, '> ' + sourceLine),
+  'fenced source paragraph': pairedCurrent.savedPlan.replace(sourceLine, '```md\n' + sourceLine + '\n```'),
+  'literal source paragraph': pairedCurrent.savedPlan.replace(sourceLine, '"' + sourceLine + '"'),
+  'historical source paragraph': pairedCurrent.savedPlan.replace(sourceLine, '## Historical metadata\n\n' + sourceLine + '\n\n## Current review'),
+  'contradictory source records': pairedCurrent.savedPlan + '\n\nSource plan: OTHER.md.\n',
+  'row has no source citation': pairedCurrent.savedPlan.replaceAll('(plan §Existing behavior)', '(unsupported)').replaceAll('(plan §Infrastructure)', '(unsupported)'),
+  'row cites a foreign source': pairedCurrent.savedPlan.replaceAll('plan §', 'OTHER.md §'),
+  'wrong row identity': pairedCurrent.savedPlan.replaceAll('D1', 'DIFFERENT'),
+  'inactive row status': pairedCurrent.savedPlan.replaceAll('| unresolved |', '| historical |'),
+  'unchanged current/proposed values': pairedCurrent.savedPlan.replace('Assert full receipt equality; optionally assert single charge call with `{amountCents:1000, currency:"USD"}` and zero sleeper records.', 'Assert receipt is truthy only.'),
+  'withdrawn proposed remedy': pairedCurrent.savedPlan.replace('Assert full receipt equality;', 'This decision is withdrawn. Assert full receipt equality;'),
+  'quoted ledger': pairedCurrent.savedPlan.split('\n').map(line => '> ' + line).join('\n'),
+  'fenced ledger': '```md\n' + pairedCurrent.savedPlan + '\n```',
+  'duplicate ledger': pairedCurrent.savedPlan + '\n' + pairedCurrent.savedPlan,
+  'comparison under history': pairedCurrent.savedPlan.replace('### D1 — options comparison', '## Historical review\n\n### D1 — options comparison'),
+  'historical comparison heading': pairedCurrent.savedPlan.replace('### D1 — options comparison', '### Historical D1 — options comparison'),
+  'foreign comparison heading': pairedCurrent.savedPlan.replace('### D1 — options comparison', '### D9 — options comparison'),
+  'fenced alternatives': replaceOptions('```md\n' + optionBody + '\n```\n'),
+  'quoted alternatives': replaceOptions(optionBody.split('\n').map(line => '> ' + line).join('\n')),
+  'literal alternatives': replaceOptions(currentOptions.map(block => '"' + block.replace(/^- /, '') + '"').join('\n\n')),
+  'missing effort': replaceOptions(optionBody.replace('Effort S (~6 lines)', 'Work S (~6 lines)')),
+  'missing risk': replaceOptions(optionBody.replace('Risk low.', 'Unassessed.')),
+  'missing pros': replaceOptions(optionBody.replace('Pros: catches', 'Notes: catches')),
+  'missing cons': replaceOptions(optionBody.replace('Cons: couples', 'Notes: couples')),
+  'quoted effort value': replaceOptions(optionBody.replace('Effort S (~6 lines)', 'Effort "S (~6 lines)"')),
+  'missing alternative': replaceOptions(currentOptions.slice(1).join('\n')),
+  'duplicate alternative': replaceOptions(optionBody + '\n' + currentOptions[0]),
+  'foreign option label': replaceOptions(optionBody.replace('**B) Receipt fields only**', '**D) Change the deployment region**')),
+  'withdrawn comparison': replaceOptions(optionBody.replace('Pros: catches', 'This decision is withdrawn. Pros: catches')),
+})) test(`owned prose comparison rejects ${name}`, () => expect(() => countCurrent(currentFp(), plan)).toThrow());
+
+for (const [name, mutate] of Object.entries({
+  'unanswered native call': (q: ReturnType<typeof currentFp>) => { q.nativeCall!.answered = false; },
+  'failed native call': (q: ReturnType<typeof currentFp>) => { q.nativeCall!.failed = true; },
+  'foreign native identity': (q: ReturnType<typeof currentFp>) => { q.signature = 'foreign:call'; },
+  'unoffered native answer': (q: ReturnType<typeof currentFp>) => { q.nativeCall!.answers = { [q.nativeCall!.questions[0]!.question]: 'Recommendation A' }; },
+  'quoted native question': (q: ReturnType<typeof currentFp>) => { q.nativeCall!.questions[0]!.question = '> ' + q.nativeCall!.questions[0]!.question.replaceAll('\n', '\n> '); reanswer(q); },
+  'ID only in historical recap': (q: ReturnType<typeof currentFp>) => { q.nativeCall!.questions[0]!.question = 'How should we continue?\n> Earlier D1 was discussed.'; reanswer(q); },
+})) test(`owned prose comparison rejects ${name}`, () => { const question = currentFp(); mutate(question); expect(() => countCurrent(question)).toThrow(); });
+
+test('prose decision count is not approval and does not bypass duplicate native ownership', () => {
+  const question = currentFp(), before = pairedCurrent.savedPlan;
+  const counter = createCeoPaymentFindingCounter(pairedCurrent.seed, () => before, ceoFirstReviewAUQ);
+  expect(counter.isReviewAUQ(question)).toBe(true);
+  expect(counter.trace).toEqual([{ signature: question.signature, kind: 'recorded-decision', ledgerId: 'D1', phase: 'D1 — options comparison (Test 1: successful charge)' }]);
+  expect(pairedCurrent.savedPlan).toBe(before);
+  expect(before).toContain('| unresolved |');
+  expect(() => counter.isReviewAUQ(question, [question.nativeCall!])).toThrow('duplicated');
+});
+
+test('fourth actual native decision has an ACK but receives no credit without its saved record', () => {
+  const row = currentFixture.unreconstructedCalls[0]!;
+  expect(row.limitation).toContain('saved plan at question time was not retained');
+  expect(row.call.answered).toBe(true);
+  expect(row.call.failed).toBe(false);
+  const question = nativePlanCallFingerprint(clone(row.call) as any, Date.parse(row.call.answeredAt), true);
+  expect(() => countCurrent(question, currentFixture.cases[0]!.seed, currentFixture.cases[0]!.seed)).toThrow(/cannot exclude/);
+});

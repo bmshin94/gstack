@@ -116,7 +116,7 @@ describeE2E('/autoplan native chain ordering (periodic)', () => {
           pendingSetupQuestion = readPendingQuestion(session.pendingQuestionFile, tempDir,
             session.hermeticConfigDir, commandStartedAt, transcript);
           pendingArtifact = readPendingAutoplanArtifact(session.pendingAutoplanArtifactFile, tempDir,
-            session.hermeticConfigDir, session.autoplanArtifactStateRoot, commandStartedAt, publicTools, Date.now(), true);
+            session.hermeticConfigDir, session.autoplanArtifactStateRoot, commandStartedAt, publicTools, Date.now(), true, session.autoplanEngTestPlanStateRoot);
           methodologyAudit = auditAutoplanMethodReads(publicTools, prompt =>
             loadAutoplanMethodologyBinding(prompt, [getHermeticDirs().runRoot, nativeState!.env.GSTACK_HOME!]));
           hits = autoplanPhaseCompletions(transcript, commandStartedAt);
@@ -127,7 +127,8 @@ describeE2E('/autoplan native chain ordering (periodic)', () => {
             raw: session.rawOutput(), visible: session.visibleText(), viewport,
             observation: { state, hits, native: transcript, pendingSetupQuestion, pendingArtifact, methodologyAudit, exitCode: session.exitCode(), unsupportedSetup, blockedQuestion,
               ownedArtifactStateRoot: session.autoplanArtifactStateRoot,
-              artifactRecorder:autoplanArtifactRecorderStatus(session.pendingAutoplanArtifactFile, tempDir, session.hermeticConfigDir, session.autoplanArtifactStateRoot),
+              ownedEngTestPlanStateRoot: session.autoplanEngTestPlanStateRoot,
+              artifactRecorder:autoplanArtifactRecorderStatus(session.pendingAutoplanArtifactFile, tempDir, session.hermeticConfigDir, session.autoplanArtifactStateRoot, session.autoplanEngTestPlanStateRoot),
               pendingQuestionRecorder:pendingQuestionRecorderStatus(session.pendingQuestionFile, tempDir, session.hermeticConfigDir),
               retention: 'Current raw/visible/viewport and parsed native metadata only; full parent JSONL retention is not guaranteed.' },
           });
@@ -170,7 +171,7 @@ describeE2E('/autoplan native chain ordering (periodic)', () => {
             // Native hooks exclusively approve owned artifact Edits. Rejection
             // is a failure, and pending hooks cannot fall through to UI input.
             const artifactStatus = autoplanArtifactRecorderStatus(session.pendingAutoplanArtifactFile, tempDir,
-              session.hermeticConfigDir, session.autoplanArtifactStateRoot);
+              session.hermeticConfigDir, session.autoplanArtifactStateRoot, session.autoplanEngTestPlanStateRoot);
             const artifactBoundary = autoplanArtifactApprovalBoundary(artifactStatus);
             if (artifactBoundary === 'failed') {
               outcome = 'artifact_permission_failed';

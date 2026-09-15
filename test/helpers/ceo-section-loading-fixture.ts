@@ -33,18 +33,29 @@ change with no UI, API, schema, pricing, or developer onboarding change.
 - All reads and writes use this repository in the same process; there are no
   external DB writers. Multi-process operation remains unsupported and startup
   rejects that configuration while caching is enabled.
+- These surrounding contracts are accepted fixture facts, supplied by the
+  existing repository, cache adapter and rollout controller. Preserve them;
+  review the new wrapper ordering below against them.
 - Authentication and authorization run before repository access. Keys encode
   the authenticated tenant ID and validated profile ID without ambiguity.
   Values are immutable profile-summary DTOs; secrets and cache keys are never
   logged. Cached results cannot bypass authorization.
 - The existing LRU adapter supports 1000 entries, a 16 MiB byte cap, and a
-  30-second TTL. Recorded hot data fits those limits. Absent records use a
-  distinct sentinel with a 10-second TTL; undefined means a cache miss.
+  30-second TTL. Recorded hot data fits those limits. repository.read returns
+  an immutable absent-result DTO for a missing record, never undefined. The
+  adapter recognizes that DTO in cache.set, stores an internal sentinel with a
+  10-second TTL, and cache.get decodes it back to the same absent-result DTO.
+  The internal sentinel cannot escape the adapter; undefined means a cache miss.
 - Cache operations are synchronous and atomic in the single JS event loop.
   On any cache failure the existing adapter bypasses the cache until an empty
   cache is reinitialized; repository errors keep the current typed API error
   mapping. The existing per-key
   single-flight wrapper coalesces simultaneous misses and releases on failure.
+- The repository uses an in-process transactional store, with no network
+  transport between this wrapper and the store. repository.write is atomic:
+  a resolved promise means committed, and every
+  rejected promise guarantees no commit; its transaction rolled back before
+  rejection. Existing contract tests exercise that guarantee.
 - A read already in progress when a write commits may return its earlier DB
   snapshot to that caller. Every read begun after that write completes must
   observe the committed version. TTL expiry is not a substitute for this rule.
@@ -60,14 +71,28 @@ ${CACHE_READ_WRITE_SKETCH}
 
 ## Verification and rollout
 Existing repository contract tests cover tenant isolation, key validation,
-absence, DB failures, and authorization. New wrapper tests cover hit/miss,
+absence, DB failures, authorization, and startup rejection of multi-process
+operation while caching is enabled. New wrapper tests cover hit/miss,
 eviction and byte limits, TTL, adapter-failure fallback, successful-write
 invalidation, failed-write preservation, and concurrent-miss coalescing.
 The rollout uses the existing runtime feature flag: enable for 10% of keys,
 then 50%, then all keys after one healthy hour at each stage. Monitor hit/miss,
 eviction, cache bytes, fallback errors, DB CPU, and read p95 without raw IDs.
-On error-rate or latency regression, disable the flag immediately; both reads
-and writes bypass the cache while disabled, and enabling creates an empty cache.
+The existing controller uses one shared key-selection predicate for reads and
+writes. On any enable, disable or percentage change, it stops admitting work,
+awaits every admitted old-instance write, then publishes a new wrapper/cache
+instance with a fresh single-flight cohort before admitting new work. Old reads
+retain their old instance and cannot fill the new one. Disabled instances
+bypass the cache on both paths. Tests cover the old-writer/new-reader ordering,
+all those transitions and predicate parity. This lifecycle isolation does not coordinate
+an ordinary DB write with a cache fill in the same active instance.
+Existing dashboards and runbooks cover these metrics. Before each stage, verify
+that alerts page the service owner on any correctness/error-SLO breach, read
+p95 above 120 ms for five minutes, or cache bypass persisting for one minute.
+A healthy hour means the stated hit-rate, CPU, latency and error targets hold
+without those alerts. Any breach disables the flag immediately; the runbook
+records the incident, rollback and criteria for resuming. These are existing
+rollout-controller and telemetry contracts, not proposed wrapper additions.
 Cold starts remain within the existing DB capacity. The service owner monitors
 the rollout and records the results against the acceptance targets.
 

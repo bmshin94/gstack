@@ -282,13 +282,20 @@ function completedQuestionTimes(call: NativePlanQuestionCall, events: ReadonlyAr
 }
 
 /** New shorthand forms must be one complete decision, not a mode mention or extra question. */
-function singleScopeBrief(text: string, descriptions: readonly string[], comparison = true): boolean {
+function singleScopeBrief(text: string, descriptions: readonly string[], comparison = true, expansion = false): boolean {
   if ([text, ...descriptions].some(value => /(?:^|[.!?]\s+|\n)\s*(?:Also|Separately|Additionally)\b|\b(?:Please|We must|You must|The plan must)\b/i.test(value))) return false;
   // Query parameter names such as ?view= are not another decision prompt.
-  const questions = text.replace(/\?[A-Za-z_][\w-]*=/g, '=').match(/\?/g);
+  // A quoted user scenario is not a second decision. Keep its original text
+  // for all instruction, context and posture checks; remove only its question marks here.
+  const questionText = expansion ? text.replace(/"[^"\n]*"|“[^”\n]*”/g,
+    quote => quote.replace(/\?/g, '')) : text;
+  const questions = questionText.replace(/\?[A-Za-z_][\w-]*=/g, '=').match(/\?/g);
   if (questions?.length !== 1 || /```|~~~|^\s*>/m.test(text)) return false;
+  const comparisonMarker = expansion
+    ? /Completeness:|Note:\s*options differ in kind, not coverage\s*[—–-]\s*no completeness score\./gi
+    : /Completeness:/gi;
   const markers = [/Project\/branch\/task:/gi, /ELI10:/gi, /Stakes if (?:we pick )?wrong:/gi,
-    /Recommendation:/gi, /Completeness:/gi, /Net:/gi];
+    /Recommendation:/gi, comparisonMarker, /Net:/gi];
   let previous = -1;
   const complete = markers.every(marker => {
     const matches = [...text.matchAll(marker)];
@@ -299,6 +306,11 @@ function singleScopeBrief(text: string, descriptions: readonly string[], compari
   // Net closes this decision brief. A following instruction is not part of its
   // comparison; this is not a general classifier of instructions inside prose.
   const net = text.slice(previous + 'Net:'.length).trim();
+  if (expansion && /Completeness:/i.test(text)) {
+    const scores = /Completeness:([\s\S]*?)Net:/i.exec(text)?.[1] ?? '';
+    const ratings = [...scores.matchAll(/\b[A-D]\s*[:=]\s*(\d+)\s*\/\s*10\b/g)];
+    if (!ratings.length || ratings.some(score => Number(score[1]) > 10)) return false;
+  }
   return complete && (comparison ? /^[^.!?;\n]+ (?:vs|versus) [^.!?;\n]+\.$/.test(net)
     : /^[^.!?;\n]+\.$/.test(net.replace(/\bvs\./gi, 'vs')));
 }
@@ -356,19 +368,30 @@ function hasAnsweredExpansionPosture(
     // This is evidence that the selected mode produced a concrete scope
     // decision, not authority to answer it. Numbering and heading names vary.
     const title = question.question.split('\n')[0]!
-      .replace(/\s*<gstack-qid:[a-z0-9-]+>\s*$/i, '').replace(/^D\d+\s*[—–-]\s*/i, '');
+      .replace(/\s*<gstack-qid:[a-z0-9-]+>\s*$/i, '').replace(/^D\d+(?:\.\d+)*\s*[—–-]\s*/i, '');
     const context = /\nProject\/branch\/task:([^\n]+)/i.exec(question.question)?.[1] ?? '';
-    if (question.multiSelect || question.options.length !== 3 ||
+    if (question.multiSelect || question.options.length < 3 || question.options.length > 4 ||
         !/^[\p{L}\p{N}][^?\n]+\?$/u.test(title) ||
         /\b(?:review\s+(?:mode|posture)|(?:selected|confirmed)\s+(?:mode|option))\b/i.test(title) ||
+        /^(?:(?:continue|proceed|resume|start|finish)\b[^?]*\b(?:review|questions?|ceremony)|(?:are|should|can|do) (?:we|I|you) (?:continue|proceed|resume)|how\b[^?]*\b(?:decide|batch|split|group))\b/i.test(title) ||
         /\b(?:HOLD SCOPE|SELECTIVE EXPANSION|SCOPE REDUCTION)\b/i.test(context) ||
         !/\b(?:SCOPE\s+EXPANSION|EXPANSION\s+(?:mode|opt[ -]in))\b/i.test(context) ||
-        !singleScopeBrief(question.question, question.options.map(o => o.description ?? ''), false)) return false;
-    const labels = question.options.map(option => option.label.trim()
-      .replace(/^[A-C][):.]\s*/i, '').replace(/\s*\(recommended\)\s*$/i, '').toLowerCase()
-      .replace(/^add to (?:(?:this|the) plan['’]s )?scope$/, 'add to scope'));
-    if (new Set(labels).size !== 3 || !['add to scope', 'defer to todos.md', 'skip'].every(label => labels.includes(label)) ||
-        !question.options.some(option => option.label === call.answers?.[question.question])) return false;
+        !singleScopeBrief(question.question, question.options.map(o => o.description ?? ''), false, true)) return false;
+    // Equivalent core dispositions demonstrate mode application. A separate
+    // discussion control may pause the decision, but its answer supplies no posture credit.
+    const dispositions = question.options.map(option => {
+      const label = option.label.trim().replace(/^[A-D][):.]\s*/i, '')
+        .replace(/\s*\(recommended\)\s*$/i, '').toLowerCase();
+      if (/^(?:include|add to (?:(?:this|the) plan['’]s )?scope)$/.test(label)) return 'include';
+      if (/^defer to todos\.md$/.test(label)) return 'defer';
+      if (/^(?:skip|cut)$/.test(label)) return 'skip';
+      if (/^(?:hold|pause)(?:\s*[—–:-]\s*discuss first)?$/.test(label)) return 'pause';
+      return null;
+    });
+    const answer = question.options.findIndex(option => option.label === call.answers?.[question.question]);
+    if (dispositions.includes(null) || new Set(dispositions).size !== dispositions.length ||
+        !['include', 'defer', 'skip'].every(value => dispositions.includes(value)) ||
+        answer < 0 || dispositions[answer] === 'pause') return false;
     // Never search quoted instructions, tool output or a menu for posture.
     const prose = question.question.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
       .replace(/^\s*>.*$/gm, '');

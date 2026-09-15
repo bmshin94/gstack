@@ -459,13 +459,15 @@ Build a user dashboard that shows account stats, recent activity, and settings.
             return await runSkillTest({
               prompt: `Read plan-design-review/SKILL.md for the design review workflow.
 
-Review the plan in ./plan.md. This plan has several design gaps — it uses vague language like "clean, modern UI" and "cards and icons", mentions a "hero section with gradient" (AI slop), and doesn't specify empty states, error states, loading states, responsive behavior, or accessibility.
+Review the plan in ./plan.md. Its design gaps are vague "clean, modern UI" and "cards and icons", a "hero section with gradient" (AI slop), and missing empty, error, loading, responsive, and accessibility behavior.
 
-Skip the preamble bash block. Skip any AskUserQuestion calls — this is non-interactive. Review all 7 design passes. Rate each scored design dimension 0-10 and explain what would make it a 10; preserve the unresolved-decisions pass and every required design decision. EDIT plan.md to add the missing design decisions (interaction state table, empty states, responsive behavior, etc.) and the full required review report, including those ratings and explanations.
+Use this non-interactive delivery sequence:
+1. Skip the preamble bash block and any AskUserQuestion calls. Read every lazy section the workflow requires. Review all 7 design passes. Rate each scored design dimension 0-10 and explain what would make it a 10; preserve the unresolved-decisions pass and every required design decision.
+2. EDIT plan.md with the missing design decisions (interaction state table, empty states, responsive behavior, etc.) and the full required review report. Keep the saved review compact: use the canonical tables and decision IDs. Specify each design requirement once; refer to its section or decision ID from other pass rationales, tasks, and report cells instead of repeating that specification. Give concise score rationales and 10/10 explanations. Retain all required report fields, design decisions, diagrams, ratings, and explanations.
+3. Persist that complete plan and review with Write before publishing a completed walkthrough or saying a fix is applied. Read plan.md back to verify the saved changes.
+4. Then return a brief, concrete summary of the design changes; do not repeat the full review in the response. This changes presentation only: execute every required pass and lazy-section Read.
 
-Persist that complete plan and review with Write before publishing a completed walkthrough or saying a fix is applied. Read plan.md back to verify the saved changes. Then return a brief, concrete summary of the design changes; do not repeat the full review in the response. The detailed review belongs in the edited plan. This changes delivery order only: execute every required pass and lazy-section Read, and retain all required report fields, design decisions, diagrams, ratings, and explanations.
-
-IMPORTANT: Do NOT try to browse any URLs or use a browse binary. This is a plan review, not a live site audit. Just read the plan file, review it, and edit it to fix the gaps.`,
+IMPORTANT: Do NOT try to browse any URLs or use a browse binary. This is a plan review, not a live site audit.`,
               workingDirectory: reviewDir,
               maxTurns: 15,
               timeout: CAPTURE_MS,

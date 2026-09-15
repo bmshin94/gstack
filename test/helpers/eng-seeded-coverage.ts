@@ -1,6 +1,7 @@
 import type { NativePlanQuestionCall, PlanCountTranscript } from './plan-count-transcript';
 import type { AskUserQuestionFingerprint } from './claude-pty-runner';
 import { hasRetainedLegacyCorpus } from './eng-retained-corpus';
+import { marked } from 'marked';
 
 /** Evidence for this fixture's four decision seeds; regression coverage is auto-added by the skill. */
 export const ENG_DECISION_SEEDS = ['complexity', 'shared-cache', 'swallowed-errors', 'sequential-idp'] as const;
@@ -331,6 +332,143 @@ export function isEngBatchingIssueAUQ(fp: AskUserQuestionFingerprint, priorCalls
   if (fp.options.length !== q.options.length || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label)) return false;
   // Re-asking an eligible issue cannot inflate the floor; setup and batches do not suppress later separate decisions.
   return !priorCalls.some(prior => batchingIssueNumber(prior) === issue);
+}
+
+/** A native brief can use its D number and topic while its stable R identity
+ * lives in the required saved ledger. Count that owned choice, not a title
+ * spelling. This does not approve the row or validate the implementation. */
+function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string): string | undefined {
+  const q = call.questions[0]!;
+  const text = prose(q.question, true), lines = text.split('\n').filter(line => line.trim());
+  const title = lines[0] ?? '', decision = /^D([1-9]\d*)\s*[—–:-]\s+\S/.exec(title);
+  const metadata = (lines[1] ?? '').replace(/"[^"\n]*"|“[^”\n]*”/g, ''), explanation = lines[2] ?? '';
+  const source = /\bPLAN\.md:([1-9]\d*(?:[-–][1-9]\d*)?)\b/.exec(metadata)?.[1];
+  if (!decision || !/\bPLAN\.md\b/.test(metadata) || !/^Project\/branch\/task: \S/.test(metadata) ||
+      !/^ELI10: \S/.test(explanation) || /^ELI10:\s*(?:".*"|“.*”)\s*$/.test(explanation) ||
+      /^(?:ELI10:\s*)?(?:source|quoted|historical|example|hypothetical)\b/i.test(explanation) ||
+      lines.filter(line => /^Project\/branch\/task:/.test(line)).length !== 1 ||
+      lines.filter(line => /^ELI10:/.test(line)).length !== 1 ||
+      /\b(?:copied|quoted|historical|hypothetical)\b/i.test(metadata)) return;
+  if (q.options.some(option => !prose(option.description ?? '', true).trim()) ||
+      /\b(?:this|the|that) (?:issue|finding|decision) (?:is|was|has been) ["“'‘]?(?:withdrawn|cancelled|canceled|rejected|superseded|resolved|closed|hypothetical|not current|no longer current)\b/i.test(text)) return;
+  const clean = (s: string) => s.replace(/[`*]/g, '').replace(/\s+/g, ' ').trim();
+  const tokens = marked.lexer(savedPlan);
+  const ledgers = tokens.flatMap((t, i) => t.type === 'heading' && /^Decision ledger$/i.test(clean(t.text)) ? [i] : []);
+  if (ledgers.length !== 1) return;
+  const start = ledgers[0]!, heading = tokens[start]!;
+  if (heading.type !== 'heading') return;
+  const currentHeading = (at: number) => {
+    const ancestors: Array<{ depth: number; text: string }> = [];
+    for (const token of tokens.slice(0, at + 1)) if (token.type === 'heading') {
+      while (ancestors.length && ancestors.at(-1)!.depth >= token.depth) ancestors.pop();
+      ancestors.push(token);
+    }
+    return !ancestors.some(owner => /\b(?:copied|quoted|historical|history|example|hypothetical|template)\b/i.test(clean(owner.text)));
+  };
+  if (!currentHeading(start)) return;
+  const withdrawn = (value: string, owners: string) => new RegExp(
+    `(?:^|[.!?;]\\s+|\\n)(?:Correction:\\s*)?(?:${owners}) (?:is|was|has been) ["“'‘]?(?:withdrawn|cancelled|canceled|rejected|superseded|resolved|closed|hypothetical|not current|no longer current)\\b`, 'i').test(prose(value, true));
+  if (withdrawn(q.question, `D${decision[1]}`)) return;
+  const previous = tokens.slice(0, start).filter(t => t.type !== 'space').at(-1);
+  if (previous && /\b(?:copied|quoted|historical|example|hypothetical|template)\b.*[:：]\s*$/i.test(previous.raw)) return;
+  let end = start + 1;
+  while (end < tokens.length && !(tokens[end]!.type === 'heading' && (tokens[end] as any).depth <= heading.depth)) end++;
+  const words = (s: string) => (clean(s).toLowerCase().replace(/\(recommended\)/g, '').match(/[a-z][a-z0-9_]*/g) ?? [])
+    .filter(word => !['the', 'a', 'an', 'and', 'or', 'with', 'to', 'of', 'as', 'is', 'it', 'one', 'first', 'now', 'option', 'recommended', 'planned'].includes(word));
+  const labelScore = (native: string, saved: string) => {
+    const normalize = (s: string) => clean(s).replace(/\s*\(recommended\)/gi, '').toLowerCase();
+    if (normalize(native) === normalize(saved)) return 3;
+    const left = words(native), right = words(saved);
+    const negated = (tokens: string[]) => tokens.some(word => ['no', 'not', 'never', 'without', 'dont'].includes(word));
+    if (Math.min(left.length, right.length) < 2 || negated(left) !== negated(right)) return 0;
+    if (normalize(saved).startsWith(normalize(native) + ' ')) return 2;
+    // Native captions may abbreviate the saved caption, but cannot introduce
+    // a different action. Every native content word must occur in order in
+    // the saved label; a short abbreviation must retain its first letter.
+    let cursor = 0, exact = 0;
+    for (const word of left) {
+      const found = right.findIndex((candidate, at) => at >= cursor && (candidate === word ||
+        word.length >= 2 && word.length <= 3 && candidate.length > word.length && candidate[0] === word[0] &&
+        new RegExp('^' + [...word].join('.*')).test(candidate)));
+      if (found < 0) return 0;
+      if (right[found] === word) exact++;
+      cursor = found + 1;
+    }
+    return exact >= 2 ? left.length / right.length : 0;
+  };
+  const matches: string[] = [];
+  for (let i = start + 1; i < end; i++) {
+    const record = tokens[i]!;
+    if (record.type !== 'heading') continue;
+    const id = /^(R[1-9]\d*):\s+\S/.exec(clean(record.text))?.[1];
+    if (!id || !currentHeading(i) || withdrawn(q.question, id)) continue;
+    let stop = i + 1;
+    while (stop < end && !(tokens[stop]!.type === 'heading' && (tokens[stop] as any).depth <= record.depth)) stop++;
+    const body = tokens.slice(i + 1, stop);
+    if (withdrawn(body.filter(t => t.type === 'paragraph').map(t => t.raw).join('\n'), `${id}|D${decision[1]}`)) continue;
+    const paragraphs = body.filter(t => t.type === 'paragraph').map(t => t.raw);
+    const fields = paragraphs.join('\n').split('\n').map(line => line.replace(/\*\*/g, '').trim());
+    const field = (name: string) => fields.filter(line => line.startsWith(name + ':')).map(line => line.slice(name.length + 1).trim());
+    const finding = field('Finding'), baseline = field('Plan baseline'), state = field('State');
+    if (finding.length !== 1 || baseline.length !== 1 || !baseline[0] || state.length !== 1 ||
+        !/^(?:pending|approved)$/i.test(state[0]!) ||
+        /\b(?:copied|quoted|historical|example|hypothetical|withdrawn|superseded)\b/i.test(finding[0]!)) continue;
+    const sources = [...finding[0]!.matchAll(/\bPLAN\.md:([1-9]\d*(?:[-–][1-9]\d*)?)\b/g)];
+    if (sources.length !== 1 || source && sources[0]![1] !== source) continue;
+    const questions = fields.flatMap((line, at) => line === `Question D${decision[1]}:` ? [at] : []);
+    if (questions.length !== 1 || clean(fields[questions[0]! + 1] ?? '') !== clean(title)) continue;
+    const offered = fields.filter(line => /^Options:/.test(line));
+    if (offered.length !== 1) continue;
+    const labels = [...offered[0]!.slice('Options:'.length).matchAll(/(?:^|\s)([A-D])[).:]\s+(.+?)(?=\s+[A-D][).:]\s+|$)/g)];
+    if (labels.length !== q.options.length || labels.some((label, index) => label[1] !== String.fromCharCode(65 + index))) continue;
+    const comparisons = body.filter(t => t.type === 'table').filter(table => {
+      if (table.type !== 'table') return false;
+      const headers = table.header.map(c => clean(c.text));
+      if (JSON.stringify(headers) !== JSON.stringify(['Choice', 'Current', ...q.options.map((_, at) => String.fromCharCode(65 + at))])) return false;
+      const rows = table.rows.filter(row => new RegExp(`^${id}\\b`).test(clean(row[0]!.text)));
+      if (rows.length !== 1 || !rows[0]!.every(cell => clean(cell.text))) return false;
+      const optionColumns = q.options.map(option => {
+        const scores = labels.map((label, at) => {
+          const direct = labelScore(option.label, label[2]!);
+          // Extra native detail must also exist in that option's saved grid
+          // column; a shared caption cannot authorize an added action.
+          const extendsCaption = clean(option.label).toLowerCase().startsWith(clean(label[2]!).toLowerCase() + ' ');
+          return direct || extendsCaption && labelScore(option.label, rows[0]![at + 2]!.text) || 0;
+        });
+        const best = Math.max(...scores);
+        return best > 0 && scores.filter(score => score === best).length === 1 ? scores.indexOf(best) : -1;
+      });
+      return !optionColumns.includes(-1) && new Set(optionColumns).size === q.options.length;
+    });
+    if (comparisons.length === 1) matches.push(`record:${id}`);
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/** Fixture-local identity memory prevents re-asks from inflating the floor,
+ * even after a reopened row replaces its earlier saved question. */
+export function createEngBatchingIssueCounter(readPlan: () => string,
+  isSetup: (fp: AskUserQuestionFingerprint) => boolean) {
+  const seen = new Set<string>();
+  const trace: Array<{ signature: string; issue: string; source: 'native' | 'saved-ledger' }> = [];
+  return {
+    trace,
+    isReviewAUQ(fp: AskUserQuestionFingerprint, priorCalls: readonly NativePlanQuestionCall[] = []): boolean {
+      const call = fp.nativeCall;
+      if (!call || fp.signature !== `${call.sessionId}:${call.toolUseId}` ||
+          (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0) ||
+          priorCalls.some(prior => prior.sessionId !== call.sessionId || prior.toolUseId === call.toolUseId) ||
+          !completedDecision(call, 0, Date.now()) || call.questions.length !== 1 || isSetup(fp)) return false;
+      const q = call.questions[0]!;
+      if (fp.options.length !== q.options.length || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label)) return false;
+      const native = batchingIssueNumber(call);
+      if (native && !isEngBatchingIssueAUQ(fp, priorCalls)) return false;
+      const issue = native ?? recordedBatchingIssue(call, readPlan());
+      if (!issue || seen.has(issue)) return false;
+      seen.add(issue); trace.push({ signature: fp.signature, issue, source: native ? 'native' : 'saved-ledger' });
+      return true;
+    },
+  };
 }
 
 /** A named required test can specify characterization without an "Add" prefix. */

@@ -153,7 +153,45 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
   if (!question.trim() || !current(question)) return null;
   const title = question.split('\n')[0]!;
   const tokens = marked.lexer(savedPlan);
-  const namedSource = tokens.some(t => t.type === 'paragraph' && /(?:^|\n)Source plan:\s*PLAN\.md\b/.test(plain(t.raw)));
+  // A current document may declare its source once and cite that plan's
+  // sections in each row. An unrelated mention elsewhere is not provenance.
+  const currentContext = (index: number) => {
+    const headings: Array<{ depth: number; text: string }> = [];
+    for (const token of tokens.slice(0, index)) if (token.type === 'heading') {
+      while (headings.length && headings.at(-1)!.depth >= token.depth) headings.pop();
+      headings.push({ depth: token.depth, text: plain(token.text) });
+    }
+    return headings.every(heading => current(heading.text));
+  };
+  const sourceRecords = tokens.flatMap((token, index) => {
+    if (token.type !== 'paragraph' || !currentContext(index) || /^[`"'“‘]/.test(token.raw.trim())) return [];
+    const text = plain(token.raw);
+    if (!current(text) && !/^Source(?: plan)?:/i.test(text)) return [];
+    return [...text.matchAll(/(?:^|[.!?]\s+|\n)(?:Source(?: plan)?|Plan under review):\s*([\w./-]+)/gi)]
+      .map(match => match[1]!.replace(/[.;,]+$/, ''));
+  });
+  const namedSource = sourceRecords.length === 1 && sourceRecords[0] === 'PLAN.md';
+  const inheritedSource = (evidence: string) => namedSource &&
+    /\bEvidence:\s*plan text\b|\bplan\s+§\s*\S|\bplan\s+sections?\s+\S|^Plan(?: contract)?:\s*\S/i.test(evidence);
+  // The skill requires complete per-option facts, not a GFM option table.
+  // Code and quoted children cannot supply a prose/list option's fields.
+  const proseOption = (parts: readonly any[]) => {
+    const paragraphs = parts.filter(part => part.type === 'paragraph' || part.type === 'text');
+    const first = paragraphs[0];
+    if (!first) return null;
+    const text = paragraphs.map(part => plain(part.raw)).join('\n').trim();
+    const label = first.tokens?.[0]?.type === 'strong' ? plain(first.tokens[0].text)
+      : /^([A-D][).:]\s+.+?)(?:\s+[—–-]\s+|\.\s+)/i.exec(text)?.[1];
+    if (!label || !/^[A-D][).:]\s+\S/i.test(label)) return null;
+    const details = text.slice(label.length).replace(/^[.\s—–-]+/, '');
+    const facts = [...details.matchAll(/(?:^|[.;]\s+|\n\s*)(Effort(?: estimate)?|Risk(?: level)?|Pros|Cons)\s*:?\s+/gi)];
+    const fields = Object.fromEntries(facts.map((fact, index) => [fact[1]!.split(' ')[0]!.toLowerCase(),
+      details.slice(fact.index! + fact[0].length, facts[index + 1]?.index ?? details.length).trim()]));
+    const complete = facts.length === 4 && Object.keys(fields).length === 4 && current(text) &&
+      ['effort', 'risk', 'pros', 'cons'].every(field => fields[field] && current(fields[field]!)) &&
+      /^(?:S|M|L|XL)\b/i.test(fields.effort!) && /^(?:low|medium|high)\b/i.test(fields.risk!);
+    return { label, summary: text, complete };
+  };
   const selector = (label: string) => /^([A-D])[.):]\s*/i.exec(plain(label))?.[1]?.toUpperCase();
   const labelWords = (label: string) => (option(label).toLowerCase().match(/[a-z][a-z0-9_]{3,}/g) ?? [])
     .filter(word => !['recommended', 'option', 'only', 'plan', 'planned', 'written', 'keep', 'same', 'full'].includes(word));
@@ -173,7 +211,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
       if (!id || !mentions(title, id) || !/^(?:unresolved|reopened|approved|deferred|declined)\b/i.test(read('status')) ||
           !read('current') || !read('proposed') || read('current') === read('proposed') ||
           !current(read('evidence')) || !current(read('proposed'))) continue;
-      if (!/\bPLAN\.md\b/.test(read('evidence')) && !(namedSource && /\bEvidence:\s*plan text\b/i.test(read('evidence')))) continue;
+      if (!/\bPLAN\.md\b/.test(read('evidence')) && !inheritedSource(read('evidence'))) continue;
       const anchors = tokens.flatMap((t, i) =>
         (t.type === 'heading' && current(plain(t.text)) && mentions(plain(t.text), id)) ||
         (t.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(t.raw)) && mentions(plain(t.raw), id)) ? [i] : []);
@@ -183,6 +221,18 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
         let end = start + 1;
         while (end < tokens.length && !(tokens[end]!.type === 'heading' &&
           (anchor.type !== 'heading' || (tokens[end] as any).depth <= anchor.depth))) end++;
+        const section = tokens.slice(start + 1, end);
+        if (currentContext(start) && currentContext(tokens.indexOf(table))) {
+          const options = section.flatMap(token => token.type === 'list'
+            ? token.items.map(item => proseOption(item.tokens))
+            : token.type === 'paragraph' ? [proseOption([token])] : []).filter(option => option !== null);
+          const matched = q.options.map(offered => options.flatMap((saved, index) =>
+            saved!.complete && sameOption(offered.label, saved!.label, saved!.summary) ? [index] : []));
+          if (options.length === q.options.length && matched.every(found => found.length === 1) &&
+              new Set(matched.flat()).size === q.options.length) {
+            matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
+          }
+        }
         for (const comparison of tokens.slice(start + 1, end)) {
           if (comparison.type !== 'table') continue;
           const headers = comparison.header.map(c => plain(c.text));
