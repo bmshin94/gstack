@@ -4,6 +4,7 @@ import path from 'node:path';
 import {ALL_HOST_CONFIGS} from '../hosts';
 import {HOST_PATHS, type TemplateContext} from '../scripts/resolvers/types';
 import {generatePreamble} from '../scripts/resolvers/preamble';
+import {generateAskUserFormat} from '../scripts/resolvers/preamble/generate-ask-user-format';
 import {generateGBrainContextLoad} from '../scripts/resolvers/gbrain';
 import {E2E_TOUCHFILES, LLM_JUDGE_TOUCHFILES, selectTests} from './helpers/touchfiles';
 
@@ -39,11 +40,13 @@ test('every host expands its real bootstrap after the mandatory entry gate', () 
 });
 
 test('entry binds a current target and delays bootstrap until scope resolves', () => {
-  expect(scope).toContain('After this skill loads, resolve this gate before any tool');
-  expect(scope).toContain('including preamble and context/brain lookup.');
-  expect(scope).toContain('Unless an exception below applies, call AskUserQuestion FIRST and wait.');
-  expect(scope).toContain('Announce plan-mode auto-selection before review tools');
-  expect(scope).toContain('A fresh declaration for this invocation may precede skill loading');
+  expect(scope).toContain('Before tools or preamble, resolve from provided messages, listed tools and explicit host metadata only');
+  expect(scope).toContain('Do not probe for session state');
+  expect(scope).toContain('When no exception above applied:');
+  expect(scope).toContain('First tool call = AskUserQuestion (tool_use). Send this exact menu and wait');
+  expect(scope).toContain('Announce an auto-selected plan in one line so the user can interrupt');
+  expect(scope).toContain('Reuse a fresh announcement made before skill loading for this invocation while the target remains clear');
+  expect(scope).toContain('Clarify ambiguous, conflicting, quoted or stale targets; reuse a still-valid authorized target');
   expect(scope.match(/\*\*Startup sequence\*\*/g)).toHaveLength(1);
   const startup = scope.slice(scope.indexOf('**Startup sequence**'), scope.indexOf('{{PREAMBLE}}'));
   const order = ['after target selection', 'Preamble', 'Context Recovery', 'Brain Context',
@@ -58,10 +61,36 @@ test('existing plan selection exceptions and unseeded hard STOP remain explicit'
   expect(scope).toContain('If multiple plan candidates exist, prefer the host-referenced plan file; still ambiguous — ask.');
   expect(scope).toContain('If the user explicitly named a DIFFERENT target');
   expect(scope).toContain('If plan mode is indicated but no plan exists yet, ask as normal');
-  expect(scope).toContain('First tool call = AskUserQuestion (tool_use). Confirm what to review.');
-  expect(scope).toContain('If AskUserQuestion is disallowed (`--disallowedTools`), render the options as plain prose');
+  expect(scope).toContain('First tool call = AskUserQuestion (tool_use). Send this exact menu and wait');
+  expect(scope).toContain('if unavailable, disallowed (`--disallowedTools`) or failed, send the menu as plain prose and STOP');
+  expect(scope).toContain('If a failed call may have surfaced, keep it pending; do not duplicate it');
   expect(scope).toContain('A) The current branch diff — the work in progress on this branch.\nB) A plan or design doc I\'ll paste or point you to.\nC) A specific file, directory, or path.');
   expect(scope).toContain('Reply with A, B, or C. STOP and wait for the answer.');
+});
+
+test('Eng alone defers canonical question rules until scope and keeps one counter across later stages', () => {
+  const exception = 'For the initial Scope gate, use its selector algorithm instead of this format and routing. Everything below applies only after target selection.';
+  const continuous = 'D-numbering: exclude the initial target menu. Start `D1` at the first later brief; increment through preamble, prerequisite, inline /office-hours, preparation, complexity and review. Never reset between stages or on return. This is a model-maintained counter.';
+  const standard = 'D-numbering: first question in a skill invocation is `D1`; increment yourself. This is a model-level instruction, not a runtime counter.';
+  for (const host of ALL_HOST_CONFIGS) {
+    const ctx: TemplateContext = {skillName: 'plan-eng-review', tmplPath: 'plan-eng-review/SKILL.md.tmpl',
+      host: host.name, paths: HOST_PATHS[host.name]!};
+    const format = generateAskUserFormat(ctx);
+    expect(format.split(exception)).toHaveLength(2);
+    expect(format.indexOf(exception)).toBeLessThan(format.indexOf('Branch on the skill-start STATUS lines'));
+    expect(format.split(continuous)).toHaveLength(2);
+    expect(format).not.toContain(standard);
+    // Only the bootstrap exception and counter differ from the other plan
+    // reviews: all actual STATUS, failure, consent and format rules survive.
+    expect(format.replace(exception + '\n\n', '').replace(continuous, standard))
+      .toBe(generateAskUserFormat({...ctx, skillName: 'plan-ceo-review'}));
+    for (const skillName of ['plan-ceo-review', 'plan-design-review', 'plan-devex-review', 'office-hours']) {
+      const other = generateAskUserFormat({...ctx, skillName});
+      expect(other).toContain(standard);
+      expect(other).not.toContain(exception);
+      expect(other).not.toContain(continuous);
+    }
+  }
 });
 
 test('the regression selects the same paid owners as the Eng template', () => {

@@ -4420,7 +4420,10 @@ describe('scope-gate exceptions drift-guard', () => {
     expect(eng).toContain('still ambiguous — ask');
     expect(eng).toContain('When in doubt, ask — the gate is the default');
     expect(engRaw.indexOf('their choice wins')).toBeLessThan(engRaw.indexOf('Announce an auto-selected plan'));
-    expect(engRaw).toContain('Use an AskUserQuestion variant already in the tool list');
+    const engMd = fs.readFileSync(path.join(ROOT, 'plan-eng-review/SKILL.md'), 'utf8');
+    const transport = engMd.indexOf('Choose listed, enabled MCP AskUserQuestion, otherwise listed native');
+    expect(transport).toBeGreaterThan(engMd.indexOf(END_MARKER));
+    expect(transport).toBeLessThan(engMd.indexOf('## Preamble (after scope gate)'));
   });
 
   test('exceptions block carries the announcement string the PTY detectors pin', () => {

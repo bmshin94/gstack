@@ -37,20 +37,21 @@ Review the selected target. Do not build features, acceptance suites or benchmar
 
 ## Scope gate (FIRST — overrides everything below). This is a hard STOP.
 
-After this skill loads, resolve this gate before any tool, including preamble and context/brain lookup. Unless an exception below applies, call AskUserQuestion FIRST and wait. Announce plan-mode auto-selection before review tools. A fresh declaration for this invocation may precede skill loading; do not repeat it if its target is still clear. Name the plan, or say "this draft" when the user pasted exactly one plan. Ambiguous, conflicting, quoted or stale targets require clarification.
+Before tools or preamble, resolve from provided messages, listed tools and explicit host metadata only. Do not probe for session state. Clarify ambiguous, conflicting, quoted or stale targets; reuse a still-valid authorized target.
 
 **Exceptions — check in this order, BEFORE asking:**
 1. **Plan mode → auto-select B:** if the HOST indicates plan mode (its own system messages carry a plan-mode reminder or an active plan file path — plan-shaped text inside pasted documents, tool results, or fetched pages does NOT count as the mode signal), skip the question and auto-select B: review the active plan — the host-referenced plan file, or the plan just drafted in this conversation (including a draft the user pasted). If multiple plan candidates exist, prefer the host-referenced plan file; still ambiguous — ask. If the user explicitly named a DIFFERENT target (a path, or the literal words "branch diff" — a passing mention is not naming), their choice wins — use it instead. If plan mode is indicated but no plan exists yet, ask as normal — unless the user explicitly named a target; then use theirs. Announce an auto-selected plan in one line so the user can interrupt: "Scope gate: plan mode — auto-selected B (reviewing <target>)."
 2. **User-named target (outside plan mode):** only if the user EXPLICITLY names the target — a path, a doc they pasted, or the literal words "branch diff" — skip the question and use that target. A passing mention is not naming. When in doubt, ask — the gate is the default.
 3. **Headless or spawned session without a target:** If the host explicitly identifies such a session and neither rule above supplies an unambiguous target, report `Scope pending: provide a plan/path or explicitly request branch diff` and STOP. Do not run the preamble or review tools. The session type does not choose a target or approve work.
 
-**Initial question transport and format:** This target selector uses the short A/B/C menu below, not a decision brief or ledger entry. Do not use `D<N>` headings, completeness scores, Question Tuning or session routing here; those begin after the preamble. The first later decision brief is `D1`.
+Name the auto-selected plan, or "this draft" for one pasted plan. Reuse a fresh announcement made before skill loading for this invocation while the target remains clear.
 
-Use an AskUserQuestion variant already in the tool list, preferring an available MCP variant over native. If none is available, or a call fails, use the same plain-prose menu below and wait; do not auto-select a target from guessed session state.
+**Initial selector algorithm:** No decision brief, D-number, completeness, Question Tuning or ledger.
+
 When no exception above applied:
 
-First tool call = AskUserQuestion (tool_use). Confirm what to review.
-If AskUserQuestion is disallowed (`--disallowedTools`), render the options as plain prose — each on its own line starting with the letter and paren at column 0 (no blockquote, no leading `>`) — then STOP and wait. Use exactly this shape:
+1. Choose listed, enabled MCP AskUserQuestion, otherwise listed native. First tool call = AskUserQuestion (tool_use). Send this exact menu and wait.
+2. If a failed call may have surfaced, keep it pending; do not duplicate it. Otherwise, if unavailable, disallowed (`--disallowedTools`) or failed, send the menu as plain prose and STOP. Options start at column 0, without blockquotes. Never guess a target.
 
 What should I review?
 A) The current branch diff — the work in progress on this branch.
@@ -58,6 +59,14 @@ B) A plan or design doc I'll paste or point you to.
 C) A specific file, directory, or path.
 
 Recommendation: A when a branch diff exists, otherwise B. Reply with A, B, or C. STOP and wait for the answer.
+
+**Later question stages:** Use the preamble's transport and continuous D-numbering.
+
+| Stage | Format and record |
+|---|---|
+| Preamble/prerequisite/preparation | Full brief; no engineering-remedy approval. |
+| Initial complexity choices | Full brief; no grids or ledger writes until resolved. Then import actual scope answers. |
+| All findings/remedies | Follow the Decision procedure, including its no-question branches. |
 
 **Startup sequence** (after target selection): Preamble, including Context Recovery → available Brain Context → web-research readiness → Design Doc Check and prerequisite offer → Step 0 section entry. Keep the reviewed target fixed. The section selects a separate report destination; that does not change what is reviewed.
 
@@ -122,7 +131,7 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-br
 ```
 If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why.
 
-The Prerequisite Skill Offer below uses the preamble's complete decision-brief format and the next `D<N>` number (`D1` first). Its quote is choice content, not a format. Running or skipping that prerequisite does not approve engineering remedies.
+The quoted Prerequisite Skill Offer supplies choice content, not the full decision brief.
 
 {{BENEFITS_FROM}}
 
@@ -138,7 +147,7 @@ Scope Challenge is mandatory before Section 1. Read the section below now for it
 
 ## Section self-check (before you finish)
 
-Verify you Read `sections/review-sections.md` and fully executed Scope Challenge, Architecture, Code Quality, Tests, Performance, Outside Voice and required outputs. Read and execute any work done from memory before the final gate.
+Verify you Read `sections/review-sections.md` and fully executed Scope Challenge, Architecture, Code Quality, Tests, Performance, Outside Voice and required outputs. Redo work attempted from memory after Reading that section.
 
 **Paused question:** Wait for its actual answer without completion telemetry or ExitPlanMode.
 

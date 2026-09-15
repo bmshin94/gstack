@@ -38,19 +38,27 @@ test('unseeded, explicit-target and early announcement rules remain authoritativ
   for (const skill of skills) {
     const template = read(skill);
     const gate = template.slice(template.indexOf('## Scope gate'), template.indexOf('{{PREAMBLE}}'));
-    expect(gate).toContain('After this skill loads, resolve this gate before any tool');
-    expect(gate).toContain('Announce plan-mode auto-selection before review tools');
+    const entry = skill === 'plan-eng-review'
+      ? 'Before tools or preamble, resolve from provided messages, listed tools and explicit host metadata only'
+      : 'After this skill loads, resolve this gate before any tool';
+    const announce = skill === 'plan-eng-review'
+      ? 'Announce an auto-selected plan in one line so the user can interrupt'
+      : 'Announce plan-mode auto-selection before review tools';
+    expect(gate).toContain(entry);
+    expect(gate).toContain(announce);
     expect(gate).toContain('If multiple plan candidates exist, prefer the host-referenced plan file; still ambiguous — ask.');
     expect(gate).toContain('If the user explicitly named a DIFFERENT target');
     expect(gate).toContain('If plan mode is indicated but no plan exists yet, ask as normal');
     expect(gate).toContain('When no exception above applied:');
-    expect(gate).toContain('First tool call = AskUserQuestion (tool_use). Confirm what to review.');
+    expect(gate).toContain(skill === 'plan-eng-review'
+      ? 'First tool call = AskUserQuestion (tool_use). Send this exact menu and wait'
+      : 'First tool call = AskUserQuestion (tool_use). Confirm what to review.');
     expect(gate).toContain('STOP and wait for the answer');
     for (const host of ALL_HOST_CONFIGS) {
       const ctx: TemplateContext = {skillName: skill, tmplPath: `${skill}/SKILL.md.tmpl`, host: host.name,
         paths: HOST_PATHS[host.name]!, preambleTier: 3, interactive: true};
       const expanded = template.replace('{{PREAMBLE}}', generatePreamble(ctx));
-      expect(expanded.indexOf('Announce plan-mode auto-selection before review tools')).toBeLessThan(expanded.indexOf('```bash'));
+      expect(expanded.indexOf(announce)).toBeLessThan(expanded.indexOf('```bash'));
       expect(expanded.indexOf('STOP and wait for the answer')).toBeLessThan(expanded.indexOf('```bash'));
       expect(expanded.indexOf(recovery(template))).toBeGreaterThan(expanded.indexOf('```bash'));
     }

@@ -2,7 +2,7 @@
 <!-- Regenerate: bun run gen:skill-docs -->
 ## Review preparation
 
-Read the Decision procedure, then execute Scope Challenge once before Sections 1–4. The initial complexity selector has its own brief and wait rule; the full grid/save procedure governs subsequent findings and remedy choices.
+Read the Decision procedure, then execute Scope Challenge once before Sections 1–4. Question stages distinguish its initial selectors from later findings.
 
 ## Review record and write policy
 
@@ -242,7 +242,7 @@ At 8+ files or 2+ new classes/services, STOP before Section 1. Use the preamble'
 2. Compare original and smaller class/module arrangements with the same feature choices. Preserve contracts and approved security, error handling, test and performance fixes in both; leave unapproved fixes pending.
 3. Ask which arrangement to use. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
 
-These initial scope selectors do not use the later grid or ledger writes. Wait for actual answers before applying changes. Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Take the same route if complexity did not trigger the gate.
+These initial scope selectors do not use the later grid or ledger writes. Wait for actual answers before applying changes. Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Without a complexity gate, proceed to findings.
 
 **Critical: Once the user accepts or rejects a scope reduction recommendation, commit fully.** Do not re-argue for smaller scope during later review sections. Do not silently reduce scope or skip planned components.
 
@@ -901,7 +901,7 @@ Prepare this from the final decision record and outputs for the saved review; an
 - Unresolved decisions: ___ in this review
 - Outside voice: recorded provider, completed / unavailable / disabled / skipped (reason)
 - Parallelization: ___ lanes, ___ parallel / ___ sequential
-- Lake Score: X/Y resolved coverage choices selected the complete (10/10) option. Exclude choices that differ in kind and unanswered choices; use N/A when Y is zero.
+- Lake Score: X/Y. Y counts answered coverage choices; X counts those selecting 10/10. Exclude choices that differ in kind; use N/A when Y is zero.
 
 ## Plan File Review Report
 
