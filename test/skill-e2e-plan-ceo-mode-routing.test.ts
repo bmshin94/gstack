@@ -43,7 +43,7 @@ import {
   type AskUserQuestionFingerprint,
   type ClaudePtySession,
 } from './helpers/claude-pty-runner';
-import { ceoModeSubmissionInput, hasNativePostAnswerCeoPosture, nextCeoModeNavigation, nextCeoPostureContinuation } from './helpers/ceo-mode-option';
+import { ceoExpansionPacingChoice, ceoExpansionPacingReady, ceoModeSubmissionInput, hasNativePostAnswerCeoPosture, nextCeoModeNavigation, nextCeoPostureContinuation } from './helpers/ceo-mode-option';
 import { createPlanCountFixture } from './helpers/plan-count-fixture';
 import { readPlanCountTranscript, type NativePublicToolEvent, type PlanCountTranscript } from './helpers/plan-count-transcript';
 import { readPendingQuestion, pendingQuestionRecorderStatus } from './helpers/plan-count-pending-question';
@@ -64,6 +64,10 @@ const CASES: ModeCase[] = [
 
 // Both cases review the same plan, available before the slash command starts.
 // The checkout supplying skills must not become the implicit review target.
+// The EXPANSION actor may preserve a full independent per-item walkthrough once.
+// It never chooses narrowing/batching or grants scope through this pacing control.
+const EXPANSION_PACING_CALLS = 1;
+
 const PLAN = [
   '# Plan: Add saved project views',
   '',
@@ -218,6 +222,8 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
           let downstreamSnapshot = '';
           let transcript: PlanCountTranscript = { status: 'missing', calls: [], assistantMessages: [] };
           let continuedQuestion = false;
+          let pacingChoice: ReturnType<typeof ceoExpansionPacingChoice> = null;
+          let pacingCalls = 0;
           const seenDownstream = new Set<string>();
           const submittedModePackets = new Set<string>();
           while (Date.now() - start < budgetMs) {
@@ -243,6 +249,19 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
             if (modeSubmit !== null) { session.send(modeSubmit); continue; }
             const pendingQuestion = readPendingQuestion(session.pendingQuestionFile, fixture.cwd,
               session.hermeticConfigDir, selectionStartedAt, transcript);
+            if (pacingChoice && !ceoExpansionPacingReady(currentInput, transcript, pacingChoice, publicTools)) continue;
+            if (c.mode === 'SCOPE EXPANSION' && !continuedQuestion) {
+              const choice = ceoExpansionPacingChoice(currentInput, transcript, selectionStartedAt, pendingQuestion);
+              if (choice) {
+                if (!choice.index || pacingCalls >= EXPANSION_PACING_CALLS) throw new Error('Unsupported or repeated CEO pacing menu; no additional answer authorized');
+                pacingChoice = choice; pacingCalls++;
+                const question = capturePlanCountQuestion(currentInput, new Set(), 0, false, choice.call)!;
+                const input = planCountQuestionInput(currentInput, question, choice.index);
+                if (input.includes('\r')) await selectPtyNumberedOption(session, choice.index);
+                else session.send(input);
+                continue;
+              }
+            }
             const continuation = nextCeoPostureContinuation(currentInput, transcript,
               c.mode, selectionStartedAt, seenDownstream, continuedQuestion, session.visibleText(), pendingQuestion);
             if (continuation !== null) {

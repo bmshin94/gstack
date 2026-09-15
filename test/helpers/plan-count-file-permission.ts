@@ -82,17 +82,22 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
   const pathOnly = headerPath && (path.isAbsolute(headerPath) || /^\.\.?[/\\]/.test(headerPath));
   // A crop can start on the single native rule immediately above the diff.
   let diff = pathOnly ? text.slice(header![0].length) : text.replace(/^[╌─━]{3,}[ \t]*\n/, '');
-  // A wrapped unchanged row has no +/- marker. Its visible tail must belong
-  // to the preceding line of the exact current owned file, not arbitrary prose.
-  let continuation = /^( +)([^+\-\s][^\n]*)\n(?=( {0,3}[1-9]\d*  ))/.exec(diff);
-  // A normal numbered diff row is not a newly recognized wrapped tail.
-  if (continuation && continuation[1]!.length !== 6 &&
-      /^[1-9]\d* [ +\-]/.test(continuation[2]!)) continuation = null;
-  // Preserve the existing six-space crop. Other native gutters must align
-  // with the next unchanged row's actual padding and line-number width.
-  if (continuation && continuation[1]!.length !== 6 &&
-      continuation[1]!.length !== continuation[3]!.length) return undefined;
-  if (continuation) diff = diff.slice(continuation[0].length);
+  // A crop may start partway through several soft-wrapped pieces of one
+  // unchanged source line. Anchor them to the next old-file line number:
+  // an added row alone has only a new-file coordinate and cannot do this.
+  const nextRow = /^( {0,3}([1-9]\d*) [ -])/m.exec(diff);
+  let continuation: { tail: string; nextLine: number } | undefined;
+  if (nextRow && nextRow.index > 0 && !/^(?: {0,3}[1-9]\d* [ +\-]| {4,5}[+\-])/.test(diff)) {
+    const rows = diff.slice(0, nextRow.index).split('\n').slice(0, -1);
+    // Preserve the older single six-space crop. New multirow crops derive
+    // their gutter from numeric padding, line-number width and diff marker.
+    const gutter = rows.length === 1 && /^ {6}[^+\-\s]/.test(rows[0]!)
+      ? 6 : nextRow[1]!.length;
+    const tails = rows.map(row => row.startsWith(' '.repeat(gutter)) ? row.slice(gutter) : '');
+    if (tails.some(tail => !tail.trim() || /^\s*[+\-]/.test(tail))) return undefined;
+    continuation = { tail: tails.map(tail => tail.trimEnd()).join(''), nextLine: Number(nextRow[2]) };
+    diff = diff.slice(nextRow.index);
+  }
   if (!/^(?:\s*\d+\s+[ +\-]?| {4,5}[+\-])/.test(diff) || /[☐□]|^\s*(?:>|`{3}|~{3})/m.test(text)) return undefined;
   const prompt = [...text.matchAll(/^ {0,3}Do you want to make this edit to ([^\n?\/\\]+)\?[ \t]*\n([\s\S]*)$/gm)].at(-1);
   if (!prompt || (text.slice(0, prompt.index).match(/^\s*\d+\s+/gm)?.length ?? 0) < 2) return undefined;
@@ -105,7 +110,7 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
   const target = path.join(directory, prompt[1]!.trim());
   if (continuation) {
     if (target !== expected) return undefined;
-    const nextLine = Number(continuation[3]!.trim());
+    const nextLine = continuation.nextLine;
     if (!Number.isSafeInteger(nextLine) || nextLine < 2) return undefined;
     try {
       const stat = fs.lstatSync(target);
@@ -118,7 +123,7 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
         const length = fs.readSync(fd, bytes, 0, bytes.length, 0);
         if (length !== opened.size || length > MAX_RECORD_BYTES) return undefined;
         const prior = bytes.subarray(0, length).toString('utf8').split(/\r?\n/)[nextLine - 2];
-        if (!prior?.trimEnd().endsWith(continuation[2]!.trimEnd())) return undefined;
+        if (!prior?.trimEnd().endsWith(continuation.tail)) return undefined;
       } finally { fs.closeSync(fd); }
     } catch { return undefined; }
   }

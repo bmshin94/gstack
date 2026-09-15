@@ -167,7 +167,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
     if (token.type !== 'paragraph' || !currentContext(index) || /^[`"'“‘]/.test(token.raw.trim())) return [];
     const text = plain(token.raw);
     if (!current(text) && !/^Source(?: plan)?:/i.test(text)) return [];
-    return [...text.matchAll(/(?:^|[.!?]\s+|\n)(?:Source(?: plan)?|Plan under review):\s*([\w./-]+)/gi)]
+    return [...text.matchAll(/(?:^|[.!?]\s+|\n)(?:Source(?: plan)?|Plan under review|(?:Reviewed|Review target|Input) plan):\s*([\w./-]+)/gi)]
       .map(match => match[1]!.replace(/[.;,]+$/, ''));
   });
   const namedSource = sourceRecords.length === 1 && sourceRecords[0] === 'PLAN.md';
@@ -181,23 +181,44 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
     if (!first) return null;
     const text = paragraphs.map(part => plain(part.raw)).join('\n').trim();
     const label = first.tokens?.[0]?.type === 'strong' ? plain(first.tokens[0].text)
-      : /^([A-D][).:]\s+.+?)(?:\s+[—–-]\s+|\.\s+)/i.exec(text)?.[1];
+      : /^([A-D][).:]\s+.+?)\s+[—–-]\s+/i.exec(text)?.[1]
+        ?? /^([A-D][).:]\s+.+?)[.:]\s+/i.exec(text)?.[1];
     if (!label || !/^[A-D][).:]\s+\S/i.test(label)) return null;
-    const details = text.slice(label.length).replace(/^[.\s—–-]+/, '');
-    const facts = [...details.matchAll(/(?:^|[.;]\s+|\n\s*)(Effort(?: estimate)?|Risk(?: level)?|Pros|Cons)\s*:?\s+/gi)];
+    const details = text.slice(label.length).replace(/^[.:\s—–-]+/, '');
+    const facts = [...details.matchAll(/(?:^|[.,;]\s+|\n\s*)(Effort(?: estimate)?|Risk(?: level)?|Pros|Cons)\s*:?\s+/gi)];
     const fields = Object.fromEntries(facts.map((fact, index) => [fact[1]!.split(' ')[0]!.toLowerCase(),
       details.slice(fact.index! + fact[0].length, facts[index + 1]?.index ?? details.length).trim()]));
     const complete = facts.length === 4 && Object.keys(fields).length === 4 && current(text) &&
       ['effort', 'risk', 'pros', 'cons'].every(field => fields[field] && current(fields[field]!)) &&
       /^(?:S|M|L|XL)\b/i.test(fields.effort!) && /^(?:low|medium|high)\b/i.test(fields.risk!);
-    return { label, summary: text, complete };
+    return { label, summary: text, bindingText: label + ' ' + details.slice(0, facts[0]?.index ?? details.length), complete };
   };
   const selector = (label: string) => /^([A-D])[.):]\s*/i.exec(plain(label))?.[1]?.toUpperCase();
   const labelWords = (label: string) => (option(label).toLowerCase().match(/[a-z][a-z0-9_]{3,}/g) ?? [])
     .filter(word => !['recommended', 'option', 'only', 'plan', 'planned', 'written', 'keep', 'same', 'full'].includes(word));
-  const sameOption = (offered: string, saved: string, summary: string) => option(offered).toLowerCase() === option(saved).toLowerCase() ||
+  // Terminal punctuation and a status suffix are presentation, not a choice.
+  const caption = (value: string) => option(value).replace(/^[A-D]:\s*/i, '').replace(/\s*\((?:plan )?as (?:written|planned)\)\.?$/i, '').replace(/[.:]$/, '').trim();
+  const words = (value: string) => caption(value).toLowerCase().match(/[a-z0-9_]+/g) ?? [];
+  const completeCaption = (offered: string, saved: string, summary: string) => {
+    const a = selector(offered), b = selector(saved);
+    if (a && a !== b) return false;
+    const left = words(offered), right = words(saved + ' ' + summary);
+    // Abbreviations may omit detail, but an unlettered saved caption cannot
+    // add an action or narrow its scope. A terminal 'in place' is presentation.
+    const savedCaption = words(caption(saved).replace(/ in place$/i, ''));
+    if (!a && savedCaption.some(word => !left.includes(word))) return false;
+    // A lettered grid may abbreviate a terminal "only" qualifier; never
+    // discard an action's internal scope or a negation while binding it.
+    if (a && left.at(-1) === 'only' && !right.includes('only')) left.pop();
+    if (['no', 'not', 'never', 'without'].some(word => left.includes(word) !== right.includes(word))) return false;
+    if (!left.length || (!a && left.length < 2) || left[0] !== right[0]) return false;
+    let cursor = 0;
+    return left.every(word => { const index = right.indexOf(word, cursor); cursor = index + 1; return index >= 0; });
+  };
+  const sameOption = (offered: string, saved: string, summary: string) => caption(offered).toLowerCase() === caption(saved).toLowerCase() ||
     Boolean(selector(offered) && selector(offered) === selector(saved) &&
-      labelWords(offered).some(word => labelWords(saved + ' ' + summary).includes(word)));
+      labelWords(offered).some(word => labelWords(saved + ' ' + summary).includes(word))) ||
+    (!selector(offered) && completeCaption(offered, saved, summary));
   const matches: Array<{ ledgerId: string; phase: string }> = [];
   for (const table of tokens.filter(t => t.type === 'table')) {
     if (table.type !== 'table') continue;
@@ -227,7 +248,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
             ? token.items.map(item => proseOption(item.tokens))
             : token.type === 'paragraph' ? [proseOption([token])] : []).filter(option => option !== null);
           const matched = q.options.map(offered => options.flatMap((saved, index) =>
-            saved!.complete && sameOption(offered.label, saved!.label, saved!.summary) ? [index] : []));
+            saved!.complete && sameOption(offered.label, saved!.label, selector(offered.label) ? saved!.summary : saved!.bindingText) ? [index] : []));
           if (options.length === q.options.length && matched.every(found => found.length === 1) &&
               new Set(matched.flat()).size === q.options.length) {
             matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
@@ -236,6 +257,36 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string): { 
         for (const comparison of tokens.slice(start + 1, end)) {
           if (comparison.type !== 'table') continue;
           const headers = comparison.header.map(c => plain(c.text));
+          // The declared commitment grid transposes the option table: each
+          // complete alternative is a column. Its saved effort/risk row and
+          // behavioral cells bind the owned native pros/cons for that option.
+          const commitment = headers.findIndex(h => /^Commitment$/i.test(h));
+          const source = headers.findIndex(h => /^Source(?:\b|\/)/i.test(h));
+          const baseline = headers.findIndex(h => /^Current$/i.test(h));
+          const optionColumns = headers.flatMap((header, index) => selector(header) ? [index] : []);
+          if (commitment >= 0 && source >= 0 && baseline >= 0 &&
+              currentContext(start) && currentContext(tokens.indexOf(table)) && currentContext(tokens.indexOf(comparison)) &&
+              headers.length === q.options.length + 3 &&
+              optionColumns.length === q.options.length &&
+              new Set(optionColumns.map(i => selector(headers[i]!))).size === q.options.length) {
+            // GFM permits a following un-delimited paragraph as a padded row.
+            // Only explicit grid rows supply cells; a current prose footer
+            // remains context and cannot fill a missing value in a real row.
+            const rawRows = comparison.raw.trimEnd().split('\n').slice(2);
+            const gridRow = (index: number) => /(^|[^\\])\|/.test(rawRows[index] ?? '');
+            const footerCurrent = rawRows.filter((_, index) => !gridRow(index)).every(line => current(plain(line)));
+            const rows = comparison.rows.filter((_, index) => gridRow(index)).map(row => row.map(cell => plain(cell.text)));
+            const effortRisk = rows.filter(row => /^Effort\s*\/\s*risk$/i.test(row[commitment] ?? ''));
+            const behavior = rows.filter(row => !/^Effort\s*\/\s*risk$/i.test(row[commitment] ?? ''));
+            const complete = footerCurrent && effortRisk.length === 1 && optionColumns.every(i => /^(?:S|M|L|XL)\s*\/\s*(?:low|medium|high)$/i.test(effortRisk[0]![i] ?? '')) &&
+              behavior.length > 0 && behavior.every(row => row.length === headers.length && row[commitment] && row[source] && row[baseline] &&
+                current(row[commitment]!) && optionColumns.every(i => row[i] && current(row[i]!))) &&
+              behavior.some(row => new Set(optionColumns.map(i => row[i]!.toLowerCase())).size > 1) &&
+              q.options.every(o => { const facts = prose(o.description ?? ''); return /✅/.test(facts) && /❌/.test(facts) && current(facts); });
+            const matched = q.options.map(offered => optionColumns.filter(i => completeCaption(offered.label, headers[i]!, '')));
+            if (complete && matched.every(found => found.length === 1) && new Set(matched.flat()).size === q.options.length)
+              matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
+          }
           const optionColumn = headers.findIndex(h => /^(?:Option|Approach)\b/i.test(h));
           if (optionColumn < 0 || !['effort', 'risk', 'pros', 'cons'].every(h => headers.some(v => v.toLowerCase() === h)) ||
               comparison.rows.length !== q.options.length || comparison.rows.some(row => row.some(cell => !plain(cell.text)))) continue;

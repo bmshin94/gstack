@@ -180,3 +180,84 @@ test('a matching saved caption cannot bind a newly appended native action', () =
   call.answers![call.questions[0]!.question] = call.questions[0]!.options[0]!.label;
   expect(evaluate(call)).toBe(false);
 });
+
+
+const expanded = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/eng-batching-expanded-ledger-6714.json'), 'utf8'));
+const engNative = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/eng-native-review-identities-6714.json'), 'utf8'));
+test('actual expanded saved brief before D4 owns its native answered decision', () => {
+  expect(evaluate(structuredClone(expanded.call), expanded.preAskPlan)).toBe(true);
+});
+test('complete current expanded ledger counts owned choices and leaves unmatched labels uncredited', () => {
+  const counter = factory(() => expanded.currentSavedPlan);
+  const calls = expanded.calls as NativePlanQuestionCall[];
+  const accepted = calls.filter((call,index) => counter.isReviewAUQ(nativePlanCallFingerprint(call,0,true), calls.slice(0,index)));
+  expect(calls).toHaveLength(7);
+  expect(accepted.map(call => call.questions[0]!.question.split(' — ')[0])).toEqual(['D4','D5','D7']);
+});
+test('actual native R identities count Eng review choices without onboarding or scope credit', () => {
+  const counter = factory(() => '');
+  const calls = engNative.calls as NativePlanQuestionCall[];
+  const accepted = calls.filter((call,index) => counter.isReviewAUQ(nativePlanCallFingerprint(call,0,true), calls.slice(0,index)));
+  expect(calls).toHaveLength(7);
+  expect(accepted.map(call => call.questions[0]!.header)).toEqual(['R1 cache DI','R2 race','R3 rollout']);
+});
+
+
+// These are synthetic layout/ownership controls, never captured file bytes.
+for (const layout of ['bold', 'bullet', 'spaced']) test('expanded brief preserves option identities with ' + layout + ' Markdown', () => {
+  const plan = expanded.preAskPlan.replace(/^([A-C]\) .+)$/gm, (_: string, line: string) =>
+    layout === 'bold' ? `**${line}**` : layout === 'bullet' ? `- ${line}` : `\n${line}\n`);
+  expect(evaluate(structuredClone(expanded.call), plan)).toBe(true);
+});
+for (const [name, change] of Object.entries({
+  'missing current option': (p: string) => p.replace(/^C\) .*$/m, ''),
+  'duplicate current option': (p: string) => p.replace(/^C\) /m, 'B) '),
+  'foreign action in saved option': (p: string) => p.replace(/^A\) .*$/m, 'A) Delete customer records'),
+  'options only after answer': (p: string) => p.replace(/^(A\) [\s\S]*?)(?=Net:)/m, '').replace('History: none', 'History: A) Library hook + one shared backoff function B) Custom inline scheduler C) Bounded probe first'),
+  'quoted option paragraphs': (p: string) => p.replace(/^([A-C]\) .+)$/gm, '> $1'),
+  'fenced option paragraphs': (p: string) => p.replace(/^([A-C]\) .+)$/gm, '```text\n$1\n```'),
+  'historical options within current row': (p: string) => p.replace(/^A\) /m, 'Historical options:\nA) '),
+  'ambiguous second R record': (p: string) => p + p.slice(p.indexOf('### R1:')).replaceAll('R1', 'R99'),
+})) test('expanded current question rejects ' + name, () => {
+  expect(evaluate(structuredClone(expanded.call), change(expanded.preAskPlan))).toBe(false);
+});
+for (const title of ['Section 1: Architecture review','2. Code quality review','Tests review','4 Performance review']) test('typed decision records remain current within ' + title, () => {
+  const plan = expanded.preAskPlan.replace('### R1:', `## ${title}\n\n### R1:`);
+  expect(evaluate(structuredClone(expanded.call), plan)).toBe(true);
+});
+for (const title of ['Historical Architecture review','Original plan','Implementation tasks','GSTACK REVIEW REPORT']) test('a copied or foreign record section gives no credit: ' + title, () => {
+  const plan = expanded.preAskPlan.replace('### R1:', `## ${title}\n\n### R1:`);
+  expect(evaluate(structuredClone(expanded.call), plan)).toBe(false);
+});
+for (const [name, change] of Object.entries({
+  'unanswered': (c: NativePlanQuestionCall) => { c.answered = false; },
+  'unknown answer': (c: NativePlanQuestionCall) => { c.answers![c.questions[0]!.question] = 'unoffered'; },
+  'mismatched R header': (c: NativePlanQuestionCall) => { c.questions[0]!.header = 'R99 cache'; },
+  'multiple R identities': (c: NativePlanQuestionCall) => reword(c, '(R1)', '(R1 R9)'),
+  'quoted R identity': (c: NativePlanQuestionCall) => reword(c, '(R1)', '("R1")'),
+  'bare D identity': (c: NativePlanQuestionCall) => reword(c, '(R1)', ''),
+  'withdrawn R': (c: NativePlanQuestionCall) => reword(c, c.questions[0]!.question, c.questions[0]!.question + '\nR1 is withdrawn.'),
+  'historical title': (c: NativePlanQuestionCall) => reword(c, '(R1)', 'historical (R1)'),
+  'quoted source': (c: NativePlanQuestionCall) => reword(c, c.questions[0]!.question, c.questions[0]!.question.replaceAll('PLAN.md', '"PLAN.md"')),
+  'batch': (c: NativePlanQuestionCall) => { const q = structuredClone(c.questions[0]!);q.question += ' second';c.questions.push(q);c.answers![q.question] = q.options[0]!.label; },
+})) test('structural native review identity rejects ' + name, () => {
+  const call = structuredClone(engNative.calls[4]) as NativePlanQuestionCall;change(call);
+  expect(evaluate(call, '')).toBe(false);
+});
+test('two paid Eng callers use the same counter while keeping completion, actors, floors and limits', () => {
+  for (const file of ['skill-e2e-plan-eng-finding-count.test.ts', 'skill-e2e-plan-eng-multi-finding-batching.test.ts']) {
+    const source = fs.readFileSync(path.join(import.meta.dir, file), 'utf8');
+    const start = source.indexOf('const findings = createEngBatchingIssueCounter');
+    const stop = source.indexOf('const obs = await runPlanSkillCounting', start);
+    expect(start).toBeGreaterThan(0);expect(stop).toBeGreaterThan(start);
+    const make = new Function('fs','planPath','createEngBatchingIssueCounter','engSetupAUQ',
+      new Bun.Transpiler({loader:'ts'}).transformSync(source.slice(start,stop)) + 'return findings;');
+    const calls = engNative.calls as NativePlanQuestionCall[];
+    const counter = make({lstatSync:()=>({isFile:()=>true,isSymbolicLink:()=>false}),readFileSync:()=>''}, '/synthetic/report.md', factory, engSetupAUQ);
+    expect(calls.filter((call,i)=>counter.isReviewAUQ(nativePlanCallFingerprint(call,0,true),calls.slice(0,i)))).toHaveLength(3);
+    expect(source).toContain('isReviewAUQ: findings.isReviewAUQ');
+    expect(source).toContain('timeoutMs: 1_500_000');
+    expect(source).toContain(file.includes('multi-finding') ? 'reviewCountCeiling: N + 3' : 'reviewCountCeiling: Infinity');
+    if (!file.includes('multi-finding')) { expect(source).toContain('approveEngTestPlanEdits: true');expect(source).toContain('isCompletionHandoffAUQ:'); }
+  }
+});

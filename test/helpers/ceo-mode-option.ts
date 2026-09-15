@@ -282,7 +282,7 @@ function completedQuestionTimes(call: NativePlanQuestionCall, events: ReadonlyAr
 }
 
 /** New shorthand forms must be one complete decision, not a mode mention or extra question. */
-function singleScopeBrief(text: string, descriptions: readonly string[], comparison = true, expansion = false): boolean {
+function singleScopeBrief(text: string, descriptions: readonly string[], comparison = true, expansion = false, proposalHeading = false): boolean {
   if ([text, ...descriptions].some(value => /(?:^|[.!?]\s+|\n)\s*(?:Also|Separately|Additionally)\b|\b(?:Please|We must|You must|The plan must)\b/i.test(value))) return false;
   // Query parameter names such as ?view= are not another decision prompt.
   // A quoted user scenario is not a second decision. Keep its original text
@@ -290,7 +290,7 @@ function singleScopeBrief(text: string, descriptions: readonly string[], compari
   const questionText = expansion ? text.replace(/"[^"\n]*"|“[^”\n]*”/g,
     quote => quote.replace(/\?/g, '')) : text;
   const questions = questionText.replace(/\?[A-Za-z_][\w-]*=/g, '=').match(/\?/g);
-  if (questions?.length !== 1 || /```|~~~|^\s*>/m.test(text)) return false;
+  if ((questions?.length ?? 0) !== (proposalHeading ? 0 : 1) || /```|~~~|^\s*>/m.test(text)) return false;
   const comparisonMarker = expansion
     ? /Completeness:|Note:\s*options differ in kind, not coverage\s*[—–-]\s*no completeness score\./gi
     : /Completeness:/gi;
@@ -353,6 +353,44 @@ function hasAnsweredHoldPosture(transcript: PlanCountTranscript, selected: Nativ
   });
 }
 
+/** A fourth Hold/Pause control can only defer the decision for discussion. */
+function expansionDiscussionControl(label: string, description: string): boolean {
+  const title = label.replace(/^[A-D][):.]\s*/i, '').replace(/\s*\(recommended\)\s*$/i, '').trim();
+  const match = /^(?:hold|pause)\b([\s\S]*)$/i.exec(title);
+  if (!match) return false;
+  // Parentheses, separators and wrapping describe the same procedural action.
+  // A qualifier naming another action is not merely a discussion control.
+  const qualifier = match[1]!.toLowerCase().replace(/[()[\]—–:;,.-]/g, ' ').trim();
+  const procedural = new Set(['stop', 'pause', 'wait', 'review', 'chain', 'questions', 'proposals',
+    'decision', 'decisions', 'discuss', 'discussion', 'talk', 'clarify', 'clarification',
+    'first', 'before', 'deciding', 'to', 'the', 'this', 'one', 'through', 'for', 'and']);
+  if (qualifier && qualifier.split(/\s+/).some(word => !procedural.has(word))) return false;
+  if (!description.trim()) return !qualifier;
+  // Quoted assurances cannot establish that this control makes no disposition.
+  const prose = description.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
+    .replace(/^\s*>.*$/gm, '').replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g, '');
+  const noDecision = /\b(?:nothing\s+(?:is\s+)?(?:decided|approved|selected)|no\s+(?:scope\s+)?(?:decision|choice|disposition|approval)\s+(?:is\s+)?(?:made|recorded|granted|selected))\b/gi;
+  if (!noDecision.test(prose) || !/\b(?:paus\w*|stop\w*|wait\w*|discuss\w*|talk)\b/i.test(prose)) return false;
+  // Keep all remaining text, including quotations, in the effect veto. A
+  // no-decision assurance cannot conceal a second action in the same control.
+  const effects = `${title}\n${description}`.replace(noDecision, '');
+  return !/\b(?:add\w*|includ\w*|approv\w*|accept\w*|reject\w*|skip\w*|cut\w*|implement\w*|ship\w*|deploy\w*|delet\w*|remov\w*|creat\w*|writ\w*|updat\w*|enabl\w*|disabl\w*|chang\w*|select\w*|choos\w*|record\w*|execut\w*|commit\w*|roll\s+back)\b/i.test(effects);
+}
+
+/** A named current proposal may state its scope comparison without a question-mark title. */
+function concreteExpansionProposal(title: string, text: string): boolean {
+  const name = /^(?:Proposal\s+\d+\s+of\s+\d+\s*[:—–-]\s*)?(E[1-9]\d*)\s*[:—–-]\s*\S/i.exec(title);
+  if (!name) return false;
+  const rationale = /ELI10:([\s\S]*?)(?=Stakes if (?:we pick )?wrong:)/i.exec(text)?.[1] ?? '';
+  const prose = rationale.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
+    .replace(/^\s*>.*$/gm, '').replace(/"[^"\n]*"|“[^”\n]*”/g, '').trim();
+  const baseline = /(?:^|[.!]\s+)(?:Today\b|Currently\b|As written\b|The current plan\b)([^.!\n]+)[.!]/i.exec(prose);
+  if (!baseline || !/\b(?:only|each|per|private|personal|limited|without|cannot|can't)\b/i.test(baseline[1]!)) return false;
+  // The same native E<n> identity must add a stated capability to that current scope.
+  return new RegExp(`(?:^|[.!]\\s+)${name[1]} (?:would |will |proposes to )?(?:add|adds|introduce|introduces|extend|extends) \\S[^.!\\n]+[.!]`, 'i')
+    .test(prose.slice(baseline.index! + baseline[0].length).trimStart());
+}
+
 /** A concrete, opted-in expansion brief is itself assistant posture evidence. */
 function hasAnsweredExpansionPosture(
   transcript: PlanCountTranscript, selected: NativePlanQuestionCall,
@@ -370,22 +408,23 @@ function hasAnsweredExpansionPosture(
     const title = question.question.split('\n')[0]!
       .replace(/\s*<gstack-qid:[a-z0-9-]+>\s*$/i, '').replace(/^D\d+(?:\.\d+)*\s*[—–-]\s*/i, '');
     const context = /\nProject\/branch\/task:([^\n]+)/i.exec(question.question)?.[1] ?? '';
+    const concreteProposal = concreteExpansionProposal(title, question.question);
     if (question.multiSelect || question.options.length < 3 || question.options.length > 4 ||
-        !/^[\p{L}\p{N}][^?\n]+\?$/u.test(title) ||
+        (!/^[\p{L}\p{N}][^?\n]+\?$/u.test(title) && !concreteProposal) ||
         /\b(?:review\s+(?:mode|posture)|(?:selected|confirmed)\s+(?:mode|option))\b/i.test(title) ||
         /^(?:(?:continue|proceed|resume|start|finish)\b[^?]*\b(?:review|questions?|ceremony)|(?:are|should|can|do) (?:we|I|you) (?:continue|proceed|resume)|how\b[^?]*\b(?:decide|batch|split|group))\b/i.test(title) ||
         /\b(?:HOLD SCOPE|SELECTIVE EXPANSION|SCOPE REDUCTION)\b/i.test(context) ||
-        !/\b(?:SCOPE\s+EXPANSION|EXPANSION\s+(?:mode|opt[ -]in))\b/i.test(context) ||
-        !singleScopeBrief(question.question, question.options.map(o => o.description ?? ''), false, true)) return false;
+        (!/\b(?:SCOPE\s+EXPANSION|EXPANSION\s+(?:mode|opt[ -]in))\b/i.test(context) && !concreteProposal) ||
+        !singleScopeBrief(question.question, question.options.map(o => o.description ?? ''), false, true, concreteProposal && !title.includes('?'))) return false;
     // Equivalent core dispositions demonstrate mode application. A separate
     // discussion control may pause the decision, but its answer supplies no posture credit.
     const dispositions = question.options.map(option => {
       const label = option.label.trim().replace(/^[A-D][):.]\s*/i, '')
         .replace(/\s*\(recommended\)\s*$/i, '').toLowerCase();
       if (/^(?:include|add to (?:(?:this|the) plan['’]s )?scope)$/.test(label)) return 'include';
-      if (/^defer to todos\.md$/.test(label)) return 'defer';
-      if (/^(?:skip|cut)$/.test(label)) return 'skip';
-      if (/^(?:hold|pause)(?:\s*[—–:-]\s*discuss first)?$/.test(label)) return 'pause';
+      if (/^defer to todos(?:\.md)?$/.test(label)) return 'defer';
+      if (/^(?:skip|cut)(?: entirely| (?:this proposal|from (?:this |the )?scope))?$/.test(label)) return 'skip';
+      if (expansionDiscussionControl(label, option.description ?? '')) return 'pause';
       return null;
     });
     const answer = question.options.findIndex(option => option.label === call.answers?.[question.question]);
@@ -395,7 +434,8 @@ function hasAnsweredExpansionPosture(
     // Never search quoted instructions, tool output or a menu for posture.
     const prose = question.question.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
       .replace(/^\s*>.*$/gm, '');
-    return hasPostAnswerCeoPosture(`● ${prose}`, posture);
+    return hasPostAnswerCeoPosture(`● ${prose}`, posture) || (concreteProposal && selected.questions.some(q =>
+      (selected.answers?.[q.question] ?? '').search(posture) !== -1));
   });
 }
 
@@ -459,6 +499,73 @@ function barlessPostureSubmit(visible: string, packet: PosturePacket): boolean {
   if (!panel.startsWith(prefix)) return false;
   const body = panel.slice(prefix.length).replace(/^Reviewyouranswers/, '');
   return body === answers.join('') + BARLESS_SUBMIT_END;
+}
+
+/** Only the full independent walkthrough is navigation; no scope selection is authorized. */
+export function ceoExpansionPacingChoice(visible: string, transcript: PlanCountTranscript,
+  selectionStartedAt: number, pending?: NativePlanQuestionCall & {source:'pre_tool_use'}) {
+  const selected = nativeCeoModeAnswer(transcript, 'SCOPE EXPANSION', selectionStartedAt);
+  const waiting = transcript.calls.filter(c => !c.answered && !c.failed);
+  const call = waiting[0] ?? pending;
+  if (!selected || !call || call.answered || call.failed || call.sessionId !== selected.sessionId ||
+      call.toolUseId === selected.toolUseId || !call.questions.length ||
+      !matchesNativePlanQuestion(visible, call)) return null;
+  const position = transcript.calls.indexOf(call);
+  if (position >= 0 && position <= transcript.calls.indexOf(selected)) return null;
+  const q = call.questions[0]!;
+  const pacing = call.questions.some(q=>/\bhow\b[^?\n]*\b(?:walk|present|review|group|batch|split)\b[^?\n]*\?/i.test(q.question.split('\n')[0]!) &&
+    /\b(?:proposals|items|expansions)\b/i.test(q.question));
+  if (!pacing) return null;
+  // Index zero is an explicit unsupported pacing outcome, never a request
+  // for the caller's generic first-option fallback.
+  const refused=()=>({call,index:0,mode:selected});
+  if (waiting.length>1 || call.questions.length!==1 || q.multiSelect || q.options.length < 2 || q.options.length > 4 ||
+      !/Project\/branch\/task:[^\n]*\bSCOPE EXPANSION\b/i.test(q.question) ||
+      !/\beach\b[^.!?\n]*\bseparate (?:scope call|decision)\b/i.test(q.question) ||
+      !singleScopeBrief(q.question,q.options.map(o=>o.description ?? ''),false,true)) return refused();
+  // The question can grant scope even when its selected option sounds like
+  // navigation. Future disposition labels are a menu, not an operative grant.
+  // Keep quoted text in this veto; it cannot smuggle a second scope effect.
+  const questionEffects=q.question.replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi,'');
+  const scopeAction=/\b(?:approv(?:e|es|ed|ing)|authori[sz](?:e|es|ed|ing)|accept(?:s|ed|ing)?|commit(?:s|ted|ting)?|adopt(?:s|ed|ing)?|implement(?:s|ed|ing)?|add(?:s|ed|ing)?|includ(?:e|es|ed|ing)|remov(?:e|es|ed|ing)|drop(?:s|ped|ping)?|cut(?:s|ting)?|skip(?:s|ped|ping)?|defer(?:s|red|ring)?|merg(?:e|es|ed|ing)|ship(?:s|ped|ping)?|deploy(?:s|ed|ing)?|enabl(?:e|es|ed|ing)|disabl(?:e|es|ed|ing))\b/i;
+  if (scopeAction.test(questionEffects)) return refused();
+  const choices = q.options.map((o,index) => ({o,index:index+1})).filter(({o}) => {
+    const label=o.label.replace(/^[A-D][):.]\s*/i,'').replace(/\s*\(recommended\)\s*$/i,'');
+    const rawDescription=o.description ?? '';
+    const description=rawDescription.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g,'').replace(/^\s*>.*$/gm,'')
+      .replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g,'');
+    const unchanged=/\bno (?:proposal|item) (?:is )?(?:dropped|removed|skipped) or merged without your (?:say|approval)\b/i;
+    if (!/\b(?:per[- ]item|one[- ]by[- ]one|individually|separately)\b/i.test(label) ||
+        /\b(?:narrow|batch|cut|skip|defer|subset|shortlist|groups?)\b/i.test(label) ||
+        !/\bone per (?:proposal|item)\b|\beach (?:proposal|item) (?:separately|individually)\b/i.test(description) ||
+        !unchanged.test(description)) return false;
+    const effects=label+'\n'+rawDescription.replace(unchanged,'').replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi,'');
+    // The brief may compare batching/narrowing as unselected pacing options;
+    // the chosen full independent walkthrough cannot perform either.
+    return !scopeAction.test(effects) && !/\b(?:narrow\w*|batch\w*)\b/i.test(effects);
+  });
+  if (choices.length !== 1) return refused();
+  const rendered=parseNumberedOptions(visible),compact=(s:string)=>s.replace(/\s+/g,'');
+  const controls=rendered.slice(q.options.length);
+  if (rendered.length<q.options.length || !q.options.every((o,i)=>
+      compact(rendered.find(r=>r.index===i+1)?.label ?? '').startsWith(compact(o.label))) ||
+      controls.length>2 || !controls.every((o,i)=>o.index===q.options.length+i+1 &&
+        (i===0?/^Typesomething\.?$/i:/^Chataboutthis$/i).test(compact(o.label)))) return refused();
+  return {call,index:choices[0]!.index,mode:selected};
+}
+
+/** Sending a pacing key never supplies an ACK or consumes the substantive allowance. */
+export function ceoExpansionPacingReady(visible: string, transcript: PlanCountTranscript,
+  choice: NonNullable<ReturnType<typeof ceoExpansionPacingChoice>>, events: ReadonlyArray<NativePublicToolEvent>): boolean {
+  if(choice.index<1)return false;
+  const owned=transcript.calls.filter(c=>c.sessionId===choice.call.sessionId&&c.toolUseId===choice.call.toolUseId);
+  if(owned.length!==1)return false;
+  const call=owned[0]!;
+  const times=call&&completedQuestionTimes(call,events);
+  if (!call || !times || times.requestedAt <= Date.parse(choice.mode.answeredAt!) ||
+      JSON.stringify(call.questions)!==JSON.stringify(choice.call.questions) ||
+      call.answers?.[call.questions[0]!.question]!==choice.call.questions[0]!.options[choice.index-1]!.label) return false;
+  return !matchesNativePlanQuestion(visible,choice.call);
 }
 
 /**

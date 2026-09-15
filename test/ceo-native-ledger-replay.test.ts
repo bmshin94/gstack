@@ -307,3 +307,111 @@ test('fourth actual native decision has an ACK but receives no credit without it
   const question = nativePlanCallFingerprint(clone(row.call) as any, Date.parse(row.call.answeredAt), true);
   expect(() => countCurrent(question, currentFixture.cases[0]!.seed, currentFixture.cases[0]!.seed)).toThrow(/cannot exclude/);
 });
+
+import fixture6714 from './fixtures/ceo-recorded-decisions-67147822.json';
+for (const row of fixture6714.cases) test(`captured6714 ${row.label} preserves the owned saved comparison`, () => {
+  expect(createHash('sha256').update(row.savedPlan).digest('hex')).toBe(row.savedPlanSha256);
+  expect(createHash('sha256').update(row.seed).digest('hex')).toBe(row.seedSha256);
+  expect(Date.parse(row.successfulPriorMutations.filter(m => m.filePath?.endsWith(row.label.startsWith('paired') ? 'gstack-test-plan-ceo-paired.md' : 'gstack-test-plan-ceo.md')).at(-1)!.completedAt)).toBeLessThan(Date.parse(row.questionIssuedAt));
+  expect(Date.parse(row.questionIssuedAt)).toBeLessThanOrEqual(Date.parse(row.call.answeredAt!));
+  const question = nativePlanCallFingerprint(clone(row.call) as any, 0, true);
+  const counter = createCeoPaymentFindingCounter(row.seed, () => row.savedPlan, ceoFirstReviewAUQ);
+  expect(counter.isReviewAUQ(question)).toBe(true);
+  expect(counter.trace.at(-1)).toMatchObject({ kind: 'recorded-decision' });
+});
+
+const grid6714 = fixture6714.cases.find(row => row.label === 'paired')!;
+const prose6714 = fixture6714.cases.find(row => row.label === 'five')!;
+const retry6714 = fixture6714.cases.find(row => row.label === 'paired-retry')!;
+const question6714 = (row = grid6714) => nativePlanCallFingerprint(clone(row.call) as any, 0, true);
+const count6714 = (plan: string, question = question6714(), row = grid6714) => {
+  const counter = createCeoPaymentFindingCounter(row.seed, () => plan, ceoFirstReviewAUQ);
+  expect(counter.isReviewAUQ(question)).toBe(true);
+  expect(counter.trace.at(-1)).toMatchObject({ kind: 'recorded-decision' });
+};
+const gridStart6714 = grid6714.savedPlan.indexOf('### R1 option comparison');
+const gridEnd6714 = grid6714.savedPlan.indexOf('### R2', gridStart6714);
+const gridBody6714 = grid6714.savedPlan.slice(gridStart6714, gridEnd6714);
+const replaceGrid6714 = (body: string) => grid6714.savedPlan.slice(0, gridStart6714) + body + grid6714.savedPlan.slice(gridEnd6714);
+
+for (const [name, body] of Object.entries({
+  'unbordered GFM rows': gridBody6714.replace(/^\|(.*)\|$/gm, '$1'),
+  'reordered source/current/option columns': gridBody6714.split('\n').map(line => line.startsWith('|')
+    ? '| ' + [5, 2, 0, 4, 1, 3].map(i => line.split('|').slice(1, -1)[i]!.trim()).join(' | ') + ' |' : line).join('\n'),
+  'separate current completeness paragraph': gridBody6714.replace('\nCompleteness:', '\n\nCompleteness:'),
+})) test(`owned commitment matrix accepts ${name}`, () => count6714(replaceGrid6714(body)));
+
+for (const [name, plan] of Object.entries({
+  'review target metadata': grid6714.savedPlan.replace('Reviewed plan:', 'Review target plan:'),
+  'input plan metadata': grid6714.savedPlan.replace('Reviewed plan:', 'Input plan:'),
+  'historical sibling does not own current review': '## Historical notes\n\nOld unrelated material.\n\n## Current review\n\n' + grid6714.savedPlan,
+})) test(`owned commitment matrix accepts ${name}`, () => count6714(plan));
+
+for (const [name, body] of Object.entries({
+  'missing native alternative column': gridBody6714.split('\n').map(line => line.startsWith('|') ? line.split('|').slice(0, -2).join('|') + '|' : line).join('\n'),
+  'duplicate alternative identity': gridBody6714.replace('B: chargeId only', 'A: chargeId only'),
+  'wrong native alternative identity': gridBody6714.replace('B: chargeId only', 'D: chargeId only'),
+  'swapped option meanings': gridBody6714.replace('A: exact receipt equality | B: chargeId only', 'A: chargeId only | B: exact receipt equality'),
+  'missing behavior value': gridBody6714.replace('C1 | no | yes | no | no', 'C1 | no | yes | | no'),
+  'missing commitment source': gridBody6714.replace('C1 | no | yes | yes | no', ' | no | yes | yes | no'),
+  'missing current behavior': gridBody6714.replace('C1 | no | yes | yes | no', 'C1 | | yes | yes | no'),
+  'missing effort and risk row': gridBody6714.replace(/^\| Effort \/ risk.*\n/m, ''),
+  'missing one effort/risk value': gridBody6714.replace('S / low | S / low | S / low', 'S / low | | S / low'),
+  'untyped effort/risk value': gridBody6714.replace('S / low | S / low | S / low', 'small / maybe | S / low | S / low'),
+  'duplicate effort/risk row': gridBody6714.replace('| Effort / risk', '| Effort / risk | | | S / low | S / low | S / low |\n| Effort / risk'),
+  'withdrawn inline footer': gridBody6714.replace('Completeness:', 'This decision is withdrawn. Completeness:'),
+  'historical comparison': gridBody6714.replace('### R1', '### Historical R1'),
+  'historical ancestor': '## Historical review\n\n' + gridBody6714,
+  'nested historical matrix': gridBody6714.replace('### R1 option comparison', '### R1 option comparison\n\n#### Historical example'),
+  'foreign comparison owner': gridBody6714.replace('### R1', '### DIFFERENT'),
+  'quoted comparison': gridBody6714.split('\n').map(line => '> ' + line).join('\n'),
+  'fenced comparison': '```md\n' + gridBody6714 + '\n```\n',
+})) test(`owned commitment matrix rejects ${name}`, () => expect(() => count6714(replaceGrid6714(body))).toThrow());
+
+for (const [name, plan] of Object.entries({
+  'foreign source metadata': grid6714.savedPlan.replace('Reviewed plan: `PLAN.md`', 'Reviewed plan: `OTHER.md`'),
+  'contradictory current source': grid6714.savedPlan + '\n\nInput plan: OTHER.md.\n',
+  'unrelated mention of source': grid6714.savedPlan.replace('Reviewed plan: `PLAN.md`', 'An unrelated example reviewed `PLAN.md`'),
+  'quoted source metadata': grid6714.savedPlan.replace('Reviewed plan:', '> Reviewed plan:'),
+  'duplicate current ledger': grid6714.savedPlan + '\n\n' + grid6714.savedPlan,
+})) test(`owned commitment matrix rejects ${name}`, () => expect(() => count6714(plan)).toThrow());
+
+for (const [name, mutate] of Object.entries({
+  'extra native action': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[1]!.label += ' and delete customer records'; },
+  'native action reversal': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[0]!.label = 'A) Do not assert exact receipt equality'; },
+  'missing native pros': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[1]!.description = '❌ Incomplete coverage.'; },
+  'missing native cons': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[1]!.description = '✅ Complete coverage.'; },
+  'quoted native facts': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[1]!.description = '> ✅ Earlier benefit\n> ❌ Earlier tradeoff'; },
+  'fenced native facts': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[1]!.description = '```md\n✅ Earlier benefit\n❌ Earlier tradeoff\n```'; },
+})) test(`owned commitment matrix rejects ${name}`, () => {
+  const question = question6714(); mutate(question); reanswer(question);
+  expect(() => count6714(grid6714.savedPlan, question)).toThrow();
+});
+
+for (const [name, mutate] of Object.entries({
+  'unlettered action reversal': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[0]!.label = 'Do not register in WebhookDispatcher'; },
+  'unlettered action appended': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[2]!.label += ' and delete customer records'; },
+  'unlettered internal scope qualifier': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[0]!.label = 'Register only in WebhookDispatcher'; },
+  'unlettered words borrowed only from cons': (q: ReturnType<typeof question6714>) => { q.nativeCall!.questions[0]!.options[0]!.label = 'Register in WebhookDispatcher dependency coupling'; },
+})) test(`owned prose comparison rejects ${name}`, () => {
+  const question = question6714(prose6714); mutate(question); reanswer(question);
+  expect(() => count6714(prose6714.savedPlan, question, prose6714)).toThrow();
+});
+
+for (const [name, plan] of Object.entries({
+  'comma-separated fields still require risk': prose6714.savedPlan.replace('risk low.', 'exposure low.'),
+  'comma-separated fields still require pros': prose6714.savedPlan.replace('Pros: one routing path', 'Benefits: one routing path'),
+  'saved caption reverses unlettered action': prose6714.savedPlan.replace('**A) Register in WebhookDispatcher.**', '**A) Register not in WebhookDispatcher.**'),
+  'plain colon list still requires cons': retry6714.savedPlan.replace('Cons: fails if', 'Notes: fails if'),
+})) test(`owned format variants reject ${name}`, () => {
+  const row = name.startsWith('plain') ? retry6714 : prose6714;
+  expect(plan).not.toBe(row.savedPlan);
+  expect(() => count6714(plan, question6714(row), row)).toThrow();
+});
+
+for (const caption of ['Register in WebhookDispatcher and delete backups.', 'Register in WebhookDispatcher only for admins.'])
+  test('unlettered saved caption cannot add scope: ' + caption, () => {
+    const plan = prose6714.savedPlan.replace('Register in WebhookDispatcher.', caption);
+    expect(plan).not.toBe(prose6714.savedPlan);
+    expect(() => count6714(plan, question6714(prose6714), prose6714)).toThrow();
+  });

@@ -339,7 +339,9 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
     // and the wording/line count of each decision field do not supply evidence.
     const ids = q.options.map(o => new RegExp(`^(${issueNumber}[A-Z])(?:[).:]?\\s+)`).exec(o.label)?.[1]);
     if (ids.some(id => !id) || new Set(ids).size !== ids.length) return false;
-    const fields = ['Project/branch/task:', 'ELI10:', 'Stakes if we pick wrong:', 'Recommendation:', 'Completeness:', 'Net:'];
+    // Count the acknowledged design decision, not optional summary formatting.
+    const fields = ['Project/branch/task:', 'ELI10:', 'Stakes if we pick wrong:', 'Recommendation:', 'Completeness:'];
+    if (q.question.includes('Net:')) fields.push('Net:');
     const positions = fields.map(field => q.question.indexOf(field));
     if (positions.some((position, i) => position < 0 || q.question.lastIndexOf(fields[i]!) !== position ||
         (i > 0 && position <= positions[i - 1]!)) || q.question.slice(0, positions[0]).trim() !== lines[0]) return false;
@@ -356,10 +358,15 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
         (quoted, index, source) => /^(?:withdrawn|resolved|closed|superseded|hypothetical|not current|no longer current)$/i.test(quoted.slice(1, -1)) &&
           (/\b(?:(?:this|the) (?:finding|gap|issue|amendment|fix|decision)|G[1-9]\d*|Issue [1-9]\d*) (?:is|was|has been) (?:already |now )?$/i.test(source.slice(0, index)) || namedStatusPrefix.test(source.slice(0, index)))
           ? quoted.slice(1, -1) : '');
+    const sourceText = current(values[0]!.replace(/`PLAN\.md`/g, 'PLAN.md'));
+    // A current pass can identify its plan by title. A different filename or
+    // quoted plan reference must not gain authority from the descriptive form.
+    const ownedSource = /\bPLAN\.md\b/.test(sourceText) ||
+      (!/\b[\w.-]+\.md\b/i.test(values[0]!) && /\bPass [1-7]\s*\([A-Za-z][A-Za-z &/-]*\) of the [A-Za-z][A-Za-z -]* plan\.$/.test(sourceText));
     if (values.some(value => !value || sourceOnly.test(value)) || inactiveCurrent(current(q.question)) ||
-        !/^\S[\s\S]*\bPLAN\.md\b/.test(values[0]!) ||
+        !ownedSource || /\b(?:other|another|different|unrelated|foreign|historical|archived|quoted|copied) (?:[A-Za-z-]+ )?(?:plan|review|source)\b/i.test(sourceText) ||
         /\b(?:planning|review|workflow) setup\b|\b(?:setup|onboarding|routing|posture|learnings) (?:stage|phase|step|decision)\b/i.test(current(values[0]!)) ||
-        (scopedIssue && !/\bPLAN\.md\b/.test(current(values[0]!.replace(/`PLAN\.md`/g, 'PLAN.md')))) ||
+        (scopedIssue && !ownedSource) ||
         !ids.some(id => values[3]!.startsWith(`${id} `))) return false;
     const assessment = current(values[1]!);
     if (/\b(?:historical|archived|hypothetical|quoted)\b|\b(?:not|isn't) (?:the )?current\b/i.test(assessment) ||
@@ -420,7 +427,10 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
           !values[3]!.startsWith(`${ids[index]} `)) return false;
       return q.options.some((other, otherIndex) => {
         const declined = `${other.description?.trim() ?? ''}\n${detailedOptions.get(ids[otherIndex]!) ?? ''}`.trim();
-        return other !== option && /^(?:Keep|Leave|Defer|Decline|No)\b/i.test(other.label.replace(new RegExp(`^${ids[otherIndex]}[).:]?\\s+`), '')) &&
+        const opposed = current(declined);
+        const ownedOpposition = !/\b(?:other|another|different|unrelated|foreign) (?:gap|issue|finding|decision)\b/i.test(opposed) &&
+          [...opposed.matchAll(/\bIssue ([1-9]\d*)\b/gi)].every(match => match[1] === issueNumber);
+        return ownedOpposition && other !== option && /^(?:Keep|Leave|Defer|Decline|No)\b/i.test(other.label.replace(new RegExp(`^${ids[otherIndex]}[).:]?\\s+`), '')) &&
           !sourceOnly.test(declined) && !inactiveCurrent(current(declined)) &&
           (new RegExp(`\\b(?:gap\\s+)?G${gapNumber}\\s+(?:stays|remains|is)\\s+(?:open|unresolved)\\b`, 'i').test(current(declined)) ||
             (!!scopedIssue && (/\b(?:the |[a-z-]+ )?gap (?:stays|remains|is) (?:open|unresolved)\b/i.test(current(declined)) ||
@@ -429,6 +439,7 @@ function designSystemChoiceIssue(fp: AskUserQuestionFingerprint): boolean {
                 !/\b(?:other|another|different|unrelated) (?:gap|issue|finding|decision)\b/i.test(current(declined)) &&
                 [...current(declined).matchAll(/\bIssue ([1-9]\d*)\b/gi)].every(match => match[1] === issueNumber)) ||
               (!!nativeIssue && /^Record as unresolved[.;]/i.test(current(declined))) ||
+              (!!nativeIssue && /\bviolates DESIGN\.md(?:'s)? (?:stated |existing |documented )?(?:primary treatment|two-role rule|spacing scale|contrast requirement)\b/i.test(current(declined))) ||
               /\b(?:plan|design|page|header)\b[^.!?]*\b(?:keeps|retains|leaves|ships)\b[^.!?]*\bDESIGN\.md violation\b/i.test(current(declined))) &&
               [...q.options.flatMap(o => [...`${o.label} ${o.description ?? ''}`.matchAll(/\bG([1-9]\d*)\b/g)])]
                 .every(m => m[1] === gapNumber)));

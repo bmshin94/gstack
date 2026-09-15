@@ -163,8 +163,10 @@ function seedSubjects(q: NativePlanQuestionCall['questions'][number]): Seed[] {
 /** A decision may put its current defect in its own metadata/ELI10, not its title. */
 function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): Seed[] {
   const rawTitle = q.question.split('\n').find(line => line.trim())?.trim() ?? '';
-  const ordinal = /^D([1-9]\d*)\s*[—–:-]/.exec(rawTitle)?.[1];
-  const owner = `(?:(?:this|the|that) (?:finding|issue|decision|gap|defect|assessment|explanation|option|action|remedy)${ordinal ? `|D${ordinal}` : ''})`;
+  const ordinal = /^D([1-9]\d*)\b/.exec(rawTitle)?.[1];
+  const record = /^D[1-9]\d*\s*\((R[1-9]\d*)\)/.exec(rawTitle)?.[1];
+  if (record && !new RegExp(`^${record}\\b`).test(q.header.trim())) return [];
+  const owner = `(?:(?:this|the|that) (?:finding|issue|decision|gap|defect|assessment|explanation|option|action|remedy)${ordinal ? `|D${ordinal}` : ''}${record ? `|${record}` : ''})`;
   const inactive = '(?:withdrawn|retracted|rejected|cancelled|canceled|resolved|fixed|superseded|optional|hypothetical|unproven|not current|no longer current)';
   const current = (value: string) => prose(value.replace(/\*\*/g, '').replace(
     new RegExp(`(${owner} (?:is|was|has been) )["“'‘\x60](${inactive})["”'’\x60]`, 'gi'), '$1$2'), true)
@@ -174,7 +176,7 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     && !/\b(?:copied|quoted|historical)\s+(?:(?:source|quoted)\s+)?(?:example|excerpt|text|material)\b/i.test(value)
     && !new RegExp(`\\b${owner} (?:is|was|has been) ${inactive}\\b`, 'i').test(value)
     && !/\b(?:if|once|when|unless) (?:approved|accepted)|\b(?:after|pending) approval\b/i.test(value)
-    && !/(?:^|[.!?;]\s+|\n)(?:Correction:\s*)?(?:do not|don't|never|skip|cancel|withdraw) (?:reduce|cut|remove|keep|flatten|split|map|rethrow|parallelize|run|apply)\b/i.test(value);
+    && !/(?:^|[.!?;]\s+|\n)(?:Correction:\s*)?(?:do not|don't|never|skip|cancel|withdraw) (?:reduce|cut|remove|keep|flatten|split|map|rethrow|parallelize|run|apply|fold|inline|combine|inject|propagate|log|construct|pass)\b/i.test(value);
   // Inline literal sentences and a non-current title cannot own the packet.
   if (/^[`"“>]/.test(rawTitle.replace(/^D[1-9]\d*\s*[—–:-]\s*/, ''))) return [];
   const text = current(q.question), lines = text.split('\n').filter(line => line.trim());
@@ -260,7 +262,48 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
       && !/\b(?:calls|requests) (?:are |now |already )*(?:parallel|concurrent|no longer sequential)\b/i.test(text)
       && options.some(o => /\b(?:Promise\.all|paralleliz\w*|concurrent\w*)\b/i.test(o)
         && /\b(?:calls|requests|siblings)\b/i.test(o))) ids.push('sequential-idp');
-  return ids;
+
+  // Current native briefs may name a choice in their title and carry the
+  // defect in ELI10. Bind source, inventory and repair within that one brief;
+  // mentions of other findings in Net or an unchosen option supply no evidence.
+  const citations = [...metadata[0]!.matchAll(/(?:^|[\s(,;])([^\s(),;]+\.md)(?::[1-9]\d*(?:[-–][1-9]\d*)?)?(?=[\s),;.]|$)/g)].map(match => match[1]);
+  const ownsPlan = citations.length > 0 && citations.every(file => file === 'PLAN.md') &&
+    !/\b(?:other|another|different|foreign|historical|quoted|copied) (?:plan|source|review)\b/i.test(metadata[0]!);
+  if (ownsPlan) {
+    const inventory = /\b(?:plan (?:adds|builds|introduces)|introducing) (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new (?:classes|types|units|components|pieces):\s*([A-Z]\w*(?:,\s*[A-Z]\w*)+)/.exec(explanation);
+    const before = inventory ? (counts[inventory[1]!] ?? Number(inventory[1])) : 0;
+    const components = inventory?.[2]?.split(/,\s*/) ?? [];
+    if (/\b(?:structure|units|components|classes|decomposition)\b/i.test(title) && before === components.length && new Set(components).size === before &&
+        ['AuthBroker', 'SessionMint', 'TokenStore', 'AuthCache', 'RequestPolicy'].every(name => components.includes(name)) &&
+        /\bAuthCache\b[^.!?]*\b(?:one|same|existing)\b[^.!?]*\b(?:backing cache|adapter)\b/.test(explanation) &&
+        /\bTokenStore\b[^.!?]*\b(?:second layer|duplicate|redundant)\b/.test(explanation) &&
+        !/\bTokenStore (?:now |already )?has (?:a documented )?(?:independent|distinct) (?:purpose|behavior|state)\b/i.test(text) &&
+        options.some(option => {
+          const after = /\b([1-9]\d*) new classes\s*\(([^)]+)\)/.exec(option);
+          const retained = after?.[2]?.split(/,\s*/) ?? [];
+          return /^(?:[A-D][):.]\s*)?(?:Fold|Remove|Drop|Inline|Combine) TokenStore\s*\+\s*RequestPolicy\b/i.test(option) &&
+            after && Number(after[1]) === before - 2 && retained.length === Number(after[1]) && new Set(retained).size === retained.length &&
+            ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => retained.includes(name)) &&
+            /\brequestPolicy(?:\.ts)?\b[^.!?\n]*\bpure functions?\b/i.test(option) &&
+            /\b(?:one|single) token layer over the existing adapter\b/i.test(option);
+        })) ids.push('complexity');
+    if (['AuthBroker', 'SessionMint', 'AuthCache'].every(name => title.includes(name)) &&
+        /\bboth services\b[^.!?]*\b(?:one|same|shared) cache (?:object|instance)\b/i.test(explanation) &&
+        /\b(?:top of a module|module[- ]level|global variable)\b/i.test(explanation) &&
+        /\b(?:same object|shared mutable state|can change it)\b/i.test(explanation) &&
+        !/\b(?:cache|services|writers) (?:is |are |now |already )*(?:isolated|injected|no longer shared)\b/i.test(text) &&
+        options.some(option => /^(?:[A-D][):.]\s*)?(?:Constructor injection|Inject\b)/i.test(option) &&
+          /\b(?:one|single) AuthCache\b[^.!?\n]*\bcomposition root\b[^.!?\n]*\b(?:passed|injected) to both services\b/i.test(option) &&
+          /\btests?\b[^.!?\n]*\b(?:fresh|isolated|independent) (?:one|cache|instance)\b/i.test(option))) ids.push('shared-cache');
+    if (/\bvalidateAndDispatch\b/.test(title) &&
+        /\b(?:catch(?:es)?|try\/catch blocks)\b[^.!?]*\b(?:swallows?|eats?|suppresses?|discards?|ignores?)\b[^.!?]*\berrors?\b/i.test(explanation) &&
+        /\b(?:without passing it on|no log|silent|nothing is logged)\b/i.test(explanation) &&
+        !/\bvalidateAndDispatch\(\) (?:now |already )?(?:rethrows every error|no longer swallows failures)\b/i.test(text) &&
+        options.some(option => /\bvalidate\(\)\b|\bvalidate\(\)/.test(option) && /\bdispatch\(\)/.test(option) &&
+          /\b(?:single|one) try\/catch at the boundary\b/i.test(option) && /\bAuthError subclasses\b/.test(option) &&
+          /\b(?:every|all) errors? (?:is |are )?logged and propagated\b/i.test(option))) ids.push('swallowed-errors');
+  }
+  return [...new Set(ids)];
 }
 
 function completedDecision(call: NativePlanQuestionCall, startedAt: number, finishedAt: number): boolean {
@@ -291,7 +334,11 @@ function batchingIssueNumber(call: NativePlanQuestionCall): string | undefined {
     // The current ledger uses stable R IDs and a new D number for each ask.
     // Earlier briefs may instead cite their current finding in task metadata.
     // Bind only that owned identity, never D alone or a later recap of others.
-    const decision = /^D([1-9]\d*)\s*[—–:-]\s+(?:(R[1-9]\d*)\s*:\s*)?\S/.exec(title);
+    const decision = /^D([1-9]\d*)\b/.exec(title);
+    // D owns this ask; one R shared by its title and header owns the choice.
+    // Their placement and punctuation are presentation, not identity.
+    const recordIds = [...prose(title, true).replace(/"[^"\n]*"|“[^”\n]*”/g, '').matchAll(/\bR[1-9]\d*\b/g)].map(match => match[0]);
+    const recordId = recordIds.length === 1 ? recordIds[0] : undefined;
     const lines = prose(q.question, true).split('\n').filter(line => line.trim());
     const metadata = lines[1]?.replace(/"[^"\n]*"|“[^”\n]*”/g, '') ?? '';
     const explanation = (lines[2] ?? '').replace(/"[^"\n]*"|“[^”\n]*”/g, '');
@@ -303,12 +350,13 @@ function batchingIssueNumber(call: NativePlanQuestionCall): string | undefined {
         /\b(?:copied|quoted|historical)\s+(?:(?:source|quoted)\s+)?(?:example|excerpt|text|material)\b/i.test(metadata) ||
         q.options.some(option => !prose(option.description ?? '', true).trim())) return;
     const finding = /(?:^|[,;]\s*)finding (F[1-9]\d*)\s*\(PLAN\.md:[1-9]\d*(?:[-–][1-9]\d*)?\)/i.exec(metadata)?.[1];
-    if (decision[2]) {
-      if (!new RegExp(`^${decision[2]}\\b`).test(q.header.trim())) return;
-      issue = `record:${decision[2]}`;
+    if (recordIds.length > 1 || /\b(?:copied|quoted|historical|example|hypothetical)\b/i.test(title)) return;
+    if (recordId) {
+      if (!new RegExp(`^${recordId}\\b`).test(q.header.trim())) return;
+      issue = `record:${recordId}`;
     } else if (finding) issue = `finding:${finding.toUpperCase()}`;
     else return;
-    currentOwner = `${decision[2] ?? finding}|D${decision[1]}`;
+    currentOwner = `${recordId ?? finding}|D${decision[1]}`;
   }
   // Owned scalar statuses remain current prose; a whole code example does not.
   const owner = `(?:(?:this|the|that) (?:issue|finding|decision)|${currentOwner})`;
@@ -371,8 +419,16 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
   if (withdrawn(q.question, `D${decision[1]}`)) return;
   const previous = tokens.slice(0, start).filter(t => t.type !== 'space').at(-1);
   if (previous && /\b(?:copied|quoted|historical|example|hypothetical|template)\b.*[:：]\s*$/i.test(previous.raw)) return;
-  let end = start + 1;
-  while (end < tokens.length && !(tokens[end]!.type === 'heading' && (tokens[end] as any).depth <= heading.depth)) end++;
+  // Records may continue in the current Architecture/Code quality/Tests/Performance
+  // sections. Their typed fields own the choice; the ledger need not be contiguous.
+  const end = tokens.findIndex((token, at) => at > start && token.type === 'heading' && /^GSTACK REVIEW REPORT$/i.test(clean(token.text)));
+  const recordEnd = end < 0 ? tokens.length : end;
+  const recordSection = (at: number, depth: number) => {
+    const owner = tokens.slice(0, at).filter(token => token.type === 'heading' && token.depth < depth).at(-1);
+    if (!owner || owner.type !== 'heading') return false;
+    const name = clean(owner.text).replace(/^(?:Section\s+)?[1-9]\d*[.:]?\s*/i, '');
+    return /^Decision ledger$/i.test(name) || /^(?:Architecture|Code quality|Tests?|Testing|Performance) review$/i.test(name);
+  };
   const words = (s: string) => (clean(s).toLowerCase().replace(/\(recommended\)/g, '').match(/[a-z][a-z0-9_]*/g) ?? [])
     .filter(word => !['the', 'a', 'an', 'and', 'or', 'with', 'to', 'of', 'as', 'is', 'it', 'one', 'first', 'now', 'option', 'recommended', 'planned'].includes(word));
   const labelScore = (native: string, saved: string) => {
@@ -397,13 +453,13 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
     return exact >= 2 ? left.length / right.length : 0;
   };
   const matches: string[] = [];
-  for (let i = start + 1; i < end; i++) {
+  for (let i = start + 1; i < recordEnd; i++) {
     const record = tokens[i]!;
     if (record.type !== 'heading') continue;
     const id = /^(R[1-9]\d*):\s+\S/.exec(clean(record.text))?.[1];
-    if (!id || !currentHeading(i) || withdrawn(q.question, id)) continue;
+    if (!id || !currentHeading(i) || !recordSection(i, record.depth) || withdrawn(q.question, id)) continue;
     let stop = i + 1;
-    while (stop < end && !(tokens[stop]!.type === 'heading' && (tokens[stop] as any).depth <= record.depth)) stop++;
+    while (stop < recordEnd && !(tokens[stop]!.type === 'heading' && (tokens[stop] as any).depth <= record.depth)) stop++;
     const body = tokens.slice(i + 1, stop);
     if (withdrawn(body.filter(t => t.type === 'paragraph').map(t => t.raw).join('\n'), `${id}|D${decision[1]}`)) continue;
     const paragraphs = body.filter(t => t.type === 'paragraph').map(t => t.raw);
@@ -417,9 +473,27 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
     if (sources.length !== 1 || source && sources[0]![1] !== source) continue;
     const questions = fields.flatMap((line, at) => line === `Question D${decision[1]}:` ? [at] : []);
     if (questions.length !== 1 || clean(fields[questions[0]! + 1] ?? '') !== clean(title)) continue;
-    const offered = fields.filter(line => /^Options:/.test(line));
-    if (offered.length !== 1) continue;
-    const labels = [...offered[0]!.slice('Options:'.length).matchAll(/(?:^|\s)([A-D])[).:]\s+(.+?)(?=\s+[A-D][).:]\s+|$)/g)];
+    // The source requires the complete brief, not a literal Options field.
+    // Read option records only inside this Question block, before answer/history.
+    // Code, quotations and foreign blocks never contribute saved option labels.
+    const briefLines = body.flatMap(token => token.type === 'paragraph' ? token.raw.split('\n') :
+      token.type === 'list' ? token.items.flatMap(item => item.tokens.filter(child => child.type === 'text' || child.type === 'paragraph').flatMap(child => child.raw.split('\n'))) : [])
+      .map(line => line.replace(/\*\*/g, '').replace(/^\s*[-*+]\s+(?=[A-D][).:]\s)/, '').trim());
+    const questionAt = briefLines.indexOf(`Question D${decision[1]}:`);
+    if (questionAt < 0) continue;
+    const remaining = briefLines.slice(questionAt + 2);
+    const boundary = remaining.findIndex(line => /^(?:Question D[1-9]\d*|Finding|Plan baseline|Runtime evidence|State|Actual answer|Accepted scope|History):/.test(line));
+    const brief = remaining.slice(0, boundary < 0 ? remaining.length : boundary);
+    if (brief.some(line => /^(?:quoted|copied|historical|example|hypothetical|template)(?:\s+[^:]*)?:/i.test(line))) continue;
+    const labels: Array<[string, string, string]> = [];
+    for (const line of brief) {
+      // Compact and expanded briefs use the same A-D records. Descriptions
+      // remain prose; their mentions of options cannot define another label.
+      const content = line.replace(/^Options:\s*/, '');
+      if (!/^[A-D][).:]\s+\S/.test(content)) continue;
+      for (const match of content.matchAll(/(?:^|\s)([A-D])[).:]\s+(.+?)(?=\s+[A-D][).:]\s+|$)/g))
+        labels.push([match[0], match[1]!, match[2]!]);
+    }
     if (labels.length !== q.options.length || labels.some((label, index) => label[1] !== String.fromCharCode(65 + index))) continue;
     const comparisons = body.filter(t => t.type === 'table').filter(table => {
       if (table.type !== 'table') return false;

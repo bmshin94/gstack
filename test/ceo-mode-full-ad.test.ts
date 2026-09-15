@@ -1,10 +1,11 @@
 import {describe,expect,test} from 'bun:test';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
-import {hasNativePostAnswerCeoPosture,nextCeoModeNavigation} from './helpers/ceo-mode-option';
+import {ceoExpansionPacingChoice,ceoExpansionPacingReady,hasNativePostAnswerCeoPosture,nextCeoModeNavigation} from './helpers/ceo-mode-option';
 import {capturePlanCountQuestion,nativePlanCallFingerprint,planCountPrerequisitePick,planCountQuestionInput} from './helpers/claude-pty-runner';
 import {readPlanCountTranscript,type NativePublicToolEvent,type NativePlanQuestionCall} from './helpers/plan-count-transcript';
 import captured from './fixtures/ceo-mode-full-ad.json';
 import kindCapture from './fixtures/ceo-expansion-posture-kind-dacc.json';
+import pauseCapture from './fixtures/ceo-expansion-pause-6714.json';
 import {E2E_TOUCHFILES,selectTests} from './helpers/touchfiles';
 const pattern=/\b(expansion|10x|delight|dream|cathedral|opt[\s-]?in)\b/i;
 function replay(i:number){
@@ -186,4 +187,181 @@ describe('completed expansion disposition classes from the retained dacc public 
       if(kind==='missing reply')e.events.pop();
       expect(match(e)).toBe(false);
     });
+});
+
+
+describe('owned expansion decisions with a nondecision discussion control', () => {
+  function current() {
+    const transcript = { status: 'ready' as const, calls: structuredClone(pauseCapture.calls), assistantMessages: [] };
+    const events = structuredClone(pauseCapture.events) as NativePublicToolEvent[];
+    for (const event of events) if (event.kind === 'use') event.input = { questions: transcript.calls.find(c => c.toolUseId === event.toolUseId)!.questions };
+    return { transcript, events };
+  }
+  function accepted(e = current()) { return hasNativePostAnswerCeoPosture(e.transcript, 'SCOPE EXPANSION', pattern, pauseCapture.selectedAt, e.events); }
+  test('the captured completed Add is posture evidence; the unchosen Hold qualifier does not change its action', () => {
+    const e = current();
+    expect(e.transcript.calls[0]!.answeredAt).toBe('2026-09-15T12:33:17.286Z');
+    expect(e.transcript.calls[1]!.answeredAt).toBe('2026-09-15T12:34:22.430Z');
+    expect(e.events[2]!.timestamp).toBe('2026-09-15T12:34:20.084Z');
+    expect(e.transcript.calls[1]!.answers[e.transcript.calls[1]!.questions[0]!.question]).toBe('Add to scope (recommended)');
+    expect(accepted(e)).toBe(true);
+  });
+  test.each([
+    ['Pause — stop the review and discuss', 'Pauses the review for clarification. No scope decision is made. Delays the remaining questions.'],
+    ['D) Hold: discuss first', 'Stops here so we can talk through the constraints. Nothing is approved yet. Delays this review.'],
+    ['Pause (wait for clarification)', 'Waits for clarification before deciding. No disposition is recorded yet.'],
+    ['Hold', ''],
+  ])('procedural label %s remains a nondecision control', (label, description) => {
+    const e=current(),option=e.transcript.calls[1]!.questions[0]!.options[3]!;
+    option.label=label;option.description=description;
+    expect(accepted(e)).toBe(true);
+  });
+  test.each([
+    ['Hold and add Redis', 'Pauses the review. No decision is made.'],
+    ['Pause (approve the proposal)', 'Waits for discussion. Nothing is decided.'],
+    ['Hold (roll back deployment)', 'Pauses the review. No disposition is recorded.'],
+    ['Continue', 'Pauses the review. No decision is made.'],
+    ['Hold', 'Pauses the review and adds Redis. Nothing is decided.'],
+    ['Pause', 'Waits for discussion. No decision is made and include Redis caching.'],
+    ['Hold', 'Stops the chain. No decision is made. Then deploy the new cache.'],
+    ['Hold', 'Pauses the review and silently approves the proposal. No decision is recorded.'],
+    ['Pause', 'Waits for discussion. "No decision is made."'],
+    ['Pause', "Waits for discussion. 'No decision is made.'"],
+    ['Pause', 'Waits for discussion. ‘No decision is made.’'],
+    ['Pause', 'Waits for discussion. “No decision is made.”'],
+    ['Hold', 'Stops here for discussion, then chooses the default.'],
+    ['Hold', 'Pauses this review. No choice is recorded. "Add Redis caching" will also happen.'],
+  ])('action-bearing or unproved control %s does not supply posture evidence (%s)', (label,description) => {
+    const e=current(),option=e.transcript.calls[1]!.questions[0]!.options[3]!;
+    option.label=label;option.description=description;
+    expect(accepted(e)).toBe(false);
+  });
+  test('selecting the valid discussion control is still not a completed substantive disposition', () => {
+    const e=current(),c=e.transcript.calls[1]!,q=c.questions[0]!;c.answers={[q.question]:q.options[3]!.label};
+    expect(accepted(e)).toBe(false);
+  });
+  test('the actual capture still requires its owned successful acknowledgment', () => {
+    const e=current();e.events.pop();expect(accepted(e)).toBe(false);
+  });
+});
+
+
+describe('EXPANSION pacing preserves one separate substantive continuation', () => {
+  const retry=pauseCapture.retry;
+  function current() {
+    const mode=structuredClone(retry.mode),pacing=structuredClone(retry.pacing);
+    pacing.answered=false;delete (pacing as any).answers;delete (pacing as any).answeredAt;delete (pacing as any).unansweredQuestionIndices;
+    const transcript={status:'ready' as const,calls:[mode,pacing],assistantMessages:[]};
+    return {transcript,pacing,visible:pane(pacing as NativePlanQuestionCall,0)};
+  }
+  function choice(e=current()) {return ceoExpansionPacingChoice(e.visible,e.transcript,retry.selectedAt);}
+  // Canonical panes below are projected from the exact native request. The
+  // CLI 2.1.251 redraw stream retained these two built-ins, not a stable frame.
+  function withNativeControls(e=current()) {
+    e.visible=e.visible.replace('Enter to select','4. Type something.\n5. Chat about this\nEnter to select');
+    return e;
+  }
+  test('the observed native pacing controls do not become authored choices',()=>{
+    expect(choice(withNativeControls())?.index).toBe(1);
+  });
+  test.each(['Choosing Full per-item split approves E1 immediately.',
+    'Answering this question authorizes every proposed expansion.',
+    'This answer commits E1 to the implementation scope.',
+    'Choosing Full per-item split deploys E1 immediately.',
+    'This answer ships E1 immediately.',
+    'Choosing Full per-item split enables E1.',
+    'This answer disables E2.',
+    '“Choosing Full per-item split approves E1 immediately.”'])('whole-question scope effect is not pacing: %s',effect=>{
+    const e=current();e.pacing.questions[0]!.question=e.pacing.questions[0]!.question.replace('ELI10:',`ELI10: ${effect}`);
+    e.visible=pane(e.pacing as NativePlanQuestionCall,0);expect(choice(e)?.index).toBe(0);
+  });
+  test.each(['unknown action','reordered controls','extra control','mismatched authored option'])('native pacing pane rejects %s',kind=>{
+    const e=withNativeControls();
+    if(kind==='unknown action')e.visible=e.visible.replace('Type something.','Approve all now.');
+    if(kind==='reordered controls')e.visible=e.visible.replace('Type something.','Chat about this').replace('5. Chat about this','5. Type something.');
+    if(kind==='extra control')e.visible=e.visible.replace('Enter to select','6. More actions\nEnter to select');
+    if(kind==='mismatched authored option')e.visible=e.visible.replace('Full per-item split','Approve all proposals');
+    expect(choice(e)?.index).toBe(0);
+  });
+  test('the captured full-per-item answer preserves scope; pacing alone and actual pending E1 remain negative',()=>{
+    const e=current(),pick=choice(e);expect(pick?.index).toBe(1);
+    expect(hasNativePostAnswerCeoPosture({status:'ready',calls:[retry.mode,retry.pacing],assistantMessages:[]},'SCOPE EXPANSION',pattern,retry.selectedAt,[])).toBe(false);
+    expect(retry.pendingProposal.answered).toBe(false);
+    expect(ceoExpansionPacingReady('next screen',e.transcript,pick!,[])).toBe(false);
+  });
+  test('the preserving option can be reordered or use equivalent individual-walkthrough wording',()=>{
+    const e=current(),q=e.pacing.questions[0]!;q.options.reverse();
+    q.options[2]!.label='All proposals individually';
+    q.options[2]!.description='Each proposal separately with Add / Defer / Skip / Hold. No item is skipped or merged without your approval. Delays the remaining review.';
+    e.visible=pane(e.pacing as NativePlanQuestionCall,0);expect(choice(e)?.index).toBe(3);
+  });
+  test.each(['foreign','unanswered mode','wrong mode','already answered','mixed packet','mismatched viewport','narrowing','bundled approval','quoted assurance','duplicate preserving choice','multiple pending calls'])('%s cannot authorize pacing',kind=>{
+    const e=current(),q=e.pacing.questions[0]!,o=q.options[0]!;
+    if(kind==='foreign')e.pacing.sessionId='foreign';
+    if(kind==='unanswered mode')e.transcript.calls[0]!.answered=false;
+    if(kind==='wrong mode')e.transcript.calls[0]!.answers={[e.transcript.calls[0]!.questions[0]!.question]:'HOLD SCOPE'};
+    if(kind==='already answered')e.pacing.answered=true;
+    if(kind==='mixed packet')e.pacing.questions.push({...structuredClone(q),header:'Extra scope',question:'Approve all proposals now?'});
+    if(kind==='narrowing')o.description+=' Add E1 and drop E2 now.';
+    if(kind==='bundled approval')o.label='Full per-item split and approve all';
+    if(kind==='quoted assurance')o.description=o.description.replace('No proposal is dropped or merged without your say','"No proposal is dropped or merged without your say"');
+    if(kind==='duplicate preserving choice')q.options[1]=structuredClone(o);
+    if(kind==='multiple pending calls')e.transcript.calls.push({...structuredClone(e.pacing),toolUseId:'another-pending-call'});
+    if(kind!=='mismatched viewport')e.visible=pane(e.pacing as NativePlanQuestionCall,0);
+    else e.visible=e.visible.replace('Full per-item split','Narrow first');
+    if(['foreign','unanswered mode','wrong mode','already answered'].includes(kind))expect(choice(e)).toBeNull();
+    else expect(choice(e)?.index).toBe(0);
+  });
+  test('the pacing transition needs its successful bound ACK and a different current pane',()=>{
+    const e=current(),pick=choice(e)!;e.transcript.calls[1]=structuredClone(retry.pacing);
+    const c=e.transcript.calls[1]!,events:NativePublicToolEvent[]=[
+      {kind:'use',name:'AskUserQuestion',sessionId:c.sessionId,toolUseId:c.toolUseId,timestamp:new Date(Date.parse(c.answeredAt!)-1000).toISOString(),input:{questions:c.questions}},
+      {kind:'result',sessionId:c.sessionId,toolUseId:c.toolUseId,timestamp:c.answeredAt!,isError:false},
+    ];
+    // Request time is synthetic; the captured ACK time and request body are retained.
+    expect(ceoExpansionPacingReady('a different current pane',e.transcript,pick,events)).toBe(true);
+    expect(ceoExpansionPacingReady(e.visible,e.transcript,pick,events)).toBe(false);
+    expect(ceoExpansionPacingReady('a different current pane',e.transcript,pick,events.slice(0,1))).toBe(false);
+    events[1]!.isError=true;expect(ceoExpansionPacingReady('a different current pane',e.transcript,pick,events)).toBe(false);
+    events[1]!.isError=false;c.answers={[c.questions[0]!.question]:c.questions[0]!.options[1]!.label};
+    expect(ceoExpansionPacingReady('a different current pane',e.transcript,pick,events)).toBe(false);
+  });
+  function acknowledgedProposal() {
+    // Derived transition only: pending E1 never received an actual paid ACK.
+    // Missing original request times below are explicitly synthetic.
+    const mode=structuredClone(retry.mode),proposal=structuredClone(retry.pendingProposal) as NativePlanQuestionCall;
+    proposal.answered=true;proposal.answers={[proposal.questions[0]!.question]:proposal.questions[0]!.options[0]!.label};proposal.unansweredQuestionIndices=[];
+    proposal.answeredAt=new Date(Date.parse(retry.pacing.answeredAt)+2000).toISOString();
+    const transcript={status:'ready' as const,calls:[mode,proposal],assistantMessages:[]};
+    const events:NativePublicToolEvent[]=transcript.calls.flatMap(c=>[
+      {kind:'use' as const,name:'AskUserQuestion',sessionId:c.sessionId,toolUseId:c.toolUseId,timestamp:new Date(Date.parse(c.answeredAt!)-1000).toISOString(),input:{questions:c.questions}},
+      {kind:'result' as const,sessionId:c.sessionId,toolUseId:c.toolUseId,timestamp:c.answeredAt!,isError:false},
+    ]);
+    return {transcript,events};
+  }
+  test('a separately acknowledged current proposal establishes scope expansion through its real before/after comparison',()=>{
+    const e=acknowledgedProposal();expect(hasNativePostAnswerCeoPosture(e.transcript,'SCOPE EXPANSION',pattern,retry.selectedAt,e.events)).toBe(true);
+    expect(hasNativePostAnswerCeoPosture(e.transcript,'SCOPE EXPANSION',/cathedral/i,retry.selectedAt,e.events)).toBe(false);
+  });
+  test.each(['ordinal/source link','decimal decision identity','before/after paraphrase','defer','skip'])('%s preserves the same current proposal',kind=>{
+    const e=acknowledgedProposal(),c=e.transcript.calls[1]!,q=c.questions[0]!;
+    if(kind==='ordinal/source link')q.question=q.question.replace('E1: Project-shared views (ledger row S1)','Proposal 1 of 7: E1 — Project-shared views [source](PLAN.md)');
+    if(kind==='decimal decision identity')q.question=q.question.replace('D3.1 —','D12.3.1 —');
+    if(kind==='before/after paraphrase')q.question=q.question.replace('Today the plan saves a view for one member only. E1 adds','As written, each member keeps private views. E1 would introduce');
+    c.answers={[q.question]:q.options[kind==='defer'?1:kind==='skip'?2:0]!.label};e.events[2]!.input={questions:c.questions};
+    expect(hasNativePostAnswerCeoPosture(e.transcript,'SCOPE EXPANSION',pattern,retry.selectedAt,e.events)).toBe(true);
+  });
+  test.each(['pending','missing ACK','wrong proposal identity','no current baseline','vague baseline','second question','quoted comparison','foreign','selected pause'])('%s supplies no proposal completion',kind=>{
+    const e=acknowledgedProposal(),c=e.transcript.calls[1]!,q=c.questions[0]!;
+    if(kind==='pending')c.answered=false;
+    if(kind==='missing ACK')e.events.pop();
+    if(kind==='wrong proposal identity')q.question=q.question.replace('E1 adds','E2 adds');
+    if(kind==='no current baseline')q.question=q.question.replace('Today the plan saves','Previously an unrelated plan saved');
+    if(kind==='vague baseline')q.question=q.question.replace('Today the plan saves a view for one member only.','Today the plan is interesting.');
+    if(kind==='second question')q.question=q.question.replace('ELI10:','ELI10: Should we remove access checks?');
+    if(kind==='quoted comparison')q.question=q.question.replace('ELI10: Today','ELI10: "Today').replace('Stakes if','"\nStakes if');
+    if(kind==='foreign')c.sessionId='foreign';
+    c.answers={[q.question]:q.options[kind==='selected pause'?3:0]!.label};e.events[2]!.input={questions:c.questions};
+    expect(hasNativePostAnswerCeoPosture(e.transcript,'SCOPE EXPANSION',pattern,retry.selectedAt,e.events)).toBe(false);
+  });
 });

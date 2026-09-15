@@ -209,6 +209,7 @@ describe('selectTests', () => {
       'office-hours-forcing-energy': 'periodic',
       'office-hours-builder-wildness': 'periodic',
       'office-hours-brain-writeback': 'periodic',
+      'plan-design-review-plan-mode': 'periodic',
       'plan-ceo-review-format-mode': 'periodic',
       'plan-ceo-review-format-approach': 'periodic',
       'plan-eng-review-format-coverage': 'periodic',
@@ -321,10 +322,10 @@ describe('selectTests', () => {
     expect(result.selected).not.toContain('retro');
   });
 
-  test('section-capture tool isolation regression selects only its three capture workflows', () => {
+  test('session tool isolation regression selects its four capture workflows', () => {
     const result = selectTests(['test/session-runner-tools.test.ts'], E2E_TOUCHFILES);
     expect(result.selected.sort()).toEqual([
-      'carve-section-loading', 'plan-ceo-section-loading', 'ship-section-loading',
+      'carve-section-loading', 'plan-ceo-section-loading', 'plan-design-review-plan-mode', 'ship-section-loading',
     ]);
     expect(result.reason).toBe('diff');
   });

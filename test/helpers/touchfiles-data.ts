@@ -286,6 +286,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   ],
   'plan-ceo-mode-routing':       [
     'test/fixtures/ceo-expansion-posture-kind-dacc.json',
+    'test/fixtures/ceo-expansion-pause-6714.json',
     'test/ceo-mode-pending-submit.test.ts', 'test/fixtures/ceo-mode-pending-submit.json',
     "test/plan-count-session-cwd.test.ts",
 
@@ -382,6 +383,9 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // completion-status resolvers because they affect question cadence and
   // terminal output (the regression surface this test catches).
   'plan-ceo-finding-count':      [
+    'test/fixtures/ceo-recorded-decisions-67147822.json',
+    'test/plan-count-cropped-wrap.test.ts',
+    'test/fixtures/plan-count-cropped-wrap-6714.json',
     'test/eng-finding-retry-budget.test.ts',
     'test/ceo-native-ledger-replay.test.ts', 'test/fixtures/ceo-native-ledger-8525.json',
     'test/fixtures/ceo-recorded-decisions-dacc95ea.json',
@@ -412,6 +416,14 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'test/helpers/ceo-paired-fixture.ts', 'test/ceo-paired-payment-fixture.test.ts', 'test/fixtures/ceo-paired-option-values.json', 'test/fixtures/paired-payment/**', 'test/fixtures/ceo-existing-payment/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/tasks-section.ts'
   ],
   'plan-eng-finding-count':      [
+    'test/eng-current-native-seeds.test.ts',
+    'test/fixtures/eng-current-native-seeds-6714.json',
+    'test/plan-count-cropped-wrap.test.ts',
+    'test/fixtures/plan-count-cropped-wrap-6714.json',
+    'test/eng-batching-saved-ledger.test.ts',
+    'test/fixtures/eng-batching-saved-ledger-dacc.json',
+    'test/fixtures/eng-batching-expanded-ledger-6714.json',
+    'test/fixtures/eng-native-review-identities-6714.json',
     'test/eng-test-plan-edit-approval.test.ts',
     'test/fixtures/eng-test-plan-edit-dacc.json',
     'test/helpers/autoplan-artifact-recorder.ts',
@@ -465,6 +477,10 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'scripts/resolvers/testing.ts', 'test/helpers/eng-finding-fixture.ts', 'test/eng-finding-fixture.test.ts', 'test/fixtures/eng-existing-auth/**', 'scripts/resolvers/review.ts'
   ],
   'plan-design-finding-count':   [
+    'test/plan-count-cropped-wrap.test.ts',
+    'test/fixtures/plan-count-cropped-wrap-6714.json',
+    'test/design-count-current-pass.test.ts',
+    'test/fixtures/design-count-current-pass.json',
     'test/eng-finding-retry-budget.test.ts',
     'test/design-count-native-8525.test.ts', 'test/fixtures/design-count-native-8525.json',
     'test/design-count-native-issue-fields.test.ts', 'test/fixtures/design-count-native-issue-fields.json',
@@ -501,6 +517,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/helpers/plan-review-board-feedback.ts', 'test/plan-review-board-feedback.test.ts', 'test/fixtures/design-board-questions.json', 'design/src/daemon-state.ts', 'design/src/daemon.ts', 'design/test/daemon-tests-fixtures.ts', 'design/src/daemon-client.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'test/design-finding-fixture.test.ts', 'scripts/resolvers/review.ts', 'bin/gstack-paths', 'bin/gstack-slug', 'scripts/resolvers/design.ts'
   ],
   'plan-devex-finding-count':    [
+    'test/plan-count-cropped-wrap.test.ts',
+    'test/fixtures/plan-count-cropped-wrap-6714.json',
     'test/eng-finding-retry-budget.test.ts',
     "test/dx-upgrade-transition-aw.test.ts",
     "test/fixtures/dx-upgrade-transition-aw.json",
@@ -559,6 +577,10 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // confirm" plan write. runPlanSkillFloorCheck cannot detect that shape
   // (it exits on first AUQ); runPlanSkillCounting can.
   'plan-eng-multi-finding-batching': [
+    'test/plan-count-cropped-wrap.test.ts',
+    'test/fixtures/plan-count-cropped-wrap-6714.json',
+    'test/fixtures/eng-batching-expanded-ledger-6714.json',
+    'test/fixtures/eng-native-review-identities-6714.json',
     'test/eng-finding-retry-budget.test.ts',
     'test/eng-batching-native-replay.test.ts', 'test/fixtures/eng-batching-native-8525.json',
     'test/eng-batching-saved-ledger.test.ts', 'test/fixtures/eng-batching-saved-ledger-dacc.json',
@@ -581,6 +603,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'scripts/resolvers/testing.ts', 'test/fixtures/eng-file-permission-repaint.json'
   ],
   'plan-ceo-split-overflow': [
+    'test/plan-count-cropped-wrap.test.ts',
+    'test/fixtures/plan-count-cropped-wrap-6714.json',
     'test/eng-finding-retry-budget.test.ts',
     "test/plan-count-session-cwd.test.ts",
 'test/pty-screen-unicode-ap.test.ts', 'test/design-crop-gutter-ap.test.ts', 'test/fixtures/design-crop-gutter-ap.json', 'bin/gstack-config', 'plan-ceo-review/**', 'scripts/resolvers/preamble.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'bin/gstack-question-preference', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/plan-count-native-input.test.ts', 'test/helpers/pty-screen.ts', 'test/pty-screen.test.ts', 'test/pty-screen-session.test.ts', 'test/fixtures/pty-screen/**', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/claude-pty-runner.unit.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/helpers/plan-count-transcript.ts', 'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json', 'test/helpers/plan-count-pending-exit.ts', 'test/plan-count-pending-exit.test.ts', 'test/plan-count-transcript.test.ts', 'test/helpers/plan-count-artifacts.ts', 'test/plan-count-artifacts.test.ts', 'test/helpers/eval-store.ts', 'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts', 'test/plan-count-timeout.test.ts', 'test/plan-count-navigation-r.test.ts', 'test/plan-count-prerequisite-n.test.ts', 'test/fixtures/ceo-prerequisite-n-call.json', 'test/fixtures/forcing-finding-seeds.ts', 'test/skill-e2e-plan-ceo-split-overflow.test.ts', 'test/plan-count-checkbox.test.ts', 'test/fixtures/ceo-checkbox-l.screen.txt', 'test/helpers/plan-count-file-permission.ts', 'test/plan-count-file-permission.test.ts', 'test/fixtures/plan-count-edit-permission-t.json', 'test/plan-count-owned-permission.test.ts', 'test/fixtures/plan-count-owned-permission-v.json', 'test/fixtures/ceo-questionless-w-native.json', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/plan-count-permission-ac.test.ts', 'test/fixtures/plan-count-permission-ac.json', 'test/fixtures/plan-count-permission-ad.json', 'test/fixtures/plan-count-permission-ae.json', 'test/fixtures/plan-count-permission-target-ad-v2.json', 'test/fixtures/plan-count-permission-ah.json',
