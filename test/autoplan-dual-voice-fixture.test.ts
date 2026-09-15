@@ -8,12 +8,13 @@ const ROOT = path.resolve(import.meta.dir, '..');
 const ORIGINAL_PLAN = `# Test Plan: add /greet skill
 
 ## Context
-Add a new /greet skill that prints a welcome message.
+Add /greet to the existing Skill Toolbox project, using its current template,
+registration and generation conventions. Its only behavior is to print "hello".
 
 ## Scope
-- Create greet/SKILL.md with a simple "hello" flow
-- Add to gen-skill-docs pipeline
-- One unit test
+- Author greet/SKILL.md.tmpl with frontmatter name "greet", description "Print a welcome message.", and body 'Print "hello".'
+- Append "greet" to the package.json skills array, preserving "about". Run the existing gen:skill-docs command to generate greet/SKILL.md and .claude/skills/greet/SKILL.md from that template.
+- Add one test/greet.test.ts unit test asserting the expected frontmatter and body, and byte equality between the template and both generated files. Keep the existing about test.
 `;
 
 // Exercise the actual paid registration and Bun retry lifecycle with only the
@@ -50,8 +51,21 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/session-runner.ts'))}
     const plan = path.join(cwd, 'TEST_PLAN.md');
     const state = opts.env?.GSTACK_HOME;
     const config = opts.env?.CLAUDE_CONFIG_DIR;
+    const entryPath = JSON.parse(/^Read ("[^\\n]+") and execute the standalone CEO dual-voice review described there\\.$/.exec(opts.prompt)?.[1] ?? 'null');
+    const entry = entryPath ? fs.readFileSync(entryPath, 'utf8') : '';
+    const actualCore = fs.readFileSync(path.join(${JSON.stringify(ROOT)}, 'autoplan/SKILL.md'), 'utf8');
+    const actualPhase = fs.readFileSync(path.join(${JSON.stringify(ROOT)}, 'autoplan/sections/ceo-phase.md'), 'utf8');
+    const exactDual = actualPhase.slice(actualPhase.indexOf('Step 0.5 (Dual Voices):'), actualPhase.indexOf('Sections 1-11 —'));
+    const exactPreflight = actualCore.slice(actualCore.indexOf('## Phase 0.5: Outside reviewer preflight'), actualCore.indexOf('## Phase 1: CEO Review'));
+    const actualPlan = fs.readFileSync(path.join(opts.env.HOME, 'active-plan.md'), 'utf8');
     const fact = {cwd, initial: fs.readFileSync(plan, 'utf8'), env: opts.env,
-      prompt: opts.prompt, timeout: opts.timeout, maxTurns: opts.maxTurns,
+      prompt: opts.prompt, entryPath, entry: {exactDual: entry.includes(exactDual), exactPreflight: entry.includes(exactPreflight),
+        scopeDeclared: entry.includes('Step 0 and its\\nSpec Review Loop have not run in this fixture'),
+        noPriorReview: actualPlan.split('## Review record')[1].trim() === '',
+        originalRestore: fs.readFileSync(path.join(opts.env.HOME, 'restore.md'), 'utf8') === fs.readFileSync(plan, 'utf8'),
+        currentInput: actualPlan.includes(fs.readFileSync(plan, 'utf8')),
+        hasActualRanges: /ranges: \\[\\{\"offset\":1,\"limit\":/.test(entry)},
+      timeout: opts.timeout, maxTurns: opts.maxTurns,
       allowedTools: opts.allowedTools, tools: opts.tools,
       appendedPrompt: opts.appendSystemPrompt, model: opts.model,
       trusted: config ? JSON.parse(fs.readFileSync(path.join(config, '.claude.json'), 'utf8')).projects?.[cwd]?.hasTrustDialogAccepted : null,
@@ -145,12 +159,18 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/session-runner.ts'))}
     }
     if (scenario === 'runner') throw Error('controlled dual-voice runner failure');
     const noAgent = scenario === 'no-agent' || scenario === 'retry' && attempts.length === 1;
+    const {prepareMethodology, createSnapshot} = await import(${JSON.stringify(path.join(ROOT, 'bin/gstack-autoplan-snapshot.ts'))});
+    const {loadAutoplanDualCommandContract} = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/autoplan-dual-voice-evidence.ts'))});
+    const active = path.join(opts.env.HOME, 'active-plan.md'), restore = path.join(opts.env.HOME, 'restore.md');
+    const methodology = prepareMethodology('ceo', path.join(${JSON.stringify(ROOT)}, 'plan-ceo-review/SKILL.md'), restore);
+    const snapshot = createSnapshot('ceo', active, restore, methodology.methodologyPath);
     const calls = [
-      ...(!noAgent ? [{tool: 'Agent', input: {prompt: scenario === 'no-progress' ? 'Calculate one plus one' : 'CEO review of this plan'}}] : []),
-      ...(scenario !== 'no-codex' ? [{tool: 'Bash', input: {command: 'codex exec fixture-prompt'}}] : []),
+      ...(!noAgent ? [{id: 'native', tool: 'Agent', input: {prompt: scenario === 'no-progress' ? 'Calculate one plus one' : snapshot.nativeDispatchPrompt}, output: 'INPUT: ceo ' + snapshot.sha256 + '\\nFree review output.'}] : []),
+      ...(scenario !== 'no-codex' ? [{id: 'probe', tool: 'Bash', input: {command: loadAutoplanDualCommandContract(${JSON.stringify(ROOT)}).probe}, output: 'CODEX_MODE: not_installed'}] : []),
     ];
     return {output: '', toolCalls: calls,
-      transcript: [{type: 'assistant', message: {content: calls.map(c => ({type: 'tool_use', name: c.tool, input: c.input}))}}],
+      transcript: calls.flatMap(c => [{type: 'assistant', session_id: 'free-parent', message: {content: [{type: 'tool_use', id: c.id, name: c.tool, input: c.input}]}},
+        {type: 'user', session_id: 'free-parent', message: {content: [{type: 'tool_result', tool_use_id: c.id, content: c.output, is_error: false}]}}]),
       exitReason: noAgent ? 'timeout' : 'success', model: 'free-fixture',
       costEstimate: {estimatedCost: 0, turnsUsed: 1}};
   },
@@ -171,7 +191,9 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-autoplan-dual-voic
       if (scenario === 'retry') expect(attempts[1].initial).toBe(attempts[0].initial);
       for (const attempt of attempts) {
         expect(attempt.initial).toBe(ORIGINAL_PLAN);
-        expect(attempt.prompt).toBe(`/autoplan ${path.join(attempt.cwd, 'TEST_PLAN.md')}`);
+        expect(attempt.prompt).toBe(`Read ${JSON.stringify(attempt.entryPath)} and execute the standalone CEO dual-voice review described there.`);
+        expect(attempt.entryPath).toBe(path.join(attempt.env.HOME, 'ceo-dual-entry.md'));
+        expect(attempt.entry).toEqual({exactDual: true, exactPreflight: true, scopeDeclared: true, noPriorReview: true, originalRestore: true, currentInput: true, hasActualRanges: true});
         expect(attempt.timeout).toBe(600_000);
         expect(attempt.maxTurns).toBe(40);
         expect(attempt.allowedTools).toEqual(['Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob', 'Agent', 'Skill']);

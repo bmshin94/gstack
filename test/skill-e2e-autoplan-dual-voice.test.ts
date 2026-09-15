@@ -1,4 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, afterAll } from 'bun:test';
+import { initializePlan, prepareMethodology, createSnapshot } from '../bin/gstack-autoplan-snapshot';
+import { autoplanDualVoiceEvidence, loadAutoplanDualCommandContract } from './helpers/autoplan-dual-voice-evidence';
 import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { runSkillTest } from './helpers/session-runner';
 import { buildSeedConfig, seedHermeticGstackHome, seedHermeticRuntimeView } from './helpers/hermetic-env';
@@ -21,6 +23,9 @@ const evalCollector = createEvalCollector('e2e-autoplan-dual-voice');
 describeIfSelected('Autoplan dual-voice E2E', ['autoplan-dual-voice'], () => {
   let workDir: string;
   let planPath: string;
+  let entryPath: string;
+  let activePlan: string;
+  let methodologySha256: string;
   let stateDir: string;
   let attemptEnv: Record<string, string>;
 
@@ -142,13 +147,58 @@ test('about is generated and discoverable', () => {
     fs.writeFileSync(planPath, `# Test Plan: add /greet skill
 
 ## Context
-Add a new /greet skill that prints a welcome message.
+Add /greet to the existing Skill Toolbox project, using its current template,
+registration and generation conventions. Its only behavior is to print "hello".
 
 ## Scope
-- Create greet/SKILL.md with a simple "hello" flow
-- Add to gen-skill-docs pipeline
-- One unit test
+- Author greet/SKILL.md.tmpl with frontmatter name "greet", description "Print a welcome message.", and body 'Print "hello".'
+- Append "greet" to the package.json skills array, preserving "about". Run the existing gen:skill-docs command to generate greet/SKILL.md and .claude/skills/greet/SKILL.md from that template.
+- Add one test/greet.test.ts unit test asserting the expected frontmatter and body, and byte equality between the template and both generated files. Keep the existing about test.
 `);
+
+    // Standalone integration entry: real inputs, no claimed Step 0/spec review.
+    // The separate chain case covers /autoplan startup and complete phase order.
+    activePlan = path.join(stateDir, 'active-plan.md');
+    const restorePath = path.join(stateDir, 'restore.md');
+    initializePlan(planPath, activePlan, restorePath);
+    const methodology = prepareMethodology('ceo', path.join(ROOT, 'plan-ceo-review/SKILL.md'), restorePath);
+    methodologySha256 = methodology.sha256;
+    const initialSnapshot = createSnapshot('ceo', activePlan, restorePath, methodology.methodologyPath);
+    const core = fs.readFileSync(path.join(ROOT, 'autoplan/SKILL.md'), 'utf8');
+    const phase = fs.readFileSync(path.join(ROOT, 'autoplan/sections/ceo-phase.md'), 'utf8');
+    const excerpt = (source: string, start: string, end: string) => {
+      const a = source.indexOf(start), b = source.indexOf(end, a + start.length);
+      if (a < 0 || b < a || source.indexOf(start, a + start.length) >= 0)
+        throw Error('Autoplan phase entry source boundary changed');
+      return source.slice(a, b);
+    };
+    const principles = excerpt(core, '## The 6 Decision Principles', '## Sequential Execution');
+    const preflight = excerpt(core, '## Phase 0.5: Outside reviewer preflight', '## Phase 1: CEO Review');
+    const dual = excerpt(phase, 'Step 0.5 (Dual Voices):', 'Sections 1-11 —');
+    entryPath = path.join(stateDir, 'ceo-dual-entry.md');
+    fs.writeFileSync(entryPath, `# Standalone CEO dual-voice review
+
+This invocation covers the outside preflight and CEO Step 0.5 dual voices below.
+The implementation is supplied directly at this phase boundary. Step 0 and its
+Spec Review Loop have not run in this fixture; no prior review or completion is
+claimed. The full /autoplan startup, primary review sections and later phases are
+covered by a separate end-to-end invocation. Execute this section's real native
+review, available outside review and consensus; report their actual results.
+
+Bindings:
+- SNAPSHOT_TOOL: ${JSON.stringify(fs.realpathSync(path.join(runtime, 'bin/gstack-autoplan-snapshot.ts')))}
+- ACTIVE_PLAN: ${JSON.stringify(activePlan)}
+- RESTORE_PATH: ${JSON.stringify(restorePath)}
+- methodologyPath: ${JSON.stringify(methodology.methodologyPath)}
+- Initial implementation snapshot (input only): ${JSON.stringify(initialSnapshot.snapshotPath)}
+
+Before dispatch, Read the bound methodology file completely using these actual
+ranges: ${JSON.stringify(methodology.readRanges)}. They contain the full current
+CEO methodology, not an abridged test rubric. Then execute the following exact
+current preflight and dual-voice section; preserve its native completion barrier,
+input binding, outside fallback and consensus rules.
+
+${principles}${preflight}${dual}`, { mode: 0o444, flag: 'wx' });
   };
 
   beforeEach(() => {
@@ -167,21 +217,15 @@ Add a new /greet skill that prints a welcome message.
   test.skipIf(!evalsEnabled)(
     'both Claude + Codex voices produce output in Phase 1 (within timeout)',
     async () => {
-      // Fire /autoplan with a 10-min hard timeout on the spawn itself.
-      // The skill itself has 10-min phase timeouts + auth-gate failfast.
-      // If Codex is unavailable on the test machine, the skill should print
-      // [codex-unavailable] and still complete the Claude subagent half.
-      // Budget note: 5 min / 30 turns was enough at v1.0-era skill sizes, but
-      // the full-depth Phase 1 (registered skill + CEO review subagent) now
-      // needs longer — at 300s the run was killed mid-CEO-review with both
-      // voices already fired but no Phase-1-complete marker yet.
+      // This bounded metric requires real Phase 1 voice execution, not complete
+      // pipeline exit. A timeout before either dispatch remains a failure.
       const result = await runSkillTest({
         testName: 'autoplan-dual-voice',
         workingDirectory: workDir,
         env: attemptEnv,
-        prompt: `/autoplan ${planPath}`,
+        prompt: `Read ${JSON.stringify(entryPath)} and execute the standalone CEO dual-voice review described there.`,
         timeout: CAPTURE_LONG_MS, // 10 min
-        // /autoplan spawns subagents and calls codex via Bash; it needs the
+        // This real phase spawns subagents and calls codex via Bash; it needs the
         // full tool set to get past Phase 1. Bash+Read+Write alone wasn't
         // enough — the skill stalled trying to invoke Agent/Skill.
         allowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob', 'Agent', 'Skill'],
@@ -189,62 +233,17 @@ Add a new /greet skill that prints a welcome message.
         runId,
       });
 
-      // Accept EITHER outcome as success:
-      //   (a) Both voices produced output (ideal case)
-      //   (b) Codex unavailable + Claude voice produced output (graceful degrade)
-      // Search ONLY the tool-call structure — NOT the prompt string that went in.
-      // Matching against full transcript is risky because the prompt itself
-      // contains "plan-ceo-review" and other marker strings that would produce
-      // false positives regardless of skill behavior. Filter to tool_result
-      // content + assistant messages emitted DURING execution.
-      const transcript = Array.isArray(result.transcript) ? result.transcript : [];
-      // The transcript holds RAW stream-json events: tool_use blocks live
-      // INSIDE assistant events' message.content, and tool_results inside
-      // user events — no top-level entry ever has type 'tool_use'. Filtering
-      // on that shape matched nothing, silently reducing `out` to
-      // result.output alone, so a run killed at the spawn timeout (no result
-      // event) had NOTHING to match and every assertion failed.
-      const executionContent = transcript
-        .filter((entry: any) => entry && (entry.type === 'assistant' || entry.type === 'user'))
-        .map((entry: any) => JSON.stringify(entry))
-        .join('\n');
-      const out = (result.output ?? '') + '\n' + executionContent;
-
-      // Claude voice: require evidence of a dispatched Agent subagent, not
-      // merely the literal string "Agent(" (which could appear in any text).
-      // Task/Agent tool_use entries have name:"Agent" or subagent_type:"..."
-      const claudeVoiceFired = /"name":\s*"Agent"|"subagent_type":\s*"[^"]/.test(out) ||
-                               /Claude\s+(CEO|subagent)\s+(review|complete|finished)|claude-subagent\s/i.test(out);
-      // Codex voice: require evidence of codex CLI invocation (command string in
-      // a Bash tool_use), not prompt-text mentions.
-      const codexVoiceFired = /"command":\s*"[^"]*codex\s+(exec|review)/.test(out) ||
-                              /CODEX SAYS\s*\(/i.test(out);
-      // Unavailable markers: explicit probe-failure strings emitted by the skill.
-      const codexUnavailable = /\[codex-unavailable\]|AUTH_FAILED\b|CODEX_NOT_AVAILABLE\b|codex_cli_missing|Codex CLI not found/i.test(out);
-
-      expect(claudeVoiceFired).toBe(true);
-      expect(codexVoiceFired || codexUnavailable).toBe(true);
-
-      // Hang protection: require pipeline-progress evidence, not name mentions.
-      // Full Phase 1 COMPLETION (three parallel review subagents, each loading a
-      // 25-35K-token skill) routinely exceeds 10 minutes on sonnet, so requiring
-      // the "Phase 1 complete" banner would force a 20-minute test for no extra
-      // dual-voice signal. Accept EITHER the completion banner (the "PHASE 1
-      // COMPLETE" mandatory output in autoplan/sections/ceo-phase.md, which the
-      // skeleton STOP-Reads) OR structural evidence that the
-      // Phase 1 review dispatch actually happened: an Agent tool_use whose input
-      // carries review instructions (execution artifact built by the skill, not
-      // an echo of our prompt).
-      const reachedPhase1 = /Phase\s+1\s+(complete|done|finished)|CEO\s+Review\s+(complete|done|approved)|Strategy\s*&\s*Scope\s+(complete|done)|Phase\s+2\s+(started|begin)/i.test(out);
-      const toolCalls = Array.isArray(result.toolCalls) ? result.toolCalls : [];
-      const reviewDispatched = toolCalls.some((tc: any) =>
-        (tc?.tool === 'Agent' || tc?.tool === 'Task') &&
-        /review|ceo|eng manager|strategy/i.test(JSON.stringify(tc?.input ?? {})));
-      expect(reachedPhase1 || reviewDispatched).toBe(true);
+      const evidence = autoplanDualVoiceEvidence(Array.isArray(result.transcript) ? result.transcript : [], {
+        ownedRoots: [workDir, stateDir], cwd: workDir, activePlan, methodologySha256,
+        commands: loadAutoplanDualCommandContract(ROOT),
+      });
+      expect(evidence.claudeVoiceFired, evidence.reasons.join('; ')).toBe(true);
+      expect(evidence.codexVoiceFired || evidence.codexUnavailable, evidence.reasons.join('; ')).toBe(true);
+      expect(evidence.reviewDispatched).toBe(true);
 
       logCost('autoplan-dual-voice', result);
       recordE2E(evalCollector, 'autoplan-dual-voice', 'Autoplan dual-voice E2E', result, {
-        passed: claudeVoiceFired && (codexVoiceFired || codexUnavailable) && (reachedPhase1 || reviewDispatched),
+        passed: evidence.claudeVoiceFired && (evidence.codexVoiceFired || evidence.codexUnavailable) && evidence.reviewDispatched,
       });
     },
     630_000, // per-test timeout slightly > spawn timeout so cleanup can run
