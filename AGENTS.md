@@ -175,6 +175,10 @@ When fixing failures or preparing `/ship`, follow this order:
    Verify required tool execution with a no-cost smoke check under that launch
    environment; versions and authentication alone do not prove it works. Set
    private artifact modes explicitly and preserve normal fixture permissions.
+   Prove a diagnostic snapshot survives fixture cleanup in the final artifact
+   directory before paid work; an unset EVALS_RUN_ID disables native snapshots.
+   Bind complete spool filenames and classify Bun's out-of-tier describe.skip
+   placeholders separately, with zero selected-case credit.
    Put standalone Git fixtures outside another checkout; verify their resolved
    project slug and state root before interpreting a failure.
    Reject missing explicit test files before invoking Bun; it can silently ignore
