@@ -806,3 +806,91 @@ for(let index=0;index<2;index++) for(const state of ['pending','failed','foreign
   if(state==='no-answer')q.nativeCall!.answers={};
   expect(()=>b955Counter(index,q)).toThrow();
 });
+
+
+const compactTupleB0ca = fixture.compactTupleB0ca;
+const compactQuestionB0ca = () => nativePlanCallFingerprint(clone(compactTupleB0ca.nativeCalls[1]!), 0, true);
+const compactCountB0ca = (plan = compactTupleB0ca.savedPlan, question = compactQuestionB0ca()) => {
+  const counter = createCeoPaymentFindingCounter(compactTupleB0ca.seed, () => plan, ceoFirstReviewAUQ);
+  counter.isReviewAUQ(nativePlanCallFingerprint(clone(compactTupleB0ca.nativeCalls[0]!), 0, true));
+  const counted = counter.isReviewAUQ(question, [compactTupleB0ca.nativeCalls[0]!]);
+  return { counted, trace: counter.trace };
+};
+const withCompactTupleB0ca = (tuple: string) => {
+  const plan = compactTupleB0ca.savedPlan.replace(/\((S|M), (low|medium) risk\)/g, tuple);
+  expect(plan).not.toBe(compactTupleB0ca.savedPlan);
+  return plan;
+};
+
+test('compact effort/risk: actual complete D1 options bind the saved current record and native ACK', () => {
+  const row = compactTupleB0ca;
+  expect(createHash('sha256').update(row.savedPlan).digest('hex')).toBe(row.provenance.excerptSha256);
+  expect(Date.parse(row.provenance.savedAt)).toBeLessThan(Date.parse(row.provenance.requestAt));
+  expect(Date.parse(row.provenance.requestAt)).toBeLessThan(Date.parse(row.nativeCalls[1]!.answeredAt!));
+  expect(row.originalError).toContain('Unsupported current CEO decision');
+  expect(compactCountB0ca()).toMatchObject({counted:true,trace:[{kind:'setup'},{kind:'recorded-decision',ledgerId:'D1'}]});
+  // This route counts the independent decision; it neither invents a seed
+  // result nor declares the original interrupted paid review complete.
+  expect(ceoPaymentFinding(compactQuestionB0ca(),row.seed,row.savedPlan)).toBeNull();
+});
+for(const tuple of ['(S, low risk)','(M, medium risk)','(L, high risk)','(XL, risk low)',
+  '(low risk, S)','(risk medium; M)','(L; Risk: high)','(XL, LOW RISK)'])
+  test(`compact effort/risk supports finite complete tuple ${tuple}`,()=>{
+    const plan = tuple === '(S, low risk)' ? compactTupleB0ca.savedPlan.replaceAll('(M, medium risk)',tuple) : withCompactTupleB0ca(tuple);
+    expect(compactCountB0ca(plan).counted).toBe(true);
+  });
+for(const selected of [0,1,2])test(`compact effort/risk retains all native option bindings for selected ${selected}`,()=>{
+  const fp=compactQuestionB0ca(),q=fp.nativeCall!.questions[0]!;
+  fp.nativeCall!.answers={[q.question]:q.options[selected]!.label};
+  expect(compactCountB0ca(undefined,fp).counted).toBe(true); // synthetic ACK variant only
+});
+for(const tuple of ['(low risk)','(S)','(S, low)','(XS, low risk)','(S, unknown risk)',
+  '(S M, low risk)','(S, M, low risk)','(S, low risk, high risk)','(S, M effort)',
+  '(S, not low risk)','(not S, low risk)','not (S, low risk)','not currently (S, low risk)',
+  'previously (S, low risk)','formerly (S, low risk)','historical (S, low risk)',
+  'hypothetical (S, low risk)','withdrawn (S, low risk)','retracted (S, low risk)',
+  'previously estimated as (S, low risk)','Historical estimate: (S, low risk)',
+  'retracted estimate: (S, low risk)','hypothetical rating: (S, low risk)',
+  '(S, low risk). This estimate is withdrawn','(S, low risk). This tuple is not current',
+  'previously, (S, low risk)','formerly; (S, low risk)','historical — (S, low risk)',
+  'retracted. (S, low risk)','hypothetical: estimate (S, low risk)',
+  '(S, low risk). This estimate is no longer current',
+  '(S, low risk). The tuple has been superseded','(S, low risk). This rating is no longer valid',
+  '(S, low risk) is not current','"(S, low risk)"','`(S, low risk)`',
+  '(S, low risk). Effort L','(S, low risk). Risk high',
+  '(S, low risk) (M, medium risk)','(S, low risk). (XS, high risk)',
+  '(S, low risk). (M, unknown risk)','(S, low risk). (M effort, medium risk)',
+  '(S effort, low risk). (M, medium risk)'])
+  test(`compact effort/risk rejects missing, conflicting, quoted or inactive tuple ${tuple}`,()=>{
+    expect(()=>compactCountB0ca(withCompactTupleB0ca(tuple))).toThrow(/Unsupported/);
+  });
+for(const [name,mutate]of Object.entries({
+  'missing own metadata':(s:string)=>s.replace('(S, low risk)',''),
+  'missing own pros':(s:string)=>s.replace('Pros: one routing path','Benefit: one routing path'),
+  'missing own cons':(s:string)=>s.replace("Cons: the dispatcher's registration API", "Tradeoff: the dispatcher's registration API"),
+  'metadata only inside a quotation':(s:string)=>s.replace('(S, low risk)','"(S, low risk)"'),
+  'metadata moved to another option':(s:string)=>s.replace('(S, low risk)','').replace('(M, medium risk)','(M, medium risk). (S, low risk)'),
+  'foreign evidence':(s:string)=>s.replaceAll('PLAN.md','OTHER.md'),
+  'foreign ledger':(s:string)=>s.replaceAll('D1','OTHER'),
+  'duplicate current ledger':(s:string)=>s+'\n'+s,
+  'historical comparison':(s:string)=>s.replace('### D1.','### Historical D1.'),
+  'quoted comparison':(s:string)=>s.slice(0,s.indexOf('### D1.'))+s.slice(s.indexOf('### D1.')).split('\n').map(l=>'> '+l).join('\n'),
+  'retracted decision':(s:string)=>s.replace('| unresolved |','| retracted |'),
+}))test(`compact effort/risk preserves ${name} boundary`,()=>{
+  const plan=mutate(compactTupleB0ca.savedPlan);expect(plan).not.toBe(compactTupleB0ca.savedPlan);
+  expect(()=>compactCountB0ca(plan)).toThrow(/Unsupported/);
+});
+test('compact effort/risk retains native ownership, complete answer and offered-option guards',()=>{
+  for(const mutate of [
+    (q:ReturnType<typeof compactQuestionB0ca>)=>{q.nativeCall!.answered=false;},
+    (q:ReturnType<typeof compactQuestionB0ca>)=>{q.nativeCall!.failed=true;},
+    (q:ReturnType<typeof compactQuestionB0ca>)=>{q.signature='foreign';},
+    (q:ReturnType<typeof compactQuestionB0ca>)=>{q.nativeCall!.answers={};},
+    (q:ReturnType<typeof compactQuestionB0ca>)=>{q.options[1]!.label='unoffered choice';},
+  ]){const q=compactQuestionB0ca();mutate(q);expect(()=>compactCountB0ca(undefined,q)).toThrow(/Invalid/);}
+});
+
+test('compact effort/risk preserves current metadata beside inert quoted history',()=>{
+  const plan=compactTupleB0ca.savedPlan.replace(/\(([SM]), (low|medium) risk\)/g, '"Historical estimate: (XL, high risk)" $&');
+  expect(compactCountB0ca(plan).counted).toBe(true);
+});

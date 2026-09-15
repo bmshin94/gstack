@@ -377,11 +377,31 @@ function expansionDiscussionControl(label: string, description: string, proposal
   const sameProposalDiscussion = proposalId && clauses.length === 2 &&
     clauses.filter(part => /^(?:stop|pause) the (?:chain|review)$/i.test(part)).length === 1 &&
     clauses.filter(part => new RegExp(`^discuss ${proposalId} before (?:continuing|proceeding|resuming)$`, 'i').test(part)).length === 1;
-  if ((!noDecision.test(prose) && !sameProposalDiscussion) || !/\b(?:paus\w*|stop\w*|wait\w*|discuss\w*|talk)\b/i.test(prose)) return false;
+  // A procedural pause can state the same boundary as three owned clauses:
+  // stop this review to discuss, leave its current disposition open, and wait.
+  // The no-disposition clause alone cannot authenticate a conditional or foreign pause.
+  const undecided = /\b(?:no (?:current )?(?:proposal|candidate|item)s? (?:is|are) (?:being )?(?:decided|resolved)|no (?:(?:current|scope) )?(?:decision|disposition)s? (?:is|are) (?:being )?(?:made|recorded|taken)|(?:this|the current) (?:proposal|candidate|item|decision) (?:remains|stays) (?:undecided|pending))\b/i;
+  const proceduralClauses = prose.split(/[.!?;]/).map(part => part.trim().replace(/^[✅❌]\s*/, ''));
+  const contingent = /\b(?:if|unless|except|provided|assuming|previously|formerly|historical|example|quoted|another|other|different|foreign|later|tomorrow|eventually|next|withdrawn|retracted)\b/i;
+  const paused = proceduralClauses.some(part =>
+    /^(?:(?:pause|stop|hold) (?:the|this) (?:ceremony|chain|review)|(?:the|this) (?:ceremony|chain|review) (?:pauses|stops|is paused|is stopped))\b/i.test(part) &&
+    /\b(?:discuss\w*|discussion|talk|clarif\w*)\b/i.test(part) && !contingent.test(part));
+  const waiting = proceduralClauses.some(part =>
+    /^remaining (?:proposals|candidates|items|questions) (?:wait|remain (?:pending|undecided))\b/i.test(part) && !contingent.test(part));
+  const proceduralPause = paused && waiting && proceduralClauses.some(part =>
+    undecided.exec(part)?.index === 0 && !contingent.test(part));
+  if ((!noDecision.test(prose) && !sameProposalDiscussion && !proceduralPause) || !/\b(?:paus\w*|stop\w*|wait\w*|discuss\w*|talk)\b/i.test(prose)) return false;
   // Keep all remaining text, including quotations, in the effect veto. A
   // no-decision assurance cannot conceal a second action in the same control.
-  const effects = `${title}\n${description}`.replace(noDecision, '');
-  return !/\b(?:add\w*|includ\w*|approv\w*|accept\w*|reject\w*|skip\w*|cut\w*|implement\w*|ship\w*|deploy\w*|delet\w*|remov\w*|creat\w*|writ\w*|updat\w*|enabl\w*|disabl\w*|chang\w*|select\w*|choos\w*|record\w*|execut\w*|commit\w*|roll\s+back)\b/i.test(effects);
+  const effects = `${title}\n${description}`.replace(noDecision, '')
+    .replace(proceduralPause ? new RegExp(undecided.source, 'gi') : /$^/, '');
+  // An earlier pause/undecided clause does not survive a later current status
+  // saying the proposal is decided or the same ceremony has already resumed.
+  if (proceduralPause && (/\b(?:decided|resolved)\b/i.test(effects) ||
+      /\b(?:this|the) (?:review|chain|ceremony) (?:(?:is|was) (?:no longer|not) (?:currently )?(?:paused|stopped)|has (?:now |already )?resumed|is running again)\b/i.test(effects) ||
+      /\b(?:current )?(?:review|chain|ceremony|pause) (?:state|status)\s*:\s*["'`“‘]?(?:active|resumed|running|not paused)\b/i.test(effects))) return false;
+  return !/\b(?:add\w*|includ\w*|approv\w*|accept\w*|reject\w*|skip\w*|cut\w*|implement\w*|ship\w*|deploy\w*|delet\w*|remov\w*|creat\w*|writ\w*|updat\w*|enabl\w*|disabl\w*|chang\w*|select\w*|choos\w*|record\w*|execut\w*|commit\w*|roll\s+back)\b/i.test(effects) &&
+    !/\b(?:decid|resolv)(?:e|es|ed|ing)\s+(?:on\s+)?(?:all|every|this|the|these|current|E[1-9]\d*)\b/i.test(effects);
 }
 
 /** A named current proposal may state its scope comparison without a question-mark title. */

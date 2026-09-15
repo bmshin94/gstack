@@ -337,24 +337,28 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
     (/\bEvidence:\s*plan text\b|\bplan\s+§\s*\S|\bplan\s+sections?\s+\S|^Plan(?: contract)?:\s*\S/i.test(evidence) ||
       lineCitation(evidence) || currentContractCitation(evidence, sourcePlan));
   // The same option may give both dimensions as a parenthesized tuple,
-  // with the value before or after its field. Normalize only complete,
-  // operative tuples; the ordinary field inventory still rejects duplicates.
+  // with the value before or after its field, or a bare finite effort size.
+  // Risk must remain explicit. Inventory every metadata tuple before accepting
+  // one so mixed compact/full forms cannot hide duplicate or invalid claims.
   const optionFacts = (raw: string) => {
     const visible = raw.replace(/`+[^`]*`+|"[^"\n]*"|“[^”\n]*”|(?<![\p{L}\p{N}])'[^'\n]*'(?![\p{L}\p{N}])|‘[^’\n]*’/gu,
       match => ' '.repeat(match.length));
     const firstTradeoff = visible.search(/\b(?:Pros|Cons)\s*:/i);
     const claims = [...visible.matchAll(/\(([^()]+)\)/g)].filter(match =>
-      (firstTradeoff < 0 || match.index! < firstTradeoff) && /\beffort\b/i.test(match[1]!) && /\brisk\b/i.test(match[1]!));
+      (firstTradeoff < 0 || match.index! < firstTradeoff) && /\brisk\b/i.test(match[1]!) &&
+      (/\beffort\b/i.test(match[1]!) || /[,;]/.test(match[1]!)));
     if (!claims.length) return raw;
     if (claims.length !== 1) return null;
     const match = claims[0]!, before = visible.slice(0, match.index).trimEnd();
     const after = visible.slice(match.index! + match[0].length);
-    if (/\b(?:not|never|no longer|previously|formerly|historical|hypothetical|quoted)(?:\s+(?:currently|now|actually|exactly|only|still|just))*$/i.test(before) ||
+    if (/\b(?:not|never|no longer|previously|formerly|historical(?:ly)?|hypothetical(?:ly)?|quoted|withdrawn|retracted)(?:[\s,:;.—–-]+(?:currently|now|actually|exactly|only|still|just|estimated?|rated?|rating|as|at|effort|risk|tuple|metadata))*[\s,:;.—–-]*$/i.test(before) ||
+        /\b(?:this|that|the) (?:estimate|tuple|rating|metadata|effort|risk) (?:is|was|has been) (?:already |now )?(?:withdrawn|retracted|not current|no longer (?:current|valid)|superseded|historical|quoted)\b/i.test(visible) ||
         !/^(?:\s*[.,;]|\s*$)/.test(after)) return null;
     const fields = match[1]!.split(/\s*[,;]\s*/).map(part => {
       const forward = /^(effort|risk)\s*:?\s+(\w+)$/i.exec(part.trim());
       const reverse = /^(\w+)\s+(effort|risk)$/i.exec(part.trim());
-      return forward ? [forward[1]!.toLowerCase(), forward[2]!] : reverse ? [reverse[2]!.toLowerCase(), reverse[1]!] : [];
+      return forward ? [forward[1]!.toLowerCase(), forward[2]!] : reverse ? [reverse[2]!.toLowerCase(), reverse[1]!]
+        : /^(?:S|M|L|XL)$/i.test(part.trim()) ? ['effort', part.trim()] : [];
     });
     const facts = Object.fromEntries(fields.filter(field => field.length === 2));
     if (fields.length !== 2 || Object.keys(facts).length !== 2 ||
