@@ -2,6 +2,15 @@
 
 After Step 0 resolves scope, complete Prior Learnings, Retrospective learning and Confidence Calibration below. Then use the Decision procedure throughout Sections 1–4 and the outside review.
 
+## Review record and write policy
+
+Keep the target selected at the Scope gate. For a plan, review its proposed work; for a branch diff or code path, review that existing code and record proposed remedies without inventing a plan document. References to the plan below mean the selected proposal, or the proposed work recorded during a code review.
+
+The **decision ledger** is the collection of decision records, grids, briefs and actual answers defined below. Its **write/read-only rules** apply to every review artifact:
+- Use the requested report file, otherwise the reviewed plan, for the ledger and narrative outputs. For a code review with neither, present the complete review in chat. Do not edit reviewed implementation files unless the user explicitly authorized that work.
+- Check user and host write limits separately for that document, the Test Plan Artifact, task JSONL, TODOs and logs. A permitted plan write does not authorize another path. If a path is forbidden, present the complete artifact as **not persisted** and do not attempt that write.
+- If a save still fails after any recovery explicitly specified by its writer, report it and stop. Do not replace failed persistence with a success claim or silently switch to chat. Explicitly best-effort logs retain their documented behavior.
+
 **Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-4) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
 {{ANTI_SHORTCUT_CLAUSE}}
@@ -76,7 +85,7 @@ If another independent change appears, return to Step 2 and split. After each an
 
 **4. Save the exact brief before sending.**
 
-Use Write or Edit to save the decision record, current grid and brief in the requested report file, otherwise the reviewed plan. Preserve other content and approvals. An old comparison or critic's recommendation cannot replace this audit.
+Use Write or Edit to save the decision record, current grid and brief under the ledger's write/read-only rules. Preserve other content and approvals. An old comparison or critic's recommendation cannot replace this audit.
 
 Respect read-only requests and host write limits; present the same material if no writable plan is in scope. If saving fails, report the error and stop before asking. Any change to outcomes, work or meaning returns to Step 3: audit and save the revision first.
 
@@ -133,7 +142,7 @@ Run the decision gate for this section's new or reopened choices. **STOP for eac
 
 ### Continue after Outside Voice
 
-Complete the chosen Outside Voice branch, including its accurate coverage record. Only completed reviews enter Cross-model tension. Then continue to Required outputs; report disabled or unavailable coverage in the Completion summary.
+Complete the chosen Outside Voice branch, including its accurate coverage record. Only completed reviews enter Cross-model tension. Continue to Final planning decisions and the approval check before Required outputs; report disabled or unavailable coverage in the Completion summary.
 
 ## CRITICAL RULE — How to ask questions
 
@@ -147,15 +156,9 @@ Use the preamble's complete decision brief and the finding/decision/question ide
 * **Coverage vs kind:** Score completeness only within this one decision. For each question, compare valid options for one recorded decision: coverage varies the depth of its implementation or proof; kind varies the approach. Coverage options receive `Completeness: N/10`: 10 = complete (all relevant in-scope edge cases), 7 = happy path, 3 = shortcut. Kind options receive no score and the line `Note: options differ in kind, not coverage — no completeness score.` Do not score a package of independent policies as more complete, or fabricate scores for different approaches.
 * Keep option labels short. After each section, report findings and dispositions. Pause for pending decisions; continue when none remain. Exact prior approval still applies.
 
-## Required outputs
+## Final planning decisions
 
-After Sections 1–4 and the Outside Voice path, follow this closing sequence:
-
-1. Resolve the TODO choices below. Write the remaining output sections, Implementation Tasks and Completion summary from accepted decisions; list pending choices separately. Write narrative outputs to the active plan, or the review response when no plan file is present. Use the specified paths for separate artifacts.
-2. Save the complete plan/report and pass its Read-back gate. Only then write Review Log and display the dashboard. Follow the report's no-file rules when no plan file is in scope.
-3. Complete **Next Steps — Review Chaining** below. That question selects navigation only. If a substantive late change arises, use the decision procedure, then repeat the affected outputs, report save, Read-back gate, Review Log and dashboard in that order.
-4. Return to the entrypoint's Section self-check and EXIT PLAN MODE GATE. Verify the completed review there before running the closing hooks; a next-step answer does not replace that gate.
-5. After the gate passes, run the closing hooks below: learnings and any enabled brain write-back, then the preamble's Telemetry command, then the non-blocking Brain Cache Background Refresh. Here, telemetry is the last reporting command; cache refresh is post-completion housekeeping. Do not start these hooks while a question is pending. Make no further plan or approval changes, then call ExitPlanMode.
+After Sections 1–4 and the Outside Voice path, resolve the TODO choices below. Then run the approval check before preparing final outputs.
 
 ### TODOS.md updates
 Present each potential TODO as its own individual AskUserQuestion. Never batch TODOs — one per question. Never silently skip this step. Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.
@@ -171,6 +174,17 @@ For each TODO, describe:
 Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
 
 Do NOT just append vague bullet points. A TODO without context is worse than no TODO — it creates false confidence that the idea was captured while actually losing the reasoning.
+
+{{PLAN_REVIEW_APPROVAL_CHECK}}
+
+## Required outputs
+
+Follow this closing sequence once the approval check passes:
+
+1. Write the output sections, Implementation Tasks and Completion summary from accepted decisions; list pending choices separately. Follow the ledger's write/read-only rules and each artifact's specified path.
+2. Save the complete plan/report and pass its Read-back gate. Only then write Review Log and display the dashboard. Follow the report's no-file rules when no plan file is in scope.
+3. Complete **Next Steps — Review Chaining** below. That question selects navigation only. If a substantive late change arises, resolve it through the decision procedure and approval check, then repeat the affected outputs, report save, Read-back gate, Review Log and dashboard in that order.
+4. Run the learning hooks below. Do not start these hooks while a question is pending. Then return once to the entrypoint for its Section self-check and read-only final gate; that gate precedes telemetry, cache refresh and ExitPlanMode.
 
 ### "NOT in scope" section
 Every plan review MUST produce a "NOT in scope" section listing work that was considered and explicitly deferred, with a one-line rationale for each item.
@@ -278,16 +292,16 @@ After displaying the Review Readiness Dashboard, check if additional reviews wou
 
 **Navigation only.** Match task prerequisites, dependencies and execution order to the written plan; do not add or strengthen them in this question or its option descriptions. A test required before editing one function does not make every independent lane wait for it.
 
-If a substantive late change is needed, return to the decision procedure. After its answer, update the plan's tasks and dependency/parallelization sections, save the refreshed report, and pass the Read-back gate before updating Review Log or the dashboard. Then resume this navigation step. A next-step answer alone approves no implementation change.
+If a substantive late change is needed, return to the decision procedure and approval check. After its answer, update the plan's tasks and dependency/parallelization sections, save the refreshed report, and pass the Read-back gate before updating Review Log or the dashboard. Then resume this navigation step. A next-step answer alone approves no implementation change.
 
 Use AskUserQuestion with only the applicable options:
 - **A)** Run /plan-design-review (only if UI scope detected and no design review exists)
 - **B)** Run /plan-ceo-review (only if significant product change and no CEO review exists)
 - **C)** Ready to implement — run /ship when done
 
-## Closing hooks
+## Learning hooks
 
-The entrypoint returns here only after its final gate passes. These hooks do not change the plan or approval record. Review durable operational learnings as required by the preamble, and use the Capture Learnings format below for other discoveries; do not log the same learning twice.
+After navigation completes, run these hooks without changing the plan or approval record. Review durable operational learnings as required by the preamble, and use the Capture Learnings format below for other discoveries; do not log the same learning twice.
 
 {{LEARNINGS_LOG}}
 
@@ -295,8 +309,4 @@ The entrypoint returns here only after its final gate passes. These hooks do not
 
 {{BRAIN_WRITE_BACK}}
 
-Run the preamble's **Telemetry (run last)** command now, once for this review. Then start the following non-blocking refresh.
-
-{{BRAIN_CACHE_REFRESH}}
-
-Call ExitPlanMode.
+Return to the entrypoint's Section self-check now. Continue forward through its read-only final gate, telemetry, cache refresh and ExitPlanMode; do not return to this section after that gate.

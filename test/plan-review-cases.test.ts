@@ -39,11 +39,20 @@ describe('plan report persistence precedes completion logging', () => {
         const target = report.slice(report.indexOf('### Detect the plan file'), report.indexOf('### Generate the report'));
         expect(target).toContain('Use an explicitly requested output/report file first.');
         expect(target).toContain('Otherwise use the reviewed plan named by the user, then the host active plan.');
-        if (skillName === 'plan-ceo-review') {
+        if (skillName === 'plan-ceo-review' || skillName === 'plan-eng-review') {
           expect(target).toContain('Without a permitted file, produce the complete reviewed plan and report in chat');
           expect(target).not.toContain('skip this section');
         } else {
           expect(target).toContain('If no file is in scope, skip this section');
+        }
+        if (skillName === 'plan-eng-review') {
+          expect(target).toContain('Review record and write policy');
+          const writer = report.slice(report.indexOf('### Write to the plan file'));
+          expect(writer).not.toContain('PLAN MODE EXCEPTION — ALWAYS RUN');
+          expect(writer).toContain('If the target is absent or writing is forbidden');
+          expect(writer).toContain('labeled not persisted');
+          expect(writer).toContain('Do not run the file-writing steps below');
+          expect(writer).toContain('re-read the plan file and retry once');
         }
         expect(report).toContain('prior review entries');
         expect(report).toContain('current Completion Summary or DX Scorecard');
@@ -326,25 +335,63 @@ describe('Eng approved-work decision gate', () => {
     expect(template).not.toContain('Label with NUMBER + LETTER');
   });
 
-  test('navigation and late changes finish before terminal telemetry and cache refresh', () => {
-    const closing = template.split('## Required outputs')[1]!.split('### TODOS.md updates')[0]!;
+  test('scope bootstrap resolves a target without depending on later session routing or decision briefs', () => {
+    const skeleton = readFileSync('plan-eng-review/SKILL.md.tmpl', 'utf8');
+    const bootstrap = skeleton.split('## Scope gate')[1]!.split('{{PREAMBLE}}')[0]!;
+    expect(bootstrap).toContain('before any tool, including preamble and context/brain lookup');
+    expect(bootstrap).toContain('short A/B/C menu below, not a decision brief or ledger entry');
+    expect(bootstrap).toContain('Do not use `D<N>` headings, completeness scores, Question Tuning or session routing here');
+    expect(bootstrap).toContain('The first later decision brief is `D1`');
+    expect(bootstrap).toContain('preferring an available MCP variant over native');
+    expect(bootstrap).toContain('If none is available, or a call fails, use the same plain-prose menu below and wait');
+    expect(bootstrap).toContain('do not auto-select a target from guessed session state');
+    expect(bootstrap).toContain('The preamble includes Context Recovery. Run it after scope resolves');
+    expect(bootstrap).toContain('None of those startup steps may choose a different review target');
+  });
+
+  test('the review record covers code inputs and per-artifact write limits before any decision is saved', () => {
+    const policy = template.split('## Review record and write policy')[1]!.split('**Anti-skip rule:**')[0]!;
+    expect(template.indexOf('## Review record and write policy')).toBeLessThan(template.indexOf('## Decision procedure'));
+    expect(policy).toContain('for a branch diff or code path, review that existing code');
+    expect(policy).toContain('without inventing a plan document');
+    expect(policy).toContain('The **decision ledger** is the collection of decision records, grids, briefs and actual answers');
+    expect(policy).toContain('requested report file, otherwise the reviewed plan');
+    expect(policy).toContain('For a code review with neither, present the complete review in chat');
+    expect(policy).toContain('separately for that document, the Test Plan Artifact, task JSONL, TODOs and logs');
+    expect(policy).toContain('A permitted plan write does not authorize another path');
+    expect(policy).toContain('as **not persisted** and do not attempt that write');
+    expect(policy).toContain('If a save still fails after any recovery explicitly specified by its writer, report it and stop');
+    expect(gate).toContain("under the ledger's write/read-only rules");
+  });
+
+  test('approval readiness follows TODO decisions and finalization returns forward exactly once', () => {
+    const closing = template.split('## Required outputs')[1]!.split('### "NOT in scope" section')[0]!;
     expect(closing).toContain('Read-back gate. Only then write Review Log and display the dashboard');
     expect(closing).toContain('report save, Read-back gate, Review Log and dashboard in that order');
     expect(closing).toContain('Do not start these hooks while a question is pending');
-    expect(closing.indexOf("Return to the entrypoint's Section self-check and EXIT PLAN MODE GATE"))
-      .toBeLessThan(closing.indexOf('After the gate passes, run the closing hooks'));
-    expect(closing).toContain('Make no further plan or approval changes, then call ExitPlanMode');
+    const outputs = ['### TODOS.md updates', '{{PLAN_REVIEW_APPROVAL_CHECK}}', '## Required outputs',
+      '{{PLAN_FILE_REVIEW_REPORT}}', '## Review Log', '{{REVIEW_DASHBOARD}}', '## Next Steps — Review Chaining',
+      '## Learning hooks', '{{BRAIN_WRITE_BACK}}', "Return to the entrypoint's Section self-check now."]
+      .map(stage => template.indexOf(stage));
+    expect(outputs.every(position => position >= 0)).toBe(true);
+    expect(outputs).toEqual([...outputs].sort((a, b) => a - b));
+    expect(template.split('{{PLAN_REVIEW_APPROVAL_CHECK}}')).toHaveLength(2);
+    expect(template).not.toContain('{{BRAIN_CACHE_REFRESH}}');
+    expect(template).not.toContain('Run the preamble\'s **Telemetry');
+    expect(template).toContain('do not return to this section after that gate');
     const ending = template.slice(template.indexOf('{{REVIEW_DASHBOARD}}'));
-    const stages = ['## Next Steps — Review Chaining', '## Closing hooks', '{{LEARNINGS_LOG}}',
-      '{{BRAIN_WRITE_BACK}}', 'Run the preamble\'s **Telemetry (run last)** command now',
-      '{{BRAIN_CACHE_REFRESH}}'].map(stage => ending.indexOf(stage));
-    expect(stages.every(position => position >= 0)).toBe(true);
-    expect(stages).toEqual([...stages].sort((a, b) => a - b));
-    const navigation = ending.split('## Closing hooks')[0]!;
+    const navigation = ending.split('## Learning hooks')[0]!;
+    expect(navigation).toContain('return to the decision procedure and approval check');
     expect(navigation).toContain('pass the Read-back gate before updating Review Log or the dashboard');
     expect(navigation).toContain('A next-step answer alone approves no implementation change');
     const skeleton = readFileSync('plan-eng-review/SKILL.md.tmpl', 'utf8');
-    expect(skeleton).toContain('After the full gate below passes, run **Closing hooks**');
+    const final = ['{{SECTION:review-sections}}', '## Section self-check', '{{EXIT_PLAN_MODE_GATE}}',
+      'After the gate passes, run the preamble\'s **Telemetry', '{{BRAIN_CACHE_REFRESH}}', 'Call ExitPlanMode, then follow the selected next step.']
+      .map(stage => skeleton.indexOf(stage));
+    expect(final.every(position => position >= 0)).toBe(true);
+    expect(final).toEqual([...final].sort((a, b) => a - b));
+    expect(skeleton).not.toContain('run approval check 0 below');
+    expect(skeleton).toContain('If a check fails, report the missing work and stop');
     expect(skeleton).toContain('Make no further plan or approval changes between verification and exit');
   });
 

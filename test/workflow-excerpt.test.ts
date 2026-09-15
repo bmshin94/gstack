@@ -133,7 +133,7 @@ describe('workflow judge excerpts', () => {
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     expect(eng.match(/^## Decision procedure$/gm)).toHaveLength(1);
     expect(eng.slice(eng.indexOf('## Decision procedure'), eng.indexOf('## Review Sections')).match(/^\*\*[1-5]\. /gm)).toHaveLength(5);
-    const outputs = ['## Required outputs', '### TODOS.md updates', '## Implementation Tasks',
+    const outputs = ['### TODOS.md updates', '## Approval readiness', '## Required outputs', '## Implementation Tasks',
       '### Unresolved decisions', '### Completion summary', '## Plan File Review Report',
       '### Write to the plan file', '## Review Log'].map(heading => eng.indexOf(heading));
     expect(outputs.every(index => index > stages[stages.length - 1]!)).toBe(true);

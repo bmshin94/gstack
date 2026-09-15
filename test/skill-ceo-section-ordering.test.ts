@@ -257,7 +257,7 @@ test('CEO Step 0 defines the decision record, execution order, and mode approval
   expect(step0).toContain('| ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |');
   expect(step0).toContain('Keep one decision ledger through Step 0, Spec Review Loop and Outside Voice');
   expect(step0).toContain('Cite evidence, conventions and test coverage; mark unknowns');
-  expect(step0).toContain('Reuse may lower effort; two allowed deliverables still means two');
+  expect(step0).toContain('Reusing code reduces effort, not the requested deliverable count');
   expect(step0).toContain('reuse and verification coverage');
   expect(step0).toContain('Give changes separate rows if one can be selected while another stays unchanged');
   expect(step0).toContain('observations do not approve changes');
@@ -306,7 +306,7 @@ describe('CEO review decision boundaries contract', () => {
     expect(alternatives).toContain('Give changes separate rows if one can be selected while another stays unchanged');
     expect(alternatives).toContain("If an approved change's test method or coverage remains open, decide that once");
     expect(alternatives).toContain('Every option preserves required behavior and approved test requirements');
-    expect(section).toContain('Apply the three test rules in Step 0D');
+    expect(section).toContain('Use the complete four-step procedure in 0D for each new or reopened decision');
     expect(section).toContain('carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending');
     expect(alternatives).toContain('For existing behavior, separate proposed tests if either can be selected alone');
     expect(alternatives).toContain('Keep tests for undecided behavior pending');
@@ -448,7 +448,7 @@ describe('CEO review decision continuity contract', () => {
     const limits = skeleton.split('**Keep the stated limits.**')[1]!.split('**Storage policy:')[0]!;
     expect(limits).toContain('Record what each limit measures, its value, unit and prerequisites');
     expect(limits).toContain('Changing a limit needs evidence and user approval');
-    expect(limits).toContain('Reuse may lower effort; two allowed deliverables still means two');
+    expect(limits).toContain('Reusing code reduces effort, not the requested deliverable count');
     expect(skeleton.indexOf('Record what each limit measures')).toBeLessThan(skeleton.indexOf('### 0D.'));
     const temporal = skeleton.split('### 0I.')[1]?.split('{{SECTION:review-sections}}')[0] ?? '';
     expect(temporal).toContain('Resolve scope and feasibility blockers now');
@@ -478,8 +478,7 @@ describe('CEO review decision continuity contract', () => {
     expect(skeleton).toContain('Split independently varying commitments into separate rows');
     for (const requirement of ['Resolve newly discovered critical risks immediately',
       'Resolve each unit in its owner section',
-      'Parameterizing a lookup and batching a per-order loop remain separate decisions even if one helper implements both',
-      'email recovery does not settle instrumentation',
+      'fixing unsafe input handling and improving throughput are separate choices even when both change one helper',
       'Test wording alone does not choose test depth']) expect(continuity).toContain(requirement);
     expect(template).toContain('Outside-voice findings use the same working decision ledger');
     expect(template).toContain('New or reopened decisions still require explicit approval');
@@ -503,31 +502,40 @@ describe('CEO review decision continuity contract', () => {
   });
 });
 
-test('CEO closing route validates the terminal report before success hooks and final exit', () => {
+test('CEO closing route checks approvals before outputs and verifies artifacts before telemetry without a file bounce', () => {
   const skeleton = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   const section = fs.readFileSync(`${SECTION}.tmpl`, 'utf8');
   const route = section.split('## Closing sequence')[1]!.split('## Required Outputs')[0]!;
-  const routeStages = ['**Required Outputs:**', '**Saved history:**', '**Navigation:**', '**Terminal gate:**', '**Closing hooks:**']
+  const routeStages = ['**Approval readiness:**', '**Required Outputs:**', '**Navigation:**', '**Learnings:**']
     .map(stage => route.indexOf(stage));
   expect(routeStages.every(position => position >= 0)).toBe(true);
   expect(routeStages).toEqual([...routeStages].sort((a, b) => a - b));
-  expect(route).toContain('repeat the affected outputs, report Read-back, log and dashboard in that order');
-  expect(route).toContain('Stop on any unmet check; do not record success or run Closing hooks yet');
-  expect(route).toContain('Queue the next skill until this review closes');
-  expect(route).toContain('No plan or approval changes occur after the terminal gate');
+  expect(route).toContain('This check requires no report or completion log');
+  expect(route).toContain('repeat Approval readiness, then refresh affected outputs, report Read-back, log and dashboard in that order');
+  expect(route).toContain('Queue the next skill');
+  expect(route).toContain('Its terminal gate verifies the finished artifacts and current approval readiness before telemetry, cache refresh and exit');
+
+  const sectionStages = ['### TODOS.md updates', '{{PLAN_REVIEW_APPROVAL_CHECK}}', '## Required Outputs',
+    '{{PLAN_FILE_REVIEW_REPORT}}', '## Review Log', '{{REVIEW_DASHBOARD}}', '## Next Steps — Review Chaining',
+    '## docs/designs Promotion', '{{LEARNINGS_LOG}}', '{{GBRAIN_SAVE_RESULTS}}', '{{BRAIN_WRITE_BACK}}',
+    "Return to the skeleton's Section self-check and EXIT PLAN MODE GATE now."]
+    .map(stage => section.indexOf(stage));
+  expect(sectionStages.every(position => position >= 0)).toBe(true);
+  expect(sectionStages).toEqual([...sectionStages].sort((a, b) => a - b));
+  expect(section).not.toContain('{{EXIT_PLAN_MODE_GATE}}');
+  expect(section).not.toContain('{{BRAIN_CACHE_REFRESH}}');
+  expect(section).not.toContain('Run the preamble\'s **Telemetry');
 
   const actualGate = skeleton.indexOf('{{EXIT_PLAN_MODE_GATE}}');
   expect(actualGate).toBeGreaterThan(skeleton.indexOf('## Section self-check'));
-  expect(skeleton.indexOf("After this gate passes, return to the section's **Closing hooks**")).toBeGreaterThan(actualGate);
-  const hooks = section.slice(section.indexOf('## Closing hooks'));
-  const hooksStages = ['{{LEARNINGS_LOG}}', '{{GBRAIN_SAVE_RESULTS}}', '{{BRAIN_WRITE_BACK}}',
-    'Run the preamble\'s **Telemetry (run last)** now', '{{BRAIN_CACHE_REFRESH}}', 'Now finish with ExitPlanMode']
-    .map(stage => hooks.indexOf(stage));
-  expect(hooksStages.every(position => position >= 0)).toBe(true);
-  expect(hooksStages).toEqual([...hooksStages].sort((a, b) => a - b));
-  expect(section.slice(0, section.indexOf('## Closing hooks'))).toContain('a failed gate must not emit success telemetry');
-  expect(hooks).toContain('without changing the plan');
-  expect(hooks).toContain('do not reopen this review\nor emit a second completion event');
+  const terminal = skeleton.slice(actualGate);
+  const terminalStages = ['{{EXIT_PLAN_MODE_GATE}}', 'Run the preamble\'s **Telemetry (run last)** once after this gate passes',
+    '{{BRAIN_CACHE_REFRESH}}', 'Finish with ExitPlanMode'].map(stage => terminal.indexOf(stage));
+  expect(terminalStages.every(position => position >= 0)).toBe(true);
+  expect(terminalStages).toEqual([...terminalStages].sort((a, b) => a - b));
+  expect(terminal).not.toMatch(/return to (?:the )?section|Closing hooks/);
+  expect(skeleton).not.toContain('Before summaries, review logs or next-step menus, run approval check 0 below');
+  expect(terminal).toContain('without changing this review');
 
   const questions = section.split('## CRITICAL RULE — How to ask questions')[1]!.split('## Mode Quick Reference')[0]!;
   expect(questions).toContain('`D<N>` question heading and A/B/C option labels');
@@ -585,6 +593,8 @@ describe('plan-ceo-review carve — static ordering', () => {
     expect(skeleton).toContain('| SCOPE EXPANSION / SELECTIVE EXPANSION | 0F → 0G → 0H (including its spec review loop) → 0I |');
     expect(skeleton).toContain('| HOLD SCOPE | 0G → 0I |');
     expect(skeleton).toContain('| SCOPE REDUCTION | 0G |');
+    expect(skeleton.indexOf('## Continue after Step 0 (all modes)')).toBeGreaterThan(skeleton.indexOf('### 0I.'));
+    expect(skeleton.indexOf('## Continue after Step 0 (all modes)')).toBeLessThan(skeleton.indexOf('> **STOP.**'));
     expect(skeleton).toContain('ask separately for each proposed cut');
     expect(skeleton).toContain("evaluate Sections 1–10 and Section 11's UI applicability, complete every applicable section, required outputs and terminal review report");
     expect(skeleton).toContain('SCOPE REDUCTION for >15 planned changed files; else SCOPE EXPANSION for greenfield work');

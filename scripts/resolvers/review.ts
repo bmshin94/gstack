@@ -80,14 +80,16 @@ Display:
 export function generatePlanFileReviewReport(ctx: TemplateContext): string {
   const beforeLog = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'plan-devex-review'].includes(ctx.skillName);
   const ceo = ctx.skillName === 'plan-ceo-review';
+  const conditionalWrites = ceo || ctx.skillName === 'plan-eng-review';
+  const storagePolicy = ceo ? 'Step 0 storage policy' : 'Review record and write policy';
   return `## Plan File Review Report
 
-${beforeLog ? (ceo ? 'Produce the complete accepted plan and review output, including this report, under the Step 0 storage policy before announcing completion.' : 'Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.') : `After displaying the Review Readiness Dashboard in conversation output, also update the
+${beforeLog ? (conditionalWrites ? `Produce the complete accepted plan and review output, including this report, under the ${storagePolicy} before announcing completion.` : 'Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.') : `After displaying the Review Readiness Dashboard in conversation output, also update the
 **plan file** itself so review status is visible to anyone reading the plan.`}
 
 ### Detect the plan file
 
-${beforeLog ? `Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. ${ceo ? 'Apply the Step 0 storage policy. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.' : 'If no file is in scope, skip this section; ordinary no-file review logging still applies.'}` : `1. Check if there is an active plan file in this conversation (the host provides plan file
+${beforeLog ? `Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. ${conditionalWrites ? `Apply the ${storagePolicy}. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.` : 'If no file is in scope, skip this section; ordinary no-file review logging still applies.'}` : `1. Check if there is an active plan file in this conversation (the host provides plan file
    paths in system messages — look for plan file references in the conversation context).
 2. If not found, skip this section silently — not every review runs in plan mode.`}
 
@@ -117,7 +119,7 @@ Each skill logs different fields:
 - **codex-review**: \\\`status\\\`, \\\`gate\\\`, \\\`findings\\\`, \\\`findings_fixed\\\`
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 
-${beforeLog ? (ceo ? 'The current row describes this actual review. Mark an unlogged current run as not persisted; do not present it as a saved dashboard entry.' : 'The current row and its later log must describe the same saved review.') : `All fields needed for the Findings column are now present in the JSONL entries.
+${beforeLog ? (conditionalWrites ? 'The current row describes this actual review. Mark an unlogged current run as not persisted; do not present it as a saved dashboard entry.' : 'The current row and its later log must describe the same saved review.') : `All fields needed for the Findings column are now present in the JSONL entries.
 For the review you just completed, you may use richer details from your own Completion
 Summary. For prior reviews, use the JSONL fields directly — they contain all required data.`}
 
@@ -155,7 +157,7 @@ DROP the current skill's row; emit the sentinel only when both are zero.
 
 ### Write to the plan file
 
-${beforeLog ? (ceo ? 'If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Otherwise save only accepted changes, keeping unresolved choices pending:' : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
+${beforeLog ? (conditionalWrites ? 'If the target is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed. Otherwise save only accepted changes, keeping unresolved choices pending:' : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.`}
 
@@ -188,17 +190,43 @@ there — the user then sees a plan whose review report is not at the bottom and
 (correctly) rejects it.`;
 }
 
+/** Approval readiness precedes output; the exit gate only verifies the saved result. */
+export function generatePlanReviewApprovalCheck(ctx: TemplateContext): string {
+  return `## Approval readiness
+
+Run this check before Required Outputs and after any substantive late change.
+It checks decisions only; no completion report or log is required yet.
+
+0. Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
+   Never group distinct issues. Setup, mode, approach and navigation are not approval.
+   Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
+   record why. Deferrals remain unresolved.${ctx.skillName === 'plan-eng-review' ? `
+   Carry forward an exact approved regression contract. Otherwise settle its
+   behavior and assertions in one dedicated decision before adding it to the plan.` : ''}
+   If missing, reset drafts to pending, ask and wait. After the answer, apply only
+   its accepted scope and repeat this check before writing completion outputs.
+
+Record that readiness passed with the current decision record. A substantive
+change invalidates that result; navigation alone does not. Then continue to
+Required Outputs, preserving unresolved decisions in the report.`;
+}
+
 export function generateExitPlanModeGate(ctx: TemplateContext): string {
   // These reviews reconcile issue decisions before summaries and logging.
   // Writing a report or choosing the review's approach cannot supply approval.
   const noApproval = ctx.skillName === 'plan-design-review'
     ? 'DESIGN.md tokens and navigation' : 'Setup, mode, approach and navigation';
-  const approvals = ['plan-design-review', 'plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName) ? `0. Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
+  const separateReadiness = ['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName);
+  const approvals = separateReadiness ? `0. Confirm Approval readiness passed for the current decisions. This is a
+   read-only verification, not a new approval or output-writing step. If the
+   decisions changed, report the stale verification and stop. A resumed repair
+   starts at Approval readiness, then repeats affected outputs, Read-back,
+   Review Log and dashboard. Do not run success telemetry or exit now.
+
+` : ctx.skillName === 'plan-design-review' ? `0. Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
    Never group distinct issues. ${noApproval} are not approval.
    Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
-   record why. Deferrals remain unresolved.${ctx.skillName === 'plan-eng-review' ? `
-   Carry forward an exact approved regression contract. Otherwise settle its
-   behavior and assertions in one dedicated decision before adding it to the plan.` : ''}
+   record why. Deferrals remain unresolved.
    If missing, reset drafts to pending, ask and wait. After answers or resets,
    refresh the plan and report, pass the Read-back gate, then update the review
    log and rerun this gate.
@@ -225,8 +253,7 @@ If any check fails, report the missing work and do not call ExitPlanMode. Review
 prose in the plan body cannot replace its separate, terminal structured report.`;
   return `## EXIT PLAN MODE GATE (BLOCKING)
 
-Before calling ExitPlanMode, run this self-check. If any item fails, do the
-missing work — do NOT call ExitPlanMode:
+${separateReadiness ? 'Before calling ExitPlanMode, verify the checks below. If any item fails, report the\nmissing work and stop; do not run success telemetry or call ExitPlanMode:' : 'Before calling ExitPlanMode, run this self-check. If any item fails, do the\nmissing work — do NOT call ExitPlanMode:'}
 
 ${approvals}1. Read the plan file with the Read tool (after your most recent write to it).
 2. Confirm the LAST \`## \` heading in the file is \`## GSTACK REVIEW REPORT\`.
@@ -374,7 +401,7 @@ export function generateSpecReviewLoop(_ctx: TemplateContext): string {
   return `${ceo ? '####' : '##'} Spec Review Loop
 
 Run an adversarial review before presenting the final document to the user.
-Follow the calling workflow's approval steps.
+${ceo ? 'Use 0D for any new or reopened amendment; 0H presents both completed inputs for final approval.' : "Follow the calling workflow's approval steps."}
 
 **Step 1: Dispatch reviewer subagent**
 
@@ -795,7 +822,7 @@ fi
 }
 
 export function generateCodexPlanReview(ctx: TemplateContext): string {
-
+  const needsApprovalReadiness = ['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName);
   return `## Outside Voice — Independent Plan Challenge (default-on)
 
 After all review sections are complete, run an independent second opinion from a
@@ -810,7 +837,7 @@ ${outsideVoicePreflight(ctx, { disabledBehavior: 'skip-all' })}
 
 **Disabled is a terminal branch for this section.** If the preflight prints
 \`CODEX_MODE: disabled\`, persist \`outside_status: disabled\` with the guarded
-command below, then continue directly to the workflow's required outputs after this section. Do not construct a challenge,
+command below, then continue directly to ${needsApprovalReadiness ? 'the remaining planning decisions and Approval readiness' : "the workflow's required outputs"} after this section. Do not construct a challenge,
 invoke an outside CLI, dispatch an Agent/Task fallback, or ask about outside findings.
 The native plan review is already complete. A disabled review is an intentional
 opt-out, not a provider failure that needs a replacement reviewer.
@@ -925,12 +952,12 @@ This is the single bounded-wait exception to foreground dispatch for this outsid
    if cancellation fails, say cancellation is unconfirmed. If TaskStop reports the
    task already completed after the timeout, still give no late-result credit.
 
-**Unavailable path:** "Outside voice unavailable. Continuing to outputs."
+**Unavailable path:** "Outside voice unavailable. Continuing to ${needsApprovalReadiness ? 'planning decisions and Approval readiness' : 'outputs'}."
 Do not retry with a general-purpose agent. Report missing outside-voice coverage.
 Ignore partial or late results for critique, agreement, clean status or coverage.
 Skip Cross-model tension. Persist an unavailable result using the command below
 with STATUS = "unavailable", SOURCE = "none", OUTSIDE_STATUS = "unavailable";
-then continue directly to outputs. The storage policy still applies.
+then continue directly to ${needsApprovalReadiness ? 'the remaining planning decisions and Approval readiness' : 'outputs'}. The storage policy still applies.
 Do not record a clean review when no reviewer completed within the accepted wait.
 
 (On \`CODEX_MODE: disabled\` you already skipped this section per the preflight — do not reach here.)

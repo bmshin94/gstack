@@ -179,6 +179,20 @@ describe('outside-voice dispatch contract', () => {
   const rendered = generateCodexPlanReview(reviewContext('claude'));
   const fallback = boundedOutsideVoice(rendered);
 
+  test('CEO and Eng disabled or unavailable reviewers still reach decision readiness', () => {
+    for (const skillName of ['plan-ceo-review', 'plan-eng-review']) {
+      const output = generateCodexPlanReview({ ...reviewContext('claude'), skillName });
+      expect(output).toContain('then continue directly to the remaining planning decisions and Approval readiness');
+      expect(output).toContain('Outside voice unavailable. Continuing to planning decisions and Approval readiness.');
+      expect(output).not.toContain('then continue directly to outputs');
+      expect(output).not.toContain('Outside voice unavailable. Continuing to outputs.');
+      expect(hasBoundedOutsideVoiceWait(output)).toBe(true);
+    }
+    // Reviews without the split gate retain their own output continuation.
+    expect(rendered).toContain('then continue directly to outputs');
+    expect(rendered).not.toContain('remaining planning decisions and Approval readiness');
+  });
+
   test('the delegated prompt itself requires findings only and forbids plan mutations', () => {
     const promptStart = rendered.indexOf('"IMPORTANT:');
     const promptEnd = rendered.indexOf('\n<plan content>"');

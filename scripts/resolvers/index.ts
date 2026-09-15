@@ -22,7 +22,7 @@ import { generatePreamble } from './preamble';
 import { generateTestFailureTriage } from './preamble';
 import { generateDesignMethodology, generateDesignHardRules, generateDesignOutsideVoices, generateDesignReviewLite, generateDesignSketch, generateDesignSetup, generateDesignMockup, generateDesignShotgunLoop, generateTasteProfile, generateUXPrinciples, generateOverusedFonts, generateDesignSlopBullets, generateDesignDetector, generateDesignMdCheck } from './design';
 import { generateTestBootstrap, generateTestCoverageAuditPlan, generateTestCoverageAuditShip, generateTestCoverageGateShip } from './testing';
-import { generateReviewDashboard, generatePlanFileReviewReport, generateExitPlanModeGate, generateAntiShortcutClause, generateSpecReviewLoop, generateBenefitsFrom, generateCodexSecondOpinion, generateAdversarialStep, generateCodexPlanReview, generateCodexDocReview, generatePlanCompletionAuditShip, generatePlanCompletionGateShip, generatePlanCompletionAuditReview, generatePlanVerificationExec, generateScopeDrift, generateCrossReviewDedup } from './review';
+import { generateReviewDashboard, generatePlanFileReviewReport, generatePlanReviewApprovalCheck, generateExitPlanModeGate, generateAntiShortcutClause, generateSpecReviewLoop, generateBenefitsFrom, generateCodexSecondOpinion, generateAdversarialStep, generateCodexPlanReview, generateCodexDocReview, generatePlanCompletionAuditShip, generatePlanCompletionGateShip, generatePlanCompletionAuditReview, generatePlanVerificationExec, generateScopeDrift, generateCrossReviewDedup } from './review';
 import { generateSlugEval, generateSlugSetup, generateBaseBranchDetect, generateDeployBootstrap, generateQAMethodology, generateCoAuthorTrailer, generateChangelogWorkflow, generateCodexWebSearchFlag, generateCodexModelConfigFlag, generateCodexReviewModelConfigFlag, generateClaudeModelFlag, generateSetupCommand } from './utility';
 import { generateLearningsSearch, generateLearningsLog } from './learnings';
 import { generateConfidenceCalibration } from './confidence';
@@ -82,6 +82,7 @@ export const RESOLVERS: Record<string, ResolverFn> = {
   REVIEW_DASHBOARD: generateReviewDashboard,
   PLAN_FILE_REVIEW_REPORT: generatePlanFileReviewReport,
   EXIT_PLAN_MODE_GATE: generateExitPlanModeGate,
+  PLAN_REVIEW_APPROVAL_CHECK: generatePlanReviewApprovalCheck,
   ANTI_SHORTCUT_CLAUSE: generateAntiShortcutClause,
   TEST_BOOTSTRAP: generateTestBootstrap,
   TEST_COVERAGE_AUDIT_PLAN: generateTestCoverageAuditPlan,

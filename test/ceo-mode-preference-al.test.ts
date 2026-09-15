@@ -104,6 +104,7 @@ test('only an explicit user selection or enabled successful mode check bypasses 
   expect(s).toContain('The >15-file threshold recommends a mode');
   expect(s).toContain('the >8-file check challenges complexity within HOLD SCOPE and SELECTIVE EXPANSION');
   expect(s).toContain('Neither threshold authorizes a scope cut');
+  expect(s).toContain('Count distinct planned file additions, edits and deletions; label uncertain counts as estimates');
   expect(s).toContain('Do NOT emit `Completeness: N/10` per option');
   expect(s).toContain("use 0D's differences-in-kind note");
   expect(document).toContain('Note: options differ in kind, not coverage — no completeness score.');

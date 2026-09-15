@@ -986,7 +986,7 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
     expect(artifact).toContain('After resolving the Test review decisions');
     expect(artifact).toContain('List any unresolved choices separately as pending, not required implementation');
     expect(artifact).toContain('Update this artifact if later approved decisions change the tests');
-    expect(artifact).toContain("Use the ledger's write/read-only rules");
+    expect(artifact).toContain('Use the Review record and write policy above.');
     expect(artifact).toContain('TEST_PLAN_USER=$(whoami)');
     expect(artifact).toContain('sanitized `BRANCH` from gstack-slug');
     expect(artifact).toContain('without an origin, write `local-only`');
@@ -1173,6 +1173,17 @@ describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
     expect(content).toContain('/plan-eng-review');
     expect(content).toContain('/plan-design-review');
     expect(content).toContain('/codex review');
+  });
+
+  test('Eng task output follows the same write policy as its report', () => {
+    const content = readSkillUnion('plan-eng-review');
+    // The task example itself has an H2; bound by the following real section.
+    const tasks = content.slice(content.indexOf('## Implementation Tasks'), content.indexOf('## Plan File Review Report'));
+    expect(tasks).toContain('only when the Review record and write policy permits it');
+    expect(tasks).toContain('label the complete task output not persisted');
+    expect(tasks).toContain('write when permitted, including zero tasks');
+    expect(tasks).toContain('When writes are permitted and zero tasks were identified');
+    expect(tasks).not.toContain('always write');
   });
 });
 
@@ -2188,19 +2199,26 @@ describe('Design approval reconciliation', () => {
   test('CEO blocking Exit checklist rejects setup and approach as issue approval', () => {
     const main = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/SKILL.md'), 'utf8');
     const check = extractMarkdownSection(main, '## Section self-check');
-    expect(check).toContain('Before summaries, review logs or next-step menus, run approval check 0 below.');
     const gate = extractMarkdownSection(main, '## EXIT PLAN MODE GATE (BLOCKING)');
-    expect(gate.indexOf('0. Approvals:')).toBeGreaterThanOrEqual(0);
-    expect(gate.indexOf('0. Approvals:')).toBeLessThan(gate.indexOf('1. Read the plan file'));
-    expect(gate).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
-    expect(gate).toContain("Never group distinct issues.");
-    expect(gate).toContain('Never group distinct issues. Setup, mode, approach and navigation are not approval.');
-    expect(gate).toContain('Honor prior exact decisions and preamble-authorized per-issue auto-decisions;');
-    expect(gate).toContain('preamble-authorized');
-    expect(gate).toContain('record why. Deferrals remain unresolved.');
-    expect(gate).toContain('If missing, reset drafts to pending, ask and wait.');
-    expect(gate).toContain('refresh the plan and report, pass the Read-back gate, then update the review');
-    expect(gate).toContain('log and rerun this gate.');
+    const section = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/sections/review-sections.md'), 'utf8');
+    const readiness = extractMarkdownSection(section, '## Approval readiness');
+    expect(section.indexOf('## Approval readiness')).toBeLessThan(section.indexOf('## Required Outputs'));
+    expect(readiness).toContain('no completion report or log is required yet');
+    expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
+    expect(gate).toContain('read-only verification, not a new approval or output-writing step');
+    expect(readiness.indexOf('0. Approvals:')).toBeGreaterThanOrEqual(0);
+    expect(gate.indexOf('Confirm Approval readiness')).toBeLessThan(gate.indexOf('1. Read the plan file'));
+    expect(readiness).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
+    expect(readiness).toContain("Never group distinct issues.");
+    expect(readiness).toContain('Never group distinct issues. Setup, mode, approach and navigation are not approval.');
+    expect(readiness).toContain('Honor prior exact decisions and preamble-authorized per-issue auto-decisions;');
+    expect(readiness).toContain('preamble-authorized');
+    expect(readiness).toContain('record why. Deferrals remain unresolved.');
+    expect(readiness).toContain('If missing, reset drafts to pending, ask and wait.');
+    expect(readiness).toContain('repeat this check before writing completion outputs');
+    expect(gate).toContain('report the stale verification and stop');
+    expect(gate).toContain('starts at Approval readiness, then repeats affected outputs, Read-back,');
+    expect(gate).toContain('Review Log and dashboard');
     expect(check).toContain('Confirm you Read `sections/review-sections.md` and executed its review, required');
     expect(check).toContain('outputs and report from the file, not memory: Sections 1–10 and Section 11');
     expect(check).toContain('findings or no-UI skip.');
@@ -2216,20 +2234,27 @@ describe('Design approval reconciliation', () => {
   test('Eng cannot exit with unasked findings listed only in an unresolved-decisions report', () => {
     const main = fs.readFileSync(path.join(ROOT, 'plan-eng-review/SKILL.md'), 'utf8');
     const check = extractMarkdownSection(main, '## Section self-check');
-    expect(check).toContain('Before summaries, review logs or next-step menus, run approval check 0 below.');
     const gate = extractMarkdownSection(main, '## EXIT PLAN MODE GATE (BLOCKING)');
-    expect(gate.indexOf('0. Approvals:')).toBeGreaterThanOrEqual(0);
-    expect(gate.indexOf('0. Approvals:')).toBeLessThan(gate.indexOf('1. Read the plan file'));
-    expect(gate).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
-    expect(gate).toContain('Never group distinct issues. Setup, mode, approach and navigation are not approval.');
-    expect(gate).toContain('Honor prior exact decisions and preamble-authorized per-issue auto-decisions;');
-    expect(gate).toContain('record why. Deferrals remain unresolved.');
-    expect(gate).toContain('Carry forward an exact approved regression contract.');
-    expect(gate).toContain('behavior and assertions in one dedicated decision before adding it to the plan.');
-    expect(gate).not.toContain('REGRESSION test is already authorized');
-    expect(gate).toContain('If missing, reset drafts to pending, ask and wait.');
-    expect(gate).toContain('refresh the plan and report, pass the Read-back gate, then update the review');
-    expect(gate).toContain('log and rerun this gate.');
+    const section = fs.readFileSync(path.join(ROOT, 'plan-eng-review/sections/review-sections.md'), 'utf8');
+    const readiness = extractMarkdownSection(section, '## Approval readiness');
+    expect(section.indexOf('## Approval readiness')).toBeLessThan(section.indexOf('## Required outputs'));
+    expect(readiness).toContain('no completion report or log is required yet');
+    expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
+    expect(gate).toContain('read-only verification, not a new approval or output-writing step');
+    expect(readiness.indexOf('0. Approvals:')).toBeGreaterThanOrEqual(0);
+    expect(gate.indexOf('Confirm Approval readiness')).toBeLessThan(gate.indexOf('1. Read the plan file'));
+    expect(readiness).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
+    expect(readiness).toContain('Never group distinct issues. Setup, mode, approach and navigation are not approval.');
+    expect(readiness).toContain('Honor prior exact decisions and preamble-authorized per-issue auto-decisions;');
+    expect(readiness).toContain('record why. Deferrals remain unresolved.');
+    expect(readiness).toContain('Carry forward an exact approved regression contract.');
+    expect(readiness).toContain('behavior and assertions in one dedicated decision before adding it to the plan.');
+    expect(readiness).not.toContain('REGRESSION test is already authorized');
+    expect(readiness).toContain('If missing, reset drafts to pending, ask and wait.');
+    expect(readiness).toContain('repeat this check before writing completion outputs');
+    expect(gate).toContain('report the stale verification and stop');
+    expect(gate).toContain('starts at Approval readiness, then repeats affected outputs, Read-back,');
+    expect(gate).toContain('Review Log and dashboard');
   });
 
   test('approval entry does not alter other review Exit checklists', () => {
@@ -4316,13 +4341,25 @@ describe('EXIT PLAN MODE GATE placement', () => {
   // and the gate text itself shows `## GSTACK REVIEW REPORT` inside a fence too.
   const stripFences = (md: string) => md.replace(/```[\s\S]*?```/g, '');
 
-  test('gate is the terminal ## heading in every plan-* review SKILL.md', () => {
+  test('gate follows review work, with only the declared cache hook after CEO and Eng verification', () => {
     for (const skill of planSkills) {
       const md = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
       const stripped = stripFences(md);
       const headings = [...stripped.matchAll(/^## .+$/gm)].map(m => m[0]);
       const lastH2 = headings.at(-1);
-      expect(lastH2, `${skill}/SKILL.md last ## heading (fences stripped)`).toBe('## EXIT PLAN MODE GATE (BLOCKING)');
+      if (['plan-ceo-review', 'plan-eng-review'].includes(skill)) {
+        const gate = headings.indexOf('## EXIT PLAN MODE GATE (BLOCKING)');
+        expect(gate).toBeGreaterThan(headings.indexOf('## Section self-check (before you finish)'));
+        expect(headings.slice(gate)).toEqual(['## EXIT PLAN MODE GATE (BLOCKING)', '## Brain Cache Background Refresh']);
+        const tail = md.slice(md.indexOf('## EXIT PLAN MODE GATE (BLOCKING)'));
+        const telemetry = tail.indexOf('**Telemetry (run last)**');
+        expect(telemetry).toBeGreaterThan(0);
+        expect(telemetry).toBeLessThan(tail.indexOf('## Brain Cache Background Refresh'));
+        expect(tail).toContain(skill === 'plan-ceo-review' ? 'once after this gate passes' : 'After the gate passes');
+        expect(tail.lastIndexOf(skill === 'plan-ceo-review' ? 'Finish with ExitPlanMode' : 'Call ExitPlanMode')).toBeGreaterThan(tail.indexOf('## Brain Cache Background Refresh'));
+      } else {
+        expect(lastH2, `${skill}/SKILL.md last ## heading (fences stripped)`).toBe('## EXIT PLAN MODE GATE (BLOCKING)');
+      }
       expect(md, `${skill}/SKILL.md gate body`).toContain(skill === 'plan-ceo-review'
         ? 'If any check fails, report the missing work and do not call ExitPlanMode'
         : 'Failing this gate and calling ExitPlanMode anyway is a contract violation');
@@ -4340,10 +4377,9 @@ describe('scope-gate exceptions drift-guard', () => {
   // The plan-mode auto-select-B exceptions block is hand-duplicated in the
   // plan-eng-review and plan-design-review templates (matching the gate
   // around it, which predates this block). The two copies must stay
-  // byte-identical modulo exactly two known variant slots:
-  //   1. the plan-mode bullet's action tail (Design Doc Check vs pre-review
-  //      audit + mockups),
-  //   2. the named-target vocabulary ("a path, a doc" vs "a path, a page, a doc").
+  // identical in their target-selection policy. Eng resolves that policy
+  // before announcing its target and has a separate bootstrap transport;
+  // Design retains its own startup sequence and page vocabulary.
   // A future edit to one copy that silently misses the other fails here
   // instead of drifting. The real fix (shared {{SCOPE_GATE}} resolver) is a
   // filed TODO — this guard is the stopgap that makes the duplication safe.
@@ -4359,19 +4395,22 @@ describe('scope-gate exceptions drift-guard', () => {
     return md.slice(start, end + END_MARKER.length);
   }
 
-  const normalizeVariantSlots = (block: string) =>
-    block
-      .replace('Then run the Design Doc Check and Step 0 against that plan.', '<ACTION_TAIL>')
-      .replace('Then run the pre-review audit, mockups, and Step 0 against that plan.', '<ACTION_TAIL>')
-      .replace('a path, a page, a doc they pasted,', 'a path, a doc they pasted,');
+  const normalizeTargetPolicy = (block: string) => block
+    .split('\n').filter(line => /^[12]\. /.test(line)).join('\n')
+    .replace(/ Announce (?:it|an auto-selected plan) in one line so the user can interrupt: "Scope gate: plan mode — auto-selected B \(reviewing <target>\)\."/g, '')
+    .replace(' Then run the pre-review audit, mockups, and Step 0 against that plan.', '')
+    .replace('a path, a page, a doc they pasted,', 'a path, a doc they pasted,');
 
-  test('eng and design exceptions blocks are identical modulo the two variant slots', () => {
-    const eng = normalizeVariantSlots(extractExceptionsBlock('plan-eng-review'));
-    const design = normalizeVariantSlots(extractExceptionsBlock('plan-design-review'));
+  test('eng and design retain the same target-selection policy across distinct startup sequences', () => {
+    const engRaw = extractExceptionsBlock('plan-eng-review');
+    const eng = normalizeTargetPolicy(engRaw);
+    const design = normalizeTargetPolicy(extractExceptionsBlock('plan-design-review'));
     expect(eng).toBe(design);
-    // The action tail must actually have been normalized in both (guards
-    // against a rewording that bypasses the normalizer and vacuously passes).
-    expect(eng).toContain('<ACTION_TAIL>');
+    expect(eng).toContain('their choice wins — use it instead');
+    expect(eng).toContain('still ambiguous — ask');
+    expect(eng).toContain('When in doubt, ask — the gate is the default');
+    expect(engRaw.indexOf('their choice wins')).toBeLessThan(engRaw.indexOf('Announce an auto-selected plan'));
+    expect(engRaw).toContain('No STATUS lookup or other tool call is needed');
   });
 
   test('exceptions block carries the announcement string the PTY detectors pin', () => {

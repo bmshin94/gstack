@@ -19,12 +19,14 @@ export const generateTasksSectionEmit: ResolverFn = (_ctx: TemplateContext, args
     throw new Error(`TASKS_SECTION_EMIT requires one of ${[...VALID_PHASES].join(', ')} — got ${phase}`);
   }
   const ceo = _ctx.skillName === 'plan-ceo-review';
+  const conditionalWrites = ceo || _ctx.skillName === 'plan-eng-review';
+  const storagePolicy = ceo ? 'Step 0 storage policy' : 'Review record and write policy';
 
   return `## Implementation Tasks
 
 Before closing this review, synthesize the findings above into a flat list of
 build-actionable tasks. Each task derives from a specific finding — no padding.
-${ceo ? 'Always emit the markdown section. Write its JSONL artifact for `/autoplan` only when the Step 0 storage policy permits it; otherwise label the complete task output not persisted and do not claim an aggregation artifact exists.' : 'Emit the markdown section AND write a JSONL artifact that `/autoplan` can\naggregate across phases.'}
+${conditionalWrites ? `Always emit the markdown section. Write its JSONL artifact for \`/autoplan\` only when the ${storagePolicy} permits it; otherwise label the complete task output not persisted and do not claim an aggregation artifact exists.` : 'Emit the markdown section AND write a JSONL artifact that `/autoplan` can\naggregate across phases.'}
 
 ### Markdown section (always emit)
 
@@ -46,7 +48,7 @@ Rules:
 - If a section had zero findings, emit \`_No new tasks from <section>._\`
 - Effort uses the AI-compression table from CLAUDE.md.
 
-### JSONL artifact (${ceo ? 'write when permitted, including zero tasks' : 'always write, even if zero tasks'})
+### JSONL artifact (${conditionalWrites ? 'write when permitted, including zero tasks' : 'always write, even if zero tasks'})
 
 \`/autoplan\` reads this file to aggregate across phases. Build each line with
 \`jq -nc\` so titles and source findings containing quotes, newlines, or
@@ -86,7 +88,7 @@ jq -nc \\
 If \`jq\` is not installed, fall back to skipping the JSONL write and warn
 the user to install jq for autoplan aggregation. Never hand-roll JSONL.
 
-${ceo ? 'When writes are permitted and zero tasks were identified, touch the JSONL file' : 'If zero tasks were identified in this review, still touch the JSONL file'}
+${conditionalWrites ? 'When writes are permitted and zero tasks were identified, touch the JSONL file' : 'If zero tasks were identified in this review, still touch the JSONL file'}
 (\`: > "$TASKS_FILE"\`) so the aggregator sees that the phase produced output
 this run (an empty file means "ran, no findings" — distinct from "didn't run").
 `;

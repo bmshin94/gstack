@@ -35,6 +35,22 @@ function sectionPaths(skill: string): string[] {
 }
 
 describe('workflow judge file bundle', () => {
+  test('the actual Eng judge registration includes authorization and the referenced final gate', () => {
+    const source = readFileSync(join(ROOT, 'test/skill-llm-eval.test.ts'), 'utf8');
+    const registration = source.match(/testIfSelected\('plan-eng-review\/SKILL\.md sections',[\s\S]*?await runWorkflowJudge\(\{([\s\S]*?)\n    \}\);/);
+    expect(registration).not.toBeNull();
+    const options = new Function('ENG_REVIEW_EXCERPT', `return ({${registration![1]}});`)(ENG_REVIEW_EXCERPT);
+    const input = readWorkflowJudgeInput({ root: ROOT, ...options });
+    const entry = input.files.find(file => file.kind === 'entrypoint')!;
+    const complete = readFileSync(join(ROOT, options.skillPath), 'utf8');
+    expect(entry.content).toBe(complete.slice(complete.indexOf('# Plan Review Mode')));
+    expect(entry.content).toContain('Do not build features, acceptance suites or benchmarks unless explicitly authorized');
+    expect(entry.content).toContain('## Scope gate');
+    expect(entry.content).toContain('## Section self-check');
+    expect(entry.content).toContain('## EXIT PLAN MODE GATE (BLOCKING)');
+    expect(entry.content).toContain('Call ExitPlanMode');
+  });
+
   test('preserves the exact entrypoint excerpt and each complete section in sorted named files', () => {
     const entrypoint = 'excluded preamble\n## Begin\nRead sections/z-last.md when directed.\n## End\nexcluded epilogue';
     const sections = {
@@ -191,9 +207,11 @@ describe('workflow judge file bundle', () => {
   test('generated engineering review includes the scope choices and readiness probe its steps reference', () => {
     const skillPath = 'plan-eng-review/SKILL.md';
     const caller = readFileSync(join(ROOT, 'test/skill-llm-eval.test.ts'), 'utf8');
-    expect(caller).toContain('...ENG_REVIEW_EXCERPT');
+    const registration = caller.match(/testIfSelected\('plan-eng-review\/SKILL\.md sections',[\s\S]*?await runWorkflowJudge\(\{([\s\S]*?)\n    \}\);/);
+    expect(registration).not.toBeNull();
+    const options = new Function('ENG_REVIEW_EXCERPT', `return ({${registration![1]}});`)(ENG_REVIEW_EXCERPT);
     expect(ENG_REVIEW_EXCERPT.skillPath).toBe(skillPath);
-    const input = readWorkflowJudgeInput({ root: ROOT, ...ENG_REVIEW_EXCERPT });
+    const input = readWorkflowJudgeInput({ root: ROOT, ...options });
     const entrypoint = input.files.find(file => file.kind === 'entrypoint')!;
     expect(entrypoint.content).toContain('B) A plan or design doc');
     expect(entrypoint.content).toContain('## Scope gate');

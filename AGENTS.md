@@ -156,6 +156,9 @@ When fixing failures or preparing `/ship`, follow this order:
    definitions, ownership and approval. Consolidate dense instructions into
    executable steps instead of appending more clauses. Review the resulting
    workflow as a whole; prose snapshots alone do not prove it is clear.
+   For each gate, identify when its inputs exist and trace normal,
+   skipped/unavailable and late-change paths to catch circular prerequisites or
+   bypassed checks.
 5. Run required cheap CI checks, including credential scanning, before paid work.
    Also run adjacent cheap checks: generated-content freshness, prompt-size/parity
    limits, source assertions, fixture checks, and dependency selection as

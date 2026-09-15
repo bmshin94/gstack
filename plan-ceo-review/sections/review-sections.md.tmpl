@@ -14,7 +14,7 @@ Continue Step 0's six-column ledger. Use its owner field for the review section 
 
 **Resolve.** Use the complete four-step procedure in 0D for each new or reopened decision. Resolve each unit in its owner section; earlier sections cross-reference pending rows. Resolve newly discovered critical risks immediately. Cross-reference an exact settled decision instead of asking it again.
 
-Apply the three test rules in Step 0D: carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Test wording alone does not choose test depth. Parameterizing a lookup and batching a per-order loop remain separate decisions even if one helper implements both; email recovery does not settle instrumentation. Do not invent independent add-ons to fill a third option.
+For tests, carry approved regression tests forward, separate independently selectable new test additions, and keep tests for undecided behavior pending. Test wording alone does not choose test depth. For example, fixing unsafe input handling and improving throughput are separate choices even when both change one helper. Do not invent independent add-ons to fill a third option.
 
 **Apply.** Update the complete working plan under Step 0's storage policy before advancing:
 1. Before the answer, record only pending issues, evidence and alternatives. A pending label does not authorize a task, verification step, or diagram to prescribe an unapproved outcome. For each unresolved or reopened decision, call AskUserQuestion and **STOP until the user responds**.
@@ -342,14 +342,40 @@ for the accepted scope; Section 11 is skipped only when that scope has no UI.
 All modes produce approved findings and the required outputs under Step 0's storage policy: save to the permitted active plan, or present in chat as not persisted.
 The separate CEO archive is additional persistence for expansion modes.
 
+## Resolve remaining TODO choices
+
+### TODOS.md updates
+**Keep the selected mode.** In HOLD SCOPE, a potential TODO must address an
+evidenced gap in the accepted scope or its required correctness and operability.
+Hypothetical future capacity, optional features, and alternatives to an adequate
+approved remedy are expansions even when labeled TODOs; do not surface them in
+HOLD SCOPE. Still audit observability and performance against the requirements,
+and approve each real deferred gap individually. Expansion modes retain their
+expansion scan and opt-in ceremony.
+
+Present each potential TODO as its own individual AskUserQuestion. Never batch TODOs — one per question. Never silently skip this step. Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.
+
+For each TODO, describe:
+* **What:** One-line description of the work.
+* **Why:** The concrete problem it solves or value it unlocks.
+* **Pros:** What you gain by doing this work.
+* **Cons:** Cost, complexity, or risks of doing it.
+* **Context:** Enough detail that someone picking this up in 3 months understands the motivation, the current state, and where to start.
+* **Effort estimate:** S/M/L/XL (human team) → with CC+gstack: S→S, M→S, L→M, XL→L
+* **Priority:** P1/P2/P3
+* **Depends on / blocked by:** Any prerequisites or ordering constraints.
+
+Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
+
 ## Closing sequence
 
 Complete these stages in order:
-1. **Required Outputs:** resolve TODO decisions, assemble tasks and summaries, then write the review report and perform its Read-back.
-2. **Saved history:** perform permitted handoff cleanup, write the Review Log, then display the dashboard. Unsaved output stays explicitly not persisted.
-3. **Navigation:** choose Next Steps and any docs/designs promotion. Queue the next skill until this review closes. If an answer changes the plan, resolve it through 0D and repeat the affected outputs, report Read-back, log and dashboard in that order.
-4. **Terminal gate:** return to the skeleton's Section self-check and EXIT PLAN MODE GATE. Stop on any unmet check; do not record success or run Closing hooks yet.
-5. **Closing hooks:** after the gate passes, run the hooks below once, then exit or hand off. No plan or approval changes occur after the terminal gate.
+1. **Approval readiness:** check the decisions and approved changes before assembling outputs. This check requires no report or completion log.
+2. **Required Outputs:** assemble tasks and summaries, write the review report and pass its Read-back. Then perform permitted cleanup, write Review Log and display the dashboard.
+3. **Navigation:** choose Next Steps and any docs/designs promotion. Queue the next skill. If an answer changes the plan, resolve it through 0D, repeat Approval readiness, then refresh affected outputs, report Read-back, log and dashboard in that order.
+4. **Learnings:** finish the learning and brain write-back blocks, then return to the skeleton once. Its terminal gate verifies the finished artifacts and current approval readiness before telemetry, cache refresh and exit.
+
+{{PLAN_REVIEW_APPROVAL_CHECK}}
 
 ## Required Outputs
 
@@ -378,29 +404,6 @@ Complete table of every method that can fail, every exception class, rescued sta
 ```
 Any row with RESCUED=N, TEST=N, USER SEES=Silent → **CRITICAL GAP**.
 
-### TODOS.md updates
-**Keep the selected mode.** In HOLD SCOPE, a potential TODO must address an
-evidenced gap in the accepted scope or its required correctness and operability.
-Hypothetical future capacity, optional features, and alternatives to an adequate
-approved remedy are expansions even when labeled TODOs; do not surface them in
-HOLD SCOPE. Still audit observability and performance against the requirements,
-and approve each real deferred gap individually. Expansion modes retain their
-expansion scan and opt-in ceremony.
-
-Present each potential TODO as its own individual AskUserQuestion. Never batch TODOs — one per question. Never silently skip this step. Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.
-
-For each TODO, describe:
-* **What:** One-line description of the work.
-* **Why:** The concrete problem it solves or value it unlocks.
-* **Pros:** What you gain by doing this work.
-* **Cons:** Cost, complexity, or risks of doing it.
-* **Context:** Enough detail that someone picking this up in 3 months understands the motivation, the current state, and where to start.
-* **Effort estimate:** S/M/L/XL (human team) → with CC+gstack: S→S, M→S, L→M, XL→L
-* **Priority:** P1/P2/P3
-* **Depends on / blocked by:** Any prerequisites or ordering constraints.
-
-Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
-
 ### Scope Expansion Decisions (EXPANSION and SELECTIVE EXPANSION only)
 For EXPANSION and SELECTIVE EXPANSION modes: expansion opportunities and delight items were surfaced and decided in Step 0G (opt-in/cherry-pick ceremony). The CEO plan records those decisions under the storage policy. Reference the CEO plan for the full record. Do not re-surface them here — list the accepted expansions for completeness:
 * Accepted: {list items added to scope}
@@ -426,9 +429,9 @@ Prepare this for the complete review. Announce file completion only after the Re
 
 Use the full mode name from Step 0E; replace spaces with underscores only in the
 review log's `MODE` field. "System Audit" summarizes repository findings from
-Step 0 and the review sections. "Lake Score" counts complete options chosen
-out of decisions that compared a complete option with a shortcut; use `N/A`
-when there were no such decisions.
+Step 0 and the review sections. "Lake Score" is X/Y: Y counts answered coverage
+choices offering a complete (10/10) option; X counts those choosing it. Exclude
+kind choices and unanswered questions; use `N/A` when Y is zero.
 
 ```
   +====================================================================+
@@ -476,7 +479,7 @@ After producing the Completion Summary, remove this branch's handoff notes only 
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-# Resolve SLUG and BRANCH in this shell before matching handoff notes.
+# gstack-slug prints both SLUG and BRANCH; eval sets them in this shell.
 {{SLUG_EVAL}}
 rm -f ~/.gstack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 ```
@@ -535,13 +538,10 @@ At the end of the review, if the vision produced a compelling feature direction,
 
 If promoted and those writes are permitted, copy the CEO plan content to `docs/designs/{FEATURE}.md` (create the directory if needed) and update the original CEO plan's `status` from `ACTIVE` to `PROMOTED`. Otherwise present the proposed design document in chat, marked not persisted; do not claim promotion occurred.
 
-Return to the skeleton's Section self-check and EXIT PLAN MODE GATE now. Resume
-below only after that gate passes; a failed gate must not emit success telemetry.
+## Learnings and brain write-back
 
-## Closing hooks
-
-The review and its approvals are complete. Run these hooks once, in order,
-without changing the plan:
+Finish these review tasks without changing the plan. Then return to the skeleton
+for terminal verification; success telemetry and exit happen there.
 
 {{LEARNINGS_LOG}}
 
@@ -549,11 +549,4 @@ without changing the plan:
 
 {{BRAIN_WRITE_BACK}}
 
-Run the preamble's **Telemetry (run last)** now, after all skill work above.
-The separate nonblocking cache refresh follows telemetry:
-
-{{BRAIN_CACHE_REFRESH}}
-
-Now finish with ExitPlanMode where the host requires it, or return to the calling
-workflow. Then perform the chosen next-skill handoff; do not reopen this review
-or emit a second completion event.
+Return to the skeleton's Section self-check and EXIT PLAN MODE GATE now.

@@ -680,7 +680,9 @@ describeIfSelected('Plan Review skill evals', [
     await runWorkflowJudge({
       testName: 'plan-eng-review/SKILL.md sections',
       suite: 'Plan Review skill evals',
-      ...ENG_REVIEW_EXCERPT,
+      skillPath: ENG_REVIEW_EXCERPT.skillPath,
+      startMarker: '# Plan Review Mode',
+      endMarker: null,
       judgeContext: 'an engineering plan review framework with 4 review sections',
       judgeGoal: 'how to review a plan for architecture quality, code quality, test coverage, and performance — walking through each section interactively with AskUserQuestion',
     });

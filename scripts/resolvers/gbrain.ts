@@ -156,7 +156,7 @@ export function generateBrainPreflight(ctx: TemplateContext): string {
 
   return `## Brain Context (preflight)
 
-Before asking any clarifying questions, load the brain's structured context
+${ctx.skillName === 'plan-eng-review' ? 'After the Scope gate, before later review questions, load the brain\'s structured context' : 'Before asking any clarifying questions, load the brain\'s structured context'}
 for this project. The cache layer handles staleness, refresh, and stale-but-
 usable fallback automatically. Skip questions whose answers are already
 present in the loaded context; ground recommendations in what the brain

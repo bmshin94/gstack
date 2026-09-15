@@ -499,15 +499,15 @@ Every scope change in every mode requires explicit AskUserQuestion opt-in. Raise
 Review only. Do NOT change code or start implementation.
 
 ## Prime Directives
-1. Zero silent failures. Every failure mode must be visible — to the system, to the team, to the user. If a failure can happen silently, that is a critical defect in the plan.
-2. Every error has a name. Don't say "handle errors." Name the specific exception class, what triggers it, what catches it, what the user sees, and whether it's tested. Catch-all error handling (e.g., catch Exception, rescue StandardError, except Exception) is a code smell — call it out.
-3. Data flows have shadow paths. Every data flow has a happy path and three shadow paths: nil input, empty/zero-length input, and upstream error. Trace all four for every new flow.
-4. Interactions have edge cases. Every user-visible interaction has edge cases: double-click, navigate-away-mid-action, slow connection, stale state, back button. Map them.
-5. Observability is scope, not afterthought. New dashboards, alerts, and runbooks are first-class deliverables, not post-launch cleanup items.
-6. Diagrams are mandatory. No non-trivial flow goes undiagrammed. ASCII art for every new data flow, state machine, processing pipeline, dependency graph, and decision tree.
-7. Record every deferral in TODOS.md or complete chat output under the storage policy.
-8. Optimize for the 6-month future, not just today. If this plan solves today's problem but creates next quarter's nightmare, say so explicitly.
-9. You have permission to say "scrap it and do this instead." If there's a fundamentally better approach, table it. I'd rather hear it now.
+1. Zero silent failures. Every failure must reach system, team and user; silence is critical.
+2. Every error has a name. Specify class, trigger, handler, user result and test coverage; flag catch-alls.
+3. Data flows have shadow paths. Trace every new flow's happy, nil, empty/zero-length and upstream-error paths.
+4. Interactions have edge cases. Map every UI's double-click, mid-action navigation, slow connection, stale state and back-button cases.
+5. Observability is scope, not afterthought. Treat new dashboards, alerts and runbooks as launch deliverables.
+6. Diagrams are mandatory. ASCII: every new data flow, state machine, pipeline, dependency graph and decision tree.
+7. Record every deferral in TODOS.md or full chat output per the storage policy.
+8. Optimize for the 6-month future, not just today. Flag future harm.
+9. You have permission to say "scrap it and do this instead." Propose better approaches now.
 
 ## Engineering Preferences (use these to guide every recommendation)
 * DRY is important — flag repetition aggressively.
@@ -871,7 +871,7 @@ Complete 0A–0E in order, then follow the selected mode's route. Put the 0A–0
 
 **Review depth** follows the requested deliverable: scope prioritization decides what belongs and whether it is feasible; implementation planning also resolves how to build it. Ask before expanding that depth. A pending choice is an unanswered decision needed for that deliverable. Facts and approved work need no new question.
 
-**Keep the stated limits.** Record what each limit measures, its value, unit and prerequisites. Reuse may lower effort; two allowed deliverables still means two. Changing a limit needs evidence and user approval.
+**Keep the stated limits.** Record what each limit measures, its value, unit and prerequisites. Reusing code reduces effort, not the requested deliverable count. Changing a limit needs evidence and user approval.
 
 **Storage policy: choose before writing.** Obey user/host restrictions separately for plans, tasks, TODOs, metadata and cleanup. The working plan is the requested output file, otherwise the reviewed plan, otherwise the host's active plan.
 - Use native Write/Edit for permitted plan documents (host editor if unavailable); use each other artifact's specified writer.
@@ -936,6 +936,7 @@ Use this procedure for later new or reopened choices, including Outside Voice. M
 
 ### 0E. Mode Selection
 The preamble's session rules govern whether and how to ask; `CONDUCTOR_SESSION: true` changes transport only.
+Count distinct planned file additions, edits and deletions; label uncertain counts as estimates.
 
 1. Use an explicit user mode choice and skip steps 2–3. "Go big", "ambitious" or "cathedral" selects SCOPE EXPANSION; "hold scope but tempt me", "show me options" or "cherry-pick" selects SELECTIVE EXPANSION. Do not ask again.
 2. Recommend SCOPE REDUCTION for >15 planned changed files; else SCOPE EXPANSION for greenfield work, SELECTIVE EXPANSION for enhancements, or HOLD SCOPE for bug fixes/refactors. This step recommends a mode; it does not select one.
@@ -1053,7 +1054,7 @@ Repo: {owner/repo}
 #### Spec Review Loop
 
 Run an adversarial review before presenting the final document to the user.
-Follow the calling workflow's approval steps.
+Use 0D for any new or reopened amendment; 0H presents both completed inputs for final approval.
 
 **Step 1: Dispatch reviewer subagent**
 
@@ -1115,6 +1116,8 @@ Add the sequence, feasibility blockers and remaining choices to the working plan
 
 Use 0D for urgent decisions; never defer critical risks. Carry the ledger and each answer's exact scope into the review sections.
 
+## Continue after Step 0 (all modes)
+
 > **STOP.** Before running the 11-section deep review, required outputs, and review report (only after Step 0 scope and mode are agreed), Read `~/.claude/skills/gstack/plan-ceo-review/sections/review-sections.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
 
@@ -1125,21 +1128,17 @@ outputs and report from the file, not memory: Sections 1–10 and Section 11's
 findings or no-UI skip. If the Completion Summary or report preceded that Read,
 STOP, Read the file and redo the review.
 
-Before summaries, review logs or next-step menus, run approval check 0 below.
-
 ## EXIT PLAN MODE GATE (BLOCKING)
 
 If storage restrictions prevented the plan/report or completion log, present the
 full chat report as not persisted; do not call ExitPlanMode or claim this gate passed.
 An attempted artifact save that failed still stops the review.
 
-0. Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
-   Never group distinct issues. Setup, mode, approach and navigation are not approval.
-   Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
-   record why. Deferrals remain unresolved.
-   If missing, reset drafts to pending, ask and wait. After answers or resets,
-   refresh the plan and report, pass the Read-back gate, then update the review
-   log and rerun this gate.
+0. Confirm Approval readiness passed for the current decisions. This is a
+   read-only verification, not a new approval or output-writing step. If the
+   decisions changed, report the stale verification and stop. A resumed repair
+   starts at Approval readiness, then repeats affected outputs, Read-back,
+   Review Log and dashboard. Do not run success telemetry or exit now.
 
 Before calling ExitPlanMode, verify all five checks:
 1. Read the plan file after your most recent write.
@@ -1155,5 +1154,21 @@ Before calling ExitPlanMode, verify all five checks:
 If any check fails, report the missing work and do not call ExitPlanMode. Review
 prose in the plan body cannot replace its separate, terminal structured report.
 
-After this gate passes, return to the section's **Closing hooks**, then exit or
-hand off without further plan changes.
+Run the preamble's **Telemetry (run last)** once after this gate passes.
+The nonblocking cache refresh follows:
+
+## Brain Cache Background Refresh
+
+After the skill's work completes (and telemetry has logged), kick a
+background refresh of any cache digest that's getting close to its TTL.
+This is non-blocking — the user doesn't wait. Next invocation benefits
+from the warm cache.
+
+```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
+(~/.claude/skills/gstack/bin/gstack-brain-cache refresh --project "$SLUG" 2>/dev/null &) || true
+```
+
+
+Finish with ExitPlanMode where the host requires it, or return to the calling
+workflow. Perform the chosen next-skill handoff without changing this review.
