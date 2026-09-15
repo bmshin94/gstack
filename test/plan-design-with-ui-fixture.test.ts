@@ -100,6 +100,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.followUpPrompt).toContain(fs.readFileSync(${JSON.stringify(path.join(ROOT, 'test/fixtures/plans/ui-heavy-feature.md'))}, 'utf8'));
     expect(opts.followUpPrompt).toContain(DESIGN_BOARD_ACTOR_PROTOCOL);
     expect(opts.reviewCountCeiling).toBe(1);
+    expect(opts.observeSetupQuestions).toBe(true);
     expect(opts).not.toHaveProperty('questionPick');
     expect(typeof opts.pickAUQ).toBe('function');
     expect(opts).not.toHaveProperty('model');

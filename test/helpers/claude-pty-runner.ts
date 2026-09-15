@@ -35,7 +35,7 @@ import { readPlanFloorTarget, type PlanFloorTargetDelivery } from './plan-floor-
 import { findNativeAutoDecision, type NativeAutoDecision } from './native-auto-decide';
 import { readPlanCountTranscript, unresolvedPlanQuestionCalls, type NativePlanQuestionCall, type PlanCountTranscript, type NativePublicToolEvent } from './plan-count-transcript';
 import { createPendingExitRecorder, withPendingExit, isCurrentPlanApprovalScreen } from './plan-count-pending-exit';
-import { createPendingQuestionRecorder } from './plan-count-pending-question';
+import { createPendingQuestionRecorder, readPendingQuestion } from './plan-count-pending-question';
 import { createFilePermissionRecorder, currentFilePermissionBinding, type FilePermissionEpoch } from './plan-count-file-permission';
 import { createAutoplanArtifactRecorder } from './autoplan-artifact-recorder';
 import { trustDialogInput } from './pty-trust-dialog';
@@ -54,6 +54,17 @@ export function stripAnsi(s: string): string {
     .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
     .replace(/\x1b[()][AB012]/g, '')
     .replace(/\x1b[78=>]/g, '');
+}
+
+/** Only consider rejection text naming the invoked slash command. */
+export function isRejectedSlashCommand(visible: string, slashCommand: string): boolean {
+  if (!/^\/[A-Za-z0-9][A-Za-z0-9:_.-]*$/.test(slashCommand)) return false;
+  const message = `Unknown command: ${slashCommand}`;
+  return stripAnsi(visible).split(/\r?\n/).some(line => {
+    const text = line.trim();
+    return text === message || text.startsWith(`${message}. Did you mean /`)
+      && /^\/[A-Za-z0-9][A-Za-z0-9:_.-]*\?$/.test(text.slice(`${message}. Did you mean `.length));
+  });
 }
 
 /** Find claude on PATH, with fallback locations. Mirrors terminal-agent.ts. */
@@ -4336,7 +4347,7 @@ export async function runPlanSkillObservation(opts: {
           ...highWaterFlags(),
         };
       }
-      if (visible.includes('Unknown command:')) {
+      if (isRejectedSlashCommand(visible, `/${opts.skillName}`)) {
         return {
           outcome: 'exited',
           summary: `claude rejected /${opts.skillName} as unknown command (skill not registered in this cwd)`,
@@ -4595,6 +4606,8 @@ export async function runPlanSkillCounting(opts: {
    * when capturePlanCountQuestion matched the currently visible native question. */
   pickAUQ?: (fp: AskUserQuestionFingerprint, activeCapture: AskUserQuestionFingerprint,
     context: Readonly<{ cwd: string; deadlineAt: number }>) => number | null;
+  /** Observe owned pending AUQs for callers that need identity before answering. */
+  observeSetupQuestions?: boolean;
   /** Require native completion plus this caller-owned final report before accepting a soft terminal. */
   expectedPlanPath?: string;
   /** Additional versioned files available in the isolated fixture before the skill starts. */
@@ -4667,6 +4680,7 @@ export async function runPlanSkillCounting(opts: {
       seedSkills: true,
       observeScreen: true,
       observePlanReady: true,
+      observeSetupQuestions: opts.observeSetupQuestions,
       observeFilePermissions: permissionPaths.length ? [...new Set(permissionPaths)] : undefined,
     });
   } catch (error) {
@@ -4788,7 +4802,7 @@ export async function runPlanSkillCounting(opts: {
         );
       }
 
-      if (visible.includes('Unknown command:')) {
+      if (isRejectedSlashCommand(visible, opts.slashCommand)) {
         return snapshot(
           'exited',
           `claude rejected ${opts.slashCommand} as unknown command (skill not registered in this cwd)`,
@@ -4796,7 +4810,12 @@ export async function runPlanSkillCounting(opts: {
         );
       }
 
-      const pending = transcript.calls.find(c => !c.answered && !c.failed);
+      // A native AUQ can render before its JSONL tool-use record is flushed.
+      // The opt-in hook supplies pending identity only; answered counts above
+      // still come exclusively from the published native transcript.
+      const pending = transcript.calls.find(c => !c.answered && !c.failed)
+        ?? readPendingQuestion(session.pendingQuestionFile, fixture.cwd,
+          session.hermeticConfigDir, startedAt, transcript);
       const newlyMatched = pending && matchesNativePlanQuestion(visible, pending);
       if (newlyMatched) lastMatchedNativeQuestion = pending;
       const renderedFrame = classifyPlanCountFrame(visible);
@@ -4954,6 +4973,21 @@ export async function runPlanSkillCounting(opts: {
       `no terminal outcome within ${timeoutMs}ms total budget (including startup and ${cleanupReserveMs}ms cleanup reserve; step0=${step0Count}, review=${reviewCount})`,
       viewport,
     );
+  } catch (error) {
+    // Caller/actor errors used to leave only the preceding 30s checkpoint.
+    // Retain the actual throw frame and public native state before close()
+    // removes the hook and fixture, without replacing the original failure.
+    try {
+      // Keep the exact frame/transcript that the throwing caller observed;
+      // awaiting a redraw here would erase that ordering evidence.
+      const saved = capture({ state: 'threw', error: error instanceof Error ? error.message : String(error),
+        elapsedMs: Date.now() - startedAt, fingerprints, step0Count, reviewCount, administrativeCount, transcript,
+        pendingQuestion: readPendingQuestion(session.pendingQuestionFile, fixture.cwd,
+          session.hermeticConfigDir, startedAt, transcript) });
+      if (saved.artifactDir) console.error(`Full PTY artifacts: ${saved.artifactDir}`);
+      if (saved.artifactError) console.error(`PTY artifact write failed: ${saved.artifactError}`);
+    } catch (captureError) { console.error(`PTY failure capture failed: ${String(captureError)}`); }
+    throw error;
   } finally {
     try {
       await session.close();
@@ -5095,7 +5129,7 @@ export async function runPlanSkillFloorCheck(opts: {
           elapsedMs: Date.now() - startedAt,
         });
       }
-      if (visible.includes('Unknown command:')) {
+      if (isRejectedSlashCommand(visible, opts.slashCommand)) {
         return finish({
           auqObserved: false,
           outcome: 'exited',
