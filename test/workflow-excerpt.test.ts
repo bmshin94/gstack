@@ -18,7 +18,7 @@ function expectOutsideReviewControlFlow(text: string, promptHeading: string): vo
 
   const fallback = text.slice(indices[3]);
   expect(fallback).toContain('The disabled branch never reaches this fallback.');
-  expect(fallback.replace(/\s+/g, ' ')).toContain('Otherwise, use this fallback for missing/broken CLI, failed authentication/model selection, a failed preflight, or a failed outside invocation.');
+  expect(fallback.replace(/\s+/g, ' ')).toMatch(/Otherwise, use this fallback for missing\/broken CLI, failed authentication\/model selection, a failed preflight(?: \(including harness mismatch\))?, or a failed outside invocation\./);
   const dispatch = fallback.indexOf('Dispatch via the Agent tool');
   expect(dispatch).toBeGreaterThan(0);
   const recheck = fallback.slice(0, dispatch);

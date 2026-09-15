@@ -216,6 +216,7 @@ type CoverageAuditMode = 'plan' | 'ship' | 'review';
 
 function generateTestCoverageAuditInner(mode: CoverageAuditMode, part: 'audit' | 'gate' = 'audit'): string {
   const sections: string[] = [];
+  const subheading = mode === 'plan' ? '####' : '###';
   let gate = '';
 
   // ── Intro (mode-specific) ──
@@ -229,7 +230,7 @@ function generateTestCoverageAuditInner(mode: CoverageAuditMode, part: 'audit' |
 
   // ── Test framework detection (shared) ──
   sections.push(`
-### Test Framework Detection
+${subheading} Test Framework Detection
 
 Before analyzing coverage, detect the project's test framework:
 
@@ -340,7 +341,7 @@ Quality scoring rubric:
 
   // ── E2E test decision matrix (shared) ──
   sections.push(`
-### E2E Test Decision Matrix
+${subheading} E2E Test Decision Matrix
 
 When checking each branch, also determine whether a unit test or E2E/integration test is the right tool:
 
@@ -361,12 +362,12 @@ When checking each branch, also determine whether a unit test or E2E/integration
 
   // ── Regression requirement; plan contracts need the review's approval gate ──
   sections.push(mode === 'plan' ? `
-### REGRESSION RULE (mandatory)
+${subheading} REGRESSION RULE (mandatory)
 
 **IRON RULE:** When a planned change puts existing behavior at risk without regression coverage, that coverage is a critical requirement. Carry forward an exact approved regression contract; otherwise use one dedicated AskUserQuestion to settle it — behavior to preserve, intentional changes, and acceptance assertions — before adding the approved contract to the plan. Ask how to cover it, not whether to skip it. Do not silently include it under a different test-depth question.
 
 A proposed rewrite is a regression risk, not proof that running code already broke. Name the existing callers and behavior at risk; preserve unchanged behavior and explicitly identify intended differences. No skipping regression coverage.` : `
-### REGRESSION RULE (mandatory)
+${subheading} REGRESSION RULE (mandatory)
 
 **IRON RULE:** When the coverage audit identifies a REGRESSION — code that previously worked but the diff broke — a regression test is written immediately. No AskUserQuestion. No skipping. Regressions are the highest-priority test because they prove something broke.
 
@@ -408,7 +409,7 @@ Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke ch
   // ── Mode-specific action section ──
   if (mode === 'plan') {
     sections.push(`
-### LLM/eval scope
+${subheading} LLM/eval scope
 
 For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Include unapproved eval scope among the choices resolved in Step 5.
 
@@ -426,7 +427,7 @@ When these test and eval choices are resolved, write the Test Plan Artifact belo
 
     // ── Test plan artifact (plan + ship) ──
     sections.push(`
-### Test Plan Artifact
+${subheading} Test Plan Artifact
 
 After resolving the Test review decisions, record the approved test requirements in an artifact for \`/qa\` and \`/qa-only\`. List any unresolved choices separately as pending, not required implementation. Update this artifact if later approved decisions change the tests. Use the Review record and write policy above.
 
@@ -531,7 +532,7 @@ Using the coverage percentage from the diagram in substep 4 (the \`COVERAGE: X/Y
 
     // ── Test plan artifact (ship mode) ──
     sections.push(`
-### Test Plan Artifact
+${subheading} Test Plan Artifact
 
 After producing the coverage diagram, write a test plan artifact so \`/qa\` and \`/qa-only\` can consume it:
 

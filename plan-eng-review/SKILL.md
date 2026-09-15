@@ -585,8 +585,8 @@ Sanitize every query before it leaves the machine: strip hostnames, IPs, file pa
 ### Design Doc Check
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
+_REVIEW_SLUG=$(~/.claude/skills/gstack/bin/gstack-slug) || exit 1
+eval "$_REVIEW_SLUG"
 _LOCALDOC=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$_LOCALDOC" ] && _LOCALDOC=$(ls -t ~/.gstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
 # Repo-local docs win when at least as fresh (#703): office-hours dual-writes
@@ -606,14 +606,12 @@ fi
 ```
 If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why.
 
-The quoted Prerequisite Skill Offer supplies choice content, not the full decision brief.
-
 ## Prerequisite Skill Offer
 
 When the design doc check above prints "No design doc found," offer the prerequisite
 skill before proceeding.
 
-Say to the user via AskUserQuestion:
+Build the next full decision brief from these facts and options, using the Later question stages and preamble format:
 
 > "No design doc found for this branch. `/office-hours` produces a structured problem
 > statement, premise challenge, and explored alternatives — it gives this review much
@@ -655,8 +653,8 @@ Execute every other section at full depth. When the loaded skill's instructions 
 After /office-hours completes, re-run the design doc check:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
+_REVIEW_SLUG=$(~/.claude/skills/gstack/bin/gstack-slug) || exit 1
+eval "$_REVIEW_SLUG"
 _LOCALDOC=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$_LOCALDOC" ] && _LOCALDOC=$(ls -t ~/.gstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
 # Repo-local docs win when at least as fresh (#703): office-hours dual-writes
@@ -677,6 +675,8 @@ fi
 
 If a design doc is now found, read it and continue the review.
 If none was produced (user may have cancelled), proceed with standard review.
+
+## Engineering review
 
 ### Step 0: Scope Challenge
 
@@ -704,11 +704,11 @@ full chat report as not persisted; do not call ExitPlanMode or claim this gate p
 An attempted artifact save that failed still stops the review via **Blocked outcome**.
 
 Confirm Approval readiness passed for the current decisions. This is a
-   read-only verification, not a new approval or output-writing step. If the
-   decisions changed, report the stale verification and stop before success
-   telemetry or exit and follow **Blocked outcome**. A resumed repair
-   starts at Approval readiness, then repeats affected outputs, Read-back,
-   Review Log and dashboard.
+read-only verification, not a new approval or output-writing step. If the
+decisions changed, report the stale verification and stop before success
+telemetry or exit and follow **Blocked outcome**. A resumed repair
+starts at Approval readiness, then repeats affected outputs, Read-back,
+Review Log and dashboard.
 
 Before calling ExitPlanMode, verify all five checks:
 1. Read the plan file after your most recent write.

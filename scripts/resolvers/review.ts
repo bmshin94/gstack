@@ -195,7 +195,7 @@ export function generatePlanReviewApprovalCheck(ctx: TemplateContext): string {
   const readinessRecord = ctx.skillName === 'plan-eng-review'
     ? 'Record `Approval readiness: PASS` with the checked decision IDs and their\nactual answer references in the current decision record. A substantive'
     : 'Record that readiness passed with the current decision record. A substantive';
-  return `## Approval readiness
+  const check = `## Approval readiness
 
 Run this check before Required Outputs and after any substantive late change.
 It checks decisions only; no completion report or log is required yet.
@@ -212,6 +212,7 @@ Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
 ${readinessRecord}
 change invalidates that result; navigation alone does not. Then continue to
 Required Outputs, preserving unresolved decisions in the report.`;
+  return ctx.skillName === 'plan-eng-review' ? check.replace(/^ {3}/gm, '') : check;
 }
 
 export function generateExitPlanModeGate(ctx: TemplateContext): string {
@@ -242,7 +243,7 @@ If storage restrictions prevented the plan/report or completion log, present the
 full chat report as not persisted; do not call ExitPlanMode or claim this gate passed${ctx.skillName === 'plan-eng-review' ? ', and follow **Blocked outcome**' : ''}.
 An attempted artifact save that failed still stops the review${ctx.skillName === 'plan-eng-review' ? ' via **Blocked outcome**' : ''}.
 
-${approvals}Before calling ExitPlanMode, verify all five checks:
+${ctx.skillName === 'plan-eng-review' ? approvals.replace(/^ {3}/gm, '') : approvals}Before calling ExitPlanMode, verify all five checks:
 1. Read the plan file after your most recent write.
 2. Its LAST \`## \` heading is exactly \`## GSTACK REVIEW REPORT\`.
 3. The report contains a Runs / Status / Findings table and VERDICT; include
@@ -497,7 +498,7 @@ export function generateBenefitsFrom(ctx: TemplateContext): string {
 When the design doc check above prints "No design doc found," offer the prerequisite
 skill before proceeding.
 
-Say to the user via AskUserQuestion:
+${ctx.skillName === 'plan-eng-review' ? 'Build the next full decision brief from these facts and options, using the Later question stages and preamble format:' : 'Say to the user via AskUserQuestion:'}
 
 > "No design doc found for this branch. ${skillList} produces a structured problem
 > statement, premise challenge, and explored alternatives — it gives this review much
@@ -521,8 +522,9 @@ ${invokeBlock}
 After /${first} completes, re-run the design doc check:
 \`\`\`bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
+${ctx.skillName === 'plan-eng-review' ? `_REVIEW_SLUG=$(~/.claude/skills/gstack/bin/gstack-slug) || exit 1
+eval "$_REVIEW_SLUG"` : `SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')`}
 ${DESIGN_DOC_DISCOVERY_BLOCK}
 \`\`\`
 
@@ -918,9 +920,9 @@ ${outsideVoiceFor(ctx).label.toUpperCase()} SAYS (plan review — outside voice)
 Immediately before dispatching, check the preflight result again. On
 \`CODEX_MODE: disabled\`, finish this section with \`outside_status: disabled\`;
 do not dispatch. Otherwise, use this fallback for missing/broken CLI, failed
-authentication/model selection, a failed preflight, or a failed outside invocation.
+authentication/model selection, a failed preflight${ctx.skillName === 'plan-eng-review' ? ' (including harness mismatch)' : ''}, or a failed outside invocation.
 The disabled branch never reaches this fallback.
-${needsApprovalReadiness ? 'Harness mismatch follows this same native fallback after the preflight reports its setup repair; no outside CLI runs.\nA native result never supplies outside coverage.' : `On \`CODEX_MODE: ${outsideVoiceFor(ctx).id === 'codex' ? 'under_codex' : 'under_current_harness'}\`, report the setup repair and
+${ctx.skillName === 'plan-eng-review' ? '' : needsApprovalReadiness ? 'Harness mismatch follows this same native fallback after the preflight reports its setup repair; no outside CLI runs.\nA native result never supplies outside coverage.' : `On \`CODEX_MODE: ${outsideVoiceFor(ctx).id === 'codex' ? 'under_codex' : 'under_current_harness'}\`, report the setup repair and
 \`outside_status: unavailable\`, run no outside CLI, and use the native subagent below.
 A native result never supplies outside coverage.`}
 
@@ -1060,7 +1062,7 @@ After processing the queue, report findings, dispositions and remaining disagree
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","host":"${ctx.host}","outside_provider":"${outsideVoiceFor(ctx).id}","outside_status":"OUTSIDE_STATUS","phase":"plan-review","commit":"'"$(git rev-parse --short HEAD)"'"}'
 \`\`\`
 
-Substitute: STATUS = "clean" only if a reviewer completed and found no issues; "issues_found" if findings exist, or "unavailable" if neither reviewer completed. Never count missing coverage as a clean review.${ctx.skillName === 'plan-eng-review' ? ' These are the completed outside reviewer\'s findings, even if the parent later resolves them; this log does not describe the parent review\'s remaining decisions.' : ''}
+Substitute: STATUS = "clean" only if a reviewer completed and found no issues; "issues_found" if findings exist, or "unavailable" if neither reviewer completed. Never count missing coverage as a clean review.${ctx.skillName === 'plan-eng-review' ? ' A completed native fallback uses SOURCE=in-host, OUTSIDE_STATUS=unavailable, and STATUS=clean or issues_found from its findings. These findings are the reviewer\'s, even if later resolved by the parent.' : ''}
 ${outsideVoiceProvenance(ctx, 'plan-review')}
 
 

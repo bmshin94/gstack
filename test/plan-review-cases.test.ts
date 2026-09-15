@@ -159,8 +159,15 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(skeleton).toContain('Scope Challenge is mandatory before Section 1');
     expect(skeleton).toContain('Loading those definitions does not resolve the complexity gate');
     expect(scope).toContain('apply only accepted scope changes');
-    expect(sections).toContain('Read the Decision procedure, then execute Scope Challenge once before Sections 1–4');
-    expect(sections).toContain('Question stages distinguish its initial selectors from later findings');
+    expect(sections).toContain('Preparation order: report file and write policy → Anti-shortcut clause → Prior Learnings → Retrospective learning → evidence calibration → Decision procedure');
+    expect(sections).toContain('Then execute Scope Challenge once before Sections 1–4');
+    const preparationOrder = ['## Review record and write policy',
+      suffix ? '{{ANTI_SHORTCUT_CLAUSE}}' : '**Anti-shortcut clause:**',
+      suffix ? '{{LEARNINGS_SEARCH}}' : '## Prior Learnings', '## Retrospective learning',
+      suffix ? '{{CONFIDENCE_CALIBRATION}}' : '## Confidence Calibration',
+      '## Decision procedure', '## Scope Challenge'].map(marker => sections.indexOf(marker));
+    expect(preparationOrder.every(position => position >= 0)).toBe(true);
+    expect(preparationOrder).toEqual([...preparationOrder].sort((a, b) => a - b));
     expect(skeleton).toContain('| Initial complexity choices | Full brief; no grids or ledger writes until resolved. Then import actual scope answers. |');
     expect(skeleton).toContain('| All findings/remedies | Follow the Decision procedure, including its no-question branches. |');
     expect(skeleton).not.toContain('STOP while a Step 0 question');
@@ -175,13 +182,16 @@ test('Eng independent-remedy rule is loaded before Step 0 and retains outside-vo
     expect(scope).toContain('"No issues found" for an empty list');
     expect(scope).toContain('Carry actual scope answers forward; a finding is not approval of its remedy');
     const stages = skeleton.indexOf('**Later question stages:**');
-    const prerequisite = skeleton.indexOf('The quoted Prerequisite Skill Offer supplies');
+    const prerequisite = skeleton.indexOf(suffix ? '{{BENEFITS_FROM}}' : '## Prerequisite Skill Offer');
     expect(stages).toBeGreaterThan(0);
     expect(stages).toBeLessThan(prerequisite);
     expect(prerequisite).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
     expect(skeleton.slice(stages, prerequisite)).toContain("Use the preamble's transport and continuous D-numbering");
     expect(skeleton.slice(stages, prerequisite)).toContain('| Preamble/prerequisite/preparation | Full brief; no engineering-remedy approval. |');
-    expect(skeleton.slice(prerequisite)).toContain('supplies choice content, not the full decision brief');
+    if (!suffix) expect(skeleton.slice(prerequisite)).toContain('Build the next full decision brief from these facts and options, using the Later question stages and preamble format');
+    const engineering = skeleton.indexOf('## Engineering review');
+    expect(engineering).toBeGreaterThan(prerequisite);
+    expect(engineering).toBeLessThan(skeleton.indexOf('### Step 0: Scope Challenge'));
     const inventory = sections.indexOf('**Decision gate (all sections and outside voice):**');
     expect(inventory).toBeGreaterThan(0);
     expect(inventory).toBeLessThan(sections.indexOf('### 1. Architecture review'));
@@ -339,7 +349,7 @@ describe('Eng approved-work decision gate', () => {
         expect(body).toContain("Run the decision gate for this section's new or reopened choices");
         expect(body).toContain('**STOP for each pending decision.**');
         const stop = body.indexOf('**STOP for each pending decision.**');
-        const artifact = body.indexOf('### Test Plan Artifact');
+        const artifact = body.indexOf('\n#### Test Plan Artifact\n');
         const report = body.indexOf('After the Test Plan Artifact is saved or presented, report the Test review findings');
         expect(0 <= stop && stop < artifact && artifact < report).toBe(true);
         expect(body.slice(stop, artifact)).not.toContain('and continue');
@@ -433,6 +443,7 @@ describe('Eng approved-work decision gate', () => {
     expect(policy).toContain('add a suffix on collision');
     expect(policy).toContain('Never select an unrelated active plan');
     expect(policy).toContain('Use this file for the ledger, narrative output, report and final gate');
+    expect(policy).toContain('QA Test Plan and task JSONL artifacts retain their specified legacy discovery paths; do not relocate them beside the report');
     expect(policy).toContain('including an active-plan-only restriction');
     expect(policy).toContain('Before creating directories or writing, check this file and its directory, Test Plan Artifact, task JSONL, TODOs and logs separately');
     expect(policy).toContain('one permitted path authorizes no other');
@@ -575,8 +586,11 @@ describe('outside-voice commitment queue', () => {
       const fallback = eng.slice(eng.indexOf('**Native fallback'), eng.indexOf('**Bounded outside-voice wait'));
       const preflight = eng.match(/```bash\n([\s\S]*?)\n```/)![1];
       expect(preflight).toContain(mismatch);
-      expect(fallback).toContain('Harness mismatch follows this same native fallback after the preflight reports its setup repair; no outside CLI runs');
-      expect(fallback).toContain('A native result never supplies outside coverage.');
+      expect(fallback).toContain('a failed preflight (including harness mismatch), or a failed outside invocation');
+      const bounded = eng.slice(eng.indexOf('**Bounded outside-voice wait'), eng.indexOf('**Cross-model tension:**'));
+      expect(bounded).toContain('A native result never supplies outside coverage.');
+      expect(eng).toContain('A completed native fallback uses SOURCE=in-host, OUTSIDE_STATUS=unavailable, and STATUS=clean or issues_found from its findings');
+      expect(eng).toContain("These findings are the reviewer's, even if later resolved by the parent");
       expect(fallback).toContain('The disabled branch never reaches this fallback.');
       expect(eng).not.toContain('No in-host substitute is defined here');
       if (host.name === 'codex') {

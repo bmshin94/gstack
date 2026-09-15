@@ -1,12 +1,14 @@
 ## Review preparation
 
-Read the Decision procedure, then execute Scope Challenge once before Sections 1–4. Question stages distinguish its initial selectors from later findings.
+Preparation order: report file and write policy → Anti-shortcut clause → Prior Learnings → Retrospective learning → evidence calibration → Decision procedure. Then execute Scope Challenge once before Sections 1–4.
 
 ## Review record and write policy
 
 Keep the Scope gate's target fixed. Review proposed work for a plan, existing behavior for code. For code targets, "plan" below means the recorded proposed remedies, never an implementation file. Apply every test, evidence and output requirement.
 
 Choose one **report file** before ledger writes: the requested report path; otherwise the selected plan file; otherwise a new `$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md` (add a suffix on collision). For that default path, run `~/.claude/skills/gstack/bin/gstack-paths` and `~/.claude/skills/gstack/bin/gstack-slug`; use their returned `GSTACK_STATE_ROOT`, `SLUG` and `BRANCH` assignments to form the literal path. If either command fails or a value is absent, that destination is unavailable. Name the reviewed target in its header. Never select an unrelated active plan. Use this file for the ledger, narrative output, report and final gate.
+
+QA Test Plan and task JSONL artifacts retain their specified legacy discovery paths; do not relocate them beside the report.
 
 The **decision ledger** holds records, grids, briefs and actual answers. Its **write/read-only rules** apply per artifact:
 - Honor user and host limits, including an active-plan-only restriction. Before creating directories or writing, check this file and its directory, Test Plan Artifact, task JSONL, TODOs and logs separately; one permitted path authorizes no other. Do not edit implementation files without explicit authorization.

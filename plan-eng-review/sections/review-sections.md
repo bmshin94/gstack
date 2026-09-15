@@ -2,13 +2,15 @@
 <!-- Regenerate: bun run gen:skill-docs -->
 ## Review preparation
 
-Read the Decision procedure, then execute Scope Challenge once before Sections 1–4. Question stages distinguish its initial selectors from later findings.
+Preparation order: report file and write policy → Anti-shortcut clause → Prior Learnings → Retrospective learning → evidence calibration → Decision procedure. Then execute Scope Challenge once before Sections 1–4.
 
 ## Review record and write policy
 
 Keep the Scope gate's target fixed. Review proposed work for a plan, existing behavior for code. For code targets, "plan" below means the recorded proposed remedies, never an implementation file. Apply every test, evidence and output requirement.
 
 Choose one **report file** before ledger writes: the requested report path; otherwise the selected plan file; otherwise a new `$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md` (add a suffix on collision). For that default path, run `~/.claude/skills/gstack/bin/gstack-paths` and `~/.claude/skills/gstack/bin/gstack-slug`; use their returned `GSTACK_STATE_ROOT`, `SLUG` and `BRANCH` assignments to form the literal path. If either command fails or a value is absent, that destination is unavailable. Name the reviewed target in its header. Never select an unrelated active plan. Use this file for the ledger, narrative output, report and final gate.
+
+QA Test Plan and task JSONL artifacts retain their specified legacy discovery paths; do not relocate them beside the report.
 
 The **decision ledger** holds records, grids, briefs and actual answers. Its **write/read-only rules** apply per artifact:
 - Honor user and host limits, including an active-plan-only restriction. Before creating directories or writing, check this file and its directory, Test Plan Artifact, task JSONL, TODOs and logs separately; one permitted path authorizes no other. Do not edit implementation files without explicit authorization.
@@ -280,7 +282,7 @@ Resolve this section's new or reopened choices through the Decision procedure. T
 
 100% coverage is the goal. Identify the tests each planned codepath needs. Add required proof for an exact approved behavior without asking again; take new policies or optional verification depth through the decision gate before treating their tests as accepted work. Review the requirements here; do not build the proposed tests.
 
-### Test Framework Detection
+#### Test Framework Detection
 
 Before analyzing coverage, detect the project's test framework:
 
@@ -360,7 +362,7 @@ Quality scoring rubric:
 - ★★   Tests correct behavior, happy path only
 - ★    Smoke test / existence check / trivial assertion (e.g., "it renders", "it doesn't throw")
 
-### E2E Test Decision Matrix
+#### E2E Test Decision Matrix
 
 When checking each branch, also determine whether a unit test or E2E/integration test is the right tool:
 
@@ -379,7 +381,7 @@ When checking each branch, also determine whether a unit test or E2E/integration
 - Edge case of a single function (null input, empty array)
 - Obscure/rare flow that isn't customer-facing
 
-### REGRESSION RULE (mandatory)
+#### REGRESSION RULE (mandatory)
 
 **IRON RULE:** When a planned change puts existing behavior at risk without regression coverage, that coverage is a critical requirement. Carry forward an exact approved regression contract; otherwise use one dedicated AskUserQuestion to settle it — behavior to preserve, intentional changes, and acceptance assertions — before adding the approved contract to the plan. Ask how to cover it, not whether to skip it. Do not silently include it under a different test-depth question.
 
@@ -411,7 +413,7 @@ Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke ch
 
 **Fast path:** All paths covered → "Test review: All new code paths have test coverage ✓" Still check LLM/eval scope and produce the Test Plan Artifact below.
 
-### LLM/eval scope
+#### LLM/eval scope
 
 For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Include unapproved eval scope among the choices resolved in Step 5.
 
@@ -427,7 +429,7 @@ Run the decision gate for this section's new or reopened choices. **STOP for eac
 
 When these test and eval choices are resolved, write the Test Plan Artifact below. Its approved requirements should be specific enough to implement alongside the feature code.
 
-### Test Plan Artifact
+#### Test Plan Artifact
 
 After resolving the Test review decisions, record the approved test requirements in an artifact for `/qa` and `/qa-only`. List any unresolved choices separately as pending, not required implementation. Update this artifact if later approved decisions change the tests. Use the Review record and write policy above.
 
@@ -648,10 +650,9 @@ CODEX SAYS (plan review — outside voice):
 Immediately before dispatching, check the preflight result again. On
 `CODEX_MODE: disabled`, finish this section with `outside_status: disabled`;
 do not dispatch. Otherwise, use this fallback for missing/broken CLI, failed
-authentication/model selection, a failed preflight, or a failed outside invocation.
+authentication/model selection, a failed preflight (including harness mismatch), or a failed outside invocation.
 The disabled branch never reaches this fallback.
-Harness mismatch follows this same native fallback after the preflight reports its setup repair; no outside CLI runs.
-A native result never supplies outside coverage.
+
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
 
@@ -711,7 +712,7 @@ Report all findings, dispositions and remaining disagreements after resolving th
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","host":"claude","outside_provider":"codex","outside_status":"OUTSIDE_STATUS","phase":"plan-review","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
-Substitute: STATUS = "clean" only if a reviewer completed and found no issues; "issues_found" if findings exist, or "unavailable" if neither reviewer completed. Never count missing coverage as a clean review. These are the completed outside reviewer's findings, even if the parent later resolves them; this log does not describe the parent review's remaining decisions.
+Substitute: STATUS = "clean" only if a reviewer completed and found no issues; "issues_found" if findings exist, or "unavailable" if neither reviewer completed. Never count missing coverage as a clean review. A completed native fallback uses SOURCE=in-host, OUTSIDE_STATUS=unavailable, and STATUS=clean or issues_found from its findings. These findings are the reviewer's, even if later resolved by the parent.
 Retain the historical review-log skill ID; add `"host":"claude","outside_provider":"codex","outside_status":"completed|unavailable|disabled|skipped","phase":"plan-review"`. Record differing attempt outcomes separately. `source:"codex"` requires completed CLI output; native uses `source:"in-host"` (historical `source:"claude"`: native Claude). Availability/native fallback is not outside completion. Preserve all reported modelUsage; unknown model identity stays unknown.
 
 
@@ -747,13 +748,13 @@ Run this check before Required Outputs and after any substantive late change.
 It checks decisions only; no completion report or log is required yet.
 
 Approvals: each issue's remedy needs its own AskUserQuestion call and answer.
-   Never group distinct issues. Setup, mode, approach and navigation are not approval.
-   Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
-   record why. Deferrals remain unresolved.
-   Carry forward an exact approved regression contract. Otherwise settle its
-   behavior and assertions in one dedicated decision before adding it to the plan.
-   If missing, reset drafts to pending, ask and wait. After the answer, apply only
-   its accepted scope and repeat this check before writing completion outputs.
+Never group distinct issues. Setup, mode, approach and navigation are not approval.
+Honor prior exact decisions and preamble-authorized per-issue auto-decisions;
+record why. Deferrals remain unresolved.
+Carry forward an exact approved regression contract. Otherwise settle its
+behavior and assertions in one dedicated decision before adding it to the plan.
+If missing, reset drafts to pending, ask and wait. After the answer, apply only
+its accepted scope and repeat this check before writing completion outputs.
 
 Record `Approval readiness: PASS` with the checked decision IDs and their
 actual answer references in the current decision record. A substantive

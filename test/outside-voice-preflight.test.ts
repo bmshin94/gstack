@@ -27,7 +27,18 @@ test('CEO and Eng describe the actual disabled route and completion validator', 
       const invocation = outsideVoiceInvocation(ctx);
       expect(invocation).toContain('missing Recommendation: <action> because <reason> markers');
       expect(invocation).not.toContain('score/severity/completion');
-      expect(output).toContain('Harness mismatch follows this same native fallback');
+      if (skillName === 'plan-eng-review') {
+        expect(output).toContain('a failed preflight (including harness mismatch), or a failed outside invocation');
+        const bounded = output.slice(output.indexOf('**Bounded outside-voice wait'), output.indexOf('**Cross-model tension:**'));
+        expect(bounded).toContain('A native result never supplies outside coverage.');
+        expect(output).toContain('A completed native fallback uses SOURCE=in-host, OUTSIDE_STATUS=unavailable, and STATUS=clean or issues_found from its findings');
+        expect(output).toContain('"unavailable" if neither reviewer completed');
+        expect(output).toContain('Never count missing coverage as a clean review');
+        expect(output).toContain("These findings are the reviewer's, even if later resolved by the parent");
+        // Compact prose must retain the actual wrong-harness execution guard.
+        expect(invocation).toContain('exit 78');
+        expect(invocation.indexOf('exit 78')).toBeLessThan(invocation.indexOf('_OUTSIDE_TMP=$(mktemp'));
+      } else expect(output).toContain('Harness mismatch follows this same native fallback');
     }
   }
   expect(validateOutsideReview('Recommendation: proceed because no findings remain.', 'review').completed).toBe(true);

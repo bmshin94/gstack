@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawnSync } from 'child_process';
+import { runCapturedCommand } from './helpers/sync-command-capture';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const MAX_SKILL_DESCRIPTION_LENGTH = 1024;
@@ -929,8 +930,21 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
     }
   });
 
+  test('all five plan audit subheadings stay inside Test review while ship keeps its existing depth', () => {
+    const tests = planSkill.split('\n### 3. Test review\n')[1]!.split('\n### 4. Performance review\n')[0]!;
+    const instructions = tests.replace(/```[\s\S]*?```/g, '');
+    const headings = ['Test Framework Detection', 'E2E Test Decision Matrix', 'REGRESSION RULE (mandatory)',
+      'LLM/eval scope', 'Test Plan Artifact'];
+    expect([...instructions.matchAll(/^#### (.+)$/gm)].map(match => match[1])).toEqual(headings);
+    expect(instructions).not.toMatch(/^#{1,3} /m);
+    for (const heading of headings.filter(heading => heading !== 'LLM/eval scope')) {
+      expect(shipSkill).toContain(`\n### ${heading}\n`);
+      expect(shipSkill).not.toContain(`\n#### ${heading}\n`);
+    }
+  });
+
   test('planned regression coverage gets its own approved contract without making coverage optional', () => {
-    const regression = planSkill.split('### REGRESSION RULE (mandatory)')[1]!.split('**Step 4.')[0]!;
+    const regression = planSkill.split('\n#### REGRESSION RULE (mandatory)\n')[1]!.split('**Step 4.')[0]!;
     expect(regression).toContain('critical requirement');
     expect(regression).toContain('Carry forward an exact approved regression contract; otherwise use one dedicated AskUserQuestion');
     expect(regression).toContain('behavior to preserve, intentional changes, and acceptance assertions');
@@ -942,7 +956,7 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
   });
 
   test('plan gap additions wait for their test-contract decision', () => {
-    const action = planSkill.split('**Step 5. Add missing tests to the plan:**')[1]!.split('### Test Plan Artifact')[0]!;
+    const action = planSkill.split('**Step 5. Add missing tests to the plan:**')[1]!.split('\n#### Test Plan Artifact\n')[0]!;
     expect(action).toContain('Collect the requirements for each GAP and the LLM/eval scope above');
     expect(action).toContain('Carry forward required proof of approved behavior');
     expect(action).toContain('Mark new contracts and optional depth choices pending until the decision gate below resolves them');
@@ -969,7 +983,7 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
   });
 
   test('plan framework absence keeps requirements without offering test generation', () => {
-    const detection = planSkill.split('### Test Framework Detection')[1]!.split('**Step 1.')[0]!;
+    const detection = planSkill.split('\n#### Test Framework Detection\n')[1]!.split('**Step 1.')[0]!;
     expect(detection).toContain('still produce the coverage diagram and planned test assertions');
     expect(detection).toContain('State that the framework is unknown');
     expect(detection).toContain('use the decision gate if selecting one needs approval');
@@ -982,7 +996,7 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
     expect(planSkill).toContain('Add missing tests to the plan');
     expect(planSkill).toContain('eng-review-test-plan');
     expect(planSkill).toContain('Test Plan Artifact');
-    const artifact = planSkill.split('### Test Plan Artifact')[1]!;
+    const artifact = planSkill.split('\n#### Test Plan Artifact\n')[1]!;
     expect(artifact).toContain('After resolving the Test review decisions');
     expect(artifact).toContain('List any unresolved choices separately as pending, not required implementation');
     expect(artifact).toContain('Update this artifact if later approved decisions change the tests');
@@ -1775,6 +1789,58 @@ describe('BENEFITS_FROM resolver', () => {
     expect(engContent).toContain('/office-hours');
   });
 
+  test('the optional Eng prerequisite ends before mandatory engineering review', () => {
+    const offer = extractMarkdownSection(engContent, '## Prerequisite Skill Offer');
+    expect(offer).toContain('Build the next full decision brief from these facts and options, using the Later question stages and preamble format');
+    expect(offer).toContain('B) Skip — proceed with standard review');
+    expect(offer).toContain('Then proceed normally. Do not re-offer later in the session');
+    expect(offer).not.toContain('### Step 0: Scope Challenge');
+    const review = extractMarkdownSection(engContent, '## Engineering review');
+    expect(review).toContain('### Step 0: Scope Challenge');
+    expect(review).toContain('Scope Challenge is mandatory before Section 1');
+    expect(review).toContain('sections/review-sections.md');
+  });
+
+  test('Eng initial and prerequisite recheck both discover the canonical override and stop on slug failure', () => {
+    const initial = extractMarkdownSection(engContent, '### Design Doc Check').match(/```bash\n([\s\S]*?)\n```/)![1]!;
+    const offer = extractMarkdownSection(engContent, '## Prerequisite Skill Offer');
+    const recheck = offer.slice(offer.indexOf('After /office-hours completes, re-run the design doc check:'))
+      .match(/```bash\n([\s\S]*?)\n```/)![1]!;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eng-design-slug-'));
+    try {
+      const home = path.join(dir, 'home'), cwd = path.join(dir, 'project');
+      const helper = path.join(home, '.claude/skills/gstack/bin/gstack-slug');
+      fs.mkdirSync(path.dirname(helper), {recursive: true});
+      fs.mkdirSync(cwd);
+      fs.copyFileSync(path.join(ROOT, 'bin/gstack-slug'), helper);
+      fs.chmodSync(helper, 0o755);
+      const expected = path.join(home, '.gstack/projects/canonical-override/session-unknown-design-current.md');
+      const wrong = path.join(home, '.gstack/projects/project/session-unknown-design-wrong.md');
+      for (const file of [expected, wrong]) {
+        fs.mkdirSync(path.dirname(file), {recursive: true});
+        fs.writeFileSync(file, '# Design fixture\n');
+      }
+      const env = {...process.env, HOME: home, GSTACK_HOME: path.join(home, '.gstack'),
+        GSTACK_PROJECT_SLUG: 'canonical-override', GIT_CEILING_DIRECTORIES: dir};
+      for (const command of [initial, recheck]) {
+        expect(command).toContain('_REVIEW_SLUG=$(~/.claude/skills/gstack/bin/gstack-slug) || exit 1\neval "$_REVIEW_SLUG"');
+        expect(command).not.toContain('remote-slug');
+        const result = runCapturedCommand('bash', ['-c', command], {cwd, env, timeout: 5000, captureStdout: true});
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toContain(`Design doc found: ${expected}`);
+        expect(result.stdout).not.toContain(wrong);
+      }
+      fs.writeFileSync(helper, '#!/usr/bin/env bash\necho "slug fixture failed" >&2\nexit 23\n', {mode: 0o755});
+      for (const command of [initial, recheck]) {
+        const result = runCapturedCommand('bash', ['-c', command], {cwd, env, timeout: 5000, captureStdout: true});
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('slug fixture failed');
+        expect(result.stdout).not.toContain('Design doc found:');
+        expect(result.stdout).not.toContain('No design doc found');
+      }
+    } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+  });
+
   test('offer includes graceful decline', () => {
     expect(ceoContent).toContain('No worries');
   });
@@ -2242,8 +2308,12 @@ describe('Design approval reconciliation', () => {
     expect(readiness).toContain('Record `Approval readiness: PASS`');
     expect(readiness).toContain('checked decision IDs and their');
     expect(readiness).toContain('actual answer references in the current decision record');
+    expect(readiness).not.toMatch(/^ {3}\S/m);
     expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
     expect(gate).toContain('read-only verification, not a new approval or output-writing step');
+    const approvalParagraph = gate.slice(gate.indexOf('Confirm Approval readiness'), gate.indexOf('Before calling ExitPlanMode'));
+    expect(approvalParagraph).not.toMatch(/^ {3}\S/m);
+    expect([...gate.matchAll(/^([1-5])\. /gm)].map(match => match[1])).toEqual(['1', '2', '3', '4', '5']);
     expect(readiness.indexOf('Approvals:')).toBeGreaterThanOrEqual(0);
     expect(gate.indexOf('Confirm Approval readiness')).toBeLessThan(gate.indexOf('1. Read the plan file'));
     expect(readiness).toContain("each issue's remedy needs its own AskUserQuestion call and answer.");
