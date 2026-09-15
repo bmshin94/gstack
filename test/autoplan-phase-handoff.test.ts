@@ -209,13 +209,17 @@ test('captured parent text and a following tool can share a response without end
 
 test('phase progress text permits immediate tool continuation in the same turn', () => {
   const contract = source('autoplan/SKILL.md.tmpl').split('## Sequential Execution')[1]!.split('---')[0]!;
-  expect(contract.replace(/\s+/g, ' ')).toContain('own visible parent assistant text block');
+  expect(contract.replace(/\s+/g, ' ')).toContain("load its `phase-close` section afresh");
   expect(contract).toContain('in the same turn');
   expect(contract).not.toContain('This parent response contains no tool calls');
+  const shared = source('autoplan/sections/phase-close.md.tmpl').replace(/\s+/g, ' ');
+  expect(shared).toContain('next visible parent assistant text block');
+  expect(shared).toContain('Send it before any next-phase Read/create/dispatch');
+  expect(shared).toContain('in the same turn');
+  expect(shared).not.toContain('This message contains no tool calls');
   for (const phase of ['ceo', 'design', 'dx', 'eng']) {
     const close = source(`autoplan/sections/${phase}-phase.md.tmpl`).split('**Close this phase:**')[1]!;
-    expect(close).toContain('own visible parent assistant text block');
-    expect(close).toContain('in the same turn');
-    expect(close).not.toContain('This message contains no tool calls');
+    expect(close).toContain('{{SECTION:phase-close}}');
+    expect(close).toContain('send only after the shared close steps succeed');
   }
 });

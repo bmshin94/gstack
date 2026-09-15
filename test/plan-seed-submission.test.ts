@@ -116,6 +116,9 @@ for (const mode of ['unseeded-deadline', 'seeded-deadline', 'protocol-error']) t
   const config = path.join(dir, '.claude'); fs.mkdirSync(config);
   const script = path.join(dir, 'cli.ts');
   fs.writeFileSync(script, `#!${process.execPath}\n${CLI}`, { mode: 0o700 });
+  const artifactRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-timeout-artifacts-'));
+  const priorEval = { EVALS_RUN_ID: process.env.EVALS_RUN_ID, GSTACK_EVAL_DIR: process.env.GSTACK_EVAL_DIR };
+  process.env.EVALS_RUN_ID = 'seed-timeout'; process.env.GSTACK_EVAL_DIR = artifactRoot;
   const old = process.env.BROWSE_TERMINAL_BINARY;
   process.env.BROWSE_TERMINAL_BINARY = script;
   try {
@@ -132,11 +135,26 @@ for (const mode of ['unseeded-deadline', 'seeded-deadline', 'protocol-error']) t
     expect(obs.summary).toContain('existing case budget');
     expect(obs.scopeGateAutoSelectObserved).toBe(false);
     expect(obs.elapsedMs).toBeLessThan(1600);
+    expect(obs.artifactDir).toStartWith(artifactRoot);
+    fs.rmSync(dir, { recursive: true, force: true });
+    const saved = JSON.parse(fs.readFileSync(path.join(obs.artifactDir!, 'observation.json'), 'utf8'));
+    expect(saved.state).toBe('plan_skill_preflight_timeout');
+    expect(saved.summary).toBe(obs.summary);
+    if (!seeded) expect(saved.viewportError).toContain('screen observation was not enabled');
+    else expect(saved.viewportError).toBeUndefined();
+    for (const name of ['terminal.raw.log', 'terminal.visible.log', ...(seeded ? ['terminal.screen.log'] : [])]) {
+      expect(fs.existsSync(path.join(obs.artifactDir!, name))).toBe(true);
+      expect(fs.statSync(path.join(obs.artifactDir!, name)).mode & 0o777).toBe(0o600);
+    }
     expect(fs.existsSync(path.join(config, 'events.jsonl'))).toBe(false);
   } finally {
     if (old === undefined) delete process.env.BROWSE_TERMINAL_BINARY;
     else process.env.BROWSE_TERMINAL_BINARY = old;
     fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(artifactRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(priorEval)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
   }
 }, 15000);
 

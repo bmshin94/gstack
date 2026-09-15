@@ -60,6 +60,7 @@ describeE2E('/plan-design-review with UI scope (gate)', () => {
         isReviewAUQ: designReviewFinding,
         reviewCountCeiling: 1,
         observeSetupQuestions: true,
+        bindDesignBoardState: true,
         pickAUQ: (_routing, active, context) => {
           const call = active.nativeCall;
           const index = active.nativeQuestionIndex ?? (call?.questions.length === 1 ? 0 : -1);

@@ -384,11 +384,29 @@ function concreteExpansionProposal(title: string, text: string): boolean {
   const rationale = /ELI10:([\s\S]*?)(?=Stakes if (?:we pick )?wrong:)/i.exec(text)?.[1] ?? '';
   const prose = rationale.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
     .replace(/^\s*>.*$/gm, '').replace(/"[^"\n]*"|“[^”\n]*”/g, '').trim();
-  const baseline = /(?:^|[.!]\s+)(?:Today\b|Currently\b|As written\b|The current plan\b)([^.!\n]+)[.!]/i.exec(prose);
+  const baseline = /(?:^|[.!]\s+)(?:Today\b|Currently\b|Right now\b|As written\b|The current plan\b)([^.!\n]+)[.!]/i.exec(prose);
   if (!baseline || !/\b(?:only|each|per|private|personal|limited|without|cannot|can't)\b/i.test(baseline[1]!)) return false;
   // The same native E<n> identity must add a stated capability to that current scope.
-  return new RegExp(`(?:^|[.!]\\s+)${name[1]} (?:would |will |proposes to )?(?:add|adds|introduce|introduces|extend|extends) \\S[^.!\\n]+[.!]`, 'i')
-    .test(prose.slice(baseline.index! + baseline[0].length).trimStart());
+  const extension = prose.slice(baseline.index! + baseline[0].length).trimStart();
+  if (new RegExp(`(?:^|[.!]\\s+)${name[1]} (?:would |will |proposes to )?(?:add|adds|introduce|introduces|extend|extends) \\S[^.!\\n]+[.!]`, 'i')
+    .test(extension)) return true;
+  // The native title can own the Add proposal's name while its explanation
+  // states the capability. Require that exact feature phrase, its qualifying
+  // scope, and the same baseline object; a topic word is not an extension.
+  const addition = new RegExp(`^${name[1]}\\s*[:—–-]\\s*Add (.+?)(?: alongside (.+?))?\\?$`, 'i').exec(title);
+  if (!addition || /^(?:example|quoted|source|historical|previously|formerly|if|unless)\b/i.test(prose) ||
+      /\b(?:this|that|the) (?:proposal|finding|decision|extension|capability) (?:is|was|has been) (?:already |now )?(?:withdrawn|retracted|resolved|rejected|cancelled|superseded|not current|historical)\b/i.test(prose)) return false;
+  const feature = /^(?:([a-z]+)-)?([a-z]+(?: [a-z]+){1,4})$/i.exec(addition[1]!);
+  if (!feature || /\b(?:not|no|never|without|if|unless|historical|previous|other|different)\b/i.test(addition[0])) return false;
+  const noun = feature[2]!.split(' ').at(-1)!.replace(/s$/, '');
+  if (!new RegExp(`\\b${noun}s?\\b`, 'i').test(baseline[1]!)) return false;
+  if (addition[2]) {
+    const existing = new RegExp(`^(?:private|personal|per-member|per-user) ${noun}s?$`, 'i');
+    if (!existing.test(addition[2]) || !/\b(?:private|personal|(?:one|each|per) (?:member|user))\b/i.test(baseline[1]!)) return false;
+  }
+  const capability = new RegExp(`(?:^|[.!]\\s+)${feature[2]} (?:let|lets|allow|allows|enable|enables|provide|provides|give|gives) ([^.!\\n]+)[.!]`, 'i').exec(extension);
+  return Boolean(capability && (!feature[1] || new RegExp(`\\b${feature[1]}\\b`, 'i').test(capability[1]!)) &&
+    !/\b(?:not|never|cannot|can't|doesn't|does not|won't|wouldn't|if|unless|only if)\b/i.test(capability[1]!));
 }
 
 /** A concrete, opted-in expansion brief is itself assistant posture evidence. */
@@ -517,7 +535,11 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
   const wholeCount = (text: string, match: RegExpExecArray) => !countTail.test(text.slice(0, match.index));
   const count = new RegExp(`\\b(${countToken})\\s+(?:expansion\\s+)?(?:candidates?|proposals?)\\b`, 'i').exec(title);
   const rationale = /ELI10:\s*([\s\S]*?)(?=Stakes if (?:we pick )?wrong:)/i.exec(q.question)?.[1] ?? '';
-  const inventory = new RegExp(`\\b(${countToken})\\s+(?:adjacent improvements|candidate expansions|expansion candidates|items|candidates|proposals)\\s*:\\s*([^.!?\\n]+)[.!?]`, 'i').exec(rationale);
+  const inventoryNoun = '(?:adjacent improvements|candidate expansions|expansion candidates|(?:independent )?(?:expansions|items|candidates|proposals))';
+  // Colons and parentheses both delimit a complete numbered inventory. Keep
+  // the same count/identity checks after parsing either presentation.
+  const inventory = new RegExp(`\\b(${countToken})\\s+${inventoryNoun}\\s*:\\s*([^.!?\\n]+)[.!?]`, 'i').exec(rationale)
+    ?? new RegExp(`\\b(${countToken})\\s+${inventoryNoun}\\s*\\(([^()!?\\n]+)\\)[.!?]`, 'i').exec(rationale);
   if (!count || !inventory || !wholeCount(title, count) || !wholeCount(rationale, inventory) ||
       numberOf(count[1]!) !== numberOf(inventory[1]!) ||
       /\b(?:example|quoted|historical|previously|formerly|if|unless)\b/i.test(rationale.slice(0, inventory.index))) return null;
@@ -533,7 +555,7 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
   if (netAt < 0 || (options.length && netAt <= options.at(-1)!.index!)) return null;
   const optionsAt = options[0]?.index ?? netAt;
   const menu = (value: string) => value.replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi, '');
-  const scopeEffect = /\b(?:approv\w*|authori[sz]\w*|accept\w*|commit\w*|adopt\w*|implement\w*|add(?:s|ed|ing)?|includ\w*|remov\w*|delet\w*|drop\w*|cut(?:s|ting)?|skip\w*|defer\w*|merg\w*|ship\w*|deploy\w*|enabl\w*|disabl\w*)\b/i;
+  const scopeEffect = /\b(?:approv\w*|authori[sz]\w*|accept\w*|commit\w*|adopt\w*|implement\w*|add(?:s|ed|ing)?|includ\w*|remov\w*|delet\w*|drop\w*|cut(?:s|ting)?|skip\w*|defer\w*|merg\w*|ship(?:s|ped|ping)?|deploy\w*|enabl\w*|disabl\w*)\b/i;
   // An unconditional or selected-choice effect cannot hide in another option.
   if (/\b(?:regardless|whichever|choosing|selecting|picking|any choice|every choice)\b[^.!?\n]*\b(?:approv\w*|authori[sz]\w*|commit\w*|add(?:s|ed|ing)?|delet\w*|drop\w*|skip\w*|defer\w*|merg\w*)\b/i.test(q.question + '\n' + q.options.map(o => o.description ?? '').join('\n'))) return null;
   // Feature titles may describe Update or delete behavior. Explicit actor
@@ -549,7 +571,11 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
     .replace(inventory[0], '')
     // A prior approach choice is setup context, not a disposition for any
     // candidate. Keep every other approval statement in the effect veto.
-    .replace(/^Project\/branch\/task:[^\n]+/gim, context => context.replace(/\bapproach [A-D] approved\b/gi, ''))
+    .replace(/^Project\/branch\/task:[^\n]+/gim, context => context.replace(/\bapproach [A-D] approved\b/gi, '')
+      // A quoted task name describes the existing review target. Approval
+      // language inside that name still fails the whole-packet veto above.
+      .replace(/\bon\s+(?:"[^"\n]+"|“[^”\n]+”)/gi, task =>
+        /\b(?:approv\w*|accept\w*|authori[sz]\w*|commit\w*|adopt\w*|defer\w*|skip\w*|reject\w*|exclude\w*|all|every|these|those|[A-Z][1-9]\d*)\b/i.test(task) ? task : ''))
     .replace(/\bnothing gets (?:cut|dropped|removed|omitted) silently\b/gi, '');
   if (scopeEffect.test(common)) return null;
   const candidates = q.options.flatMap((o, index) => {
@@ -557,7 +583,7 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
     const label = o.label.replace(/^[A-D][):.]\s*/i, '').replace(/\s*\(recommended\)\s*$/i, '');
     const numbers = label.match(/\b\d+\b/g) ?? [];
     const rawDescription = o.description ?? '';
-    const description = menu(rawDescription.replace(/"[^"\n]*"|“[^”\n]*”|`[^`\n]*`/g, '')).trim();
+    const description = menu(rawDescription.replace(/"[^"\n]*"|“[^”\n]*”|`[^`]*`/g, '')).trim();
     const option = options.findIndex(option => option[1] === id);
     if (!id || (options.length && option < 0) || numbers.some(value => Number(value) !== n) || numbers.length > 1 ||
         !/\b(?:full|complete|all)\b/i.test(label) || !/\b(?:split|walkthrough|per[- ]item|one[- ]by[- ]one)\b/i.test(label) ||
@@ -572,10 +598,19 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
     const questionRange = /\bone per (?:candidate|item|proposal)\b/i.test(label) && sequence &&
       wholeCount(description, sequence) && numberOf(sequence[1]!) === n &&
       (description.match(/\bD[1-9]\d*\.[1-9]\d*\b/g)?.length ?? 0) === 2;
-    if (!candidateRange && !questionRange) return [];
+    // A full split can also bind the numbered inventory by cardinality and
+    // universal per-item disposition, without inventing future question IDs.
+    const mappingRationale = rationale.replace(/"[^"\n]*"|“[^”\n]*”|`[^`]*`/g, quote => ' '.repeat(quote.length));
+    const questionCounts = [...mappingRationale.matchAll(new RegExp(`\\b(${countToken})\\s+questions\\b`, 'gi'))];
+    const perProposal = /\bone question per (?:candidate|item|proposal)\b/i.test(label) &&
+      /\b(?:Every|Each) (?:candidate|item|proposal) gets its own\b/i.test(description) &&
+      /\bone question per (?:candidate|item|proposal)\b/i.test(mappingRationale) && questionCounts.length > 0 &&
+      questionCounts.every(match => wholeCount(mappingRationale, match) && numberOf(match[1]!) === n);
+    if (!candidateRange && !questionRange && !perProposal) return [];
     const ownBrief = option < 0 ? '' : q.question.slice(options[option]!.index!, options[option + 1]?.index ?? netAt);
     const own = menu(label + '\n' + rawDescription + '\n' + ownBrief)
-      .replace(/\bnothing is (?:dropped|removed|skipped) or merged on your behalf\b/gi, '');
+      .replace(/\bnothing is (?:dropped|removed|skipped) or merged on your behalf\b/gi, '')
+      .replace(/\bno (?:candidate|item|proposal) is (?:silently )?(?:merged|dropped|removed|skipped) or (?:merged|dropped|removed|skipped)\b/gi, '');
     if (/```|~~~|^\s*>|\b(?:not|never|without|except|excluding|stop\w*|omit\w*|narrow\w*|batch\w*|subset|shortlist|groups?)\b/im.test(label + '\n' + description) ||
         scopeEffect.test(own)) return [];
     return [index + 1];

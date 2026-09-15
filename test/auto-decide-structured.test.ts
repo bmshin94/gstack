@@ -82,6 +82,8 @@ for (const name of ['gstack-skill-start', 'gstack-question-preference', 'gstack-
 
 for (const [label, text] of Object.entries({
   'plain current field': 'Mode: HOLD SCOPE.',
+  'parenthetical explanation with punctuation': 'Mode: HOLD SCOPE (saved preference, confirmed).',
+  'parenthetical review explanation': '**Review mode: HOLD SCOPE (saved preference; confirmed).**',
   'current review field': '**Review mode: HOLD SCOPE.**',
   'compact completion': '**STATUS: DONE**\n\nMode: HOLD SCOPE',
   'bullet conclusion': 'The requested routing decision is complete.\n\n- **Mode: HOLD SCOPE**, using the saved preference.\n\nThe substantive review is deferred.',
@@ -100,6 +102,8 @@ for (const text of [
   'Previous transcript:\n\nMode: HOLD SCOPE.', 'If approved, Mode: HOLD SCOPE.',
   'Mode: HOLD SCOPE, if you approve.', 'Mode: HOLD SCOPE, pending approval.',
   'Mode: HOLD SCOPE?', 'Mode: HOLD SCOPELESS.',
+  'Mode: HOLD SCOPE (withdrawn).', 'Mode: HOLD SCOPE (retracted).',
+  'Mode: HOLD SCOPE.\n\nMode: HOLD SCOPE (pending approval).',
   'Mode: HOLD SCOPE.\n\nCorrection: I withdraw this decision.',
   'Mode: HOLD SCOPE.\n\nI did not auto-decide the review mode.',
   'Mode: HOLD SCOPE.\n\nCorrection: Mode: SCOPE EXPANSION.',

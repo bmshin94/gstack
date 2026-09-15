@@ -1,6 +1,7 @@
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, afterAll } from 'bun:test';
 import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { runSkillTest } from './helpers/session-runner';
+import { buildSeedConfig, seedHermeticGstackHome } from './helpers/hermetic-env';
 import {
   ROOT, runId, evalsEnabled,
   describeIfSelected, logCost, recordE2E,
@@ -20,19 +21,84 @@ const evalCollector = createEvalCollector('e2e-autoplan-dual-voice');
 describeIfSelected('Autoplan dual-voice E2E', ['autoplan-dual-voice'], () => {
   let workDir: string;
   let planPath: string;
+  let stateDir: string;
+  let attemptEnv: Record<string, string>;
 
-  beforeAll(() => {
+  const cleanup = () => {
+    try {
+      if (workDir) fs.rmSync(workDir, { recursive: true, force: true });
+    } finally {
+      if (stateDir) fs.rmSync(stateDir, { recursive: true, force: true });
+    }
+  };
+
+  // Bun retries repeat the body and these hooks. A prior attempt's amended
+  // plan, review artifacts and native session must never become retry input.
+  const prepareAttempt = () => {
     workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-autoplan-dv-'));
+    stateDir = '';
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-autoplan-dv-state-'));
+    const configDir = path.join(stateDir, '.claude');
+    const gstackHome = path.join(stateDir, 'gstack-home');
+    fs.mkdirSync(configDir);
+    fs.mkdirSync(gstackHome);
+    fs.writeFileSync(path.join(configDir, '.claude.json'), JSON.stringify(buildSeedConfig({
+      apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
+      trustedDirs: [workDir],
+    })), { mode: 0o600 });
+    seedHermeticGstackHome(gstackHome);
+    attemptEnv = { CLAUDE_CONFIG_DIR: configDir, GSTACK_HOME: gstackHome, GSTACK_STATE_ROOT: gstackHome };
 
-    const run = (cmd: string, args: string[]) =>
-      spawnSync(cmd, args, { cwd: workDir, stdio: 'pipe', timeout: 10000 });
+    const run = (cmd: string, args: string[]) => {
+      const result = spawnSync(cmd, args, { cwd: workDir, encoding: 'utf8', timeout: 10000 });
+      if (result.error || result.status !== 0)
+        throw new Error(`Dual-voice fixture setup failed: ${result.error?.message ?? result.stderr}`);
+    };
 
     run('git', ['init', '-b', 'main']);
     run('git', ['config', 'user.email', 'test@test.com']);
     run('git', ['config', 'user.name', 'Test']);
-    fs.writeFileSync(path.join(workDir, 'README.md'), '# test repo\n');
+    // The plan adds a skill to an existing generator. Supply that small,
+    // working project so review does not have to invent its missing toolchain.
+    const projectFiles: Record<string, string> = {
+      'README.md': '# Skill Toolbox\n\nThe /about skill prints the project name.\n\n'
+        + 'Author skills in `<name>/SKILL.md.tmpl`. Register their directories in the\n'
+        + '`skills` array in package.json, then run `bun run gen:skill-docs`. The generator\n'
+        + 'copies each template to `<name>/SKILL.md` and `.claude/skills/<name>/SKILL.md`\n'
+        + 'for project discovery. `bun test` checks existing skill content.\n',
+      'package.json': JSON.stringify({ name: 'skill-toolbox', private: true, skills: ['about'],
+        scripts: { 'gen:skill-docs': 'bun scripts/gen-skill-docs.ts', test: 'bun test' } }, null, 2) + '\n',
+      'about/SKILL.md.tmpl': '---\nname: about\ndescription: Show the project name.\n---\nPrint "Skill Toolbox".\n',
+      'scripts/gen-skill-docs.ts': `import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const { skills } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+for (const name of skills) {
+  const source = readFileSync(new URL('../' + name + '/SKILL.md.tmpl', import.meta.url), 'utf8');
+  for (const directory of [name, '.claude/skills/' + name]) {
+    const output = fileURLToPath(new URL('../' + directory + '/SKILL.md', import.meta.url));
+    mkdirSync(dirname(output), {recursive: true});
+    writeFileSync(output, source);
+  }
+}
+`,
+      'test/about.test.ts': `import { expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+test('about is generated and discoverable', () => {
+  const source = readFileSync(new URL('../about/SKILL.md.tmpl', import.meta.url), 'utf8');
+  expect(readFileSync(new URL('../about/SKILL.md', import.meta.url), 'utf8')).toBe(source);
+  expect(readFileSync(new URL('../.claude/skills/about/SKILL.md', import.meta.url), 'utf8')).toBe(source);
+});
+`,
+    };
+    for (const [relative, content] of Object.entries(projectFiles)) {
+      const file = path.join(workDir, relative);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content);
+    }
+    run(process.execPath, ['scripts/gen-skill-docs.ts']);
     run('git', ['add', '.']);
-    run('git', ['commit', '-m', 'initial']);
+    run('git', ['-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', 'Existing skill project']);
 
     // Copy /autoplan + its review-skill dependencies (they're loaded from disk).
     copyDirSync(path.join(ROOT, 'autoplan'), path.join(workDir, 'autoplan'));
@@ -74,14 +140,19 @@ Add a new /greet skill that prints a welcome message.
 - Add to gen-skill-docs pipeline
 - One unit test
 `);
-  });
+  };
 
-  afterAll(() => {
-    finalizeEvalCollector(evalCollector);
-    if (workDir && fs.existsSync(workDir)) {
-      fs.rmSync(workDir, { recursive: true, force: true });
+  beforeEach(() => {
+    try {
+      prepareAttempt();
+    } catch (error) {
+      cleanup();
+      throw error;
     }
   });
+
+  afterEach(cleanup);
+  afterAll(() => finalizeEvalCollector(evalCollector));
 
   // Skip entirely unless evals enabled (periodic tier).
   test.skipIf(!evalsEnabled)(
@@ -98,6 +169,7 @@ Add a new /greet skill that prints a welcome message.
       const result = await runSkillTest({
         testName: 'autoplan-dual-voice',
         workingDirectory: workDir,
+        env: attemptEnv,
         prompt: `/autoplan ${planPath}`,
         timeout: CAPTURE_LONG_MS, // 10 min
         // /autoplan spawns subagents and calls codex via Bash; it needs the

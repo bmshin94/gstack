@@ -190,14 +190,23 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   // Keep raw instructions for vetoes: quoted commands cannot disappear merely
   // because quoted text cannot establish positive completion evidence.
   const context = [q.question, ...q.options.map(o => `${o.label}\n${o.description ?? ''}`)].join('\n');
+  const statusContext = context.replace(/(?:^|\n)(?:Earlier|Previous|Historical|Example|Quoted)\b[^\n]*:\s*(?:"[^"\n]*"|“[^”\n]*”)\s*$/gmi, '').replace(/["“”'‘’]/g, '');
+  if (/\bnot (?:all|every) decisions?\b|\bdecisions?\s+(?:(?:is|are|remains?)\s+|status:\s*)?(?:still\s+)?(?:unanswered|unresolved|pending|reopened|not answered|not settled|open)\b/i.test(statusContext)) return false;
   // These are assertions about a finished review and an action-only next-step
   // choice, not a required seven-line transcript or a particular risk sentence.
   const eng = String.raw`(?:(?:the |this )?(?:eng(?:ineering)? review|eng gate)|this review|the review|the verdict|all required reviews)`;
   const complete = String.raw`(?:clear(?:ed)?|complete[d]?|done|finished)`;
+  const explicitNavigation = /\b(?:navigation|routing) only\b|\bonly (?:selects?|chooses?|changes?) (?:the )?next (?:step|workflow|review)\b/i.test(body) &&
+    /\b(?:approves?|authorizes?|adds?|makes?) no (?:new )?(?:implementation|scope) (?:changes?|work)\b|\b(?:does not|doesn't|will not|won't|neither) (?:authorize|approve|add|change|alter|modify)(?: nor (?:authorize|approve|add|change|alter|modify))? (?:any )?(?:new )?(?:implementation|scope|requirements?|work)\b|\bwithout (?:any )?(?:new )?(?:implementation|scope) changes?\b/i.test(body);
+  // A completed two-route menu need not repeat a no-change disclaimer. Its
+  // settled decisions, sole remaining workflow choice and named reviewed plan
+  // supply the same boundary; task ownership and new-work vetoes still apply.
+  const completedChoice = /\b(?:all decisions (?:are )?(?:answered|settled)|every decision (?:is )?(?:answered|settled))\b/i.test(body) &&
+    /\b(?:the only question left is whether to (?:start building|implement) or (?:first )?get (?:a )?(?:strategy-level second look|strategy review)|only the next (?:step|workflow) remains: implementation or an optional strategy review)\b/i.test(body);
+  const namedPlans = [...q.question.matchAll(/\breviewed\s+[\w./-]+\.md\s+["“]([^"”\n]+)["”]/gi)];
   if (!/\b(?:what(?:['’]s| is)? (?:the )?next|next steps?|where (?:do|should) we go)\b/i.test(body) ||
       !new RegExp(String.raw`\b${eng}\s+(?:(?:is|are|has been|have been)\s+)?(?:now\s+)?${complete}\b`, 'i').test(body) ||
-      !/\b(?:navigation|routing) only\b|\bonly (?:selects?|chooses?|changes?) (?:the )?next (?:step|workflow|review)\b/i.test(body) ||
-      !/\b(?:approves?|authorizes?|adds?|makes?) no (?:new )?(?:implementation|scope) (?:changes?|work)\b|\b(?:does not|doesn't|will not|won't|neither) (?:authorize|approve|add|change|alter|modify)(?: nor (?:authorize|approve|add|change|alter|modify))? (?:any )?(?:new )?(?:implementation|scope|requirements?|work)\b|\bwithout (?:any )?(?:new )?(?:implementation|scope) changes?\b/i.test(body)) return false;
+      !(explicitNavigation || completedChoice && namedPlans.length === 1)) return false;
   if (/`{3}|~{3}|(?:^|\n)\s*>|\b(?:example|sample|quoted|historical)\s*:/i.test(context) ||
       new RegExp(String.raw`\b${eng}\b[^.!?;\n]{0,100}\b(?:not|never|incomplete|unfinished|pending|withdrawn|superseded|cancelled|canceled|reopened)\b`, 'i').test(context) ||
       new RegExp(String.raw`\b${eng}\s+(?:will|would|may|might|can|could|should)\s+(?:be |become )?${complete}\b`, 'i').test(context) ||
@@ -206,7 +215,7 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   // Finite offered actions are navigation. Descriptions may explain their
   // tradeoffs, but cannot append a new implementation command or obligation.
   const proposedWork = /\b(?:new|additional|extra)\s+(?:implementation|scope|requirement|task|dependency|feature|datastore|database|cache|test|prerequisite)\b|\b(?:must|shall|should|needs? to|have to|has to|required to)\s+(?!run \/plan-ceo-review\b|run \/ship\b)[a-z]/i;
-  const implementationAction = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|before (?:implementation|building|review))\s+)(?:please\s+)?(?:add|remove|delete|cut|drop|replace|rewrite|change|alter|modify|enable|disable|implement|install|introduce|build|write|record|capture|create|switch|migrate|externalize|refactor|expand|reduce)\b/i;
+  const implementationAction = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|while|before (?:implementation|building|review))\s+)(?:please\s+)?(?:add(?:ing)?|remov(?:e|ing)|delet(?:e|ing)|cut(?:ting)?|drop(?:ping)?|replac(?:e|ing)|rewrit(?:e|ing)|chang(?:e|ing)|alter(?:ing)?|modif(?:y|ying)|enabl(?:e|ing)|disabl(?:e|ing)|implement(?:ing)?|install(?:ing)?|introduc(?:e|ing)|build(?:ing)?|writ(?:e|ing)|record(?:ing)?|captur(?:e|ing)|creat(?:e|ing)|switch(?:ing)?|migrat(?:e|ing)|externaliz(?:e|ing)|refactor(?:ing)?|expand(?:ing)?|reduc(?:e|ing))\b/i;
   // An explicit negative is inert only within its clause; appended work after
   // a conjunction or punctuation remains subject to the same action checks.
   const actionContext=context.replace(/\b(?:approves?|authorizes?|adds?|makes?) no (?:new )?(?:implementation|scope) (?:changes?|work)\b/gi,'')
@@ -215,8 +224,8 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   if(proposedWork.test(actionContext)||implementationAction.test(actionContext)||/\brun\s+(?!\/(?:ship|plan-ceo-review)\b)/i.test(actionContext))return false;
   const taskRefs=[...context.matchAll(/\bT([1-9]\d*)(?:\s*(?:[–-]|through|to)\s*T([1-9]\d*))?\b/g)];
   if(!taskRefs.length)return false;
-  const laneRefs=[...context.matchAll(/\blanes?\s+([A-Z](?:\s*\+\s*[A-Z])*(?:(?:,?\s*then\s+|\s*→\s*)[A-Z](?:\s*\+\s*[A-Z])*)*)/g)];
-  if(!laneRefs.length)return false;
+  const laneRefs=[...context.matchAll(/\b[Ll]anes?\s+([A-Z](?:\s*\+\s*[A-Z])*(?:(?:,?\s*then\s+|\s*→\s*)[A-Z](?:\s*\+\s*[A-Z])*)*)/g)];
+  if(!laneRefs.length && !completedChoice)return false;
   // Only active, unfenced sections own a recap. A copied report/task list cannot.
   const published: string[] = [];
   let fence: { marker: string; length: number } | undefined;
@@ -231,6 +240,10 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
     if (!/^(?: {4}|\t| {0,3}>)/.test(line)) published.push(line);
   }
   if (fence) return false;
+  if (!explicitNavigation) {
+    const titles = published.filter(line => /^# /.test(line));
+    if (titles.length !== 1 || compact(titles[0]!.replace(/^# (?:Plan: )?/i, '').replace(/\s+\(reviewed\)$/i, '')) !== compact(namedPlans[0]![1]!)) return false;
+  }
   const section = (heading: string) => {
     const starts=published.flatMap((line,i)=>line.toLowerCase()===`## ${heading}`.toLowerCase()?[i]:[]);
     if(starts.length!==1)return undefined;
@@ -256,7 +269,7 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   }
   const groups=(text:string)=>[...text.matchAll(/\b[A-Z](?:\s*\+\s*[A-Z])*\b/g)].map(m=>m[0].replace(/\s/g,''));
   const execution=lanes.split('\n').filter(line=>/^Execution:/.test(line));
-  return execution.length===1 && laneRefs.every(ref=>
+  return execution.length===1 && /\bLane [A-Z]:/.test(lanes) && laneRefs.every(ref=>
     JSON.stringify(groups(execution[0]!))===JSON.stringify(groups(ref[1]!)) &&
     groups(ref[1]!).flatMap(s=>s.split('+')).every(id=>new RegExp(`\\bLane ${id}:`).test(lanes)));
 }

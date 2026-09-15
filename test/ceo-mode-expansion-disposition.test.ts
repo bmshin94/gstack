@@ -49,3 +49,43 @@ describe('completed expansion disposition targets the current plan',()=>{
   const foreign=evidence();foreign.events[2]={...foreign.events[2]!,input:{questions:[]}};expect(accepted(foreign)).toBe(false);
  });
 });
+
+describe('named Add proposal owns its current scope comparison',()=>{
+ const f=captured.namedAddProposal;
+ function state(){const selected=structuredClone(f.selected),proposal=structuredClone(f.proposal);return{selected,proposal,transcript:{status:'ready' as const,calls:[selected,proposal],assistantMessages:[]},events:structuredClone(f.events) as NativePublicToolEvent[]};}
+ function change(v:ReturnType<typeof state>,fn:(q:NativePlanQuestionCall['questions'][number])=>void){
+  const q=v.proposal.questions[0]!,answer=v.proposal.answers![q.question]!;fn(q);v.proposal.answers={[q.question]:answer};
+  const request=v.events.find(e=>e.kind==='use'&&e.toolUseId===v.proposal.toolUseId)!;if(request.kind==='use')request.input={questions:v.proposal.questions};
+ }
+ const matches=(v:ReturnType<typeof state>)=>hasNativePostAnswerCeoPosture(v.transcript,'SCOPE EXPANSION',posture,f.selectionStartedAt,v.events);
+ test('actual E1 title and current same-feature explanation demonstrate expansion after its ACK',()=>{expect(matches(state())).toBe(true);});
+ const positives={
+  'other explicit current marker':(q:any)=>{q.question=q.question.replace('Right now','Currently');},
+  'other feature and scope with the same owned comparison':(q:any)=>{q.question=q.question.replaceAll('project-shared views','workspace-shared bookmarks').replaceAll('Shared views','Shared bookmarks').replaceAll('private views','private bookmarks').replaceAll('a view for','a bookmark for').replaceAll('whole project','whole workspace');},
+  'title without repeated baseline':(q:any)=>{q.question=q.question.replace(' alongside private views','');},
+  'same current named proposal with another identity':(q:any)=>{q.question=q.question.replace('E1:','E12:');},
+ };
+ for(const [name,fn]of Object.entries(positives))test(name,()=>{const v=state();change(v,fn);expect(matches(v)).toBe(true);});
+ const negatives={
+  'unrelated title feature':(q:any)=>{q.question=q.question.replace('project-shared views','project-shared reports');},
+  'foreign scope modifier':(q:any)=>{q.question=q.question.replace('project-shared','organization-shared');},
+  'unrelated baseline object':(q:any)=>{q.question=q.question.replace('a view for one member only','a bookmark for one member only');},
+  'no current limited baseline':(q:any)=>{q.question=q.question.replace('Right now the plan saves a view for one member only.','The project has a task list.');},
+  'contradictory alongside baseline':(q:any)=>{q.question=q.question.replace('alongside private views','alongside public views');},
+  'no operative same-feature explanation':(q:any)=>{q.question=q.question.replace('Shared views let','Shared reports let');},
+  'quoted feature explanation':(q:any)=>{q.question=q.question.replace('Shared views let','"Shared views let').replace('nobody else rebuilds it.','nobody else rebuilds it."');},
+  'conditional feature explanation':(q:any)=>{q.question=q.question.replace('Shared views let','If approved, shared views let');},
+  'negated feature capability':(q:any)=>{q.question=q.question.replace('Shared views let','Shared views do not let');},
+  'withdrawn current proposal':(q:any)=>{q.question=q.question.replace('Stakes if','This proposal is withdrawn.\nStakes if');},
+  'historical baseline':(q:any)=>{q.question=q.question.replace('Right now','Previously');},
+  'historical whole comparison':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: Historical example.');},
+  'wrong selected-mode context':(q:any)=>{q.question=q.question.replace('Project/branch/task:','Project/branch/task: HOLD SCOPE;');},
+  'extra decision':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: Should we replace billing?');},
+  'incomplete comparison':(q:any)=>{q.question=q.question.replace('Completeness:','Notes:');},
+  'foreign plan inclusion':(q:any)=>{q.options[0].label='Add to another plan (recommended)';},
+ };
+ for(const [name,fn]of Object.entries(negatives))test(name,()=>{const v=state();change(v,fn);expect(matches(v)).toBe(false);});
+ test('no pending, duplicate, foreign or missing native ACK can supply posture',()=>{
+  for(const mutation of [(v:ReturnType<typeof state>)=>{v.proposal.answered=false;},(v:ReturnType<typeof state>)=>{v.events.pop();},(v:ReturnType<typeof state>)=>{v.events.push(structuredClone(v.events.at(-1)!));},(v:ReturnType<typeof state>)=>{v.events.at(-1)!.sessionId='foreign';}]){const v=state();mutation(v);expect(matches(v)).toBe(false);}
+ });
+});

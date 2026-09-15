@@ -536,8 +536,8 @@ do not launch the downstream skill or open a browser.`,
   // ── Token-reduction Phase 4 wave 2 (v1.69.x branch) ──────────────────────
   autoplan: {
     skill: 'autoplan',
-    expectedSections: ['ceo-phase.md', 'design-phase.md', 'eng-phase.md', 'dx-phase.md', 'tasks-aggregator.md'],
-    requiredReads: ['ceo-phase.md', 'eng-phase.md', 'tasks-aggregator.md'],
+    expectedSections: ['ceo-phase.md', 'design-phase.md', 'eng-phase.md', 'dx-phase.md', 'phase-close.md', 'tasks-aggregator.md'],
+    requiredReads: ['ceo-phase.md', 'eng-phase.md', 'phase-close.md', 'tasks-aggregator.md'],
     scenario:
       'Run the /autoplan pipeline against the plan in PLAN.md. Codex and subagent tools are unavailable — note both voices unavailable (single-reviewer mode) and keep going. The plan has no UI scope and no developer-facing scope, so Phase 2 and Phase 2.5 are skipped (do not read their sections). Execute Phase 1 (CEO) and Phase 3 (Eng) at full depth, run the Phase 4 aggregator step, and produce the Final Approval Gate summary as the report.',
     staticInvariants: {

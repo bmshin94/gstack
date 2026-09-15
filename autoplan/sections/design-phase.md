@@ -116,30 +116,14 @@ Retain the historical review-log skill ID; add `"host":"claude","outside_provide
 
 **Close this phase:**
 
-1. **Save artifacts and export current input.** Reconcile full review → EVERY accepted
-   requirement/condition/test in its block. Taste provisional; User Challenges keep
-   original. Keep the amendment checkpoint fixed for this phase invocation; a later
-   review export does not replace the baseline used by accepted edit records.
-```bash
-bun "<SNAPSHOT_TOOL>" amend-input design "<ACTIVE_PLAN>" "<DESIGN_INPUT>" "<RESTORE_PATH>" "<methodologyPath>"
-```
-2. **Read and verify the current text.** From the successful compact result, Read
-   `reviewInputPath` through every returned `readRanges` entry to EOF. This is the
-   full current Implementation plan; compare its actual text with accepted choices,
-   conditions, tests and required outputs. Counts, hashes, keyword probes and a
-   saved sentence saying "Read-back" do not perform this review. If output is
-   truncated, finish the missing file ranges before continuing.
-   None: reason checks unchanged. Retention verifies bytes, not approval,
-   completeness or correctness. Require full skill/section ranges, successful
-   writes/check and terminal reviewer results (unavailable/disabled allowed).
-   When the native review succeeded, match its INPUT. A failed native attempt
-   follows the phase's failure policy without native completion credit; a pending
-   reviewer keeps this phase open.
-3. **Send the completion message.** After verifying the text, your next action is
-   to emit the following summary as its own visible parent assistant text block.
-   Saving it in ACTIVE_PLAN or printing it through Bash does not send it to the
-   user. Send it before any next-phase Read/create/dispatch.
-   After this text, load/create/dispatch the next phase in the same turn:
+The review work above ends here. Now load the shared close steps afresh, even if
+read earlier. Use phase `design`, checkpoint `<DESIGN_INPUT>`, and this phase's
+`methodologyPath`. Keep this checkpoint for this invocation; review exports do not replace it.
+
+> **STOP.** Before closing a review phase, after its reviews finish and before announcing completion or loading the next phase (read afresh at each exit), Read `~/.claude/skills/gstack/autoplan/sections/phase-close.md` and execute it
+> in full. Do not work from memory — that section is the source of truth for this step.
+
+**Completion message — send only after the shared close steps succeed:**
 
 **Phase 2 complete.**
 Codex: [completed: N concerns / unavailable / disabled]. Claude subagent: [completed: N issues / unavailable].

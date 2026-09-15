@@ -26,6 +26,10 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/eng-test-plan-edit-approval.test.ts', ['autoplan-chain-pty', 'plan-eng-finding-count']],
     ['test/fixtures/eng-test-plan-edit-dacc.json', ['autoplan-chain-pty', 'plan-eng-finding-count']],
     ['test/autoplan-owned-state.test.ts', ['autoplan-chain-pty']],
+    ['test/fixtures/eng-current-choice-cab3.json', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-completed-navigation-cab3.json', ['plan-eng-finding-count']],
+    ['test/autoplan-dual-voice-fixture.test.ts', ['autoplan-dual-voice']],
+    ['test/fixtures/devex-journey-evidence-cab3.json', ['plan-devex-finding-count']],
     ['test/autoplan-phase-handoff.test.ts', ['carve-section-loading', 'autoplan-chain-pty', 'autoplan-dual-voice']],
     ['test/autoplan-amend-input.test.ts', ['carve-section-loading', 'autoplan-chain-pty', 'autoplan-dual-voice']],
     ['test/fixtures/autoplan-amend-input-77.json', ['carve-section-loading', 'autoplan-chain-pty', 'autoplan-dual-voice']],
@@ -315,7 +319,8 @@ test('same-plan expansion disposition replay selects the existing mode helper co
 test('structured auto-decision evidence selects every native observer', () => {
   const expected = ['auto-decide-preserved', 'conductor-prose', 'plan-ceo-review-plan-mode',
     'plan-design-review-plan-mode', 'plan-devex-review-plan-mode', 'plan-eng-review-plan-mode', 'plan-mode-no-op'];
-  for (const file of ['test/auto-decide-structured.test.ts', 'test/fixtures/auto-decide-structured-77.json']) {
+  for (const file of ['test/auto-decide-structured.test.ts', 'test/fixtures/auto-decide-structured-77.json',
+    'test/helpers/auto-decision-state.ts', 'test/auto-decision-state.test.ts', 'test/fixtures/auto-decide-state-cab3.json']) {
     expect([...selectTests([file], E2E_TOUCHFILES).selected].sort()).toEqual(expected);
     expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
   }

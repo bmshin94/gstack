@@ -1,0 +1,71 @@
+{
+  "source": "cab3edc8b24f873b55f6edc6d98b60981eda52cb",
+  "captureAt": "2026-09-15T19:33:27.540Z",
+  "note": "Complete public completed native decisions only; original paid timeout and missing evidence preserved separately. No earlier approvals needed to count the current four-to-three choice.",
+  "calls": [
+    {
+      "sessionId": "a5bd9ed4-796f-4d5d-9bea-ab180502c903",
+      "toolUseId": "toolu_01TapUQ8xuvA9xXgVB1nAWtm",
+      "questions": [
+        {
+          "question": "D6 \u2014 Component arrangement: keep TokenStore as a separate class, or fold it into AuthCache?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; Scope Challenge structure choice (feature choices held fixed: legacy rewrite deferred behind a flag per D4, RequestPolicy deferred per D5).\nELI10: With RequestPolicy deferred, the plan still adds four components: AuthBroker, SessionMint, AuthCache, and TokenStore. The plan says AuthCache is a facade over the existing cache adapter, which already stores tokens keyed by tenant/issuer/audience/policy and already handles eviction and invalidation (PLAN.md:7-13). That makes TokenStore a third layer doing the adapter's job. This question picks structure only: how many boxes. Whether the shared AuthCache stays a module-level global (Section 1) and how errors and IDP calls are handled are separate decisions and stay pending in every option.\nStakes if we pick wrong: too many layers means three places to look when a tenant's revoked token still validates at 3am; too few means AuthBroker and SessionMint tangle if their responsibilities really are distinct.\nRecommendation: A because it removes the one component whose job the existing adapter already does, keeps the two services whose names describe distinct work, and preserves every retained contract from PLAN.md:6-13 unchanged. (human: ~0.5 day less / CC: ~5 min less.)\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: the existing adapter is already the token store; the question is whether you want a second one.",
+          "header": "Structure",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "3 components: AuthBroker, SessionMint, AuthCache; drop TokenStore (recommended)",
+              "description": "\u2705 AuthCache facade + existing adapter is the single token store; one place for invalidation bugs\n\u2705 Two services with distinct names keep brokering and minting separable and testable\n\u274c If TokenStore was meant to hold something the adapter cannot (e.g. refresh-token secrets), that need has to be named and added to AuthCache"
+            },
+            {
+              "label": "4 components: keep TokenStore separate (original)",
+              "description": "\u2705 Matches the plan as written; no re-scoping of what AuthCache owns\n\u2705 Room for TokenStore to own a distinct persistence concern if one exists\n\u274c Three storage layers (adapter, AuthCache, TokenStore) with no stated boundary between the last two"
+            },
+            {
+              "label": "2 components: one AuthService (broker+mint) + AuthCache",
+              "description": "\u2705 Fewest moving parts; one service to inject the cache into\n\u2705 Simplest wiring for the D4 flag routing\n\u274c Merges two responsibilities the plan deliberately separated; AuthService grows into the next 60-line validateAndDispatch()"
+            }
+          ]
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D6 \u2014 Component arrangement: keep TokenStore as a separate class, or fold it into AuthCache?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; Scope Challenge structure choice (feature choices held fixed: legacy rewrite deferred behind a flag per D4, RequestPolicy deferred per D5).\nELI10: With RequestPolicy deferred, the plan still adds four components: AuthBroker, SessionMint, AuthCache, and TokenStore. The plan says AuthCache is a facade over the existing cache adapter, which already stores tokens keyed by tenant/issuer/audience/policy and already handles eviction and invalidation (PLAN.md:7-13). That makes TokenStore a third layer doing the adapter's job. This question picks structure only: how many boxes. Whether the shared AuthCache stays a module-level global (Section 1) and how errors and IDP calls are handled are separate decisions and stay pending in every option.\nStakes if we pick wrong: too many layers means three places to look when a tenant's revoked token still validates at 3am; too few means AuthBroker and SessionMint tangle if their responsibilities really are distinct.\nRecommendation: A because it removes the one component whose job the existing adapter already does, keeps the two services whose names describe distinct work, and preserves every retained contract from PLAN.md:6-13 unchanged. (human: ~0.5 day less / CC: ~5 min less.)\nNote: options differ in kind, not coverage \u2014 no completeness score.\nNet: the existing adapter is already the token store; the question is whether you want a second one.": "3 components: AuthBroker, SessionMint, AuthCache; drop TokenStore (recommended)"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T19:12:46.916Z"
+    },
+    {
+      "sessionId": "a5bd9ed4-796f-4d5d-9bea-ab180502c903",
+      "toolUseId": "toolu_01ELUcYLwUeDZm9Qrw1cLb6c",
+      "questions": [
+        {
+          "question": "D10 \u2014 Rewrite validateAndDispatch() with explicit error outcomes, or just add logging to the three catches?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; Code quality finding C1 (PLAN.md:23-24), ledger row R4.\nELI10: Today three nested try/catch blocks each quietly eat one kind of error. An expired token, a revoked one, and an unreachable identity provider all vanish into the same silence, and whatever runs after the catches may proceed as if nothing happened. The fix is to split the function: `validate()` returns a typed result (ok / expired / revoked / idp_unreachable) and rethrows anything it does not recognize, then `dispatch()` branches on that result. The user gets a specific failure, and an unknown bug crashes loudly instead of being swallowed.\nStakes if we pick wrong: with swallowed errors, an IDP outage can look like \"everyone's token is invalid\" (or worse, dispatch runs on an unvalidated request) and nobody finds out until a tenant complains.\nRecommendation: A because it is explicit over clever, kills the error-hiding anti-pattern at the root, and each outcome gets its own test. The plan's own 5-call IDP path (Section 4) needs the idp_unreachable variant anyway. (A: human ~1 day / CC ~20 min. B: human ~1h / CC ~5 min.)\nCompleteness: A=10/10, B=5/10, C=1/10\nNet: typed outcomes and loud unknowns vs. the same silence with log lines.",
+          "header": "R4 errors",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "Split into validate() + dispatch() with a typed AuthResult (recommended)",
+              "description": "\u2705 Every known error class becomes a visible outcome the caller and the user can act on\n\u2705 Unknown errors propagate, so a real bug surfaces in monitoring instead of being eaten\n\u274c Touches every caller of validateAndDispatch() to branch on the result (bounded: it is one function)"
+            },
+            {
+              "label": "Keep the nesting, add a log line per catch",
+              "description": "\u2705 Smallest diff; the swallowed errors at least show up in logs\n\u2705 No caller changes\n\u274c Behavior still silently continues after failure; three nested blocks remain the next person's problem"
+            },
+            {
+              "label": "Do nothing (as planned)",
+              "description": "\u2705 Zero effort now\n\u2705 No risk of changing current caller behavior\n\u274c Error hiding stays in the auth path; failures are invisible to users and operators"
+            }
+          ]
+        }
+      ],
+      "answered": true,
+      "failed": false,
+      "answers": {
+        "D10 \u2014 Rewrite validateAndDispatch() with explicit error outcomes, or just add logging to the three catches?\nProject/branch/task: `main`, PLAN.md Multi-tenant Auth Refactor; Code quality finding C1 (PLAN.md:23-24), ledger row R4.\nELI10: Today three nested try/catch blocks each quietly eat one kind of error. An expired token, a revoked one, and an unreachable identity provider all vanish into the same silence, and whatever runs after the catches may proceed as if nothing happened. The fix is to split the function: `validate()` returns a typed result (ok / expired / revoked / idp_unreachable) and rethrows anything it does not recognize, then `dispatch()` branches on that result. The user gets a specific failure, and an unknown bug crashes loudly instead of being swallowed.\nStakes if we pick wrong: with swallowed errors, an IDP outage can look like \"everyone's token is invalid\" (or worse, dispatch runs on an unvalidated request) and nobody finds out until a tenant complains.\nRecommendation: A because it is explicit over clever, kills the error-hiding anti-pattern at the root, and each outcome gets its own test. The plan's own 5-call IDP path (Section 4) needs the idp_unreachable variant anyway. (A: human ~1 day / CC ~20 min. B: human ~1h / CC ~5 min.)\nCompleteness: A=10/10, B=5/10, C=1/10\nNet: typed outcomes and loud unknowns vs. the same silence with log lines.": "Split into validate() + dispatch() with a typed AuthResult (recommended)"
+      },
+      "unansweredQuestionIndices": [],
+      "answeredAt": "2026-09-15T19:15:49.638Z"
+    }
+  ]
+}

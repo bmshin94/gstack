@@ -57,7 +57,12 @@ describe('autoplan phase order (Eng always last)', () => {
     const section = read(`autoplan/sections/${child}-phase.md.tmpl`);
     const announced = [...section.matchAll(/^\*\*Phase (\d+(?:\.\d+)?) complete\.\*\*$/gm)].map(m => m[1]);
     const handoff = section.match(/^Passing to .+$/m)?.[0] ?? '';
-    expect(section.replace(/\s+/g, ' ')).toContain('emit the following summary as its own visible parent assistant text block');
+    expect(section).toContain('**Completion message — send only after the shared close steps succeed:**');
+    const pointer = section.indexOf('{{SECTION:phase-close}}');
+    expect(pointer).toBeGreaterThan(section.indexOf('**Close this phase:**'));
+    expect(pointer).toBeLessThan(section.indexOf(`**Phase ${id} complete.**`));
+    const generated = read(`autoplan/sections/${child}-phase.md`);
+    expect(generated).toContain('Read `~/.claude/skills/gstack/autoplan/sections/phase-close.md` and execute it');
     expect(announced).toEqual([id]);
     expect([...handoff.matchAll(/Phase (\d+(?:\.\d+)?)/g)].map(m => m[1])).toEqual(next);
     // Catch obsolete Phase 3.5 references anywhere in any carved child,
@@ -198,14 +203,15 @@ describe('autoplan phase execution checkpoints', () => {
     expect(contract.replace(/\s+/g, ' ')).toContain('then create the fresh snapshot and dispatch its nativeDispatchPrompt unchanged');
     expect(contract.replace(/\s+/g, ' ')).toContain("Consume the native terminal result and apply the phase's failure policy");
     expect(contract.replace(/\s+/g, ' ')).toContain("consume enabled outside results. Complete the phase's remaining primary review sections after these results");
-    expect(contract).toContain('Save the full review artifacts and accepted amendments');
-    expect(contract.replace(/\s+/g, ' ')).toContain('implementation check and readback');
-    expect(contract).toContain('reviewInputPath');
-    expect(contract).toContain('readRanges');
-    expect(contract.replace(/\s+/g, ' ')).toContain('next action before any next-phase Read, create or dispatch');
-    expect(contract.replace(/\s+/g, ' ')).toContain('emit the phase completion summary as its own visible parent assistant text block');
-    expect(contract.replace(/\s+/g, ' ')).toContain("Then continue to the next phase's tool calls in the same turn");
-    expect(contract.replace(/\s+/g, ' ')).toContain('for Eng, send this text before final synthesis/approval');
+    const workflow = contract.replace(/\s+/g, ' ');
+    expect(workflow).toContain("At the phase's exit, load its `phase-close` section afresh");
+    expect(workflow).toContain('the complete current readback, semantic reconciliation and visible parent completion message');
+    expect(workflow).toContain('an earlier Read is not this close');
+    expect(workflow).toContain('Only after the message has been sent may the driver load/create/dispatch the next phase');
+    expect(workflow).toContain("Then continue to the next phase's tool calls in the same turn");
+    expect(workflow).toContain('after Eng, proceed to final synthesis/approval');
+    expect(workflow).toContain('an inapplicable phase; do not load its review or close steps');
+    expect(workflow).toContain('reload `phase-close` and resume its first incomplete step');
     expect(contract).toContain('A missing gate means the current phase remains open');
     expect(contract).toContain('Read requests/self-reports and INPUT hashes do not prove uptake or review quality');
     expect(contract).toContain('Pending is not unavailable');
@@ -219,50 +225,63 @@ describe('autoplan phase execution checkpoints', () => {
     expect(tmpl).toContain('LOG each decision; record ALL accepted obligations below and run `amend-input` before continuing');
   });
 
-  test('each completed phase announces only after persisted full outputs and settled reviewers', () => {
+  test('each phase binds its fixed amendment checkpoint before loading the shared close', () => {
     for (const [phase, number] of [['ceo', '1'], ['design', '2'], ['dx', '2.5'], ['eng', '3']]) {
       const section = read(`autoplan/sections/${phase}-phase.md.tmpl`);
       const barrier = section.indexOf('**Close this phase:**');
+      const pointer = section.indexOf('{{SECTION:phase-close}}');
       const announcement = section.indexOf(`\n**Phase ${number} complete.**\n`);
       expect(barrier).toBeGreaterThan(-1);
-      expect(barrier).toBeLessThan(announcement);
-      const checkpoint = section.slice(barrier, announcement).replace(/\s+/g, ' ');
-      expect(checkpoint).toContain('Require full skill/section ranges');
-      expect(checkpoint).toContain('successful writes');
-      expect(checkpoint).toContain('terminal reviewer results');
-      expect(checkpoint).toContain('When the native review succeeded, match its INPUT');
-      expect(checkpoint).toContain("A failed native attempt follows the phase's failure policy without native completion credit");
-      expect(checkpoint).toContain('a pending reviewer keeps this phase open');
-      expect(checkpoint).toContain('(unavailable/disabled allowed)');
-      expect(checkpoint).toContain('successful writes/check');
-      expect(checkpoint).toContain(phase === 'eng'
-        ? 'After this text, proceed to final synthesis/approval in the same turn'
-        : 'After this text, load/create/dispatch the next phase in the same turn');
-      expect(checkpoint).toContain('EVERY accepted requirement/condition/test');
-      expect(checkpoint).toContain('in its block');
-      expect(checkpoint).toContain('Reconcile full review');
-      expect(checkpoint).toContain('Read `reviewInputPath` through every returned `readRanges` entry to EOF');
-      expect(checkpoint).toContain('full current Implementation plan');
-      expect(checkpoint).toContain('Counts, hashes, keyword probes');
-      expect(checkpoint).toContain('finish the missing file ranges before continuing');
-      expect(checkpoint).toContain('Retention verifies bytes, not approval, completeness or correctness');
-      expect(checkpoint).toContain('Taste provisional');
-      expect(checkpoint).toContain('User Challenges keep original');
-      const amendmentBaseline = phase === 'ceo' ? 'CEO_STEP0_CHECKPOINT' : `${phase.toUpperCase()}_INPUT`;
-      expect(checkpoint).toContain(`amend-input ${phase} "<ACTIVE_PLAN>" "<${amendmentBaseline}>" "<RESTORE_PATH>" "<methodologyPath>"`);
-      expect(checkpoint).toContain('Keep the amendment checkpoint fixed');
-      expect(checkpoint).toContain('None: reason checks unchanged');
-      expect(checkpoint).toContain('emit the following summary as its own visible parent assistant text block');
-      const save = checkpoint.indexOf('1. **Save artifacts and export current input.**');
-      const verify = checkpoint.indexOf('2. **Read and verify the current text.**');
-      const notify = checkpoint.indexOf('3. **Send the completion message.**');
-      expect(save).toBeGreaterThan(-1);
-      expect(save).toBeLessThan(verify);
-      expect(verify).toBeLessThan(notify);
-      expect(checkpoint).toContain('After verifying the text, your next action');
-      expect(checkpoint).toContain('Send it before any next-phase Read/create/dispatch');
-      expect(checkpoint).not.toContain('This message contains no tool calls');
+      expect(pointer).toBeGreaterThan(barrier);
+      expect(pointer).toBeLessThan(announcement);
+      expect(section.match(/\{\{SECTION:phase-close\}\}/g)).toHaveLength(1);
+      const binding = section.slice(barrier, pointer).replace(/\s+/g, ' ');
+      const checkpoint = phase === 'ceo' ? 'CEO_STEP0_CHECKPOINT' : `${phase.toUpperCase()}_INPUT`;
+      expect(binding).toContain(`Use phase \`${phase}\`, checkpoint \`<${checkpoint}>\``);
+      expect(binding).toContain("this phase's `methodologyPath`");
+      expect(binding).toContain('load the shared close steps afresh, even if read earlier');
+      expect(binding).toContain('Keep this checkpoint for this invocation; review exports do not replace it');
+      expect(section.slice(pointer, announcement)).toContain('send only after the shared close steps succeed');
     }
+  });
+
+  test('the shared close saves, exports, reads, verifies and announces in that order', () => {
+    const template = read('autoplan/sections/phase-close.md.tmpl');
+    const close = template.replace(/\s+/g, ' ');
+    const stages = ['1. **Finish and save the review.**', '2. **Reconcile accepted requirements.**',
+      '3. **Export the current implementation.**', '4. **Read the complete new export.**',
+      '5. **Verify the actual text.**', "6. **Send the phase's completion message now.**"];
+    const positions = stages.map(stage => template.indexOf(stage));
+    expect(positions.every(position => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(close).toContain("the phase's full methodology/section Reads, required outputs, successful writes and terminal reviewer results");
+    expect(close).toContain("Match a completed native review's INPUT to its voice snapshot");
+    expect(close).toContain('A pending reviewer keeps the phase open');
+    expect(close).toContain("Apply the phase's failure policy to failed native attempts");
+    expect(close).toContain('unavailable/disabled voices receive no completion credit');
+    expect(close).toContain("every accepted behavior, condition, test and manual checklist in this phase's accepted block");
+    expect(close).toContain('Taste remains provisional; User Challenges preserve the original requirements');
+    expect(close).toContain('A `None` record must explain why the implementation remains unchanged');
+    expect(close).toContain('Keep the amendment checkpoint fixed for this invocation, including after compaction');
+    expect(template).toContain('amend-input "<PHASE>" "<ACTIVE_PLAN>" "<AMENDMENT_CHECKPOINT>" "<RESTORE_PATH>" "<methodologyPath>"');
+    expect(close).toContain("For every returned `readRanges` entry, issue a Read of `reviewInputPath` with that entry's exact `offset` and `limit`");
+    expect(close).toContain('Finish all ranges through EOF');
+    expect(close).toContain('A Read of only the edited tail does not satisfy this step; previous snapshots do not satisfy it');
+    expect(close).toContain('If a result is truncated, read its missing ranges');
+    expect(close).toContain('If a Read fails, repair it and finish the missing ranges');
+    expect(close).toContain('Do not advance on a request without its result');
+    expect(close).toContain('Compare the complete current implementation with the accepted decisions, source requirements, conditions, tests and required outputs');
+    expect(close).toContain('Retention checks prove bytes; counts, hashes, keyword probes and a saved “Read-back” sentence do not perform this semantic review');
+    expect(close).toContain('Fix omissions, then repeat the export and full readback');
+    expect(close).toContain('Review history stays in Review record');
+    expect(close).toContain('next visible parent assistant text block, with actual findings and voice statuses');
+    expect(close).toContain('Missing outside coverage means N/A consensus, never confirmed');
+    expect(close).toContain('Saving the message in ACTIVE_PLAN or printing it through Bash does not send it to the user');
+    expect(close).toContain('Send it before any next-phase Read/create/dispatch');
+    expect(close).toContain('continue in the same turn. After Eng, continue to final synthesis/approval');
+    expect(close).toContain('Do not wait for a “continue” reply');
+    expect(close).not.toContain('This message contains no tool calls');
+    expect(read('autoplan/sections/phase-close.md')).toContain(template.trim());
   });
 
   test('Design hands off to conditional DX and DX never requests a future Eng result', () => {
@@ -320,8 +339,9 @@ describe('autoplan current implementation-plan identity', () => {
       expect(section).toContain('Reads `nativePromptPath` to EOF');
       expect(section).toContain(`Outside prompt: inline the full contents of <${phase.toUpperCase()}_INPUT>`);
       const checkpoint = phase === 'ceo' ? 'CEO_STEP0_CHECKPOINT' : `${phase.toUpperCase()}_INPUT`;
-      expect(section).toContain(`amend-input ${phase} "<ACTIVE_PLAN>" "<${checkpoint}>"`);
-      expect(section).toContain('None: reason checks unchanged');
+      expect(section).toContain(`Use phase \`${phase}\`, checkpoint \`<${checkpoint}>\``);
+      expect(section).toContain('{{SECTION:phase-close}}');
+      expect(read('autoplan/sections/phase-close.md.tmpl')).toContain('amend-input "<PHASE>" "<ACTIVE_PLAN>" "<AMENDMENT_CHECKPOINT>"');
       expect(read('autoplan/SKILL.md.tmpl')).toContain('checks exact retention');
       expect(section).not.toContain('<review_plan_path>');
       expect(section).not.toContain('<plan_path>');

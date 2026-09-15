@@ -413,3 +413,102 @@ for(const status of ['deferred','not required','not needed','superseded','no lon
     expect(regression(minimalBaseline()+`\n## Current amendments\nEarlier note: "${id} is ${status}."\n`)).toBe('plan');
   }
 });
+
+
+// Current choice identity is in the title; current defect and exact inventory
+// belong to this same native question's source and explanation.
+import currentChoiceCab3 from './fixtures/eng-current-choice-cab3.json';
+const cab3Call=(index:number)=>structuredClone(currentChoiceCab3.calls[index]) as NativePlanQuestionCall;
+const cab3Result=(c:NativePlanQuestionCall)=>evaluateEngSeedCoverage({status:'ready',calls:[c],assistantMessages:[]},'',0,Date.parse(currentChoiceCab3.captureAt)).decisions;
+const cab3Change=(index:number,edit:(q:NativePlanQuestionCall['questions'][number])=>void)=>{const c=cab3Call(index);edit(c.questions[0]!);c.answers={[c.questions[0]!.question]:c.questions[0]!.options[0]!.label};return c;};
+for(const [index,seed] of [[0,'complexity'],[1,'swallowed-errors']] as const){
+  test('cab3 current owned choice identifies '+seed,()=>{
+    const c=cab3Call(index);expect(cab3Result(c)).toEqual({[seed]:`${c.sessionId}:${c.toolUseId}`});
+    expect(isEngSeedDecisionAUQ(nativePlanCallFingerprint(c,0,true),[],0,Date.parse(currentChoiceCab3.captureAt))).toBe(true);
+    for(const option of c.questions[0]!.options){c.answers={[c.questions[0]!.question]:option.label};expect(cab3Result(c)[seed]).toBeDefined();}
+  });
+  test('cab3 current choice preserves formatting, ordering and historical examples: '+seed,()=>{
+    for(const edit of [
+      (q:any)=>{q.question=q.question.replaceAll('`','');},
+      (q:any)=>{q.options.reverse();},
+      (q:any)=>{q.question+='\nEarlier note: "This decision is withdrawn."';},
+      (q:any)=>{q.question=q.question.replace(/^D\d+ — /,'D42: ');},
+    ])expect(cab3Result(cab3Change(index,edit))[seed]).toBeDefined();
+  });
+  test('cab3 current choice requires its own source and current evidence: '+seed,()=>{
+    for(const edit of [
+      (q:any)=>{q.question=q.question.replaceAll('PLAN.md','OTHER.md');},
+      (q:any)=>{q.question=q.question.replaceAll('PLAN.md','archive/PLAN.md');},
+      (q:any)=>{q.question=q.question.replace(/^Project\/branch\/task: (.+)$/m,'Project/branch/task: "$1"');},
+      (q:any)=>{q.question=q.question.replace('Project/branch/task: ','Project/branch/task: Historical example: ');},
+      (q:any)=>{q.question=q.question.replace(/^ELI10: (.+)$/m,'ELI10: "$1"');},
+      (q:any)=>{q.question=q.question.replace('ELI10: ','ELI10: If approved, ');},
+      (q:any)=>{q.question+='\nThis decision is withdrawn.';},
+      (q:any)=>{q.question+='\nThis decision is "reopened".';},
+      (q:any)=>{q.question+='\nThis finding applies only if approved.';},
+      (q:any)=>{q.question=q.question.replace(/^([^\n]+)/,'"$1"');},
+    ]){const c=cab3Change(index,edit);expect(cab3Result(c),JSON.stringify(c.questions)).toEqual({});}
+  });
+  test('cab3 current choice cannot borrow an option or bypass native completion: '+seed,()=>{
+    for(const edit of [
+      (q:any)=>{q.options[0].description='No current remedy.';},
+      (q:any)=>{q.options[0].description='"'+q.options[0].description.replaceAll('\n',' ')+'"';},
+      (q:any)=>{q.options[0].description+='\nThis remedy is withdrawn.';},
+      (q:any)=>{q.options[0].description+='\nThis remedy is "deferred".';},
+      (q:any)=>{q.options[0].description+='\nThis remedy applies only if approved.';},
+    ])expect(cab3Result(cab3Change(index,edit))).toEqual({});
+    for(const edit of [(c:any)=>{c.answered=false;},(c:any)=>{c.failed=true;},(c:any)=>{c.answers={};},(c:any)=>{c.unansweredQuestionIndices=[0];},(c:any)=>{c.questions[0].multiSelect=true;}]){const c=cab3Call(index);edit(c);expect(cab3Result(c)).toEqual({});}
+  });
+}
+test('cab3 store consolidation proves the current inventory and one fewer store',()=>{
+ for(const edit of [
+   (q:any)=>{q.question=q.question.replace('four components:','4 components:');q.options[0].label=q.options[0].label.replace('3 components:','three components:');q.options[1].label=q.options[1].label.replace('4 components:','four components:');},
+   (q:any)=>{q.question=q.question.replace('Component arrangement: keep TokenStore as a separate class, or fold it into AuthCache?','How should the TokenStore and AuthCache components be arranged?');},
+   (q:any)=>{q.options[0].label=q.options[0].label.replace('drop TokenStore','remove TokenStore');},
+ ])expect(cab3Result(cab3Change(0,edit)).complexity).toBeDefined();
+ for(const edit of [
+   (q:any)=>{q.question=q.question.replace('four components:','five components:');},
+   (q:any)=>{q.question=q.question.replace('AuthCache, and TokenStore.','AuthCache, and OtherStore.');},
+   (q:any)=>{q.options[0].label=q.options[0].label.replace('3 components:','4 components:');},
+   (q:any)=>{q.options[1].label=q.options[1].label.replace('4 components:','3 components:');},
+   (q:any)=>{q.options[0].label=q.options[0].label.replace('AuthCache; drop','AuthBroker; drop');},
+   (q:any)=>{q.options[0].label=q.options[0].label.replace('drop TokenStore','keep TokenStore');},
+   (q:any)=>{q.options[0].description+='\nDo not remove TokenStore.';},
+   (q:any)=>{q.options[0].description+='\nTokenStore remains a separate store.';},
+   (q:any)=>{q.question+='\nCorrection: TokenStore has an independent persistence purpose.';},
+   (q:any)=>{q.question=q.question.replace("a third layer doing the adapter's job",'an independent component with a separate contract');},
+ ])expect(cab3Result(cab3Change(0,edit))).toEqual({});
+});
+test('cab3 typed error choice owns both visible known outcomes and unknown propagation',()=>{
+ for(const edit of [
+   (q:any)=>{q.question=q.question.replace('quietly eat one kind of error','silently swallow one error class');},
+   (q:any)=>{q.options[0].label=q.options[0].label.replace('AuthResult','AuthOutcome');},
+   (q:any)=>{q.options[0].description=q.options[0].description.replace('Unknown errors propagate','Unknown failures are rethrown');},
+ ])expect(cab3Result(cab3Change(1,edit))['swallowed-errors']).toBeDefined();
+ for(const edit of [
+   (q:any)=>{q.question=q.question.replace('quietly eat one kind of error','explicitly surface each error');},
+   (q:any)=>{q.question+='\nCorrection: validateAndDispatch() no longer swallows failures.';},
+   (q:any)=>{q.options[0].description=q.options[0].description.replace('Unknown errors propagate','Unknown errors are swallowed');},
+   (q:any)=>{q.options[0].description=q.options[0].description.replace('Every known error class becomes a visible outcome','Some known error classes are ignored');},
+   (q:any)=>{q.options[0].description+='\nNot every known error class becomes a visible outcome.';},
+   (q:any)=>{q.options[0].description+='\nDo not propagate unknown errors.';},
+   (q:any)=>{q.options[0].description+='\nErrors are still swallowed.';},
+   (q:any)=>{q.options[0].description+='\nThis remedy applies to another function.';},
+   (q:any)=>{q.options[1].description+=' Unknown errors propagate.';q.options[0].description=q.options[0].description.replace('Unknown errors propagate','Unknown errors are unspecified');},
+ ])expect(cab3Result(cab3Change(1,edit))).toEqual({});
+});
+
+
+test('cab3 choice attribution cannot bypass guards through a more explicit title',()=>{
+ for(const [index,title] of [[0,'Component classes: keep TokenStore separate, or fold it into AuthCache?'],[1,'Rewrite validateAndDispatch() to fix nested swallowed errors, or add logs?']] as const){
+  expect(cab3Result(cab3Change(index,q=>{q.question=q.question.replace(/^D\d+ — [^\n]+/,'D20 — '+title);}))[index===0?'complexity':'swallowed-errors']).toBeDefined();
+  for(const suffix of ['\nThis decision is withdrawn.','\nThis decision is "reopened".']) expect(cab3Result(cab3Change(index,q=>{q.question=q.question.replace(/^D\d+ — [^\n]+/,'D20 — '+title)+suffix;}))).toEqual({});
+  expect(cab3Result(cab3Change(index,q=>{q.question=q.question.replace(/^D\d+ — [^\n]+/,'D20 — '+title).replaceAll('PLAN.md','OTHER.md');}))).toEqual({});
+ }
+});
+test('cab3 owned remedies reject explicit contradictory retention and silent errors',()=>{
+ for(const [index,tail] of [[0,'Keep TokenStore as a separate store.'],[0,'Retain TokenStore as a separate class.'],[1,'Known errors are still hidden.'],[1,'Unknown errors do not propagate.']] as const){
+  expect(cab3Result(cab3Change(index,q=>{q.options[0]!.description+='\n'+tail;}))).toEqual({});
+  expect(cab3Result(cab3Change(index,q=>{q.options[0]!.description+='\nEarlier note: "'+tail+'"';}))[index===0?'complexity':'swallowed-errors']).toBeDefined();
+ }
+});

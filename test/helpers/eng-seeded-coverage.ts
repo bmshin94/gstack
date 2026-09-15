@@ -119,6 +119,13 @@ function seedSubjects(q: NativePlanQuestionCall['questions'][number]): Seed[] {
   // when it says "parallel", their current defect and bounded remedy belong
   // to the owned explanation, not the generic direct-action shortcut below.
   if (/^How (?:should|will|do) (?:the )?(?:five|5) (?:IDP|identity provider)(?: validation)? calls? (?:be )?(?:issued|run|executed|scheduled)\b/i.test(decisionTitle)) return explainedSeedSubjects(q);
+  // A component-arrangement or rewrite choice owns its explanation even
+  // when the title also names the defect. Do not let a failed owned-source
+  // check fall through to the legacy title-only shortcuts. Existing compact
+  // one-line briefs keep their established direct-assertion route.
+  if (q.question.includes('\n') && (/\bTokenStore\b/.test(decisionTitle) && /\bAuthCache\b/.test(decisionTitle) &&
+      /\b(?:arrangement|arranged|structure|components?|classes?)\b/i.test(decisionTitle) ||
+      /^Rewrite validateAndDispatch\(\)\s+(?:with|using|into|to)\b/i.test(decisionTitle))) return explainedSeedSubjects(q);
   const offered = q.options.map(o => `${o.label} ${o.description ?? ''}`).join('\n');
   const directAction = title.match(/\b(?:should|shall|can|do|would)\s+(?:we|I)\s+([^?]+)\?\s*$/i)?.[1];
   const action = (re: RegExp) => re.test(offered) || Boolean(directAction && new RegExp(`^(?:${re.source})`, re.flags).test(directAction));
@@ -309,6 +316,44 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     const settledStructure = (raw: string) => !new RegExp(`\\b${owner} (?:is|was|has been) ${unsettled}\\b`, 'i').test(current(raw.replace(
       new RegExp(`(${owner} (?:is|was|has been) )["“'‘\\x60](${unsettled})["”'’\\x60]`, 'gi'), '$1$2')));
     const structureOptions = q.options.map(o => `${o.label}\n${o.description ?? ''}`).filter(settledStructure).map(current).filter(active);
+    // A current store-consolidation choice may follow a separate feature cut.
+    // Its own counted inventory and opposed keep/remove options establish the
+    // reduction; neither the earlier approval nor the cumulative count does.
+    const currentInventory = new RegExp(`\\bplan (?:still )?(?:adds|contains|retains|has) (one|two|three|four|five|six|seven|eight|nine|[1-9]\\d*) (?:new )?components:\\s*${identifiers}\\.`, 'i').exec(explanation);
+    const inventoryNames = currentInventory ? namesIn(currentInventory[2]!) : [];
+    const inventoryCount = currentInventory ? counts[currentInventory[1]!.toLowerCase()] ?? Number(currentInventory[1]) : 0;
+    const ownedStoreChoice = /\b(?:arrangement|arranged|structure|components?|classes?)\b/i.test(title) && /\bTokenStore\b/.test(title) && /\bAuthCache\b/.test(title);
+    const independentStore = /\bTokenStore (?:now |already )?(?:has|requires|provides) (?:a documented |an? )?(?:independent|distinct|separate) (?:persistence )?(?:purpose|behavior|state|contract)\b|\bTokenStore is (?:no longer|not) (?:redundant|a duplicate)\b/i;
+    if (ownedStoreChoice && settledStructure(q.question) && inventoryCount === 4 &&
+        sameNames(inventoryNames, ['AuthBroker', 'SessionMint', 'AuthCache', 'TokenStore']) &&
+        /\bAuthCache (?:is|is described as) a facade over the existing (?:cache )?adapter\b/i.test(explanation) &&
+        /\badapter\b[^.!?]*\balready stores tokens\b/i.test(explanation) &&
+        /\bTokenStore (?:is |a |makes |becomes )*(?:a )?(?:third layer doing the adapter's job|redundant (?:token )?store|duplicate (?:token )?store)\b/i.test(explanation) &&
+        !independentStore.test(text) &&
+        structureOptions.some(option => new RegExp(`^(?:[A-D][):.]\\s*)?(?:${inventoryCount}|four) components:\\s*(?:keep|retain) TokenStore separate\\b`, 'i').test(option)) &&
+        structureOptions.some(option => {
+          const head = option.split('\n')[0]!;
+          const match = new RegExp(`^(?:[A-D][):.]\\s*)?(three|3) components:\\s*${identifiers};\\s*(?:drop|remove|fold) TokenStore\\b`, 'i').exec(head);
+          return match && sameNames(namesIn(match[2]!), ['AuthBroker', 'SessionMint', 'AuthCache']) &&
+            /\bAuthCache facade\s*\+\s*existing adapter is the single token store\b/i.test(option) &&
+            !independentStore.test(option) && !/\b(?:keep|retain|leave) TokenStore (?:as )?(?:a )?(?:separate|second|independent) (?:token )?(?:store|class|component)\b/i.test(option) &&
+            !/\b(?:do not|don't|never) (?:drop|remove|fold|merge|consolidate) TokenStore\b|\bTokenStore (?:still |now |will )*(?:remains?|stays?|is retained as) (?:a )?(?:separate|second|independent) (?:token )?(?:store|class|component)\b/i.test(option);
+        })) ids.push('complexity');
+
+    // The same owned choice can expose known failures as a typed result and
+    // propagate unknown failures without prescribing a particular catch layout.
+    // Naming an error type alone, or a remedy in another option, is insufficient.
+    const eatsErrors = /\b(?:three|3) nested (?:try\/catch|catch) blocks each (?:quietly|silently) (?:eat|swallow|suppress|discard|ignore) (?:one kind of error|one error class|a different error class)\b/i.test(explanation);
+    if (/\bvalidateAndDispatch\(\)(?=\s|[.,?!;:]|$)/.test(title) && eatsErrors && settledStructure(q.question) &&
+        /\bvalidate\(\) returns a typed result\b/i.test(explanation) &&
+        /\bdispatch\(\) branches on that result\b/i.test(explanation) &&
+        !/\bvalidateAndDispatch\(\) (?:now |already )?(?:rethrows every error|no longer swallows failures)\b/i.test(text) &&
+        structureOptions.some(option => /\b(?:Split|Flatten)\b/i.test(option.split('\n')[0]!) &&
+          /\bvalidate\(\)/.test(option) && /\bdispatch\(\)/.test(option) && /\btyped [A-Za-z]\w*\b/.test(option) &&
+          /\bEvery known error class becomes a visible outcome\b/i.test(option) &&
+          /\bUnknown (?:errors|failures) (?:propagate|are rethrown)\b/i.test(option) &&
+          !/\b(?:not (?:every|all|each)|only some) (?:known )?(?:errors?|failures?)(?: classes?| class)?\b|\b(?:errors?|failures?) (?:are |is |will be |still |silently )*(?:swallowed|ignored|discarded|suppressed|hidden)\b|\b(?:do not|don't|never) (?:propagate|rethrow|surface|expose)\b|\b(?:other|another|foreign|different) (?:function|method|issue|project|remedy)\b/i.test(option))) ids.push('swallowed-errors');
+
     const counted = structureOptions.map(option => {
       const heading = option.split('\n')[0]!;
       const match = new RegExp(`^(?:[A-D][):.]\\s*)?(?:(?:Keep|Retain|Use|Reduce to)\\s+)?(one|two|three|four|five|six|seven|eight|nine|[1-9]\\d*) (?:new )?(?:units|classes|components)(?::\\s*|\\s*\\(\\s*)${identifiers}`, 'i').exec(heading);
@@ -1531,6 +1576,97 @@ function declaredLegacyCharacterization(text: string): boolean {
     }
   }
 
+  // A required test-table row can own a parity contract through an approved
+  // decision and one task. Its lane records the unchanged legacy oracle first,
+  // then adds the new implementation; rollout waits for both to pass.
+  const fieldValues = (body: string, field: string) => [...body.matchAll(new RegExp(`^${field}: ([^\\n]+)$`, 'gm'))].map(m => m[1]!);
+  const outcomes = (value: string) => value.split(',').map(item => item.trim().toLowerCase().replace(/[-_]/g, ' ').replace(/ id$/, ''));
+  const sameInventory = (a: string[], b: string[]) => a.length > 1 && a.length === b.length && new Set(a).size === a.length &&
+    new Set(b).size === b.length && a.every(item => item && b.includes(item));
+  const framedParity = (body: string) => sourceFrame(body) || extractionSourceOwner(body) ||
+    /(?:^|[.!?;]\s+|\n)\s*(?:if|unless|assuming|provided|pending)\b/i.test(unquoted(body));
+  for (const tests of current.filter(s => /^Tests(?: \([^\n]*\))?$/i.test(s.title))) {
+    for (const table of marked.lexer(tests.body.join('\n'))) {
+      if (table.type !== 'table') continue;
+      const column = (name: string) => table.header.flatMap((cell, index) => cell.text.toLowerCase() === name ? [index] : []);
+      const columns = [column('decision'), column('test file'), column('asserts')];
+      if (columns.some(indices => indices.length !== 1)) continue;
+      for (const row of table.rows) {
+        const decision = /^(D[1-9]\d*) CRITICAL$/.exec(row[columns[0]![0]!]!.text)?.[1];
+        const file = row[columns[1]![0]!]!.text, assertion = row[columns[2]![0]!]!.text;
+        const cases = /^parity suite:\s*([^;]+);/i.exec(assertion)?.[1];
+        const target = /\bparameterized over legacyAuthFlow\(\) and ([A-Za-z][\w]*)\b/.exec(assertion)?.[1];
+        if (!decision || !cases || !target || !/^[A-Za-z][\w/.-]*\.test\.[jt]s$/.test(file) ||
+            !/\basserts outcome \+ cache key written\b/.test(assertion) || !/\bboth green before any tenant is allowlisted\b/.test(assertion) ||
+            framedParity(assertion) || withdrawn(assertion)) continue;
+        const expected = outcomes(cases), basename = file.split('/').at(-1)!;
+        const records = current.filter(s => /^R[1-9]\d*: legacyAuthFlow\(\) regression contract$/.test(s.title) &&
+          new RegExp(`^Question ${decision}:`, 'm').test(s.body.join('\n')));
+        if (records.length !== 1) continue;
+        const record = records[0]!, recordId = record.title.split(':')[0]!, body = unquoted(record.body.join('\n'));
+        const finding=fieldValues(body,'Finding'), baseline=fieldValues(body,'Plan baseline'), state=fieldValues(body,'State');
+        const answer=fieldValues(body,'Actual answer'), scope=fieldValues(body,'Accepted scope'), question=fieldValues(body,'Question '+decision);
+        if ([finding,baseline,state,answer,scope,question].some(values=>values.length!==1) || state[0]!=='approved' ||
+            !/\bCRITICAL\b/.test(finding[0]!) || !/(?<![\w./-])PLAN\.md:[1-9]\d*/.test(finding[0]!) ||
+            /(?:[\w.-]+\/)+PLAN\.md|(?<![\w./-])(?!PLAN\.md\b)[\w.-]+\.md\b/.test(finding[0]!) ||
+            !/\blegacyAuthFlow\(\)/.test(baseline[0]!) || !/\bunchanged code\b/.test(baseline[0]!) ||
+            framedParity(body) || withdrawn(body,recordId)) continue;
+        const options=question[0]!.split(/\s+\/\s+/).map(label=>label.replace(/\s*\(recommended\)$/, ''));
+        const selected=options.filter(label=>answer[0]!.startsWith(label+' '));
+        const acceptedCases=/\bscenarios \(([^)]+)\) asserting outcome \+ cache key written\b/.exec(scope[0]!);
+        if (options.length<2 || options.length>4 || new Set(options).size!==options.length || selected.length!==1 ||
+            !/\bparity suite\b/i.test(selected[0]!) || !answer[0]!.endsWith(`(D${decision.slice(1)})`) ||
+            !answer[0]!.includes(`legacy AND ${target}`) || !acceptedCases || !sameInventory(expected,outcomes(acceptedCases[1]!)) ||
+            !scope[0]!.startsWith(basename+' with ') || !scope[0]!.includes(`parameterized over legacyAuthFlow() and ${target}.`) ||
+            !/\bBoth must pass before any tenant enters [A-Z][A-Z0-9_]*\./.test(scope[0]!) ||
+            !/\bIntentional differences: none in this PR\./.test(scope[0]!) || framedParity(scope[0]!)) continue;
+        const comparisons=marked.lexer(body).filter(token=>token.type==='table');
+        const oracles=comparisons.flatMap(table=>{
+          if(table.type!=='table')return [];
+          const labels=table.header.filter(header=>/^[A-D]$/.test(header.text)).map(header=>header.text);
+          if(labels.length!==options.length||new Set(labels).size!==labels.length)return [];
+          const shape=table.rows.filter(row=>row[0]?.text===recordId+' test shape'), assertions=table.rows.filter(row=>row[0]?.text==='Acceptance assertions');
+          if(shape.length!==1||assertions.length!==1)return [];
+          return table.header.flatMap((header,index)=>/^[A-D]$/.test(header.text)&&
+            shape[0]![index]!.text.includes(basename)&&shape[0]![index]!.text.includes(`run against legacyAuthFlow() now and ${target} (both must pass)`)&&
+            /^identical outcome \+ identical cache key written for each scenario, both impls$/.test(assertions[0]![index]!.text)?[header.text]:[]);
+        });
+        if(oracles.length!==1 || oracles[0]!==String.fromCharCode(65+options.indexOf(selected[0]!)))continue;
+        for (const tasks of current.filter(s=>s.title==='Implementation Tasks')) {
+          const taskBody=tasks.body.join('\n'), blocks=taskBody.split(/\n(?=-\s)/);
+          const ids=blocks.flatMap(block=>/^-(?: \[[ xX]\])? (T[1-9]\d*)\b/.exec(block)?.[1]??[]);
+          if(new Set(ids).size!==ids.length)continue;
+          for(const task of blocks){
+            const id=/^-(?: \[[ xX]\])? (T[1-9]\d*)\b/.exec(task)?.[1];
+            const first=task.split('\n')[0]!,files=fieldValues(task,'  - Files'),verify=fieldValues(task,'  - Verify'),source=fieldValues(task,'  - Surfaced by');
+            const count=verify.length===1?/^(one|two|three|four|five|six|seven|eight|nine|ten|[1-9]\d*) scenarios green for both implementations before any tenant is allowlisted$/i.exec(verify[0]!):null;
+            const n=count?(/^\d+$/.test(count[1]!)?Number(count[1]):'zero one two three four five six seven eight nine ten'.split(' ').indexOf(count[1]!.toLowerCase())):0;
+            if(!id || files.length!==1 || source.length!==1 || !source[0]!.includes(`CRITICAL (${decision})`) || n!==expected.length ||
+                !first.endsWith(`Write ${basename} parameterized over legacyAuthFlow() and ${target}`) ||
+                !(files[0]===file || new RegExp(`^${file.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')} \\(or [A-Za-z][\\w/-]*/\\)$`).test(files[0]!)) ||
+                framedParity(task) || withdrawn(task,id))continue;
+            const ordered=current.some(s=>/\b(?:parallelization|worktree|execution|schedule)\b/i.test(s.title) &&
+              s.body.some(line=>{
+                const lane=new RegExp(`^- Lane [A-Z]: ${id} parity suite written against legacyAuthFlow\\(\\) \\(independent: [^)]*\\), then parameterized over ${target} after Lane [A-Z]'s (T[1-9]\\d*) merges$`).exec(line);
+                return lane&&lane[1]!==id&&blocks.some(dependency=>new RegExp(`^- (?:\\[[ xX]\\] )?${lane[1]}\\b`).test(dependency)&&
+                  new RegExp(`\\b${target}\\b`).test(dependency.split('\n')[0]!)&&fieldValues(dependency,'  - Files').some(value=>value.includes(`/${target}.ts`)));
+              }) &&
+              !framedParity(s.body.join('\n')) && !withdrawn(s.body.join('\n'),id));
+            if(!ordered || suiteWithdrawn)continue;
+            const status='(?:withdrawn|rejected|cancelled|canceled|superseded|deferred|optional|not current|no longer current|not required|no longer required)';
+            const owner=`(?:${id}|${decision}|${recordId}|(?:the|this) legacy (?:parity|regression|characterization) (?:suite|tests?|requirement)|(?:the|this) baseline verification)`;
+            const inactive=current.some(s=>{
+              const raw=s.body.join('\n').replace(new RegExp(`(${owner} (?:is|are|was|were|has been|have been) )["“'‘](${status})["”'’]`,'gi'),'$1$2');
+              return unquoted(raw).split(/\n|[.!?;]\s+/).some(line=>!sourceFrame(line)&&
+                (new RegExp(`\\b${owner} (?:is|are|was|were|has been|have been) ${status}\\b`,'i').test(line) ||
+                 new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|will be) (?:changed|modified|rewritten) before ${id}\\b`,'i').test(line)));
+            });
+            if(!inactive)return true;
+          }
+        }
+      }
+    }
+  }
   return hasRetainedLegacyCorpus(current, snapshotSource)
     || !suiteWithdrawn && hasScheduledLegacyRegression(current, snapshotSource);
 }

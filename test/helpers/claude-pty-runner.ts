@@ -32,6 +32,7 @@ import { createPlanCountFixture, ownedNativeReviewStateRoot, type NativeReviewSt
 import { createPlanCountSnapshotWriter } from './plan-count-artifacts';
 import { nativeSeededPlanSelection } from './plan-scope-selection';
 import { readPlanFloorTarget, type PlanFloorTargetDelivery } from './plan-floor-target';
+import { bindAutoDecisionState } from './auto-decision-state';
 import { findNativeAutoDecision, type NativeAutoDecision } from './native-auto-decide';
 import { readPlanCountTranscript, unresolvedPlanQuestionCalls, type NativePlanQuestionCall, type PlanCountTranscript, type NativePublicToolEvent } from './plan-count-transcript';
 import { createPendingExitRecorder, withPendingExit, isCurrentPlanApprovalScreen } from './plan-count-pending-exit';
@@ -4368,6 +4369,8 @@ export async function runPlanSkillObservation(opts: {
    * a rendered prose choice list. Deterministic terminal outcomes retain
    * precedence; this does not grant prose credit to a judge verdict. */
   requireProseEvidence?: boolean;
+  /** Optional witness in this attempt's explicit child state. */
+  autoDecisionState?: { stateRoot: string; projectSlug: string };
   /** Extra CLI args appended after --permission-mode. Used by the v1.22+
    *  AskUserQuestion-blocked regression tests to pass
    *  `['--disallowedTools', 'AskUserQuestion']` (the flag set Conductor
@@ -4412,6 +4415,9 @@ export async function runPlanSkillObservation(opts: {
   const scopeSessionId = opts.initialPlanContent && opts.inPlanMode !== false &&
     !opts.extraArgs?.some(arg => /^(?:--session-id|--resume|--continue|-r|-c)(?:=|$)/.test(arg))
     ? randomUUID() : undefined;
+  const readAutoDecisionState = opts.autoDecisionState
+    ? bindAutoDecisionState(opts.autoDecisionState, opts.env, opts.skillName) : undefined;
+  const saveSnapshot = createPlanCountSnapshotWriter();
   const session = await launchClaudePty({
     permissionMode: opts.inPlanMode === false ? null : 'plan',
     cwd: opts.cwd,
@@ -4428,13 +4434,21 @@ export async function runPlanSkillObservation(opts: {
   });
 
   try {
-    const preflightTimeout = (summary: string): PlanSkillObservation => ({
-      outcome: 'timeout', summary, evidence: session.visibleText().slice(-2000),
-      elapsedMs: Date.now() - startedAt,
-      proseAUQEverObserved: false, waitingEverObserved: false,
-      scopeGateQuestionObserved: false, scopeGateAutoSelectObserved: false,
-      ...(opts.trackTokens?.length ? { tokensObserved: Object.fromEntries(opts.trackTokens.map(t => [t, false])) } : {}),
-    });
+    const preflightTimeout = async (summary: string): Promise<PlanSkillObservation> => {
+      let viewport: string | undefined, viewportError: string | undefined;
+      try { viewport = (await session.currentScreenFrame())?.text; } catch (error) { viewportError = String(error); }
+      const artifacts = saveSnapshot({ skillName: opts.skillName, cwd: path.resolve(opts.cwd ?? process.cwd()),
+        claudeConfigDir: session.hermeticConfigDir, raw: session.rawOutput(), visible: session.visibleText(), viewport,
+        observation: { state: 'plan_skill_preflight_timeout', summary, scopeSessionId, startedAt, deadlineAt, viewportError } });
+      return {
+        outcome: 'timeout', summary, evidence: session.visibleText().slice(-2000),
+        elapsedMs: Date.now() - startedAt,
+        proseAUQEverObserved: false, waitingEverObserved: false,
+        scopeGateQuestionObserved: false, scopeGateAutoSelectObserved: false,
+        ...(opts.trackTokens?.length ? { tokensObserved: Object.fromEntries(opts.trackTokens.map(t => [t, false])) } : {}),
+        ...artifacts,
+      };
+    };
     // Entry deadline → boot → owned paste/receipt/ack → slash → observation.
     // Setup consumes the existing case budget; cleanup has its separate grace.
     await Bun.sleep(Math.min(8000, Math.max(0, deadlineAt - Date.now())));
@@ -4447,10 +4461,10 @@ export async function runPlanSkillObservation(opts: {
         });
       } catch (error) {
         if (!(error instanceof PlanSeedTimeout)) throw error;
-        return preflightTimeout(`Plan seed submission failed: ${error.message}`);
+        return await preflightTimeout(`Plan seed submission failed: ${error.message}`);
       }
     }
-    if (Date.now() >= deadlineAt) return preflightTimeout('Boot or seed preflight exhausted the existing case budget');
+    if (Date.now() >= deadlineAt) return await preflightTimeout('Boot or seed preflight exhausted the existing case budget');
     const commandStartedAt = Date.now();
     const since = session.mark();
     session.send(`/${opts.skillName}\r`);
@@ -4471,7 +4485,6 @@ export async function runPlanSkillObservation(opts: {
     let scopeTools: NativePublicToolEvent[] = [];
     let nativeAutoDecide: NativeAutoDecision | null = null;
     let nativePolledAt: number | null = null;
-    const saveSnapshot = createPlanCountSnapshotWriter();
     const tokensObserved: Record<string, boolean> = {};
     for (const t of opts.trackTokens ?? []) tokensObserved[t] = false;
     // Single source for the high-water flags at EVERY return site. Hand-
@@ -4583,6 +4596,7 @@ export async function runPlanSkillObservation(opts: {
       if (scopeSessionId) {
         nativeAutoDecide = findNativeAutoDecision(scopeTranscript, scopeTools, {
           skillName: opts.skillName, sessionId: scopeSessionId, commandStartedAt, now: Date.now(), proseQuestionObserved: proseAUQEverObserved,
+          stateEvidence: readAutoDecisionState?.(),
         });
         if (nativeAutoDecide) return {
           outcome: 'auto_decided',
@@ -4772,6 +4786,8 @@ export async function runPlanSkillCounting(opts: {
     context: Readonly<{ cwd: string; deadlineAt: number }>) => number | null;
   /** Observe owned pending AUQs for callers that need identity before answering. */
   observeSetupQuestions?: boolean;
+  /** Bind the declared Design board actor and renderer to one fixture-owned daemon state. */
+  bindDesignBoardState?: boolean;
   /** Require native completion plus this caller-owned final report before accepting a soft terminal. */
   expectedPlanPath?: string;
   /** Additional versioned files available in the isolated fixture before the skill starts. */
@@ -4802,6 +4818,8 @@ export async function runPlanSkillCounting(opts: {
   /** Override the spawned model. Defaults via launchClaudePty's chain. */
   model?: string;
 }): Promise<PlanSkillCountObservation> {
+  if (opts.bindDesignBoardState && (opts.skillName !== 'plan-design-review' || !opts.pickAUQ))
+    throw Error('Design board state binding requires the Design caller and its declared picker');
   if (opts.approveEngTestPlanEdits && (opts.skillName !== 'plan-eng-review' || !opts.expectedPlanPath))
     throw Error('Eng test-plan approval requires the Eng caller and its explicit report');
   const budgetStarted = performance.now();
@@ -4841,7 +4859,10 @@ export async function runPlanSkillCounting(opts: {
       // Stop new output at the work cutoff so screen drain cannot consume
       // the reserve while the CLI continues streaming.
       timeoutMs: Math.max(1, remainingWork()),
-      env: { ...opts.env, ...fixture.env },
+      env: { ...opts.env, ...fixture.env,
+        // The renderer may cd into its artifact directory before starting the daemon.
+        ...(opts.bindDesignBoardState ? { DESIGN_DAEMON_STATE_FILE: path.join(fixture.cwd, '.gstack', 'design.json') } : {}),
+      },
       model: opts.model,
       seedSkills: true,
       observeScreen: true,

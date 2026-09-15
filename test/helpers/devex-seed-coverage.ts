@@ -126,6 +126,11 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
     .replace(/, including ([A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+){0,6}),/gi, (aside, subject: string) =>
       /\b(?:if|unless|assuming|provided|except|excluding|only|no|not|never|without|was|were|is|are|has|had|may|might|could|would|historical|earlier|quoted|source|example|hypothetical|fixed|resolved|cancelled|canceled|withdrawn|rejected|superseded)\b/i.test(subject) ? aside : '')
     : title;
+  // Journey cards may state the defect in the title and place its named
+  // current contract in Evidence/ELI10. Keep this route owned even on rejection.
+  const evidenceJourney = Boolean(stage && /^Evidence:/m.test(q.question)) &&
+    (/\bquickstart\b/i.test(assertionTitle) ? 'missing-quickstart'
+      : /\bCI (?:check|gate)\b/i.test(assertionTitle) ? 'local-ci-gate' : undefined);
   const opaqueAuthentication = /^(?:The )?authentication error says nothing[.?]?$/i.test(assertionTitle);
   const vanishingUpgrade = /^v\d+ Client\.evaluate\(\) vanishes in v\d+ with no warning, alias, or guide[.?]?$/i.test(assertionTitle);
   // A defect heading can assert a prerequisite or compare named signatures
@@ -135,7 +140,7 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
     /^run_eval\(\s*dataset\s*,\s*evaluator\s*\) (?:vs\.?|versus|and) run_batch\(\s*evaluator\s*,\s*dataset\s*\): (?:reversed|opposite|swapped) (?:positional|argument) order[.?]?$/i.test(assertionTitle);
   const nominalSubject = /^(?:Mandatory|Required|Optional)\b[^?!\n]*\bCI (?:check|gate)\b/i.test(assertionTitle) ||
     /^run_eval\([^)]+\) (?:vs\.?|versus|and) run_batch\([^)]+\):/i.test(assertionTitle);
-  if (nominalSubject && !nominalDefect) return [];
+  if (nominalSubject && !nominalDefect && !evidenceJourney) return [];
   const signatureDeclaration = /^run_eval\(\s*dataset\s*,\s*evaluator\s*\) and run_batch\(\s*evaluator\s*,\s*dataset\s*\) (?:take|takes)\b/i.test(assertionTitle);
   if (/^run_eval\([^)]+\) and run_batch\([^)]+\) (?:take|takes)\b/i.test(assertionTitle) && !signatureDeclaration) return [];
   // The named tuples can establish the reversal without an adjective. Keep
@@ -160,7 +165,7 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
     (/^(?:[A-Za-z0-9_.]+\s+){1,12}(?:points?|references?|blocks?|requires?|takes?|raises?|removes?|drops?)\b/i.test(finiteTitle) || nominalDefect || opaqueAuthentication || vanishingUpgrade) &&
     !/^`[^`]*`$/.test(rawTitle) &&
     !/\b(?:if|unless|suppose|might|may|could|would|previously|earlier|historical|hypothetical|example|quoted|source|never|no longer|does not|do not|did not)\b/i.test(polarityTitle);
-  if (newAssertion && !declaration) return [];
+  if (newAssertion && !declaration && !evidenceJourney) return [];
   if ((!declaration && (!title.endsWith('?') || questionMarks !== 1)) ||
       /^`[^`]*`[.?]?$/.test(rawTitle) ||
       /^(?:>|"|“|Example\b|Quoted\b|Source(?: excerpt| example)?[,:.]|Historical\b|Earlier review\b|If (?:approved|accepted)\b|Assuming\b|Provided\b|Suppose\b)|\bhypothetical\b/i.test(title) ||
@@ -170,7 +175,7 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
       /\b(?:report|summary|recap)\b[^?]*\b(?:mention|include|reference|list)\b|\b(?:mention|include|reference|list)\b[^?]*\b(?:report|summary|recap)\b/i.test(title)) return [];
   let offered = q.options;
   let signatureOptions = q.options;
-  if (declaration || upgradeTransition || explainedSubject) {
+  if (declaration || upgradeTransition || explainedSubject || evidenceJourney) {
     const currentProse = (text: string, offeredAction = false) => {
       // In a tuple decision, a semicolon also separates current assertions.
       // Quotations and fenced examples are still removed as whole statements.
@@ -284,6 +289,61 @@ function decisionGaps(q: NativePlanQuestion): DevexSeededGap[] {
     });
     // Preserve inline tuple evidence for the stricter signature parser.
     offered = signatureOptions.map(option => ({ ...option, label: action(option.label), description: action(option.description ?? '') }));
+    if (evidenceJourney) {
+      const projects = lines.filter(line => /^Project\/branch\/task:/.test(line));
+      const evidenceFields = lines.filter(line => /^Evidence:/.test(line));
+      const evidence = evidenceFields[0]?.replace(/^Evidence:\s*/, '') ?? '';
+      const explain = (lines[explanation] ?? '').replace(/^ELI10:\s*/, '');
+      const fieldFrame = /^(?:[>"“'‘`]|Source\b|Quoted\b|Historical\b|Earlier\b|Example\b|Hypothetical\b|If\b|Assuming\b|Provided\b)/i;
+      if (projects.length !== 1 || !/^Project\/branch\/task:\s*EvalKit\b/i.test(projects[0]!) ||
+          /\b(?:other|another|foreign|different) (?:project|SDK|codebase|repository)\b/i.test(projects[0]!) ||
+          evidenceFields.length !== 1 || explanation < 2 || lines.indexOf(evidenceFields[0]!) > explanation ||
+          lines.filter(line => /^ELI10:/.test(line)).length !== 1 || fieldFrame.test(evidence) || fieldFrame.test(explain)) return [];
+      // Quotes inside a named Evidence field are source data. The title and
+      // unquoted explanation must independently assert the current problem.
+      const citations = `${assertionTitle}\n${evidence}`.match(/(?:[\w.-]+\/)*[\w.-]+\.(?:md|txt)\b/g) ?? [];
+      const allowed = evidenceJourney === 'missing-quickstart'
+        ? ['README.md', 'docs/package-contents.txt', 'package-contents.txt']
+        : ['README.md', 'docs/current-contracts.md', 'docs/benchmarks.md'];
+      const required = evidenceJourney === 'missing-quickstart' ? 'docs/package-contents.txt' : 'docs/current-contracts.md';
+      const ownedStatus = currentProse(q.question.replace(/((?:this|the) (?:evidence|statement) (?:is|was|has been) )["“'‘`](withdrawn|historical|hypothetical|cancelled|canceled|superseded|(?:not|no longer) current)["”'’`]/gi, '$1$2'));
+      if (/(?:this|the) (?:finding|evidence|explanation|issue) (?:applies|exists|is current) (?:only )?(?:if|when|once) (?:approved|accepted)\b/i.test(current) ||
+          !citations.includes(required) || !/\bREADME(?:\.md)?\b/.test(evidence) || citations.some(source => !allowed.includes(source)) ||
+          /\b(?:other|another|foreign|different) (?:project|SDK|codebase|repository)\b/i.test(currentProse(evidence)) ||
+          /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:this|that|the) (?:evidence|statement) (?:is|was|has been) (?:withdrawn|rejected|historical|hypothetical|cancelled|canceled|superseded|(?:not|no longer) current)\b/i.test(ownedStatus) ||
+          /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:the )?(?:quickstart|referenced) file (?:is (?:now |already )?(?:shipped|included|present)|now exists)\b/i.test(current) ||
+          /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:the )?(?:local )?demo (?:no longer|does not|never) (?:waits?|blocks?|requires?)\b/i.test(current)) return [];
+      if (/\b(?:may|might|could|would|historical|hypothetical|previously|earlier)\b/i.test(assertionTitle) ||
+          /\b(?:quickstart|README) (?:does not|never|no longer) (?:point|reference)\b/i.test(assertionTitle) ||
+          /\b(?:that |referenced |quickstart )?file\b[^.\n]{0,30}\b(?:not|never) absent\b/i.test(evidence) ||
+          /\bfirst local evaluation\b[^.\n]{0,70}\b(?:does not require|never blocks|no longer)\b/i.test(evidence) ||
+          /\b(?:no longer|does not|never) waits? for (?:that|the) CI check\b/i.test(evidence)) return [];
+      const asserted = currentProse(explain);
+      const remedy = offered.some(option => {
+        const text = `${option.label}\n${option.description ?? ''}`;
+        if (/\b(?:other|another|foreign|different) (?:project|SDK|codebase|repository|demo|quickstart|file)\b/i.test(text) ||
+            /\b(?:if|once|when|unless) (?:approved|accepted)|\b(?:after|pending) approval\b/i.test(text) ||
+            /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:do not|don't|never) (?:change|point|replace|remove|ship|skip|bypass|exempt)\b/i.test(text) ||
+            /(?:^|[.!?\n]\s*)(?:Correction:\s*)?(?:the )?(?:quickstart still points at the missing file|(?:local )?demo remains gated by CI|README does not point to evalkit\.demo|demo does not (?:skip|bypass) the CI (?:check|gate))\b/i.test(text)) return false;
+        if (evidenceJourney === 'missing-quickstart') return (
+          /\b(?:point|replace|make|rewrite)\b[^\n]*\b(?:README|quickstart)\b[^\n]*\b(?:python -m )?evalkit\.demo\b/i.test(text) &&
+          /\b(?:remove|drop)\b[^\n]*\bfirst_eval\.py\b[^\n]*\breference\b/i.test(text)) ||
+          /\b(?:ship|add|include)\b[^\n]*\bexamples\/first_eval\.py\b/i.test(text) && /\bwheel\b/i.test(text) && /\bexamples archive\b/i.test(text);
+        return /\b(?:demo|local(?: mock)?(?: evaluation| eval)?)\b[^.\n]*\b(?:skips?|bypasses?) (?:the )?CI (?:check|gate)\b/i.test(text) ||
+          /\b(?:exempt|remove|skip|bypass)\b[^.\n]*\b(?:demo|local (?:evaluation|eval|run))\b[^.\n]*\bCI (?:check|gate)\b/i.test(text);
+      });
+      const available = assertionTitle.replace(/\bisn['’]t\b/gi, 'is not').replace(/\bdoesn['’]t\b/gi, 'does not');
+      if (evidenceJourney === 'missing-quickstart') return (
+        /\b(?:points?|references?)\b[^.?!]*\b(?:file|example)\b[^.?!]*\b(?:not (?:shipped|included|packaged)|does not (?:ship|exist)|absent|missing)\b/i.test(available) &&
+        /\bexamples\/first_eval\.py\b/.test(evidence) && /\bpython -m evalkit\.demo\b/.test(evidence) &&
+        /\b(?:that |referenced |quickstart )?file\b[^.\n]{0,30}\babsent\b[^.\n]*\b(?:package|wheel)\b[^.\n]*\bexamples archive\b/i.test(evidence) &&
+        /\b(?:command|quickstart)\b[^.?!]*\bfails?\b[^.?!]*\b(?:file-not-found|missing file)\b/i.test(asserted) && remedy
+      ) ? ['missing-quickstart'] : [];
+      return /\b(?:mandatory|required|blocks?|waits?)\b/i.test(assertionTitle) &&
+        /\bfirst local evaluation\b/i.test(evidence) && /\b(?:requires?|blocks?|waits?)\b/i.test(evidence) && /\b(?:five minutes|5.minutes|300s)\b/i.test(evidence) &&
+        /\bdemo\b/i.test(asserted) && /\bmock transport\b/i.test(asserted) && /\bwait\b/i.test(asserted) && remedy
+        ? ['local-ci-gate'] : [];
+    }
   }
   const options = offered.map(o => `${o.label} ${o.description ?? ''}`);
   // New explained questions require one complete current correction. Labels

@@ -584,8 +584,9 @@ sections. Read a section in full before doing its step; do not work from memory.
 |------|-------------------|
 | starting Phase 1 (CEO review — always runs, after the Phase 0.5 preflight) | `sections/ceo-phase.md` |
 | starting Phase 2 (design review — ONLY if UI scope was detected in Phase 0; skip the read entirely otherwise) | `sections/design-phase.md` |
-| starting Phase 3 (eng review — always runs, after the Pre-Phase 3 checklist) | `sections/eng-phase.md` |
+| starting Phase 3 (eng review — always runs, after all earlier applicable phases have closed) | `sections/eng-phase.md` |
 | starting Phase 2.5 (DX review — ONLY if developer-facing scope was detected in Phase 0; skip the read entirely otherwise) | `sections/dx-phase.md` |
+| closing a review phase, after its reviews finish and before announcing completion or loading the next phase (read afresh at each exit) | `sections/phase-close.md` |
 | presenting the Final Approval Gate (Phase 4) — the aggregator computes $AGGREGATED_TASKS that the gate message substitutes | `sections/tasks-aggregator.md` |
 
 ---
@@ -623,18 +624,9 @@ Examples: run the outside reviewer when enabled (always yes), run evals (always 
 **User Challenge** — Claude and Codex both recommend changing the
 user's stated direction: merge, split, add or remove features/skills/workflows.
 NEVER auto-decide these. At the final approval gate, give:
-- **What the user said:** (their original direction)
-- **What both models recommend:** (the change)
-- **Why:** (the models' reasoning)
-- **What context we might be missing:** (explicit acknowledgment of blind spots)
-- **If we're wrong, the cost is:** (what happens if the user's original direction
-  was right and we changed it)
-
-Default to the user's original direction. The models must justify changing it.
-
-For agreed security vulnerabilities or feasibility blockers, explicitly warn:
-"Both models believe this is a security/feasibility risk, not just a preference."
-The user still decides.
+the original direction, proposed change, reasoning, blind spots and cost of being
+wrong, using the Phase 4 template. Flag agreed security/feasibility risks explicitly.
+The user's original direction stands unless they approve the change.
 
 ---
 
@@ -650,24 +642,21 @@ Keep ONE phase active, completing these gates in order:
 3. Consume the native terminal result and apply the phase's failure policy, then
    consume enabled outside results. Complete the phase's remaining primary review
    sections after these results.
-4. Save the full review artifacts and accepted amendments. Run `amend-input` with
-   the phase's amendment checkpoint; its compact result names the current immutable
-   `reviewInputPath` and complete `readRanges`. Read that file through every range,
-   then compare the actual text with every accepted decision and required output.
-   Counts, hashes and keyword probes cannot substitute for this implementation
-   check and readback. Within one phase invocation, keep its amendment checkpoint separate from review exports.
-5. After that verification, emit the phase completion summary as its own visible
-   parent assistant text block, starting with `Phase <number> complete.` This is
-   the next action before any next-phase Read, create or dispatch. Then continue
-   to the next phase's tool calls in the same turn; for Eng, send this text before
-   final synthesis/approval. The response may contain the summary followed by tools.
+4. At the phase's exit, load its `phase-close` section afresh. That section owns
+   the complete current readback, semantic reconciliation and visible parent
+   completion message. Follow its steps now; an earlier Read is not this close.
+5. Only after the message has been sent may the driver load/create/dispatch the
+   next phase. Then continue to the next phase's tool calls in the same turn;
+   after Eng, proceed to final synthesis/approval. Use the declared skip rule for
+   an inapplicable phase; do not load its review or close steps.
 Phase notifications, including skips, are progress updates: do not end the turn
 or wait for a "continue" reply at these boundaries.
 A missing gate means the current phase remains open, even if a reviewer finished.
 Read requests/self-reports and INPUT hashes do not prove uptake or review quality.
 Never draft future-phase reviews or outputs. Headings/promises are not completion.
 After compaction, reload current phase instructions/skill/sections, then
-reconcile saved artifacts and sent conversation messages separately:
+reconcile saved artifacts and sent conversation messages separately. If closing,
+reload `phase-close` and resume its first incomplete step:
 - If a verified phase lacks its announcement, send that message before advancing.
 - If its reviewer is pending, wait for that same reviewer.
 - If native dispatch has not happened, finish any incomplete preliminary work before recovering a voice input.
@@ -697,22 +686,16 @@ direction or reinterpret settled decisions, or a premise is clearly wrong. Queue
 for the Final Approval Gate, never mid-run stops. Interrupt the user once, there;
 they have context models lack. Use Decision Classification above.
 
-**You MUST still:**
-- READ the actual code, diffs, and files each section references
-- PRODUCE every output the section requires (diagrams, tables, registries, artifacts)
-- IDENTIFY every issue the section is designed to catch
-- DECIDE each issue using the 6 principles (instead of asking the user)
-- LOG each decision; record ALL accepted obligations below and run `amend-input` before continuing
-- WRITE all required artifacts to disk
+Read referenced code, diffs and files; identify and decide every issue. Produce
+all required diagrams, tables, registries and artifacts on disk or in the plan.
+LOG each decision; record ALL accepted obligations below and run `amend-input` before continuing.
+Missing deliverables mean an incomplete review.
 
-**You MUST NOT:**
-- Compress a review section into a one-liner table row
-- Skip a section because "it doesn't apply" without stating what you checked and why
-- Produce a summary instead of the required output (e.g., "architecture looks good"
-  instead of the ASCII dependency graph the section requires)
-
-"No issues found" requires analysis: state what you examined and why nothing was
-flagged (1-2 sentences minimum). Never skip a non-skip-listed section.
+Never replace required outputs with summaries or compress sections into one-line
+rows; fewer than 3 sentences likely means compression. "No issues found" requires
+1-2 sentences stating what you examined and why nothing was flagged. State the
+evidence and reason for any inapplicable section; only Phase 0's skip list permits
+skipping. Never abort or redirect to interactive review: the user chose /autoplan.
 
 **Accepted obligations:** One unfenced block per phase in `Review record`:
 ```markdown
@@ -884,13 +867,6 @@ Disabled/unavailable: retain each applicable native pass. Recheck before each ou
 
 ---
 
-**Pre-Phase 2 checklist (verify before starting):**
-- [ ] CEO completion summary written to plan file
-- [ ] CEO dual voices ran (Codex + Claude subagent, or noted unavailable)
-- [ ] CEO consensus table produced
-- [ ] Premises assessed (clearly-wrong ones queued as Final Gate items — no mid-run stop)
-- [ ] Parent phase-completion text sent after file verification
-
 ## Phase 2: Design Review (conditional — skip if no UI scope)
 
 **Skip condition:** If UI scope was NOT detected in Phase 0, skip this phase
@@ -913,19 +889,9 @@ Record the skip in ACTIVE_PLAN; it is not a completed review.
 
 ---
 
-**Pre-Phase 3 checklist (verify before starting):**
-- [ ] All Phase 1 items above confirmed
-- [ ] Design completion summary written (or "skipped, no UI scope")
-- [ ] Design dual voices ran (if Phase 2 ran)
-- [ ] Design consensus table produced (if Phase 2 ran)
-- [ ] DX completion summary written (or "skipped, no developer-facing scope")
-- [ ] DX dual voices ran (if Phase 2.5 ran)
-- [ ] DX consensus table produced (if Phase 2.5 ran)
-- [ ] Parent phase-completion text sent after file verification
-
 ## Phase 3: Eng Review + Dual Voices (always runs, always LAST — the required gate reviews the final amended plan)
 
-> **STOP.** Before starting Phase 3 (eng review — always runs, after the Pre-Phase 3 checklist), Read `~/.claude/skills/gstack/autoplan/sections/eng-phase.md` and execute it
+> **STOP.** Before starting Phase 3 (eng review — always runs, after all earlier applicable phases have closed), Read `~/.claude/skills/gstack/autoplan/sections/eng-phase.md` and execute it
 > in full. Do not work from memory — that section is the source of truth for this step.
 
 ---
@@ -946,57 +912,19 @@ Immediately after each auto-decision, append one row to the plan file using Edit
 
 ## Pre-Gate Verification
 
-Before the Final Approval Gate, check the plan file and conversation for every
-required output below.
+Check the plan and conversation for every applicable deliverable:
 
-**Phase 1 (CEO) outputs:**
-- [ ] Premise challenge with specific premises named (not just "premises accepted")
-- [ ] All applicable review sections have findings OR explicit "examined X, nothing flagged"
-- [ ] Error & Rescue Registry table produced (or noted N/A with reason)
-- [ ] Failure Modes Registry table produced (or noted N/A with reason)
-- [ ] "NOT in scope" section written
-- [ ] "What already exists" section written
-- [ ] Dream state delta written
-- [ ] Completion Summary produced
-- [ ] Dual voices ran (Codex + Claude subagent, or noted unavailable)
-- [ ] CEO consensus table produced
+| Phase | Required outputs |
+|---|---|
+| CEO | Named premise challenges; findings or explicit examination/no-findings for every applicable section; Error & Rescue and Failure Modes registries (or N/A with reason); NOT in scope; What already exists; dream state delta; Completion Summary; consensus table. |
+| Design, if UI | Scores for all 7 dimensions; identified and decided issues; litmus scorecard. |
+| DX, if developer-facing | Scores for all 8 dimensions; developer journey map; empathy narrative; TTHW assessment and target; DX Implementation Checklist; consensus table. |
+| Eng, always last | Scope challenge grounded in code; architecture ASCII diagram; codepath-to-test diagram; test plan on disk at ~/.gstack/projects/$SLUG/; NOT in scope; What already exists; failure modes registry with critical gaps; Completion Summary; consensus table. |
 
-**Phase 2 (Design) outputs — only if UI scope detected:**
-- [ ] All 7 dimensions evaluated with scores
-- [ ] Issues identified and auto-decided
-- [ ] Dual voices ran (or noted unavailable/skipped with phase)
-- [ ] Design litmus scorecard produced
-
-**Phase 2.5 (DX) outputs — only if DX scope detected:**
-- [ ] All 8 DX dimensions evaluated with scores
-- [ ] Developer journey map produced
-- [ ] Developer empathy narrative written
-- [ ] TTHW assessment with target
-- [ ] DX Implementation Checklist produced
-- [ ] Dual voices ran (or noted unavailable/skipped with phase)
-- [ ] DX consensus table produced
-
-**Phase 3 (Eng — final phase) outputs:**
-- [ ] Scope challenge with actual code analysis (not just "scope is fine")
-- [ ] Architecture ASCII diagram produced
-- [ ] Test diagram mapping codepaths to test coverage
-- [ ] Test plan artifact written to disk at ~/.gstack/projects/$SLUG/
-- [ ] "NOT in scope" section written
-- [ ] "What already exists" section written
-- [ ] Failure modes registry with critical gap assessment
-- [ ] Completion Summary produced
-- [ ] Dual voices ran (Codex + Claude subagent, or noted unavailable)
-- [ ] Eng consensus table produced
-
-**Cross-phase:**
-- [ ] Cross-phase themes section written
-
-**Audit trail:**
-- [ ] Decision Audit Trail has at least one row per auto-decision (not empty)
-
-If ANY checkbox above is missing, go back and produce the missing output. Max 2
-attempts — if still missing after retrying twice, proceed to the gate with a warning
-noting which items are incomplete. Do not loop indefinitely.
+For each phase, verify native and outside voice results or explicit
+unavailable/skipped status. Verify cross-phase themes and at least one Decision
+Audit Trail row per auto-decision. Produce missing outputs before the gate; after
+at most 2 repair attempts, warn at the gate with each still-incomplete item.
 
 ---
 
@@ -1078,7 +1006,7 @@ AskUserQuestion options:
 **Option handling:**
 - A: mark APPROVED, write review logs, suggest /ship
 - B: ask which overrides, apply, then follow D's affected-phase rerun rule (including Eng last) before re-presenting the gate. Counts toward the same 3-cycle cap as D.
-- B2: walk the User Challenges one at a time (accept or reject each). Rejected → note the user's direction stands, no plan change. Accepted → amend the plan for that challenge (a clearly-wrong premise accepted here reshapes scope the way a mid-run stop used to), then re-run Eng on the amended plan (same rule as D — the gate always reviews the final plan), then re-present the gate. Counts toward the same 3-cycle cap as D.
+- B2: accept/reject User Challenges one at a time. Rejection preserves the user's direction; acceptance amends the plan. Re-run Eng after amendments, then re-present the gate. Uses D's same 3-cycle cap.
 - C: answer freeform, re-present gate
 - D: make changes, re-run affected phases (scope→1, design→2, dx→2.5, test plan→3, arch→3; a re-run of any earlier phase re-runs Eng after it — the gate always reviews the final plan). Max 3 cycles.
 - E: start over
@@ -1097,7 +1025,7 @@ existing invocation and its checkpoint. Eng still runs after all prior amendment
 
 ## Completion: Write Review Logs
 
-On approval, write 3 separate review log entries so /ship's dashboard recognizes them.
+On approval, write each completed review's log entry for /ship's dashboard.
 Replace TIMESTAMP, STATUS, and N with actual values from each review phase.
 STATUS is "clean" if no unresolved issues, "issues_open" otherwise.
 
@@ -1120,24 +1048,18 @@ If Phase 2.5 ran (DX scope):
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
-Dual voice logs (always write all four phase records, sharing this run’s TIMESTAMP; never carry a prior run’s completion forward):
+Dual voice logs: write this record separately for each PHASE (`ceo`, `design`,
+`dx`, `eng`), substituting that phase's status and counts. Generate one unique
+AUTOPLAN_RUN_ID at run start; share it and TIMESTAMP across all four records.
 ```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"autoplan-voices","run_id":"AUTOPLAN_RUN_ID","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","host":"claude","outside_provider":"codex","outside_status":"OUTSIDE_STATUS","phase":"ceo","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
-
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"autoplan-voices","run_id":"AUTOPLAN_RUN_ID","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","host":"claude","outside_provider":"codex","outside_status":"OUTSIDE_STATUS","phase":"eng","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"autoplan-voices","run_id":"AUTOPLAN_RUN_ID","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","host":"claude","outside_provider":"codex","outside_status":"OUTSIDE_STATUS","phase":"PHASE","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
 
-Always log the design phase. If it had no UI scope, use status and outside_status "skipped", source "none", and zero consensus counts:
-```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"autoplan-voices","run_id":"AUTOPLAN_RUN_ID","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","host":"claude","outside_provider":"codex","outside_status":"OUTSIDE_STATUS","phase":"design","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
-```
-
-Always log the DX phase. If it had no developer-facing scope, use status and outside_status "skipped", source "none", and zero consensus counts:
-```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"autoplan-voices","run_id":"AUTOPLAN_RUN_ID","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","host":"claude","outside_provider":"codex","outside_status":"OUTSIDE_STATUS","phase":"dx","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
-```
-
-Generate one unique AUTOPLAN_RUN_ID at run start and substitute the same value in all four records. SOURCE = "codex" only for completed external output; use separate "in-host" records for native results. OUTSIDE_STATUS is phase-specific: completed, unavailable, disabled, or skipped. Never reuse one phase's success for another phase. Keep unknown model identity unknown; preserve multi-model usage when reported.
+Always log skipped Design/DX phases: status and outside_status "skipped", source
+"none", zero consensus counts. SOURCE = "codex" only for completed
+external output; use separate "in-host" records for native results. OUTSIDE_STATUS:
+completed, unavailable, disabled, or skipped. Never carry success across phases
+or runs. Keep unknown model identity unknown and preserve reported multi-model usage.
 
 Retain the historical review-log skill ID; add `"host":"claude","outside_provider":"codex","outside_status":"completed|unavailable|disabled|skipped","phase":"autoplan"`. Record differing attempt outcomes separately. `source:"codex"` requires completed CLI output; native uses `source:"in-host"` (historical `source:"claude"`: native Claude). Availability/native fallback is not outside completion. Preserve all reported modelUsage; unknown model identity stays unknown.
 
@@ -1145,14 +1067,3 @@ Present a phase-by-phase coverage table (CEO, design, DX, eng) with host, outsid
 Replace N values with actual consensus counts from the tables.
 
 Suggest next step: `/ship` when ready to create the PR.
-
----
-
-## Important Rules
-
-- **Never abort.** The user chose /autoplan. Respect that choice. Surface all taste decisions, never redirect to interactive review.
-- **One gate.** The only non-auto-decided AskUserQuestions surface at the Final Approval Gate: User Challenges — including clearly-wrong premises queued from Phase 1. Everything else resolves to the recommended option (the 6 principles break ties), so the pipeline never stops mid-run.
-- **Log every decision.** No silent auto-decisions. Every choice gets a row in the audit trail.
-- **Full depth means full depth.** Do not compress or skip loaded sections except the Phase 0 skip list. Read required code, produce every output, and identify and decide every issue. One-sentence summaries are skips; fewer than 3 sentences likely means compression.
-- **Artifacts are deliverables.** Test plan artifact, failure modes registry, error/rescue table, ASCII diagrams — these must exist on disk or in the plan file when the review completes. If they don't exist, the review is incomplete.
-- **Sequential order.** CEO → Design (if UI scope) → DX (if developer-facing scope) → Eng, always last. Each phase builds on the last; the required gate reviews the final amended plan.

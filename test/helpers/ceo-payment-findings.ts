@@ -50,6 +50,23 @@ function current(value: string): boolean {
   return !/^[\x60\"'“‘]/.test(value.trim()) && !/\bno (?:current )?(?:defect|gap|issue|problem)\b/i.test(value) && !/^(?:example|quoted|historical|source|hypothetical|previously|formerly|if|unless)\b/i.test(value.trim()) &&
     !/\b(?:this|that|the) (?:finding|issue|decision|defect|assessment|remedy) (?:is|was|has been) (?:already |now )?(?:resolved|fixed|withdrawn|retracted|not current|superseded|historical|quoted)\b/i.test(value);
 }
+function currentDocumentContext(tokens: ReturnType<typeof marked.lexer>, index: number): boolean {
+  const headings: Array<{ depth: number; text: string }> = [];
+  for (const token of tokens.slice(0, index)) if (token.type === 'heading') {
+    while (headings.length && headings.at(-1)!.depth >= token.depth) headings.pop();
+    headings.push({ depth: token.depth, text: plain(token.text) });
+  }
+  return headings.every(heading => current(heading.text));
+}
+function currentDocumentSources(tokens: ReturnType<typeof marked.lexer>): string[] {
+  return tokens.flatMap((token, index) => {
+    if (token.type !== 'paragraph' || !currentDocumentContext(tokens, index) || /^[`"'“‘]/.test(token.raw.trim())) return [];
+    const text = plain(token.raw);
+    if (!current(text) && !/^Source(?: plan)?:/i.test(text)) return [];
+    return [...text.matchAll(/(?:^|[.!?]\s+|\n)(?:Source(?: plan)?|Plan under review|(?:Reviewed|Review target|Input) plan):\s*([\w./-]+)/gi)]
+      .map(match => match[1]!.replace(/[.;,]+$/, ''));
+  });
+}
 // A whole quoted ledger value can cite the supplied plan's current prose.
 // Authenticate its complete paragraph/sentence, not a substring or a quote
 // elsewhere. This does not turn quoted evidence into a seeded defect.
@@ -116,6 +133,35 @@ function ownedSetupPacket(fp: AskUserQuestionFingerprint): boolean {
   }));
 }
 
+/** A question can attribute one offered baseline explicitly "as planned".
+ * Its title, active ledger proposal and matching native option must agree;
+ * ELI10 must still assert the current plan's behavior, not quoted history. */
+function attributedBaselineDefect(q: NativePlanQuestionCall['questions'][number], proposed: string,
+  explanation: string, spec: typeof obligations[number]): boolean {
+  const unquoted = (text: string) => prose(text.replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’|`[^`]*`/g, ''));
+  const title = unquoted(q.question.split('\n')[0]!).replace(/^D\d+\s*[—–-]\s*/i, '');
+  if (!current(title) || !title.endsWith('?')) return false;
+  const alternatives = [...title.matchAll(/(?:^|[:,;]\s*|\bor\s+)([^,;:?]+?)\s+as (?:planned|written)(?=\s*[,;?]|$)/gi)];
+  if (alternatives.length !== 1) return false;
+  const baseline = alternatives[0]![1]!.trim();
+  const normalize = (value: string) => plain(value).toLowerCase().replace(/\s+/g, ' ').trim();
+  const words = (value: string) => normalize(value).match(/[a-z0-9_]+/g) ?? [];
+  const expected = words(baseline), actual = words(proposed);
+  if (!current(baseline) || !spec.subject.test(baseline) || !spec.defect.test(baseline) ||
+      expected.length < 2 || !actual.some((_, i) => expected.every((word, offset) => actual[i + offset] === word))) return false;
+  const offered = q.options.filter(o => {
+    const body=unquoted(`${o.label}\n${o.description ?? ''}`);
+    return current(body) && !/\b(?:this|that|the) (?:option|alternative|baseline) (?:is|was|has been) (?:already |now )?(?:withdrawn|retracted|rejected|superseded|not current|historical)\b/i.test(body) &&
+      normalize(option(o.label).replace(/^(?:keep|retain|preserve)\s+/i, '')
+        .replace(/\s*\(as (?:planned|written)\)\s*$/i, '')) === normalize(baseline);
+  });
+  if (offered.length !== 1) return false;
+  const clauses = unquoted(explanation).split(/(?<=[.!?])\s+|\n/);
+  return clauses.some(clause => current(clause) && spec.subject.test(clause) &&
+    /\b(?:the|this) (?:current )?plan\s+\S/i.test(clause) && !spec.remedy.test(clause) &&
+    !/\b(?:previously|formerly|historical|example|hypothetical|if|unless|not|never|no longer|doesn't|does not)\b/i.test(clause));
+}
+
 /** Source requires Current/Proposed/Status/evidence and a cited row ID. It
  * does not require heading depth, column order, a Dn(ledger ID) title, or
  * native option wording. Pending is valid: the actual ACK precedes the next Edit. */
@@ -128,6 +174,7 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
   if (!question.trim() || !current(question) || !current(explanation)) return null;
   const options = q.options.map(o => prose(`${o.label}\n${o.description ?? ''}`)).filter(current);
   const tokens = marked.lexer(savedPlan);
+  const declaredSources = currentDocumentSources(tokens);
   const namedSourcePlan = tokens.some(t => t.type === 'paragraph' &&
     /(?:^|\n)Source plan:\s*PLAN\.md\b/.test(plain(t.raw)));
   const matches: Finding[] = [];
@@ -168,7 +215,9 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
           current(read('proposed')) && spec.subject.test(read('proposed')) && spec.defect.test(defectValue('proposed'));
         if (!spec.subject.test(seedPlan) || !spec.defect.test(seedPlan) || !spec.subject.test(row) ||
           !(spec.defect.test(defectValue('current')) || pendingDefect) ||
-          !spec.subject.test(question) || !spec.defect.test(defectExplanation)) continue;
+          !spec.subject.test(question) || !(spec.defect.test(defectExplanation) ||
+            (pendingDefect && declaredSources.length <= 1 && declaredSources.every(source => source === 'PLAN.md') &&
+              currentDocumentContext(tokens, tokens.indexOf(table)) && attributedBaselineDefect(q, read('proposed'), explanation, spec)))) continue;
         const operative = options.some(o => spec.remedy.test(o) && spec.subject.test(o));
         const proposal = proposals.find(p => current(p.body) && spec.remedy.test(p.body) && spec.subject.test(p.body));
         if (operative && proposal) matches.push({ seed: spec.seed, ledgerId: id, phase: proposal.phase, signature: fp.signature });
@@ -222,24 +271,19 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
   const tokens = marked.lexer(savedPlan);
   // A current document may declare its source once and cite that plan's
   // sections in each row. An unrelated mention elsewhere is not provenance.
-  const currentContext = (index: number) => {
-    const headings: Array<{ depth: number; text: string }> = [];
-    for (const token of tokens.slice(0, index)) if (token.type === 'heading') {
-      while (headings.length && headings.at(-1)!.depth >= token.depth) headings.pop();
-      headings.push({ depth: token.depth, text: plain(token.text) });
-    }
-    return headings.every(heading => current(heading.text));
-  };
-  const sourceRecords = tokens.flatMap((token, index) => {
-    if (token.type !== 'paragraph' || !currentContext(index) || /^[`"'“‘]/.test(token.raw.trim())) return [];
-    const text = plain(token.raw);
-    if (!current(text) && !/^Source(?: plan)?:/i.test(text)) return [];
-    return [...text.matchAll(/(?:^|[.!?]\s+|\n)(?:Source(?: plan)?|Plan under review|(?:Reviewed|Review target|Input) plan):\s*([\w./-]+)/gi)]
-      .map(match => match[1]!.replace(/[.;,]+$/, ''));
-  });
+  const currentContext = (index: number) => currentDocumentContext(tokens, index);
+  const sourceRecords = currentDocumentSources(tokens);
   const namedSource = sourceRecords.length === 1 && sourceRecords[0] === 'PLAN.md';
+  const lineCitation = (evidence: string) => {
+    const cited = /^Plan lines?\s+([1-9]\d*(?:\s*[-–—]\s*[1-9]\d*)?(?:\s*,\s*[1-9]\d*(?:\s*[-–—]\s*[1-9]\d*)?)*)\s*:/i.exec(evidence);
+    return Boolean(cited && cited[1]!.split(',').every(range => {
+      const bounds=range.trim().split(/\s*[-–—]\s*/).map(Number), first=bounds[0]!, last=bounds.at(-1)!;
+      return Number.isSafeInteger(first) && Number.isSafeInteger(last) && first<=last && last<=sourcePlan.split('\n').length;
+    }));
+  };
   const inheritedSource = (evidence: string) => namedSource &&
-    /\bEvidence:\s*plan text\b|\bplan\s+§\s*\S|\bplan\s+sections?\s+\S|^Plan(?: contract)?:\s*\S/i.test(evidence);
+    (/\bEvidence:\s*plan text\b|\bplan\s+§\s*\S|\bplan\s+sections?\s+\S|^Plan(?: contract)?:\s*\S/i.test(evidence) ||
+      lineCitation(evidence));
   // The same option may give both dimensions as a parenthesized tuple,
   // with the value before or after its field. Normalize only complete,
   // operative tuples; the ordinary field inventory still rejects duplicates.

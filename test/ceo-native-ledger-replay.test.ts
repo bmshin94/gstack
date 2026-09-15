@@ -5,6 +5,66 @@ import { ceoPaymentFinding, createCeoPaymentFindingCounter } from './helpers/ceo
 import { nativePlanCallFingerprint, ceoFirstReviewAUQ, ceoStep0Boundary, planCountQuestionPhase } from './helpers/claude-pty-runner';
 
 const clone = <T>(v: T): T => structuredClone(v);
+const cab3 = fixture.attributedCurrentCab3.rows;
+const currentCall = (i: number) => nativePlanCallFingerprint(clone(cab3[i]!.call), 1, true);
+const currentDecision = (i: number, question = currentCall(i), plan = cab3[i]!.savedPlan) =>
+  createCeoPaymentFindingCounter(cab3[i]!.seed, () => plan, ceoFirstReviewAUQ).isReviewAUQ(question);
+function amendCurrent(question: ReturnType<typeof currentCall>, change: (q: NonNullable<typeof question.nativeCall>['questions'][number]) => void) {
+  const q=question.nativeCall!.questions[0]!,answer=question.nativeCall!.answers![q.question]!;change(q);
+  question.nativeCall!.answers={[q.question]:answer};question.options=q.options.map((o,i)=>({index:i+1,label:o.label}));
+}
+test('actual current title attribution and inherited line citations preserve both completed decisions',()=>{
+  for(let i=0;i<2;i++){
+    expect(Date.parse(cab3[i]!.savedAt)).toBeLessThan(Date.parse(cab3[i]!.questionIssuedAt));
+    expect(currentDecision(i)).toBe(true);
+  }
+  expect(ceoPaymentFinding(currentCall(0),cab3[0]!.seed,cab3[0]!.savedPlan)).toMatchObject({seed:'lookup',ledgerId:'R2'});
+  const generic=createCeoPaymentFindingCounter(cab3[1]!.seed,()=>cab3[1]!.savedPlan,ceoFirstReviewAUQ);
+  expect(generic.isReviewAUQ(currentCall(1))).toBe(true);
+  expect(generic.trace).toMatchObject([{kind:'recorded-decision',ledgerId:'R1'}]);
+});
+for(const [name,mutation]of Object.entries({
+  'as-written attribution':(q:any)=>{q.question=q.question.replace('raw SQL fragment as planned','raw SQL fragment as written');q.options[1].label=q.options[1].label.replace('as planned','as written');},
+  'different affirmative explanation wording':(q:any)=>{q.question=q.question.replace('the plan pastes that text straight into a SQL query','the plan puts the untouched ID text directly in the SQL query');},
+}))test(`attributed current baseline supports ${name}`,()=>{const q=currentCall(0);amendCurrent(q,mutation);expect(currentDecision(0,q)).toBe(true);});
+for(const [name,mutation]of Object.entries({
+  'quoted title attribution':(q:any)=>{q.question=q.question.replace('raw SQL fragment as planned','"raw SQL fragment as planned"');},
+  'code-only title attribution':(q:any)=>{q.question=q.question.replace('raw SQL fragment as planned','`raw SQL fragment as planned`');},
+  'historical title':(q:any)=>{q.question=q.question.replace('D3 —','D3 — Historical example:');},
+  'missing affirmative explanation':(q:any)=>{q.question=q.question.replace(/^ELI10:.*$/m,'ELI10: These are some possible API choices.');},
+  'foreign plan explanation':(q:any)=>{q.question=q.question.replace(/^ELI10:.*$/m,'ELI10: Another plan inserts this text into SQL.');},
+  'healthy current explanation':(q:any)=>{q.question=q.question.replace(/^ELI10:.*$/m,'ELI10: The current plan binds each parameter in the SQL query.');},
+  'negated current explanation':(q:any)=>{q.question=q.question.replace(/^ELI10:.*$/m,'ELI10: The plan does not put this ID text in SQL.');},
+  'conditional explanation':(q:any)=>{q.question=q.question.replace(/^ELI10:.*$/m,'ELI10: If approved, the plan puts this ID text in SQL.');},
+  'quoted current explanation':(q:any)=>{q.question=q.question.replace(/^ELI10:.*$/m,'ELI10: "The plan puts this ID text in SQL."');},
+  'withdrawn explanation':(q:any)=>{q.question=q.question.replace('ELI10:','ELI10: This finding is withdrawn.');},
+  'missing matching offered alternative':(q:any)=>{q.options[1].label='B) Keep the old ORM finder';},
+  'withdrawn matching offered baseline':(q:any)=>{q.options[1].description+=' This option is withdrawn.';},
+  'baseline alternative appends an action':(q:any)=>{q.options[1].label='B) Keep raw SQL fragment and delete the audit log (as planned)';},
+  'partial baseline caption':(q:any)=>{q.question=q.question.replace('raw SQL fragment as planned','raw SQL frag as planned');q.options[1].label='B) Keep raw SQL frag (as planned)';},
+  'duplicate attributed baseline':(q:any)=>{q.question=q.question.replace('raw SQL with manual escaping?','raw SQL fragment as planned?');},
+}))test(`attributed baseline rejects ${name}`,()=>{const q=currentCall(0);amendCurrent(q,mutation);expect(()=>currentDecision(0,q)).toThrow(/cannot exclude/);});
+for(const [name,mutation]of Object.entries({
+  'foreign source':(p:string)=>p.replace('Source: `PLAN.md`','Source: `foreign.md`'),
+  'missing source':(p:string)=>p.replace(/^Source:.*$/m,''),
+  'ambiguous source':(p:string)=>p+'\nSource: other.md\n',
+  'duplicate source':(p:string)=>p+'\nSource: PLAN.md\n',
+  'quoted source':(p:string)=>p.replace('Source: `PLAN.md`','> Source: `PLAN.md`'),
+  'code-only source':(p:string)=>p.replace(/^Source:.*$/m,m=>'```text\n'+m+'\n```'),
+  'historical source':(p:string)=>p.replace('Source: `PLAN.md`','Historical source: `PLAN.md`'),
+  'foreign row citation':(p:string)=>p.replace('Plan line 100-103:','Other plan line 100-103:'),
+  'line-only subject with no line reference':(p:string)=>p.replace('Plan line 100-103:','Plan line unknown:'),
+  'reversed line range':(p:string)=>p.replace('Plan line 100-103:','Plan line 103-100:'),
+  'nonexistent source line':(p:string)=>p.replace('Plan line 100-103:','Plan line 9999:'),
+  'withdrawn comparison':(p:string)=>p.replace('### R1 Handler routing','### Historical R1 Handler routing'),
+  'missing same-option comparison':(p:string)=>p.replace(/^\| B\) Separate class, registered in dispatcher.*\n/m,''),
+  'missing same-option risk':(p:string)=>p.replace('| low | One routing path;','| | One routing path;'),
+  'foreign ledger':(p:string)=>p.replaceAll('R1','OTHER'),
+}))test(`line citation inheritance rejects ${name}`,()=>{expect(()=>currentDecision(1,currentCall(1),mutation(cab3[1]!.savedPlan))).toThrow(/cannot exclude/);});
+test('both new paths retain native answer ownership and active source guards',()=>{
+  for(let i=0;i<2;i++)for(const change of [(q:ReturnType<typeof currentCall>)=>{q.nativeCall!.answered=false;},(q:ReturnType<typeof currentCall>)=>{q.signature='foreign';},(q:ReturnType<typeof currentCall>)=>{q.nativeCall!.answers={};}]){const q=currentCall(i);change(q);expect(()=>currentDecision(i,q)).toThrow();}
+  for(const source of ['foreign.md','PLAN.md\n\nSource: PLAN.md'])expect(()=>currentDecision(0,currentCall(0),cab3[0]!.savedPlan.replace('Source plan: `PLAN.md`','Source plan: '+source))).toThrow(/cannot exclude/);
+});
 const five = fixture.groups.find(g => g.name === 'five-retry')!;
 const paired = fixture.groups.find(g => g.name === 'paired-first')!;
 const record = five.calls.at(-1)!;

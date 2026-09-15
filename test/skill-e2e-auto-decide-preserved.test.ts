@@ -65,7 +65,7 @@ been selected.`;
 
 describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () => {
   test('user-opted-in question still auto-decides when AskUserQuestion is --disallowedTools', async () => {
-    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-auto-decide-'));
+    const tmpHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-auto-decide-')));
     let fixture: ReturnType<typeof createPlanCountFixture> | undefined;
     try {
       fixture = createPlanCountFixture(PLAN);
@@ -97,7 +97,8 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
         timeout: 30_000,
       });
       // gstack-slug emits `eval`-able shell exports like `SLUG=garrytan-gstack`.
-      const slug = (slugRes.stdout.match(/SLUG=([^\s;]+)/)?.[1] ?? 'unknown').replace(/['"]/g, '');
+      const slug = slugRes.stdout.match(/SLUG=([^\s;]+)/)?.[1]?.replace(/['"]/g, '');
+      if (slugRes.status !== 0 || !slug) throw new Error('gstack-slug failed to identify the owned project');
 
       // 3. Write the preference: plan-ceo-review-mode → never-ask. The
       //    'plan-tune' source bypasses the inline-user origin gate.
@@ -143,7 +144,12 @@ describeE2E('AUTO_DECIDE opt-in preserved under Conductor flags (periodic)', () 
         inPlanMode: true,
         extraArgs: ['--disallowedTools', 'AskUserQuestion'],
         timeoutMs: CAPTURE_LONG_MS,
-        env: { GSTACK_HOME: tmpHome, GSTACK_STATE_ROOT: tmpHome, CONDUCTOR_WORKSPACE_PATH: fixture.cwd },
+        // A judge calling an idle session 'waiting' is not an observed question.
+        // Missing decision evidence still fails at the unchanged deadline.
+        requireProseEvidence: true,
+        autoDecisionState: { stateRoot: fs.realpathSync(tmpHome), projectSlug: slug },
+        env: { GSTACK_HOME: tmpHome, GSTACK_STATE_ROOT: tmpHome, CONDUCTOR_WORKSPACE_PATH: fixture.cwd,
+          DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' },
       });
 
       // 5. Pass: 'auto_decided' (the strongest signal) or 'plan_ready' with

@@ -448,6 +448,56 @@ test('descriptive Update and delete feature titles remain supported',()=>{
 });
 
 import nativePacing77 from './fixtures/ceo-expansion-pacing-77.json';
+describe('complete per-proposal pacing preserves every candidate without granting scope',()=>{
+  const f=nativePacing77.completePerProposal;
+  function state(){const transcript=structuredClone(f.transcript);return{transcript,pacing:transcript.calls.at(-1)!};}
+  function pane(c:any){const q=c.questions[0];return ['☐ '+q.header,q.question,...q.options.map((o:any,i:number)=>`${i?' ':'❯'} ${i+1}. ${o.label}`),'4. Type something.','5. Chat about this','Enter to select · ↑/↓ to navigate · Esc to cancel'].join('\n');}
+  function choose(e=state(),screen=pane(e.pacing)){return ceoExpansionPacingChoice(screen,e.transcript as any,f.selectionStartedAt);}
+  test('actual parenthesized full inventory binds one question per proposal',()=>{
+    const e=state(),choice=choose(e,f.viewport)!;
+    expect(choice?.index).toBe(1);
+    expect(ceoExpansionPacingReady('Next proposal',e.transcript as any,choice,f.events as any)).toBe(false);
+    expect(hasNativePostAnswerCeoPosture(e.transcript as any,'SCOPE EXPANSION',/expansion|10x|delight|dream/i,f.selectionStartedAt,f.events as any)).toBe(false);
+  });
+  const positive={
+    'different complete inventory prefix':(q:any)=>{q.question=q.question.replace(/\bP(?=\d)/g,'E');},
+    'numeric and word counts':(q:any)=>{q.question=q.question.replace('Seven expansion','7 expansion').replace('7 independent','seven independent');},
+    'colon-delimited independent inventory':(q:any)=>{q.question=q.question.replace('expansions (','expansions: ').replace('inline rename).','inline rename.');},
+    'different card identity':(q:any)=>{q.question=q.question.replace('D4.0','D12.0');},
+    'reordered choices':(q:any)=>{q.options.reverse();},
+    'no quoted task context':(q:any)=>{q.question=q.question.replace(' on "Add saved project views"','');},
+    'candidate terminology':(q:any)=>{q.options[0].label=q.options[0].label.replace('per proposal','per candidate');q.options[0].description=q.options[0].description.replace('Every proposal','Every candidate');},
+  };
+  for(const [name,mutate] of Object.entries(positive))test(name,()=>{const e=state();mutate(e.pacing.questions[0]);expect(choose(e)?.index).toBe(name==='reordered choices'?3:1);});
+  const negative={
+    'missing inventory item':(q:any)=>{q.question=q.question.replace(', P7 quick switcher + inline rename','');},
+    'duplicate item':(q:any)=>{q.question=q.question.replace('P7 quick switcher','P6 quick switcher');},
+    'mixed prefixes':(q:any)=>{q.question=q.question.replace('P7 quick switcher','E7 quick switcher');},
+    'wrong title count':(q:any)=>{q.question=q.question.replace('Seven expansion','Eight expansion');},
+    'wrong described question count':(q:any)=>{q.question=q.question.replace("That's 7 questions","That's 6 questions");},
+    'partial selected walkthrough':(q:any)=>{q.options[0].description=q.options[0].description.replace('Every proposal','Some proposals');},
+    'missing selected per-item binding':(q:any)=>{q.options[0].label=q.options[0].label.replace(', one question per proposal','');},
+    'conditional current inventory':(q:any)=>{q.question=q.question.replace('I have 7','If I have 7');},
+    'historical inventory':(q:any)=>{q.question=q.question.replace('I have 7','Previously I had 7');},
+    'quoted mapping':(q:any)=>{q.options[0].label='A) Full split (recommended)';q.options[0].description='"One question per proposal. Every proposal gets its own Add / Defer / Skip / Hold."';},
+    'code-only mapping':(q:any)=>{q.options[0].description='`'+q.options[0].description+'`';},
+    'negated full split':(q:any)=>{q.options[0].label=q.options[0].label.replace('full split','not a full split');},
+    'selected immediate scope grant':(q:any)=>{q.options[0].description+=' We approve P1 now.';},
+    'universal approval in another option':(q:any)=>{q.options[1].description+=' Regardless of choice, approve P1 now.';},
+    'hidden inventory grant':(q:any)=>{q.question=q.question.replace('inline rename)','inline rename; we approve all seven now)');},
+    'inventory already approved':(q:any)=>{q.question=q.question.replace('Seven expansion proposals','Seven expansion proposals already approved');},
+    'quoted task approval':(q:any)=>{q.question=q.question.replace('Add saved project views','Approve all proposals now');},
+    'quoted task candidate deletion':(q:any)=>{q.question=q.question.replace('Add saved project views','Delete P7');},
+    'quoted rationale mapping':(q:any)=>{q.question=q.question.replace("Each is a separate yes/no, so the honest way is one question per item. That's 7 questions plus a final confirmation.","\"Each is a separate yes/no, so the honest way is one question per item. That's 7 questions plus a final confirmation.\"");},
+    'scope grant after task title':(q:any)=>{q.question=q.question.replace('views".','views"; approve P1 now.');},
+    'disguised omission assurance':(q:any)=>{q.options[0].description=q.options[0].description.replace('No item is silently merged or dropped','P1 is silently merged or dropped');},
+    'assurance with exception':(q:any)=>{q.options[0].description+=' Except P4.';},
+    'narrowing assurance':(q:any)=>{q.options[0].description+=' No item outside the top three is included.';},
+    'batch selected proposals':(q:any)=>{q.options[0].description+=' Batch P1 and P2 together.';},
+    'duplicate full choice':(q:any)=>{q.options[1]=structuredClone(q.options[0]);},
+  };
+  for(const [name,mutate] of Object.entries(negative))test(name,()=>{const e=state();mutate(e.pacing.questions[0]);expect(choose(e)?.index).not.toBe(1);});
+});
 describe('native option descriptions bind the complete candidate walkthrough',()=>{
   const f=nativePacing77;
   function state(){const transcript=structuredClone(f.transcript);return{transcript,pacing:transcript.calls.at(-1)!};}

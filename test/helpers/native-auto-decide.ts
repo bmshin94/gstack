@@ -1,3 +1,4 @@
+import type { AutoDecisionState } from './auto-decision-state';
 import type { NativePublicToolEvent, PlanCountTranscript } from './plan-count-transcript';
 
 export interface NativeAutoDecision {
@@ -10,6 +11,7 @@ export interface NativeAutoDecision {
   summary: string;
   option: string;
   annotation: string;
+  stateRecord?: Record<string, unknown>;
 }
 
 const plain = (text: string) => text.replace(/\*\*([^*]+)\*\*/g, '$1').trim();
@@ -41,12 +43,16 @@ function withdrawn(text: string, option: string): boolean {
       /\b(?:I|we)\s+(?:did not|didn't|have not|haven't|will not|won't|no longer)\s+auto-decide\b/i.test(prose) ||
       /\b(?:I|we)\s+(?:did not|didn't|have not|haven't)\s+make\s+(?:this|that|the)\s+(?:decision|selection|choice)\b/i.test(prose) ||
       /\b(?:this|that|the)\s+(?:auto[- ]decision|annotation|statement|decision|selection|choice)\b[^.!?\n]{0,100}\b(?:withdrawn|retracted|revoked|cancelled|canceled|hypothetical|conditional|example)\b/i.test(prose)) return true;
-  // Preserve the original annotation's broad Review mode withdrawal: a
-  // later 'undecided' or 'not selected' is just as final as another enum.
-  if ([...prose.matchAll(/^Review mode:\s*([^\n.]+)\.?$/gmi)].some(m => plain(m[1]!).toLowerCase() !== option.toLowerCase())) return true;
+  // Read the complete field before separating an explanatory parenthetical;
+  // punctuation inside that explanation does not change the enum. Status or
+  // conditional suffixes still withdraw a previously completed declaration.
   return prose.split('\n').some(line => {
-    const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode:\s*([^\n.,;]+)/i.exec(line.replace(/^\s*[-*+]\s+/, '').trim());
-    return match && plain(match[1]!).toLowerCase() !== option.toLowerCase();
+    const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode:\s*(.*)$/i.exec(line.replace(/^\s*[-*+]\s+/, '').trim());
+    if (!match) return false;
+    const field = plain(match[1]!);
+    if (/\b(?:withdrawn|retracted|revoked|cancelled|canceled|undecided|not selected|not decided|not yet|pending|proposed|if|unless|would|might|will)\b/i.test(field)) return true;
+    const value = field.replace(/[.,;]$/, '').replace(/\s+\([^()]*\)$/, '').split(/[.,;]/, 1)[0]!.trim();
+    return value.toLowerCase() !== option.toLowerCase();
   });
 }
 
@@ -130,12 +136,12 @@ function currentModeStatement(text: string): { option: string; statement: string
   const lines = prose.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const statement = lines[i]!.replace(/^\s*[-*+]\s+/, '').trim();
-    const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode:\s*(HOLD SCOPE|SCOPE EXPANSION|SELECTIVE EXPANSION|SCOPE REDUCTION)(?:[.,;]|$)/i.exec(statement);
+    const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode:\s*(HOLD SCOPE|SCOPE EXPANSION|SELECTIVE EXPANSION|SCOPE REDUCTION)(?:[.,;]|\s+\([^()]*\)[.!;]?$|$)/i.exec(statement);
     if (!match) continue;
     // Source/example introductions and conditional selections cannot supply
     // a current declaration merely by putting a Mode field on the next line.
     if (/\b(?:example|hypothetical|historical|previous|quoted)\b/i.test(lines.slice(0, i + 1).join('\n')) ||
-        /\b(?:if|unless|would|might|will|not selected|not decided|not yet|pending|proposed)\b/i.test(statement)) continue;
+        /\b(?:if|unless|would|might|will|withdrawn|retracted|revoked|cancelled|canceled|undecided|not selected|not decided|not yet|pending|proposed)\b/i.test(statement)) continue;
     return { option: match[1]!.toUpperCase(), statement: lines[i]!.trim() };
   }
   return null;
@@ -145,7 +151,7 @@ function currentModeStatement(text: string): { option: string; statement: string
  * preamble → preference check → decision log → current public mode provides
  * the alternative evidence, without attributing a synthetic Skill event. */
 function structuredModeDecision(transcript: PlanCountTranscript, tools: NativePublicToolEvent[],
-  opts: { skillName: string; sessionId: string; commandStartedAt: number; now: number; proseQuestionObserved?: boolean },
+  opts: { skillName: string; sessionId: string; commandStartedAt: number; now: number; proseQuestionObserved?: boolean; stateEvidence?: AutoDecisionState },
 ): NativeAutoDecision | null {
   const time = (value: string) => Date.parse(value);
   const timely = (value: string) => Number.isFinite(time(value)) && time(value) >= opts.commandStartedAt && time(value) <= opts.now;
@@ -181,6 +187,30 @@ function structuredModeDecision(transcript: PlanCountTranscript, tools: NativePu
   });
   if (starts.length !== 1) return null;
   const start = starts[0]!, questionId = `${opts.skillName}-mode`;
+  // Opt-in fixture evidence bypasses no failed shell ACK: the owned file is
+  // the completed write. The preamble, record and current public declaration
+  // must all agree in this native session, after invocation and before now.
+  if (opts.stateEvidence?.questionId === questionId && opts.stateEvidence.preference === 'never-ask') {
+    const rows = opts.stateEvidence.records.filter(row => row.question_id === questionId);
+    if (rows.length === 1) {
+      const row = rows[0]!;
+      const loggedAt = typeof row.ts === 'string' ? time(row.ts) : NaN;
+      if (row.skill === opts.skillName && row.session_id === start.session && row.source === 'agent' &&
+          row.auto_decided === true && modeValue(row.user_choice) && modeValue(row.user_choice) === modeValue(row.recommended) &&
+          typeof row.question_summary === 'string' && row.question_summary.trim() &&
+          loggedAt >= time(start.result.timestamp) && loggedAt <= opts.now) {
+        for (const message of current) {
+          const declared = currentModeStatement(message.text);
+          if (time(message.timestamp) < loggedAt || !declared || declared.option !== modeValue(row.user_choice)) continue;
+          const after = current.filter(m => time(m.timestamp) >= time(message.timestamp)).map(m => m.text).join('\n\n');
+          if (withdrawn(after, declared.option)) continue;
+          return { sessionId: opts.sessionId, timestamp: message.timestamp, summary: row.question_summary,
+            option: declared.option, annotation: message.text, preambleToolUseId: start.use.toolUseId, stateRecord: row };
+        }
+      }
+    }
+    return null;
+  }
   const checks = bash.flatMap(use => {
     let command = (use.input!.command as string).trim();
     const result = successful(use); if (time(use.timestamp) < time(start.result.timestamp)) return [];
@@ -235,7 +265,7 @@ function structuredModeDecision(transcript: PlanCountTranscript, tools: NativePu
 export function findNativeAutoDecision(
   transcript: PlanCountTranscript,
   tools: NativePublicToolEvent[],
-  opts: { skillName: string; sessionId: string; commandStartedAt: number; now: number; proseQuestionObserved?: boolean },
+  opts: { skillName: string; sessionId: string; commandStartedAt: number; now: number; proseQuestionObserved?: boolean; stateEvidence?: AutoDecisionState },
 ): NativeAutoDecision | null {
   if (transcript.status !== 'ready' || !opts.sessionId || !opts.skillName || opts.proseQuestionObserved ||
       !Number.isFinite(opts.commandStartedAt) || !Number.isFinite(opts.now) || opts.now < opts.commandStartedAt) return null;

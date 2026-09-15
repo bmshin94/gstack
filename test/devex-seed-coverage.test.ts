@@ -3,6 +3,7 @@ import { DEVEX_SEEDED_GAPS, devexSeedCoverage } from './helpers/devex-seed-cover
 import type { PlanCountTranscript, NativePlanQuestionCall } from './helpers/plan-count-transcript';
 import fixture from './fixtures/devex-seed-coverage-ad-v3.json';
 import declarativeFixture from './fixtures/dx-declarative-choices-am.json';
+import journeyEvidence from './fixtures/devex-journey-evidence-cab3.json';
 import { E2E_TOUCHFILES, matchGlob } from './helpers/touchfiles';
 
 function transcript(attempt = 0): PlanCountTranscript {
@@ -660,5 +661,151 @@ describe('DX source facts in a current explained question', () => {
       expect(devexSeedCoverage(variant).decisions['missing-quickstart']).toEqual([]);
     }
     expect(devexSeedCoverage(transcript()).decisions['missing-quickstart']).toHaveLength(1);
+  });
+});
+
+
+// Captured current decisions joined to the existing three other seed controls.
+// Full original native-attempt replay is preserved separately; this is free evidence.
+function journeyEvidenceTranscript(): PlanCountTranscript {
+  const t = transcript();
+  t.calls.splice(0, 2, ...structuredClone(journeyEvidence.calls) as NativePlanQuestionCall[]);
+  for (const call of t.calls) call.sessionId = t.calls[0]!.sessionId;
+  return t;
+}
+const journeyGaps = ['missing-quickstart', 'local-ci-gate'] as const;
+function changeJourney(t: PlanCountTranscript, index: number, mutate: (q: NativePlanQuestionCall['questions'][number]) => void) {
+  const call = t.calls[index]!, q = call.questions[0]!;
+  const answer = call.answers![q.question]!;
+  mutate(q); call.answers = {[q.question]: q.options.some(o => o.label === answer) ? answer : q.options[0]!.label};
+}
+
+describe('current source-backed journey decisions (cab3)', () => {
+  test('complete captured defects and offered remedies bind each distinct native decision', () => {
+    const t = journeyEvidenceTranscript();
+    for (let i = 0; i < 2; i++) for (const option of t.calls[i]!.questions[0]!.options) {
+      const call = t.calls[i]!, q = call.questions[0]!;
+      call.answers = {[q.question]: option.label};
+      expect(devexSeedCoverage(t).complete).toBe(true);
+      expect(devexSeedCoverage(t).decisions[journeyGaps[i]!]).toEqual([`${call.sessionId}:${call.toolUseId}`]);
+    }
+  });
+  test('availability grammar, citation notation and inline code do not alter current ownership', () => {
+    for (const phrase of ["isn't shipped", 'isn’t shipped', 'is not shipped', "doesn't ship", 'does not ship', 'is absent from the package']) {
+      const t = journeyEvidenceTranscript();
+      changeJourney(t, 0, q => {q.question = q.question.replace("isn't shipped", phrase);});
+      expect(devexSeedCoverage(t).complete, phrase).toBe(true);
+    }
+    for (const edit of [
+      (s: string) => s.replaceAll('`', ''),
+      (s: string) => s.replaceAll(' lines ', ':').replaceAll(' line ', ':'),
+      (s: string) => s.replace('DISCOVER/INSTALL', 'INSTALL / HELLO WORLD'),
+      (s: string) => s.replace('the mandatory 5-minute CI check', 'the required remote CI gate'),
+    ]) {
+      const t = journeyEvidenceTranscript();
+      for (let i=0;i<2;i++) changeJourney(t,i,q => {q.question=edit(q.question);});
+      expect(devexSeedCoverage(t).complete).toBe(true);
+    }
+  });
+  test('source fields must own the current defect before its explanation', () => {
+    for (let i=0;i<2;i++) for (const mutate of [
+      (s: string) => s.replace(/^Project\/branch\/task:.*$/m, 'Project/branch/task: ForeignSDK in another repository.'),
+      (s: string) => s.replace('Evidence: ', 'Evidence: Historical example: '),
+      (s: string) => s.replace('Evidence: ', 'Evidence: > '),
+      (s: string) => s.replace(/^(Evidence: )(.*)$/m, '$1"$2"'),
+      (s: string) => s.replace(/^(Evidence:.*)$/m, '```\n$1\n```'),
+      (s: string) => s.replace('ELI10: ', 'ELI10: Source excerpt: '),
+      (s: string) => s.replace(/^(ELI10: )(.*)$/m, '$1"$2"'),
+      (s: string) => s.replace(/^(Evidence:.*)\n(ELI10:.*)$/m, '$2\n$1'),
+      (s: string) => s.replace(/^(Evidence:.*)$/m, '$1\nEvidence: Another unrelated field.'),
+      (s: string) => s + '\nProject/branch/task: another SDK.',
+      (s: string) => s.replace(/README(?:\.md)?/, 'foreign/README.md'),
+      (s: string) => s.replace('docs/package-contents.txt', 'foreign/package-contents.txt').replace('docs/current-contracts.md', 'foreign/current-contracts.md'),
+    ]) {
+      const t=journeyEvidenceTranscript();changeJourney(t,i,q=>{const old=q.question;q.question=mutate(old);expect(q.question).not.toBe(old);});
+      expect(devexSeedCoverage(t).missing, mutate.toString()).toContain(journeyGaps[i]!);
+    }
+  });
+  test('current status and contradiction defeats quoted source facts and offered repair words', () => {
+    for (let i=0;i<2;i++) for (const tail of [
+      'This finding is withdrawn.', 'This evidence is "withdrawn".', "This evidence is 'historical'.",
+      'This explanation is no longer current.', 'This finding applies only if approved.',
+      'This issue is already resolved.', `D${i+4} is cancelled.`,
+      i===0 ? 'Correction: the quickstart file is now shipped.' : 'Correction: the demo no longer waits for the CI check.',
+    ]) {
+      const t=journeyEvidenceTranscript();changeJourney(t,i,q=>{q.question+='\n'+tail;});
+      expect(devexSeedCoverage(t).missing,tail).toContain(journeyGaps[i]!);
+    }
+    for (let i=0;i<2;i++) for (const quoted of ['> This finding is withdrawn.', 'Old note: "This evidence is withdrawn."', '```\nThis evidence is historical.\n```']) {
+      const t=journeyEvidenceTranscript();changeJourney(t,i,q=>{q.question+='\n'+quoted;});
+      expect(devexSeedCoverage(t).complete,quoted).toBe(true);
+    }
+  });
+  test('healthy, hypothetical, future and foreign task claims cannot become current findings', () => {
+    for (let i=0;i<2;i++) for (const changeTitle of [
+      (s:string)=>'Historical example: '+s,
+      (s:string)=>'If approved, '+s,
+      (s:string)=>'TODO: '+s+' in a later release?',
+      (s:string)=>JSON.stringify(s),
+      (s:string)=>s.replace("isn't shipped", 'is shipped').replace('the mandatory 5-minute CI check', 'an optional check after deployment'),
+    ]) {
+      const t=journeyEvidenceTranscript();changeJourney(t,i,q=>{const lines=q.question.split('\n');lines[0]=changeTitle(lines[0]!);q.question=lines.join('\n');});
+      expect(devexSeedCoverage(t).missing).toContain(journeyGaps[i]!);
+    }
+  });
+  test('one offered current option must contain its own scoped remedy', () => {
+    for (let i=0;i<2;i++) for (const mutate of [
+      (s:string)=>'"'+s+'"',
+      (s:string)=>'Historical example: '+s,
+      (s:string)=>'If approved, '+s,
+      (s:string)=>s+' This option is withdrawn.',
+      (s:string)=>s+' This action applies to another SDK.',
+      (s:string)=>s+(i===0?' Do not change the README or ship the missing file.':' Do not skip or bypass the CI check for the demo.'),
+      (s:string)=>s+(i===0?' Correction: the quickstart still points at the missing file.':' Correction: the local demo remains gated by CI.'),
+    ]) {
+      const t=journeyEvidenceTranscript();changeJourney(t,i,q=>{q.options=q.options.map(o=>({...o,label:mutate(o.label),description:mutate(o.description??'')}));});
+      expect(devexSeedCoverage(t).missing).toContain(journeyGaps[i]!);
+    }
+    for (let i=0;i<2;i++) {
+      const t=journeyEvidenceTranscript();changeJourney(t,i,q=>{q.options=[{label:'Continue review',description:'Move on.'},{label:'Discuss',description:'Talk through this topic.'}];});
+      expect(devexSeedCoverage(t).missing).toContain(journeyGaps[i]!);
+    }
+  });
+  test('reference negation, healthy source contracts and split remedies cannot borrow remaining atoms', () => {
+    const edits = [
+      [0, (s:string)=>s.replace('quickstart points at', 'quickstart does not point at')],
+      [0, (s:string)=>s.replace('quickstart points at', 'quickstart may point at')],
+      [0, (s:string)=>s.replace('is absent from both the published package', 'is present in the published package')],
+      [0, (s:string)=>s.replace('is absent from both the published package', 'is not absent from the published package')],
+      [1, (s:string)=>s.replace('requires a successful remote CI check and blocks', 'does not require a remote CI check and never blocks')],
+      [1, (s:string)=>s.replace('still waits for that CI check', 'no longer waits for that CI check')],
+    ] as const;
+    for (const [i,edit] of edits) {
+      const t=journeyEvidenceTranscript();changeJourney(t,i,q=>{const old=q.question;q.question=edit(old);expect(q.question).not.toBe(old);});
+      expect(devexSeedCoverage(t).missing,edit.toString()).toContain(journeyGaps[i]!);
+    }
+    for (let i=0;i<2;i++) for (const suffix of [
+      'This option applies to another demo.',
+      i===0?'The README does not point to evalkit.demo.':'The demo does not skip the CI check.',
+    ]) {
+      const t=journeyEvidenceTranscript();changeJourney(t,i,q=>{q.options=[{...q.options[0]!,description:q.options[0]!.description+' '+suffix},{label:'Defer',description:'Leave this gap unchanged.'}];});
+      expect(devexSeedCoverage(t).missing,suffix).toContain(journeyGaps[i]!);
+    }
+    const split=journeyEvidenceTranscript();changeJourney(split,0,q=>{q.options=[
+      {label:'Point README at evalkit.demo',description:'Discuss removing the old reference later.'},
+      {label:'Remove first_eval.py reference',description:'Discuss the destination later.'},
+    ];});expect(devexSeedCoverage(split).missing).toContain('missing-quickstart');
+  });
+  test('native answered identity and one-distinct-call rules remain mandatory', () => {
+    for (let i=0;i<2;i++) for (const mutate of [
+      (c:NativePlanQuestionCall)=>{c.answered=false;},
+      (c:NativePlanQuestionCall)=>{c.failed=true;},
+      (c:NativePlanQuestionCall)=>{c.answeredAt='invalid';},
+      (c:NativePlanQuestionCall)=>{c.unansweredQuestionIndices=[0];},
+      (c:NativePlanQuestionCall)=>{c.answers={'Another question':'Another answer'};},
+      (c:NativePlanQuestionCall)=>{c.sessionId='foreign';},
+      (c:NativePlanQuestionCall)=>{c.questions[0]!.multiSelect=true;},
+      (c:NativePlanQuestionCall)=>{c.questions.push(structuredClone(c.questions[0]!));},
+    ]) {const t=journeyEvidenceTranscript();mutate(t.calls[i]!);expect(devexSeedCoverage(t).complete).toBe(false);}
   });
 });

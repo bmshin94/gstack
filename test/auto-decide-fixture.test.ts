@@ -76,6 +76,10 @@ mock.module(path.join(root, 'test/helpers/e2e-gate.ts'), () => ({ describeE2ETie
 mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
   runPlanSkillObservation: async opts => {
     expect(typeof opts.cwd).toBe('string');
+    expect(opts.requireProseEvidence).toBe(true);
+    expect(opts.env.DISABLE_AUTOUPDATER).toBe('1');
+    expect(opts.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC).toBe('1');
+    expect(opts.autoDecisionState.stateRoot).toBe(fs.realpathSync(opts.env.GSTACK_STATE_ROOT));
     expect(opts.cwd).not.toBe(root);
     const run = (bin, args) => execFileSync(path.join(root, 'bin', bin), args, {
       cwd: opts.cwd, env: { ...process.env, ...opts.env }, encoding: 'utf8', timeout: 10000,
@@ -88,6 +92,7 @@ mock.module(path.join(root, 'test/helpers/claude-pty-runner.ts'), () => ({
     };
     const prior = fs.existsSync(${JSON.stringify(factsFile)}) ? JSON.parse(fs.readFileSync(${JSON.stringify(factsFile)}, 'utf8')) : [];
     fs.writeFileSync(${JSON.stringify(factsFile)}, JSON.stringify([...prior, facts]));
+    expect(opts.autoDecisionState.projectSlug).toBe(slug);
     expect(slug).toBe(path.basename(opts.cwd));
     expect(slug).not.toBe('project');
     expect(fs.existsSync(path.join(process.env.HOME, '.gstack', 'projects', slug, 'tasks-ceo-review-20260909-081225.jsonl'))).toBe(false);

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { capturePlanCountQuestion, isRejectedSlashCommand, matchesNativePlanQuestion, planCountQuestionInput, stripAnsi } from './helpers/claude-pty-runner';
+import { capturePlanCountQuestion, isRejectedSlashCommand, matchesNativePlanQuestion, planCountQuestionInput, runPlanSkillCounting, stripAnsi } from './helpers/claude-pty-runner';
 import type { NativePlanQuestionCall } from './helpers/plan-count-transcript';
 import boxedFrames from './fixtures/design-ui-boxed-question.json';
 
@@ -155,7 +155,7 @@ describe('complete boxed native questions', () => {
   });
 });
 
-test.skipIf(process.platform === 'win32').each(['answer', 'throw'] as const)(
+test.skipIf(process.platform === 'win32').each(['answer', 'throw', 'unbound'] as const)(
   'real counting loop binds a pending board before publication and preserves %s evidence', async mode => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'design-ui-count-recovery-'));
     const fake = path.join(root, 'fake-claude'), worker = path.join(root, 'worker.ts');
@@ -165,9 +165,16 @@ test.skipIf(process.platform === 'win32').each(['answer', 'throw'] as const)(
     fs.writeFileSync(fake, `#!${process.execPath}\n` + String.raw`
 import * as fs from 'node:fs'; import * as path from 'node:path';
 const cwd=process.cwd(), session='owned-board-session', id='owned-board-call';
+const {resolveStateFilePath}=await import(process.env.PROBE_STATE_MODULE);
+const designCwd=path.join(process.env.GSTACK_STATE_ROOT,'projects','owned','designs','board');
+fs.mkdirSync(designCwd,{recursive:true});process.chdir(designCwd);
+const resolvedState=resolveStateFilePath();process.chdir(cwd);
+
 const journal=path.join(process.env.CLAUDE_CONFIG_DIR,'projects','owned',session+'.jsonl');
 fs.mkdirSync(path.dirname(journal),{recursive:true});
 const record=value=>fs.appendFileSync(process.env.PROBE_EVENTS,JSON.stringify(value)+'\n');
+record({kind:'state-binding',cwd,designCwd,resolvedState,envState:process.env.DESIGN_DAEMON_STATE_FILE});
+
 const persist=(role,content,extra={})=>fs.appendFileSync(journal,JSON.stringify({cwd,sessionId:session,
   isSidechain:false,timestamp:new Date().toISOString(),message:{role,content},...extra})+'\n');
 const question={header:'Comparison board',question:'Review http://127.0.0.1:48123/boards/owned-fixture/ and continue?',
@@ -214,7 +221,8 @@ let picks=0, originalError;
 try {
   const observation=await runPlanSkillCounting({skillName:'plan-design-review',slashCommand:'/plan-design-review',
     followUpPrompt:'# Owned board ordering control',observeSetupQuestions:true,
-    env:${JSON.stringify({ PROBE_EVENTS: events, PROBE_HELP_FRAME: TOOL_HELP_FRAME })},
+    bindDesignBoardState:${mode !== 'unbound'},
+    env:${JSON.stringify({ PROBE_EVENTS: events, PROBE_HELP_FRAME: TOOL_HELP_FRAME, PROBE_STATE_MODULE: pathToFileURL(path.resolve(import.meta.dir, '../design/src/daemon-state.ts')).href, DESIGN_DAEMON_STATE_FILE: path.join(root, 'foreign', 'design.json') })},
     isLastStep0AUQ:()=>false,isReviewAUQ:fp=>fp.nativeCall?.answered===true,
     reviewCountCeiling:1,timeoutMs:28000,pickAUQ:(_routing,active)=>{
       if(!active.nativeCall||active.nativeCall.answered||active.nativeCall.toolUseId!=='owned-board-call')throw Error('board missing owned pending identity');
@@ -236,14 +244,20 @@ try {
       expect(result.picks, JSON.stringify(result)).toBe(1);
       const rows = fs.readFileSync(events, 'utf8').trim().split('\n').map(line => JSON.parse(line));
       expect(rows.filter(row => row.kind === 'input').map(row => row.input)).toEqual(
-        mode === 'answer' ? ['/plan-design-review\r', '1'] : ['/plan-design-review\r']);
+        mode !== 'throw' ? ['/plan-design-review\r', '1'] : ['/plan-design-review\r']);
+      const binding = rows.find(row => row.kind === 'state-binding');
+      expect(binding.designCwd.startsWith(binding.cwd + path.sep)).toBe(false);
+      const expectedState = mode === 'unbound' ? path.join(root, 'foreign', 'design.json')
+        : path.join(binding.cwd, '.gstack', 'design.json');
+      expect(binding.envState).toBe(expectedState);
+      expect(binding.resolvedState).toBe(expectedState);
       const run = path.join(evalDir, 'pty-count', `board-ordering-${mode}`);
       const snapshots = fs.readdirSync(run);
       expect(snapshots).toHaveLength(1);
       const artifact = path.join(run, snapshots[0]!);
       const saved = JSON.parse(fs.readFileSync(path.join(artifact, 'observation.json'), 'utf8'));
       expect(fs.existsSync(saved.capture.cwd)).toBe(false);
-      if (mode === 'answer') {
+      if (mode !== 'throw') {
         expect(result.observation.outcome).toBe('ceiling_reached');
         expect(result.observation.reviewCount).toBe(1);
         expect(result.observation.transcript.calls).toHaveLength(1);
@@ -266,3 +280,19 @@ try {
     }
   }, 35_000,
 );
+
+
+test('Design state binding rejects unrelated callers or a missing actor before fixture creation', async () => {
+  for (const control of [
+    {skillName: 'plan-eng-review', pickAUQ: () => 1},
+    {skillName: 'plan-design-review'},
+  ]) {
+    // The independently invalid budget also prevents any process launch if
+    // the ownership guard regresses; this free control cannot invoke a model.
+    await expect(runPlanSkillCounting({
+      ...control, slashCommand: '/plan-design-review', followUpPrompt: 'Ownership control',
+      bindDesignBoardState: true, timeoutMs: 1000,
+      isLastStep0AUQ: () => false, reviewCountCeiling: 1,
+    })).rejects.toThrow('Design board state binding requires the Design caller and its declared picker');
+  }
+});

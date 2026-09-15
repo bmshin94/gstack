@@ -106,3 +106,70 @@ for (const [open, close] of [['"', '"'], ['“', '”'], ["'", "'"], ['‘', '�
       question(x, s => s + '\n' + template.replace('COMMAND', open + 'add Redis caching' + close)));
   }
 }
+
+
+import currentMenu from './fixtures/eng-completed-navigation-cab3.json';
+function currentMenuCheck(name:string,expected:boolean,mutate?:(x:any)=>void) {
+ test(`completed current menu: ${name}`,()=>{
+  const x=structuredClone(currentMenu);mutate?.(x);
+  expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);
+ });
+}
+currentMenuCheck('actual D19 ready versus optional CEO with published task references',true);
+currentMenuCheck('reordered options and independent ordinal',true,x=>{x.call.questions[0].options.reverse();question(x,s=>s.replace('D19 —','D31:'));});
+currentMenuCheck('equivalent current decision-only routing',true,x=>question(x,s=>s.replace('The only question left is whether to start building or first get a strategy-level second look.','Only the next workflow remains: implementation or an optional strategy review.')));
+currentMenuCheck('explicit lane sequence must still match the published sequence',true,x=>{x.call.questions[0].options[0].description=x.call.questions[0].options[0].description.replace('ordered with lanes','ordered with lanes A then B then C');x.plan=x.plan.replace('Execution: launch A and B in parallel worktrees. Merge both. Then C.','Execution: launch A; then B; then C.');});
+for(const [name,mutate] of Object.entries({
+ 'unanswered':(x:any)=>{x.call.answered=false;x.call.unansweredQuestionIndices=[0];},
+ 'failed':(x:any)=>{x.call.failed=true;},
+ 'unknown answer':(x:any)=>{x.call.answers[x.call.questions[0].question]='Other';},
+ 'missing ACK':(x:any)=>{delete x.call.answeredAt;},
+ 'bundled work question':(x:any)=>{x.call.questions.push(structuredClone(x.priorCalls[3].questions[0]));},
+ 'new task':(x:any)=>{x.call.questions[0].options[0].description=x.call.questions[0].options[0].description.replace('T1-T9','T1-T10');},
+ 'missing task':(x:any)=>{x.plan=x.plan.replace('**T6 (','**T99 (');},
+ 'unpublished lane':(x:any)=>{x.call.questions[0].options[0].description+=' Lanes A then Z.';},
+ 'changed lane grouping':(x:any)=>{x.call.questions[0].options[0].description+=' Lanes A+C then B.';},
+ 'missing current report':(x:any)=>{x.plan=x.plan.slice(0,x.plan.indexOf('## GSTACK REVIEW REPORT'));},
+ 'reopened report':(x:any)=>{x.plan=x.plan.replace('CLEAR (PLAN)','NOT CLEARED');},
+ 'quoted report':(x:any)=>{x.plan='```md\n'+x.plan+'\n```';},
+ 'historical catalog':(x:any)=>{x.plan=x.plan.replace('## Implementation Tasks','## Historical tasks');},
+ 'withdrawn task':(x:any)=>{x.plan=x.plan.replace('  - Verify: six scenarios green for both implementations before any tenant is allowlisted','  - Correction: T6 is withdrawn.');},
+ 'foreign plan title':(x:any)=>{x.plan=x.plan.replace('# Plan: Multi-tenant Auth Refactor (reviewed)','# Plan: Different Auth Refactor (reviewed)');},
+ 'quoted completion':(x:any)=>{question(x,s=>s.replace('Eng Review CLEAR','"Eng Review CLEAR"'));},
+ 'conditional completion':(x:any)=>{question(x,s=>s.replace('Eng Review CLEAR','Eng Review CLEAR if more tests pass'));},
+ 'negative completion':(x:any)=>{question(x,s=>s.replace('Eng Review CLEAR','Eng Review not CLEAR'));},
+ 'other decision remains':(x:any)=>{question(x,s=>s.replace('The only question left is whether','Another question is whether'));},
+ 'new work in ready label':(x:any)=>{x.call.questions[0].options[0].label+=' and add Redis';},
+ 'new work in ready description':(x:any)=>{x.call.questions[0].options[0].description+=' Also add Redis.';},
+ 'new work in CEO description':(x:any)=>{x.call.questions[0].options[1].description+=' Then rewrite the router.';},
+ 'new requirement in brief':(x:any)=>{question(x,s=>s+'\nA new dependency is required.');},
+ 'additional imperative':(x:any)=>{question(x,s=>s+'\nAlso externalize token state into Redis.');},
+ 'quoted imperative':(x:any)=>{question(x,s=>s+'\nAlso "add Redis" before implementation.');},
+ 'subordinate action':(x:any)=>{question(x,s=>s+'\nStart building while deleting the old database.');},
+}))currentMenuCheck(name,false,mutate);
+
+test('current completed D19 alone is administrative; report and other answers retain exact freshness',()=>{
+ const x=structuredClone(currentMenu), dir=fs.mkdtempSync(path.join(os.tmpdir(),'eng-current-menu-')),file=path.join(dir,'review.md');
+ const now=Date.now;
+ try {
+  Date.now=()=>Date.parse(x.captureAt);fs.writeFileSync(file,x.plan);fs.utimesSync(file,x.reportMtimeMs/1000,x.reportMtimeMs/1000);
+  const fp=nativePlanCallFingerprint(x.call,0,false),admin=new Set(isEngCompletionHandoff(fp,x.plan,x.priorCalls)?[fp.signature]:[]);
+  const transcript:PlanCountTranscript={status:'ready',calls:[...x.priorCalls,x.call],assistantMessages:[],planReadyRequests:x.planReadyRequests};
+  const check=(t=transcript,ids=admin)=>hasNativePlanTerminal(t,file,x.startedAt,'plan_ready',ids);
+  expect(check()).toBe(true);expect(check(transcript,new Set())).toBe(false);expect(check(transcript,new Set(['foreign:call']))).toBe(false);
+  for(const mutate of [
+   (t:PlanCountTranscript)=>{t.calls[0]!.answeredAt=x.call.answeredAt;},
+   (t:PlanCountTranscript)=>{t.calls[0]!.answered=false;t.calls[0]!.unansweredQuestionIndices=[0];},
+   (t:PlanCountTranscript)=>{t.planReadyRequests=[];},
+   (t:PlanCountTranscript)=>{t.planReadyRequests![0]!.failed=true;},
+   (t:PlanCountTranscript)=>{t.planReadyRequests![0]!.sessionId='foreign';},
+  ]){const t=structuredClone(transcript);mutate(t);expect(check(t)).toBe(false);}
+ }finally{Date.now=now;fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+for(const action of ['adding Redis','rewriting the router','replacing the database','dropping a table','building a second service'])
+ currentMenuCheck(`subordinate new work: ${action}`,false,x=>question(x,s=>s+'\nStart building while '+action+'.'));
+for(const status of ['Not every decision is answered.', 'Some decisions remain open.', 'One decision is unresolved.'])
+ currentMenuCheck(`current unresolved decision: ${status}`,false,x=>question(x,s=>s+'\nCorrection: '+status));
+currentMenuCheck('quoted historical decision status is not a current withdrawal',true,x=>question(x,s=>s+'\nEarlier note: "One decision is unresolved."'));
+currentMenuCheck('quoted current scalar status still withdraws completion',false,x=>question(x,s=>s+'\nCorrection: One decision is "unresolved".'));
