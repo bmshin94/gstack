@@ -21,6 +21,7 @@ async function observe(frames:string[],verdict:'waiting'|'working',required?:boo
     launchClaudePty:async()=>({send:()=>{},mark:()=>0,exited:()=>false,visibleSince:current,rawOutput:current,currentScreen:async()=>current(),hermeticConfigDir:null,close:async()=>{closed++;}}),
     createPlanCountSnapshotWriter:()=>()=>({}),logPtySnapshot:()=>{},
     submitPlanSeed: async () => {}, PlanSeedTimeout: class extends Error {},
+    isRejectedSlashCommand:predicates.isRejectedSlashCommand,
     isProseAUQVisible:predicates.isProseAUQVisible,isPlanReadyVisible:predicates.isPlanReadyVisible,
     isScopeGateQuestionVisible:predicates.isScopeGateQuestionVisible,isScopeGateAutoSelectVisible:predicates.isScopeGateAutoSelectVisible,
     classifyVisible:predicates.classifyVisible,extractPlanFilePath:predicates.extractPlanFilePath,findNativeAutoDecision:()=>null,

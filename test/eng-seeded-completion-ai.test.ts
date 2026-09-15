@@ -137,6 +137,7 @@ async function mockedObservation(frames: string[], verdict: 'waiting' | 'working
       close: async () => { closed++; } }),
     createPlanCountSnapshotWriter: () => () => ({}), logPtySnapshot: () => {},
     submitPlanSeed: async () => {}, PlanSeedTimeout: class extends Error {},
+    isRejectedSlashCommand: predicates.isRejectedSlashCommand,
     isProseAUQVisible: predicates.isProseAUQVisible, isPlanReadyVisible: predicates.isPlanReadyVisible,
     isScopeGateQuestionVisible: predicates.isScopeGateQuestionVisible,
     isScopeGateAutoSelectVisible: predicates.isScopeGateAutoSelectVisible,
