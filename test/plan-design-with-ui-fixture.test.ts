@@ -5,8 +5,8 @@ import * as path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
-// Execute the real paid registration with native observation and the board
-// picker mocked. Exact seeding, picker binding, assertions and cleanup execute.
+// Execute the real paid registration with native observation mocked. The actual
+// actor picker, exact seeding, owned binding, assertions and cleanup execute.
 function exercise(mode: string) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'design-ui-free-'));
   const script = path.join(directory, 'registration.test.ts');
@@ -21,14 +21,17 @@ const fixture = ${JSON.stringify(path.join(ROOT, 'test/fixtures/plans/ui-heavy-f
 const template = fs.readFileSync(${JSON.stringify(path.join(ROOT, 'plan-design-review/SKILL.md.tmpl'))}, 'utf8');
 const focus = template.match(/### 0D\\. Focus Areas\\nAskUserQuestion: "([^\\n]+)"/)![1]
   .replace('{N}', '4').replace('{X, Y, Z}', 'hierarchy, spacing, contrast');
-const { pickPlanReviewQuestion } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))});
-const { DESIGN_BOARD_ACTOR_PROTOCOL } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))});
+const { DESIGN_BOARD_ACTOR_PROTOCOL, createDesignReviewPicker: actualCreateDesignReviewPicker } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))});
+const outsideVoices = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(ROOT, 'test/fixtures/design-outside-voices-question.json'))}, 'utf8'));
 let pickerScope;
 let pickerQuestion;
-const designPicker = question => { pickerQuestion = question; return pickPlanReviewQuestion(question); };
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-board-feedback.ts'))}, () => ({
   DESIGN_BOARD_ACTOR_PROTOCOL,
-  createDesignReviewPicker: scope => { pickerScope = scope; return designPicker; },
+  createDesignReviewPicker: scope => {
+    pickerScope = scope;
+    const actualPicker = actualCreateDesignReviewPicker(scope);
+    return question => { pickerQuestion = question; return actualPicker(question); };
+  },
 }));
 const { createPlanCountFixture } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-count-fixture.ts'))});
 const { nativePlanCallFingerprint } = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'))});
@@ -109,6 +112,8 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(fs.readFileSync(path.join(cwd, 'review-input.md'), 'utf8')).toBe(fs.readFileSync(fixture, 'utf8'));
     const instructions = fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf8');
     expect(instructions).toContain(DESIGN_BOARD_ACTOR_PROTOCOL);
+    expect(instructions).toContain('Decline the optional Design Outside Voices step');
+    expect(instructions).toContain('all ordinary Design review decisions still apply');
     expect(execFileSync('git', ['show', 'HEAD:CLAUDE.md'], { cwd: cwd, encoding: 'utf8', timeout: 5000 })).toBe(instructions);
     expect(execFileSync('git', ['diff', 'origin/main...HEAD'], { cwd: cwd, encoding: 'utf8', timeout: 5000 })).toBe('');
     expect(execFileSync('git', ['show', 'HEAD:review-input.md'], { cwd: cwd, encoding: 'utf8', timeout: 5000 })).toBe(fs.readFileSync(fixture, 'utf8'));
@@ -137,6 +142,20 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(pickerScope).toEqual(context);
     expect(pickerQuestion).toEqual(pendingCall.questions[0]);
     expect(opts.pickAUQ(chosenFocus, chosenFocus, context)).toBeNull();
+    // Replay the retained public menu; this synthetic answer is not a rewrite
+    // of its historical Yes. No optional outside-review answer counts as a finding.
+    const voicesCall = { sessionId: 'owned-ui-fixture', toolUseId: 'outside-voices-replay',
+      answered: false, failed: false, unansweredQuestionIndices: [0],
+      questions: [outsideVoices.question] };
+    const pendingVoices = nativePlanCallFingerprint(voicesCall, 1000, false);
+    pendingVoices.nativeQuestionIndex = 0;
+    expect(opts.pickAUQ(pendingVoices, pendingVoices, context)).toBe(2);
+    expect(pickerQuestion).toEqual(outsideVoices.question);
+    expect(opts.isReviewAUQ(pendingVoices)).toBe(false);
+    const declinedVoices = nativePlanCallFingerprint({ ...voicesCall, answered: true,
+      unansweredQuestionIndices: [], answers: { [outsideVoices.question.question]: 'No, proceed without' } }, 1000, false);
+    expect(opts.isReviewAUQ(declinedVoices)).toBe(false);
+    expect(opts.pickAUQ(declinedVoices, declinedVoices, context)).toBeNull();
     const unboundBoard = {...pending, nativeCall: undefined, options: [{index: 1, label: 'Submitted'}]};
     expect(() => opts.pickAUQ(unboundBoard, unboundBoard, context)).toThrow('requires an owned native question');
     fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify({ calls, cwd: cwd, seeded: true }));
@@ -144,6 +163,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     const observed = mode.startsWith('target-menu') ? [target, fp('other', 'Which artifact should I inspect?', false)]
       : mode === 'early-exit' ? [] : mode === 'focus-only' ? [chosenFocus]
       : mode === 'native-setup-only' ? [nativeFocus, nativeSetup]
+      : mode === 'native-voices-only' ? [nativeFocus, declinedVoices]
       : mode.startsWith('native-') ? [nativeFocus, nativeSetup, mode === 'native-unnumbered' ? unnumberedFinding : nativeFinding]
       : [chosenFocus, finding];
     if (mode === 'unanswered-finding') observed.at(-1).nativeCall.answered = false;
@@ -188,7 +208,7 @@ test.each(['source', 'paraphrase', 'native-sequence', 'native-unnumbered', 'nati
   expect(result.code, result.output).toBe(0);
 }, 20_000);
 
-test.each(['target-menu', 'target-menu-design-system', 'focus-only', 'native-setup-only', 'early-exit', 'timeout', 'exited', 'unanswered-finding', 'failed-finding', 'no-native-finding'])('UI gate rejects %s and removes its fixture', mode => {
+test.each(['target-menu', 'target-menu-design-system', 'focus-only', 'native-setup-only', 'native-voices-only', 'early-exit', 'timeout', 'exited', 'unanswered-finding', 'failed-finding', 'no-native-finding'])('UI gate rejects %s and removes its fixture', mode => {
   const result = exercise(mode);
   expect(result.code, result.output).toBe(1);
   expect(result.output).toContain('plan-design-review with UI scope FAILED');

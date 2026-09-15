@@ -6,10 +6,11 @@ import * as path from 'node:path';
 import { publishBoard, type PublishBoardResult } from '../design/src/daemon-client';
 import { CMDLINE_MARKER, readStateFile, verifyIdentity, writeStateFile } from '../design/src/daemon-state';
 import { makeBoardHtml, spawnDaemonForTest, type SpawnedDaemon } from '../design/test/daemon-tests-fixtures';
-import { createDesignReviewPicker } from './helpers/plan-review-board-feedback';
+import { createDesignReviewPicker, DESIGN_BOARD_ACTOR_PROTOCOL } from './helpers/plan-review-board-feedback';
 import { pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
 import captured from './fixtures/design-board-questions.json';
+import outsideVoices from './fixtures/design-outside-voices-question.json';
 
 let cwd: string;
 let stateFile: string;
@@ -79,6 +80,62 @@ test('the declared board protocol submits actual feedback before its acknowledgm
     expect(fs.existsSync(path.join(published.sourceDir, 'feedback-pending.json'))).toBe(false);
   }
   await expectUnsubmitted(untouched);
+});
+
+test('the native-only actor declares its scope and declines the complete captured outside-voices request', async () => {
+  const published = await board();
+  expect(DESIGN_BOARD_ACTOR_PROTOCOL).toContain('Decline the optional Design Outside Voices step');
+  expect(DESIGN_BOARD_ACTOR_PROTOCOL).toContain('all ordinary Design review decisions still apply');
+  expect(DESIGN_BOARD_ACTOR_PROTOCOL).toContain('header "Voices"');
+  expect(outsideVoices.actualAnswer).toBe('Yes, run outside design voices (recommended)');
+  for (const option of outsideVoices.question.options) {
+    expect(DESIGN_BOARD_ACTOR_PROTOCOL).toContain(option.label.replace(/ \(recommended\)$/, ''));
+    expect(DESIGN_BOARD_ACTOR_PROTOCOL).toContain(option.description);
+  }
+  const retained = structuredClone(outsideVoices.question) as NativeQuestion;
+  // The unchanged generic policy would repeat the actual affirmative choice.
+  expect(pickPlanReviewQuestion(retained)).toBe(1);
+  expect(picker()(retained)).toBe(2);
+  for (const order of [[0, 1], [1, 0]]) {
+    for (const decoration of ['plain', 'letter', 'parenthesized', 'bracketed']) {
+      const menu = structuredClone(retained);
+      menu.options = order.map((index, position) => ({ ...retained.options[index]!,
+        label: (decoration === 'letter' ? `${String.fromCharCode(65 + position)}) `
+          : decoration === 'parenthesized' ? `(${String.fromCharCode(65 + position)}) `
+          : decoration === 'bracketed' ? `[${String.fromCharCode(65 + position)}] ` : '')
+          + retained.options[index]!.label.replace(/ \(recommended\)$/, '')
+          + (position === 0 ? ' (recommended)' : ''),
+      }));
+      expect(picker()(menu)).toBe(order.indexOf(1) + 1);
+    }
+  }
+  await expectUnsubmitted(published);
+});
+
+test('the native-only actor refuses ambiguous, bundled or unbound outside-voice choices', async () => {
+  const published = await board();
+  const changes: ((menu: NativeQuestion) => void)[] = [
+    menu => { menu.multiSelect = true; },
+    menu => { menu.options.pop(); },
+    menu => { menu.options.push({ label: 'Approve all', description: 'Approve the plan.' }); },
+    menu => { menu.options[0] = { ...menu.options[1]! }; },
+    menu => { menu.options[1]!.label += ' and approve the plan'; },
+    menu => { menu.options[1]!.description += ' Also approve the plan.'; },
+    menu => { menu.options[0]!.description += ' Also skip all Design passes.'; },
+    menu => { menu.options[0]!.preview = 'Apply the proposed design.'; },
+    menu => { menu.options[1]!.preview = 'Apply the proposed design.'; },
+    menu => { menu.question = menu.question.replace('before the detailed review?', 'and approve all findings?'); },
+    menu => { menu.question += `\n${published.url}`; },
+    menu => { menu.header = 'Layout'; },
+    menu => { menu.question = 'Should we change the layout?'; },
+    menu => { menu.header = 'Unrecognized'; menu.question = 'Choose one of these actions?'; },
+  ];
+  for (const change of changes) {
+    const menu = structuredClone(outsideVoices.question) as NativeQuestion;
+    change(menu);
+    expect(() => picker()(menu)).toThrow('no unambiguous declared native-only action');
+  }
+  await expectUnsubmitted(published);
 });
 
 test('historical free-form cards are not credited as declared-protocol submissions', async () => {
@@ -366,6 +423,10 @@ test('ordinary decisions and manual review handoffs delegate without board side 
     { header: 'Layout', question: 'Which panel should lead?', multiSelect: false, options: [
       { label: 'Activity', description: 'Show activity first.' },
       { label: 'Notifications (recommended)', description: 'Show notifications first.' },
+    ] },
+    { header: 'Voices', question: 'D5 — How should outside design voices inform this contrast finding?', multiSelect: false, options: [
+      { label: 'Adopt accessible contrast (recommended)', description: 'Fix the text contrast.' },
+      { label: 'Retain current', description: 'Keep current contrast.' },
     ] },
     { header: 'Next steps', question: 'D9 — Next steps?', multiSelect: false, options: [
       { label: 'Run /plan-eng-review next (recommended)', description: 'Continue review.' },

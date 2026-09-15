@@ -217,3 +217,12 @@ test('Eng approval-rule source and free contract controls select every declared 
     expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toContain('plan-eng-review/SKILL.md sections');
   }
 });
+
+// This actor is used by the bounded native Design UI case, not the optional
+// outside-review evaluations. Its captured inputs must select that same case.
+test('Design native-only actor capture selects its gate case', () => {
+  const result = selectTests(['test/fixtures/design-outside-voices-question.json'], E2E_TOUCHFILES);
+  expect(result.reason).toBe('diff');
+  expect(result.selected).toEqual(['plan-design-with-ui-scope']);
+  expect(E2E_TIERS['plan-design-with-ui-scope']).toBe('gate');
+});

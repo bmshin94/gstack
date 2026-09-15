@@ -12,7 +12,34 @@ export const DESIGN_BOARD_WAIT_OPTIONS = [
   { label: 'Type preferences', description: 'I will provide my preferences in chat instead of using the comparison board.' },
 ] as const;
 
+// Optional outside review is separate from the native finding this fixture
+// measures. Preserve the complete supported menu, not just its No label.
+const DESIGN_OUTSIDE_VOICE_OPTIONS = [
+  {
+    "label": "Yes, run outside design voices",
+    "description": "✅ Codex hard-rule + litmus scorecard plus an independent Claude completeness read. ✅ Disagreements surface with both perspectives in the relevant pass. ❌ Adds a few minutes; Codex may be missing here, in which case only the Claude voice runs and it's tagged single-model."
+  },
+  {
+    "label": "No, proceed without",
+    "description": "✅ Straight into the 7 passes with the approved mockup as anchor. ✅ Fewest steps to a fixed plan. ❌ Findings rest on one reviewer; no cross-model check on slop risk or hierarchy."
+  }
+] as const;
+
 export const DESIGN_BOARD_ACTOR_PROTOCOL = [
+  '## Fixture user: native Design review',
+  '',
+  'This fixture reviews the supplied UI through a native Design finding.',
+  'Decline the optional Design Outside Voices step; do not dispatch either',
+  'outside reviewer. Mockups, board feedback/confirmation, visual verification',
+  'and all ordinary Design review decisions still apply.',
+  'If offering that optional step, ask one single-select question with header "Voices",',
+  'beginning "Want outside design voices before the detailed review?" and exactly:',
+  ...DESIGN_OUTSIDE_VOICE_OPTIONS.map(option => `- ${option.label}: ${option.description}`),
+  'Option order, a letter prefix, and a trailing (recommended) marker may vary.',
+  'Keep this choice separate from other approvals; no previews or extra actions.',
+  'The fixture user chooses No, proceed without. Observe the actual native',
+  'answer before continuing when this question is offered.',
+  '',
   '## Fixture user: comparison-board acknowledgment',
   '',
   'For the comparison-board wait only, ask one single-select question containing',
@@ -76,8 +103,8 @@ if (ack?.received !== true || ack?.action !== 'submitted') throw new Error('Desi
 console.log(JSON.stringify({ received: true, action: 'submitted' }));
 `;
 
-/** Simulate the fixture user's board choice before saying it was submitted.
- * Other decisions retain the existing recommended/manual-handoff policy. */
+/** Decline the declared optional outside review; acknowledge board submission
+ * only after it happens. Other decisions retain the recommended/manual policy. */
 export function createDesignReviewPicker({ cwd, deadlineAt }: { cwd: string; deadlineAt: number }): (question: NativeQuestion) => number {
   const submitted = new Set<string>();
   const stateFile = path.resolve(cwd, '.gstack/design.json');
@@ -85,6 +112,21 @@ export function createDesignReviewPicker({ cwd, deadlineAt }: { cwd: string; dea
     const labels = question.options.map(option => option.label.trim()
       .replace(/^(?:[A-E][).:]?|\([A-E]\)|\[[A-E]\])\s+/i, '')
       .replace(/\s*\(recommended\)\s*$/i, '').trim());
+    const lead = question.question.split(/\r?\n/, 1)[0]!.trim()
+      .replace(/^D\d+(?:\.\d+)?\s*[—–:-]\s*/i, '');
+    const claimsVoices = /^(?:Want|Run) outside (?:design )?voices\b/i.test(lead)
+      || labels.includes(DESIGN_OUTSIDE_VOICE_OPTIONS[0].label);
+    if (claimsVoices) {
+      const voiceActions = question.options.map((option, index) => DESIGN_OUTSIDE_VOICE_OPTIONS.findIndex(expected =>
+        labels[index] === expected.label && option.description === expected.description && option.preview === undefined));
+      if (question.header.trim() !== 'Voices'
+        || !/^(?:Want outside design voices before the detailed review|Run outside design voices before the 7 passes)\?$/i.test(lead)
+        || question.multiSelect || voiceActions.length !== 2 || voiceActions.includes(-1)
+        || new Set(voiceActions).size !== 2 || /https?:\/\/[^\s<>\[\]()]*\/boards\//.test(question.question)) {
+        throw new Error('Design outside-voices choice has no unambiguous declared native-only action');
+      }
+      return voiceActions.indexOf(1) + 1;
+    }
     const actions = question.options.map((option, index) => DESIGN_BOARD_WAIT_OPTIONS.findIndex(expected =>
       labels[index] === expected.label && option.description === expected.description && option.preview === undefined));
     const submittedIndex = actions.indexOf(0);
