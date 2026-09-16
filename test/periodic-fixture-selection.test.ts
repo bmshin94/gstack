@@ -4,7 +4,10 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
+    ['test/ceo-current-decision-record.test.ts', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-current-decision-cdd-public.json', ['plan-ceo-finding-count']],
     ['test/fixtures/eng-count-c6fc-public.json', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-cdd-regression-task.json', ['plan-eng-finding-count']],
     ['test/eng-count-owned-outcomes.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-count-owned-outcomes-f359.json', ['plan-eng-finding-count']],
     ['test/fixtures/eng-batching-prefixed-ledger-f359.json', ['plan-eng-multi-finding-batching']],
@@ -168,6 +171,23 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
       expect(result.selected.sort()).toEqual([...expected].sort());
       for (const id of expected) expect(E2E_TIERS[id]).toBe('periodic');
     });
+  }
+});
+
+test('offering source lookup dependencies select all four gate audits', () => {
+  const expected = ['codex-offered-office-hours', 'codex-offered-ceo-review',
+    'codex-offered-design-review', 'codex-offered-eng-review'].sort();
+  for (const file of ['test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts',
+    'test/fixtures/codex-offering-cdd-public.json', 'test/helpers/workflow-judge-input.ts',
+    'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts']) {
+    const result = selectTests([file], E2E_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    expect(result.selected.sort()).toEqual(expected);
+    for (const id of expected) expect(E2E_TIERS[id]).toBe('gate');
+  }
+  for (const file of ['test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts',
+    'test/fixtures/codex-offering-cdd-public.json']) {
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
   }
 });
 

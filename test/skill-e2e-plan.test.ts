@@ -11,6 +11,7 @@ import {
 } from './helpers/e2e-helpers';
 import { judgePosture } from './helpers/llm-judge';
 import { extractSkillSections } from './helpers/skill-fixture';
+import { buildCodexOfferingPrompt } from './helpers/codex-offering-fixture';
 import { validateOfficeHoursSpecSummary } from './helpers/office-hours-completion';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
@@ -820,16 +821,10 @@ describeIfSelected('Codex Offering E2E', [
 
   async function checkCodexOffering(skill: string, testName: string, featureName: string) {
     const result = await runSkillTest({
-      prompt: `Read ${skill}/SKILL.md. Search for ALL sections related to "codex", "outside voice", or "second opinion".
-
-Summarize the Codex/${featureName} integration — answer these specific questions:
-1. How is Codex availability checked? (what exact bash command?)
-2. How is the user prompted? (via AskUserQuestion? what are the options?)
-3. What happens when Codex is NOT available? (fallback to subagent? skip entirely?)
-4. Is this step blocking (gates the workflow) or optional (can be skipped)?
-5. What prompt/context is sent to Codex?
-
-Write your summary to ${testDir}/${testName}-summary.md`,
+      prompt: buildCodexOfferingPrompt({
+        root: testDir, skill, featureName,
+        summaryPath: path.join(testDir, `${testName}-summary.md`),
+      }),
       workingDirectory: testDir,
       maxTurns: 8,
       timeout: JUDGE_MS,

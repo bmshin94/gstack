@@ -1082,7 +1082,7 @@ function declaredLegacyCharacterization(text: string): boolean {
       while (owners.length && owners.at(-1)!.level >= heading[1]!.length) owners.pop();
       if (/^Current reviewed plan$/i.test(heading[2]!) && owners.length === 0) { sourcePreamble = false; prefix = ''; }
       const asserted = !sourcePreamble && !sourceFrame(prefix) && owners.every(owner => owner.asserted)
-        && !/\b(?:source|example|hypothetical|proposed|optional|quoted|historical|template|unproven)\b/i.test(heading[2]!);
+        && !/\b(?:source|example|hypothetical|proposed|optional|quoted|history|historical|template|unproven)\b/i.test(heading[2]!);
       owners.push({ level: heading[1]!.length, asserted });
       sections.push({ title: heading[2]!, body: [], asserted });
     } else if (sections.length) {
@@ -2058,6 +2058,51 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
         || Boolean(scopedBaseline && new RegExp(`\\b(?:update|change|replace|regenerate|rewrite) ${subject} (?:expectations|expected (?:results|outputs)|assertions)\\b|\\b${subject} (?:expectations|assertions) (?:are|will be) (?:changed|updated|replaced)\\b`, 'i').test(line));
     });
   });
+  // A required task may name its deliverable instead of repeating an Add verb.
+  // Bind the legacy corpus to its file and executable parity verification.
+  for (const task of allTasks) {
+    if (!task.match || /\b(?:history|historical|source|quoted|example)\b/i.test(task.section) ||
+        framed(task.preceding) || !owned(task.body)) continue;
+    const id = task.match[1]!, title = task.match[2]!;
+    if (allTasks.filter(other => other.match?.[1] === id).length !== 1 ||
+        !new RegExp(`^- (?:\\[[ xX]\\] )?${id} \\([^\\n)]*\\b(?:CRITICAL|mandatory|required)\\b[^\\n)]*\\)`).test(task.body)) continue;
+    const action = title.replace(/^[A-Za-z][\w/.-]*(?:, [A-Za-z][\w/.-]*)* [—–] /, '');
+    if (!/^(?:Characterization|Regression) (?:suite|tests?|fixtures?) from legacyAuthFlow\(\) (?:run|replayed) against both paths(?:;|$)/i.test(action)) continue;
+    const fields = (name: string) => task.body.split('\n').filter(line => line.startsWith(`  - ${name}:`))
+      .map(line => line.slice(`  - ${name}:`.length).trim());
+    const files = fields('Files'), verify = fields('Verify');
+    if (files.length !== 1 || verify.length !== 1 ||
+        files[0]!.split(/,\s*/).filter(file => /^(?:[A-Za-z][\w.-]*\/)*legacyAuthFlow\.characterization\.test(?:\.[jt]s)?$/.test(file)).length !== 1 ||
+        !/^(?:suite|tests?|fixtures?) (?:green|pass(?:es)?) on both paths(?:;|$)/i.test(verify[0]!)) continue;
+    const sources = fields('Surfaced by');
+    const decisions = sources.length === 1 ? [...sources[0]!.matchAll(/\bD[1-9]\d*\b/g)].map(match => match[0]) : [];
+    if (decisions.length !== 1) continue;
+    const decision = decisions[0]!;
+    const records = current.filter(record => /\b(?:regression|characterization)\b/i.test(record.title) &&
+      /\blegacyAuthFlow\(\)/.test(record.title) && new RegExp(`^Question ${decision}:`, 'm').test(record.body.join('\n')));
+    if (records.length !== 1) continue;
+    const record = records[0]!, row = /^R[1-9]\d*(?=:)/.exec(record.title)?.[0];
+    const field = (name: string) => record.body.filter(line => line.startsWith(name+':')).map(line => line.slice(name.length+1).trim());
+    const state = field('State'), answer = field('Actual answer'), scope = field('Accepted scope');
+    const finding = field('Finding'), questions = record.body.filter(line => /^Question D[1-9]\d*:/.test(line));
+    const origins = finding.length === 1 ? [...finding[0]!.matchAll(/\b[\w./-]+\.md\b/g)].map(match => match[0]) : [];
+    const chosen = /^([A-D])\s*[—–]\s*(.+?)(?:\s+\([^()\n]+\))?$/.exec(answer[0] ?? '');
+    if (!row || questions.length !== 1 || finding.length !== 1 || !/\bCRITICAL\b/.test(finding[0]!) ||
+        !origins.length || origins.some(source => source !== 'PLAN.md') || !chosen ||
+        !/^(?:Characterization|Regression) (?:suite|tests?|fixtures?)\b/i.test(chosen[2]!) ||
+        !owned(chosen[2]!) || new RegExp(`\\b(?:${inactive}|no|not|never|skip|omit|defer|withdraw|cancel)\\b`, 'i').test(chosen[2]!) ||
+        record.body.filter(line => line === `${chosen[1]}) ${chosen[2]} (recommended)` || line === `${chosen[1]}) ${chosen[2]}`).length !== 1 || current.filter(other => other.title.startsWith(row+':')).length !== 1 ||
+        state.length !== 1 || state[0] !== 'approved' || answer.length !== 1 ||
+        !new RegExp(`\\b${decision}\\b`).test(answer[0]!) || scope.length !== 1 || !owned(scope[0]!.split(';')[0]!) || framed(scope[0]!) || approval.test(scope[0]!) ||
+        !/(?:^|[,:}]\s+)recorded from legacyAuthFlow\(\), run against both legacyAuthFlow\(\) and [A-Za-z][\w.]*\(\) in CI$/.test(scope[0]!.split(';')[0]!) ||
+        scope[0]!.split(/[.;]\s+|\n/).some(clause => {
+          const operation = /\b(?:record(?:ed|ing)?|captur(?:e|ed|ing)|pin(?:ned|ning)?)\b[^;.!?]*\blegacyAuthFlow\b|\b(?:run|replay(?:ed)?|execut(?:e|ed))\b[^;!?]*\bboth (?:paths|legacyAuthFlow)\b/i.test(clause);
+          return operation && /\b(?:not|never|no longer|skip|omit|defer|withdraw|cancel|if|unless|when|once|pending)\b/i.test(unquoted(clause));
+        }) ||
+        !/\boutcome\b/.test(scope[0]!) || !/\berror\b/.test(scope[0]!) || !/\bcache writes\b/.test(scope[0]!)) continue;
+    const subject = `(?:${id}|${row}|${decision}|(?:this|the) (?:legacy )?(?:regression|characterization) (?:suite|tests?|fixtures?|requirement))`;
+    if (!cancelledBaseline(subject, id, true)) return true;
+  }
   // A source-owned approved row may publish a before-change characterization
   // corpus while its task carries the legacy component, file and green run.
   // Those fields form one requirement; the action need not repeat the target.

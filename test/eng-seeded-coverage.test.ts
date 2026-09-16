@@ -1,3 +1,4 @@
+import cddRegression from './fixtures/eng-cdd-regression-task.json';
 import ledgerSeedFixture from './fixtures/eng-current-ledger-seeds.json';
 import { describe, expect, test } from 'bun:test';
 import captured from './fixtures/eng-count-ad-v2.json';
@@ -448,4 +449,54 @@ test('complete native subject claims preserve their own counts and current remed
       expect(check(foreign)).toBe(false);
     }
   }
+});
+
+
+describe('captured required legacy characterization task representation', () => {
+  const task = cddRegression.parts[1]!;
+  const wrap = (body: string) => '# Current reviewed plan\n\n'+cddRegression.parts[0]+'\n## Implementation Tasks\n'+body+'\n\n## GSTACK REVIEW REPORT\nComplete.\n';
+  test('required noun-form task retains the existing affirmative regression semantics', () => {
+    expect(evaluate(transcript(), wrap(task)).regression).toBe('plan');
+    expect(evaluate(transcript(), '# Current reviewed plan\n'+cddRegression.parts[0]+'\n## Implementation Tasks\n'+task+'\n## GSTACK REVIEW REPORT\nComplete').regression).toBe('plan');
+    expect(evaluate(transcript(), wrap(task).replace('(user answer to D8)', '(D8)')).regression).toBe('plan');
+    expect(evaluate(transcript(), wrap(task).replace('A — Characterization suite + shadow-mode comparison (user answer to D8)', 'B — Characterization suite only (user answer to D8)').replace(/ \(2\) Flag gains[^\n]*?Behavior preserved:/, ' Behavior preserved:').replace('; SHADOW compare + `auth.parity.mismatch` metric + D7 allowlist', '').replace(', auth/routing/shadowCompare', '').replace('; deliberately broken fixture emits mismatch; allowlisted case does not', '')).regression).toBe('plan');
+    expect(evaluate(transcript(), wrap(task).replace('Behavior preserved:', 'Error cases must not dispatch after Deny. Behavior preserved:')).regression).toBe('plan');
+    expect(cddRegression.originalOutcome).toContain('FAIL');
+  });
+  test('required target, file and verification cannot be missing, foreign or contradictory', () => {
+    for (const bad of [
+      task.replace('P1 CRITICAL', 'P1'),
+      task.replace('suite from legacyAuthFlow()', 'suite from anotherAuthFlow()'),
+      task.replace('legacyAuthFlow.characterization.test', 'anotherAuthFlow.characterization.test'),
+      task.replace('suite green on both paths', 'suite green on the new path only'),
+      task.replace('suite green on both paths', 'suite not green on both paths'),
+      task.replace('  - Verify:', '  - Optional verification:'),
+      task+'\n  - Verify: suite green on both paths',
+      task+'\n'+task,
+      task.replace('Characterization suite', 'Optional characterization suite'),
+      task.replace('Characterization suite', 'Do not add characterization suite'),
+    ]) expect(evaluate(transcript(), wrap(bad)).regression).toBeUndefined();
+  });
+  test('source framing and current withdrawal cannot lend completed coverage', () => {
+    for (const plan of [
+      wrap(task).replace('## Implementation Tasks', '## Historical implementation tasks'),
+      wrap(task).replace('## Implementation Tasks', '## Example'),
+      wrap('```\n'+task+'\n```'),
+      wrap(task+'\n\nT6 is withdrawn.'),
+      wrap(task).replace('State: approved', 'State: pending'),
+      wrap(task).replace('### R8:', '## History\n### R8:'),
+      wrap(task).replaceAll('PLAN.md:', 'other/PLAN.md:'),
+      wrap(task).replace('Question D8:', 'Question D8:\nQuestion D9:'),
+      ...['not run', 'do not run', 'never run', 'no longer run', 'if approved, run'].map(action => wrap(task).replace('run against both legacyAuthFlow()', action+' against both legacyAuthFlow()')),
+      ...['not recorded', 'never recorded', 'no longer recorded', 'if approved, recorded'].map(action => wrap(task).replace('recorded from legacyAuthFlow()', action+' from legacyAuthFlow()')),
+      ...['Do not run against both paths.', 'Never run against both paths.', 'Only if approved, run against both paths.'].map(conflict => wrap(task).replace('Behavior preserved:', conflict+' Behavior preserved:')),
+      wrap(task).replace('Actual answer: A —', 'Actual answer: B —'),
+      wrap(task).replace('Actual answer: A — Characterization suite + shadow-mode comparison', 'Actual answer: C — Shadow-mode comparison only'),
+      ...['Do not add characterization suite', 'Characterization suite deferred', 'Characterization suite optional'].map(caption => wrap(task).replaceAll('Characterization suite + shadow-mode comparison', caption)),
+      wrap(task+'\n\nR8 is withdrawn.'),
+      wrap(task+'\n\nD8 is withdrawn.'),
+      wrap(task+'\n\nCorrection: skip T6.'),
+      wrap(task+'\n\nT6 assertions are changed.'),
+    ]) expect(evaluate(transcript(), plan).regression).toBeUndefined();
+  });
 });

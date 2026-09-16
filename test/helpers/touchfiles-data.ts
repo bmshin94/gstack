@@ -398,6 +398,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // completion-status resolvers because they affect question cadence and
   // terminal output (the regression surface this test catches).
   'plan-ceo-finding-count':      [
+    'test/ceo-current-decision-record.test.ts', 'test/fixtures/ceo-current-decision-cdd-public.json',
     'test/ceo-native-fields-f359.test.ts', 'test/fixtures/ceo-native-fields-f359.json', 'test/fixtures/ceo-plain-fields-f359.json',
     'test/ceo-conditional-option-facts.test.ts', 'test/fixtures/ceo-conditional-option-facts-c6fc.json',
     'test/ceo-incomplete-save-b176.test.ts', 'test/fixtures/ceo-incomplete-save-b176.json',
@@ -438,6 +439,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   ],
   'plan-eng-finding-count':      [
     'test/fixtures/eng-count-c6fc-public.json',
+    'test/fixtures/eng-cdd-regression-task.json',
     'test/eng-count-owned-outcomes.test.ts', 'test/fixtures/eng-count-owned-outcomes-f359.json',
     'test/eng-task-pause-navigation-f359.test.ts', 'test/fixtures/eng-task-pause-navigation-f359.json',
     'test/fixtures/eng-current-choice-cab3.json', 'test/fixtures/eng-completed-navigation-cab3.json',
@@ -738,11 +740,18 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'plan-tune-dream-cycle':       ['bin/gstack-distill-free-text', 'bin/gstack-distill-apply', 'hosts/claude/hooks/**', 'plan-tune/**', 'test/skill-e2e-plan-tune-cathedral.test.ts', 'lib/jsonl-store.ts', 'lib/is-conductor.ts', 'test/plan-tune-cathedral-fixture.test.ts'],
 
   // Codex offering verification
-  'codex-offered-office-hours':  ['office-hours/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts'],
+  'codex-offered-office-hours':  ['office-hours/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
+    'test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts', 'test/fixtures/codex-offering-cdd-public.json',
+    'test/helpers/workflow-judge-input.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts'
+  ],
   'codex-offered-ceo-review':    ['plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
+    'test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts', 'test/fixtures/codex-offering-cdd-public.json',
+    'test/helpers/workflow-judge-input.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts',
     'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/tasks-section.ts'
   ],
   'codex-offered-design-review': [
+    'test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts', 'test/fixtures/codex-offering-cdd-public.json',
+    'test/helpers/workflow-judge-input.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json",
     "test/fixtures/design-scope-checkpoint-at.json",'plan-design-review/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
@@ -752,6 +761,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'scripts/resolvers/preamble/generate-ask-user-format.ts'
   ],
   'codex-offered-eng-review':    [
+    'test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts', 'test/fixtures/codex-offering-cdd-public.json',
+    'test/helpers/workflow-judge-input.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts',
     'scripts/resolvers/learnings.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json", 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',

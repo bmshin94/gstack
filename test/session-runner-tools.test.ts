@@ -483,6 +483,9 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
     ['changed error contract', 'Consider converting a database error into undefined.', 'existing contracts'],
     ['omitted required proof', 'Consider dropping the closed-database batch acceptance test.', 'missing required proof still requires resolution'],
     ['optional batch cap', 'Consider rejecting batches larger than 100 keys.', 'arbitrary size limits'],
+    ['routine mechanics authority', 'Plan the necessary code, tests and existing-documentation synchronization using current conventions.', 'scope and proposed steps are in PLAN.md'],
+    ['optional polish', 'Consider a new documentation surface and independent instrumentation project.', 'Do not authorize optional scope'],
+    ['authority conflict', 'An offered alternative changes an author-fixed contract and has no compatible option.', 'do not hide it or claim approval'],
   ])('bounded Eng actor receives the accepted recipe and rejection constraint for %s', async (_name, proposal, constraint) => {
     // This proves delivery to the actual capture/CLI boundary, not a fake model's
     // semantic choice. Only a subsequent paid invocation can prove that choice.
@@ -514,6 +517,11 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
       expect(fs.readFileSync(path.join(dir, 'PLAN.md'), 'utf8')).toBe(fixtures['PLAN.md']);
       expect(fixtures['PLAN.md']).toContain('accepted requirements to review against');
       expect(fixtures['PLAN.md']).toContain('implementation itself remains proposed and unapproved');
+      expect(fixtures['PLAN.md']).toContain('author delegates routine mechanics');
+      expect(fixtures['PLAN.md']).toContain('not separate scope or approval questions');
+      expect(fixtures['PLAN.md']).toContain('material contract change, missing required proof');
+      expect(fixtures['PLAN.md']).toContain('report the unresolved\nconflict');
+      expect(fixtures['PLAN.md']).toContain('Optional polish, duplicate contract');
     });
   });
 

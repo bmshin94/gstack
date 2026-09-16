@@ -599,12 +599,12 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
     const label = baselineCaption(saved.label);
     const tail = saved.bindingText.slice(saved.label.length).trim();
     if (/^as (?:planned|written)\b/i.test(label)) {
-      const caption = label.replace(/^as (?:planned|written):?\s*/i, '');
+      const caption = retainedCaption(label.replace(/^as (?:planned|written):?\s*/i, ''));
       return { generic: !caption, caption };
     }
     const suffix = /^(.*?)\s*(?:\((?:plan )?as (?:planned|written)\)|,\s*as (?:planned|written))$/i.exec(label);
-    if (suffix) return { generic: false, caption: suffix[1]!.trim() };
-    if (/^\((?:plan )?as (?:planned|written)\)(?:\s|[—–-]|$)/i.test(tail)) return { generic: false, caption: label };
+    if (suffix) return { generic: false, caption: retainedCaption(suffix[1]!) };
+    if (/^\((?:plan )?as (?:planned|written)\)(?:\s|[—–-]|$)/i.test(tail)) return { generic: false, caption: retainedCaption(label) };
     return null;
   };
   const matches: Array<{ ledgerId: string; phase: string }> = [];
@@ -632,9 +632,28 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
       const contractCitation = /^Contracts?:/i.test(read('evidence'));
       if (contractCitation && (!currentContext(tokens.indexOf(table)) || hasForeignContractSource(read('evidence'), sourcePlan))) continue;
       if (sectionEvidence && !sectionContext(tokens, tokens.indexOf(table))) continue;
+      // A named current record is also valid as a plain/bold paragraph.
+      // A bare Row marker inherits only its enclosing currentDecision heading;
+      // incidental row mentions and quoted/code tokens cannot own a comparison.
+      const paragraphRecord = (index: number) => {
+        const token = tokens[index];
+        if (token?.type !== 'paragraph' || !currentContext(index) || !current(plain(token.raw))) return false;
+        const marker = plain(token.raw).split('\n')[0]!;
+        const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const parentIndex = tokens.slice(0, index).findLastIndex(t => t.type === 'heading');
+        const parent = tokens[parentIndex];
+        // An immediate same-row marker describes its named heading's record.
+        // A marker after any record content remains a separate declaration.
+        if (parent?.type === 'heading' && /^currentDecision\b/i.test(plain(parent.text)) &&
+            mentions(plain(parent.text), id) && tokens.slice(parentIndex + 1, index).every(t => t.type === 'space')) return false;
+        if (new RegExp(`^currentDecision\\s*(?:[:(—–-]\\s*)?${escaped}(?=$|[\\s):—–-])`, 'i').test(marker)) return activeSection(marker);
+        return parent?.type === 'heading' && /^currentDecision\b/i.test(plain(parent.text)) &&
+          new RegExp(`^Row\\s+${escaped}(?=$|[\\s:—–-])`, 'i').test(marker) && activeSection(marker);
+      };
       const anchors = tokens.flatMap((t, i) =>
         (t.type === 'heading' && current(plain(t.text)) && mentions(plain(t.text), id)) ||
-        (t.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(t.raw)) && mentions(plain(t.raw), id)) ? [i] : []);
+        (t.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(t.raw)) && mentions(plain(t.raw), id)) ||
+        paragraphRecord(i) ? [i] : []);
       let matchedPhase: string | undefined;
       for (const start of anchors) {
         if ((quotedProposal || contractCitation) && !currentContext(start)) continue;
@@ -643,7 +662,9 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
         let end = start + 1;
         while (end < tokens.length && !(tokens[end]!.type === 'heading' &&
           (anchor.type !== 'heading' || (tokens[end] as any).depth <= anchor.depth))) end++;
-        const section = tokens.slice(start + 1, end);
+        // Keep a paragraph anchor's continuation (e.g. Header/Question) in
+        // the exact-field record, just as fields below a heading are retained.
+        const section = tokens.slice(anchor.type === 'paragraph' ? start : start + 1, end);
         if (currentContext(start) && currentContext(tokens.indexOf(table))) {
           // Reuse the owned ledger/source gates, but require one current row
           // and comparison anchor before granting this exact-field path credit.
@@ -652,11 +673,15 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
             const ids = token.header.flatMap((cell, i) => /^(?:ID|Decision)\b/i.test(plain(cell.text)) ? [i] : []);
             return ids.length === 1 ? token.rows.map(row => plain(row[ids[0]!]!.text).split(/\s/, 1)[0]!.replace(/[.:]$/, '')) : [];
           });
-          if (pendingRowContext(tokens, tokens.indexOf(table), read('id')) &&
+          const ownedComparison = pendingRowContext(tokens, tokens.indexOf(table), read('id')) &&
               sourceRecords.length <= 1 && sourceRecords.every(source => source === 'PLAN.md') &&
               !hasForeignContractSource(cells[fields.evidence[0]!]!.text, sourcePlan) &&
-              currentRows.filter(value => value === id).length === 1 && anchors.filter(currentContext).length === 1 &&
-              exactNativeFields(section)) matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
+              currentRows.filter(value => value === id).length === 1 && anchors.filter(currentContext).length === 1;
+          if (paragraphRecord(start) && (!pendingRowContext(tokens, tokens.indexOf(table), read('id')) ||
+              sourceRecords.some(source => source !== 'PLAN.md') ||
+              hasForeignContractSource(cells[fields.evidence[0]!]!.text, sourcePlan) ||
+              currentRows.filter(value => value === id).length !== 1 || anchors.filter(currentContext).length !== 1)) continue;
+          if (ownedComparison && exactNativeFields(section)) matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
           // Markdown permits an option paragraph followed by a facts list.
           // Bind only the adjacent list to that option; never borrow a later
           // option's facts, quoted/code content or another section's details.
