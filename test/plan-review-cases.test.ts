@@ -830,8 +830,8 @@ describe('outside-voice commitment queue', () => {
           expect(stages.every(position => position >= 0)).toBe(true);
           expect(stages).toEqual([...stages].sort((a, b) => a - b));
           expect(skeleton).toContain("`D<N> — <ROW-ID>: <one-line question>`");
-          expect(skeleton).toContain("Ask one row per call: copy verified `currentDecision`");
-          expect(skeleton).toContain('question, header, labels and descriptions literally');
+          expect(skeleton).toContain("Ask one row per call with that object unchanged, without recomposing");
+          expect(skeleton).toContain('compare its actual question, header, labels and full descriptions literally with the saved fields');
           expect(skeleton).toContain('ROW-ID identifies this exact pending choice');
           expect(skeleton).toContain("Save the answer reference and scope");
           expect(skeleton).toContain("amend only authorized work");

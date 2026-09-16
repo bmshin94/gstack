@@ -332,19 +332,22 @@ path, 3 = shortcut. For different kinds of work, write: "Note: options differ in
    Revisions replace the whole payload. Other answered decisions and their answers
    keep separate headings; no old question/header/options remain in this record.
 - **Read-back.** After the latest successful Write/Edit, Read the ledger row and
-   entire saved payload through the last option's full description. Read omitted
-   continuations; verify IDs and every field against `currentDecision`, and citations
-   against source. This Read is mandatory despite Edit's current-in-context hint;
-   even a one-word correction requires a new Read. For chat, verify the complete
-   **not persisted** text. A grid, summary or pointer is insufficient.
+   full payload through the last option's full description; fetch continuations.
+   Verify IDs and fields against `currentDecision`, citations against source.
+   Read despite Edit's current-in-context hint;
+   every correction requires a new Read. For chat, verify the full **not persisted**
+   text. A grid, summary or pointer is insufficient.
 
 Stop on failed save/mismatch. A changed decision repeats 0D step 3.
 
 **4. Ask, record the answer, and amend.**
-Ask one row per call: copy verified `currentDecision` question, header, labels and
-descriptions literally. Do not add a brief, shorten labels or rebuild options;
-changes return to step 3's save and Read-back. Only the preamble authorizes
-prose/auto-decision transport. A recommendation is not approval.
+Copy that Read into one native arguments object:
+`{questions: [{question, header, options: [{label, description}, ...]}]}`.
+Before dispatch, compare its actual question, header, labels and full descriptions
+literally with the saved fields, except Save-added selector prefixes.
+Compare strings, not format/scores. Changes repeat step 3's save
+and Read-back. Ask one row per call with that object unchanged, without recomposing.
+Only the preamble authorizes prose/auto-decision transport. A recommendation is not approval.
 
 **STOP for the actual answer, even for a lone option.** Only a preamble-authorized
 auto-decision resolves this wait; record its authority. Save the answer reference

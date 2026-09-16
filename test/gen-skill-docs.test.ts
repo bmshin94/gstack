@@ -2349,8 +2349,8 @@ describe('Design approval reconciliation', () => {
     expect(check).toContain('findings or no-UI skip.');
     expect(check).toContain('STOP, Read the file and redo the review.');
     const decisions = main.slice(main.indexOf('### 0D.'), main.indexOf('### 0E.')).replace(/\s+/g, ' ');
-    expect(decisions).toMatch(/Ask one row per call[^.]*verified `currentDecision`/);
-    expect(decisions).toContain('question, header, labels and descriptions literally');
+    expect(decisions).toMatch(/Ask one row per call with that object unchanged, without recomposing/);
+    expect(decisions).toContain('compare its actual question, header, labels and full descriptions literally with the saved fields');
     expect(decisions).toContain('`D<N> — <ROW-ID>: <one-line question>`');
     const row = decisions.slice(decisions.indexOf('**Row.**'), decisions.indexOf('**Fields.**'));
     expect(row).toMatch(/Find exactly one (?:ledger )?row/);
@@ -4413,8 +4413,8 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(gate).toContain("When this step's required decisions are settled, go to 0E if you came from 0C");
     expect(gate).toContain('even for a lone option');
     expect(approach).toContain('A recommendation is not approval');
-    expect(approach).toMatch(/Ask one row per call[^.]*verified `currentDecision`/);
-    expect(approach).toContain('question, header, labels and descriptions literally');
+    expect(approach).toMatch(/Ask one row per call with that object unchanged, without recomposing/);
+    expect(approach).toContain('compare its actual question, header, labels and full descriptions literally with the saved fields');
     expect(gate).toMatch(/(?:Record its reference|Save the answer reference) and scope in Exact approval and scope/);
     expect(gate).toMatch(/update Status,? and amend only (?:what it authorizes|authorized work)/);
     expect(gate).toContain('storage policy before taking another row');
