@@ -108,8 +108,9 @@ Keep ONE phase active, completing these gates in order:
    consume enabled outside results. Complete the phase's remaining primary review
    sections after these results.
 4. At the phase's exit, load its `phase-close` section afresh. That section owns
-   the complete current readback, semantic reconciliation and visible parent
-   completion message. Follow its steps now; an earlier Read is not this close.
+   close packet: the complete current readback followed by semantic reconciliation
+   and the visible parent completion message in the same ordered artifact. Read
+   and execute the full packet; an earlier Read is not this close.
 5. Only after the message has been sent may the driver load/create/dispatch the
    next phase. Then continue to the next phase's tool calls in the same turn;
    after Eng, proceed to final synthesis/approval. Use the declared skip rule for
@@ -121,8 +122,9 @@ Read requests/self-reports and INPUT hashes do not prove uptake or review qualit
 Never draft future-phase reviews or outputs. Headings/promises are not completion.
 After compaction, reload current phase instructions/skill/sections, then
 reconcile saved artifacts and sent conversation messages separately. If closing,
-reload `phase-close` and resume its first incomplete step:
-- If a verified phase lacks its announcement, send that message before advancing.
+reload `phase-close` and resume its first incomplete step in the bound close packet;
+regenerate and reread the full packet if the implementation or accepted decisions changed:
+- If a verified phase lacks its announcement, execute the packet's publication before advancing.
 - If its reviewer is pending, wait for that same reviewer.
 - If native dispatch has not happened, finish any incomplete preliminary work before recovering a voice input.
   If the final voice input does not exist, create it after the preliminary gates.

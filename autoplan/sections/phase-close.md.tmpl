@@ -1,16 +1,9 @@
 Read this section afresh when the current phase's review work finishes. Use the
 phase, amendment checkpoint and methodology path bound at that phase's exit.
-This section supplies the publication format and routing for every phase.
+This section prepares the full readback and publication packet for the current phase.
 Close one phase before the driver starts another.
 On hosts that inline sections, reread this close block in the installed Autoplan
 SKILL.md at each exit; those hosts do not have a separate phase-close.md file.
-
-| Phase | Number | Consensus total | Next step |
-|---|---|---|---|
-| ceo | 1 | 6 | Phase 2 (Design Review) |
-| design | 2 | rows in the completed design litmus scorecard | Phase 2.5 (DX Review) if DX scope was detected; otherwise Phase 3 (Eng Review) |
-| dx | 2.5 | 6 | Phase 3 (Eng Review — the required gate reviews the final amended plan) |
-| eng | 3 | 6 | Phase 4 (Final Gate) |
 
 1. **Finish and save the review.** Require the phase's full methodology/section
    Reads, required outputs, successful writes and terminal reviewer results.
@@ -22,40 +15,26 @@ SKILL.md at each exit; those hosts do not have a separate phase-close.md file.
    provisional; User Challenges preserve the original requirements. A `None`
    record must explain why the implementation remains unchanged. Keep the
    amendment checkpoint fixed for this invocation, including after compaction.
-3. **Export the current implementation.** Run with the exit's phase/checkpoint:
+3. **Prepare this phase's close packet.** Run with the exit's phase/checkpoint:
 ```bash
-bun "<SNAPSHOT_TOOL>" amend-input "<PHASE>" "<ACTIVE_PLAN>" "<AMENDMENT_CHECKPOINT>" "<RESTORE_PATH>" "<methodologyPath>"
+bun "<SNAPSHOT_TOOL>" prepare-close "<PHASE>" "<ACTIVE_PLAN>" "<AMENDMENT_CHECKPOINT>" "<RESTORE_PATH>" "<methodologyPath>"
 ```
-4. **Read the complete new export.** For every returned `readRanges` entry, issue
-   a Read of `reviewInputPath` with that entry's exact `offset` and `limit`.
-   Finish all ranges through EOF before leaving this readback step. A Read of only the
-   edited tail does not satisfy this step; previous snapshots do not satisfy it.
-   If a result is truncated, read its missing ranges. If a Read fails, repair it
-   and finish the missing ranges. Do not advance on a request without its result.
-5. **Verify the actual text.** Compare the complete current implementation with
-   the accepted decisions, source requirements, conditions, tests and required
-   outputs. Retention checks prove bytes; counts, hashes, keyword probes and a
-   saved “Read-back” sentence do not perform this semantic review. Fix omissions,
-   then repeat the export and full readback. Review history stays in Review record.
-6. **Publish the phase report.** If any prerequisite in steps
-   1–5 is incomplete, keep this phase open: repair, export and finish the full
-   readback/verification before publishing. Otherwise, send the filled report
-   below now as visible parent assistant text. Use this phase's row above and
-   completed review data: actual findings, voice statuses and next step.
-   Saving it in ACTIVE_PLAN or printing it through Bash does not publish it.
-   Use N/A when either review voice is missing; confirmed counts require both voices.
-   Include the DX score/TTHW line only for `dx`. Send filled text, not the code fence.
+This applies the accepted requirements and exports a separate immutable close
+packet. The blind reviewer input stays unchanged. The packet binds the current
+phase, fixed checkpoint and implementation hashes; its complete implementation
+text is followed by this phase's semantic verification and parent report.
+4. **Read and execute the complete close packet.** For every returned `readRanges`
+   entry, issue a Read of `closePacketPath` with that entry's exact `offset` and
+   `limit`. Finish all ranges through EOF, including the continuation after the
+   implementation. A Read of only the edited tail does not satisfy this step;
+   previous snapshots do not satisfy it. If a result is truncated, read its missing
+   ranges. If a Read fails, repair it and finish the missing ranges. Do not advance
+   on a request without its result. Execute the packet's verification and publication
+   continuation now; a successful helper result or Read never completes a phase.
+   If verification requires an implementation or accepted-decision edit, regenerate
+   the packet with the same checkpoint and Read the entire new packet before publication.
 
-```text
-**Phase [number] complete.**
-[DX only: DX overall: [N]/10. TTHW: [N] min → [target] min.]
-{{OUTSIDE_LABEL}}: [completed: N concerns / unavailable / disabled]. {{NATIVE_LABEL}} subagent: [completed: N issues / unavailable].
-Consensus: [N/A (voice coverage missing) | X/[total] native+outside confirmed; Y disagreements → gate].
-Passing to [next step].
-```
-
-7. **Continue to the next step.** After the report message has been sent,
-   Read/create/dispatch the next step in this phase's row. Continue in the same turn;
-   do not end the turn to wait for a “continue” reply. After Eng, the next step is
-   final synthesis/approval. The driver emits its declared skip message for each
-   inapplicable Design or DX phase; a skip is never a completion.
+The packet owns the close continuation; the driver owns advancement after the
+actual visible parent report. Do not resume at a later phase merely because the
+implementation readback finished. After compaction, resume the current packet's
+first incomplete step, or regenerate it if its bound inputs changed.

@@ -126,7 +126,8 @@ test('CEO applies Step 0 decisions before each spec dispatch and refreshes the n
 test('compaction recovery separates saved artifacts, sent messages and pending reviewer state', () => {
   const contract = source('autoplan/SKILL.md.tmpl').split('## Sequential Execution')[1]!.split('---')[0]!;
   expect(contract).toContain('reconcile saved artifacts and sent conversation messages separately');
-  expect(contract).toContain('verified phase lacks its announcement, send that message before advancing');
+  expect(contract).toContain("verified phase lacks its announcement, execute the packet's publication before advancing");
+  expect(contract).toContain('regenerate and reread the full packet if the implementation or accepted decisions changed');
   expect(contract).toContain('If its reviewer is pending, wait for that same reviewer');
   expect(contract).toContain('Read `snapshot.json` beside that final `<PHASE_INPUT>`');
   expect(contract).toContain('use its `nativeDispatchPrompt` unchanged');
@@ -213,13 +214,13 @@ test('phase progress text permits immediate tool continuation in the same turn',
   expect(contract).toContain('in the same turn');
   expect(contract).not.toContain('This parent response contains no tool calls');
   const shared = source('autoplan/sections/phase-close.md.tmpl').replace(/\s+/g, ' ');
-  expect(shared).toContain('send the filled report below now as visible parent assistant text');
-  expect(shared).toContain("After the report message has been sent, Read/create/dispatch the next step in this phase's row");
-  const publish = shared.indexOf('6. **Publish the phase report.**');
-  const continueAt = shared.indexOf('7. **Continue to the next step.**');
-  expect(publish).toBeGreaterThan(-1);
-  expect(continueAt).toBeGreaterThan(publish);
-  expect(shared).toContain('in the same turn');
+  expect(shared).toContain("Execute the packet's verification and publication continuation now");
+  expect(shared).toContain('The packet owns the close continuation; the driver owns advancement after the actual visible parent report');
+  const prepare = shared.indexOf("3. **Prepare this phase's close packet.**");
+  const readback = shared.indexOf('4. **Read and execute the complete close packet.**');
+  expect(prepare).toBeGreaterThan(-1);
+  expect(readback).toBeGreaterThan(prepare);
+  expect(shared).toContain('including the continuation after the implementation');
   expect(shared).not.toContain('This message contains no tool calls');
   for (const phase of ['ceo', 'design', 'dx', 'eng']) {
     const close = source(`autoplan/sections/${phase}-phase.md.tmpl`).split('**Close this phase:**')[1]!;
