@@ -2,6 +2,7 @@ import {afterEach, expect, test} from 'bun:test';
 import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
+import {createHash} from 'node:crypto';
 import {prepareMethodology, createSnapshot} from '../bin/gstack-autoplan-snapshot';
 import {autoplanDualVoiceEvidence, loadAutoplanDualCommandContract} from './helpers/autoplan-dual-voice-evidence';
 import captured from './fixtures/autoplan-dual-false-positive-6bd.json';
@@ -10,10 +11,10 @@ const clone=<T>(v:T):T=>JSON.parse(JSON.stringify(v));
 afterEach(()=>{for(const dir of owned.splice(0))rmSync(dir,{recursive:true,force:true});});
 const use=(id:string,name:string,input:any,session='parent')=>({type:'assistant',session_id:session,message:{content:[{type:'tool_use',id,name,input}]}});
 const ack=(id:string,content:string,is_error=false,session='parent')=>({type:'user',session_id:session,message:{content:[{type:'tool_result',tool_use_id:id,content,is_error}]}});
-function fixture(){
+function fixture(plan?:string){
  const dir=mkdtempSync(join(tmpdir(),'autoplan-dual-evidence-'));owned.push(dir);
  const active=join(dir,'active.md'),restore=join(dir,'restore.md');
- writeFileSync(active,'## Implementation plan\n# Greet\nPrint hello.\n\n## Review record\n');writeFileSync(restore,'# Greet\nPrint hello.\n');
+ writeFileSync(active,'## Implementation plan\n'+(plan??'# Greet\nPrint hello.\n\n')+'## Review record\n');writeFileSync(restore,plan??'# Greet\nPrint hello.\n');
  const method=prepareMethodology('ceo',join(ROOT,'plan-ceo-review/SKILL.md'),restore);
  const snapshot=createSnapshot('ceo',active,restore,method.methodologyPath);
  const commands=loadAutoplanDualCommandContract(ROOT);
@@ -192,5 +193,145 @@ test('pre-execution, arbitrary, copied and unowned failures supply no outside-at
   if(kind==='quoted')f.events[7]=ack('outside','Quoted diagnostic: "'+marker+'"',true);
   expect(f.read().codexAttempted,kind).toBe(false);
   expect(f.read().codexUnavailable,kind).toBe(false);
+ }
+});
+
+// Availability rechecks may stop before dispatch; they cannot supply a voice.
+const configRead=(f:ReturnType<typeof fixture>)=>f.options.commands.probe.split('\n').find(line=>line.startsWith('_CODEX_CFG='))!;
+const configStop=(f:ReturnType<typeof fixture>,status=77)=>configRead(f)+`\n[ "$_CODEX_CFG" = "disabled" ] && { echo 'CODEX_MODE: disabled (recheck)'; exit ${status}; }`;
+const cliStop="command -v codex >/dev/null 2>&1 || { echo 'CODEX_MODE: not_installed (recheck)' >&2; exit 76; }";
+function addGuards(f:ReturnType<typeof fixture>,guards:string,where='after'){
+ const input=f.events[6]!.message.content[0].input;
+ input.command=where==='before'?guards+'\n'+input.command:input.command.replace('\n_REPO_ROOT=','\n'+guards+'\n_REPO_ROOT=');
+}
+test.each(['before','after'])('source-bound config and CLI stop forms preserve exact dispatch: %s',where=>{
+ for(const kind of ['config','cli','both','reverse','if','if-cli','silent','quoted']){
+  const f=fixture();
+  const config=configStop(f), cli=cliStop;
+  const guards=kind==='config'?config:kind==='cli'?cli:kind==='both'?config+'\n'+cli:kind==='reverse'?cli+'\n'+config:
+   kind==='if'?configRead(f)+'\nif [ "$_CODEX_CFG" == disabled ]; then\necho "CODEX_MODE: disabled before dispatch" >&2\nexit 1\nfi':
+   kind==='if-cli'?'if ! command -v codex >/dev/null 2>&1; then\necho "CODEX_MODE: not_installed"\nexit 127\nfi':
+   kind==='silent'?configRead(f)+'\n[ "$_CODEX_CFG" = disabled ] && { exit 0; }':
+   configRead(f)+"\n[ \"$_CODEX_CFG\" = 'disabled' ] && { echo \"CODEX_MODE: disabled\"; exit 255; }";
+  addGuards(f,guards,where);
+  expect(f.read(),kind).toMatchObject({claudeVoiceFired:true,codexVoiceFired:true,codexAttempted:true,probeMode:'ready'});
+ }
+});
+test('guarded execution still accepts only a literal owned cd and source comments',()=>{
+ const f=fixture();addGuards(f,configStop(f));
+ f.events[6]!.message.content[0].input.command='cd "'+f.dir+'" &&\n# Dispatch-time availability\n'+f.events[6]!.message.content[0].input.command;
+ expect(f.read().codexVoiceFired).toBe(true);
+});
+test.each(['before','after'])('guard blocks retain command separators around the exact harness: %s',where=>{
+ const f=fixture(),guard=configStop(f);addGuards(f,guard,where);
+ const input=f.events[6]!.message.content[0].input;
+ input.command=input.command.split('\n').map((line:string)=>line.trim()).filter((line:string)=>line&&!line.startsWith('#')).join('\n');
+ input.command=where==='before'?input.command.replace(guard+'\n',guard):input.command.replace('fi\n'+guard,'fi'+guard);
+ expect(f.read().codexVoiceFired).toBe(false);
+});
+test.each(['assignment-only','set-config','other-config','foreign-reader','or-config','and-cli','inverted-cli','no-exit','return','dynamic-exit','out-of-range-exit','command-substitution','backticks','redirect','diagnostic-command','completed-diagnostic','variable-change','duplicate-config','duplicate-cli','extra-command','conditional-body','inside-harness','inside-body','before-cd','changed-harness','changed-timeout','changed-sandbox','changed-prompt','skipped-validator','suffix'])('availability guards reject changed dispatch or non-stop shell: %s',kind=>{
+ const f=fixture();let guards=configStop(f)+'\n'+cliStop;
+ if(kind==='assignment-only')guards=configRead(f);
+ if(kind==='set-config')guards=guards.replace('get codex_reviews','set codex_reviews enabled');
+ if(kind==='other-config')guards=guards.replace('get codex_reviews','get telemetry');
+ if(kind==='foreign-reader')guards=guards.replace('~/.claude/skills/gstack/bin/gstack-config','/tmp/gstack-config');
+ if(kind==='or-config')guards=guards.replace('] && {','] || {');
+ if(kind==='and-cli')guards=guards.replace('2>&1 || {','2>&1 && {');
+ if(kind==='inverted-cli')guards='if command -v codex >/dev/null 2>&1; then\nexit 0\nfi';
+ if(kind==='no-exit')guards=guards.replace('exit 77;','true;');
+ if(kind==='return')guards=guards.replace('exit 77;','return 77;');
+ if(kind==='dynamic-exit')guards=guards.replace('exit 77;','exit "$CODE";');
+ if(kind==='out-of-range-exit')guards=guards.replace('exit 77;','exit 256;');
+ if(kind==='command-substitution')guards=guards.replace("'CODEX_MODE: disabled (recheck)'",'"CODEX_MODE: disabled $(touch /tmp/side-effect)"');
+ if(kind==='backticks')guards=guards.replace("'CODEX_MODE: disabled (recheck)'",'"CODEX_MODE: disabled `touch /tmp/side-effect`"');
+ if(kind==='redirect')guards=guards.replace('; exit 77;',' > /tmp/side-effect; exit 77;');
+ if(kind==='diagnostic-command')guards=guards.replace('; exit 77;','; touch /tmp/side-effect; exit 77;');
+ if(kind==='completed-diagnostic')guards=guards.replace('CODEX_MODE: disabled (recheck)','OUTSIDE_STATUS: completed provider=codex host=claude');
+ if(kind==='variable-change')guards+='\nGSTACK_ACTIVE_HOST=claude';
+ if(kind==='duplicate-config')guards+='\n'+configStop(f);
+ if(kind==='duplicate-cli')guards+='\n'+cliStop;
+ if(kind==='extra-command')guards+='\necho ready';
+ addGuards(f,guards);
+ const input=f.events[6]!.message.content[0].input;
+ if(kind==='conditional-body')input.command='if false; then\n'+input.command+'\nfi';
+ if(kind==='inside-harness')input.command=input.command.replace(guards+'\n','').replace('  exit 78','  '+guards+'\n  exit 78');
+ if(kind==='inside-body')input.command=input.command.replace(guards+'\n','').replace('_OUTSIDE_EXIT=0','_OUTSIDE_EXIT=0\n'+guards);
+ if(kind==='before-cd')input.command=guards+'\ncd '+f.dir+'\n'+f.options.commands.outside.replace("'<prepared-prompt-file>'","'"+f.file+"'");
+ if(kind==='changed-harness')input.command=input.command.replace('exit 78','exit 0');
+ if(kind==='changed-timeout')input.command=input.command.replace('_gstack_codex_timeout_wrapper 600','_gstack_codex_timeout_wrapper 1');
+ if(kind==='changed-sandbox')input.command=input.command.replace('-s read-only','-s danger-full-access');
+ if(kind==='changed-prompt')input.command=input.command.replace('codex exec "$_OUTSIDE_PROMPT"','codex exec "Different plan"');
+ if(kind==='skipped-validator')input.command=input.command.replace(/^bun .*outside-review-result.*\n/m,'');
+ if(kind==='suffix')input.command+='\ntrue';
+ expect(f.read().codexVoiceFired,kind).toBe(false);
+ expect(f.read().codexAttempted,kind).toBe(false);
+});
+test.each(['disabled','missing-cli','missing-ack','failed-ack','foreign-ack','child','wrong-owner','wrong-method','changed-write','changed-native','pending','marker-only'])('accepted guard syntax never replaces execution, input or ownership evidence: %s',kind=>{
+ const f=fixture();addGuards(f,configStop(f,0)+'\n'+cliStop);
+ if(kind==='disabled')f.events[7]=ack('outside','CODEX_MODE: disabled (recheck)');
+ if(kind==='missing-cli')f.events[7]=ack('outside','CODEX_MODE: not_installed (recheck)',true);
+ if(kind==='missing-ack')f.events.pop();
+ if(kind==='failed-ack')f.events[7]=ack('outside','OUTSIDE_STATUS: completed provider=codex host=claude',true);
+ if(kind==='foreign-ack')f.events[7]=ack('outside','OUTSIDE_STATUS: completed provider=codex host=claude',false,'other');
+ if(kind==='child')Object.assign(f.events[6]!,{parent_tool_use_id:'child'});
+ if(kind==='wrong-owner')f.events[4]!.message.content[0].input.file_path='/tmp/foreign-prompt';
+ if(kind==='wrong-method')f.options.methodologySha256='0'.repeat(64);
+ if(kind==='changed-write')f.events.splice(6,0,use('edit','Edit',{file_path:f.file,new_string:'Changed plan'}),ack('edit','Updated'));
+ if(kind==='changed-native')f.events[3]=ack('native','INPUT: ceo '+'0'.repeat(64));
+ if(kind==='pending')f.events[7]=ack('outside','Command running in background with ID: pending. Output is being written to: /tmp/tasks/pending.output. You will be notified when it completes. To check interim output, use Read on that file path.');
+ if(kind==='marker-only')f.events[6]!.message.content[0].input.command=configStop(f)+'\necho "OUTSIDE_STATUS: completed provider=codex host=claude"';
+ expect(f.read().codexVoiceFired,kind).toBe(false);
+ expect(f.read().codexAttempted,kind).toBe(false);
+});
+
+const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
+function capturedGuardFixture(attempt:typeof captured.sourceBoundB176.attempts[number]){
+ const f=fixture(attempt.plan),old=attempt.snapshot;
+ // Authenticate the original public payload before adapting only fixture paths
+ // and the native prompt's path-derived byte count/hash to real owned artifacts.
+ expect(hash(attempt.plan)).toBe(old.sha256);
+ expect(hash(attempt.nativePrompt)).toBe(old.nativePromptSha256);
+ expect(attempt.events[2]!.message.content[0].input!.prompt).toBe(old.nativeDispatchPrompt);
+ expect(f.snapshot.sha256).toBe(old.sha256);
+ expect(attempt.nativePrompt.replaceAll(old.snapshotPath,f.snapshot.snapshotPath)).toBe(f.snapshot.nativePrompt);
+ const dispatch=old.nativeDispatchPrompt.replaceAll(old.nativePromptPath,f.snapshot.nativePromptPath)
+  .replace(old.nativePromptSha256,f.snapshot.nativePromptSha256)
+  .replace(old.nativePromptBytes+' UTF-8 bytes',f.snapshot.nativePromptBytes+' UTF-8 bytes');
+ expect(dispatch).toBe(f.snapshot.nativeDispatchPrompt);
+ const rows:any[]=clone(attempt.events);
+ for(const event of rows){
+  for(const part of event.message.content){
+   if(part.type==='tool_use'&&part.name==='Agent')part.input.prompt=dispatch;
+   if(part.type==='tool_use'&&part.name==='Write'){
+    part.input.file_path=f.file;part.input.content=part.input.content.replaceAll(old.snapshotPath,f.snapshot.snapshotPath);
+    writeFileSync(f.file,part.input.content);
+   }
+   if(part.type==='tool_use'&&part.name==='Bash')part.input.command=part.input.command.replaceAll(attempt.preparedPromptPath,f.file);
+  }
+ }
+ f.events.splice(0,f.events.length,...rows);
+ return f;
+}
+test.each(captured.sourceBoundB176.attempts)('actual b176 attempt $attempt retains successful owned voices despite its availability recheck',attempt=>{
+ const f=capturedGuardFixture(attempt);
+ expect(f.read()).toMatchObject({claudeVoiceFired:true,codexAttempted:true,codexVoiceFired:true,codexUnavailable:false,reviewDispatched:true,
+  nativeToolUseId:attempt.events[2]!.message.content[0].id,outsideToolUseId:attempt.events[6]!.message.content[0].id});
+ expect(attempt.originalPaidVerdict).toBe('FAIL');
+ expect(captured.sourceBoundB176.originalPaidVerdicts).toEqual(['FAIL','FAIL']);
+ expect(captured.sourceBoundB176.paidOutcomesReclassified).toBe(false);
+});
+test.each(['missing-native','foreign-outside-result','changed-prompt','changed-owner','changed-method','changed-harness','changed-exec','no-marker'])('actual b176 captures still reject %s',kind=>{
+ for(const attempt of captured.sourceBoundB176.attempts){
+  const f=capturedGuardFixture(attempt),outside=f.events[6]!.message.content[0].input;
+  if(kind==='missing-native')f.events.splice(3,1);
+  if(kind==='foreign-outside-result')f.events[7]!.session_id='other';
+  if(kind==='changed-prompt')f.events[4]!.message.content[0].input.content='Different plan';
+  if(kind==='changed-owner')f.events[4]!.message.content[0].input.file_path='/tmp/foreign-prompt';
+  if(kind==='changed-method')f.options.methodologySha256='0'.repeat(64);
+  if(kind==='changed-harness')outside.command=outside.command.replace('exit 78','exit 0');
+  if(kind==='changed-exec')outside.command=outside.command.replace('-s read-only','-s danger-full-access');
+  if(kind==='no-marker')f.events[7]!.message.content[0].content='CODEX_MODE: disabled (recheck)';
+  expect(f.read().codexVoiceFired,kind).toBe(false);
+  expect(f.read().codexAttempted,kind).toBe(false);
  }
 });

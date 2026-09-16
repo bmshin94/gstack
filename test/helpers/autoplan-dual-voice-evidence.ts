@@ -12,6 +12,7 @@ const object = (value: unknown): value is Record<string, any> => value !== null 
 const parent = (event: any) => event?.parent_tool_use_id == null && event?.agentId == null && (event?.isSidechain == null || event?.isSidechain === false);
 // These are delivered executable blocks, not a shell interpreter. Only blank
 // lines, indentation and full-line comments may differ; branch/order/args stay exact.
+// The outside matcher also recognizes bounded stop-only availability rechecks.
 const code = (value: string) => value.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#')).join('\n');
 function block(source: string, needle: string): string {
   const blocks = [...source.matchAll(/```bash\r?\n([\s\S]*?)\r?\n```/g)].map(match => match[1]!);
@@ -113,11 +114,51 @@ export function autoplanDualVoiceEvidence(transcript: unknown[], options: Autopl
       }
     }
   }
-  const canonical = (command: string, expected: string) => {
-    // An optional literal cd to the actual fixture is the only preamble allowed.
+  const canonical = (command: string, expected: string, readiness = false) => {
+    // A literal fixture cd is shared by the probe and outside command.
     const prefix = new RegExp('^cd (?:' + [options.cwd, '"' + options.cwd + '"', "'" + options.cwd + "'"]
       .map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?: \&\&|;)?\\n');
-    return code(command.replace(prefix, '')) === code(expected);
+    const actual = code(command.replace(prefix, '')), contract = code(expected);
+    if (actual === contract) return true;
+    if (!readiness) return false;
+    // At dispatch, a fresh availability check may precede or follow the exact
+    // host guard. The execution body, host guard and their order remain exact.
+    // These finite stop-only forms are not a general shell normalizer.
+    const boundary = contract.indexOf('\n_REPO_ROOT=');
+    if (boundary < 0 || contract.indexOf('\n_REPO_ROOT=', boundary + 1) >= 0) return false;
+    const harness = contract.slice(0, boundary), body = contract.slice(boundary);
+    if (!actual.endsWith(body)) return false;
+    const edges = actual.slice(0, -body.length).split(harness);
+    if (edges.length !== 2) return false;
+    if (edges[0] && !edges[0].endsWith('\n') || edges[1] && !edges[1].startsWith('\n')) return false;
+    const assignments = code(options.commands.probe).split('\n').filter(line => line.startsWith('_CODEX_CFG='));
+    if (assignments.length !== 1) return false;
+    const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const separator = '(?:;[ \\t]*|\\n)';
+    const stop = (mode: string) => {
+      const literal = `(?:'CODEX_MODE: ${mode}[A-Za-z0-9 .,:_()/=-]*'|"CODEX_MODE: ${mode}[A-Za-z0-9 .,:_()/=-]*")`;
+      return `(?:echo ${literal}(?: >&2)?${separator}\\s*)?exit (?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])`;
+    };
+    const condition = '\\[ "\\$_CODEX_CFG" =?= (?:"disabled"|\'disabled\'|disabled) \\]';
+    const cli = 'command -v codex >/dev/null 2>&1';
+    const guard = (condition: string, operator: string, mode: string, negated = false) => {
+      const exit = stop(mode);
+      return `(?:${condition} ${operator} \\{\\s*${exit}${separator}\\s*\\}|if ${negated ? '! ' : ''}${condition}; then\\s*${exit}${separator}\\s*fi)`;
+    };
+    const config = new RegExp('^' + escaped(assignments[0]!) + '\\n' + guard(condition, '&&', 'disabled') + '(?:\\n|$)');
+    const available = new RegExp('^' + guard(cli, '\\|\\|', 'not_installed', true) + '(?:\\n|$)');
+    const seen = new Set<string>();
+    for (const edge of edges) {
+      let remaining = edge.trim();
+      while (remaining) {
+        const match = config.exec(remaining) ?? available.exec(remaining);
+        if (!match) return false;
+        const kind = match[0].startsWith(assignments[0]!) ? 'config' : 'cli';
+        if (seen.has(kind)) return false;
+        seen.add(kind); remaining = remaining.slice(match[0].length).trim();
+      }
+    }
+    return seen.size > 0;
   };
   for (const call of calls.values()) {
     if (call.name !== 'Bash' || typeof call.input.command !== 'string' || !canonical(call.input.command, options.commands.probe)) continue;
@@ -162,7 +203,7 @@ export function autoplanDualVoiceEvidence(transcript: unknown[], options: Autopl
         if ([...calls.values()].some(call => call.order > write.order && call.order < outside.order &&
             ['Write', 'Edit'].includes(call.name) && call.input.file_path === file)) continue;
         const command = options.commands.outside.replace("'<prepared-prompt-file>'", "'" + file + "'");
-        if (/[\r\n\0']/.test(file) || !canonical(outside.input.command, command)) continue;
+        if (/[\r\n\0']/.test(file) || !canonical(outside.input.command, command, true)) continue;
         const otherIdenticalCalls = new Set([...calls.values()].filter(call => call.id !== outside.id &&
           call.name === 'Bash' && call.input.command === outside.input.command).map(call => call.id));
         const thisExecution = publicStream.filter(event => !event.message?.content?.some((part: any) =>

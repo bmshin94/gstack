@@ -115,12 +115,13 @@ function withoutAttributedPriorRecordData(output: string, priorRecord?: Record<s
   };
   const ownsPriorValue = (prefix: string, fenced: boolean): boolean => {
     const local = prefix.replace(/[*`]/g, '').trimEnd().split(/\r?\n|(?<=[.!?;])\s+/).at(-1) ?? '';
-    const owner = [...local.matchAll(/\b(?:earlier|prior|previous|historical|old(?:er)?|pre[- ]existing)\s+(?:(?:review[- ]log|review|log)\s+)?(?:entry|record|line)(?:\s+\d+)?\b/gi)].at(-1);
+    const owner = [...local.matchAll(/\b(?:earlier|prior|previous|historical|old(?:er)?|pre[- ]existing)\s+(?:(?:review[- ]log|review|log)\s+)?(?:entry|record|line|row)(?:\s+\d+)?\b/gi)].at(-1);
     if (!owner || /\b(?:now|currently|current|today|new|updat\w*|append\w*|chang\w*|mark\w*|set|write|wrote)\b/i.test(local.slice(0, owner.index))) return false;
     let rest = local.slice(owner.index + owner[0].length);
-    // A source location is metadata, not a new reporting subject. Bind its
-    // optional timestamp to the retained record; arbitrary parentheses fail.
-    const location = /^\s*\(\s*(?:timestamp\s+)?([^\s,()]+)\s*,\s*before\s+(?:this|my)\s+(?:run|session|workflow)(?:\s+(?:started|began))?\s*\)/i.exec(rest);
+    // An explicit historical owner already establishes prior attribution.
+    // A parenthesized timestamp must identify that exact retained record;
+    // the redundant pre-run suffix is optional, but arbitrary metadata fails.
+    const location = /^\s*\(\s*(?:timestamp\s+)?([^\s,()]+)(?:\s*,\s*before\s+(?:this|my)\s+(?:run|session|workflow)(?:\s+(?:started|began))?)?\s*\)/i.exec(rest);
     if (location) {
       const priorTime = typeof priorRecord.timestamp === 'string' ? Date.parse(priorRecord.timestamp) : NaN;
       const clock = Number.isFinite(priorTime) ? new Date(priorTime).toISOString().slice(11, 19) + 'Z' : '';

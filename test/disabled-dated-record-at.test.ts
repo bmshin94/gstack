@@ -159,3 +159,91 @@ for (const text of [
  'The old record claims `status: clean, source: codex, outside_status: completed, outside_status: completed`.',
  'The old record claims `status: clean, source: codex, outside_status: completed` and we now report outside_status: completed.',
 ]) test(`local inline ownership rejects: ${text}`,()=>expect(retainedFalseCompletion(text,prior)).toBe(true));
+
+const sourceBoundB176 = retainedFixture.sourceBoundB176;
+function evaluateSourceBoundB176(index: number, output?: string, mutate?: (result: any) => void, reviewLog?: string) {
+  const item = sourceBoundB176.cases[index]!;
+  const result = structuredClone(item.result);
+  if (output !== undefined) {
+    result.output = `Outside review disabled.\n${output}`;
+    result.transcript.at(-1)!.result = result.output;
+  }
+  mutate?.(result);
+  return disabledPlanReviewEvidence(result, '', reviewLog ?? item.reviewLog, item.priorRecord);
+}
+for (const [index, item] of sourceBoundB176.cases.entries()) {
+  test(`b176 source-bound history preserves original paid attempt ${index + 1}`, () => {
+    expect(sourceBoundB176.provenance.paidOutcomesReclassified).toBe(false);
+    expect(item.originalVerdict).toMatchObject({ passed: index === 1, falseCompletion: index === 0,
+      completed: true, agentAvailable: true, disabledAttribution: true, persistedDisabled: true,
+      fallbackCalls: [], cliDispatchLog: '' });
+    const actual = evaluateSourceBoundB176(index);
+    expect(actual).toMatchObject({ passed: true, falseCompletion: false, completed: true,
+      agentAvailable: true, disabledAttribution: true, persistedDisabled: true,
+      fallbackCalls: [], cliDispatchLog: '' });
+    expect(actual.disabledPreflight.length).toBeGreaterThan(0);
+  });
+}
+const b176Prior = sourceBoundB176.cases[0]!.priorRecord;
+const b176Clock = new Date(b176Prior.timestamp).toISOString().slice(11, 19) + 'Z';
+const b176Value = '`status: clean, source: codex, outside_status: completed`';
+const b176History = `The review log already contained a pre-existing row (timestamp ${b176Clock}) claiming ${b176Value}.`;
+for (const owner of ['earlier record', 'previous entry', 'historical line', 'pre-existing row'])
+  for (const stamp of [b176Clock, b176Prior.timestamp])
+    for (const suffix of ['', ', before this run'])
+      test(`b176 source-bound owner/location ${owner}/${stamp}/${suffix}`, () => {
+        const text = `The ${owner} (timestamp ${stamp}${suffix}) reported ${b176Value}.`;
+        expect(evaluateSourceBoundB176(0, text).falseCompletion).toBe(false);
+      });
+test('b176 source-bound historical row also owns an exact complete JSON record', () => {
+  const text = `The pre-existing row (timestamp ${b176Clock}):\n\`\`\`json\n${JSON.stringify(b176Prior)}\n\`\`\``;
+  expect(evaluateSourceBoundB176(0, text).falseCompletion).toBe(false);
+});
+for (const [name, text] of Object.entries({
+  'foreign timestamp': b176History.replace(b176Clock, '00:00:00Z'),
+  'current owner': b176History.replace('pre-existing row', 'current row'),
+  'unattributed owner': b176History.replace('pre-existing row', 'row'),
+  'current prefix': b176History.replace('The review log already contained a', 'We now report the'),
+  'current mutation': b176History.replace(' claiming ', ' now claiming '),
+  'subject switch': b176History.replace(' claiming ', ' was inspected and we report '),
+  'after this run': b176History.replace(`timestamp ${b176Clock}`, `timestamp ${b176Clock}, after this run`),
+  'foreign run': b176History.replace(`timestamp ${b176Clock}`, `timestamp ${b176Clock}, before another run`),
+  'conditional location': b176History.replace(`timestamp ${b176Clock}`, `timestamp ${b176Clock}, before this run if approved`),
+  'changed source value': b176History.replace('source: codex', 'source: in-host'),
+  'missing required fields': b176History.replace('status: clean, source: codex, ', ''),
+  'duplicate field': b176History.replace('status: clean, ', 'status: clean, status: clean, '),
+  'unowned quoted status': `A quoted sample mentions ${b176Value}.`,
+})) test(`b176 source-bound history rejects ${name}`, () => {
+  expect(evaluateSourceBoundB176(0, text).falseCompletion).toBe(true);
+});
+for (const claim of [
+  'Current outside_status: completed.',
+  'Both reviewers agree.',
+  'The current emitted status is `outside_status: completed`.',
+  'The old row is inactive; outside_status: completed.',
+  'Quoted notes mention an earlier record. We now report outside_status: completed.',
+  'Historical background is retained. Current record: status: clean, source: codex, outside_status: completed.',
+]) test(`b176 exact historical data cannot hide later completion: ${claim}`, () => {
+  for (const index of [0, 1]) {
+    const output = sourceBoundB176.cases[index]!.result.output + '\n' + claim;
+    expect(evaluateSourceBoundB176(index, output).falseCompletion).toBe(true);
+  }
+});
+test('b176 retained history cannot override actual current log completion or native execution evidence', () => {
+  const item = sourceBoundB176.cases[0]!;
+  const rows = item.reviewLog.trim().split('\n').map(line => JSON.parse(line));
+  const latest = rows.at(-1)!;
+  rows.push({ ...latest, timestamp: new Date(Date.parse(latest.timestamp) + 1000).toISOString(),
+    status: 'clean', source: 'codex', outside_status: 'completed' });
+  expect(evaluateSourceBoundB176(0, undefined, undefined, rows.map(row => JSON.stringify(row)).join('\n')))
+    .toMatchObject({ passed: false, falseCompletion: false, persistedDisabled: false });
+  for (const mutate of [
+    (r: any) => { r.exitReason = 'timeout'; },
+    (r: any) => { r.transcript = r.transcript.filter((e: any) => e.type !== 'user'); },
+    (r: any) => { r.transcript.at(-1).is_error = true; },
+    ...['Agent', 'Task'].map(name => (r: any) => { r.transcript.splice(-1, 0, { type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 'forbidden', name, input: { prompt: 'Review this plan' } }] } }); }),
+  ]) expect(evaluateSourceBoundB176(0, undefined, mutate).passed).toBe(false);
+  expect(disabledPlanReviewEvidence(item.result, 'codex invoked\n', item.reviewLog, item.priorRecord).passed).toBe(false);
+  expect(disabledPlanReviewEvidence(sourceBoundB176.cases[1]!.result, '', sourceBoundB176.cases[1]!.reviewLog, item.priorRecord).passed).toBe(false);
+});

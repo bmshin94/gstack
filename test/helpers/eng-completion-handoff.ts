@@ -336,10 +336,29 @@ function isApprovedInvestigationRecap(fp: AskUserQuestionFingerprint, plan: stri
   return remaining.length === 1 && new RegExp(`^- ${issue} / ${decision} [—–-] .+: Investigate; re-ask .+\\(${task}\\)$`, 'i').test(remaining[0]!);
 }
 
+function hasCompleteEarlierNativeAnswers(call: NativePlanQuestionCall,
+  prior: readonly NativePlanQuestionCall[]): boolean {
+  const identities = prior.map(c => `${c.sessionId}:${c.toolUseId}`);
+  return !!prior.length && new Set(identities).size === prior.length && !prior.some(c => c.sessionId !== call.sessionId ||
+    c.toolUseId === call.toolUseId || !c.toolUseId || c.answered !== true || c.failed !== false ||
+    !Number.isFinite(Date.parse(c.answeredAt ?? '')) || Date.parse(c.answeredAt!) >= Date.parse(call.answeredAt!) ||
+    !Array.isArray(c.unansweredQuestionIndices) || c.unansweredQuestionIndices.length ||
+    !c.questions.length || c.questions.length > 4 || Object.keys(c.answers ?? {}).length !== c.questions.length ||
+    new Set(c.questions.map(q => q.question)).size !== c.questions.length ||
+    c.questions.some(q => q.multiSelect || q.options.length < 2 || q.options.length > 4 ||
+      new Set(q.options.map(o => o.label)).size !== q.options.length ||
+      !q.options.some(o => o.label === c.answers?.[q.question])));
+}
+
+function introducesSourceContext(line: string): boolean {
+  return /[:：]$|\b(?:example|sample|hypothetical|template|quoted)\b/i.test(line);
+}
+
 /** Navigation may repeat already-approved post-review bookkeeping, but cannot
  * authorize it afresh or hide new implementation work behind a completion label. */
 function isApprovedMaintenanceRecap(fp: AskUserQuestionFingerprint, plan: string,
   prior: readonly NativePlanQuestionCall[]): boolean {
+  if (isRecordedMaintenanceRecap(fp, plan, prior)) return true;
   const call = fp.nativeCall!, q = call.questions[0]!;
   const label = (s: string) => s.replace(/^[1-9]\d*[A-Z]\)\s*/, '').replace(/\s*\(recommended\)$/, '').trim();
   const current = (s: string) => !/^(?:\s*>|\s*`{3,}|\s*~{3,})|(?:^|\n)\s*(?:source|example|historical|quoted)\b|["“”]|\b(?:withdrawn|cancelled|canceled|rejected|superseded|no longer current|not approved|no longer approved|pending approval|if approved|once approved|assuming approval|provided approval)\b/i.test(s);
@@ -360,16 +379,7 @@ function isApprovedMaintenanceRecap(fp: AskUserQuestionFingerprint, plan: string
   const todos = actions.map(a => /^(?:create|write) TODOS\.md with (?:the )?(one|two|three|four|five|six|seven|eight|nine|[1-9]) accepted items?$/i.exec(a)).filter(Boolean);
   if (routing.length !== 1 || todos.length !== 1) return false;
   const count = Number(todos[0]![1]) || ['one','two','three','four','five','six','seven','eight','nine'].indexOf(todos[0]![1]!.toLowerCase()) + 1;
-  const identities = prior.map(c => `${c.sessionId}:${c.toolUseId}`);
-  if (!prior.length || new Set(identities).size !== prior.length || prior.some(c => c.sessionId !== call.sessionId ||
-      c.toolUseId === call.toolUseId || !c.toolUseId || c.answered !== true || c.failed !== false ||
-      !Number.isFinite(Date.parse(c.answeredAt ?? '')) || Date.parse(c.answeredAt!) >= Date.parse(call.answeredAt!) ||
-      !Array.isArray(c.unansweredQuestionIndices) || c.unansweredQuestionIndices.length ||
-      !c.questions.length || c.questions.length > 4 || Object.keys(c.answers ?? {}).length !== c.questions.length ||
-      new Set(c.questions.map(q => q.question)).size !== c.questions.length ||
-      c.questions.some(q => q.multiSelect || q.options.length < 2 || q.options.length > 4 ||
-        new Set(q.options.map(o => o.label)).size !== q.options.length ||
-        !q.options.some(o => o.label === c.answers?.[q.question])))) return false;
+  if (!hasCompleteEarlierNativeAnswers(call, prior)) return false;
   const approved = prior.flatMap(c => c.questions.map(q => ({ q, selected: label(c.answers![q.question]!) })));
   const routingCalls = approved.filter(({q}) => q.header === 'Routing');
   if (routingCalls.length !== 1 || routingCalls.filter(({q, selected}) => current(q.question) &&
@@ -397,6 +407,115 @@ function isApprovedMaintenanceRecap(fp: AskUserQuestionFingerprint, plan: string
     return subjects.length === 1 && blocks.filter(b => /^### /.test(b) && current(b) &&
       new RegExp(`\\b${subjects[0]}\\b`).test(b.split('\n')[0]!)).length === 1;
   });
+}
+
+/** Reference-bearing navigation can repeat approved post-exit maintenance and
+ * the published first task. Bind each D/T reference to the current report and
+ * actual earlier native answers; this never supplies report or exit evidence. */
+function isRecordedMaintenanceRecap(fp: AskUserQuestionFingerprint, plan: string,
+  prior: readonly NativePlanQuestionCall[]): boolean {
+  const call = fp.nativeCall!, q = call.questions[0]!;
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const label = (s: string) => s.trim().replace(/^(?:[1-9]\d*)?[A-Z][).:]\s*/, '')
+    .replace(/\s*\((?:recommended|optional|soft(?:: optional)?)\)$/i, '');
+  if (q.multiSelect || !/^Next(?: steps?)?$/i.test(q.header.trim()) || q.options.length !== 2 || fp.options.length !== 2 ||
+      !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) ||
+      Date.parse(call.answeredAt!) > Date.now()) return false;
+  const ready = q.options.find(o => /^Ready to implement(?: [—–-] run \/ship when done)?$/i.test(label(o.label)));
+  const ceo = q.options.find(o => /^Run \/plan-ceo-review(?: first)?$/i.test(label(o.label)));
+  if (!ready || !ceo || call.answers?.[q.question] !== ready.label || !/^Optional (?:strategy|scope)/i.test(ceo.description ?? '')) return false;
+  const recap = /^Exit plan mode[.;] (?:start|begin) with (T[1-9]\d*) (?:fixtures|characterization tests), then (?:write|create) CLAUDE\.md routing rules \((D[1-9]\d*)\) and TODOS\.md \((D[1-9]\d*(?:\/D[1-9]\d*)*)\)\.$/i.exec(ready.description ?? '');
+  if (!recap) return false;
+  const context = [q.question, ...q.options.map(o => `${o.label}\n${o.description ?? ''}`)].join('\n');
+  const positive = q.question.replace(/"[^"\n]*"|“[^”\n]*”/g, '');
+  const eng = '(?:(?:the |this )?eng(?:ineering)? review|the review|this review)';
+  const completed = '(?:clear(?:ed)?|complete[d]?|done|finished)';
+  const invalid = new RegExp(`\\b${eng}\\b[^.!?;\\n]{0,100}\\b(?:not|never|incomplete|unfinished|pending|withdrawn|superseded|cancelled|canceled|reopened)\\b|\\b${eng}\\s+(?:will|would|may|might|could|should) (?:be )?${completed}\\b|\\b${eng}\\b[^.!?;\\n]{0,100}\\b${completed}\\b[^.!?;\\n]{0,80}\\b(?:if|when|once|unless|provided|assuming|after)\\b|\\b(?:if|when|once|unless|provided|assuming)\\b[^.!?;\\n]{0,80}\\b${eng}\\b`, 'i');
+  if (!/\b(?:where next|next steps?)\b/i.test(positive) ||
+      !new RegExp(`\\b${eng} (?:is |has been )?${completed}\\b`, 'i').test(positive) ||
+      !/\b(?:every finding has an approved fix|all decisions (?:are )?(?:answered|settled))\b/i.test(positive) ||
+      !/\b(?:remaining|only) choice is whether\b/i.test(positive) ||
+      invalid.test(context) || /(?:^|\n)\s*>|`{3}|~{3}|\b(?:example|quoted|historical)\s*:/i.test(context) ||
+      /\b(?:not every finding|not all decisions|unanswered|unresolved|unapproved|pending approval)\b/i.test(context)) return false;
+  // Only the already-bound selected recap may contain implementation commands.
+  const actions = context.replace(ready.description!, '');
+  // A new obligation is substantive whether phrased as a command, a need,
+  // a dependency or a declared requirement. Only the bound recap is exempt.
+  const obligation = /\b(?:must|shall|should|requires?|needs?)\s+\S|\b(?:depends on|required to)\s+\S|\b(?:is|are|becomes?|remains?)\s+(?:now |still )?(?:required|mandatory|a prerequisite)\b/i;
+  if (/(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|while)\s+)(?:please\s+)?(?:add|remove|delete|replace|rewrite|change|alter|modify|enable|disable|implement|install|introduce|build|write|record|capture|create|switch|migrate|refactor|expand|reduce|deploy|approve)\b/i.test(actions) ||
+      /\brun\s+(?!\/(?:ship|plan-ceo-review)\b)|\b(?:new|additional|extra) (?:work|implementation|scope|task|requirement|dependency|feature|datastore|database|cache|test|prerequisite)\b/i.test(actions) || obligation.test(actions)) return false;
+
+  const published: string[] = [], hierarchy: { depth: number; inactive: boolean }[] = [];
+  let fence: string | undefined, preceding = '';
+  for (const line of plan.split(/\r?\n/)) {
+    const mark = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (mark) { if (!fence) fence = mark[1]; else if (mark[1]![0] === fence[0] && mark[1]!.length >= fence.length && !mark[2]!.trim()) fence = undefined; continue; }
+    if (fence || /^(?: {4}|\t| {0,3}>)/.test(line)) continue;
+    const h = /^(#{1,6}) (.+)$/.exec(line);
+    if (h) { while (hierarchy.at(-1) && hierarchy.at(-1)!.depth >= h[1]!.length) hierarchy.pop(); hierarchy.push({depth:h[1]!.length,inactive:introducesSourceContext(preceding) || /\b(?:history|historical|archived?|example|quoted|template|withdrawn|superseded)\b/i.test(h[2]!)}); }
+    // Keep the preceding visible line even in an inactive section, so source
+    // context follows its heading's descendants and ends at the next sibling.
+    if (line.trim()) preceding = line;
+    if (!hierarchy.some(h => h.inactive)) published.push(line);
+  }
+  if (fence) return false;
+  const current = published.join('\n'), titles = [...current.matchAll(/^# Plan: (.+) \(reviewed\)$/gm)];
+  const owners = [...current.matchAll(/^(?:<!-- )?Reviewed target: ([\w./-]+\.md) \("Plan: ([^"\n]+)"\) in (\/[\w./-]+), branch ([\w./-]+), commit [a-f0-9]+\./gm)];
+  const metadata = [...q.question.matchAll(/^Project\/branch\/task: ([\w.-]+) @ ([\w./-]+) [—–-] ([^,\n]+),/gm)];
+  if (titles.length !== 1 || owners.length !== 1 || metadata.length !== 1 || titles[0]![1] !== owners[0]![2] ||
+      metadata[0]![1] !== owners[0]![3]!.split('/').at(-1) || metadata[0]![2] !== owners[0]![4] || metadata[0]![3] !== titles[0]![1]) return false;
+  const source = owners[0]![1]!, branch = owners[0]![4]!;
+  const section = (heading: RegExp) => {
+    const hits = published.flatMap((line, i) => heading.test(line) ? [i] : []);
+    if (hits.length !== 1) return undefined;
+    const start = hits[0]!, end = published.findIndex((line, i) => i > start && /^#{1,2} /.test(line));
+    return published.slice(start + 1, end < 0 ? undefined : end).join('\n');
+  };
+  const report = section(/^## GSTACK REVIEW REPORT$/), ledger = section(/^## Decision ledger$/), tasks = section(/^## Implementation Tasks$/), todos = section(/^## Accepted TODOs(?: \([^\n]*\))?$/);
+  if (!report || !ledger || !tasks || !todos || report.trim().split('\n').at(-1) !== 'NO UNRESOLVED DECISIONS' ||
+      !/^\| Eng Review \|[^\n]*\| CLEAR \|[^\n]*\b0 critical gaps\b/m.test(report) ||
+      !/^- \*\*VERDICT:\*\* ENG CLEARED\b/m.test(report) || invalid.test(report) ||
+      !/^Approval readiness: PASS\b/m.test(ledger)) return false;
+  if (!hasCompleteEarlierNativeAnswers(call, prior)) return false;
+  const answers = prior.flatMap(c => c.questions.map(q => ({q,id:/^(D[1-9]\d*)\s*[—–:-]/.exec(q.question)?.[1],selected:c.answers![q.question]!})));
+  if (answers.some(a => !a.id) || new Set(answers.map(a => a.id)).size !== answers.length) return false;
+  const withdrawn = /\b(?:approval|decision|scope|task|TODO|routing rules)\s*(?:is|was|has been|:)?\s*(?:now )?(?:withdrawn|revoked|rejected|cancelled|canceled|reopened|superseded|not approved|pending approval)\b/i;
+  if (withdrawn.test(context) || withdrawn.test(current) || answers.some(a => withdrawn.test(a.q.question))) return false;
+  const rows = ledger.split(/\n(?=### )/).filter(row => /^### R[1-9]\d*:/.test(row.trim()));
+  const bound = new Set<string>();
+  for (const row of rows) {
+    const states = [...row.matchAll(/^State: (.+)$/gm)], decision = [...row.matchAll(/^Question (D[1-9]\d*):/gm)];
+    const selected = [...row.matchAll(/^Actual answer: ([A-Z]) [—–-] (D[1-9]\d*) answer "([^"\n]+)"$/gm)];
+    if (states.length !== 1 || states[0]![1] !== 'approved' || decision.length !== 1 || selected.length !== 1 || decision[0]![1] !== selected[0]![2]) return false;
+    const answer = answers.find(a => a.id === decision[0]![1]);
+    if (!answer || bound.has(answer.id!) || selected[0]![3] !== answer.selected ||
+        answer.q.options.findIndex(o => o.label === answer.selected) !== selected[0]![1]!.charCodeAt(0) - 65 ||
+        !new RegExp(`^Project/branch/task: ${escape(branch)}[,;] ${escape(source)}\\b`, 'm').test(answer.q.question)) return false;
+    bound.add(answer.id!);
+  }
+  if (!rows.length || [...ledger.matchAll(/^State: /gm)].length !== rows.length) return false;
+  const routing = answers.find(a => a.id === recap[2]), todoIds = recap[3]!.split('/');
+  if (!routing || routing.q.header !== 'Routing' || label(routing.selected) !== 'Add routing rules to CLAUDE.md' ||
+      !new RegExp(`^Project/branch/task: ${escape(branch)} branch[^\\n]*\\b${escape(source)}\\b`, 'm').test(routing.q.question) ||
+      !new RegExp(`\\b${recap[2]} \\(CLAUDE\\.md routing rules, setup, answered A;`).test(ledger) || new Set(todoIds).size !== todoIds.length) return false;
+  const blocks = todos.split(/\n(?=### )/).filter(block => /^### TODO [1-9]\d*:/.test(block.trim()));
+  if (blocks.length !== todoIds.length) return false;
+  for (const id of todoIds) {
+    const a = answers.find(a => a.id === id), number = a && new RegExp(`^Project/branch/task: ${escape(branch)}, ${escape(source)} ${escape(titles[0]![1]!)}, TODO ([1-9]\\d*) of ([1-9]\\d*)\\b`, 'm').exec(a.q.question);
+    if (!a || a.q.header !== 'TODO' || label(a.selected) !== 'Add to TODOS.md' || !number || +number[2]! !== todoIds.length ||
+        blocks.filter(block => block.trim().startsWith(`### TODO ${number[1]}:`)).length !== 1 ||
+        !new RegExp(`\\b${id}/A\\b`).test(ledger) || !new RegExp(`\\b${id}\\b`).test(tasks)) return false;
+  }
+  const entries = [...tasks.matchAll(/^- \[ \] \*\*(T[1-9]\d*)\b[^\n]+/gm)];
+  if (!entries.length || new Set(entries.map(e => e[1])).size !== entries.length) return false;
+  for (const ref of context.matchAll(/\bT([1-9]\d*)(?:[–-]T([1-9]\d*))?\b/g)) {
+    const first = +ref[1]!, last = +(ref[2] ?? ref[1])!;
+    if (last < first || last - first >= entries.length) return false;
+    for (let n = first; n <= last; n++) if (!entries.some(e => e[1] === `T${n}`)) return false;
+  }
+  const firstTask = entries.filter(e => e[1] === recap[1]);
+  return firstTask.length === 1 && /\bRecord\b[^\n]*\bcharacterization fixtures\b[^\n]*\bbefore any rewrite\b/.test(firstTask[0]![0]) &&
+    new RegExp(`^1\\. Record characterization fixtures[^\\n]*\\(${recap[1]}\\)\\. Commit\\.$`, 'm').test(current);
 }
 
 /** A finished backend review may recap an already-published author prerequisite.
@@ -444,7 +563,7 @@ function isPublishedPrerequisiteHandoff(fp: AskUserQuestionFingerprint, reviewed
     if (hits.length !== 1) return undefined;
     const start = hits[0]!;
     const preceding = published.slice(0, start).filter(s => s.trim()).at(-1) ?? '';
-    if (/[:：]$|\b(?:example|sample|hypothetical|template|quoted)\b/i.test(preceding)) return undefined;
+    if (introducesSourceContext(preceding)) return undefined;
     const end = published.findIndex((line, i) => i > start && /^#{1,2} /.test(line));
     return published.slice(start + 1, end < 0 ? undefined : end).join('\n');
   };
