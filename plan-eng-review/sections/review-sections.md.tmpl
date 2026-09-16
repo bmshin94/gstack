@@ -81,10 +81,11 @@ Select one pending ID. Build `currentDecision` now: the single question object c
 
 Build a **comparison grid** covering the entire brief: one row per independently selectable behavior, approach, guarantee or bound. Show current and per-option values/work, including shared recommendations, fixed and pending choices. Cite approvals; use concrete values, not package names. The grid and record annotations are separate from the native fields. Put option deliberation in the finished question or descriptions now; do not add a second Pros/cons block only to the saved question or remove one when dispatching.
 
-Check each row:
+Before saving, check each row and each option's complete scope:
 - The selected choice may vary between options. Every other approved value stays fixed; every other pending choice stays undecided. A new value common to all options is still a choice requiring approval.
 - Necessary implementation and proof of an already approved contract is common work: cite its answer; no new approval row is needed. Do not remove an established contract or required proof to make an option smaller.
-- Investigate and Defer name any bounded investigation and the values left unchanged or pending. Neither approves implementation.
+- Derive each option's proposed scope from its full native label and description plus its comparison column. They must describe the same work, including conditional commitments; a short caption cannot override that work. Resolve any contradiction in step 3 before saving.
+- Investigate and Defer name any bounded investigation and the values left unchanged or pending. Neither approves implementation, including a fix conditional on the investigation's result. Keep that implementation choice pending for a later answer; if the option mixes them, return to step 2 and split it.
 
 For example, jitter and a delay cap can be chosen independently. A menu of “both / cap only / neither” bundles them by omitting “jitter only.” Ask about jitter first:
 
@@ -139,9 +140,11 @@ After step 4's verification, dispatch the unchanged `currentDecision`. Copy the 
 ### 6. Apply and refresh
 
 **Apply the answer:**
+Read the selected option's full saved label, description and comparison column. Carry their complete scope into the resolution below, including conditions, unchanged values and pending choices. If these fields contradict one another or the option combines choices that should have been separate, preserve the actual answer, explain the contradiction and rebuild the comparison through steps 2–5 for another answer. Do not silently drop a selected commitment or reinterpret it from the caption; do not advance with conflicting approval records.
+
 1. Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference. These three adjacent fields form one mutable resolution block after the options; replace the whole block together, never only its answer/scope tail. Each field occurs once outside `History`. Set this current record’s `State` to `approved` for the actual accepted scope; keep `pending` when the answer leaves a remedy unresolved. Preserve the draft options; superseded states belong in `History`. When resuming an older record with separated fields, bring all three into this block and remove their old occurrences in the same edit.
 2. Apply only those amendments to the working plan with a scoped Edit that also saves the current record. Other choices stay unchanged. In read-only mode, present the amended record and plan as **not persisted**.
-3. Check the Edit result and read back the entire saved resolution block, including its `State` line. Verify its single current state, actual answer and accepted scope agree; an answer-only search does not verify the block. The host's current-in-context hint does not replace this verification Read. In read-only mode, verify the presentation. Correct discrepancies before advancing; save or read-back failures follow **Review record and write policy**.
+3. Check the Edit result and read back the entire saved resolution block, including its `State` line. Verify its single current state, actual answer and accepted scope agree with the complete selected option and comparison column; an answer-only search does not verify the block. The host's current-in-context hint does not replace this verification Read. In read-only mode, verify the presentation. Correct discrepancies before advancing; save or read-back failures follow **Review record and write policy**.
 
 Now return to step 1 with the updated plan and actual answer. Hold the chosen value fixed while rebuilding the next relevant pending choice through steps 2–5; record why an irrelevant choice needs no question. Advance to the next finding or section only when no choice in this section awaits an answer.
 

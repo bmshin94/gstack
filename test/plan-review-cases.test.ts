@@ -298,6 +298,26 @@ describe('Eng approved-work decision gate', () => {
   const gate = template.split('**Decision gate (all sections and outside voice):**')[1]?.split('### 1. Architecture review')[0] ?? '';
   const ledger = gate.match(/```markdown\n([\s\S]*?)\n```/)?.[1] ?? '';
 
+  test('preserves the full selected scope and reopens contradictory options before applying them', () => {
+    const compare = gate.slice(gate.indexOf('### 3. Compare one choice'), gate.indexOf('### 4. Save the pending record'));
+    const apply = gate.slice(gate.indexOf('**Apply the answer:**'), gate.indexOf('## Scope Challenge'));
+    expect(compare).toContain("each option's complete scope");
+    expect(compare).toContain('full native label and description plus its comparison column');
+    expect(compare).toContain('including conditional commitments');
+    expect(compare).toContain("Neither approves implementation, including a fix conditional on the investigation's result");
+    expect(compare).toContain('Keep that implementation choice pending for a later answer');
+    expect(compare).toContain('if the option mixes them, return to step 2 and split it');
+    const selected = apply.indexOf("Read the selected option's full saved label, description and comparison column");
+    const conflict = apply.indexOf('preserve the actual answer, explain the contradiction and rebuild the comparison through steps 2–5 for another answer');
+    const resolution = apply.indexOf("1. Replace the current record's");
+    expect(selected >= 0 && conflict > selected && resolution > conflict).toBe(true);
+    expect(apply).toContain('Do not silently drop a selected commitment or reinterpret it from the caption');
+    expect(apply).toContain('accepted scope agree with the complete selected option and comparison column');
+    // a689 D3's conditional fix was selected, then silently replaced with a
+    // probe-only scope. Native behavior remains a paid gate; this guards the
+    // producer's prepare/apply/recovery instructions, not that run's outcome.
+  });
+
   test('reconciles operative decision State before approval readiness and unresolved counts', () => {
     const apply = gate.slice(gate.indexOf('**Apply the answer:**'), gate.indexOf('## Scope Challenge'));
     expect(apply).toContain('Set this current record’s `State` to `approved` for the actual accepted scope');
