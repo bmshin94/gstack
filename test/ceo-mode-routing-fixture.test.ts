@@ -56,8 +56,8 @@ mock.module(path.join(root,'test/helpers/ceo-mode-option.ts'),()=>({
     if(scenario==='navigation')throw new Error('fixture navigation failed');
     current.mode=target; return {kind:'mode',index:target==='HOLD SCOPE'?2:1,question};
   },
-  hasNativePostAnswerCeoPosture:(_transcript,target,_pattern,selectedAt)=>{
-    current.posture={target,selectedAt};
+  hasNativePostAnswerCeoPosture:(_transcript,target,_pattern,selectedAt,_events,source)=>{
+    current.posture={target,selectedAt,source};
     return (!scenario.startsWith('pacing')||target==='HOLD SCOPE'||current.continued) && scenario!=='posture' && (scenario!=='next-modal'||current.continued) && (scenario!=='mode-submit'||current.submitted);
   },
   nextCeoPostureContinuation:()=>{current.continuationChecks.push(current.pacingChecks);return (scenario==='next-modal'||scenario==='pacing')&&!current.continued?'question':null;},
@@ -106,6 +106,7 @@ await import(path.join(root,'test/skill-e2e-plan-ceo-mode-routing.test.ts'));
       if (!['launch','navigation'].includes(scenario)) {
         expect(fact.posture.target).toBe(index === 0 ? 'HOLD SCOPE' : 'SCOPE EXPANSION');
         expect(fact.posture.selectedAt).toBeGreaterThan(0);
+        expect(fact.posture.source).toEqual({path:path.join(fact.cwd,'PLAN.md'),content:fact.plan});
       }
     }
     if (scenario === 'posture' || scenario === 'pacing-unacknowledged') expect(child.stderr).toContain('no posture match');

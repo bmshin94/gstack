@@ -96,6 +96,11 @@ export function registerCarveSectionCase(skill: string): void {
           planDir,
           skillName: guard.skill,
           scenario: guard.scenario,
+          // This actor approves the supplied bounded change, not every optional
+          // addition a recommendation might bundle into it.
+          decisionPolicy: guard.skill === 'plan-eng-review'
+            ? '- Proceed directly with the requested engineering review; skip the optional /office-hours prerequisite. You represent the plan author, whose scope and proposed steps are in PLAN.md. At each decision, choose the complete alternative that preserves those requirements and existing contracts; choose the recommended option only among alternatives within that scope. Do not authorize optional scope, extra public input guarantees, arbitrary size limits, or optional proof projects. Decline work explicitly listed out of scope, including creating TODOs for it. Record the decision and its actual authority as the skill requires, then continue without asking a human. A demonstrated incompatibility or missing required proof still requires resolution; do not hide it or claim approval when no offered alternative meets these constraints.'
+            : undefined,
           // Both plan reviews persist their required report in the reviewed plan.
           reportFile: ['plan-devex-review', 'plan-eng-review'].includes(guard.skill) ? 'PLAN.md' : undefined,
           // This scenario produces an HTML implementation, whose complete

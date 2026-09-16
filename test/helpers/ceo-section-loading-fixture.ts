@@ -89,9 +89,16 @@ an ordinary DB write with a cache fill in the same active instance.
 Existing dashboards and runbooks cover these metrics. Before each stage, verify
 that alerts page the service owner on any correctness/error-SLO breach, read
 p95 above 120 ms for five minutes, or cache bypass persisting for one minute.
-A healthy hour means the stated hit-rate, CPU, latency and error targets hold
-without those alerts. Any breach disables the flag immediately; the runbook
-records the incident, rollback and criteria for resuming. These are existing
+Hit rate is hits / (hits + misses) among requests admitted to the cache path;
+flag-excluded or adapter-bypassed requests are tracked separately, not as misses.
+DB CPU and read p95 are service-wide metrics, including bypassed requests.
+At the 10% and 50% stages, a healthy hour requires at least 60% admitted-request
+hits, unchanged correctness/error SLOs, no alerts, and aggregate DB CPU/read p95
+no worse than their 70%/120 ms pre-rollout baselines. At 100%, the original
+absolute acceptance targets (DB CPU below 50%, read p95 below 60 ms, hits at
+least 60%) must all hold with unchanged correctness/error SLOs and no alerts.
+Any breach disables the flag immediately; the runbook records the incident,
+rollback and criteria for resuming. These are existing
 rollout-controller and telemetry contracts, not proposed wrapper additions.
 Cold starts remain within the existing DB capacity. The service owner monitors
 the rollout and records the results against the acceptance targets.

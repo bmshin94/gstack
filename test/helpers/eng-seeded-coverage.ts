@@ -529,6 +529,18 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
             (!count || Number(count[1]) === before - 2 && retained.length === Number(count[1]) && new Set(retained).size === retained.length &&
               ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => retained.includes(name)));
         })) ids.push('complexity');
+    // An outcome-preserving rewrite can describe the catch defect in the
+    // title and ELI10, then name extraction and the boundary in one option.
+    // The legacy oracle fixes each error's outcome; a typed-name or a remedy
+    // borrowed from another option cannot supply the missing contract.
+    const catchAssessment = `${title}\n${explanation}`;
+    if (/\bvalidateAndDispatch\(\)/.test(title) && settledStructure(q.question) &&
+        /\b(?:nested|nesting)\b/i.test(catchAssessment) && /\b(?:catch(?:es)?|try\/catch)\b/i.test(catchAssessment) &&
+        /\b(?:swallow\w*|eat(?:s|ing)?|suppress\w*|discard\w*)\b[^.!?]*\b(?:error|failure)/i.test(explanation) &&
+        !/\bvalidateAndDispatch\(\) (?:now |already )?(?:rethrows every error|no longer swallows failures)\b/i.test(text) &&
+        structureOptions.some(option => /\b(?:flatten|split|extract)\b/i.test(option) && /\bnamed (?:steps|helpers|functions)\b/i.test(option) &&
+          /\b(?:one|single) (?:top[- ]level )?(?:error )?boundary maps? (?:each|every|all) (?:error|failure) class(?:es)? to (?:an? )?explicit (?:named )?outcome (?:that )?matches? legacyAuthFlow\(\)(?:'s)? (?:captured|recorded|current|existing) (?:behavior|outcomes|outputs)\b/i.test(option) &&
+          !/\b(?:not (?:every|all|each)|only some) (?:error|failure) class(?:es)?\b|\b(?:errors?|failures?) (?:are |is |will be |still |silently )*(?:swallowed|ignored|discarded|suppressed)\b|\b(?:do(?:es)? not|don't|doesn't|never|will not|won't) (?:extract|map|preserve|match)\b|\b(?:other|another|foreign|different) (?:function|method|issue|project|remedy)\b/i.test(option))) ids.push('swallowed-errors');
     const sharedObject = /\b(?:one|same|shared) cache (?:object|instance)\b/i.test(explanation)
       && /\bboth services\b[^.!?]*\b(?:cache|import|mutate|change)\b/i.test(explanation);
     if (['AuthBroker', 'SessionMint', 'AuthCache'].every(name => title.includes(name)) && sharedObject &&
@@ -705,7 +717,12 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
       while (ancestors.length && ancestors.at(-1)!.depth >= token.depth) ancestors.pop();
       ancestors.push(token);
     }
-    return !ancestors.some(owner => /\b(?:copied|quoted|historical|history|example|hypothetical|template|archived|withdrawn|superseded)\b/i.test(clean(owner.text)));
+    return !ancestors.some(owner => {
+      const previous = tokens.slice(0, tokens.findIndex(token => token.type === 'heading' && token === owner))
+        .filter(token => token.type !== 'space').at(-1);
+      return /\b(?:copied|quoted|historical|history|example|hypothetical|template|archived|withdrawn|superseded)\b/i.test(clean(owner.text)) ||
+        previous?.type === 'paragraph' && /\b(?:source|quoted|copied|historical|example|hypothetical|template|archived)\b[^\n]*[:：]\s*$/i.test(previous.raw);
+    });
   };
   if (!currentHeading(start)) return;
   // A named plan may inherit its file identity only from this report's one
@@ -749,7 +766,7 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
     const owner = tokens.slice(0, at).filter(token => token.type === 'heading' && token.depth < depth).at(-1);
     if (!owner || owner.type !== 'heading') return false;
     const name = clean(owner.text).replace(/^(?:Section\s+)?[1-9]\d*[.:]?\s*/i, '');
-    return /^Decision ledger$/i.test(name) || /^(?:Architecture|Code quality|Tests?|Testing|Performance) review$/i.test(name);
+    return /^Decision ledger$/i.test(name) || /^(?:Architecture|Code quality|Tests?|Testing|Performance) review(?:\s*[—–:-]\s+[A-Za-z0-9][A-Za-z0-9 ,/()&-]*)?$/i.test(name);
   };
   const words = (s: string) => (clean(s).toLowerCase().replace(/\(recommended\)/g, '').match(/[a-z][a-z0-9_]*/g) ?? [])
     .filter(word => !['the', 'a', 'an', 'and', 'or', 'with', 'to', 'of', 'as', 'is', 'it', 'one', 'first', 'now', 'option', 'recommended', 'planned'].includes(word));
@@ -801,7 +818,7 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
   for (let i = start + 1; i < recordEnd; i++) {
     const record = tokens[i]!;
     if (record.type !== 'heading') continue;
-    const id = /^(R[1-9]\d*):\s+\S/.exec(clean(record.text))?.[1];
+    const id = /^(R[1-9]\d*(?:[a-z][a-z0-9]*)?):\s+\S/.exec(clean(record.text))?.[1];
     if (!id || !currentHeading(i) || !recordSection(i, record.depth) || withdrawn(q.question, id)) continue;
     let stop = i + 1;
     while (stop < recordEnd && !(tokens[stop]!.type === 'heading' && (tokens[stop] as any).depth <= record.depth)) stop++;
@@ -857,24 +874,39 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
     const headers = brief.flatMap((line, at) => /^Header:/.test(line) ? [at] : []);
     if (headers.length) {
       const options = brief.flatMap((line, at) => /^Options:/.test(line) ? [at] : []);
-      // These explicit fields must preserve each native label and full
-      // description separately. Matching question prose cannot repair a
-      // contradictory or abbreviated authoritative Options field.
-      const optionRecords: Array<{ selector: string; label: string; description: string[] }> = [];
-      let ownedOptionFields = options.length === 1 && clean(brief[options[0]!]!) === 'Options:';
-      if (ownedOptionFields) for (const line of brief.slice(options[0]! + 1)) {
-        const label = /^([A-D])[).:]\s+(.+)$/.exec(line);
-        if (label) optionRecords.push({ selector: label[1]!, label: label[2]!, description: [] });
-        else if (optionRecords.length) optionRecords.at(-1)!.description.push(line);
-        else if (line.trim()) ownedOptionFields = false;
-      }
-      ownedOptionFields &&= optionRecords.length === q.options.length && optionRecords.every((record, at) => {
-        const selector = String.fromCharCode(65 + at), option = q.options[at]!;
-        const nativeLabel = clean(option.label).replace(new RegExp(`^${selector}[).:]\\s+`), '');
-        return record.selector === selector && clean(record.label) === nativeLabel &&
-          clean(record.description.join('\n')) === clean(option.description ?? '');
+      // Selectors bind options independently of presentation order. Native
+      // labels may already own one; conflicting or repeated prefixes cannot
+      // manufacture another choice or borrow its full description.
+      const nativeOptions = q.options.map((option, at) => {
+        const label = clean(option.label), prefix = /^([A-D])[).:]\s+/.exec(label);
+        const selector = prefix?.[1];
+        const caption = prefix ? label.slice(prefix[0].length) : label;
+        return { selector, label: caption, description: option.description ?? '' };
       });
-      if (inline || headers.length !== 1 || options.length !== 1 || !ownedOptionFields ||
+      const selectors = q.options.map((_, at) => String.fromCharCode(65 + at));
+      const explicitSelectors = nativeOptions.flatMap(option => option.selector ? [option.selector] : []);
+      if (new Set(explicitSelectors).size !== explicitSelectors.length ||
+          nativeOptions.some(option => option.selector && !selectors.includes(option.selector) || !option.label || /^[A-D][).:]\s+/.test(option.label))) continue;
+      const readOptions = (lines: string[]) => {
+        const records: Array<{ selector: string; label: string; description: string[] }> = [];
+        for (const line of lines) {
+          const label = /^([A-D])[).:]\s+(.+)$/.exec(line);
+          if (label) records.push({ selector: label[1]!, label: label[2]!, description: [] });
+          else if (records.length) records.at(-1)!.description.push(line);
+          else if (line.trim()) return undefined;
+        }
+        if (records.length !== nativeOptions.length || new Set(records.map(record => record.selector)).size !== records.length ||
+            records.some(record => !selectors.includes(record.selector))) return undefined;
+        const matches = records.map(record => nativeOptions.flatMap((native, at) =>
+          (!native.selector || native.selector === record.selector) && clean(record.label) === native.label &&
+            clean(record.description.join('\n')) === clean(native.description) ? [at] : []));
+        return matches.every(match => match.length === 1) && new Set(matches.flat()).size === records.length ? records : undefined;
+      };
+      // Explicit Options fields are authoritative. Matching question prose
+      // cannot repair an abbreviated description or contradictory choice.
+      const optionRecords = options.length === 1 && clean(brief[options[0]!]!) === 'Options:'
+        ? readOptions(brief.slice(options[0]! + 1)) : undefined;
+      if (inline || headers.length !== 1 || options.length !== 1 || !optionRecords ||
           field('Header').length !== 1 || field('Options').length !== 1 || field('Actual answer').length !== 1 ||
           options[0]! <= headers[0]! || brief.slice(headers[0]! + 1, options[0]!).some(line => line.trim()) ||
           clean(brief[headers[0]!]!.slice('Header:'.length)) !== clean(q.header) ||
@@ -885,17 +917,17 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
             const deliberations = question.flatMap((line, at) => /^Pros\s*\/\s*cons:$/i.test(line) ? [at] : []);
             if (deliberations.length !== 1) return false;
             const at = deliberations[0]!;
-            const expected = clean(q.options.map((option, index) =>
-              `${String.fromCharCode(65 + index)}) ${option.label}\n${option.description}`).join('\n'));
-            // Only an exact copy of the offered choices may be inserted into
-            // the saved question. Added instructions or changed tradeoffs fail.
+            // A copied deliberation block owns the same complete alternatives,
+            // even when the native UI presents its recommended choice first.
             for (let end = at + 2; end <= question.length; end++) {
-              if (clean(question.slice(at + 1, end).join('\n')) !== expected) continue;
+              if (!readOptions(question.slice(at + 1, end))) continue;
               return clean(prose([...question.slice(0, at), ...question.slice(end)].join('\n'), true)) === native;
             }
             return false;
           })()) continue;
-      brief = brief.slice(options[0]! + 1);
+      // The grid's A-D columns use selector order, not menu presentation order.
+      brief = [...optionRecords].sort((a, b) => a.selector.localeCompare(b.selector))
+        .flatMap(record => [`${record.selector}) ${record.label}`, ...record.description]);
     }
     if (brief.some(line => /^(?:quoted|copied|historical|example|hypothetical|template)(?:\s+[^:]*)?:/i.test(line))) continue;
     const labels: Array<[string, string, string]> = [];
@@ -1000,14 +1032,15 @@ function declaredLegacyCharacterization(text: string): boolean {
   const sourceFrame = (body: string) => {
     const text = body.replace(/"[^"\n]*"|“[^”\n]*”/g, '').replace(/\s+/g, ' ');
     return /\b(?:(?:hypothetical|historical) example|unproven hypothesis|(?:source|quoted) (?:material|text) only|(?:are|is) not requirements? of this plan)\b/i.test(text)
-      || /^\s*(?:(?:quoted )?source(?: (?:excerpt|text|material))?|(?:historical|earlier|previous) (?:review )?assessment):(?:\s|$)/i.test(text);
+      || /^\s*(?:(?:quoted )?(?:source|copied)(?: (?:excerpt|text|material|example))?|(?:historical|earlier|previous) (?:review )?assessment):(?:\s|$)/i.test(text);
   };
   for (const line of prose(text).split('\n')) {
     const heading = /^(#{1,6})\s+(.+)$/.exec(line);
     if (heading) {
+      let prefix = sections.at(-1)?.body.join('\n').trim().split(/\n\s*\n/).at(-1) ?? preamble;
       while (owners.length && owners.at(-1)!.level >= heading[1]!.length) owners.pop();
-      if (/^Current reviewed plan$/i.test(heading[2]!) && owners.length === 0) sourcePreamble = false;
-      const asserted = !sourcePreamble && owners.every(owner => owner.asserted)
+      if (/^Current reviewed plan$/i.test(heading[2]!) && owners.length === 0) { sourcePreamble = false; prefix = ''; }
+      const asserted = !sourcePreamble && !sourceFrame(prefix) && owners.every(owner => owner.asserted)
         && !/\b(?:source|example|hypothetical|proposed|optional|quoted|historical|template|unproven)\b/i.test(heading[2]!);
       owners.push({ level: heading[1]!.length, asserted });
       sections.push({ title: heading[2]!, body: [], asserted });
@@ -1368,7 +1401,7 @@ function declaredLegacyCharacterization(text: string): boolean {
   // The same mandatory characterization can precede a behavior-preserving
   // extraction: its untouched baseline and the extraction's rerun share a task ID.
   const extractionSourceOwner = (body: string) => goldenSourceOwner(body) ||
-    /(?:^|\n)\s*(?:(?:quoted )?source(?: (?:excerpt|text|material))?|(?:historical|earlier|previous)(?: review)?(?: assessment)?|(?:hypothetical )?example):\s*(?:\n|$)/i.test(unquoted(body));
+    /(?:^|\n)\s*(?:(?:quoted )?(?:source|copied)(?: (?:excerpt|text|material|example))?|(?:historical|earlier|previous)(?: review)?(?: assessment)?|(?:hypothetical )?example):\s*(?:\n|$)/i.test(unquoted(body));
   for (const section of current.filter(s => s.title === 'Tests')) {
     const body = unquoted(section.body.join('\n'));
     const claim = /^CRITICAL [—–-] regression rule \(mandatory, not a decision\): (T[1-9]\d*) adds a characterization test for legacyAuthFlow\(\)'s current behavior \([^\n)]{1,300}\) and lands before the ([1-9]\d*[A-D]) extraction\./m.exec(body);
@@ -1962,12 +1995,27 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
   const approval = /\b(?:if|when|once|unless) approved|\b(?:after|pending|assuming|provided) approval\b|(?:^|\n|:\s*)(?:if|when|once|unless) accepted\b/i;
   const owned = (s: string) => snapshot.includes(flat(s)) && !framed(s)
     && !approval.test(unquoted(s))
-    && !/\b(?:do not|don\x27t|never|skip|omit|defer) (?:add|write|run|capture|record|pin|implement)\b|\b(?:maybe|might|could|optional|proposed)\b/i.test(unquoted(s));
+    && !/\b(?:do not|don\x27t|never|skip|omit|defer) (?:add|write|run|execute|replay|capture|record|pin|implement)\b|\b(?:maybe|might|could|optional|proposed)\b/i.test(unquoted(s));
   const allTasks = current.flatMap(s => {
     const text = s.body.join('\n');
     return text.split(/\n(?=- )/).map(body => ({ body, section: s.title,
       preceding: text.slice(0, text.indexOf(body)).trim().split('\n').at(-1) ?? '',
       match: /^- (?:\[[ xX]\] )?(T[1-9]\d*)(?: \([^\n)]*\))? [—–:-] (.+)(?:\n|$)/.exec(body) }));
+  });
+  const cancelledBaseline = (subject: string, id: string, scopedBaseline: boolean) => current.some(s => {
+    if (/\b(?:history|historical|source|quoted|example)\b/i.test(s.title)) return false;
+    const named = /^(.*?)\b(?:regression|characterization)\s+(?:suite|tests?)\b/i.exec(s.title)?.[1]?.trim();
+    const foreign = Boolean(named && !/^(?:(?:current|final|critical|required|updated)\s*)*(?:legacy(?:AuthFlow\(\))?)?[\s:—-]*$/i.test(named));
+    const raw = s.body.join('\n').replace(new RegExp(`(${subject} (?:is|was|has been) )["“'‘](${inactive})["”'’]`, 'gi'), '$1$2');
+    return unquoted(raw).split(/\n|[.!?;]\s+/).some(line => {
+      if (framed(line) || /^\s*(?:if|unless|assuming|provided)\b/i.test(line)) return false;
+      if (foreign && !new RegExp(`\\b${id}\\b|legacyAuthFlow|\\blegacy (?:regression|characterization)`).test(line)) return false;
+      return new RegExp(`\\b${subject} (?:is|was|has been) ${inactive}\\b|^\\s*\\|\\s*${id}\\s*\\|\\s*${inactive}\\s*\\|`, 'i').test(line)
+        || new RegExp(`^\\s*(?:Correction:\\s*)?(?:do not|don't|never|skip|defer|cancel|withdraw) (?:run |execute |replay |implement )?${subject}\\b`, 'i').test(line)
+        || new RegExp(`\\b(?:run|execute|record|capture) ${id} only after (?:modifying|changing|rewriting|refactoring|removing|deleting) legacyAuthFlow\\b`, 'i').test(line)
+        || new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|was|has been|will be) (?:modified|changed|rewritten|refactored|removed|deleted) before ${id}\\b`, 'i').test(line)
+        || Boolean(scopedBaseline && new RegExp(`\\b(?:update|change|replace|regenerate|rewrite) ${subject} (?:expectations|expected (?:results|outputs)|assertions)\\b|\\b${subject} (?:expectations|assertions) (?:are|will be) (?:changed|updated|replaced)\\b`, 'i').test(line));
+    });
   });
   // A source-owned approved row may publish a before-change characterization
   // corpus while its task carries the legacy component, file and green run.
@@ -1975,6 +2023,73 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
   const values = (body: string, name: string) => [...body.matchAll(new RegExp(
     `^${name}:\\s*([^]*?)(?=^(?:  - )?[A-Z][\\w /-]*:|$(?![^]))`, 'gm'))].map(m => flat(m[1]!));
   const number = (value: string) => /^\d+$/.test(value) ? Number(value) : 'zero one two three four five six seven eight nine ten'.split(' ').indexOf(value.toLowerCase());
+  // Capture and replay may be separate tasks. Their shared test file and
+  // source decision bind one retained corpus; neither a task title nor an
+  // unselected grid column can supply its baseline or parity verification.
+  const taskValues = (body: string, name: string) => [...body.matchAll(new RegExp(`^  - ${name}: (.+)$`, 'gm'))].map(match => flat(match[1]!));
+  const corpusFiles = (value: string) => [...value.matchAll(/(?:^|[, ]+)([A-Za-z][\w/.-]*\.test(?:\.(?:[jt]sx?)?)?)(?=,|\s|$)/g)].map(match => match[1]!);
+  const taskAction = (value: string) => unquoted(value).replace(/^[A-Za-z][\w/-]*\s+[—–-]\s+/, '');
+  const beforeRewrite = (value: string) => /\bbefore (?:any|the) (?:rewrite|refactor|change)\b/i.test(value) && !/\b(?:not|never) before\b/i.test(value);
+  const sourceSelection = (value: string) => {
+    const rows = [...value.matchAll(/\bR[1-9]\d*[a-z0-9]*\b/g)], choices = [...value.matchAll(/\b(D[1-9]\d*)\s*(?:→|->)\s*([A-D])\b/g)];
+    return rows.length === 1 && choices.length === 1 && [...value.matchAll(/\bD[1-9]\d*\b/g)].length === 1
+      ? { row: rows[0]![0], decision: choices[0]![1]!, selected: choices[0]![2]! } : undefined;
+  };
+  const currentTasks = allTasks.filter(task => task.section === 'Implementation Tasks' && task.match);
+  for (const baseline of currentTasks) {
+    const id = baseline.match![1]!, action = taskAction(baseline.match![2]!);
+    const files = taskValues(baseline.body, 'Files'), verify = taskValues(baseline.body, 'Verify'), source = taskValues(baseline.body, 'Surfaced by');
+    if (currentTasks.filter(task => task.match![1] === id).length !== 1 || files.length !== 1 || verify.length !== 1 || source.length !== 1 ||
+        !owned(baseline.body) || framed(baseline.preceding) ||
+        !/^(?:Capture|Record|Pin|Write|Add)\b/i.test(action) || !/\blegacyAuthFlow\(\)\b|\blegacyAuthFlow\(\)(?=\s|['’])/i.test(action) ||
+        !/\b(?:characterization|regression) (?:suite|corpus|fixtures|tests)\b/i.test(action) || !beforeRewrite(action) ||
+        !/\b(?:suite|corpus|fixtures|tests) (?:passes?|green|is green) (?:against|on) (?:the )?legacy(?:AuthFlow\(\))?\b/i.test(verify[0]!)) continue;
+    const corpus = corpusFiles(files[0]!);
+    const origin = sourceSelection(source[0]!);
+    if (corpus.length !== 1 || !origin) continue;
+    const { row, decision } = origin;
+    const records = current.filter(section => section.title.startsWith(row + ':') && /\blegacyAuthFlow\b/.test(section.title));
+    if (records.length !== 1) continue;
+    const body = records[0]!.body.join('\n'), scope = values(body, 'Accepted scope'), answer = values(body, 'Actual answer'), findings = values(body, 'Finding'), states = values(body, 'State');
+    const questions = [...body.matchAll(/^Question (D[1-9]\d*):/gm)], selected = answer.length === 1 ? /^([A-D])\s+[—–-]/.exec(answer[0]!)?.[1] : undefined;
+    const offered = /^Options:\n([^]*?)(?=^Actual answer:)/m.exec(body)?.[1] ?? '';
+    const selectedBlocks = selected ? [...offered.matchAll(new RegExp(`^${selected}[).:] (.+(?:\\n(?![A-D][).:] )[^\\n]+)*)`, 'gm'))] : [];
+    const caption = (value: string) => value.replace(/\s*\(recommended\)/gi, '').trim();
+    const answeredLabel = answer[0]?.replace(/^[A-D]\s+[—–-]\s+/, '').replace(/\s+\(D[1-9]\d*(?: answer)?\)\.?$/, '');
+    if (scope.length !== 1 || findings.length !== 1 || questions.length !== 1 || questions[0]![1] !== decision || !selected || selected !== origin.selected ||
+        !new RegExp(`\\b${decision}\\b`).test(answer[0]!) || selectedBlocks.length !== 1 || caption(selectedBlocks[0]![1]!.split('\n')[0]!) !== caption(answeredLabel ?? '') ||
+        !states.length || states.some(state => !/^approved(?:\s+\([^)]*\))?$/.test(state) || new RegExp(`\\b${inactive}\\b`, 'i').test(state)) ||
+        !/\bPLAN\.md:[1-9]\d*/.test(findings[0]!) || [...findings[0]!.matchAll(/\b[\w/.-]+\.md\b/g)].some(match => match[0] !== 'PLAN.md') ||
+        !owned('Accepted scope: ' + scope[0]) || !owned(selectedBlocks[0]![1]!) || framed(body) ||
+        !/\b(?:capture|record|pin)\b[^.!?]*\blegacyAuthFlow\(\)[^.!?]*\b(?:behavior|outcomes|outputs)\b/i.test(selectedBlocks[0]![1]!) ||
+        !beforeRewrite(scope[0]!) ||
+        !/\b(?:Replay|Run|Execute) (?:the )?(?:same|identical) (?:suite|corpus|fixtures) against\b/i.test(scope[0]!)) continue;
+    const inventories = marked.lexer(body).flatMap(token => token.type === 'table' ? token.rows.flatMap(cells => {
+      const columns = token.header.flatMap((header, index) => header.text === selected ? [index] : []), column = columns[0];
+      return columns.length === 1 && column !== undefined && /\b(?:input matrix|case matrix|scenario matrix|fixture set|cases|scenarios)\b/i.test(cells[0]?.text ?? '')
+        ? [cells[column]?.text.split(/;\s*/).filter(Boolean) ?? []] : [];
+    }) : []);
+    const covered = /\b(?:every|each|all) (?:matrix )?rows? (?:present|covered)\b/i.test(verify[0]!) && !/\b(?:not|never|only some) (?:every|each|all|matrix)\b/i.test(verify[0]!);
+    const counts = [...verify[0]!.matchAll(/\b([1-9]\d*) rows? listed in (R[1-9]\d*[a-z0-9]*) grid\b/g)];
+    if (inventories.length !== 1 || inventories[0]!.length < 2 || new Set(inventories[0]).size !== inventories[0]!.length || !covered ||
+        counts.length > 1 || counts.some(count => Number(count[1]) !== inventories[0]!.length || count[2] !== row)) continue;
+    for (const replay of currentTasks) {
+      const next = replay.match![1]!, replayAction = taskAction(replay.match![2]!);
+      const nextFiles = taskValues(replay.body, 'Files'), nextVerify = taskValues(replay.body, 'Verify'), nextSource = taskValues(replay.body, 'Surfaced by');
+      if (next === id || currentTasks.filter(task => task.match![1] === next).length !== 1 || nextFiles.length !== 1 || nextVerify.length !== 1 || nextSource.length !== 1 ||
+          !owned(replay.body) || framed(replay.preceding) || !corpusFiles(nextFiles[0]!).includes(corpus[0]!) ||
+          JSON.stringify(sourceSelection(nextSource[0]!)) !== JSON.stringify(origin) ||
+          !/^(?:Replay|Run|Execute) (?:the )?(?:same |identical )?(?:characterization|regression) (?:suite|corpus|fixtures) against\b/i.test(replayAction) ||
+          !/^(?:Assert |Verify )?(?:identical|matching) (?:outcomes|outputs|results) (?:on|for|across) (?:every|each|all) (?:row|case|fixture)s?(?:;|\.|$)/i.test(nextVerify[0]!)) continue;
+      const targets = [...replayAction.split(/\bagainst\s+/i)[1]!.split(';')[0]!.matchAll(/\b[A-Z][A-Za-z0-9]*\b/g)].map(match => match[0]);
+      if (!targets.length || targets.some(target => !scope[0]!.includes(target)) ||
+          !/\bdelete legacyAuthFlow\(\) only (?:when|after)\b/i.test(replayAction) ||
+          !/\b(?:identical|matching|same)\b/i.test(replayAction) ||
+          !/\blegacyAuthFlow\(\) is deleted only (?:when|after) both pass (?:identically|with identical (?:outcomes|outputs|results))\b/i.test(scope[0]!)) continue;
+      const subject = `(?:${row}|${decision}|${next}(?: (?:replay )?verification)?|${id}(?: (?:baseline )?verification)?|(?:this|the) (?:(?:legacy|baseline) )?(?:(?:regression|characterization) )?(?:suite|test|requirement|verification))`;
+      if (!cancelledBaseline(subject, id, true)) return true;
+    }
+  }
   for (const record of current) {
     const row = /^([A-Z][1-9]\d*): (?:Regression coverage|Characterization tests?|Regression contract) for legacyAuthFlow\(\)(?: current (?:behavior|outcomes))?$/i.exec(record.title)?.[1];
     if (!row || current.filter(s=>s.title.startsWith(row+':')).length!==1) continue;
@@ -2179,22 +2294,7 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
       });
       if (!baseline) continue;
       const subject = `(?:${ledgerBaseline ? `${ledgerRow}|${ledger!.question}|${ledgerTasks[0]!.match![1]}|` : ''}${id}(?: (?:baseline )?verification)?|(?:this|the) (?:(?:legacy|baseline) )?(?:(?:regression|characterization) )?(?:suite|test|requirement|verification))`;
-      const cancelled = current.some(s => {
-        if (/\b(?:history|historical|source|quoted|example)\b/i.test(s.title)) return false;
-        const named = /^(.*?)\b(?:regression|characterization)\s+(?:suite|tests?)\b/i.exec(s.title)?.[1]?.trim();
-        const foreign = Boolean(named && !/^(?:(?:current|final|critical|required|updated)\s*)*(?:legacy(?:AuthFlow\(\))?)?[\s:—-]*$/i.test(named));
-        const raw = s.body.join('\n').replace(new RegExp(`(${subject} (?:is|was|has been) )["“'‘](${inactive})["”'’]`, 'gi'), '$1$2');
-        return unquoted(raw).split(/\n|[.!?;]\s+/).some(line => {
-          if (framed(line) || /^\s*(?:if|unless|assuming|provided)\b/i.test(line)) return false;
-          if (foreign && !new RegExp(`\\b${id}\\b|legacyAuthFlow|\\blegacy (?:regression|characterization)`).test(line)) return false;
-          return new RegExp(`\\b${subject} (?:is|was|has been) ${inactive}\\b|^\\s*\\|\\s*${id}\\s*\\|\\s*${inactive}\\s*\\|`, 'i').test(line)
-            || new RegExp(`^\\s*(?:Correction:\\s*)?(?:do not|don't|never|skip|defer|cancel|withdraw) (?:run |execute |implement )?${subject}\\b`, 'i').test(line)
-            || new RegExp(`\\b(?:run|execute|record|capture) ${id} only after (?:modifying|changing|rewriting|refactoring|removing|deleting) legacyAuthFlow\\b`, 'i').test(line)
-            || new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|was|has been|will be) (?:modified|changed|rewritten|refactored|removed|deleted) before ${id}\\b`, 'i').test(line)
-            || Boolean(scopedBaseline && new RegExp(`\\b(?:update|change|replace|regenerate|rewrite) ${subject} (?:expectations|expected (?:results|outputs)|assertions)\\b|\\b${subject} (?:expectations|assertions) (?:are|will be) (?:changed|updated|replaced)\\b`, 'i').test(line));
-        });
-      });
-      if (!cancelled) return true;
+      if (!cancelledBaseline(subject, id!, Boolean(scopedBaseline))) return true;
     }
   }
   return false;

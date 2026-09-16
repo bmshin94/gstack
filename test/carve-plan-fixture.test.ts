@@ -66,6 +66,11 @@ test('engineering scenario proposes ordered batch reads without changing the DX 
   expect(proposal).toContain('after the database closes must still fail');
   expect(proposal).toContain('not tests\nalready implemented or passing');
   expect(proposal).toContain('do not claim a measured speedup');
+  expect(proposal).toContain('a dense `readonly string[]`');
+  expect(proposal).toContain('`for...of` loop that pushes `this.get(key)`');
+  expect(proposal).toContain("getMany(['orders', 'orders', 'missing'])");
+  expect(proposal).toContain('not implementation that\nalready exists or authority to overlook a defect');
+  expect(proposal).toContain('it does not add a benchmark project');
   expect(proposal).not.toMatch(/module-wide write token|1000 entries|LRU/);
   expect(eng).toEqual({
     'PLAN.md': fs.readFileSync(path.join(dir, 'engineering-batch-read-plan.md'), 'utf8'),

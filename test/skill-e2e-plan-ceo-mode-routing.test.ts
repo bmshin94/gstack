@@ -31,6 +31,7 @@
  */
 
 import { test } from 'bun:test';
+import * as path from 'node:path';
 import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier } from './helpers/e2e-gate';
 import {
@@ -171,6 +172,7 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
       `mode "${c.mode}" routes to its distinctive posture`,
       async () => {
         const fixture = createPlanCountFixture(PLAN);
+        const postureSource = { path: path.join(fixture.cwd, 'PLAN.md'), content: PLAN };
         let session: ClaudePtySession | undefined;
         const saveSnapshot = createPlanCountSnapshotWriter();
         let lastSnapshotAt = 0;
@@ -239,7 +241,7 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
             transcript = session.hermeticConfigDir
               ? readPlanCountTranscript(session.hermeticConfigDir, fixture.cwd, event => publicTools.push(event))
               : { status: 'error', calls: [], assistantMessages: [], error: 'No isolated mode transcript directory' };
-            if (hasNativePostAnswerCeoPosture(transcript, c.mode, c.postureRe, selectionStartedAt, publicTools)) {
+            if (hasNativePostAnswerCeoPosture(transcript, c.mode, c.postureRe, selectionStartedAt, publicTools, postureSource)) {
               postureMatched = true;
               break;
             }
@@ -283,7 +285,7 @@ describeE2E('/plan-ceo-review mode routing (gate)', () => {
             if (
               isPlanReadyVisible(downstreamSnapshot) &&
               isNumberedOptionListVisible(downstreamSnapshot) &&
-              !hasNativePostAnswerCeoPosture(transcript, c.mode, c.postureRe, selectionStartedAt, publicTools)
+              !hasNativePostAnswerCeoPosture(transcript, c.mode, c.postureRe, selectionStartedAt, publicTools, postureSource)
             ) {
               // Plan-ready AND a follow-up AskUserQuestion are both visible but
               // posture text has not appeared yet. Keep polling for a bit.

@@ -4,6 +4,16 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
+    ['test/eng-count-owned-outcomes.test.ts', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-count-owned-outcomes-f359.json', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-batching-prefixed-ledger-f359.json', ['plan-eng-multi-finding-batching']],
+    ['test/fixtures/ceo-hold-preservation-f359.json', ['plan-ceo-mode-routing']],
+    ['test/ceo-native-fields-f359.test.ts', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-native-fields-f359.json', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-plain-fields-f359.json', ['plan-ceo-finding-count']],
+    ['test/eng-task-pause-navigation-f359.test.ts', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-task-pause-navigation-f359.json', ['plan-eng-finding-count']],
+    ['test/fixtures/auto-decide-completed-mode-f359.json', ['auto-decide-preserved']],
     ['test/fixtures/ceo-onboarding-packet-90f.json', ['plan-ceo-finding-count']],
     ['test/fixtures/ceo-baseline-alternatives-90f.json', ['plan-ceo-finding-count']],
     ['test/fixtures/eng-structure-choice-90f.json', ['plan-eng-finding-count']],

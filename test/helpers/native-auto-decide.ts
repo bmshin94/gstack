@@ -37,6 +37,19 @@ function publicProse(text: string): string {
   return lines.join('\n');
 }
 
+// The same current-mode field grammar owns declarations and later corrections.
+function modeField(line: string): { value: string; completed: boolean } | null {
+  const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode(?:( decision)(?: ([^:\r\n]+))?)?:\s*(.*)$/i.exec(line.replace(/^\s*[-*+]\s+/, '').trim());
+  if (!match) return null;
+  // An explicit decision status is complete only in the supported completion
+  // class. Pending, cancelled, unfinished and unknown statuses cannot declare
+  // completion, and invalidate an earlier declaration through this same parser.
+  const completeStatus = !match[1] || /^(?:done|complete|completed)$/i.test(match[2]?.trim() ?? '');
+  const value = plain(match[3]!);
+  const unfinishedValue = /\b(?:withdrawn|retracted|revoked|cancelled|canceled|undecided|unfinished|incomplete|not complete(?:d)?|not selected|not decided|not yet|pending|proposed|if|unless|would|might|will)\b/i.test(value);
+  return { value, completed: completeStatus && !unfinishedValue };
+}
+
 function withdrawn(text: string, option: string): boolean {
   const prose = publicProse(text);
   if (/\b(?:I|we)\s+(?:retract|withdraw|revoke|cancel)\b[^.!?\n]{0,100}\b(?:auto[- ]decision|annotation|decision|selection|choice)\b/i.test(prose) ||
@@ -47,12 +60,12 @@ function withdrawn(text: string, option: string): boolean {
   // punctuation inside that explanation does not change the enum. Status or
   // conditional suffixes still withdraw a previously completed declaration.
   return prose.split('\n').some(line => {
-    const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode:\s*(.*)$/i.exec(line.replace(/^\s*[-*+]\s+/, '').trim());
-    if (!match) return false;
-    const field = plain(match[1]!);
-    if (/\b(?:withdrawn|retracted|revoked|cancelled|canceled|undecided|not selected|not decided|not yet|pending|proposed|if|unless|would|might|will)\b/i.test(field)) return true;
-    const value = field.replace(/[.,;]$/, '').replace(/\s+\([^()]*\)$/, '').split(/[.,;]/, 1)[0]!.trim();
-    return value.toLowerCase() !== option.toLowerCase();
+    const parsed = modeField(line);
+    if (parsed === null) return false;
+    if (!parsed.completed) return true;
+    const field = parsed.value;
+    const selected = field.replace(/[.,;]$/, '').replace(/\s+\([^()]*\)$/, '').split(/[.,;]/, 1)[0]!.trim();
+    return selected.toLowerCase() !== option.toLowerCase();
   });
 }
 
@@ -136,12 +149,12 @@ function currentModeStatement(text: string): { option: string; statement: string
   const lines = prose.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const statement = lines[i]!.replace(/^\s*[-*+]\s+/, '').trim();
-    const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode:\s*(HOLD SCOPE|SCOPE EXPANSION|SELECTIVE EXPANSION|SCOPE REDUCTION)(?:[.,;]|\s+\([^()]*\)[.!;]?$|$)/i.exec(statement);
+    const field = modeField(statement);
+    const match = !field?.completed ? null : /^(HOLD SCOPE|SCOPE EXPANSION|SELECTIVE EXPANSION|SCOPE REDUCTION)(?:[.,;]|\s+\([^()]*\)[.!;]?$|$)/i.exec(field.value);
     if (!match) continue;
     // Source/example introductions and conditional selections cannot supply
     // a current declaration merely by putting a Mode field on the next line.
-    if (/\b(?:example|hypothetical|historical|previous|quoted)\b/i.test(lines.slice(0, i + 1).join('\n')) ||
-        /\b(?:if|unless|would|might|will|withdrawn|retracted|revoked|cancelled|canceled|undecided|not selected|not decided|not yet|pending|proposed)\b/i.test(statement)) continue;
+    if (/\b(?:example|hypothetical|historical|previous|quoted)\b/i.test(lines.slice(0, i + 1).join('\n'))) continue;
     return { option: match[1]!.toUpperCase(), statement: lines[i]!.trim() };
   }
   return null;
@@ -233,9 +246,9 @@ function structuredModeDecision(transcript: PlanCountTranscript, tools: NativePu
     let valid = !!result;
     // Optional quiet logging reports success only through &&, never a masked
     // failed log followed by an unconditional echo.
-    const reported = /(?:\s+2>\/dev\/null)?\s+&&\s+echo\s+([A-Za-z0-9_-]+)(?:\s+\|\|\s+echo\s+"([^"$`\\]*)")?$/.exec(command);
-    if (reported) { command = command.slice(0, -reported[0].length); valid &&= typeof result?.content === 'string' && result.content.trim() === reported[1] &&
-      (reported[2] === undefined || reported[2].trim() !== reported[1]); }
+    const reported = /(?:\s+2>\/dev\/null)?\s+&&\s+echo\s+((?:[A-Za-z0-9_-]+|"[A-Za-z0-9_-]+"|'[A-Za-z0-9_-]+'))(?:\s+\|\|\s+echo\s+"([^"$`\\]*)")?$/.exec(command);
+    if (reported) { command = command.slice(0, -reported[0].length); valid &&= typeof result?.content === 'string' && result.content.trim() === literalWords(reported[1]!)?.[0] &&
+      (reported[2] === undefined || reported[2].trim() !== literalWords(reported[1]!)?.[0]); }
     else valid &&= typeof result?.content === 'string' && !result.content.trim();
     const args = cliArgs(command, 'gstack-question-log'); if (!args || args.length !== 1) return [];
     let log: any; try { log = JSON.parse(args[0]!); } catch { return []; }

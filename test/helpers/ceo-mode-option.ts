@@ -315,15 +315,74 @@ function singleScopeBrief(text: string, descriptions: readonly string[], compari
     : /^[^.!?;\n]+\.$/.test(net.replace(/\bvs\./gi, 'vs')));
 }
 
+/** Fixture-owned baseline for a completed scope-preservation decision. */
+export interface CeoPostureSource { path: string; content: string }
+
+function hasCompletedScopePreservation(transcript: PlanCountTranscript, selected: NativePlanQuestionCall,
+  call: NativePlanQuestionCall, events: ReadonlyArray<NativePublicToolEvent>, source?: CeoPostureSource): boolean {
+  if (!source || !source.path.startsWith('/') || /(?:^|\/)\.\.(?:\/|$)/.test(source.path) || !source.content.trim()) return false;
+  const name = source.path.slice(source.path.lastIndexOf('/') + 1);
+  const contextOf = (text: string) => /Project\/branch\/task:([^\n]*)/i.exec(text)?.[1] ?? '';
+  const planNames = (text: string) => [...new Set(text.match(/\b[\w./-]+\.md\b/gi) ?? [])];
+  const selectedPlans = planNames(selected.questions.map(q => contextOf(q.question)).join(' '));
+  const q = call.questions[0]!;
+  const context = contextOf(q.question), plans = planNames(context);
+  if (selectedPlans.length !== 1 || selectedPlans[0] !== name || plans.length !== 1 || plans[0] !== name ||
+      !/\bHOLD SCOPE\b/.test(context) || /\b(?:SCOPE EXPANSION|SELECTIVE EXPANSION|SCOPE REDUCTION|historical|previous|example|hypothetical|withdrawn)\b/i.test(context)) return false;
+  if (q.multiSelect || q.options.length !== 2 || !singleScopeBrief(q.question, q.options.map(o => o.description ?? ''), false)) return false;
+  const labels = q.options.map(o => o.label.replace(/\s*\(recommended\)\s*$/i, '').trim());
+  const kept = labels.map(label => /^Keep ([a-z][a-z -]{0,70}) in scope$/i.exec(label));
+  const index = kept.findIndex(Boolean);
+  if (index < 0 || kept.filter(Boolean).length !== 1 || call.answers?.[q.question] !== q.options[index]!.label) return false;
+  const subject = kept[index]![1]!.trim();
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!new RegExp(`^Defer ${escape(subject)} to TODOS(?:\\.md)?$`, 'i').test(labels[1-index]!) ||
+      !new RegExp(`^D\\d+\\s*[—–-]\\s*Keep (?:the )?${escape(subject)}\\b[^?\\n]* in scope, or defer`, 'i').test(q.question)) return false;
+  const body = q.question + '\n' + q.options[index]!.description;
+  if (!q.options.every(o => typeof o.description === 'string' && o.description.trim()) ||
+      /\b(?:also|additionally|separately|expand(?:ing)? scope|outside (?:the )?(?:plan|scope)|and add|plus new|withdrawn|cancelled|canceled|retracted|revoked|hypothetical)\b/i.test(body)) return false;
+  // The choice retains an actual baseline requirement and names concrete
+  // failure/proof consequences, rather than merely repeating the mode label.
+  const required = source.content.split('\n').filter(line => /^\s*-\s+/.test(line));
+  if (!required.some(line => new RegExp(`\\b${escape(subject)}\\b`, 'i').test(line)) ||
+      !new RegExp(`(?:${escape(name)} lists|the plan already states)\\b`, 'i').test(q.question)) return false;
+  if ([/\btests?\b/i, /\bauthz\b|\baccess\b/i, /\b(?:concurrent|duplicate|stale)\b/i,
+       /\b(?:delete.and.recreate|delete\+recreate|re-save)\b/i, /\b(?:pilot|reuse) metric\b/i]
+      .filter(pattern => pattern.test(body)).length < 2) return false;
+  const times = completedQuestionTimes(call, events); if (!times || times.answeredAt > Date.now()) return false;
+  const own = events.filter(e => e.sessionId === selected.sessionId);
+  const loaded = own.some(use => {
+    if (use.kind !== 'use' || !Number.isFinite(Date.parse(use.timestamp)) || Date.parse(use.timestamp) >= times.requestedAt ||
+        own.filter(e => e.kind === 'use' && e.toolUseId === use.toolUseId).length !== 1) return false;
+    const replies = own.filter(e => e.kind === 'result' && e.toolUseId === use.toolUseId);
+    if (replies.length !== 1 || replies[0]!.isError !== false || !Number.isFinite(Date.parse(replies[0]!.timestamp)) || Date.parse(replies[0]!.timestamp) < Date.parse(use.timestamp) ||
+        Date.parse(replies[0]!.timestamp) >= times.requestedAt || typeof replies[0]!.content !== 'string') return false;
+    const content = replies[0]!.content as string;
+    if (use.name === 'Read' && use.input?.file_path === source.path)
+      return content.replace(/^\d+\t/gm, '').trim() === source.content.trim();
+    // Existing native capture used a literal cat in its fixed project audit.
+    const command = use.input?.command;
+    if (use.name !== 'Bash' || typeof command !== 'string' || !command.startsWith(`cd ${source.path.slice(0,source.path.lastIndexOf('/'))}\n`) ||
+        (command.match(/(?:^|[;\n])\s*cd\s/g) ?? []).length !== 1) return false;
+    const cat = new RegExp(`(?:^|[;\\n])\\s*cat ${escape(name)}(?: 2>/dev/null)?(?: \\|\\| echo "no ${escape(name)}")?\\s*$`);
+    return cat.test(command) && content.trimEnd().endsWith(source.content.trim());
+  });
+  if (!loaded) return false;
+  // Later current contradictions cannot inherit an earlier preserved scope.
+  return !transcript.assistantMessages.some(m => m.sessionId === selected.sessionId && Date.parse(m.timestamp) >= times.answeredAt &&
+    /\b(?:withdraw|retract|cancel|expand|reduce)\b[^.!?\n]*(?:decision|scope)|\b(?:not|no longer)\s+(?:holding|keeping|retaining)\b|\b(?:decision|posture)\b[^.!?\n]*\b(?:withdrawn|retracted|revoked|cancelled|canceled)\b/i.test(m.text.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '').replace(/^\s*>.*$/gm, '').replace(/"[^"\n]*"|“[^”\n]*”/g, '')));
+}
+
 /** HOLD can apply its boundary in a completed defer decision, before standalone prose. */
 function hasAnsweredHoldPosture(transcript: PlanCountTranscript, selected: NativePlanQuestionCall,
-  posture: RegExp, events: ReadonlyArray<NativePublicToolEvent>): boolean {
+  posture: RegExp, events: ReadonlyArray<NativePublicToolEvent>, source?: CeoPostureSource): boolean {
   const modeTimes = completedQuestionTimes(selected, events);
   if (!modeTimes) return false;
   return transcript.calls.some(call => {
     if (call === selected || call.sessionId !== selected.sessionId || call.questions.length !== 1) return false;
     const times = completedQuestionTimes(call, events);
     if (!times || times.requestedAt <= modeTimes.answeredAt) return false;
+    if (hasCompletedScopePreservation(transcript, selected, call, events, source)) return true;
     const q = call.questions[0]!;
     // A substantive review decision can apply HOLD in its rationale before
     // standalone prose is published. Metadata and answer echoes do not count.
@@ -496,6 +555,7 @@ export function hasNativePostAnswerCeoPosture(
   posture: RegExp,
   selectionStartedAt: number,
   publicTools: ReadonlyArray<NativePublicToolEvent> = [],
+  source?: CeoPostureSource,
 ): boolean {
   const selected = nativeCeoModeAnswer(transcript, targetMode, selectionStartedAt);
   if (!selected) return false;
@@ -507,7 +567,7 @@ export function hasNativePostAnswerCeoPosture(
         Date.parse(message.timestamp) <= Date.now() &&
         hasCurrentHoldScopePosture(message.text, selected));
   }) || (targetMode === 'SCOPE EXPANSION' && hasAnsweredExpansionPosture(transcript, selected, posture, publicTools)) ||
-    (targetMode === 'HOLD SCOPE' && hasAnsweredHoldPosture(transcript, selected, posture, publicTools));
+    (targetMode === 'HOLD SCOPE' && hasAnsweredHoldPosture(transcript, selected, posture, publicTools, source));
 }
 
 type PosturePacket = { headers: string[]; screens: string[]; next: number; nativeId?: string; submitted: boolean };

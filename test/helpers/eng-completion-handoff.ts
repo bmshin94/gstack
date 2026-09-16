@@ -10,7 +10,7 @@ export function isEngCompletionHandoff(fp: AskUserQuestionFingerprint, reviewedP
       !Array.isArray(call.unansweredQuestionIndices) || call.unansweredQuestionIndices.length ||
       (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0) ||
       Object.keys(call.answers ?? {}).length !== 1 || !Number.isFinite(Date.parse(call.answeredAt ?? ''))) return false;
-  if (isCurrentLedgerNavigation(fp, reviewedPlan, priorCalls) || isApprovedInvestigationRecap(fp, reviewedPlan, priorCalls) || isPublishedReadyNavigation(fp, reviewedPlan) || isApprovedMaintenanceRecap(fp, reviewedPlan, priorCalls) || isPublishedPrerequisiteHandoff(fp, reviewedPlan)) return true;
+  if (isPublishedTaskPauseNavigation(fp, reviewedPlan, priorCalls) || isCurrentLedgerNavigation(fp, reviewedPlan, priorCalls) || isApprovedInvestigationRecap(fp, reviewedPlan, priorCalls) || isPublishedReadyNavigation(fp, reviewedPlan) || isApprovedMaintenanceRecap(fp, reviewedPlan, priorCalls) || isPublishedPrerequisiteHandoff(fp, reviewedPlan)) return true;
   const q = call.questions[0]!;
   if (q.multiSelect || q.header.trim() !== 'Next steps' || q.options.length !== 2 ||
       fp.options.length !== 2 || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) ||
@@ -706,4 +706,184 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   return execution.length===1 && /\bLane [A-Z]:/.test(lanes) && laneRefs.every(ref=>
     JSON.stringify(groups(execution[0]!))===JSON.stringify(groups(ref[1]!)) &&
     groups(ref[1]!).flatMap(s=>s.split('+')).every(id=>new RegExp(`\\bLane ${id}:`).test(lanes)));
+}
+
+/** A completed implementation-or-pause menu can recap a published task graph
+ * and previously answered bookkeeping. It grants navigation credit only. */
+function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: string,
+  prior: readonly NativePlanQuestionCall[]): boolean {
+  const call = fp.nativeCall!, q = call.questions[0]!;
+  const compact = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const label = (s: string) => compact(s.replace(/\*\*/g, '')).replace(/^(?:[1-9]\d*)?[A-Z][).:]\s*/, '').replace(/\s*\((?:recommended|optional)\)$/i, '');
+  if (q.multiSelect || !/^Next steps?$/i.test(q.header.trim()) || q.options.length !== 2 || fp.options.length !== 2 ||
+      !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) || !hasCompleteEarlierNativeAnswers(call, prior)) return false;
+  const ready = q.options.find(o => /^Ready to implement(?:\s*[,—–-]\s*run \/ship when done)?$/i.test(label(o.label)));
+  const pause = q.options.find(o => /^Pause here(?:, no further action this session)?$/i.test(label(o.label)));
+  if (!ready || !pause || !q.options.some(o => o.label === call.answers?.[q.question])) return false;
+  const context = [q.question, ...q.options.map(o => `${o.label}\n${o.description ?? ''}`)].join('\n');
+  const currentText = (s: string) => s.replace(/(?:^|\n)(?:Earlier|Previous|Historical|Example|Quoted)\b[^\n]*:\s*(?:"[^"\n]*"|“[^”\n]*”)\s*$/gmi, '');
+  const status = currentText(context).replace(/["“”'‘’]/g, '');
+  const positive = currentText(q.question).replace(/"[^"\n]*"|“[^”\n]*”/g, '');
+  const eng = '(?:(?:the |this )?(?:eng(?:ineering)? review|eng gate)|the review|this review|all required reviews)';
+  const complete = '(?:clear(?:ed)?|complete[d]?|done|finished)';
+  const incomplete = new RegExp(`\\b${eng}\\b[^.!?;\\n]{0,100}\\b(?:not|never|incomplete|unfinished|pending|withdrawn|revoked|superseded|cancelled|canceled|reopened)\\b|\\b${eng}\\s+(?:will|would|may|might|could|should) (?:be )?${complete}\\b|\\b${eng}\\b[^.!?;\\n]{0,100}\\b${complete}\\b[^.!?;\\n]{0,80}\\b(?:if|when|once|unless|provided|assuming|after)\\b|\\b(?:if|when|once|unless|provided|assuming)\\b[^.!?;\\n]{0,80}\\b${eng}\\b`, 'i');
+  if (!/^D[1-9]\d*\s*[—–:-]\s*Next steps? after this eng(?:ineering)? review\?/i.test(positive) ||
+      !new RegExp(`\\b${eng} (?:is |has been )?${complete}\\b`, 'i').test(positive) ||
+      !/\b(?:every decision is|all decisions are) (?:answered|settled)\b/i.test(positive) ||
+      !/\b(?:navigation|routing) only\b/i.test(positive) ||
+      !/\b(?:this question|this choice) (?:approves?|authorizes?) no (?:new )?implementation changes?\b/i.test(positive) ||
+      /(?:^|\n)\s*>|`{3}|~{3}|\b(?:example|sample|quoted|historical)\s*:/i.test(context) || incomplete.test(status) ||
+      /\bnot (?:all|every) decisions?\b|\bdecisions?\s+(?:(?:is|are|remains?)\s+|status:\s*)?(?:still )?(?:unanswered|unresolved|pending|reopened|not answered|not settled|open)\b/i.test(status)) return false;
+
+  const published: string[] = [], hierarchy: { depth: number; inactive: boolean }[] = [];
+  let fence: string | undefined, preceding = '';
+  for (const line of plan.split(/\r?\n/)) {
+    const mark = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (mark) { if (!fence) fence = mark[1]; else if (mark[1]![0] === fence[0] && mark[1]!.length >= fence.length && !mark[2]!.trim()) fence = undefined; continue; }
+    if (fence || /^(?: {4}|\t| {0,3}>)/.test(line)) continue;
+    const h = /^(#{1,6}) (.+)$/.exec(line);
+    if (h) { while (hierarchy.at(-1) && hierarchy.at(-1)!.depth >= h[1]!.length) hierarchy.pop(); hierarchy.push({depth:h[1]!.length,inactive:introducesSourceContext(preceding) || /\b(?:history|historical|archived?|example|quoted|template|withdrawn|superseded)\b/i.test(h[2]!)}); }
+    if (line.trim()) preceding = line;
+    if (!hierarchy.some(h => h.inactive)) published.push(line);
+  }
+  if (fence) return false;
+  const current = published.join('\n');
+  const titles = [...current.matchAll(/^# Plan: (.+) \(reviewed\)$/gm)];
+  const owners = [...current.matchAll(/^Reviewed target: `([^`\n]+\.md)` \("Plan: ([^"\n]+)"\) in repo `([^`\n]+)`, branch `([^`\n]+)`, commit `[a-f0-9]+`\.$/gm)];
+  if (titles.length !== 1 || owners.length !== 1 || titles[0]![1] !== owners[0]![2]) return false;
+  const metadata = `Project/branch/task: ${owners[0]![3]} on ${owners[0]![4]}, reviewing ${owners[0]![1]} (${owners[0]![2]}).`;
+  const sameOwner = (text: string) => { const found = text.split('\n').filter(s => /^Project\/branch\/task:/.test(s)); return found.length === 1 && found[0] === metadata; };
+  if (!sameOwner(q.question) || prior.some(c => c.questions.length !== 1 || !sameOwner(c.questions[0]!.question))) return false;
+  const section = (heading: RegExp) => {
+    const starts = published.flatMap((line, i) => heading.test(line) ? [i] : []);
+    if (starts.length !== 1) return undefined;
+    const start = starts[0]!, end = published.findIndex((line, i) => i > start && /^#{1,2} /.test(line));
+    return published.slice(start + 1, end < 0 ? undefined : end).join('\n');
+  };
+  const ledger = section(/^## Decision ledger$/), tasks = section(/^## Implementation Tasks$/), graph = section(/^## Worktree parallelization strategy$/), report = section(/^## GSTACK REVIEW REPORT$/);
+  if (!ledger || !tasks || !graph || !report || report.trim().split('\n').at(-1) !== 'NO UNRESOLVED DECISIONS' || incomplete.test(report) || /\b[1-9]\d* unresolved decisions?\b/i.test(report) ||
+      report.split('\n').filter(s => /^\| Eng Review \|/.test(s)).length !== 1 ||
+      !/^\| Eng Review \|[^\n]*\| CLEAR \|[^\n]*\b0 critical gaps\b/m.test(report) ||
+      report.split('\n').filter(s => /^(?:- )?\*\*VERDICT:\*\*/.test(s)).length !== 1 ||
+      !/^(?:- )?\*\*VERDICT:\*\* ENG CLEARED\b/m.test(report)) return false;
+  const finalId = /^(D[1-9]\d*)\s*[—–:-]/.exec(q.question)?.[1];
+  const approvals = prior.map(c => ({call:c,q:c.questions[0]!,id:/^(D[1-9]\d*)\s*[—–:-]/.exec(c.questions[0]!.question)?.[1],selected:c.answers![c.questions[0]!.question]!}));
+  if (!finalId || approvals.some(a => !a.id || a.id === finalId) || new Set(approvals.map(a => a.id)).size !== approvals.length) return false;
+  const selectedLetter = (a: typeof approvals[number]) => {
+    const explicit = /^(?:[1-9]\d*)?([A-Z])[).:]\s/.exec(a.selected)?.[1];
+    const named = [...a.q.question.matchAll(/^([A-Z])\) (.+)$/gm)].filter(m => label(m[2]!.replace(/\s+\(human:.*$/, '')) === label(a.selected));
+    const recommendation = [...a.q.question.matchAll(/^Recommendation: ([A-Z]) because\b/gm)];
+    return explicit ?? (named.length === 1 ? named[0]![1]! : /\(recommended\)$/i.test(a.selected) &&
+      a.q.options.filter(o => /\(recommended\)$/i.test(o.label)).length === 1 && recommendation.length === 1 ? recommendation[0]![1] : undefined);
+  };
+  if (approvals.some(a => !selectedLetter(a))) return false;
+  const revoked = /\b(?:[DRT][1-9]\d*|approval|decision|scope|task|TODO|routing rules)(?: (?:decision|scope|state|approval|task))?\s*(?::|is|was|has been|remains)?\s*(?:now |still )?(?:withdrawn|revoked|cancelled|canceled|rejected|reopened|superseded|not approved|no longer approved|pending approval|pending|unanswered|unresolved)\b/i;
+  if ([status, currentText(current), ...approvals.map(a => currentText(a.q.question))].some(s => revoked.test(s.replace(/["“”'‘’]/g, '')))) return false;
+  const rows = ledger.split(/\n(?=### )/).filter(s => /^### R[1-9]\d*:/.test(s.trim()));
+  const rowIds = rows.map(s => /^### (R[1-9]\d*):/.exec(s.trim())![1]!);
+  if (!rows.length || new Set(rowIds).size !== rows.length ||
+      [...ledger.matchAll(/^State:/gm)].length !== rows.reduce((n, row) => n + [...row.matchAll(/^State:/gm)].length, 0)) return false;
+  const owned = new Map<string, string>();
+  for (const row of rows) {
+    const states = [...row.matchAll(/^State: (.+)$/gm)], ids = [...row.matchAll(/^Question (D[1-9]\d*):$/gm)];
+    // An explicit past dispatch annotation can accompany exactly one current
+    // state. Duplicate current states and contradictory updates stay invalid.
+    if (states.filter(s => s[1] === 'approved').length !== 1 || states.length > 2 ||
+        states.some(s => s[1] !== 'approved' && s[1] !== 'approved (was pending at dispatch; see Actual answer)') || ids.length !== 1) return false;
+    const id = ids[0]![1]!, a = approvals.find(a => a.id === id);
+    const answers = [...row.matchAll(/^Actual answer: \*\*([A-Z]) [—–-] (.+)\*\* \((D[1-9]\d*) answer\)\.$/gm)];
+    if (!a || owned.has(id) || answers.length !== 1 || answers[0]![1] !== selectedLetter(a) || answers[0]![3] !== id || label(answers[0]![2]!) !== label(a.selected) ||
+        row.split(a.q.question).length !== 2 || row.split('\n').filter(s => /^Accepted scope: \S/.test(s)).length !== 1) return false;
+    owned.set(id, rowIds[rows.indexOf(row)]!);
+  }
+  const readiness = ledger.split('\n').filter(s => /^(?:\*\*)?Approval readiness:/.test(s));
+  if (readiness.length !== 1 || !/^\*\*Approval readiness: PASS\.\*\*/.test(readiness[0]!)) return false;
+  for (const ref of readiness[0]!.matchAll(/\b(D[1-9]\d*) → ([A-Z])/g)) {
+    const a = approvals.find(a => a.id === ref[1]);
+    if (!a || selectedLetter(a) !== ref[2]) return false;
+  }
+  const readyRows = [...readiness[0]!.matchAll(/\b(R[1-9]\d*) \((D[1-9]\d*) → ([A-Z])\)/g)];
+  if (readyRows.length !== rows.length || new Set(readyRows.map(r => r[1])).size !== rows.length ||
+      readyRows.some(r => owned.get(r[2]!) !== r[1] || selectedLetter(approvals.find(a => a.id === r[2])!) !== r[3])) return false;
+
+  const maintenance = /Routing rules \((D[1-9]\d*)\) and TODOS\.md \((D[1-9]\d*)\) still need writing once plan mode exits/i.exec(context);
+  if (!maintenance) return false;
+  const routing = approvals.find(a => a.id === maintenance[1]), todo = approvals.find(a => a.id === maintenance[2]);
+  if (!routing || !todo || routing.q.header !== 'Routing' || label(routing.selected) !== 'Add routing rules to CLAUDE.md' ||
+      todo.q.header !== 'TODO' || label(todo.selected) !== 'Add to TODOS.md' ||
+      !new RegExp(`^- \\*\\*${routing.id}\\*\\* routing rules in CLAUDE\\.md → ${selectedLetter(routing)} \\(add\\)\\.`, 'm').test(ledger)) return false;
+  const todos = section(/^## TODOS\.md \(not persisted in plan mode; write after exit\)$/);
+  const todoRows = ledger.split(/\n(?=### )/).filter(s => new RegExp(`^### ${todo.id}: TODO [—–-]`).test(s.trim()));
+  const subject = /^D[1-9]\d*\s*[—–:-]\s*Capture "([^"\n]+)" as a TODO\?/.exec(todo.q.question)?.[1];
+  if (!todos || !subject || todoRows.length !== 1 || !new RegExp(`^Actual answer: \\*\\*${selectedLetter(todo)} [—–-] Add to TODOS\\.md\\.\\*\\*`, 'm').test(todoRows[0]!) ||
+      !new RegExp(`^- \\*\\*${escape(subject)}\\*\\* \\(${todo.id} → ${selectedLetter(todo)}\\)$`, 'mi').test(todos)) return false;
+  // Setup/scope answers that lack an R row still have a unique saved selector.
+  for (const a of approvals.filter(a => !owned.has(a.id!) && a !== todo)) {
+    const saved = [...ledger.matchAll(new RegExp(`^- \\*\\*${a.id}\\*\\* [^\\n]*?→ (?:\\*\\*)?([A-Z])(?=[ :(.])`, 'gm'))];
+    if (saved.length !== 1 || saved[0]![1] !== selectedLetter(a)) return false;
+  }
+
+  const entries = [...tasks.matchAll(/^- \[ \] \*\*(T[1-9]\d*)\b[^\n]*?\*\* [—–-] (.+?) [—–-] (.+)$/gm)];
+  const ids = entries.map(e => e[1]!);
+  if (!entries.length || new Set(ids).size !== ids.length) return false;
+  for (const ref of context.matchAll(/\bT([1-9]\d*)(?:\s*(?:[–-]|through|to)\s*T([1-9]\d*))?\b/g)) {
+    const first = +ref[1]!, last = +(ref[2] ?? ref[1])!;
+    if (last < first || last - first >= ids.length) return false;
+    for (let n = first; n <= last; n++) if (!ids.includes(`T${n}`)) return false;
+  }
+  const orders = [...context.matchAll(/\b(?:order the plan specifies|published task order) \(([^)]+)\)/gi)];
+  if (orders.length !== 1) return false;
+  const groups: string[][] = [];
+  for (const raw of orders[0]![1]!.split(/,?\s*then\s+|\s*→\s*|\s*->\s*/i)) {
+    const group = raw.trim().replace(/,?\s+(?:(?:in )?parallel|last)$/i, '');
+    if (!/^T[1-9]\d*(?:\s*[+/]\s*T[1-9]\d*)*$/.test(group)) return false;
+    groups.push(group.split(/\s*[+/]\s*/));
+  }
+  const ordered = groups.flat(), included = new Set(ordered);
+  if (!ordered.length || included.size !== ordered.length || ids.slice(0, ordered.length).some(id => !included.has(id))) return false;
+  const bodyFor = (i: number) => tasks.slice(entries[i]!.index!, entries[i + 1]?.index ?? tasks.length);
+  // Auxiliary catalog entries remain obligations: a prerequisite explicitly tied
+  // to a recapped task, or work in each implementation commit, is not dropped.
+  if (entries.slice(ordered.length).some((e, j) => {
+    const body = bodyFor(ordered.length + j), before = /^  - Verify: .+ before (T[1-9]\d*) merges$/m.exec(body);
+    return !(before && included.has(before[1]!)) && !/^  - Verify: .+ in the same commit$/m.test(body);
+  })) return false;
+  const steps = [...graph.matchAll(/^\| (S[1-9]\d*) ([^|\n]+) \| ([^|\n]+) \| ([^|\n]+) \|$/gm)];
+  const stepIds = steps.map(s => s[1]!);
+  if (!steps.length || new Set(stepIds).size !== steps.length || !/^\| Step \| Modules touched \| Depends on \|$/m.test(graph)) return false;
+  const module = (s: string) => compact(s.replace(/`/g, '').replace(/\s*\([^)]*\)/g, '')).replace(/\/$/, '');
+  const stepModules = steps.map(s => s[3]!.split(',').map(module));
+  const deps = steps.map(s => /^[—–-]$/.test(s[4]!) ? [] : s[4]!.split(/,\s*/));
+  if (deps.some((d, i) => new Set(d).size !== d.length || d.some(id => !stepIds.includes(id) || stepIds.indexOf(id) >= i))) return false;
+  // Task/module and step/module fields bind the two independently numbered
+  // catalogs. Require a unique contiguous partition; shared paths alone cannot
+  // choose between ambiguous steps. No semantic caption guessing is involved.
+  const mappings: number[][] = [];
+  const assign = (at: number, step: number, mapping: number[]) => {
+    if (mappings.length > 1) return;
+    if (at === ordered.length) { if (step === steps.length - 1) mappings.push(mapping); return; }
+    for (const next of at === 0 ? [0] : [step, step + 1]) {
+      if (next >= steps.length || !entries[at]![2]!.split(/\s+\+\s+/).map(module).every(m => stepModules[next]!.includes(m))) continue;
+      assign(at + 1, next, [...mapping, next]);
+    }
+  };
+  assign(0, 0, []);
+  if (mappings.length !== 1) return false;
+  const mapped = new Map(ids.slice(0, ordered.length).map((id, i) => [id, mappings[0]![i]!]));
+  const positions = steps.map(() => [] as number[]);
+  for (let i = 0; i < groups.length; i++) {
+    const members = groups[i]!.map(id => mapped.get(id)!);
+    if (new Set(members).size !== members.length) return false;
+    for (const s of members) positions[s]!.push(i);
+  }
+  if (deps.some((d, i) => d.some(id => Math.max(...positions[stepIds.indexOf(id)]!) >= Math.min(...positions[i]!)))) return false;
+  for (let i = 0; i < ordered.length; i++) {
+    const id = ids[i]!, pos = groups.findIndex(g => g.includes(id));
+    for (const m of bodyFor(i).matchAll(/\bafter (T[1-9]\d*) (?:is )?green\b/gi)) if (!included.has(m[1]!) || groups.findIndex(g => g.includes(m[1]!)) >= pos) return false;
+  }
+  let actions = currentText(context).replace(orders[0]![0], '').replace(maintenance[0], '')
+    .replace(/\b(?:this question|this choice) (?:approves?|authorizes?) no (?:new )?implementation changes?\b/gi, '');
+  const action = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|while|before (?:implementation|building|review))\s+)(?:please\s+)?(?:adds?|adding|append(?:s|ing)?|remov(?:e|es|ing)|delet(?:e|es|ing)|cut(?:s|ting)?|drop(?:s|ping)?|replac(?:e|es|ing)|rewrit(?:e|es|ing)|chang(?:e|es|ing)|alter(?:s|ing)?|modif(?:y|ies|ying)|enabl(?:e|es|ing)|disabl(?:e|es|ing)|implement(?:s|ing)?|install(?:s|ing)?|introduc(?:e|es|ing)|build(?:s|ing)?|writ(?:e|es|ing)|record(?:s|ing)?|captur(?:e|es|ing)|creat(?:e|es|ing)|switch(?:es|ing)?|migrat(?:e|es|ing)|externaliz(?:e|es|ing)|refactor(?:s|ing)?|expand(?:s|ing)?|reduc(?:e|es|ing)|deploy(?:s|ing)?|approv(?:e|es|ing))\b/i;
+  return !action.test(actions) && !/\brun\s+(?!\/ship\b)|\b(?:new|additional|extra) (?:work|implementation|scope|task|requirement|dependency|feature|datastore|database|cache|test|prerequisite)\b|\b(?:must|shall|should|needs? to|required to|depends on)\s+\S|\b(?:only|skip|drop|omit) (?:the )?tasks?\b/i.test(actions);
 }

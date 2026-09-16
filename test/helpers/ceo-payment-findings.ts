@@ -445,7 +445,13 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
     const text = plain(normalized);
     const label = first.tokens?.[0]?.type === 'strong' ? plain(first.tokens[0].text)
       : /^([A-D][).:]\s+.+?)\s+[—–-]\s+/i.exec(text)?.[1]
-        ?? /^([A-D][).:]\s+.+?)[.:]\s+/i.exec(text)?.[1];
+        ?? /^([A-D][).:]\s+.+?)[.:]\s+/i.exec(text)?.[1]
+        // A plain label can own the next line's full option facts. A
+        // single-line fragment cannot borrow fields from another paragraph.
+        ?? (first.type === 'paragraph' && tokens.indexOf(first) >= 0 &&
+          first.raw.trim().includes('\n') && currentContext(tokens.indexOf(first)) &&
+          /^[A-D][).:]\s+\S/i.test(plain(first.raw.split('\n')[0]!))
+          ? plain(first.raw.split('\n')[0]!) : undefined);
     if (!label || !/^[A-D][).:]\s+\S/i.test(label)) return null;
     const details = text.slice(label.length).replace(/^[.:\s—–-]+/, '');
     // Mask quoted/code field names without changing offsets. A real field
@@ -462,6 +468,46 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
       ['effort', 'risk', 'pros', 'cons'].every(field => fields[field] && current(fields[field]!)) &&
       /^(?:S|M|L|XL)\b/i.test(fields.effort!) && /^(?:low|medium|high)\b/i.test(fields.risk!);
     return { label, summary: text, bindingText: label + ' ' + details.slice(0, facts[0]?.index ?? details.length), complete };
+  };
+  // The checkpoint also saves the native Question/Header and unchanged full
+  // option descriptions. These use native ✅/❌ tradeoffs, not prose-fallback
+  // field names. Match the whole current record without borrowing old tables.
+  const exactNativeFields = (section: ReturnType<typeof marked.lexer>) => {
+    const line = (value: string) => value.trim()
+      .replace(/^\*\*(Question|Header):\*\*\s*/, '$1: ')
+      .replace(/^\*\*(Question|Header)\*\*:\s*/, '$1: ')
+      .replace(/^\*\*([A-D][).:]\s+.+)\*\*$/, '$1');
+    const lines = (value: string) => value.replace(/\r\n/g, '\n').split('\n').map(line).filter(Boolean);
+    const saved = section.filter(token => token.type === 'paragraph' && currentContext(tokens.indexOf(token))).flatMap(token => lines(token.raw));
+    const questions = saved.flatMap((value, i) => /^Question:/.test(value) ? [i] : []);
+    const headers = saved.flatMap((value, i) => /^Header:/.test(value) ? [i] : []);
+    if (questions.length !== 1 || headers.length !== 1 || !q.header.trim()) return false;
+    const prefixes = q.options.flatMap(offered => /^([A-D])[).:]\s+/.exec(offered.label)?.[1] ?? []);
+    if (new Set(prefixes).size !== prefixes.length) return false;
+    const assigned = new Set(prefixes);
+    const options = q.options.map((offered, index) => {
+      const prefix = /^([A-D])[).:]\s+/.exec(offered.label);
+      if (prefix && /^[A-D][).:]\s+/.test(offered.label.slice(prefix[0].length))) return null;
+      const id = prefix?.[1] ?? ['A', 'B', 'C', 'D'].find(value => !assigned.has(value));
+      if (!id) return null;
+      assigned.add(id);
+      const description = prose(offered.description ?? '');
+      const tradeoffs = [...description.matchAll(/([✅❌])\s*([^✅❌]+)/g)];
+      if (!description.trim() || !current(description) || withdrawnOption.test(optionText(description)) ||
+          !/\bEffort(?: estimate)?\s*:?\s+(?:S|M|L|XL)\b/i.test(description) ||
+          !/\bRisk(?: level)?\s*:?\s+(?:low|medium|high)\b/i.test(description) ||
+          tradeoffs.filter(part => part[1] === '✅').length < 2 || !tradeoffs.some(part => part[1] === '❌') ||
+          tradeoffs.some(part => !/[A-Za-z0-9]/.test(part[2]!))) return null;
+      return `${prefix ? offered.label : `${id}) ${offered.label}`}\n${offered.description}`;
+    });
+    if (options.some(value => value === null)) return false;
+    const fields = [`Question: ${q.question}`, `Header: ${q.header}`];
+    if (headers[0]! < questions[0]!) fields.reverse();
+    const expected = lines([...fields, ...options].join('\n'));
+    const start = Math.min(questions[0]!, headers[0]!);
+    if (!saved.slice(0, start).every(activeSection)) return false;
+    const actual = saved.slice(start);
+    return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
   };
   const selector = (label: string) => /^([A-D])[.):]\s*/i.exec(plain(label))?.[1]?.toUpperCase();
   const labelWords = (label: string) => (option(label).toLowerCase().match(/[a-z][a-z0-9_]{3,}/g) ?? [])
@@ -593,6 +639,18 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
           (anchor.type !== 'heading' || (tokens[end] as any).depth <= anchor.depth))) end++;
         const section = tokens.slice(start + 1, end);
         if (currentContext(start) && currentContext(tokens.indexOf(table))) {
+          // Reuse the owned ledger/source gates, but require one current row
+          // and comparison anchor before granting this exact-field path credit.
+          const currentRows = tokens.flatMap(token => {
+            if (token.type !== 'table' || !currentContext(tokens.indexOf(token))) return [];
+            const ids = token.header.flatMap((cell, i) => /^(?:ID|Decision)\b/i.test(plain(cell.text)) ? [i] : []);
+            return ids.length === 1 ? token.rows.map(row => plain(row[ids[0]!]!.text).split(/\s/, 1)[0]!.replace(/[.:]$/, '')) : [];
+          });
+          if (pendingRowContext(tokens, tokens.indexOf(table), read('id')) &&
+              sourceRecords.length <= 1 && sourceRecords.every(source => source === 'PLAN.md') &&
+              !hasForeignContractSource(cells[fields.evidence[0]!]!.text, sourcePlan) &&
+              currentRows.filter(value => value === id).length === 1 && anchors.filter(currentContext).length === 1 &&
+              exactNativeFields(section)) matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
           // Markdown permits an option paragraph followed by a facts list.
           // Bind only the adjacent list to that option; never borrow a later
           // option's facts, quoted/code content or another section's details.

@@ -109,6 +109,23 @@ const FAKE_CLAUDE = String.raw`
       fs.writeFileSync(outputFile, '## GSTACK REVIEW REPORT\nold artifact');
       await Bun.sleep(60_000);
     }
+  } else if (fs.existsSync('incremental-edit')) {
+    const exposed = observed.args[observed.args.indexOf('--tools') + 1]?.split(',') ?? [];
+    const allowed = observed.args.slice(observed.args.indexOf('--allowed-tools') + 1);
+    if (!exposed.includes('Edit') || !allowed.includes('Edit') || exposed.includes('Agent') || exposed.includes('Bash')) throw new Error('Wrong native local-edit interface');
+    const file_path = path.join(process.cwd(), outputFile);
+    const old_string = fs.readFileSync(file_path, 'utf8');
+    const new_string = old_string + '\n## GSTACK REVIEW REPORT\nCompleted through a scoped Edit.\n';
+    console.log(JSON.stringify({ type: 'assistant', message: { content: [
+      { type: 'tool_use', id:'section', name:'Read', input:{file_path:path.join(process.cwd(),'plan-ceo-review/sections/review-sections.md')} },
+      { type: 'tool_use', id:'before', name:'Read', input:{file_path} },
+      { type: 'tool_use', id:'edit', name:'Edit', input:{file_path,old_string,new_string} },
+    ] } }));
+    fs.writeFileSync(file_path,new_string);
+    console.log(JSON.stringify({type:'user',message:{content:[{type:'tool_result',tool_use_id:'edit',content:'File edited successfully.'}]}}));
+    console.log(JSON.stringify({type:'assistant',message:{content:[{type:'tool_use',id:'after',name:'Read',input:{file_path}}]}}));
+    console.log(JSON.stringify({type:'user',message:{content:[{type:'tool_result',tool_use_id:'after',content:fs.readFileSync(file_path,'utf8')}]}}));
+    console.log(JSON.stringify({type:'result',subtype:'success',result:'Complete; report verified.'}));
   } else if (fs.existsSync('fail-cli')) {
     const failure = fs.readFileSync('fail-cli', 'utf8');
     const report = '## GSTACK REVIEW REPORT\nA report written before the run failed.\n';
@@ -400,11 +417,24 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
       expect(child.prompt).toContain('Use compact outcome entries and short table cells; execute the review checklists without copying their questions or narrating every check into the artifact.');
       expect(child.prompt).toContain('Brevity must preserve every finding, accepted requirement, required field, and required diagram in its specified format.');
       expect(child.prompt).toContain('unless that code is needed to specify an accepted plan change');
-      expect(child.prompt).toContain('execute the full review, perform every required lazy-file Read, and complete all required artifacts');
+      expect(child.prompt).toContain('Execute the full review, perform every required lazy-file Read, and complete all required artifacts');
       expect(child.prompt).toContain('MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers');
       expect(child.prompt).toContain('report outside coverage as disabled');
       expect(child.prompt).toContain('After all required writes are complete');
-      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write');
+      expect(child.prompt).toContain('Follow each workflow save/readback checkpoint as it occurs; do not defer all persistence to one final Write.');
+      expect(child.prompt).toContain('Maintain ' + path.join(dir, 'PLAN.md') + ' incrementally with Write/Edit throughout the review');
+      const before = child.prompt.indexOf('save its full currentDecision question/header');
+      const verify = child.prompt.indexOf('Read back and verify those fields');
+      const answer = child.prompt.indexOf('Then record the authorized auto-decision and exact scope');
+      const next = child.prompt.indexOf('Read back before taking another row');
+      expect(before).toBeGreaterThan(-1); expect(verify).toBeGreaterThan(before);
+      expect(answer).toBeGreaterThan(verify); expect(next).toBeGreaterThan(answer);
+      expect(child.prompt).toContain('every labeled option and full description, commitment comparison and source citations before auto-selecting');
+      expect(child.prompt).toContain('At completion, Read back the assembled plan and verify the full required outputs');
+      expect(child.prompt).not.toContain('When the workflow is complete, write');
+      const allowed = child.args.slice(child.args.indexOf('--allowed-tools') + 1, child.args.indexOf('--allowed-tools') + 6);
+      expect(allowed).toEqual(['Read', 'Grep', 'Glob', 'Write', 'Edit']);
+      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit');
     });
   });
 
@@ -428,6 +458,24 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
       expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent');
       expect(child.prompt).not.toContain('codex_reviews: disabled');
       expect(child.prompt).not.toContain('all 11 sections');
+    });
+  });
+
+  test('a fixture decision policy replaces blanket recommendation authority without changing tools or completion checks', async () => {
+    await withFakeClaude(async (dir, observed) => {
+      const options = { planDir: dir, skillName: 'plan-eng-review', scenario: 'Review PLAN.md.',
+        reportFile: 'PLAN.md', testName: 'bounded-decisions', timeout: 5_000 };
+      const first = await captureSectionReads(options);
+      const original = observed();
+      const policy = '- Choose only alternatives that preserve the supplied scope and required proofs; decline excluded work.';
+      const second = await captureSectionReads({ ...options, decisionPolicy: policy });
+      const bounded = observed();
+      const blanket = "- At any decision point that would call AskUserQuestion, silently pick the skill's recommended option and continue. Do NOT stop to ask.";
+      expect(original.prompt.split(blanket)).toHaveLength(2);
+      expect(bounded.prompt).toBe(original.prompt.replace(blanket, policy));
+      expect(bounded.args).toEqual(original.args);
+      expect([...second.readSections]).toEqual([...first.readSections]);
+      expect(second.exitReason).toBe(first.exitReason);
     });
   });
 
@@ -486,6 +534,25 @@ Rules for this run:
       expect(fs.existsSync(sharedConfigPath) ? fs.readFileSync(sharedConfigPath, 'utf8') : null).toBe(sharedBefore);
       expect(result.reportProduced).toBe(true);
       expect(result.output).toContain('Outside review: disabled');
+    });
+  });
+
+  test('native-only review can update and read back its owned plan with Edit while provider dispatch stays disabled', async () => {
+    await withFakeClaude(async (dir, observed) => {
+      const original='# Original requirements\nKeep this accepted contract.\n';
+      fs.writeFileSync(path.join(dir,'PLAN.md'),original);
+      fs.writeFileSync(path.join(dir,'active-plan-output'),'');
+      fs.writeFileSync(path.join(dir,'incremental-edit'),'');
+      const result=await captureSectionReads({planDir:dir,skillName:'plan-ceo-review',scenario:'Review the full plan',
+        reportFile:'PLAN.md',reportMarker:/^## GSTACK REVIEW REPORT$/m,testName:'native-local-edit',nativeReviewOnly:true,timeout:5000});
+      expect(result.exitReason).toBe('success'); expect(result.reportProduced).toBe(true); expect(result.reportWritten).toBe(true);
+      expect(result.output.startsWith(original)).toBe(true); expect(result.readSections.has('review-sections.md')).toBe(true);
+      expect(result.toolCalls.map(call=>call.tool)).toEqual(['Read','Read','Edit','Read']);
+      expect(result.toolCalls[2]!.output).toBe('File edited successfully.');
+      expect(result.toolCalls[3]!.output).toBe(result.output);
+      expect(flagValue(observed().args,'--tools')).toBe('Read,Grep,Glob,Write,Edit');
+      expect(observed().outsideDisabled).toBe(true); expect(observed().promptConfigMatchesState).toBe(true);
+      expect(fs.existsSync(observed().stateHome)).toBe(false);
     });
   });
 

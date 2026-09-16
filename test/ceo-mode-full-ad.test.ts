@@ -680,13 +680,16 @@ describe('same-proposal discussion control makes no scope decision',()=>{
 test.each(['acknowledged pacing','missing pacing ACK'])('actual paid posture loop preserves the substantive allowance: %s',async scenario=>{
   const f=nativePacing77.countedNativeB955;
   const source=fs.readFileSync(path.join(import.meta.dir,'skill-e2e-plan-ceo-mode-routing.test.ts'),'utf8');
+  const planDeclaration=source.match(/^const PLAN = \[[\s\S]*?^\]\.join\('\\n'\);/m)?.[0];
+  expect(planDeclaration).toBeDefined();
+  const plan=new Function(`${planDeclaration}; return PLAN;`)();
   const start=source.indexOf('          const budgetMs = 240_000;'),end=source.indexOf("          outcome = 'posture_confirmed';",start);
   expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
   const loop=source.slice(start,end+"          outcome = 'posture_confirmed';".length);
   const keys=['Bun','Date','c','session','sincePick','selectionStartedAt','question','fixture','capture','readPlanCountTranscript',
     'readPendingQuestion','hasNativePostAnswerCeoPosture','ceoModeSubmissionInput','ceoExpansionPacingReady','ceoExpansionPacingChoice',
     'nextCeoPostureContinuation','capturePlanCountQuestion','planCountQuestionInput','selectPtyNumberedOption','isPlanReadyVisible','isNumberedOptionListVisible',
-    'EXPANSION_PACING_CALLS','modeIndex','artifacts','visibleAtMode'];
+    'EXPANSION_PACING_CALLS','modeIndex','artifacts','visibleAtMode','postureSource'];
   const compiled=new Bun.Transpiler({loader:'ts'}).transformSync(`async function run(b){const {${keys.join(',')}}=b;let outcome;${loop};return {outcome,continuedQuestion,pacingCalls};}`);
   const run=new Function(compiled+';return run;')();
   const pending=structuredClone(f.pacing);pending.answered=false;delete pending.answers;delete pending.answeredAt;delete pending.unansweredQuestionIndices;
@@ -713,7 +716,8 @@ test.each(['acknowledged pacing','missing pacing ACK'])('actual paid posture loo
     selectionStartedAt:f.selectedAt,question:{nativeCall:f.mode},fixture:{cwd:'fixture-root'},capture:(state:string)=>snapshots.push(state),readPlanCountTranscript,
     readPendingQuestion:()=>undefined,hasNativePostAnswerCeoPosture,ceoModeSubmissionInput,ceoExpansionPacingReady,ceoExpansionPacingChoice,nextCeoPostureContinuation,
     capturePlanCountQuestion,planCountQuestionInput,selectPtyNumberedOption:async(s:any,index:number)=>s.send(String(index)),isPlanReadyVisible,isNumberedOptionListVisible,
-    EXPANSION_PACING_CALLS:1,modeIndex:2,artifacts:{},visibleAtMode:'captured mode menu'};
+    EXPANSION_PACING_CALLS:1,modeIndex:2,artifacts:{},visibleAtMode:'captured mode menu',
+    postureSource:{path:path.join('fixture-root','PLAN.md'),content:plan}};
   if(scenario==='missing pacing ACK')await expect(run(bindings)).rejects.toThrow('no posture match');
   else expect(await run(bindings)).toEqual({outcome:'posture_confirmed',continuedQuestion:true,pacingCalls:1});
   expect(sends).toEqual(scenario==='missing pacing ACK'?['1']:['1','1']);

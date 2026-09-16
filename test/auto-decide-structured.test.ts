@@ -158,3 +158,64 @@ for (const fallback of ['"LOGGED"', '" LOGGED "', '"\\x4cOGGED"', '-e "\\x4cOGGE
     request.input.command = request.input.command.replace('"log unavailable (best-effort)"', fallback);
     expect(decision(f)).toBeNull();
   });
+
+import completedModeCapture from './fixtures/auto-decide-completed-mode-f359.json';
+{
+const copy=()=>structuredClone(completedModeCapture);
+const check=(f:any)=>findNativeAutoDecision(f.transcript,f.tools,f.options);
+const message=(f:any)=>f.transcript.assistantMessages.find((m:any)=>m.text.includes('Mode decision done:'));
+const logUse=(f:any)=>f.tools.find((t:any)=>t.kind==='use'&&t.input?.command?.includes('gstack-question-log'));
+test('actual owned public attempt fails original and completes mode-only with full acknowledged authority',()=>{
+ const f=copy();const v=check(f);expect(v?.option).toBe('HOLD SCOPE');expect(v?.questionLogToolUseId).toBe(logUse(f).toolUseId);
+});
+const mutations:Record<string,(f:any)=>void>={
+ 'unlogged':f=>{const id=logUse(f).toolUseId;f.tools=f.tools.filter((t:any)=>t.toolUseId!==id)},
+ 'failed log':f=>{f.tools.find((t:any)=>t.kind==='result'&&t.toolUseId===logUse(f).toolUseId).isError=true},
+ 'masked log failure':f=>{logUse(f).input.command=logUse(f).input.command.replace('&& echo','; echo')},
+ 'wrong returned marker':f=>{f.tools.find((t:any)=>t.kind==='result'&&t.toolUseId===logUse(f).toolUseId).content='LOG_FAILED (best-effort)'},
+ 'unmatched quote':f=>{logUse(f).input.command=logUse(f).input.command.replace('"LOGGED"','"LOGGED')},
+ 'foreign session':f=>{f.options.sessionId='foreign'},
+ 'wrong mode':f=>{message(f).text=message(f).text.replace('done: HOLD SCOPE','done: SCOPE EXPANSION')},
+ 'unfinished':f=>{message(f).text=message(f).text.replace('Mode decision done:','Mode decision pending:')},
+ 'late declaration':f=>{message(f).timestamp=new Date(f.options.now+1000).toISOString()},
+ 'prior declaration':f=>{message(f).timestamp=new Date(f.options.commandStartedAt-1000).toISOString()},
+ 'cancelled':f=>{message(f).text+='\n\nI cancel this decision.'},
+ 'wrong later completed mode':f=>{message(f).text+='\n\nMode decision done: SCOPE EXPANSION'},
+ 'quoted declaration':f=>{message(f).text='> '+message(f).text},
+ 'hypothetical':f=>{message(f).text='Example:\n'+message(f).text},
+ 'conditional':f=>{message(f).text=message(f).text.replace('done: HOLD SCOPE','done: HOLD SCOPE (if approved)')},
+ 'native question surfaced':f=>{f.transcript.calls.push({sessionId:f.options.sessionId})},
+ 'wrong logged mode':f=>{logUse(f).input.command=logUse(f).input.command.replace('"user_choice":"HOLD SCOPE"','"user_choice":"SCOPE EXPANSION"')},
+};
+for(const [name,mutate] of Object.entries(mutations))test(name,()=>{const f=copy();mutate(f);expect(check(f)).toBeNull()});
+
+for(const completion of ['done','complete','completed']) {
+ test(`completed mode class ${completion}`,()=>{const f=copy();message(f).text=message(f).text.replace('decision done:','decision '+completion+':');expect(check(f)?.option).toBe('HOLD SCOPE')});
+ test(`conflicting later completed mode ${completion}`,()=>{const f=copy();message(f).text+='\n\nMode decision '+completion+': SCOPE EXPANSION';expect(check(f)).toBeNull()});
+ test(`unfinished completed mode ${completion}`,()=>{const f=copy();message(f).text=message(f).text.replace('done: HOLD SCOPE',completion+': HOLD SCOPE (pending approval)');expect(check(f)).toBeNull()});
+}
+test('paired single-quoted success token retains exact shell ACK',()=>{const f=copy();logUse(f).input.command=logUse(f).input.command.replace('"LOGGED"',"'LOGGED'");expect(check(f)?.option).toBe('HOLD SCOPE')});
+test('unpaired single-quoted success token cannot authenticate log',()=>{const f=copy();logUse(f).input.command=logUse(f).input.command.replace('"LOGGED"',"'LOGGED");expect(check(f)).toBeNull()});
+
+}
+
+import statusFixture from './fixtures/auto-decide-completed-mode-f359.json';
+{
+const fixture=statusFixture;
+const fixed=findNativeAutoDecision;
+const copy=()=>structuredClone(fixture) as any;
+const message=(f:any)=>f.transcript.assistantMessages.find((m:any)=>m.text.includes('Mode decision done:'));
+const check=(f:any)=>fixed(f.transcript,f.tools,f.options);
+test('current pending status retracts the completed owned mode',()=>{const f=copy();message(f).text+='\n\nMode decision pending: HOLD SCOPE';expect(check(f)).toBeNull()});
+for(const status of ['pending','pending approval','unfinished','incomplete','cancelled','canceled','withdrawn','retracted','revoked','undecided','proposed','not selected','not decided','not yet complete','in progress','on hold','unknown']){
+ test(`unfinished declaration ${status}`,()=>{const f=copy();message(f).text=message(f).text.replace('decision done:','decision '+status+':');expect(check(f)).toBeNull()});
+ test(`later unfinished status ${status}`,()=>{const f=copy();message(f).text+='\n\nMode decision '+status+': HOLD SCOPE';expect(check(f)).toBeNull()});
+ test(`quoted historical status ${status}`,()=>{const f=copy();message(f).text+='\n\n> Historical example:\n> Mode decision '+status+': HOLD SCOPE';expect(check(f)?.option).toBe('HOLD SCOPE')});
+}
+for(const status of ['done','complete','completed']){
+ test(`same current completed field ${status}`,()=>{const f=copy();message(f).text+='\n\nMode decision '+status+': HOLD SCOPE';expect(check(f)?.option).toBe('HOLD SCOPE')});
+ test(`completed conflicting field ${status}`,()=>{const f=copy();message(f).text+='\n\nMode decision '+status+': SCOPE EXPANSION';expect(check(f)).toBeNull()});
+}
+for(const status of ['unfinished','incomplete','pending approval','cancelled','not completed'])test(`unfinished value suffix ${status}`,()=>{const f=copy();message(f).text+='\n\nMode decision done: HOLD SCOPE ('+status+')';expect(check(f)).toBeNull()});
+for(const text of ['Historical example: Mode decision pending: HOLD SCOPE','```\nMode decision pending: HOLD SCOPE\n```','"Mode decision cancelled: HOLD SCOPE"'])test(`unasserted historical field ${text}`,()=>{const f=copy();message(f).text+='\n\n'+text;expect(check(f)?.option).toBe('HOLD SCOPE')});
+}

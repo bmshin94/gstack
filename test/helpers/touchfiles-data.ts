@@ -261,6 +261,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // surfacing the question. Touches the question-tuning + preference
   // infrastructure plus the resolvers that own the AUTO_DECIDE preamble.
   'auto-decide-preserved':        [
+    'test/fixtures/auto-decide-completed-mode-f359.json',
     'test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts','test/pty-screen-unicode-ap.test.ts',
     'test/auto-decide-saved-ai.test.ts', 'test/fixtures/auto-decide-saved-ai.json', 'test/fixtures/auto-decide-retry-ai.json','bin/gstack-skill-start', 'bin/gstack-skill-end', 'bin/gstack-session-kind', 'scripts/resolvers/question-tuning.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-preamble-bash.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'plan-ceo-review/**', 'bin/gstack-question-preference', 'bin/gstack-config', 'bin/gstack-slug', 'hosts/claude/hooks/question-preference-hook.ts', 'hosts/claude/hooks/spawned-directive.ts', 'lib/is-conductor.ts', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/skill-e2e-auto-decide-preserved.test.ts', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/helpers/native-auto-decide.ts', 'test/auto-decide-structured.test.ts', 'test/fixtures/auto-decide-structured-77.json', 'test/helpers/auto-decision-state.ts', 'test/auto-decision-state.test.ts', 'test/fixtures/auto-decide-state-cab3.json', 'bin/gstack-question-log', 'test/native-auto-decide.test.ts', 'test/native-auto-decide-pty.test.ts', 'test/helpers/fake-plan-seed.ts', 'test/helpers/plan-seed-submission.ts', 'test/plan-seed-submission.test.ts', 'test/fixtures/plan-seed-cli.ts', 'test/fixtures/native-auto-decide-ag.json', 'test/eng-seeded-completion-ai.test.ts', 'test/fixtures/eng-seeded-completion-ai.json', 'test/helpers/plan-count-pending-exit.ts', 'test/plan-count-pending-exit.test.ts', 'test/helpers/pty-screen.ts', 'test/pty-screen.test.ts', 'test/pty-screen-session.test.ts', 'test/fixtures/pty-screen/**',
     "test/ceo-mode-preference-al.test.ts",
@@ -289,6 +290,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'scripts/resolvers/tasks-section.ts'
   ],
   'plan-ceo-mode-routing':       [
+    'test/fixtures/ceo-hold-preservation-f359.json',
     'test/fixtures/ceo-expansion-complete-inventory-6f.json',
     'test/fixtures/ceo-expansion-posture-kind-dacc.json',
     'test/fixtures/ceo-expansion-pause-6714.json',
@@ -396,6 +398,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // completion-status resolvers because they affect question cadence and
   // terminal output (the regression surface this test catches).
   'plan-ceo-finding-count':      [
+    'test/ceo-native-fields-f359.test.ts', 'test/fixtures/ceo-native-fields-f359.json', 'test/fixtures/ceo-plain-fields-f359.json',
     'test/ceo-incomplete-save-b176.test.ts', 'test/fixtures/ceo-incomplete-save-b176.json',
     'test/fixtures/ceo-recorded-decisions-67147822.json',
     'test/plan-count-cropped-wrap.test.ts',
@@ -433,6 +436,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'test/helpers/ceo-paired-fixture.ts', 'test/ceo-paired-payment-fixture.test.ts', 'test/fixtures/ceo-paired-option-values.json', 'test/fixtures/paired-payment/**', 'test/fixtures/ceo-existing-payment/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/tasks-section.ts'
   ],
   'plan-eng-finding-count':      [
+    'test/eng-count-owned-outcomes.test.ts', 'test/fixtures/eng-count-owned-outcomes-f359.json',
+    'test/eng-task-pause-navigation-f359.test.ts', 'test/fixtures/eng-task-pause-navigation-f359.json',
     'test/fixtures/eng-current-choice-cab3.json', 'test/fixtures/eng-completed-navigation-cab3.json',
     'test/eng-native-seed-contract.test.ts', 'test/fixtures/eng-native-seed-contract-6f.json',
     'test/fixtures/eng-native-packets-b955.json',
@@ -604,6 +609,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // confirm" plan write. runPlanSkillFloorCheck cannot detect that shape
   // (it exits on first AUQ); runPlanSkillCounting can.
   'plan-eng-multi-finding-batching': [
+    'test/fixtures/eng-batching-prefixed-ledger-f359.json',
     'test/eng-batching-current-ledger.test.ts', 'test/fixtures/eng-batching-saved-ledger-b176.json',
     'test/review-count-markdown.test.ts', 'test/fixtures/review-count-markdown-6f.json',
     'test/plan-count-cropped-wrap.test.ts',

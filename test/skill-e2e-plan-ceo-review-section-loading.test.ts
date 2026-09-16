@@ -60,7 +60,7 @@ describeE2E('/plan-ceo-review section-loading E2E (periodic, SDK capture)', () =
         planDir,
         skillName: 'plan-ceo-review',
         scenario:
-          'Review the plan in PLAN.md. Hold the current scope (HOLD SCOPE mode) — do not challenge or expand scope. Run the full CEO review. PLAN.md is both the active plan and final output: preserve and amend its plan content, then include the full review report there.',
+          'Review the plan in PLAN.md. Hold the current scope (HOLD SCOPE mode) — do not challenge or expand scope. Run the full CEO review. Treat the explicitly accepted repository, adapter and controller contracts as fixture facts; an unavailable implementation is not evidence that those contracts fail. Propose remedies for demonstrated gaps, and surface any actual contradiction without silently weakening a retained requirement. PLAN.md is both the active plan and final output: preserve and amend its plan content, then include the full review report there.',
         // The skill appends its report to the active plan. Use that same
         // artifact so the capture does not request a second report write.
         reportFile: 'PLAN.md',

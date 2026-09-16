@@ -879,3 +879,29 @@ describe('current fill-lifetime overlap', () => {
     expect(fixture.events).toEqual(['DB read v1 completes', 'cache set v1', 'DB write commits v2', 'cache delete']);
   });
 });
+
+
+describe('section fixture rollout metrics retain final acceptance without an impossible early-stage gate',()=>{
+  test('early-stage hit rate counts admitted requests while aggregate metrics use baseline limits',()=>{
+    const requests=9000, admitted=requests*0.1, hits=admitted*0.6;
+    const cohortHitRate=hits/admitted, aggregateHitRate=hits/requests;
+    expect(cohortHitRate).toBe(0.6); expect(aggregateHitRate).toBe(0.06);
+    expect(70*(1-aggregateHitRate)).toBeCloseTo(65.8); // uniform traffic, linear read CPU: above final 50%, below baseline 70%
+    expect(CEO_SECTION_CACHE_PLAN).toContain('among requests admitted to the cache path');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('tracked separately, not as misses');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('DB CPU and read p95 are service-wide metrics, including bypassed requests');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('At the 10% and 50% stages');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('no worse than their 70%/120 ms pre-rollout baselines');
+    expect(CEO_SECTION_CACHE_PLAN).not.toContain('A healthy hour means the stated hit-rate, CPU, latency and error targets hold');
+  });
+  test('full rollout keeps all original absolute targets and the seeded race still needs repair',()=>{
+    expect(CEO_SECTION_CACHE_PLAN).toContain('At 100%, the original');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('absolute acceptance targets (DB CPU below 50%, read p95 below 60 ms, hits at');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('least 60%) must all hold with unchanged correctness/error SLOs and no alerts');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('Every read begun after that write completes must');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('TTL expiry is not a substitute for this rule');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('no additional version checks or');
+    expect(CEO_SECTION_CACHE_PLAN).toContain(CACHE_READ_WRITE_SKETCH);
+    expect(CEO_SECTION_CACHE_PLAN).toContain('repository.read returns\n  an immutable absent-result DTO for a missing record, never undefined');
+  });
+});

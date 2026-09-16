@@ -222,7 +222,7 @@ This is a capture test, not an interactive session. Skip any system-audit / envi
  * the agent cannot wander to the global install). AskUserQuestion is declared
  * unavailable so the agent auto-picks the recommended option and proceeds far
  * enough to hit the post-Step-0 STOP-Read directives; Read is the tool a STOP-Read
- * resolves to, so Read/Grep/Glob/Write is all the agent needs (no Bash → it cannot
+ * resolves to, so Read/Grep/Glob/Write/Edit cover local artifacts (no Bash → it cannot
  * `find /` its way out, nor run git/gh mutations).
  */
 export function hasDisabledOutsideReview(output: string): boolean {
@@ -247,6 +247,8 @@ export async function captureSectionReads(opts: {
   /** Fixture-authorized local artifact commands. */
   artifactCommands?: string;
   scenario: string;
+  /** The fixture actor's decision authority; defaults to recommended choices. */
+  decisionPolicy?: string;
   /** Relative filename the agent writes its final output to (terminal signal). */
   reportFile?: string;
   /** Marker proving a real report/plan was produced (default: any non-empty text). */
@@ -283,7 +285,7 @@ export async function captureSectionReads(opts: {
   // Preserve full method execution while avoiding a second written walkthrough
   // of decisions already represented in the amended plan and required outputs.
   const planReviewWritingRule = opts.skillName === 'plan-ceo-review'
-    ? `\n- Write a concise, complete decision record: preserve original requirements and accepted plan amendments. Record each finding once with concrete evidence, the selected remedy, residual risks, and verification. Give all 11 sections an explicit outcome (including no issues or justified skips); retain the complete required registries, applicable diagrams, tasks, completion summary, and exact GSTACK REVIEW REPORT table. Cross-reference those records instead of repeating findings, option deliberations, diagrams, or registries in each section. Use compact outcome entries and short table cells; execute the review checklists without copying their questions or narrating every check into the artifact. Brevity must preserve every finding, accepted requirement, required field, and required diagram in its specified format. Do not expand the artifact into full implementation or test code unless that code is needed to specify an accepted plan change. This is a writing rule only: execute the full review, perform every required lazy-file Read, and complete all required artifacts before returning.`
+    ? `\n- Maintain ${outFile} incrementally with Write/Edit throughout the review; preserve original requirements and accepted plan amendments. For each independent choice, save its full currentDecision question/header, every labeled option and full description, commitment comparison and source citations before auto-selecting. Read back and verify those fields against the drafted decision and cited source; fix any mismatch before continuing. Then record the authorized auto-decision and exact scope, apply its amendments with scoped Edit operations, and Read back before taking another row. Keep one authoritative record per choice; reference its ID elsewhere.\n- As sections finish, add each finding once with concrete evidence, the selected remedy, residual risks, and verification. Give all 11 sections an explicit outcome (including no issues or justified skips); retain the complete required registries, applicable diagrams, tasks, completion summary, and exact GSTACK REVIEW REPORT table. Cross-reference those records instead of repeating findings, option deliberations, diagrams, or registries in each section. Use compact outcome entries and short table cells; execute the review checklists without copying their questions or narrating every check into the artifact. Brevity must preserve every finding, accepted requirement, required field, and required diagram in its specified format. Do not expand the artifact into full implementation or test code unless that code is needed to specify an accepted plan change. At completion, Read back the assembled plan and verify the full required outputs; finish missing or mismatched fields with scoped Edits, without regenerating unchanged records. Execute the full review, perform every required lazy-file Read, and complete all required artifacts before returning.`
     : opts.skillName === 'plan-eng-review'
       ? `\n- Keep the full engineering review in concise, complete records. Preserve all four review sections, every finding and original requirement, required decision fields and comparisons, exact approvals, verification, diagrams, TODOS dispositions, completion summary and GSTACK REVIEW REPORT. Give each independent choice one ID and one authoritative decision record; findings may reference several choice IDs. Keep its complete question and every option before selecting, as the skill requires. Use short summaries and option bullets instead of copying checklists or narrating every check. After a verified record exists, apply answers and amendments with scoped Edit operations; do not regenerate unchanged records or repeat their briefs in the final report. Cross-reference their IDs in the report. Do not write full implementation or test code unless needed to specify an accepted change. This controls writing only: execute the complete workflow, actually Read every required section, finish every required artifact and verification, then return.`
       : '';
@@ -295,11 +297,11 @@ ${opts.scenario}
 
 Rules for this run:
 - Skip system-audit, environment-setup, telemetry, and unrelated codebase exploration. Read the supplied plan's referenced fixture files when its review requires them.
-- At any decision point that would call AskUserQuestion, silently pick the skill's recommended option and continue. Do NOT stop to ask.
+${opts.decisionPolicy ?? "- At any decision point that would call AskUserQuestion, silently pick the skill's recommended option and continue. Do NOT stop to ask."}
 - This skill's body has been carved into on-demand sections/. When the skill gives a STOP-Read directive (for example "Read \`.../sections/<file>\` and execute it in full"), you MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers. Do not work from memory.
 - Resolve installed-root paths for section and companion Markdown files under ${opts.planDir}, where this fixture's skill package is copied.
 - Do NOT run git, gh, commit, push, or any mutating command${opts.artifactCommands ? ' except the local artifact commands explicitly authorized below' : ''}.${opts.artifactCommands ? `\n- ${opts.artifactCommands}` : ''}
-- When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.${nativeReviewRule}${planReviewWritingRule}
+${opts.skillName === 'plan-ceo-review' ? `- Save the evolving plan and required review outputs to ${outFile}. Follow each workflow save/readback checkpoint as it occurs; do not defer all persistence to one final Write.` : `- When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${outFile}.`}${nativeReviewRule}${planReviewWritingRule}
 - After all required writes are complete, return a brief completion message and STOP. Do not reproduce the full report in the final response.`;
 
   let result: SkillTestResult;
@@ -308,8 +310,8 @@ Rules for this run:
     result = await runSkillTest({
       prompt,
       workingDirectory: opts.planDir,
-      allowedTools: ['Read', 'Grep', 'Glob', 'Write', ...(opts.nativeReviewOnly ? [] : ['Edit', 'Agent']), ...(opts.artifactCommands ? ['Bash'] : [])],
-      tools: ['Read', 'Grep', 'Glob', 'Write', ...(opts.nativeReviewOnly ? [] : ['Edit', 'Agent']), ...(opts.artifactCommands ? ['Bash'] : [])],
+      allowedTools: ['Read', 'Grep', 'Glob', 'Write', 'Edit', ...(opts.nativeReviewOnly ? [] : ['Agent']), ...(opts.artifactCommands ? ['Bash'] : [])],
+      tools: ['Read', 'Grep', 'Glob', 'Write', 'Edit', ...(opts.nativeReviewOnly ? [] : ['Agent']), ...(opts.artifactCommands ? ['Bash'] : [])],
       publicStreamDiagnostics: true,
       maxTurns: opts.maxTurns ?? 25,
       timeout: opts.timeout ?? 300_000,
