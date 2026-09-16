@@ -67,6 +67,29 @@ function currentDocumentSources(tokens: ReturnType<typeof marked.lexer>): string
       .map(match => match[1]!.replace(/[.;,]+$/, ''));
   });
 }
+
+// The ledger enumerates "unresolved" while its procedure calls these rows
+// pending. Normalize only that unqualified current scalar, never a quoted,
+// compound or inactive status. The five existing dispositions keep their rules.
+function pendingRowContext(tokens: ReturnType<typeof marked.lexer>, index: number, owner = ''): boolean {
+  const active = (text: string) => current(text) &&
+    !/\b(?:historical|archiv(?:ed|al)|withdrawn|retracted|superseded|obsolete|cancelled|canceled|not current|no longer current)\b/i.test(text);
+  const headings: Array<{ depth: number; text: string }> = [];
+  for (const token of tokens.slice(0, index + 1)) if (token.type === 'heading') {
+    while (headings.length && headings.at(-1)!.depth >= token.depth) headings.pop();
+    headings.push({ depth: token.depth, text: plain(token.text) });
+  }
+  return active(owner) && headings.every(heading => active(heading.text));
+}
+function ledgerStatus(value: string, tokens: ReturnType<typeof marked.lexer>, index: number,
+  owner: string, evidence: string, sourcePlan: string): string {
+  const status = plain(value);
+  if (!/^pending$/i.test(status)) return status;
+  const sources = currentDocumentSources(tokens);
+  return pendingRowContext(tokens, index, owner) && current(evidence) &&
+    sources.length === 1 && sources[0] === 'PLAN.md' && !hasForeignContractSource(evidence, sourcePlan)
+    ? 'unresolved' : '';
+}
 // An existing suite can provide zero coverage of the new implementation.
 // The owned test row supplies that scope; historical quotes and current
 // positive/contradictory coverage statements cannot establish its absence.
@@ -234,12 +257,15 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
     for (const cells of table.rows) {
       const read = (key: keyof typeof fields) => plain(cells[fields[key][0]!]!.text);
       const owner = read('id'), id = owner.split(/\s/, 1)[0]!.replace(/[.:]$/, '');
+      const pending = /^pending$/i.test(read('status'));
+      const status = ledgerStatus(cells[fields.status[0]!]!.text, tokens, tokens.indexOf(table), owner, read('evidence'), seedPlan);
       const sourceBound = /\bPLAN\.md\b/.test(read('evidence')) ||
         (namedSourcePlan && /\bEvidence:\s*plan text\b/i.test(read('evidence')));
-      if (!id || !mentions(question, id) || !/^(?:unresolved|approved|reopened|deferred|declined)\b/i.test(read('status')) || !sourceBound) continue;
+      if (!id || !mentions(question, id) || !/^(?:unresolved|approved|reopened|deferred|declined)\b/i.test(status) || !sourceBound) continue;
       // A row can contain its proposals directly or cite a separate saved
       // comparison bearing the same ID. Heading spelling/depth is immaterial.
       const blocks = tokens.map((t, i) => t.type === 'heading' && mentions(plain(t.text), id) ? i : -1).filter(i => i >= 0);
+      if (pending && blocks.filter(index => pendingRowContext(tokens, index)).length > 1) continue;
       const proposals: Array<{ body: string; phase: string; active: boolean }> = [{ body: read('proposed'), phase: 'ledger row', active: currentDocumentContext(tokens, tokens.indexOf(table)) }];
       for (const start of blocks) {
         const heading = tokens[start]!;
@@ -247,7 +273,7 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
         let end = start + 1;
         while (end < tokens.length && !(tokens[end]!.type === 'heading' && (tokens[end] as any).depth <= heading.depth)) end++;
         const preceding = tokens.slice(0, start).filter(t => t.type === 'heading' && t.depth < heading.depth).at(-1);
-        proposals.push({ body: prose(tokens.slice(start + 1, end).map(t => t.raw).join('')), phase: preceding?.type === 'heading' ? preceding.text : heading.text, active: current(plain(heading.text)) && currentDocumentContext(tokens, start) });
+        proposals.push({ body: prose(tokens.slice(start + 1, end).map(t => t.raw).join('')), phase: preceding?.type === 'heading' ? preceding.text : heading.text, active: current(plain(heading.text)) && currentDocumentContext(tokens, start) && (!pending || pendingRowContext(tokens, start)) });
       }
       for (const spec of obligations) {
         const row = `${owner} ${read('evidence')} ${read('current')}`;
@@ -260,10 +286,10 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
           ? /^ELI10:\s*(.+)$/m.exec(q.question)?.[1] ?? q.question : explanation;
         const scopedTestAbsence = spec.seed === 'tests' && declaredSources.length === 1 && declaredSources[0] === 'PLAN.md' &&
           currentDocumentContext(tokens, tokens.indexOf(table)) && /\btests?\b/i.test(owner) &&
-          /^(?:unresolved|reopened)\b/i.test(read('status')) && current(read('current')) &&
+          /^(?:unresolved|reopened)\b/i.test(status) && current(read('current')) &&
           /^(?:None|zero|0|no (?:new )?(?:automated )?tests?)\.?$/i.test(cells[fields.proposed[0]!]!.text.trim()) &&
           excludesCurrentTestTarget(cells[fields.current[0]!]!.text) && excludesCurrentTestTarget(defectExplanation);
-        const pendingDefect = /^(?:unresolved|reopened)\b/i.test(read('status')) &&
+        const pendingDefect = /^(?:unresolved|reopened)\b/i.test(status) &&
           current(read('proposed')) && spec.subject.test(read('proposed')) && spec.defect.test(defectValue('proposed'));
         if (!spec.subject.test(seedPlan) || !spec.defect.test(seedPlan) || !spec.subject.test(row) ||
           !(spec.defect.test(defectValue('current')) || pendingDefect || scopedTestAbsence) ||
@@ -271,7 +297,7 @@ export function ceoPaymentFinding(fp: AskUserQuestionFingerprint, seedPlan: stri
             (pendingDefect && declaredSources.length <= 1 && declaredSources.every(source => source === 'PLAN.md') &&
               currentDocumentContext(tokens, tokens.indexOf(table)) && attributedBaselineDefect(q, read('proposed'), explanation, spec)))) continue;
         const operative = options.some(o => spec.remedy.test(o) && spec.subject.test(o));
-        const proposal = proposals.find(p => (!scopedTestAbsence || p.active) && current(p.body) && spec.remedy.test(p.body) && spec.subject.test(p.body));
+        const proposal = proposals.find(p => (!(scopedTestAbsence || pending) || p.active) && current(p.body) && spec.remedy.test(p.body) && spec.subject.test(p.body));
         if (operative && proposal) matches.push({ seed: spec.seed, ledgerId: id, phase: proposal.phase, signature: fp.signature });
       }
     }
@@ -495,14 +521,15 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
     for (const cells of table.rows) {
       const read = (key: keyof typeof fields) => plain(cells[fields[key][0]!]!.text);
       const id = read('id').split(/\s/, 1)[0]!.replace(/[.:]$/, '');
-      const quotedProposal = !current(read('proposed')) && /^(?:unresolved|reopened)\b/i.test(read('status')) &&
+      const status = ledgerStatus(cells[fields.status[0]!]!.text, tokens, tokens.indexOf(table), read('id'), read('evidence'), sourcePlan);
+      const quotedProposal = !current(read('proposed')) && /^(?:unresolved|reopened)\b/i.test(status) &&
         (!sourceRecords.length || namedSource) && currentContext(tokens.indexOf(table)) &&
         quotedSourceProposal(cells[fields.proposed[0]!]!.text, sourcePlan);
       const sectionEvidence = sectionCitation(cells[fields.evidence[0]!]!.text);
       const headingCitation = !namedSource && /§/.test(read('evidence')) && tokens.some(token =>
         token.type === 'heading' && /\(from\s+[^()]+\)$/i.test(plain(token.text)));
       if (headingCitation && !sectionEvidence) continue;
-      if (!id || !mentions(title, id) || !/^(?:unresolved|reopened|approved|deferred|declined)\b/i.test(read('status')) ||
+      if (!id || !mentions(title, id) || !/^(?:unresolved|reopened|approved|deferred|declined)\b/i.test(status) ||
           !read('current') || !read('proposed') || read('current') === read('proposed') ||
           !current(read('evidence')) || (!current(read('proposed')) && !quotedProposal)) continue;
       if (!/\bPLAN\.md\b/.test(read('evidence')) && !inheritedSource(read('evidence')) && !sectionEvidence) continue;
@@ -644,12 +671,13 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
           const commitment = headers.findIndex(h => /^Commitment$/i.test(h));
           const source = headers.findIndex(h => /^Source(?:\b|\/)/i.test(h));
           const baseline = headers.findIndex(h => /^Current$/i.test(h));
-          const optionColumns = headers.flatMap((header, index) => selector(header) ? [index] : []);
+          const gridSelector = (header: string) => selector(header) ?? /^([A-D])$/i.exec(header)?.[1]?.toUpperCase();
+          const optionColumns = headers.flatMap((header, index) => gridSelector(header) ? [index] : []);
           if (commitment >= 0 && source >= 0 && baseline >= 0 &&
               currentContext(start) && currentContext(tokens.indexOf(table)) && currentContext(tokens.indexOf(comparison)) &&
               headers.length === q.options.length + 3 &&
               optionColumns.length === q.options.length &&
-              new Set(optionColumns.map(i => selector(headers[i]!))).size === q.options.length) {
+              new Set(optionColumns.map(i => gridSelector(headers[i]!))).size === q.options.length) {
             // GFM permits a following un-delimited paragraph as a padded row.
             // Only explicit grid rows supply cells; a current prose footer
             // remains context and cannot fill a missing value in a real row.
@@ -658,13 +686,35 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
             const footerCurrent = rawRows.filter((_, index) => !gridRow(index)).every(line => current(plain(line)));
             const rows = comparison.rows.filter((_, index) => gridRow(index)).map(row => row.map(cell => plain(cell.text)));
             const effortRisk = rows.filter(row => /^Effort\s*\/\s*risk$/i.test(row[commitment] ?? ''));
-            const behavior = rows.filter(row => !/^Effort\s*\/\s*risk$/i.test(row[commitment] ?? ''));
-            const complete = footerCurrent && effortRisk.length === 1 && optionColumns.every(i => /^(?:S|M|L|XL)\s*\/\s*(?:low|medium|high)$/i.test(effortRisk[0]![i] ?? '')) &&
+            const effort = rows.filter(row => /^Effort$/i.test(row[commitment] ?? ''));
+            const risk = rows.filter(row => /^Risk$/i.test(row[commitment] ?? ''));
+            const behavior = rows.filter(row => !/^(?:Effort(?:\s*\/\s*risk)?|Risk)$/i.test(row[commitment] ?? ''));
+            const scalar = (value: string, kind: 'effort' | 'risk') => {
+              const match = /^(S|M|L|XL|low|medium|high)(?:\s*\(([^()]*)\))?$/i.exec(value);
+              return Boolean(match && (kind === 'effort' ? /^(?:S|M|L|XL)$/i : /^(?:low|medium|high)$/i).test(match[1]!) &&
+                (kind !== 'effort' || !(match[2]?.match(/\b(?:S|M|L|XL)\b/gi) ?? []).some(size => size.toUpperCase() !== match[1]!.toUpperCase())) &&
+                current(match[2] ?? '') && !/\b(?:not|never|no longer|withdrawn|retracted|superseded|historical|previously|formerly|low|medium|high|risk|effort)\b/i.test(match[2] ?? ''));
+            };
+            const separate = effortRisk.length === 0 && effort.length === 1 && risk.length === 1;
+            const metadata = separate ? optionColumns.every(i => scalar(effort[0]![i] ?? '', 'effort') && scalar(risk[0]![i] ?? '', 'risk'))
+              : effortRisk.length === 1 && effort.length === 0 && risk.length === 0 && optionColumns.every(i => /^(?:S|M|L|XL)\s*\/\s*(?:low|medium|high)$/i.test(effortRisk[0]![i] ?? ''));
+            const bare = optionColumns.some(i => /^[A-D]$/i.test(headers[i]!));
+            const declarations = [...read('proposed').matchAll(/(?:^|[.;]\s+)([A-D])[).:]\s+(.+?)(?=[.;]\s+[A-D][).:]\s+|$)/g)]
+              .map(match => `${match[1]}) ${match[2]}`);
+            const uniqueGrid = !(bare || separate) || (sourceRecords.length <= 1 && sourceRecords.every(source => source === 'PLAN.md') &&
+              anchors.length === 1 && section.filter(token => token.type === 'table' &&
+              token.header.some(cell => /^Commitment$/i.test(plain(cell.text)))).length === 1);
+            const complete = footerCurrent && metadata && uniqueGrid &&
               behavior.length > 0 && behavior.every(row => row.length === headers.length && row[commitment] && row[source] && row[baseline] &&
-                current(row[commitment]!) && optionColumns.every(i => row[i] && current(row[i]!))) &&
+                current(row[commitment]!) && (!(bare || separate) || (current(row[source]!) && !hasForeignContractSource(row[source]!, sourcePlan))) &&
+                optionColumns.every(i => row[i] && current(row[i]!))) &&
               behavior.some(row => new Set(optionColumns.map(i => row[i]!.toLowerCase())).size > 1) &&
-              q.options.every(o => { const facts = prose(o.description ?? ''); return /✅/.test(facts) && /❌/.test(facts) && current(facts); });
-            const matched = q.options.map(offered => optionColumns.filter(i => completeCaption(offered.label, headers[i]!, '')));
+              q.options.every(o => { const facts = prose(o.description ?? ''); return /✅/.test(facts) && /❌/.test(facts) && current(facts) &&
+                (!(bare || separate) || !withdrawnOption.test(optionText(facts))); });
+            const matched = q.options.map(offered => optionColumns.filter(i => /^[A-D]$/i.test(headers[i]!)
+              ? selector(offered.label) === gridSelector(headers[i]!) && declarations.length === q.options.length &&
+                declarations.filter(saved => selector(saved) === gridSelector(headers[i]!) && sameOption(offered.label, saved, '')).length === 1
+              : completeCaption(offered.label, headers[i]!, '')));
             if (complete && matched.every(found => found.length === 1) && new Set(matched.flat()).size === q.options.length)
               matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
           }

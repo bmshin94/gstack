@@ -1212,3 +1212,137 @@ for(const side of ['saved','native'] as const)for(const correction of [
   else plan=plan.replace('premature abstraction until a second handler exists.','premature abstraction until a second handler exists. '+correction);
   expect(()=>comparisonCount6bd(plan,q)).toThrow(/Unsupported/);
 });
+
+
+const current8bf = fixture.current8bf.rows;
+function replay8bf(row: typeof current8bf.pending, savedPlan = row.savedPlan, call = clone(row.call)) {
+  const counter = createCeoPaymentFindingCounter(row.seed, () => savedPlan, ceoFirstReviewAUQ);
+  const counted = counter.isReviewAUQ(nativePlanCallFingerprint(call, 1, true), row.priorCalls);
+  return { counted, trace: counter.trace };
+}
+function rowStatus8bf(plan: string, status: string) {
+  const lines = plan.split('\n');
+  const index = lines.findIndex(line => /^\| R1 \(/.test(line));
+  expect(index).toBeGreaterThanOrEqual(0);
+  const cells = lines[index]!.split('|');
+  expect(cells[5]!.trim()).toBe('pending');
+  cells[5] = ` ${status} `; lines[index] = cells.join('|');
+  return lines.join('\n');
+}
+test('8bf current pending row is an unresolved owned decision', () => {
+  const row=current8bf.pending;
+  expect(createHash('sha256').update(row.savedPlan).digest('hex')).toBe(row.savedPlanSha256);
+  expect(row.savedAtMs).toBeLessThan(Date.parse(row.questionIssuedAt));
+  expect(Date.parse(row.questionIssuedAt)).toBeLessThanOrEqual(Date.parse(row.call.answeredAt!));
+  expect(replay8bf(row)).toMatchObject({ counted:true, trace:[{seed:'dispatcher',ledgerId:'R1'}] });
+});
+test('8bf source-declared bare columns and separate effort/risk preserve the actual complete decision', () => {
+  const row=current8bf.grid;
+  expect(createHash('sha256').update(row.savedPlan).digest('hex')).toBe(row.savedPlanSha256);
+  expect(row.savedAtMs).toBeLessThan(Date.parse(row.questionIssuedAt));
+  expect(replay8bf(row)).toMatchObject({counted:true,trace:[{kind:'recorded-decision',ledgerId:'R1'}]});
+  expect(ceoPaymentFinding(nativePlanCallFingerprint(clone(row.call),1,true),row.seed,row.savedPlan)).toBeNull();
+});
+test('8bf mixed setup and review still rejects the entire answered packet', () => {
+  let reads=0;const row=current8bf.mixed,counter=createCeoPaymentFindingCounter(row.seed,()=>{reads++;return row.savedPlan;},ceoFirstReviewAUQ);
+  expect(()=>counter.isReviewAUQ(nativePlanCallFingerprint(clone(row.call),1,true),row.priorCalls)).toThrow(/Invalid or duplicated/);
+  expect(reads).toBe(0);expect(counter.trace).toEqual([]);
+});
+
+function replaceOnce8bf(value:string, before:string, after:string) {
+  expect(value.split(before)).toHaveLength(2);
+  return value.replace(before,after);
+}
+for (const status of ['pending','PENDING','unresolved','approved','reopened','deferred','declined'])
+  test(`8bf ledger preserves current disposition ${status}`,()=>{
+    expect(replay8bf(current8bf.pending,rowStatus8bf(current8bf.pending.savedPlan,status)).counted).toBe(true);
+  });
+for (const status of ["'pending'",'“pending”','not pending','no longer pending','pending / approved','pending but withdrawn','pending: historical','formerly pending','pending?','pending approval','withdrawn','archived','superseded','cancelled','unknown',''])
+  test(`8bf ledger rejects non-current or qualified pending scalar ${status}`,()=>{
+    expect(()=>replay8bf(current8bf.pending,rowStatus8bf(current8bf.pending.savedPlan,status))).toThrow(/Unsupported/);
+  });
+for (const [name,change] of Object.entries({
+  'archived ledger':(p:string)=>replaceOnce8bf(p,'## Decision ledger','## Archived decision ledger'),
+  'withdrawn owner':(p:string)=>replaceOnce8bf(p,'R1 (plan author)','R1 (withdrawn plan author)'),
+  'archived comparison':(p:string)=>replaceOnce8bf(p,'### R1 — Handler registration','### Archived R1 — Handler registration'),
+  'duplicate source':(p:string)=>p+'\nSource plan: PLAN.md\n',
+  'foreign document source':(p:string)=>replaceOnce8bf(p,'Source plan: `PLAN.md`','Source plan: `OTHER.md`'),
+  'foreign row evidence':(p:string)=>replaceOnce8bf(p,'(PLAN.md L100-103, L105-108)','(OTHER.md L100-103, L105-108)'),
+  'mixed source evidence':(p:string)=>replaceOnce8bf(p,'(PLAN.md L100-103, L105-108)','(PLAN.md and OTHER.md L100-103, L105-108)'),
+  'missing status column':(p:string)=>replaceOnce8bf(p,'| Status |','| State |'),
+  'duplicate status column':(p:string)=>replaceOnce8bf(p,'| Exact approval and scope |','| Status |'),
+  'duplicate owned row':(p:string)=>p.replace(/^(\| R1 \(plan author\).*)$/m,'$1\n$1'),
+  'second current comparison':(p:string)=>p+'\n### R1 — Another current comparison\nRegister the dispatcher.\n',
+})) test(`8bf pending ownership rejects ${name}`,()=>{
+  expect(()=>replay8bf(current8bf.pending,change(current8bf.pending.savedPlan))).toThrow(/Unsupported/);
+});
+test('8bf pending ownership ignores a quoted historical ledger',()=>{
+  const quote=current8bf.pending.savedPlan.split('\n').map(line=>'> '+line).join('\n');
+  expect(replay8bf(current8bf.pending,current8bf.pending.savedPlan+'\n\n'+quote).counted).toBe(true);
+});
+function grid8bf(change:(block:string)=>string, plan=current8bf.grid.savedPlan) {
+  const start=plan.indexOf('### R1 option comparison'),end=plan.indexOf('### R2 option comparison');
+  expect(start).toBeGreaterThanOrEqual(0);expect(end).toBeGreaterThan(start);
+  return plan.slice(0,start)+change(plan.slice(start,end))+plan.slice(end);
+}
+for (const [name,change] of Object.entries({
+  'combined metadata':(b:string)=>b.replace(/^\| Effort \|.*\n\| Risk \|.*\n/m,'| Effort / risk | | | S / low | S / low | S / low |\n'),
+  'plain finite metadata':(b:string)=>b.replace('S (human ~10 min / CC ~1 min)','S').replace('low (test cannot fail meaningfully)','low'),
+  'metadata row order':(b:string)=>b.replace(/^(\| Effort \|.*)\n(\| Risk \|.*)$/m,'$2\n$1'),
+  'grid column order':(b:string)=>b.split('\n').map(line=>{if(!line.startsWith('|'))return line;const c=line.split('|');[c[4],c[6]]=[c[6],c[4]];return c.join('|');}).join('\n'),
+})) test(`8bf owned bare grid accepts ${name}`,()=>{
+  expect(replay8bf(current8bf.grid,grid8bf(change)).counted).toBe(true);
+});
+for (const [name,change] of Object.entries({
+  'missing effort':(b:string)=>b.replace(/^\| Effort \|.*\n/m,''),
+  'missing risk':(b:string)=>b.replace(/^\| Risk \|.*\n/m,''),
+  'duplicate effort':(b:string)=>b.replace(/^(\| Effort \|.*)$/m,'$1\n$1'),
+  'duplicate risk':(b:string)=>b.replace(/^(\| Risk \|.*)$/m,'$1\n$1'),
+  'mixed combined metadata':(b:string)=>b.trimEnd()+'\n| Effort / risk | | | S / low | S / low | S / low |\n\n',
+  'blank risk cell':(b:string)=>replaceOnce8bf(b,'| low | low | low (','| low | | low ('),
+  'unknown effort':(b:string)=>replaceOnce8bf(b,'| S | S |','| unknown | S |'),
+  'unknown risk':(b:string)=>replaceOnce8bf(b,'| low | low | low (','| low | unknown | low ('),
+  'negated risk':(b:string)=>replaceOnce8bf(b,'| low | low | low (','| not low | low | low ('),
+  'quoted risk':(b:string)=>replaceOnce8bf(b,'| low | low | low (','| "low" | low | low ('),
+  'withdrawn risk metadata':(b:string)=>replaceOnce8bf(b,'low (test cannot fail meaningfully)','low (this estimate is withdrawn)'),
+  'contradictory risk metadata':(b:string)=>replaceOnce8bf(b,'low (test cannot fail meaningfully)','low (actually high)'),
+  'contradictory effort metadata':(b:string)=>replaceOnce8bf(b,'S (human ~10 min / CC ~1 min)','S (actually XL)'),
+  'duplicate column identity':(b:string)=>replaceOnce8bf(b,'| A | B | C |','| A | B | B |'),
+  'unoffered column identity':(b:string)=>replaceOnce8bf(b,'| A | B | C |','| A | B | D |'),
+  'missing column identity':(b:string)=>replaceOnce8bf(b,'| A | B | C |','| A | B | |'),
+  'mismatched column caption':(b:string)=>replaceOnce8bf(b,'| A | B | C |','| A) Delete the receipt | B | C |'),
+  'foreign commitment source':(b:string)=>replaceOnce8bf(b,'| Receipt is returned | PLAN.md |','| Receipt is returned | OTHER.md |'),
+  'blank commitment source':(b:string)=>replaceOnce8bf(b,'| Receipt is returned | PLAN.md |','| Receipt is returned | |'),
+  'missing commitment value':(b:string)=>replaceOnce8bf(b,'| truthy | equality | equality | truthy |','| truthy | | equality | truthy |'),
+  'withdrawn comparison':(b:string)=>b.replace('### R1 option comparison','### Withdrawn R1 option comparison'),
+  'quoted grid':(b:string)=>b.split('\n').map(line=>line.startsWith('|')?'> '+line:line).join('\n'),
+  'code-only grid':(b:string)=>b.replace('| Commitment','```text\n| Commitment')+'```\n',
+  'duplicate current grid':(b:string)=>b+b.slice(b.indexOf('| Commitment')),
+})) test(`8bf bare grid rejects ${name}`,()=>{
+  expect(()=>replay8bf(current8bf.grid,grid8bf(change))).toThrow(/Unsupported/);
+});
+for (const [name,change] of Object.entries({
+  'foreign ledger source':(p:string)=>p.replaceAll('PLAN.md','OTHER.md'),
+  'archived ledger':(p:string)=>replaceOnce8bf(p,'## Step 0D — Decision ledger','## Archived Step 0D — Decision ledger'),
+  'duplicate document source':(p:string)=>p+'\nSource plan: PLAN.md\n',
+  'duplicate owned ledger row':(p:string)=>p.replace(/^(\| R1 \(owner: test author\).*)$/m,'$1\n$1'),
+  'missing option declaration':(p:string)=>replaceOnce8bf(p,'C) keep truthy-only.','keep truthy-only.'),
+  'mismatched option declaration':(p:string)=>replaceOnce8bf(p,'B) assert full receipt equality only.','B) delete the database.'),
+})) test(`8bf grid provenance rejects ${name}`,()=>{
+  expect(()=>replay8bf(current8bf.grid,change(current8bf.grid.savedPlan))).toThrow(/Unsupported/);
+});
+for (const [name,change] of Object.entries({
+  'missing native pros':(c:typeof current8bf.grid.call)=>{c.questions[0]!.options[1]!.description='❌ There is no stated benefit.';},
+  'missing native cons':(c:typeof current8bf.grid.call)=>{c.questions[0]!.options[1]!.description='✅ This adds exact coverage.';},
+  'withdrawn native choice':(c:typeof current8bf.grid.call)=>{c.questions[0]!.options[1]!.description+=' This option is withdrawn.';},
+  'missing native selector':(c:typeof current8bf.grid.call)=>{c.questions[0]!.options[1]!.label='Receipt equality only';},
+  'duplicate native selector':(c:typeof current8bf.grid.call)=>{c.questions[0]!.options[1]!.label='A: Receipt equality only';},
+  'unoffered native selector':(c:typeof current8bf.grid.call)=>{c.questions[0]!.options[1]!.label='D: Receipt equality only';},
+  'failed ACK':(c:typeof current8bf.grid.call)=>{c.failed=true;},
+  'missing ACK':(c:typeof current8bf.grid.call)=>{c.answered=false;},
+  'unanswered tab':(c:typeof current8bf.grid.call)=>{c.unansweredQuestionIndices=[0];},
+  'unoffered answer':(c:typeof current8bf.grid.call)=>{c.answers={[c.questions[0]!.question]:'Not an offered choice'};},
+})) test(`8bf complete native ownership rejects ${name}`,()=>{
+  const c=clone(current8bf.grid.call);change(c);
+  expect(()=>replay8bf(current8bf.grid,current8bf.grid.savedPlan,c)).toThrow();
+});
