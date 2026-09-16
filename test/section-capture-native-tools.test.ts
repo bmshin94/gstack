@@ -3,6 +3,89 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+test('Eng section producer checkpoints complete outcomes and never credits an exhausted draft', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eng-section-checkpoints-'));
+  const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
+  const helper = (name: string) => path.resolve(import.meta.dir, 'helpers', name + '.ts');
+  // Public boundary from 749df444, first Eng carve attempt, session
+  // 9cefb69f-60b7-49fe-bec3-f5b3d50118d4. The incomplete input was hashed,
+  // never an executed Write. Replay its metadata, not reconstructed content.
+  const exhausted = {
+    type: 'public_stream_diagnostic', kind: 'message_delta',
+    messageId: 'msg_011Cf75reetor7sBHhJw7xwT', elapsedMs: 454169,
+    stopReason: 'max_tokens',
+  };
+  const incompleteWrite = {
+    type: 'public_stream_diagnostic', kind: 'content_block_delta',
+    messageId: exhausted.messageId, index: 2, elapsedMs: 454148,
+    blockType: 'tool_use', toolName: 'Write', deltaType: 'input_json_delta',
+    inputBytes: 27568, inputSha256: '01688dc5f6d704461620a43b8d0d5950c302801b2687bd8793b005dbfb06757d',
+  };
+  fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
+const fs = require('node:fs');
+const prompt = await Bun.stdin.text();
+fs.appendFileSync('observed.jsonl',JSON.stringify({prompt,args:process.argv.slice(2)})+'\\n');
+console.log(JSON.stringify({type:'system',subtype:'init'}));
+console.log(JSON.stringify({type:'assistant',message:{content:[{type:'tool_use',id:'toolu_01WP9DBmwzdGhTYMJ3Tw8xrT',name:'Read',input:{file_path:process.cwd()+'/plan-eng-review/sections/review-sections.md'}}]}}));
+if (prompt.includes('capture-case:timeout')) {
+  console.log(JSON.stringify(${JSON.stringify(incompleteWrite)}));
+  console.log(JSON.stringify(${JSON.stringify(exhausted)}));
+  if (prompt.includes('capture-case:timeout-partial')) fs.writeFileSync('PLAN.md','# Partial review\\n\\n## GSTACK REVIEW REPORT\\nDraft only.\\n');
+  await Bun.sleep(5000);
+}
+if (prompt.includes('capture-case:synthetic-success')) fs.writeFileSync('PLAN.md','# Synthetic complete fixture\\n\\n## GSTACK REVIEW REPORT\\nSynthetic complete review.\\n');
+console.log(JSON.stringify({type:'result',subtype:'success',result:'Request delivered only.'}));
+`, { mode: 0o755 });
+  const script = path.join(dir, 'run.ts');
+  fs.writeFileSync(script, `import {mock} from 'bun:test';
+mock.module(${JSON.stringify(helper('eval-store'))},()=>({getProjectEvalDir:()=>${JSON.stringify(path.join(dir, 'evals'))}}));
+const {captureSectionReads}=await import(${JSON.stringify(helper('auq-sdk-capture'))});
+const fs=await import('node:fs');
+const results=[];
+for(const scenario of ['delivery','timeout','timeout-partial','synthetic-success']) {
+  fs.writeFileSync('PLAN.md','# Original accepted requirements\\n');
+  const capture=await captureSectionReads({planDir:${JSON.stringify(dir)},skillName:'plan-eng-review',scenario:'capture-case:'+scenario,decisionPolicy:'- Preserve the supplied author scope; do not approve excluded work.',reportFile:'PLAN.md',reportMarker:/^## GSTACK REVIEW REPORT\\s*$/m,testName:'eng-checkpoints',timeout:scenario.startsWith('timeout')?300:480000,model:'fake-model'});
+  results.push({scenario,reads:[...capture.readSections],report:capture.reportProduced,written:capture.reportWritten,exit:capture.exitReason,executedWrites:capture.toolCalls.filter(t=>t.tool==='Write').length});
+}
+console.log(JSON.stringify(results));
+`);
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`, TMPDIR: dir, TMP: dir, TEMP: dir, EVALS_HERMETIC: '1' };
+  delete env.CI;
+  const child = Bun.spawn([process.execPath, script], { env, cwd: dir, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+  const timer = setTimeout(() => child.kill(), 15_000);
+  try {
+    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect(code, stderr).toBe(0);
+    const results = JSON.parse(stdout.trim().split('\n').at(-1)!);
+    expect(results.map((r: any) => [r.scenario, r.exit, r.written, r.report, r.executedWrites])).toEqual([
+      ['delivery', 'success', false, false, 0],
+      ['timeout', 'timeout', false, false, 0],
+      ['timeout-partial', 'timeout', true, false, 0],
+      ['synthetic-success', 'success', true, true, 0],
+    ]);
+    for (const result of results) expect(result.reads).toEqual(['review-sections.md']);
+    const launches = fs.readFileSync(path.join(dir, 'observed.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    expect(launches).toHaveLength(4);
+    for (const launch of launches) {
+      expect(launch.prompt).toContain('When Scope Challenge finishes, save its outcome');
+      expect(launch.prompt).toContain('after each completed review section, save');
+      expect(launch.prompt).toContain('Check the Write/Edit result and Read the saved outcome before advancing');
+      expect(launch.prompt).toContain('also apply when no new choice needs approval');
+      expect(launch.prompt).toContain('Preserve all four review sections, every finding and original requirement');
+      expect(launch.prompt).toContain('finish missing required outputs with scoped Edits');
+      expect(launch.prompt).toContain("perform the skill's full final Read-back gate");
+      expect(launch.prompt).not.toContain("When the workflow is complete, write the skill's final output");
+      expect(launch.args[launch.args.indexOf('--max-turns') + 1]).toBe('25');
+      expect(launch.args[launch.args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Write,Edit,Agent');
+      expect(launch.args[launch.args.indexOf('--model') + 1]).toBe('fake-model');
+    }
+  } finally {
+    clearTimeout(timer); if (child.exitCode === null) child.kill();
+    await child.exited;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}, 20_000);
+
 test('CEO section caller supplies the author scope instead of blanket recommendation authority', () => {
   const caller = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-plan-ceo-review-section-loading.test.ts'), 'utf8');
   expect(caller).toContain('decisionPolicy: CEO_SECTION_DECISION_POLICY');

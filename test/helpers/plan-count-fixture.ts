@@ -25,7 +25,7 @@ export function ownedNativeReviewStateRoot(state: NativeReviewState, env: Record
 }
 
 /** Disposable config for evals that explicitly cover native review only. */
-export function createNativeReviewState(): NativeReviewState {
+export function createNativeReviewState(opts: { preconfiguredReviewActor?: boolean } = {}): NativeReviewState {
   const sharedState = getHermeticDirs().gstackHome;
   const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-native-review-state-'));
   let state: NativeReviewState | undefined;
@@ -42,8 +42,14 @@ export function createNativeReviewState(): NativeReviewState {
         fs.copyFileSync(path.join(sharedState, entry.name), path.join(stateRoot, entry.name));
       }
     }
-    const config = fs.readFileSync(path.join(sharedState, 'config.yaml'), 'utf8')
+    let config = fs.readFileSync(path.join(sharedState, 'config.yaml'), 'utf8')
       .replace(/^codex_reviews:.*(?:\r?\n|$)/gm, '');
+    if (opts.preconfiguredReviewActor) {
+      // This fixture has already declined setup changes and cross-project recall.
+      // Keep native review questions interactive; never alter shared/operator state.
+      config = config.replace(/^(?:routing_declined|cross_project_learnings):.*(?:\r?\n|$)/gm, '')
+        + '\nrouting_declined: true\ncross_project_learnings: false\n';
+    }
     fs.writeFileSync(path.join(stateRoot, 'config.yaml'), config + '\ncodex_reviews: disabled\n');
     // Readers and onboarding writers must agree on the owned state.
     state = { env: { GSTACK_HOME: stateRoot, GSTACK_STATE_ROOT: stateRoot }, cleanup };
@@ -62,11 +68,17 @@ export function createNativeReviewState(): NativeReviewState {
  * bare slash command starts: a later message can remain queued behind the
  * skill's first AskUserQuestion and leave it reviewing the live branch.
  */
-export function createPlanCountFixture(prompt: string, opts: { nativeReviewOnly?: boolean; files?: Record<string, string> } = {}): {
+export function createPlanCountFixture(prompt: string, opts: {
+  nativeReviewOnly?: boolean;
+  preconfiguredReviewActor?: boolean;
+  files?: Record<string, string>;
+} = {}): {
   cwd: string;
   env: Record<string, string>;
   cleanup(): void;
 } {
+  if (opts.preconfiguredReviewActor && !opts.nativeReviewOnly)
+    throw new Error('Preconfigured review actor requires owned native review state');
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-plan-count-'));
   let nativeState: ReturnType<typeof createNativeReviewState> | undefined;
   const env: Record<string, string> = {};
@@ -91,7 +103,7 @@ export function createPlanCountFixture(prompt: string, opts: { nativeReviewOnly?
     }
     if (opts.nativeReviewOnly) {
       // Seeded-N bands cover native finding cadence; mode fixtures keep defaults.
-      nativeState = createNativeReviewState();
+      nativeState = createNativeReviewState({ preconfiguredReviewActor: opts.preconfiguredReviewActor });
       Object.assign(env, nativeState.env);
     }
     fs.writeFileSync(path.join(cwd, 'PLAN.md'), prompt);

@@ -241,6 +241,49 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     return (o.description ?? '').trim().startsWith('✅') && blocks.filter(b => b[1] === '✅').length >= 2 && blocks.some(b => b[1] === '❌');
   });
   const sourceOwned = nativeTradeoffs && ownsPlan;
+  // A neutral question can choose a policy while its own cited ELI10 owns
+  // the defect. Keep that policy separate from earlier injection or later
+  // function-shape choices; never borrow a remedy from another option.
+  const explanationSources = [...explanation.matchAll(/(?:^|[\s(,;])([^\s(),;]+\.md)(?::([1-9]\d*(?:[-–][1-9]\d*)?))?(?=[\s),;.]|$)/g)];
+  const citedExplanation = explanationSources.length > 0 &&
+    explanationSources.every(source => source[1] === 'PLAN.md' && source[2]);
+  const neutralChoice = /^(?:who|what|which|how)\b[^\n]*\?$/i.test(title);
+  if (sourceOwned && citedExplanation && neutralChoice) {
+    const foreign = /\b(?:other|another|foreign|different) (?:cache|adapter|service|project|remedy|function|method|source)\b/i;
+    const sameWriters = /\b(?:two|both) services\b[^.!?\n]*\b(?:write|writing|mutate|mutating)\b[^.!?\n]*\b(?:same|shared) (?:cache|adapter)\b/i.test(explanation);
+    const unordered = /\b(?:writes|mutations) (?:are |remain )*(?:not|never) (?:serialized|ordered)\b|\b(?:unserialized|unordered) (?:writes|mutations)\b|\b(?:no|without) (?:serialization|write ordering)\b/i.test(explanation);
+    const orderedNow = /(?:^|[.!?;]\s+|\n)(?:Correction:\s*)?(?:the |these |those )?(?:cache )?(?:writes|mutations|writers) (?:are |now |already |remain )*(?:serialized|ordered|isolated|no longer shared)\b|\b(?:two|both) services\b[^.!?\n]*\b(?:do not|don't|never|no longer) (?:write|mutate)\b/i.test(text);
+    const singleWriter = completeOptions.some(option => {
+      const contract = `${option.label}\n${option.promises}`;
+      const writer = /\bonly (AuthBroker|SessionMint) writes?\b|\b(AuthBroker|SessionMint) is (?:the )?(?:only|sole) writer\b/i.exec(contract);
+      const actor = writer?.[1] ?? writer?.[2];
+      if (!actor || !/\b(?:single|sole|one)[ -]writer\b/i.test(option.label)) return false;
+      const other = actor.toLowerCase() === 'authbroker' ? 'SessionMint' : 'AuthBroker';
+      return /\b(?:cache|adapter)\b/i.test(option.promises) &&
+        new RegExp(`\\b${other}\\b[^.!?\\n]*\\b(?:side[ -]effect free|(?:does|performs) no cache writes|returns? (?:the )?(?:minted )?session)\\b`, 'i').test(option.promises) &&
+        !foreign.test(`${contract}\n${option.facts}`) &&
+        !new RegExp(`\\b${other} (?:also |still |now |will )*(?:writes|mutates)\\b`, 'i').test(option.facts) &&
+        !/\b(?:both|two) services (?:still |will |now )*write\b|\b(?:do not|don't|never) (?:use|choose|make|keep) (?:a )?(?:single|sole|one)[ -]writer\b|\b(?:not|no) (?:single|sole) writer\b/i.test(option.facts);
+    });
+    if (/\b(?:cache|adapter)\b/i.test(title) && sameWriters && unordered && !orderedNow &&
+        !foreign.test(explanation) && singleWriter) ids.push('shared-cache');
+
+    const nestedCatches = /\b(?:three|3) nested (?:try\/catch|catch) blocks\b/i.test(explanation);
+    const catchesDiscard = /\b(?:each|every) (?:one|catch|block)\b[^.!?\n]*\b(?:swallows?|discards?|suppresses?|ignores?)\b[^.!?\n]*\b(?:error|failure)\b|\b(?:each|every) (?:one|catch|block)\b[^.!?\n]*\bcatches? (?:an? |the )?(?:error|failure)\b[^.!?\n]*\b(?:moves? on|keeps? going|continues?)\b/i.test(explanation);
+    const surfacedNow = /\bvalidateAndDispatch\(\) (?:now |already )?(?:rethrows every error|no longer swallows failures)\b|\b(?:each|every) (?:one|catch|block)\b[^.!?\n]*\b(?:does not|doesn't|never|no longer) (?:swallows?|discards?|suppresses?|ignores?)\b/i.test(text);
+    const errorPolicy = completeOptions.some(option => {
+      const contract = `${option.label}\n${option.promises}`;
+      return /\bfail[ -]closed\b/i.test(option.label) &&
+        /\b(?:validate|validation|policy)\b[^.!?\n]*\b(?:deny|denied|denial)\b/i.test(contract) &&
+        /\btyped errors?\b/i.test(contract) &&
+        /\bdispatch(?:[- ]stage)? errors? (?:propagate|are rethrown)\b/i.test(contract) &&
+        /\b(?:every|each|all) (?:denial|error|failure)s?\b[^.!?\n]*\blogged\b/i.test(option.promises) &&
+        !foreign.test(`${contract}\n${option.facts}`) &&
+        !/\b(?:do(?:es)? not|don't|doesn't|never|will not|won't) (?:deny|log|propagate|rethrow|fail[ -]closed)\b|\b(?:not (?:all|every|each)|only some) (?:errors?|failures?|denials?)\b|\b(?:errors?|failures?) (?:are |will be |remain |stay |still |silently )*(?:swallowed|ignored|discarded|suppressed|hidden)\b|\b(?:not|never) fail[ -]closed\b/i.test(option.facts);
+    });
+    if (/\bvalidateAndDispatch(?:\(\))?(?=\s|[.,?!;:]|$)/.test(title) && nestedCatches &&
+        catchesDiscard && !surfacedNow && !foreign.test(explanation) && errorPolicy) ids.push('swallowed-errors');
+  }
   const declaredNames = /\bclass arrangement\b[^?]*\(([^)]+)\)/i.exec(title)?.[1]?.split(/,\s*/);
   const declaredCount = /\b(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) (?:new )?(?:components|classes)\b/i.exec(title)?.[1];
   const beforeCount = declaredCount ? counts[declaredCount.toLowerCase()] ?? Number(declaredCount) : 0;
@@ -1089,7 +1132,7 @@ function requiredLegacyCharacterization(task: string): boolean {
 }
 
 /** Required suites bind a numbered task to an untouched legacy baseline or parity oracle. */
-function declaredLegacyCharacterization(text: string): boolean {
+function declaredLegacyCharacterization(text: string, nativeCalls: readonly NativePlanQuestionCall[] = [], startedAt = 0, finishedAt = 0): boolean {
   const sections: Array<{ title: string; body: string[]; asserted: boolean }> = [];
   const owners: Array<{ level: number; asserted: boolean }> = [];
   let preamble = '', sourcePreamble = false;
@@ -2046,6 +2089,142 @@ function declaredLegacyCharacterization(text: string): boolean {
       }
     }
   }
+  // A paired suite can run against an unchanged legacy oracle after independent
+  // new code is built. Bind the complete approved native record, its own task
+  // verification and the separately approved preservation of that oracle.
+  // A grid's unselected remedy or generic neighboring test cannot fill a gap.
+  const nativeRecord = (section: typeof current[number]) => {
+    const row = /^(R[1-9]\d*):/.exec(section.title)?.[1];
+    if (!row || current.filter(s => s.title.startsWith(row+':')).length !== 1) return;
+    const body = section.body.join('\n').split(/^History:/m)[0]!;
+    const fields = (name: string) => fieldValues(body, name);
+    const finding=fields('Finding'), baseline=fields('Plan baseline'), state=fields('State'), answers=fields('Actual answer'), scopes=fields('Accepted scope');
+    const question=[...body.matchAll(/^Question (D[1-9]\d*):\s*\n([^]*?)^Header: ([^\n]+)\nOptions:\n([^]*?)^State:/gm)];
+    if ([finding,baseline,state,answers,scopes,question].some(v => v.length !== 1) || state[0] !== 'approved' || sourceFrame(body)) return;
+    const sources=[...finding[0]!.matchAll(/\b[\w./-]+\.md\b/g)].map(m=>m[0]);
+    if (!sources.length || sources.some(file=>file !== 'PLAN.md') || !/\bPLAN\.md:[1-9]\d*/.test(finding[0]!)) return;
+    const decision=question[0]![1]!, calls=nativeCalls.filter(c=>c.questions.length === 1 && new RegExp(`^${decision}\\s*[—–:-]`).test(c.questions[0]!.question));
+    if (calls.length !== 1 || !completedDecision(calls[0]!, startedAt, finishedAt)) return;
+    const call=calls[0]!, q=call.questions[0]!, selected=q.options.find(o=>o.label === call.answers![q.question]);
+    const saved=question[0]![4]!.trim().split(/\n(?=[A-D]\) )/).map(block=>{
+      const line=block.indexOf('\n'); return { selector:block[0],label:block.slice(3,line),description:block.slice(line+1).trim() };
+    });
+    const answer=/^([A-D])\) (.+) — (D[1-9]\d*) answer "(.+)"$/.exec(answers[0]!);
+    const caption=(s:string)=>s.replace(/\s*\(recommended\)$/, '').trim();
+    if (!selected || question[0]![2]!.trim() !== prose(q.question).trim() || question[0]![3] !== q.header ||
+        saved.length !== q.options.length || new Set(saved.map(o=>o.selector)).size !== saved.length ||
+        !q.options.every(o=>saved.filter(s=>s.label === o.label && s.description === prose(o.description ?? '').trim()).length === 1) ||
+        !answer || answer[3] !== decision || answer[4] !== selected.label ||
+        !(caption(answer[2]!) === caption(selected.label) || caption(selected.label).startsWith(caption(answer[2]!)+':')) ||
+        saved.find(o=>o.selector === answer[1])?.label !== selected.label) return;
+    return { row, decision, body, finding:finding[0]!, baseline:baseline[0]!, scope:scopes[0]!, selected, answeredAt:Date.parse(call.answeredAt!) };
+  };
+  const assertionFact='(?:decision|error class|cache writes?|dispatch(?: invocation)?|IDP call count|(?:IDP call )?order|assertions?|outcomes?)';
+  const missingAssertion='(?:(?:not|never|no longer)(?: (?:always|consistently))? (?:asserted|verified|compared|checked|tested|recorded|required|needed)|optional|omitted|skipped|unverified)';
+  const assertionOmitted=new RegExp(`\\b${assertionFact} (?:is |are |will be |has been |may be )?${missingAssertion}\\b|\\b(?:omit|skip|exclude) (?:the )?(?:per-case )?${assertionFact}\\b|\\b(?:no|without) ${assertionFact} (?:assertions?|verification|checks?|comparison)\\b`,'i');
+  const proofActive = (body:string) => !sourceFrame(body) && !assertionOmitted.test(unquoted(body)) && !/\b(?:if|once|when|unless) approved|\bpending approval\b|\b(?:not (?:all|every|each)|only some) (?:matrix |test )?(?:cells?|cases?|assertions?|outcomes?)\b|\b(?:do not|don't|never|skip|omit) (?:run|drive|execute|assert|verify|compare|preserve)\b|\b(?:new (?:path|broker)|AuthBroker) only\b|\blegacyAuthFlow\(\) (?:is |will be )?(?:not|never) (?:run|executed|tested)\b/i.test(unquoted(body));
+  // An inventory entry is an affirmative assertion, not a bag of keywords.
+  // Parse each owned fact so "error class is never asserted" cannot fill it.
+  const assertions = (body:string) => {
+    const facts=body.toLowerCase().split(/\s*,\s*/).flatMap(entry=>{
+      const fact=entry.trim().replace(/ (?:is |are )?(?:asserted|verified|compared|checked)$/, '');
+      if (/^decision$/.test(fact)) return ['decision'];
+      if (/^error class$/.test(fact)) return ['error'];
+      if (/^cache write(?: (?:yes\/no|y\/n))?$/.test(fact)) return ['cache'];
+      if (/^dispatch(?: invoked)?(?: (?:yes\/no|y\/n))?$/.test(fact)) return ['dispatch'];
+      if (/^idp call count (?:and|\+|\/) order$/.test(fact)) return ['count','order'];
+      return ['unsupported'];
+    });
+    return facts.length === 6 && new Set(facts).size === 6 && !facts.includes('unsupported');
+  };
+  const benefitClauses=(option:{ description?:string })=>[...(option.description ?? '').matchAll(/✅\s*([^✅❌]+)/g)].map(m=>m[1]!);
+  const benefits=(option:{ description?:string })=>benefitClauses(option).join(' ');
+  const sharedParityClaim=(claim:string,target:string)=>{
+    const facts=prose(unquoted(claim)).replace(/legacyAuthFlow\(\)/g,'legacy').replace(new RegExp(`\\b${target}\\b`,'g'),'broker');
+    // Scope absence/partial-coverage qualifiers to the fixture subject or a
+    // case axis; negative expected outcomes (e.g. no dispatch) stay valid.
+    const restricted='(?:no|not|never|without|only(?: some| selected)?|some|partially|a subset of)';
+    const subjectOrAxis='(?:(?:shared|same) fixtures|token states?|cache states?|IDP failure positions?)';
+    const qualified=new RegExp(`\\b${restricted}(?: (?:every|each|all|any|the))? ${subjectOrAxis}\\b`,'i');
+    if (!proofActive(facts) || qualified.test(facts) || /\b(?:not|never|without) (?:assert\w*|identical\w*|equal\w*)\b|\b(?:different|separate) fixtures\b|\b(?:only|excluding|except)\b/i.test(facts)) return false;
+    // Use the existing statement boundary: another sentence in the same benefit
+    // cannot supply the fixtures, targets or assertions this statement lacks.
+    return facts.split(/\n|[.!?;]\s+/).some(statement=>{
+      const active=/\b(?:shared|same) fixtures assert(?:s)? (?:identical|equal|the same) (?:results|outcomes)\b/i.test(statement);
+      const passive=/\basserted identically\b/i.test(statement) && /\bfrom (?:the )?(?:shared|same) fixtures\b/i.test(statement);
+      return (active || passive) && /\b(?:legacy (?:and|[&+]) broker|broker (?:and|[&+]) legacy)\b/i.test(statement) &&
+        /\b(?:every|each|all) token state\b/i.test(statement) && /\bcache state\b/i.test(statement) && /\bIDP failure position\b/i.test(statement);
+    });
+  };
+  const failClosed=(body:string)=>/\bfail(?:s)?[ -]closed\b/i.test(body) &&
+    !/\b(?:not|never) fail(?:s)?[ -]closed\b|\bfail[ -]open\b|\b(?:suppress\w*|swallow\w*|ignor\w*|discard\w*)\b[^.;\n]{0,60}\berrors?\b|\berrors?\b[^.;\n]{0,60}\b(?:suppressed|swallowed|ignored|discarded)\b/i.test(unquoted(body));
+  const pairedTasks=taskSections.flatMap(s=>s.body.join('\n').split(/\n(?=-\s)/)).map(body=>({body,id:/^- (?:\[[ xX]\] )?(T[1-9]\d*)\b/.exec(body)?.[1]})).filter(t=>t.id);
+  const taskField=(body:string,name:string)=>fieldValues(body,'  - '+name);
+  for (const section of current.filter(s=>/\bregression contract\b/i.test(s.title) && /\blegacyAuthFlow\b/.test(s.title))) {
+    const record=nativeRecord(section);
+    if (!record || !/\bCRITICAL\b/.test(record.finding) || /\b(?:not|non)[ -]CRITICAL\b/i.test(record.finding) || suiteWithdrawn || !proofActive(record.scope)) continue;
+    const pair=/\b(?:shared|same) fixtures (?:drive|run through|execute against) both legacyAuthFlow\(\) and ([A-Za-z][\w]*)\b/.exec(record.scope);
+    const target=pair?.[1], expected=/\bAcceptance assertions per case: ([^;]+);/.exec(record.scope)?.[1];
+    const difference=/\bIntended differences: only (D[1-9]\d*) ([^;]+);/.exec(record.scope);
+    const axes=[...record.scope.matchAll(/\b(token|cache|IDP) \{([^}]+)\}/g)];
+    const promises=benefits(record.selected);
+    if (!target || target === 'legacyAuthFlow' || !expected || !assertions(expected) || !difference || !/\brecorded per case\b/.test(difference[2]!) ||
+        axes.length !== 3 || new Set(axes.map(a=>a[1])).size !== 3 || axes.some(a=>a[2]!.split(',').length < 2) ||
+        !/\bparity\b/i.test(record.selected.label) || !benefitClauses(record.selected).some(claim=>sharedParityClaim(claim,target)) ||
+        !new RegExp(`\\b${difference[1]} fail[ -]closed\\b`).test(promises) || !failClosed(difference[2]!) || !proofActive(promises)) continue;
+    const errorRecords=current.map(nativeRecord).filter(r=>r?.decision === difference[1]);
+    if (errorRecords.length !== 1) continue;
+    const error=errorRecords[0]!, policy=error.selected.label, errorProof=benefits(error.selected);
+    // The exception must have been chosen earlier. An offered stronger option
+    // or stale accepted scope cannot stand in for the user's actual answer.
+    if (error.answeredAt >= record.answeredAt || !failClosed(policy) ||
+        !/\bvalidat(?:e|ion)\b/i.test(policy) || !/\bpolicy\b/i.test(policy) || !/\bdeny\b/i.test(policy) ||
+        !/\btyped errors?\b/i.test(policy) || !/\bdispatch errors? (?:must |will )?propagat\w*\b/i.test(policy) ||
+        !/\b(?:named|typed) error class\b/i.test(errorProof) || !/\b(?:Every|Each) denial (?:is |gets )?logged\b/i.test(errorProof) ||
+        !/\bvalidateAndDispatch\(\) fails closed\b/.test(error.scope) || !/\bdeny carrying a typed error\b/.test(error.scope) ||
+        !/\bnothing is dispatched\b/.test(error.scope) || !/\bdispatch stage propagate to the caller\b/.test(error.scope) ||
+        !proofActive(error.scope) || /\b(?:keep|continue|allow)\b[^.;\n]{0,60}\b(?:swallow|suppress|ignore)\w*\b|\berrors? (?:is|are|will be) (?:swallowed|suppressed|ignored)\b|\b(?:dispatch|policy|validation) errors? (?:do not|don't|never)\b/i.test(error.scope)) continue;
+    const oracleDecision=/\b(D[1-9]\d*) approved: legacy stays as parity oracle\b/.exec(record.baseline)?.[1];
+    const oracleRecords=current.map(nativeRecord).filter(r=>r?.decision === oracleDecision);
+    if (!oracleDecision || oracleRecords.length !== 1) continue;
+    const oracle=oracleRecords[0]!;
+    if (oracle.answeredAt >= record.answeredAt ||
+        !/\b(?:keep|retain|preserve) legacy\b/i.test(oracle.selected.label) || !/\b(?:flag[ -]routed|route by flag|strangler)\b/i.test(oracle.selected.label) ||
+        !/\bboth paths\b/i.test(benefits(oracle.selected)) || !/\bflag flip\b/i.test(benefits(oracle.selected)) ||
+        !/\blegacyAuthFlow\(\) (?:stays|remains) (?:untouched|unchanged|unmodified)\b/.test(oracle.scope) || !proofActive(oracle.scope)) continue;
+    for (const task of pairedTasks) {
+      const files=taskField(task.body,'Files'), verifies=taskField(task.body,'Verify'), sources=taskField(task.body,'Surfaced by');
+      if ([files,verifies,sources].some(f=>f.length !== 1) || pairedTasks.filter(t=>t.id === task.id).length !== 1 || !proofActive(task.body) ||
+          !new RegExp(`\\b${record.decision}\\b`).test(sources[0]!) || [...sources[0]!.matchAll(/\bD[1-9]\d*\b/g)].length !== 1 ||
+          !/\bPLAN\.md:[1-9]\d*/.test(sources[0]!) || [...sources[0]!.matchAll(/\b[\w./-]+\.md\b/g)].some(m=>m[0] !== 'PLAN.md')) continue;
+      const first=task.body.split('\n')[0]!;
+      const actual=/\bevery matrix cell asserts ([^;]+);/.exec(verifies[0]!)?.[1];
+      const scopeFiles=[...record.scope.matchAll(/\b[\w/.-]+\.test\.[jt]s\b/g)].map(m=>m[0]);
+      const taskFiles=[...files[0]!.matchAll(/\b[\w/.-]+\.test\.[jt]s\b/g)].map(m=>m[0]);
+      if (!/\b(?:Build|Write|Add) the parity suite\b/i.test(first) || !new RegExp(`\\bshared fixtures drive legacyAuthFlow\\(\\) and ${target}\\b`).test(first) ||
+          !/\bacross token\s+(?:×|[xX]|times)\s+cache\s+(?:×|[xX]|times)\s+IDP matrix\b/.test(first) || !actual || !assertions(actual) ||
+          !new RegExp(`\\bintended differences limited to ${difference[1]}\\b`).test(verifies[0]!) ||
+          !failClosed(verifies[0]!.split(';').find(clause=>/\bintended differences\b/.test(clause)) ?? '') || !/\blisted per case\b/.test(verifies[0]!) ||
+          taskFiles.length !== 1 || !scopeFiles.includes(taskFiles[0]!)) continue;
+      const preservation=pairedTasks.filter(t=>{
+        const source=taskField(t.body,'Surfaced by'), verification=taskField(t.body,'Verify'), files=taskField(t.body,'Files');
+        return t.id !== task.id && pairedTasks.filter(other=>other.id === t.id).length === 1 && source.length === 1 && verification.length === 1 &&
+          files.length === 1 && files[0]!.trim().length > 0 && /\bPLAN\.md:[1-9]\d*/.test(source[0]!) &&
+          [...source[0]!.matchAll(/\b[\w./-]+\.md\b/g)].every(m=>m[0] === 'PLAN.md') &&
+          new RegExp(`\\b${oracleDecision}\\b`).test(source[0]!) && [...source[0]!.matchAll(/\bD[1-9]\d*\b/g)].length === 1 &&
+          /\bleave legacyAuthFlow\(\) (?:untouched|unchanged|unmodified)\b/.test(t.body.split('\n')[0]!) &&
+          /\bgit diff shows no change to legacyAuthFlow\(\)/.test(verification[0]!) && proofActive(t.body);
+      });
+      if (preservation.length !== 1) continue;
+      const ids=[record.row,record.decision,task.id,error.row,error.decision,oracle.row,oracle.decision,preservation[0]!.id].join('|');
+      const owner=`(?:${ids})(?: (?:verification|assertions|baseline))?|(?:this|the) legacy (?:parity|regression) (?:suite|contract|oracle)`;
+      const status='(?:withdrawn|rejected|superseded|cancelled|canceled|optional|not current|no longer required)';
+      const revoked=current.some(s=>unquoted(s.body.join('\n').split(/^History:/m)[0]!.replace(new RegExp(`(\\b(?:${owner}) (?:is|was|has been) )["“'‘](${status})["”'’]`,'gi'),'$1$2')).split(/\n|[.!?;]\s+/).some(line=>!sourceFrame(line) &&
+        (new RegExp(`\\b(?:${owner}) (?:is|was|has been) ${status}\\b`,'i').test(line) ||
+         new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|will be) (?:changed|rewritten|removed|deleted) before ${task.id}\\b`,'i').test(line))));
+      if (!revoked) return true;
+    }
+  }
   return hasRetainedLegacyCorpus(current, snapshotSource)
     || !suiteWithdrawn && hasScheduledLegacyRegression(current, snapshotSource);
 }
@@ -2409,8 +2588,8 @@ function hasScheduledLegacyRegression(current: ReadonlyArray<{ title: string; bo
   return false;
 }
 
-function regressionEvidence(text: string): boolean {
-  if (declaredLegacyCharacterization(text)) return true;
+function regressionEvidence(text: string, nativeCalls: readonly NativePlanQuestionCall[] = [], startedAt = 0, finishedAt = 0): boolean {
+  if (declaredLegacyCharacterization(text, nativeCalls, startedAt, finishedAt)) return true;
   return prose(text).split(/\n\s*\n|\n(?=\s*[-#])/).some(block => {
     let task = block.trim().replace(/^[-+]\s+(?:\[[ xX]\]\s*)?/, '');
     const numbered = /^T\d+(?:\s*\([^\n)]*\))?\s*[—–:-]\s*/.exec(task);
@@ -2458,7 +2637,7 @@ export function evaluateEngSeedCoverage(transcript: PlanCountTranscript, plan: s
     if (seeds.length === 1) decisions[seeds[0]!] ??= `${call.sessionId}:${call.toolUseId}`;
   }
   const missing = ENG_DECISION_SEEDS.filter(seed => !decisions[seed]);
-  const regression = regressionEvidence(plan) ? 'plan' : bound && transcript.assistantMessages.some(m =>
+  const regression = regressionEvidence(plan, bound ? transcript.calls : [], startedAt, finishedAt) ? 'plan' : bound && transcript.assistantMessages.some(m =>
     sessions.has(m.sessionId) && Date.parse(m.timestamp) >= startedAt && Date.parse(m.timestamp) <= finishedAt &&
     regressionEvidence(m.text)) ? 'public-narration' : undefined;
   if (!regression) problems.push('mandatory legacy regression coverage absent');

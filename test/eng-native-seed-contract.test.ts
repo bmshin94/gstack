@@ -294,6 +294,7 @@ test('guard replay extracts the actual seeded callback and reaches unchanged fin
   expect(source).toContain('reviewCountCeiling: Infinity');
   expect(source).toContain('timeoutMs: 1_500_000');
   expect(source).toContain('approveEngTestPlanEdits: true');
+  expect(source).toContain('preconfiguredReviewActor: true');
   expect(source).toContain('isCompletionHandoffAUQ:');
 });
 test('native guard rejects incomplete, unowned, duplicate and foreign calls',()=>{

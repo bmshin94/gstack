@@ -4799,6 +4799,8 @@ export async function runPlanSkillCounting(opts: {
   expectedPlanPath?: string;
   /** Additional versioned files available in the isolated fixture before the skill starts. */
   fixtureFiles?: Record<string, string>;
+  /** Fixture actor already declined routing setup and cross-project learnings. */
+  preconfiguredReviewActor?: boolean;
   /** Hard cap on review-phase count; helper returns when reached. Should be
    *  set ABOVE the test's assertion ceiling so the test sees the cap as a
    *  failure rather than a silent stop. */
@@ -4852,7 +4854,8 @@ export async function runPlanSkillCounting(opts: {
     return !clipped && remainingWork() > 0;
   }
 
-  const fixture = createPlanCountFixture(opts.followUpPrompt, { nativeReviewOnly: true, files: opts.fixtureFiles });
+  const fixture = createPlanCountFixture(opts.followUpPrompt, { nativeReviewOnly: true,
+    files: opts.fixtureFiles, preconfiguredReviewActor: opts.preconfiguredReviewActor });
   const pickerContext = Object.freeze({cwd: fixture.cwd, deadlineAt: startedAt + timeoutMs - cleanupReserveMs});
   const permissionPaths = [
     ...(opts.expectedPlanPath ? [opts.expectedPlanPath, path.join(fixture.cwd, 'PLAN.md')] : []),

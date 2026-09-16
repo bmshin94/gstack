@@ -174,6 +174,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.reviewCountCeiling).toBe(8);
     expect(opts.isLastStep0AUQ).toBe(boundary);
     expect(opts.timeoutMs).toBe(1_500_000);
+    expect(opts.preconfiguredReviewActor).toBe(true);
     expect(opts.env).toEqual({ QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' });
     const directory = fs.readdirSync(${JSON.stringify(temp)}).find(name => name.startsWith('gstack-e2e-plan-ceo-split-overflow-'));
     expect(directory).toBeDefined();

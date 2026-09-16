@@ -5,13 +5,15 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
     ['test/ceo-current-decision-record.test.ts', ['plan-ceo-finding-count']],
-    ['test/fixtures/auto-decide-mode-selector-749df.json', ['auto-decide-preserved']],
     ['test/fixtures/ceo-current-decision-cdd-public.json', ['plan-ceo-finding-count']],
     ['test/fixtures/eng-count-c6fc-public.json', ['plan-eng-finding-count']],
     ['test/fixtures/eng-cdd-regression-task.json', ['plan-eng-finding-count']],
     ['test/eng-resolution-block-position.test.ts', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/eng-initial-selector-043a.test.ts', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/eng-initial-selector-043a.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
+    ['test/fixtures/eng-neutral-seed-749df.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
+    ['test/fixtures/eng-paired-suite-749df.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
+    ['test/fixtures/auto-decide-mode-selector-749df.json', ['auto-decide-preserved']],
     ['test/eng-count-owned-outcomes.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-count-owned-outcomes-f359.json', ['plan-eng-finding-count']],
     ['test/fixtures/eng-batching-prefixed-ledger-f359.json', ['plan-eng-multi-finding-batching']],

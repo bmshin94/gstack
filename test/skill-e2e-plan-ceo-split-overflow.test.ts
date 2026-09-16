@@ -73,6 +73,8 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
           followUpPrompt,
           isLastStep0AUQ: ceoStep0Boundary,
           reviewCountCeiling: N + 3, // hard cap above floor + tolerance
+          // The actor is configured for review; setup preferences are not scope choices.
+          preconfiguredReviewActor: true,
           timeoutMs: 1_500_000, // 25 min
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });

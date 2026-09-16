@@ -1,5 +1,7 @@
 import cddRegression from './fixtures/eng-cdd-regression-task.json';
 import ledgerSeedFixture from './fixtures/eng-current-ledger-seeds.json';
+import neutralSeedFixture from './fixtures/eng-neutral-seed-749df.json';
+import pairedSuiteFixture from './fixtures/eng-paired-suite-749df.json';
 import { describe, expect, test } from 'bun:test';
 import captured from './fixtures/eng-count-ad-v2.json';
 import af from './fixtures/eng-first-category-af.json';
@@ -20,6 +22,312 @@ function question(call: NativePlanQuestionCall, text: string) {
   const answer = call.answers![call.questions[0]!.question]!;
   call.questions[0]!.question = text; call.answers = { [text]: answer };
 }
+
+describe('neutral native questions own their cited defect and one complete policy option', () => {
+  const retained = neutralSeedFixture.calls as NativePlanQuestionCall[];
+  const seeds = ['shared-cache', 'swallowed-errors'] as const;
+  const identity = (c: NativePlanQuestionCall) => `${c.sessionId}:${c.toolUseId}`;
+  const check = (c: NativePlanQuestionCall) => evaluateEngSeedCoverage(
+    { status: 'ready', calls: [c], assistantMessages: [] }, '',
+    Date.parse(neutralSeedFixture.windowStart), Date.parse(neutralSeedFixture.windowEnd));
+  const editText = (c: NativePlanQuestionCall, edit: (s: string) => string) => question(c, edit(c.questions[0]!.question));
+  const editOption = (c: NativePlanQuestionCall, edit: (o: NativePlanQuestionCall['questions'][number]['options'][number]) => void) => {
+    const q = c.questions[0]!, previous = structuredClone(q.options[0]!);
+    edit(q.options[0]!);
+    // A mutated fixture remains a complete native payload: update the in-question
+    // display and the exact offered answer, without changing the source fixture.
+    editText(c, text => text.replace(previous.label, q.options[0]!.label)
+      .replace(previous.description!.replaceAll('\n', '\n  '), q.options[0]!.description!.replaceAll('\n', '\n  ')));
+    c.answers = { [q.question]: q.options[0]!.label };
+  };
+
+  test('exact D7 and D8 establish separate seed decisions without injection or function-shape decisions', () => {
+    retained.forEach((c, i) => {
+      expect(check(c).decisions).toEqual({ [seeds[i]!]: identity(c) });
+      expect(check(c).ok).toBe(false);
+      expect(check(c).regression).toBeUndefined();
+      expect(isEngSeedDecisionAUQ(nativePlanCallFingerprint(c, 1, false), [],
+        Date.parse(neutralSeedFixture.windowStart), Date.parse(neutralSeedFixture.windowEnd))).toBe(true);
+    });
+    const result = evaluateEngSeedCoverage({ status: 'ready', calls: structuredClone(retained), assistantMessages: [] }, '',
+      Date.parse(neutralSeedFixture.windowStart), Date.parse(neutralSeedFixture.windowEnd));
+    expect(Object.keys(result.decisions)).toEqual([...seeds]);
+    expect(new Set(Object.values(result.decisions)).size).toBe(2);
+    expect(result.missing).toEqual(['complexity', 'sequential-idp']);
+    expect(result.ok).toBe(false);
+    expect(neutralSeedFixture.originalOutcome).toBe('timeout');
+  });
+
+  test('the relation survives neutral titles, formatting, sentence order and any offered answer', () => {
+    const titles = [
+      ['Which cache adapter write policy should we choose?', 'How should the cache adapter accept writes?'],
+      ['How should validateAndDispatch() respond to failure?', 'Which error policy should validateAndDispatch() use?'],
+    ];
+    retained.forEach((original, i) => {
+      for (const title of titles[i]!) for (const option of original.questions[0]!.options) {
+        const c = structuredClone(original);
+        editText(c, text => text.replace(/^D\d+ — [^\n]+/, 'D42 — '+title)
+          .replace('Project/branch/task:', '**Project/branch/task:**').replace('ELI10:', '**ELI10:**')
+          .replaceAll('PLAN.md', '`PLAN.md`').replaceAll('validateAndDispatch()', '`validateAndDispatch()`'));
+        c.answers = { [c.questions[0]!.question]: option.label };
+        expect(check(c).decisions[seeds[i]!], title).toBe(identity(c));
+      }
+      const reordered = structuredClone(original);
+      editText(reordered, text => text.replace(/^ELI10: .+$/m, i === 0
+        ? 'ELI10: Adapter mutations remain not serialized (PLAN.md:19). Both services mutate the shared adapter (PLAN.md:29).'
+        : 'ELI10: Every block discards its error (PLAN.md:32-33). The function has 3 nested catch blocks.'));
+      expect(check(reordered).decisions[seeds[i]!]).toBe(identity(reordered));
+    });
+  });
+
+  test('current cited ownership cannot come from a foreign source, quotation or inactive explanation', () => {
+    const transforms = [
+      (s: string) => s.replaceAll('PLAN.md', 'OTHER.md'),
+      (s: string) => s.replaceAll('PLAN.md', 'archive/PLAN.md'),
+      (s: string) => s.replace(/(ELI10: .+)$/m, '$1 Other evidence is in OTHER.md:19.'),
+      (s: string) => s.replace(/^ELI10: .+\n/m, ''),
+      (s: string) => s.replace(/^ELI10: (.+)$/m, 'ELI10: "$1"'),
+      (s: string) => s.replace(/^ELI10: (.+)$/m, 'ELI10: `$1`'),
+      (s: string) => s.replace(/^ELI10: /m, '> ELI10: '),
+      (s: string) => s.replace(/^ELI10: /m, 'ELI10: Historical example: '),
+      (s: string) => s.replace(/^ELI10: /m, 'ELI10: If approved, '),
+      (s: string) => s.replace(/^ELI10: (.+)$/m, (_line, body) => 'ELI10: '+body.replace(/PLAN\.md:\d+(?:-\d+)?/g, 'the plan')),
+      (s: string) => s+'\nThis finding is withdrawn.',
+      (s: string) => s+'\nThis decision is "not current".',
+      (s: string) => s+'\nThis remedy applies only if approved.',
+      (s: string) => s.replace(/^D\d+ — [^\n]+/, 'D42 — Which report format should we use?'),
+    ];
+    retained.forEach((original, i) => transforms.forEach((edit, index) => {
+      const c = structuredClone(original); editText(c, edit);
+      expect(check(c).missing, `${seeds[i]} ownership control ${index}`).toContain(seeds[i]!);
+    }));
+  });
+
+  test('each current defect must remain factual and unresolved', () => {
+    const changes = [
+      ['Two services both write', 'Two services never write'],
+      ['writes are not serialized', 'writes are serialized'],
+      ['the same cache', 'another cache'],
+    ];
+    for (const [from, to] of changes) {
+      const c = structuredClone(retained[0]!); editText(c, s => s.replace(from!, to!));
+      expect(check(c).missing, `${from} → ${to}`).toContain('shared-cache');
+    }
+    for (const [i, correction] of [[0, 'The writes are now serialized.'], [1, 'validateAndDispatch() now rethrows every error.']] as const) {
+      const c = structuredClone(retained[i]!); editText(c, s => s+'\nCorrection: '+correction);
+      expect(check(c).missing).toContain(seeds[i]!);
+      const quoted = structuredClone(retained[i]!); editText(quoted, s => s+'\nPrior wording: "'+correction+'"');
+      expect(check(quoted).decisions[seeds[i]!]).toBe(identity(quoted));
+    }
+    for (const [from, to] of [['three nested try/catch blocks', 'one catch block'], ['each one catches an error and moves on', 'each one catches and rethrows an error'], ['each one catches an error and moves on', 'each one never swallows an error']]) {
+      const c = structuredClone(retained[1]!); editText(c, s => s.replace(from!, to!));
+      expect(check(c).missing, `${from} → ${to}`).toContain('swallowed-errors');
+    }
+  });
+
+  test('one active offered option must own the entire remedy, including authoritative contradictions', () => {
+    const edits = [
+      (o: { label: string; description?: string }) => { o.label = 'Unrelated choice'; },
+      (o: { label: string; description?: string }) => { o.description = '✅ One benefit\n❌ One cost'; },
+      (o: { label: string; description?: string }) => { o.description += '\nThis option is withdrawn.'; },
+      (o: { label: string; description?: string }) => { o.description += '\nThis option proceeds only if approved.'; },
+      (o: { label: string; description?: string }) => { o.description = 'Historical example: '+o.description; },
+      (o: { label: string; description?: string }) => { o.description = '"'+o.description+'"'; },
+    ];
+    retained.forEach((original, i) => edits.forEach((edit, index) => {
+      const c = structuredClone(original); editOption(c, edit);
+      expect(check(c).missing, `${seeds[i]} remedy control ${index}`).toContain(seeds[i]!);
+    }));
+    const contradictions = [
+      ['SessionMint still writes to the cache.', 'Both services still write directly.', 'Do not use a single writer.', 'The remedy belongs to another cache.'],
+      ['Dispatch errors remain swallowed.', 'Do not log denials.', 'Only some errors are surfaced.', 'This remedy is not fail-closed.', 'The remedy belongs to another function.'],
+    ];
+    retained.forEach((original, i) => contradictions[i]!.forEach(correction => {
+      const c = structuredClone(original); editOption(c, o => { o.description += '\nCorrection: '+correction; });
+      expect(check(c).missing, correction).toContain(seeds[i]!);
+      const quoted = structuredClone(original); editOption(quoted, o => { o.description += '\n❌ If '+correction[0]!.toLowerCase()+correction.slice(1)+' this contract has not been implemented.'; });
+      expect(check(quoted).decisions[seeds[i]!], 'conditional risk: '+correction).toBe(identity(quoted));
+    }));
+    for (const [index, text] of [[0, 'SessionMint becomes side-effect free and trivially testable'], [1, 'Every denial is logged with tenant and request id, so a 3am incident has a trail']] as const) {
+      const c = structuredClone(retained[index]!);
+      editOption(c, o => { o.description = o.description!.replace(text, 'There is a local benefit'); });
+      c.questions[0]!.options[1]!.description += '\n✅ '+text;
+      expect(check(c).missing, 'cross-option borrowing').toContain(seeds[index]!);
+    }
+  });
+
+  test('seed recognition still requires a single completed native answer with identity and timing', () => {
+    const edits = [
+      (c: NativePlanQuestionCall) => { c.answered = false; },
+      (c: NativePlanQuestionCall) => { c.failed = true; },
+      (c: NativePlanQuestionCall) => { c.answers = { [c.questions[0]!.question]: 'Not offered' }; },
+      (c: NativePlanQuestionCall) => { c.answers!.foreign = 'Yes'; },
+      (c: NativePlanQuestionCall) => { c.answeredAt = neutralSeedFixture.windowStart.replace('12:11', '12:10'); },
+      (c: NativePlanQuestionCall) => { c.sessionId = ''; },
+      (c: NativePlanQuestionCall) => { c.toolUseId = ''; },
+      (c: NativePlanQuestionCall) => { c.unansweredQuestionIndices = [0]; },
+      (c: NativePlanQuestionCall) => { c.questions[0]!.multiSelect = true; },
+      (c: NativePlanQuestionCall) => { c.questions.push(structuredClone(retained[1]!.questions[0]!)); },
+    ];
+    retained.forEach((original, i) => edits.forEach((edit, index) => {
+      const c = structuredClone(original); edit(c); expect(check(c).missing, `completion control ${index}`).toContain(seeds[i]!);
+    }));
+    const foreign = structuredClone(retained); foreign[1]!.sessionId = 'foreign';
+    const duplicate = [...structuredClone(retained), structuredClone(retained[0]!)];
+    for (const calls of [foreign, duplicate]) {
+      const result = evaluateEngSeedCoverage({ status: 'ready', calls, assistantMessages: [] }, '',
+        Date.parse(neutralSeedFixture.windowStart), Date.parse(neutralSeedFixture.windowEnd));
+      expect(result.decisions).toEqual({});
+    }
+  });
+});
+
+describe('approved paired legacy suite from the complete 749df public capture', () => {
+  const retained=[...pairedSuiteFixture.calls, neutralSeedFixture.calls.find(c=>c.questions[0]!.question.startsWith('D8 '))!] as NativePlanQuestionCall[];
+  const check=(parts=pairedSuiteFixture.parts, calls=structuredClone(retained)) => evaluateEngSeedCoverage(
+    {status:'ready',calls,assistantMessages:[]},parts.join('\n\n'),Date.parse(pairedSuiteFixture.windowStart),Date.parse(pairedSuiteFixture.windowEnd));
+  const mutate=(index:number, edit:(s:string)=>string) => { const parts=[...pairedSuiteFixture.parts]; parts[index]=edit(parts[index]!); expect(parts[index]).not.toBe(pairedSuiteFixture.parts[index]); return parts; };
+  test('exact relevant native records and linked tasks establish the regression requirement only',()=>{
+    expect(check().regression).toBe('plan');
+    expect(check().ok).toBe(false);
+    expect(pairedSuiteFixture.originalOutcome).toBe('timeout');
+    expect(check(pairedSuiteFixture.parts,[]).regression).toBeUndefined();
+  });
+  test('record captions, task verbs, filenames and native option order are presentation',()=>{
+    expect(check(mutate(4,s=>s.replace('R9: Regression contract for legacyAuthFlow() (IRON RULE)','R9: Approved regression contract — legacyAuthFlow()'))).regression).toBe('plan');
+    expect(check(mutate(6,s=>s.replace('Build the parity suite:', 'Write the parity suite:'))).regression).toBe('plan');
+    const parts=pairedSuiteFixture.parts.map(s=>s.replaceAll('parity.legacy-vs-broker.test.ts','auth-regression.test.ts'));
+    expect(check(parts).regression).toBe('plan');
+    const calls=structuredClone(retained); calls.forEach(c=>c.questions[0]!.options.reverse());
+    expect(check(pairedSuiteFixture.parts,calls).regression).toBe('plan');
+  });
+  test('equivalent matrix separators and affirmative inventory order preserve meaning',()=>{
+    for(const separator of ['×','x','X','times']) {
+      expect(check(mutate(6,s=>s.replaceAll(' × ', ' '+separator+' ').replace('Build the parity suite:', 'Add the parity suite:'))).regression).toBe('plan');
+    }
+    expect(check(mutate(6,s=>s.replace('decision, error class, cache write y/n, dispatch y/n, IDP call count + order',
+      'IDP call count and order, error class is asserted, decision, dispatch invoked yes/no, cache write yes/no'))).regression).toBe('plan');
+  });
+  test('active and passive native promises own the same fixtures, targets and equal assertions',()=>{
+    const original='Every token state, cache state and IDP failure position is asserted identically on legacy and broker from shared fixtures';
+    const active='Shared fixtures assert identical results on both legacy and broker for every token state, cache state and IDP failure position';
+    const changed=(promise:string)=>{
+      const calls=structuredClone(retained),q=calls[1]!.questions[0]!,answer=calls[1]!.answers![q.question]!;
+      q.question=q.question.replace(original,promise);q.options[0]!.description=q.options[0]!.description!.replace(original,promise);
+      calls[1]!.answers={[q.question]:answer};
+      return check(mutate(4,s=>s.replaceAll(original,promise)),calls);
+    };
+    for(const promise of [active,active+' On denial, dispatch is not invoked.',active.replace('Shared fixtures','Same fixtures').replace('identical results','equal outcomes'),
+      active.replace('legacy and broker','AuthBroker and legacyAuthFlow()'),
+      'Every token state, cache state and IDP failure position is asserted identically from the same fixtures on broker and legacy']) {
+      expect(changed(promise).regression,promise).toBe('plan');
+    }
+    for(const promise of [active.replace('Shared fixtures','Separate fixtures'),active.replace('assert identical results','collect results'),
+      active.replace('both legacy and broker','the broker'),active.replace('assert identical','do not assert identical'),
+      active.replace('identical results','nonidentical results'),active.replace('IDP failure position','IDP success position'),
+      active.replace('every token state','some token states'),active+' except IDP error outcomes',
+      active.replace('Shared fixtures assert','Shared fixtures run the tests.\n✅ A different suite asserts'),
+      active.replace('Shared fixtures assert','Shared fixtures run the tests. A different suite asserts'),
+      active.replace('Shared fixtures assert','Shared fixtures run the tests; a different suite asserts'),
+      active.replace('Shared fixtures assert','Shared fixtures run the tests, while a different suite asserts'),
+      active.replace('Shared fixtures','No shared fixtures'),active.replace('Shared fixtures','Without shared fixtures'),
+      active.replace('every token state','not every token state'),active.replace('every token state','not all token states'),
+      active.replace('every token state','only some token states'),active.replace('cache state','not every cache state'),
+      active.replace('IDP failure position','not every IDP failure position')]) {
+      expect(changed(promise).regression,promise).toBeUndefined();
+    }
+  });
+  test('prior selected answers own the intended difference and untouched oracle',()=>{
+    expect(check(pairedSuiteFixture.parts,structuredClone(retained.slice(0,2))).regression).toBeUndefined();
+    expect(check(mutate(2,_s=>'')).regression).toBeUndefined();
+    for(const [callIndex,partIndex] of [[2,2],[0,3]] as const) for(const selectedIndex of [1,2]) {
+      const calls=structuredClone(retained),call=calls[callIndex]!,q=call.questions[0]!,selected=q.options[selectedIndex]!.label;
+      call.answers={[q.question]:selected};
+      expect(check(pairedSuiteFixture.parts,calls).regression).toBeUndefined();
+      const decision=callIndex===2?'D8':'D9';
+      const parts=mutate(partIndex,s=>s.replace(/^Actual answer: .+$/m,
+        'Actual answer: '+String.fromCharCode(65+selectedIndex)+') '+selected+' — '+decision+' answer "'+selected+'"'));
+      expect(check(parts,calls).regression).toBeUndefined();
+    }
+    const late=structuredClone(retained);late[2]!.answeredAt='2026-09-16T12:15:50.000Z';
+    expect(check(pairedSuiteFixture.parts,late).regression).toBeUndefined();
+    for(const status of ['D8 is withdrawn.','R6 is superseded.']) expect(check(mutate(7,s=>s+'\nCorrection: '+status)).regression).toBeUndefined();
+  });
+  test('current omission and suppression cannot retain affirmative coverage credit',()=>{
+    for(const outcome of ['On denial, dispatch is not invoked.','On denial, no dispatch is expected.'])
+      expect(check(mutate(6,s=>s+'\n'+outcome)).regression).toBe('plan');
+    for(const fact of ['decision','error class','cache write','dispatch','IDP call count','order']) {
+      for(const assessment of ['is never asserted','is not verified','is optional','may be omitted']) {
+        expect(check(mutate(6,s=>s+'\nCorrection: '+fact+' '+assessment+'.')).regression).toBeUndefined();
+      }
+    }
+    expect(check(mutate(6,s=>s.replace('asserts decision, error class,','asserts decision, error class is never asserted,'))).regression).toBeUndefined();
+    expect(check(mutate(6,s=>s+'\nCorrection: omit error class assertions.')).regression).toBeUndefined();
+    const changed=[...pairedSuiteFixture.parts];
+    changed[4]=changed[4]!.replace('only D8 fail-closed outcomes on error paths','only D8 suppression of all error outcomes');
+    changed[6]=changed[6]!.replace('limited to D8 fail-closed cases','limited to D8 suppression of all error outcomes');
+    expect(changed[4]).not.toBe(pairedSuiteFixture.parts[4]);expect(changed[6]).not.toBe(pairedSuiteFixture.parts[6]);
+    expect(check(changed).regression).toBeUndefined();
+    for(const index of [4,6]) expect(check(mutate(index,s=>s.replace('D8 fail-closed','D8 fail-open'))).regression).toBeUndefined();
+  });
+  const controls:[string,number,(s:string)=>string][]=[
+    ['foreign finding',4,s=>s.replaceAll('PLAN.md:', 'OTHER.md:')],
+    ['quoted record',4,s=>s.split('\n').map(line=>'> '+line).join('\n')],
+    ['historical record',4,s=>'## History\n'+s],
+    ['unapproved record',4,s=>s.replace('State: approved','State: pending')],
+    ['missing actual answer',4,s=>s.replace(/^Actual answer: .+\n/m,'')],
+    ['duplicate record',4,s=>s+'\n\n'+s],
+    ['wrong native question',4,s=>s.replace('D11 — How do we prove','D11 — How might we prove')],
+    ['scope has only new execution',4,s=>s.replace('shared fixtures drive both `legacyAuthFlow()` and `AuthBroker`','shared fixtures drive only `AuthBroker`')],
+    ['scope omits IDP order',4,s=>s.replace('IDP call count and order; shared fixtures','IDP call count; shared fixtures')],
+    ['scope omits error assertions',4,s=>s.replace('Acceptance assertions per case: decision, error class,','Acceptance assertions per case: decision,')],
+    ['scope omits per-case obligation',4,s=>s.replace('Acceptance assertions per case:', 'Acceptance assertions:')],
+    ['scope omits intentional differences',4,s=>s.replace('Intended differences: only D8','Possible differences: D8')],
+    ['task loses source decision',6,s=>s.replace('→ D11','→ D19')],
+    ['task borrows multiple decisions',6,s=>s.replace('→ D11','→ D11 and D19')],
+    ['task has foreign source',6,s=>s.replace('PLAN.md:', 'other/PLAN.md:')],
+    ['task file differs',6,s=>s.replace('parity.legacy-vs-broker.test.ts','new-only.test.ts')],
+    ['task omitted',6,_s=>''],
+    ['task duplicated',6,s=>s+'\n'+s],
+    ['task only runs new path',6,s=>s.replace('shared fixtures drive `legacyAuthFlow()` and `AuthBroker`','shared fixtures drive `AuthBroker`')],
+    ['task lacks IDP dimension',6,s=>s.replace('token × cache × IDP matrix','token × cache matrix')],
+    ['task omits per-cell verification',6,s=>s.replace('every matrix cell asserts','some matrix cells assert')],
+    ['task omits error class verification',6,s=>s.replace('asserts decision, error class,','asserts decision,')],
+    ['task negates error assertions',6,s=>s.replace('asserts decision, error class,','asserts decision, no error class,')],
+    ['task omits IDP count',6,s=>s.replace('IDP call count + order','IDP order')],
+    ['task omits IDP order',6,s=>s.replace('IDP call count + order','IDP call count')],
+    ['task negates IDP order',6,s=>s.replace('IDP call count + order','IDP call count but no order')],
+    ['legacy execution later refused',6,s=>s+'\nCorrection: legacyAuthFlow() is never executed.'],
+    ['task changes accepted differences',6,s=>s.replace('limited to D8','limited to D19')],
+    ['oracle loses approval',3,s=>s.replace('State: approved','State: pending')],
+    ['oracle loses untouched contract',3,s=>s.replace('legacyAuthFlow()` stays untouched','legacyAuthFlow()` gets rewritten')],
+    ['oracle native choice differs',3,s=>s.replace('D9 answer "Flag-routed strangler:', 'D9 answer "Different choice:')],
+    ['preservation task omitted',7,_s=>''],
+    ['preservation files omitted',7,s=>s.replace(/^  - Files: .+\n/m,'')],
+    ['preservation has foreign source',7,s=>s.replace('PLAN.md:', 'other/PLAN.md:')],
+    ['preservation verification omitted',7,s=>s.replace('`git diff` shows no change to `legacyAuthFlow()`','broker tests pass')],
+    ['preservation bound to another choice',7,s=>s.replace('→ D9','→ D19')],
+  ];
+  for(const [name,index,edit] of controls) test('rejects '+name,()=>expect(check(mutate(index,edit)).regression).toBeUndefined());
+  test('current withdrawal or changed legacy cannot hide behind the earlier contract',()=>{
+    for(const correction of ['R9 is superseded.','R9 is "superseded".','D11 is withdrawn.','T5 is optional.','T5 verification is optional.','R7 is rejected.','T6 is not current.','legacyAuthFlow() is changed before T5.']) {
+      expect(check(mutate(7,s=>s+'\n\nCorrection: '+correction)).regression,correction).toBeUndefined();
+      expect(check(mutate(7,s=>s+'\n\nPrior wording: "'+correction+'"')).regression,correction).toBe('plan');
+    }
+  });
+  test('native approval is required and selecting a weaker option cannot borrow the full matrix',()=>{
+    for(const index of [0,1,2]) for(const mutate of [
+      (c:NativePlanQuestionCall)=>{c.answered=false;},
+      (c:NativePlanQuestionCall)=>{c.failed=true;},
+      (c:NativePlanQuestionCall)=>{c.answeredAt='invalid';},
+      (c:NativePlanQuestionCall)=>{c.answers={[c.questions[0]!.question]:'not offered'};},
+    ]) { const calls=structuredClone(retained);mutate(calls[index]!);expect(check(pairedSuiteFixture.parts,calls).regression).toBeUndefined(); }
+    const calls=structuredClone(retained), c=calls[1]!, q=c.questions[0]!, selected=q.options[1]!.label;
+    c.answers={[q.question]:selected};
+    const parts=mutate(4,s=>s.replace(/^Actual answer: .+$/m,'Actual answer: B) '+selected+' — D11 answer "'+selected+'"'));
+    expect(check(parts,calls).regression).toBeUndefined();
+  });
+});
 
 describe('Eng seeded coverage from completed native decisions', () => {
   test('four separate decisions plus the auto-added regression cover all five seeds regardless of total count', () => {
