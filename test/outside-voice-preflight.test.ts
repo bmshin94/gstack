@@ -28,7 +28,13 @@ test('CEO and Eng describe the actual disabled route and completion validator', 
       expect(invocation).toContain('missing Recommendation: <action> because <reason> markers');
       expect(invocation).not.toContain('score/severity/completion');
       if (skillName === 'plan-eng-review') {
-        expect(output).toContain('a failed preflight (including harness mismatch), or a failed outside invocation');
+        const routing = output.slice(output.indexOf('**Outcome routing:**'), output.indexOf('**Disabled is a terminal branch'));
+        expect(routing).toMatch(/\| Disabled \|[^\n]*No prompt, outside process or native replacement\./);
+        expect(routing).toMatch(/\| Other preflight mode, including harness mismatch \|[^\n]*Native fallback\./);
+        expect(routing).toMatch(/\| Outside execution or output validation fails \|[^\n]*finish termination, then use Native fallback\./);
+        expect(routing).toMatch(/\| Native fallback unavailable or fails \|[^\n]*No clean-review credit\./);
+        const fallback = output.slice(output.indexOf('**Native fallback'), output.indexOf('Dispatch via the Agent tool'));
+        expect(fallback.replace(/\s+/g, ' ')).toContain('Immediately before dispatch, check the preflight result again: disabled means no replacement');
         const bounded = output.slice(output.indexOf('**Bounded outside-voice wait'), output.indexOf('**Cross-model tension:**'));
         expect(bounded).toContain('A native result never supplies outside coverage.');
         expect(output).toContain('A completed native fallback uses SOURCE=in-host, OUTSIDE_STATUS=unavailable, and STATUS=clean or issues_found from its findings');

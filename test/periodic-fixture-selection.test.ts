@@ -53,6 +53,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/design-count-current-pass.json', ['plan-design-finding-count']],
     ['test/eng-test-plan-edit-approval.test.ts', ['autoplan-chain-pty', 'plan-eng-finding-count']],
     ['test/fixtures/eng-test-plan-edit-dacc.json', ['autoplan-chain-pty', 'plan-eng-finding-count']],
+    ['test/fixtures/eng-test-plan-edit-cli.js', ['autoplan-chain-pty', 'plan-eng-finding-count']],
     ['test/autoplan-owned-state.test.ts', ['autoplan-chain-pty']],
     ['test/fixtures/eng-current-choice-cab3.json', ['plan-eng-finding-count']],
     ['test/fixtures/eng-completed-navigation-cab3.json', ['plan-eng-finding-count']],
@@ -408,4 +409,16 @@ test('explanatory native mode evidence selects all observers with their existing
   expect(expected.map(id => E2E_TIERS[id])).toEqual([
     'periodic', 'periodic', 'gate', 'gate', 'periodic', 'gate', 'periodic', 'gate',
   ]);
+});
+
+// The workflow judge includes all carved sections, including those outside the
+// entrypoint marker window (readWorkflowJudgeInput).
+test('CEO carved sections select the judge that consumes their complete content', () => {
+  for (const file of [
+    'plan-ceo-review/sections/review-sections.md.tmpl',
+    'plan-ceo-review/sections/review-sections.md',
+  ]) {
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected)
+      .toEqual(['plan-ceo-review/SKILL.md modes']);
+  }
 });
