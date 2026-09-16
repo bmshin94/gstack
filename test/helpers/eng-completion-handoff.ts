@@ -10,7 +10,7 @@ export function isEngCompletionHandoff(fp: AskUserQuestionFingerprint, reviewedP
       !Array.isArray(call.unansweredQuestionIndices) || call.unansweredQuestionIndices.length ||
       (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0) ||
       Object.keys(call.answers ?? {}).length !== 1 || !Number.isFinite(Date.parse(call.answeredAt ?? ''))) return false;
-  if (isApprovedInvestigationRecap(fp, reviewedPlan, priorCalls) || isPublishedReadyNavigation(fp, reviewedPlan) || isApprovedMaintenanceRecap(fp, reviewedPlan, priorCalls) || isPublishedPrerequisiteHandoff(fp, reviewedPlan)) return true;
+  if (isCurrentLedgerNavigation(fp, reviewedPlan, priorCalls) || isApprovedInvestigationRecap(fp, reviewedPlan, priorCalls) || isPublishedReadyNavigation(fp, reviewedPlan) || isApprovedMaintenanceRecap(fp, reviewedPlan, priorCalls) || isPublishedPrerequisiteHandoff(fp, reviewedPlan)) return true;
   const q = call.questions[0]!;
   if (q.multiSelect || q.header.trim() !== 'Next steps' || q.options.length !== 2 ||
       fp.options.length !== 2 || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) ||
@@ -36,6 +36,153 @@ export function isEngCompletionHandoff(fp: AskUserQuestionFingerprint, reviewedP
   const regression = tasks.find(t => t[1] === task[3])?.[0] ?? '';
   if (!/ [—–] Record regression(?: characterization)? fixtures before\b/i.test(regression)) return false;
   return ceo.description === 'Optional scope and strategy pass before implementing. ✅ Catches product-level questions the eng review does not ask. ✅ Adds a CEO row to the dashboard. ❌ Little product surface here; likely confirms the current scope.';
+}
+
+/** A completed report can retain critical implementation gaps (ISSUES OPEN).
+ * Its current decision states, actual earlier answers and published task order
+ * must still agree. This route supplies navigation credit only. */
+function isCurrentLedgerNavigation(fp: AskUserQuestionFingerprint, plan: string,
+  prior: readonly NativePlanQuestionCall[]): boolean {
+  const call = fp.nativeCall!, q = call.questions[0]!;
+  const compact = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const label = (s: string) => compact(s.replace(/\*\*/g, '')).replace(/^(?:[1-9]\d*)?[A-Z]\s*[).:—–-]\s*/, '').replace(/\s*\((?:recommended|optional)\)$/i, '');
+  const currentText = (s: string) => s.replace(/(?:^|\n)(?:Earlier|Previous|Historical|Example|Quoted)\b[^\n]*:\s*(?:"[^"\n]*"|“[^”\n]*”)\s*$/gmi, '');
+  if (q.multiSelect || !/^Next(?: steps?)?$/i.test(q.header.trim()) || q.options.length !== 2 || fp.options.length !== 2 ||
+      !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label)) return false;
+  const ready = q.options.find(o => /^Ready to implement(?: [—–-] run \/ship when done)?$/i.test(label(o.label)));
+  const ceo = q.options.find(o => /^Run \/plan-ceo-review(?: first)?$/i.test(label(o.label)));
+  if (!ready || !ceo || call.answers?.[q.question] !== ready.label) return false;
+  const context = currentText([q.question, ...q.options.map(o => `${o.label}\n${o.description ?? ''}`)].join('\n'));
+  const positive = context.replace(/"[^"\n]*"|“[^”\n]*”|'[^'\n]*'|‘[^’\n]*’/g, '');
+  const status = context.replace(/["“”'‘’]/g, '');
+  const badStatus = /\b(?:review|decisions?(?: [A-Z][1-9]\d*)?|readiness|state|accepted scope)\s*(?:(?:is|are|remains?|has been)\s+|:\s*)?(?:now |still )?(?:incomplete|unfinished|pending|unanswered|unresolved|reopened|withdrawn|superseded|cancelled|canceled|rejected|revoked|denied|unapproved|(?:not|no longer) (?:complete|completed|done|finished|approved|answered|settled))\b|\b(?:not all|not every) decisions?\b|\b[1-9]\d* unresolved decisions?\b/i;
+  if (badStatus.test(status) || /`{3}|~{3}|(?:^|\n)\s*>/.test(context) ||
+      !/\breview (?:is |has been )?(?:complete[d]?|done|finished)\b/i.test(positive) ||
+      !/\bwhat next\b|\bnext steps?\b/i.test(positive) ||
+      !/\b(?:every decision is|all decisions are) (?:answered|settled)\b/i.test(positive) ||
+      /\breview\b[^.!?;\n]{0,60}\b(?:will|would|may|might|could|should) (?:be )?(?:complete|done|finished)\b|\breview\b[^.!?;\n]{0,60}\b(?:complete|done|finished)\b[^.!?;\n]{0,60}\b(?:if|when|once|unless|provided|assuming|after)\b|\b(?:if|when|once|unless|provided|assuming)\b[^.!?;\n]{0,60}\breview\b[^.!?;\n]{0,60}\b(?:complete|done|finished)\b/i.test(status)) return false;
+
+  // Fences, quoted lines and explicitly historical sections cannot establish a
+  // current owner. Keep the heading hierarchy so an archived parent is inert.
+  const lines: string[] = [], headings: { depth: number; inactive: boolean }[] = [];
+  let fence: string | undefined;
+  for (const line of plan.split(/\r?\n/)) {
+    const mark = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (mark) { if (!fence) fence = mark[1]; else if (mark[1]![0] === fence[0] && mark[1]!.length >= fence.length && !mark[2]!.trim()) fence = undefined; continue; }
+    if (fence || /^(?: {4}|\t| {0,3}>)/.test(line)) continue;
+    const h = /^(#{1,6}) (.+)$/.exec(line);
+    if (h) {
+      while (headings.at(-1) && headings.at(-1)!.depth >= h[1]!.length) headings.pop();
+      headings.push({ depth: h[1]!.length, inactive: /\b(?:history|historical|archived?|withdrawn|superseded|example|quoted|template)\b/i.test(h[2]!) });
+    }
+    if (!headings.some(h => h.inactive)) lines.push(line);
+  }
+  if (fence) return false;
+  const current = currentText(lines.join('\n'));
+  const section = (name: string) => {
+    const starts = lines.flatMap((line, i) => new RegExp(`^#{2,3} ${escape(name)}$`, 'i').test(line) ? [i] : []);
+    if (starts.length !== 1) return undefined;
+    const start = starts[0]!, depth = /^#+/.exec(lines[start]!)![0].length;
+    const end = lines.findIndex((line, i) => i > start && new RegExp(`^#{1,${depth}} `).test(line));
+    return lines.slice(start + 1, end < 0 ? undefined : end).join('\n');
+  };
+  const titles = [...current.matchAll(/^# (?:Plan: )?(.+?)(?: \(reviewed\))?$/gm)];
+  const targets = [...current.matchAll(/^Reviewed target: `([^`\n]+\.md)` \("([^"]+)"\)[^\n]*, branch `([^`\n]+)`[^\n]*$/gm)];
+  if (titles.length !== 1 || targets.length !== 1 ||
+      compact(titles[0]![1]!) !== compact(targets[0]![2]!.replace(/^Plan: /i, ''))) return false;
+  const source = targets[0]![1]!, branch = targets[0]![3]!;
+  const metadata = q.question.split('\n').filter(s => /^Project\/branch\/task:/.test(s));
+  if (metadata.length !== 1 || !new RegExp(`^Project/branch/task: ${escape(branch)}; /plan-eng-review of ${escape(source)} (?:finished|completed|done),`).test(metadata[0]!)) return false;
+  const ledger = section('Decision ledger'), tasks = section('Implementation Tasks'), lanes = section('Worktree parallelization strategy'), report = section('GSTACK REVIEW REPORT');
+  if (!ledger || !tasks || !lanes || !report || badStatus.test(currentText(report).replace(/["“”'‘’]/g, '')) ||
+      report.trim().split('\n').at(-1) !== 'NO UNRESOLVED DECISIONS') return false;
+  const reportRows = report.split('\n').filter(s => /^\| Eng Review \|/.test(s));
+  const verdicts = report.split('\n').filter(s => /^(?:- )?\*\*VERDICT:\*\*/.test(s));
+  const gaps = reportRows.length === 1 ? /\| (CLEAR|ISSUES OPEN) \|[^\n]*\b(\d+) critical gaps\b/.exec(reportRows[0]!) : null;
+  if (!gaps || verdicts.length !== 1 || !new RegExp(`\\bEng Review (?:is )?${gaps[1]}\\b`, 'i').test(verdicts[0]!) ||
+      !/\b0 unresolved decisions\b/.test(verdicts[0]!) || (gaps[1] === 'CLEAR') !== (+gaps[2]! === 0) ||
+      !new RegExp(`\\b${gaps[2]} critical gaps\\b`).test(metadata[0]!)) return false;
+
+  const identities = prior.map(c => `${c.sessionId}:${c.toolUseId}`);
+  if (!prior.length || new Set(identities).size !== prior.length || prior.some(c => c.sessionId !== call.sessionId ||
+      !c.toolUseId || c.toolUseId === call.toolUseId || c.answered !== true || c.failed !== false ||
+      !Number.isFinite(Date.parse(c.answeredAt ?? '')) || Date.parse(c.answeredAt!) >= Date.parse(call.answeredAt!) ||
+      !Array.isArray(c.unansweredQuestionIndices) || c.unansweredQuestionIndices.length || c.questions.length !== 1 ||
+      Object.keys(c.answers ?? {}).length !== 1 || c.questions[0]!.multiSelect ||
+      new Set(c.questions[0]!.options.map(o => o.label)).size !== c.questions[0]!.options.length ||
+      !c.questions[0]!.options.some(o => o.label === c.answers?.[c.questions[0]!.question]))) return false;
+  const approvals = prior.map(c => ({ call: c, q: c.questions[0]!, id: /^(D[1-9]\d*)\s*[—–:-]/.exec(c.questions[0]!.question)?.[1], selected: label(c.answers![c.questions[0]!.question]!) }));
+  const finalId = /^(D[1-9]\d*)\s*[—–:-]/.exec(q.question)?.[1];
+  if (!finalId || approvals.some(a => !a.id || a.id === finalId) || new Set(approvals.map(a => a.id)).size !== approvals.length) return false;
+  const rows = ledger.split(/\n(?=### )/).filter(s => /^### /.test(s.trim()));
+  const rowIds = rows.map(s => /^### ([A-Z][1-9]\d*):/.exec(s.trim())?.[1]);
+  const states = [...ledger.matchAll(/^State: (.+)$/gm)];
+  const owned = new Map<string, string>();
+  if (!rows.length || rowIds.some(id => !id) || new Set(rowIds).size !== rows.length || states.length !== rows.length || states.some(s => s[1] !== 'approved')) return false;
+  for (const row of rows) {
+    const field = (name: string) => { const matches = [...row.matchAll(new RegExp(`^${name}: (.+)$`, 'gm'))]; return matches.length === 1 ? matches[0]![1]! : undefined; };
+    const answer = field('Actual answer'), scope = field('Accepted scope');
+    const question = [...row.matchAll(/^Question (D[1-9]\d*): (.+)$/gm)];
+    if (field('State') !== 'approved' || !answer || !scope || question.length !== 1 || badStatus.test(currentText(row).replace(/["“”'‘’]/g, ''))) return false;
+    const id = question[0]![1]!, a = approvals.find(a => a.id === id);
+    if (!a || owned.has(id) || !answer.endsWith(`(${id})`) || label(answer.slice(0, -id.length - 3)) !== a.selected) return false;
+    const meta = a.q.question.split('\n').filter(s => /^Project\/branch\/task:/.test(s));
+    if (meta.length !== 1 || !new RegExp(`^Project/branch/task: ${escape(branch)}; [^;\n]*\\bon ${escape(source)}(?=[ ,;])`).test(meta[0]!) ||
+        /\b(?:compare|comparison|historical|archived?|withdrawn|superseded)\b/i.test(meta[0]!.split(`on ${source}`)[0]!) ||
+        [...meta[0]!.split(`on ${source}`)[0]!.matchAll(/[\w./-]+\.md\b/g)].some(m => m[0] !== 'TODOS.md')) return false;
+    const owner = /^### ([A-Z][1-9]\d*):/.exec(row)![1]!;
+    const changed = new RegExp(`\\b(?:${owner}|${id})\\b(?: (?:decision|scope|state|approval))?\\s*(?::|is|was|has been|remains)?\\s*(?:now |still )?(?:pending|withdrawn|superseded|reopened|cancelled|canceled|rejected|revoked|denied|unapproved|not approved|no longer approved)\\b`, 'i');
+    if (changed.test(currentText(row).replace(/["“”'‘’]/g, '')) || prior.some(c => Date.parse(c.answeredAt!) > Date.parse(a.call.answeredAt!) && changed.test(currentText(c.questions[0]!.question).replace(/["“”'‘’]/g, '')))) return false;
+    owned.set(id, row);
+  }
+  const readiness = ledger.split('\n').filter(s => /^Approval readiness:/.test(s));
+  const readyRefs = readiness.length === 1 ? [...readiness[0]!.matchAll(/\b([A-Z][1-9]\d*) \((D[1-9]\d*)\)/g)] : [];
+  if (readiness.length !== 1 || !/^Approval readiness: PASS\b/.test(readiness[0]!) ||
+      readyRefs.length !== rows.length || new Set(readyRefs.map(r => r[2])).size !== rows.length ||
+      readyRefs.some(r => !owned.get(r[2]!)?.startsWith(`### ${r[1]}:`))) return false;
+  const entries = [...tasks.matchAll(/^- \[ \] \*\*(T[1-9]\d*)\b[^\n]+/gm)];
+  const ids = entries.map(e => e[1]!);
+  if (!ids.length || new Set(ids).size !== ids.length) return false;
+  for (const ref of context.matchAll(/\bT([1-9]\d*)(?:\s*(?:[–-]|through|to)\s*T([1-9]\d*))?\b/g)) {
+    const first = +ref[1]!, last = +(ref[2] ?? ref[1])!;
+    if (last < first || last - first >= ids.length) return false;
+    for (let n = first; n <= last; n++) if (!ids.includes(`T${n}`)) return false;
+  }
+  const taskBody = (id: string) => { const e = entries.find(e => e[1] === id); return e ? tasks.slice(e.index!, entries.find(v => v.index! > e.index!)?.index ?? tasks.length) : ''; };
+  if (/\bT[1-9]\d*\b[^.!?\n]*\b(?:withdrawn|cancelled|canceled|rejected|not approved|pending approval)\b/i.test(currentText(tasks).replace(/["“”'‘’]/g, ''))) return false;
+  const count = /\bimplement (?:the )?(\d+) tasks\b/i.exec(positive);
+  if (!count || +count[1]! !== ids.length) return false;
+  const laneIds = [...lanes.matchAll(/\bLane ([A-Z]):/g)].map(m => m[1]!);
+  const execution = lanes.split('\n').filter(s => /^Execution(?: order)?:/.test(s));
+  const menuOrder = [...context.matchAll(/\blane order \(([^)]+)\)/gi)];
+  const groups = (text: string) => text.split(/,?\s*then\s+|\s*→\s*/i).map(s => s.trim().replace(/\s+parallel$|\s+sequential(?:ly)?$/i, '').split(/\s*\+\s*|\s+and\s+/).sort());
+  const publishedGroups = execution.length === 1 ? [...execution[0]!.matchAll(/\b(?:launch|then) ([A-Z](?:\s*(?:\+|and)\s*[A-Z])*)(?: in parallel(?: worktrees)?| sequentially)?(?=[.,]|$)/gi)].map(m => groups(m[1]!)[0]!) : [];
+  if (!laneIds.length || new Set(laneIds).size !== laneIds.length || !publishedGroups.length || menuOrder.length !== 1 ||
+      JSON.stringify(groups(menuOrder[0]![1]!)) !== JSON.stringify(publishedGroups) ||
+      JSON.stringify(publishedGroups.flat().sort()) !== JSON.stringify([...laneIds].sort())) return false;
+
+  // Strip only already-owned implementation/navigation recaps before applying
+  // the established action veto. Approval references are read from this packet.
+  let actions = context.replace(/\bimplement (?:the )?\d+ tasks in the lane order given\b/gi, '')
+    .replace(/\bimplement T[1-9]\d*[-–]T[1-9]\d* in lane order \([^)]+\)/gi, '');
+  const maintenance = /(?:First two edits after exit|Post-exit|After exiting): ((?:append|add) (?:gstack )?routing rules to CLAUDE\.md) \((D[1-9]\d*)\) and ((?:create|write) TODOS\.md) \((D[1-9]\d*)\)\./i.exec(actions);
+  if (maintenance) {
+    const routing = approvals.find(a => a.id === maintenance[2]), todo = approvals.find(a => a.id === maintenance[4]);
+    const sameTask = entries.some(e => { const b = taskBody(e[1]!); return /\bCLAUDE\.md\b/.test(b) && /\bTODOS\.md\b/.test(b) && [maintenance[2], maintenance[4]].every(id => new RegExp(`\\b${id}\\b`).test(b)); });
+    if (!routing || !todo || routing.q.header !== 'Routing' || !/^(?:Add|Append) (?:gstack )?routing rules(?: to CLAUDE\.md)?$/i.test(routing.selected) ||
+        !/\bCLAUDE\.md\b/.test(routing.q.question) || !/^TODO(?: [1-9]\d*)?$/.test(todo.q.header) || todo.selected !== 'Add to TODOS.md' || !owned.has(todo.id!) || !sameTask ||
+        !new RegExp(`^Project/branch/task: ${escape(branch)}(?: branch|;)`).test(routing.q.question.split('\n')[1] ?? '')) return false;
+    for (const a of [routing, todo]) {
+      const withdrawn = new RegExp(`\\b${a.id}\\b(?: (?:decision|scope|state|approval))?\\s*(?::|is|was|has been|remains)?\\s*(?:now |still )?(?:pending|withdrawn|superseded|reopened|cancelled|canceled|rejected|revoked|denied|unapproved|not approved|no longer approved)\\b`, 'i');
+      if (withdrawn.test(current.replace(/["“”'‘’]/g, '')) || prior.some(c => Date.parse(c.answeredAt!) >= Date.parse(a.call.answeredAt!) && withdrawn.test(currentText(c.questions[0]!.question).replace(/["“”'‘’]/g, '')))) return false;
+    }
+    actions = actions.replace(maintenance[0], '');
+  }
+  actions = actions.replace(/\bAdds? a scope\/strategy pass(?: and a (?:written )?([a-z]+(?: [a-z]+)+) the plan currently lacks \((T[1-9]\d*)\))?(?=[.!?]|$)/gi, (whole, noun, id) =>
+    !noun || new RegExp(`\\b${escape(noun)}\\b`, 'i').test(taskBody(id).split('\n')[0] ?? '') ? '' : whole);
+  const action = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|while|before (?:implementation|building|review))\s+)(?:please\s+)?(?:adds?|adding|append(?:s|ing)?|remov(?:e|es|ing)|delet(?:e|es|ing)|cut(?:s|ting)?|drop(?:s|ping)?|replac(?:e|es|ing)|rewrit(?:e|es|ing)|chang(?:e|es|ing)|alter(?:s|ing)?|modif(?:y|ies|ying)|enabl(?:e|es|ing)|disabl(?:e|es|ing)|implement(?:s|ing)?|install(?:s|ing)?|introduc(?:e|es|ing)|build(?:s|ing)?|writ(?:e|es|ing)|record(?:s|ing)?|captur(?:e|es|ing)|creat(?:e|es|ing)|switch(?:es|ing)?|migrat(?:e|es|ing)|externaliz(?:e|es|ing)|refactor(?:s|ing)?|expand(?:s|ing)?|reduc(?:e|es|ing)|deploy(?:s|ing)?|approv(?:e|es|ing))\b/i;
+  return !action.test(actions) && !/\brun\s+(?!\/(?:ship|plan-ceo-review)\b)|\b(?:new|additional|extra) (?:work|task|requirement|dependency|feature)\b|\b(?:must|shall|should|needs? to|required to)\s+[a-z]/i.test(actions);
 }
 
 /** A ready menu may recap one previously approved investigation. The completed

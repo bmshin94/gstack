@@ -327,3 +327,136 @@ investigationCheck('later native explicitly approves implementation for the owne
 investigationCheck('later unrelated reference to owned issue is inert',true,x=>{const c=x.priorCalls[1];question({call:c},s=>s+'\nR6 remains the previously approved investigation.');});
 investigationCheck('later historical quoted reopening is inert',true,x=>{const c=x.priorCalls[1];question({call:c},s=>s+'\nEarlier note: "R6 is reopened."');});
 investigationCheck('an unrelated previously approved task stays approved',true,x=>{x.plan=x.plan.replace('## GSTACK REVIEW REPORT','T2 implementation is approved.\n\n## GSTACK REVIEW REPORT');});
+
+
+const currentLedgerCf74 = currentMenu.currentLedgerCf74;
+const ledgerNavigationCf74 = (name: 'first' | 'retry', reconcile = false) => {
+  const x = structuredClone(currentLedgerCf74[name]);
+  const call = x.transcript.calls.at(-1)!;
+  if (reconcile) {
+    expect((x.plan.match(/^State: pending$/gm) ?? []).length).toBe(6);
+    x.plan = x.plan.replace(/^State: pending$/gm, 'State: approved');
+  }
+  return { ...x, call, priorCalls: x.transcript.calls.slice(0, -1) };
+};
+const ledgerHandoffCf74 = (x: ReturnType<typeof ledgerNavigationCf74>) =>
+  isEngCompletionHandoff(nativePlanCallFingerprint(x.call, 0, false), x.plan, x.priorCalls);
+test('cf74 current ledger preserves both actual contradictory handoffs as negatives', () => {
+  expect(ledgerHandoffCf74(ledgerNavigationCf74('first'))).toBe(false);
+  expect(ledgerHandoffCf74(ledgerNavigationCf74('retry'))).toBe(false);
+  expect(ledgerHandoffCf74(ledgerNavigationCf74('first', true))).toBe(false);
+});
+test('cf74 counterfactual reconciled current states permit reviewed issues-open navigation only', () => {
+  const x = ledgerNavigationCf74('retry', true);
+  expect(ledgerHandoffCf74(x)).toBe(true);
+  expect(x.plan).toContain('| ISSUES OPEN |');
+  expect(x.plan).toContain('NO UNRESOLVED DECISIONS');
+});
+
+function ledgerCheckCf74(name: string, expected: boolean, edit: (x: ReturnType<typeof ledgerNavigationCf74>) => void) {
+  test('cf74 current-ledger navigation ' + name, () => {
+    const x = ledgerNavigationCf74('retry', true); edit(x); expect(ledgerHandoffCf74(x)).toBe(expected);
+  });
+}
+for (const [name, edit] of Object.entries({
+  'one decision still pending': (x:any) => { x.plan=x.plan.replace('State: approved','State: pending'); },
+  'missing current State': (x:any) => { x.plan=x.plan.replace('State: approved\n',''); },
+  'missing State cannot borrow another row duplicate': (x:any) => { x.plan=x.plan.replace('State: approved\n','').replace('State: approved','State: approved\nState: approved'); },
+  'duplicate current State': (x:any) => { x.plan=x.plan.replace('State: approved','State: approved\nState: approved'); },
+  'quoted State cannot approve': (x:any) => { x.plan=x.plan.replace('State: approved','State: "approved"'); },
+  'quoted current row': (x:any) => { x.plan=x.plan.replace('### R3:', '> ### R3:'); },
+  'archived current row': (x:any) => { x.plan=x.plan.replace('### R3:', '### Archived R3:'); },
+  'withdrawn ledger owner': (x:any) => { x.plan=x.plan.replace('## Decision ledger','## Withdrawn Decision ledger'); },
+  'quoted entire ledger': (x:any) => { x.plan=x.plan.replace(/(## Decision ledger[\s\S]*?)(?=## Review output)/, (s:string)=>s.split('\n').map(l=>'> '+l).join('\n')); },
+  'missing actual answer': (x:any) => { x.plan=x.plan.replace(/^Actual answer:.*\n/m,''); },
+  'different actual answer': (x:any) => { x.plan=x.plan.replace('Actual answer: Defer TokenStore (D4)','Actual answer: Keep TokenStore (D4)'); },
+  'duplicate actual answer': (x:any) => { x.plan=x.plan.replace('Actual answer: Defer TokenStore (D4)','Actual answer: Defer TokenStore (D4)\nActual answer: Defer TokenStore (D4)'); },
+  'missing accepted scope': (x:any) => { x.plan=x.plan.replace(/^Accepted scope:.*\n/m,''); },
+  'missing approval reference': (x:any) => { x.plan=x.plan.replace('Actual answer: Defer TokenStore (D4)','Actual answer: Defer TokenStore'); },
+  'foreign approval reference': (x:any) => { x.plan=x.plan.replace('Actual answer: Defer TokenStore (D4)','Actual answer: Defer TokenStore (D44)'); },
+  'readiness missing a current record': (x:any) => { x.plan=x.plan.replace('PASS — S1 (D4), ', 'PASS — '); },
+  'readiness claims an unpublished record': (x:any) => { x.plan=x.plan.replace('PASS — S1 (D4)', 'PASS — R99 (D99), S1 (D4)'); },
+  'current scope withdrawal': (x:any) => { x.plan=x.plan.replace('### R4:', 'Correction: R3 scope is withdrawn.\n\n### R4:'); },
+  'current quoted state correction': (x:any) => { x.plan=x.plan.replace('### R4:', 'Correction: State is "pending".\n\n### R4:'); },
+  'missing prior answer': (x:any) => { x.priorCalls[3].answered=false; },
+  'failed prior answer': (x:any) => { x.priorCalls[3].failed=true; },
+  'unacknowledged prior answer': (x:any) => { delete x.priorCalls[3].answeredAt; },
+  'foreign prior session': (x:any) => { x.priorCalls[3].sessionId='foreign'; },
+  'duplicate native identity': (x:any) => { x.priorCalls.push(structuredClone(x.priorCalls[3])); },
+  'duplicate native decision ID': (x:any) => { question({call:x.priorCalls[4]},(s:string)=>s.replace(/^D5/, 'D4')); },
+  'prior answer after navigation': (x:any) => { x.priorCalls[3].answeredAt=x.call.answeredAt; },
+  'different prior selected option': (x:any) => { const c=x.priorCalls[3],q=c.questions[0];c.answers[q.question]=q.options[1].label; },
+  'prior mixed question packet': (x:any) => { const c=x.priorCalls[3];c.questions.push(structuredClone(c.questions[0])); },
+  'later native reopens owned decision': (x:any) => { question({call:x.priorCalls[12]},(s:string)=>s+'\nCorrection: R3 is reopened.'); },
+  'later native withdraws accepted scope': (x:any) => { question({call:x.priorCalls[12]},(s:string)=>s+'\nCorrection: D9 approval is revoked.'); },
+  'foreign current source': (x:any) => { question(x,(s:string)=>s.replace('of PLAN.md finished','of OTHER.md finished; compare PLAN.md')); },
+  'foreign current branch': (x:any) => { question(x,(s:string)=>s.replace('task: main;', 'task: other;')); },
+  'foreign current report title': (x:any) => { x.plan=x.plan.replace('# Plan: Multi-tenant Auth Refactor', '# Plan: Other plan'); },
+  'foreign current target': (x:any) => { x.plan=x.plan.replace('Reviewed target: `PLAN.md`', 'Reviewed target: `OTHER.md`'); },
+  'duplicate current target': (x:any) => { x.plan=x.plan.replace('Reviewed target:', 'Reviewed target: `OTHER.md` ("Other") in repo, branch `main`.\nReviewed target:'); },
+  'foreign prior target with expected comparison': (x:any) => { question({call:x.priorCalls[6]},(s:string)=>s.replace('Architecture on PLAN.md', 'Architecture on OTHER.md; compare PLAN.md')); },
+  'quoted metadata cannot own source': (x:any) => { question(x,(s:string)=>s.replace('Project/branch/task:', '> Project/branch/task:')); },
+  'missing interior task': (x:any) => { x.plan=x.plan.replace('**T3 (', '**T33 ('); },
+  'duplicate published task': (x:any) => { x.plan=x.plan.replace('**T3 (', '**T2 ('); },
+  'new task range': (x:any) => { x.call.questions[0].options[0].description=x.call.questions[0].options[0].description.replace('T1-T10','T1-T11'); },
+  'incorrect task count': (x:any) => { question(x,(s:string)=>s.replace('the 10 tasks','the 11 tasks')); },
+  'withdrawn current task': (x:any) => { x.plan=x.plan.replace('**T3 (', '**T3 withdrawn ('); },
+  'wrong lane ordering': (x:any) => { x.call.questions[0].options[0].description=x.call.questions[0].options[0].description.replace('A+B parallel, then C+D','C+D parallel, then A+B'); },
+  'stronger parallelism': (x:any) => { x.call.questions[0].options[0].description=x.call.questions[0].options[0].description.replace('A+B parallel, then C+D','A+B+C+D parallel'); },
+  'foreign lane': (x:any) => { x.call.questions[0].options[0].description=x.call.questions[0].options[0].description.replace('then E)', 'then Z)'); },
+  'missing lane owner': (x:any) => { x.plan=x.plan.replace('Lane C:', 'Group C:'); },
+  'historical-only lane order': (x:any) => { x.plan=x.plan.replace('Execution order:', '> Execution order:'); },
+  'report still has an unresolved decision': (x:any) => { x.plan=x.plan.replace('0 unresolved decisions. eng review required.', '1 unresolved decision. eng review required.'); },
+  'false clear with critical gaps': (x:any) => { x.plan=x.plan.replace('| ISSUES OPEN |', '| CLEAR |'); },
+  'report current completion withdrawn': (x:any) => { x.plan=x.plan.replace('NO UNRESOLVED DECISIONS','Correction: The review is withdrawn.\nNO UNRESOLVED DECISIONS'); },
+  'missing unresolved sentinel': (x:any) => { x.plan=x.plan.replace('NO UNRESOLVED DECISIONS',''); },
+  'new missing maintenance reference': (x:any) => { x.call.questions[0].options[0].description=x.call.questions[0].options[0].description.replace('(D1)', '(D99)'); },
+  'wrong maintenance approval kind': (x:any) => { x.call.questions[0].options[0].description=x.call.questions[0].options[0].description.replace('(D1)', '(D3)'); },
+  'unapproved routing choice': (x:any) => { const c=x.priorCalls[0],q=c.questions[0];c.answers[q.question]=q.options[1].label; },
+  'unapproved TODO choice': (x:any) => { const c=x.priorCalls[12],q=c.questions[0];c.answers[q.question]=q.options[1].label; },
+  'maintenance task lacks owning reference': (x:any) => { x.plan=x.plan.replace('preamble D1','preamble D99').replace('CLAUDE.md (D1)','CLAUDE.md (D99)'); },
+  'extra work borrowed from task reference': (x:any) => { x.call.questions[0].options[1].description=x.call.questions[0].options[1].description.replace('a written problem statement', 'a deployed production database'); },
+})) ledgerCheckCf74(name,false,edit);
+for(const verb of ['add','append','remove','drop','replace','enable','write','record','capture','switch','refactor','expand','reduce','alter','deploy','approve','run'])
+  for(const option of [0,1]) ledgerCheckCf74(`new ${verb} command in option ${option}`,false,x=>{x.call.questions[0]!.options[option]!.description+=` Also ${verb} ./production.`;});
+for(const correction of ['The review is incomplete.','The review is not complete.','The review is no longer complete.','If the review is complete, proceed.','The review is complete if the task lands.','There is 1 unresolved decision.','Not every decision is answered.','Decision R3 is pending.'])
+  ledgerCheckCf74('current status '+correction,false,x=>question(x,s=>s+'\nCorrection: '+correction));
+ledgerCheckCf74('quoted command cannot hide extra work',false,x=>question(x,s=>s+'\nAlso "add a cache" before implementing.'));
+ledgerCheckCf74('ordinary historical incomplete status is inert',true,x=>question(x,s=>s+'\nEarlier note: "The review is incomplete."'));
+ledgerCheckCf74('native options may reorder',true,x=>x.call.questions[0]!.options.reverse());
+ledgerCheckCf74('navigation can omit approved maintenance recap',true,x=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace(/ ✅ First two edits after exit:[^.]+CLAUDE\.md \(D1\) and create TODOS\.md \(D13\)\./,'');});
+ledgerCheckCf74('parallel lane names may reorder within the same group',true,x=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('A+B parallel, then C+D','B+A parallel, then D+C');});
+ledgerCheckCf74('section depth follows the published hierarchy',true,x=>{x.plan=x.plan.replace('### Worktree parallelization strategy','## Worktree parallelization strategy');});
+ledgerCheckCf74('coherent arbitrary decision, task, branch and plan identities',true,x=>{
+  const transform=(s:string)=>s.replace(/\bD(\d+)\b/g,(_,n)=>'D'+(+n+20)).replace(/\bT(\d+)\b/g,(_,n)=>'T'+(+n+30))
+    .replaceAll('PLAN.md','SPEC.md').replaceAll('Multi-tenant Auth Refactor','Account Policy Migration').replace(/\bmain\b/g,'topic');
+  x.plan=transform(x.plan);question(x,transform);x.call.questions[0]!.options.forEach(o=>{o.description=transform(o.description??'');});
+  x.priorCalls.forEach(c=>question({call:c},transform));
+});
+ledgerCheckCf74('final question cannot repeat an earlier decision identity',false,x=>question(x,s=>s.replace(/^D14/,'D13')));
+ledgerCheckCf74('later routing approval withdrawal stays operative',false,x=>question({call:x.priorCalls.at(-1)!},s=>s+'\nCorrection: D1 approval is withdrawn.'));
+ledgerCheckCf74('published routing approval withdrawal stays operative',false,x=>{x.plan=x.plan.replace('## GSTACK REVIEW REPORT','D1 approval is revoked.\n\n## GSTACK REVIEW REPORT');});
+ledgerCheckCf74('historical quoted routing withdrawal is inert',true,x=>question({call:x.priorCalls.at(-1)!},s=>s+'\nEarlier note: "D1 approval is withdrawn."'));
+
+test('cf74 reconciled navigation retains independent native freshness and exit requirements',()=>{
+  const x=ledgerNavigationCf74('retry',true), dir=fs.mkdtempSync(path.join(os.tmpdir(),'eng-current-ledger-terminal-')), file=path.join(dir,'review.md'), now=Date.now;
+  try {
+    const t=x.transcript as PlanCountTranscript;
+    Date.now=()=>Date.parse(t.planReadyRequests!.at(-1)!.timestamp)+1000;
+    fs.writeFileSync(file,x.plan);fs.utimesSync(file,x.report.mtimeMs/1000,x.report.mtimeMs/1000);
+    const fp=nativePlanCallFingerprint(x.call,0,false), admin=new Set(ledgerHandoffCf74(x)?[fp.signature]:[]);
+    const check=(v=t,ids=admin)=>hasNativePlanTerminal(v,file,x.startedAt,'plan_ready',ids);
+    expect(check()).toBe(true);expect(check(t,new Set())).toBe(false);expect(check(t,new Set(['foreign:call']))).toBe(false);
+    for(const change of [
+      (v:PlanCountTranscript)=>{v.planReadyRequests=[];},
+      (v:PlanCountTranscript)=>{v.planReadyRequests![0]!.failed=true;},
+      (v:PlanCountTranscript)=>{v.planReadyRequests![0]!.sessionId='foreign';},
+      (v:PlanCountTranscript)=>{v.planReadyRequests![0]!.timestamp=x.priorCalls[0]!.answeredAt!;},
+      (v:PlanCountTranscript)=>{v.calls.at(-1)!.answered=false;v.calls.at(-1)!.unansweredQuestionIndices=[0];},
+      (v:PlanCountTranscript)=>{v.calls[6]!.answeredAt=x.call.answeredAt;},
+      (v:PlanCountTranscript)=>{v.calls[0]!.answeredAt=x.call.answeredAt;},
+    ]){const v=structuredClone(t);change(v);expect(check(v)).toBe(false);}
+    expect(fs.statSync(file).mtimeMs).toBeCloseTo(x.report.mtimeMs,0);
+    fs.writeFileSync(file,'## GSTACK REVIEW REPORT\n');fs.utimesSync(file,x.report.mtimeMs/1000,x.report.mtimeMs/1000);expect(check()).toBe(false);
+  } finally { Date.now=now;fs.rmSync(dir,{recursive:true,force:true}); }
+});
