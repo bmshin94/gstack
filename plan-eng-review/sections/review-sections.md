@@ -210,7 +210,7 @@ For a tool question, `currentDecision` is the single question object for the sav
 
 ### 6. Apply and refresh
 
-**Apply the answer:** Record the actual option, answer reference and accepted scope separately from the draft options. Apply only those amendments to the working plan with a scoped Edit; present them in read-only mode. Update this choice's record and leave others unchanged.
+**Apply the answer:** Record the actual option, answer reference and accepted scope separately from the draft options. Set this current record’s `State` to `approved` for the actual accepted scope; keep `pending` when the answer leaves a remedy unresolved. Apply only those amendments to the working plan with a scoped Edit that also saves the current record; present them in read-only mode. Other choices stay unchanged; superseded states belong in `History`.
 
 Now return to step 1 with the updated plan and actual answer. Hold the chosen value fixed while rebuilding the next relevant pending choice through steps 2–5; record why an irrelevant choice needs no question. Advance to the next finding or section only when no choice in this section awaits an answer.
 
@@ -771,7 +771,7 @@ unresolved decisions in the report.
 
 Each gate checks these inputs in order, without restarting settled decisions:
 
-1. **Approval readiness** verifies ledger answers before outputs exist. After it passes, write accepted sections, Implementation Tasks and Completion summary; list pending choices separately. Follow **Review record and write policy** and per-artifact paths.
+1. **Approval readiness** verifies that each current `State`, actual answer and accepted scope agree. Reconcile stale states from their actual answers before PASS; derive the unresolved count from current pending records. Then write accepted sections, Implementation Tasks and Completion summary under **Review record and write policy** and per-artifact paths.
 2. Save the complete plan/report, including its terminal report, and pass **Read-back**. Then announce completion, write Review Log and display the dashboard. Unavailable persistence follows the no-file rules and **Blocked outcome**.
 3. Complete **Next Steps — Review Chaining**. A substantive change repeats Decision procedure → approval → affected outputs → Read-back → logs/dashboard; navigation alone adds no approval.
 4. Finish learning hooks after navigation, with no pending question. Return once to the entrypoint: **Section self-check** verifies methodology; read-only **EXIT PLAN MODE GATE** verifies current approval, persisted report and completion logs before success telemetry, cache refresh and ExitPlanMode.

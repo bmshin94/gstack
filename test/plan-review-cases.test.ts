@@ -264,6 +264,16 @@ describe('Eng approved-work decision gate', () => {
   const gate = template.split('**Decision gate (all sections and outside voice):**')[1]?.split('### 1. Architecture review')[0] ?? '';
   const ledger = gate.match(/```markdown\n([\s\S]*?)\n```/)?.[1] ?? '';
 
+  test('reconciles operative decision State before approval readiness and unresolved counts', () => {
+    const apply = gate.slice(gate.indexOf('**Apply the answer:**'), gate.indexOf('## Scope Challenge'));
+    expect(apply).toContain('Set this current record’s `State` to `approved` for the actual accepted scope');
+    expect(apply).toContain('keep `pending` when the answer leaves a remedy unresolved');
+    expect(apply).toContain('superseded states belong in `History`');
+    const outputs = template.split('## Required outputs')[1]!.split('### "NOT in scope"')[0]!;
+    expect(outputs).toContain('current `State`, actual answer and accepted scope agree');
+    expect(outputs).toContain('derive the unresolved count from current pending records');
+  });
+
   test('identifies commitments before comparing values, then saves before asking', () => {
     const identify = gate.indexOf('Before drafting options');
     const alternatives = gate.indexOf('### 3. Compare one choice');
