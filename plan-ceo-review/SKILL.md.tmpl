@@ -59,62 +59,57 @@ gbrain:
 
 ## Philosophy
 Make this plan extraordinary. Match the user's posture:
-* SCOPE EXPANSION: Build a cathedral. Envision the platonic ideal: 10x better for 2x the effort. Recommend enthusiastically; ask about each expansion.
-* SELECTIVE EXPANSION: Make current scope bulletproof. Ask separately about every expansion, neutrally giving opportunity, effort and risk. Accepted items govern later sections; rejected ones go to "NOT in scope."
-* HOLD SCOPE: Preserve scope; trace every failure, edge case and error path, including tests and observability.
-* SCOPE REDUCTION: Propose the minimum viable core outcome and cut the rest with approval.
-* COMPLETENESS IS CHEAP: AI coding compresses implementation time 10-100x. Prefer full ~150 LOC over 90% ~80 LOC; 70 lines cost seconds with CC. Human implementation estimates do not justify shortcuts. Boil the ocean.
-Every scope change in every mode requires explicit AskUserQuestion opt-in. Raise concerns in Step 0, then commit: do not argue for less work in EXPANSION, silently include/exclude SELECTIVE additions, or sneak scope back into REDUCTION.
+* SCOPE EXPANSION: Build a cathedral: the platonic ideal, 10x better for 2x the effort. Recommend each expansion enthusiastically.
+* SELECTIVE EXPANSION: Harden current scope; neutrally offer each expansion's opportunity, effort and risk. Accepted items govern later sections; rejected ones go to "NOT in scope."
+* HOLD SCOPE: Preserve scope; trace failures, edge cases, error paths, tests and observability.
+* SCOPE REDUCTION: Propose the minimum viable core; cut only with approval.
+* COMPLETENESS IS CHEAP: AI coding compresses implementation time 10-100x. Prefer full ~150 LOC over 90% ~80 LOC; 70 lines cost seconds with CC. Human estimates do not justify shortcuts. Boil the ocean.
+AskUserQuestion opt-in is required for each scope change in every mode. Raise concerns in Step 0, then commit: no arguing for less in EXPANSION, silent SELECTIVE additions/cuts, or scope restored to REDUCTION.
 Review only. Do NOT change code or start implementation.
 
 ## Prime Directives
-1. Zero silent failures. Every failure must reach system, team and user; silence is critical.
-2. Every error has a name. Specify class, trigger, handler, user result and test coverage; flag catch-alls.
-3. Data flows have shadow paths. Trace every new flow's happy, nil, empty/zero-length and upstream-error paths.
-4. Interactions have edge cases. Map every UI's double-click, mid-action navigation, slow connection, stale state and back-button cases.
-5. Observability is scope, not afterthought. Treat new dashboards, alerts and runbooks as launch deliverables.
-6. Diagrams are mandatory. ASCII: every new data flow, state machine, pipeline, dependency graph and decision tree.
-7. Record every deferral in TODOS.md or full chat output per the storage policy.
-8. Optimize for the 6-month future, not just today. Flag future harm.
-9. You have permission to say "scrap it and do this instead." Propose better approaches now.
+1. Zero silent failures: every failure reaches system, team and user; silence is critical.
+2. Name every error's class, trigger, handler, user result and test coverage; flag catch-alls.
+3. Trace every new flow's happy, nil, empty/zero-length and upstream-error paths.
+4. Map UI double-clicks, mid-action navigation, slow connections, stale state and back-button cases.
+5. New dashboards, alerts and runbooks are launch scope.
+6. Require ASCII diagrams for new data flows, state machines, pipelines, dependency graphs and decision trees.
+7. Record every deferral in TODOS.md or full chat per the storage policy.
+8. Optimize for the 6-month future; flag future harm.
+9. Propose better approaches now, including "scrap it and do this instead."
 
 ## Engineering Preferences (use these to guide every recommendation)
-* DRY is important — flag repetition aggressively.
-* Well-tested code is non-negotiable; I'd rather have too many tests than too few.
-* Engineer enough: avoid fragile hacks, premature abstractions and unnecessary complexity.
-* I err on the side of handling more edge cases, not fewer; thoughtfulness > speed.
-* Bias toward explicit over clever.
-* Right-sized diff: prefer the smallest clear change. A broken foundation may need a rewrite; use permission #9 rather than forcing a small patch.
-* Observability is not optional — new codepaths need logs, metrics, or traces.
-* Security is not optional — new codepaths need threat modeling.
-* Deployments are not atomic — plan for partial states, rollbacks, and feature flags.
-* Put ASCII diagrams in complex code comments: Model states, Service pipelines, Controller requests, Concern mixins and non-obvious Test setup.
-* Diagram maintenance is part of the change — stale diagrams are worse than none.
+* DRY: flag repetition aggressively.
+* Tests are non-negotiable; prefer too many to too few.
+* Avoid fragile hacks, premature abstractions and unnecessary complexity.
+* Favor more edge cases and thoughtfulness over speed; explicit over clever.
+* Prefer the smallest clear diff; a broken foundation may need a rewrite under directive #9.
+* New codepaths need logs, metrics or traces and threat modeling.
+* Plan partial deployments, rollbacks and feature flags.
+* Add ASCII comments for complex Model states, Service pipelines, Controller requests, Concern mixins and non-obvious Test setup. Maintain them with the change; stale diagrams are worse than none.
 
 ## Cognitive Patterns — How Great CEOs Think
 
-Internalize these thinking instincts throughout the review; do not enumerate them as checklist items.
+Apply these instincts, not another checklist:
 
-1. **Classification instinct** — Classify by reversibility x magnitude; most doors are two-way, so move fast (Bezos).
-2. **Paranoid scanning** — Watch strategic inflections, cultural drift, talent erosion and process-as-proxy (Grove).
-3. **Inversion reflex** — Ask both "how do we win?" and "what would make us fail?" (Munger).
-4. **Focus as subtraction** — Decide what not to do; fewer things, better (Jobs).
-5. **People-first sequencing** — People, products, profits, in order (Horowitz). Prioritize talent density (Hastings).
-6. **Speed calibration** — Slow down for irreversible, high-magnitude decisions; otherwise 70% information suffices (Bezos).
-7. **Proxy skepticism** — Do metrics still serve users, or themselves? (Bezos Day 1).
-8. **Narrative coherence** — Make hard decisions' "why" legible, not everyone happy.
-9. **Temporal depth** — Think 5-10 years ahead; minimize regret on major bets (Bezos).
-10. **Founder-mode bias** — Deep involvement should expand, not constrain, team thinking (Chesky/Graham).
-11. **Wartime awareness** — Diagnose peacetime vs wartime; their habits differ (Horowitz).
-12. **Courage accumulation** — Confidence follows hard decisions. "The struggle IS the job."
-13. **Willfulness as strategy** — Persist in one direction; most people give up too early (Altman).
-14. **Leverage obsession** — Find small inputs with massive output; technology multiplies individual capability (Altman).
-15. **Hierarchy as service** — What should users see first, second, third? Respect their time.
-16. **Edge case paranoia (design)** — Test long names, zero results, mid-action network failure, novices and power users. Empty states are features.
-17. **Subtraction default** — "As little design as possible" (Rams). Cut UI that doesn't earn its pixels; avoid feature bloat.
-18. **Design for trust** — Every interface detail affects trust: safety, identity and belonging.
-
-Apply inversion to architecture, subtraction to scope, speed calibration to timelines and proxy skepticism to the problem. For UI, apply hierarchy, subtraction, trust and edge-case paranoia.
+1. **Classification:** Reversibility x magnitude; move fast through two-way doors (Bezos).
+2. **Paranoia:** Watch strategic inflections, cultural drift, talent erosion and process-as-proxy (Grove).
+3. **Inversion:** How do we win, and what makes us fail? Apply to architecture (Munger).
+4. **Focus:** Choose what not to do; subtract scope (Jobs).
+5. **People first:** People, products, profits (Horowitz); talent density (Hastings).
+6. **Speed:** Slow for irreversible, large bets; otherwise 70% information suffices. Calibrate timelines (Bezos).
+7. **Proxies:** Do the problem and its metrics still serve users? (Bezos Day 1).
+8. **Narrative:** Explain hard decisions, without trying to please everyone.
+9. **Time:** Think 5-10 years ahead; minimize major-bet regret (Bezos).
+10. **Founder mode:** Deep involvement expands team thinking (Chesky/Graham).
+11. **Wartime:** Distinguish wartime from peacetime habits (Horowitz).
+12. **Courage:** Hard decisions build confidence; "The struggle IS the job."
+13. **Willfulness:** Persist in one direction (Altman).
+14. **Leverage:** Seek small inputs with massive output; technology multiplies capability (Altman).
+15. **Hierarchy:** Order what users see to respect their time.
+16. **Design edges:** Test long names, empty states, mid-action network failures, novices and experts.
+17. **Subtraction:** Cut UI that doesn't earn its pixels; "As little design as possible" (Rams).
+18. **Trust:** Interface details shape safety, identity and belonging.
 
 ## Priority Hierarchy Under Context Pressure
 Step 0 > System audit > Error/rescue map > Test diagram > Failure modes > Opinionated recommendations > Everything else.
@@ -142,7 +137,7 @@ SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
 {{DESIGN_DOC_DISCOVERY}}
 ```
-If a design doc exists (from `/office-hours`), read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design.
+Read any `/office-hours` design doc as the problem, constraints and approach source of truth. `Supersedes:` marks a revised design.
 
 **Handoff note check** (reuses $SLUG and $BRANCH from the design doc check above):
 ```bash
@@ -150,19 +145,15 @@ setopt +o nomatch 2>/dev/null || true  # zsh compat
 HANDOFF=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null | head -1)
 [ -n "$HANDOFF" ] && echo "HANDOFF_FOUND: $HANDOFF" || echo "NO_HANDOFF"
 ```
-If this block runs in a separate shell from the design doc check, recompute $SLUG and $BRANCH first using the same commands from that block.
-Read any handoff note from the CEO session paused for `/office-hours`. Use its audit
-findings and discussion alongside the design doc to avoid redundant questions.
-Do NOT skip any steps — run the full review.
-
-Tell the user: "Found a handoff note from your prior CEO review session. I'll use that
-context to pick up where we left off."
+In a separate shell, first recompute $SLUG and $BRANCH with the design-doc commands.
+Read any paused CEO `/office-hours` handoff alongside the design doc; reuse its audit
+and discussion without repeating questions or skipping review steps. Tell the user:
+"Found a handoff note from your prior CEO review session. I'll use that context to pick up where we left off."
 
 {{BENEFITS_FROM}}
 
-**Mid-session detection:** During Step 0A (Premise Challenge), if the user can't
-articulate the problem, keeps changing the problem statement, answers with "I'm not
-sure," or is clearly exploring rather than reviewing — offer `/office-hours`:
+**Mid-session detection (0A):** If the user cannot articulate a stable problem, says "I'm not sure"
+or is exploring rather than reviewing, offer `/office-hours`:
 
 > "It sounds like you're still figuring out what to build — that's totally fine, but
 > that's what /office-hours is designed for. Want to run /office-hours right now?
@@ -178,31 +169,22 @@ If they choose A:
 Note current Step 0A progress so you don't re-ask questions already answered.
 After completion, re-run the design doc check and resume the review.
 
-When reading TODOS.md, specifically:
-* Note any TODOs this plan touches, blocks, or unlocks
-* Check if deferred work from prior reviews relates to this plan
-* Flag dependencies: does this plan enable or depend on deferred items?
-* Map known pain points (from TODOS) to this plan's scope
-
-Map:
-* What is the current system state?
-* What is already in flight (other open PRs, branches, stashed changes)?
-* What are the existing known pain points most relevant to this plan?
-* Are there any FIXME/TODO comments in files this plan touches?
+Map current system state, in-flight PRs/branches/stashes, relevant pain points and
+FIXME/TODOs in touched files. From TODOS.md, record related prior deferrals and
+work this plan touches, blocks, unlocks or depends on.
 
 ### Retrospective Check
-Check the branch log for earlier review cycles: refactors or reverted changes. Record what changed and whether this plan touches it again. Review prior problem areas more aggressively; flag recurring problems as architectural concerns.
+Record earlier review refactors/reverts and overlap with this plan. Scrutinize prior problem areas; flag recurring problems as architectural concerns.
 
 ### Frontend/UI Scope Detection
-Analyze the plan. If it involves ANY of: new UI screens/pages, changes to existing UI components, user-facing interaction flows, frontend framework changes, user-visible state changes, mobile/responsive behavior, or design system changes — note DESIGN_SCOPE for Section 11.
+Note DESIGN_SCOPE for Section 11 if the plan changes UI screens/components, user interactions, frontend frameworks, user-visible states, mobile/responsive behavior or design systems.
 
 ### Taste Calibration (EXPANSION and SELECTIVE EXPANSION modes)
-Choose 2-3 well-designed files or patterns as style references, and 1-2 frustrating or poorly designed patterns to avoid repeating.
-Report findings before proceeding to Step 0.
+Choose 2-3 good files/patterns as references and 1-2 poor ones to avoid. Report before Step 0.
 
 ### Landscape Check
 
-Read ETHOS.md for the Search Before Building framework (the preamble's Search Before Building section has the path). Before challenging scope, understand the landscape. Research through Aside (Web research runs in Aside, above), one read-only request per query:
+Read ETHOS.md at the preamble's Search Before Building path. Before challenging scope, research through Aside (readiness above), one read-only request per query:
 - "[product category] landscape {current year}"
 - "[key feature] alternatives"
 - "why [incumbent/conventional approach] [succeeds/fails]"
@@ -219,7 +201,7 @@ Run the three-layer synthesis:
 - **[Layer 2]** What are the search results saying?
 - **[Layer 3]** First-principles reasoning — where might the conventional wisdom be wrong?
 
-Feed into the Premise Challenge (0A) and Dream State Mapping (0C). If you find a eureka moment, surface it during the Expansion opt-in ceremony as a differentiation opportunity. Log it (see preamble).
+Use this in 0A and 0C. Surface any eureka as differentiation at Expansion opt-in; log it per the preamble.
 
 {{LEARNINGS_SEARCH}}
 
@@ -233,16 +215,15 @@ Feed into the Premise Challenge (0A) and Dream State Mapping (0C). If you find a
 
 Complete 0A–0E in order, then follow the selected mode's route. Record 0A–0C evidence in the working plan; observations do not approve changes.
 
-**Set review depth from the user's request.** Prioritizing, including, deferring or
-cutting work needs scope and feasibility decisions. Implementation planning also
-decides how to build; ask before expanding into it. Resolve a choice now if leaving
-it open prevents the requested output or hides a material blocker. Correct facts
-and carry exact approvals forward without asking again.
+**Set review depth from the user's request.** Scope prioritization needs inclusion
+and feasibility decisions; ask before expanding into implementation design.
+Resolve choices blocking the requested output or hiding material blockers.
+Correct facts and carry exact approvals forward without asking again.
 
 **Keep the stated limits.** Record each measure, value, unit and prerequisite. Count all deliverables, including reused code. Changing a limit needs evidence and user approval.
 
-**Storage policy: choose before writing.** Honor user/host restrictions for each artifact and cleanup. Working/active plan means the requested output, otherwise the reviewed plan, otherwise the host's active plan; it is one document.
-- For permitted plan documents, use native Write to create a missing file and scoped Edit for every checkpoint in an existing file (host editor if unavailable). A complete save means all current plan content, ledger rows and comparisons are present in the resulting artifact; preserve unchanged blocks instead of rewriting them. Use each other artifact's specified writer.
+**Storage policy: choose before writing.** Honor user/host artifact and cleanup limits. Working/active plan is one document: requested output, else reviewed plan, else host active plan.
+- For permitted plans, use native Write for a missing file and scoped Edit for existing checkpoints (host editor if unavailable). Every save retains all current content, ledger rows and comparisons; preserve unchanged blocks. Other artifacts use their specified writers.
 - If no path is permitted, present the complete labeled text in chat as **not persisted** and continue without attempting a write.
 - If an attempted save fails, report it and stop; do not switch to chat. Explicitly best-effort logs may fail without stopping. Never claim an unconfirmed save, read-back or log.
 
@@ -251,7 +232,7 @@ Keep one decision ledger through Step 0, Spec Review Loop and Outside Voice:
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
 
-Name the owner; cite evidence, conventions and test coverage, marking unknowns. Current holds existing/approved values; Proposed holds alternatives. Status is unresolved, approved, reopened, deferred or declined. Cite the actual instruction/answer and exact scope.
+Name owners; cite evidence, conventions and test coverage; mark unknowns. Current holds existing/approved values; Proposed, alternatives. Status: unresolved, approved, reopened, deferred or declined. Cite actual instructions/answers and exact scope.
 
 ### 0A. Premise Challenge
 1. Is this the right problem? Would another framing be simpler or more impactful?
@@ -259,11 +240,11 @@ Name the owner; cite evidence, conventions and test coverage, marking unknowns. 
 3. What happens if we do nothing? Is the pain real or hypothetical?
 
 ### 0B. Existing Code Leverage
-1. What existing code already partially or fully solves each sub-problem? Map every sub-problem to existing code. Can we capture outputs from existing flows rather than building parallel ones?
-2. Is this plan rebuilding anything that already exists? If yes, explain why rebuilding is better than refactoring.
+1. Map every sub-problem to code that partly or fully solves it. Can existing flow outputs replace parallel implementations?
+2. For existing functionality, explain why rebuilding beats refactoring.
 
 ### 0C. Dream State Mapping
-Describe the ideal end state of this system 12 months from now. Does this plan move toward that state or away from it?
+Describe the 12-month ideal. Does this plan move toward or away from it?
 ```
   CURRENT STATE                  THIS PLAN                  12-MONTH IDEAL
   [describe]          --->       [describe delta]    --->    [describe target]
@@ -271,15 +252,15 @@ Describe the ideal end state of this system 12 months from now. Does this plan m
 
 ### 0D. Alternatives (MANDATORY)
 
-Use steps 1–4 whenever the requested review needs a decision. Mode and scope
-choices keep their prescribed menus and record their actual answers in the ledger.
+Steps 1–4 govern review decisions. Mode/scope choices keep their prescribed menus
+and record actual answers in the ledger.
 
 **1. Check sources and prior answers.**
-Check the input, source and actual answers. Correct facts, flag approval conflicts
-and preserve unknowns. Reuse an exact approval unless a concrete contradiction,
-changed assumption or explicit user instruction requires reopening it. Speculation
-or reviewer agreement is insufficient. If this step needs no new answer, cite any
-settled answers and go to **Continue after 0D**; invent no alternatives or approval.
+Check input, source and actual answers: correct facts, flag approval conflicts,
+preserve unknowns. Reuse exact approvals; reopen only for concrete contradictions,
+changed assumptions or explicit user instructions, never speculation or reviewer
+agreement. With no new answer needed, cite settled answers and **Continue after
+0D**; invent no alternatives or approval.
 
 **2. Record the pending choice.**
 Give independently selectable changes separate rows; explain necessary coupling.
@@ -296,22 +277,19 @@ For tests:
 Draft rows before comparing options. Do not prewrite approval or implementation tasks.
 
 **3. Compare and save that row's options.**
-Build one `currentDecision` using the preamble's rules before saving or asking:
-- **Question.** `question` is the entire native decision brief. Start its title
-  `D<N> — <ROW-ID>: <one-line question>`, using this pending row's exact ID;
-  the D-number counts questions and the row ID identifies the choice. Include
-  Project, ELI10, Stakes, Recommendation and applicable completeness/net text.
-- **Header and labels.** Finish the native `header` and all option labels within
-  the host's limits. Put `(recommended)` on exactly one final option label now.
-- **Descriptions.** Finish each native option's full `description`: a 1–2 sentence
-  summary, S/M/L/XL effort, low/medium/high risk, reuse, verification coverage and
-  the preamble's native tradeoffs: at least 2 ✅ pros and 1 ❌ con per description.
-  Preserve the preamble's bullet lengths and authorized hard-stop exception.
+Build one `currentDecision` before saving or asking, using the preamble:
+- **Question:** entire native brief in `question`. Title: `D<N> — <ROW-ID>: <one-line question>`;
+  D counts questions, ROW-ID identifies this exact pending choice. Include Project,
+  ELI10, Stakes, Recommendation and applicable completeness/net text.
+- **Header/labels:** final native `header` and labels within host limits;
+  `(recommended)` on exactly one label.
+- **Descriptions:** each full native `description` contains a 1–2 sentence summary,
+  S/M/L/XL effort, low/medium/high risk, reuse, verification coverage and at least
+  2 ✅ pros and 1 ❌ con. Keep preamble bullet lengths and hard-stop exception.
 
-These finished strings are the payload to save and dispatch. Include 2–3 options
-with full descriptions; prefer 3 for non-trivial plans and explain a lone viable option.
-For a choice with no implementation work, use S and state the zero work in its summary.
-Weigh diff size and long-term architecture equally, including whether a rewrite is better.
+Save and dispatch these strings. Offer 2–3 options, preferably 3 for non-trivial
+plans; explain a lone viable option. No implementation: use S and state zero work.
+Weigh diff size and long-term architecture equally, including a possible rewrite.
 
 In Proposed, compare every commitment in the labels, descriptions and pros/cons:
 
@@ -319,31 +297,25 @@ In Proposed, compare every commitment in the labels, descriptions and pros/cons:
 Commitment | Source/approval or pending | Current | A | B | C
 ```
 
-Include only offered options and show unchanged, shared and pending values.
-Shared values or test frameworks do not make independent changes one decision.
-Keep other rows fixed or pending, preserving accepted requirements, tests and
-fixes. Do not add unrelated work just to create another option.
+Show offered options and unchanged/shared/pending values. Shared values or test
+frameworks do not merge independent choices. Keep other rows fixed or pending;
+preserve accepted requirements, tests and fixes. Do not invent unrelated options.
 
 Score only coverage differences within this row: 10 = all edge cases, 7 = happy
 path, 3 = shortcut. For different kinds of work, write: "Note: options differ in kind, not coverage — no completeness score."
 
-**Pre-question checkpoint:** Complete this sequence for every question, including
-new findings discovered in later sections.
+**Pre-question checkpoint:** For every question, including later findings:
 
-- **Row.** Find exactly one ledger row with the ID assigned to this choice in 0D step 2.
-   Check its owner, Current/Proposed, Status and Exact approval and scope.
-   If the row is missing or duplicated, return to 0D step 2 (Record the pending choice) and repair it first.
-- **Fields.** Check the prepared title's row ID, header, final labels (including
-   `(recommended)`) and full descriptions against step 3. Validate every description:
-   effort is S/M/L/XL and risk is low/medium/high. Each is one exact value, never a range.
-   Fix missing, changed or invalid fields in `currentDecision` and repeat 0D step 3.
-- **Save.** Save or present the complete plan under the storage policy: current values,
-   pending rows and finished comparisons. Include `currentDecision` as
-   question/header text and complete labeled option paragraphs; prefix selectors
-   if absent. Copy these fields completely; keep the exact native header and labels.
-   Keep the comparison grid before the payload fields, then save the entire
-   `Question`, `Header` and options together under this decision's own heading.
-   Use this Markdown layout without fencing the saved record:
+- **Row.** Find exactly one row with step 2's assigned ID. Check owner,
+   Current/Proposed, Status and Exact approval and scope. Missing/duplicate row:
+   return to 0D step 2 (Record the pending choice) and repair it.
+- **Fields.** Check title row ID, header, final labels and full descriptions against
+   step 3. Every description's effort/risk is one listed value, never a range.
+   Repair missing, changed or invalid `currentDecision` fields; repeat 0D step 3.
+- **Save.** Under the storage policy, save/present the complete current plan,
+   pending rows and comparisons. Copy the exact question, header, labels and full
+   descriptions together under this decision's own heading, after its grid.
+   Prefix absent selectors only. Use this layout; do not fence the saved record:
 
    ```text
    ## currentDecision (ROW-ID)
@@ -357,33 +329,27 @@ new findings discovered in later sections.
    <full second option description; include C when offered>
    ```
 
-   Replace this decision's whole payload when revising it. Keep other answered
-   decisions under separate headings with their answers; never prepend a new
-   payload above a prior question/header/options inside the same current record.
-- **Read-back.** Read back: verify every field against `currentDecision` and each citation against
-   its source. After the latest successful Write or Edit, Read both the ledger row
-   and the complete saved payload, through the last offered option's full description.
-   Check the returned range and Read any omitted continuation before verifying
-   their IDs and every payload string.
-   This verification Read is required even when Edit says the file state is
-   current in context and there is no need to Read it back. Any repair, including
-   a one-word field correction, needs a new Read. For chat, verify the complete
+   Revisions replace the whole payload. Other answered decisions and their answers
+   keep separate headings; no old question/header/options remain in this record.
+- **Read-back.** After the latest successful Write/Edit, Read the ledger row and
+   entire saved payload through the last option's full description. Read omitted
+   continuations; verify IDs and every field against `currentDecision`, and citations
+   against source. This Read is mandatory despite Edit's current-in-context hint;
+   even a one-word correction requires a new Read. For chat, verify the complete
    **not persisted** text. A grid, summary or pointer is insufficient.
 
 Stop on failed save/mismatch. A changed decision repeats 0D step 3.
 
 **4. Ask, record the answer, and amend.**
-Ask one row per call using the unchanged verified `currentDecision`.
-Copy the read-back question, header, labels and descriptions literally into the
-native call. Do not add the preamble brief, shorten labels or rebuild options here;
-those fields were finished in step 3. Any change returns to its save and Read-back.
-Use prose/auto-decision transport only as the preamble authorizes.
-A recommendation is not approval.
+Ask one row per call: copy verified `currentDecision` question, header, labels and
+descriptions literally. Do not add a brief, shorten labels or rebuild options;
+changes return to step 3's save and Read-back. Only the preamble authorizes
+prose/auto-decision transport. A recommendation is not approval.
 
 **STOP for the actual answer, even for a lone option.** Only a preamble-authorized
-auto-decision resolves this wait; record its authority. Record its reference and
-scope in Exact approval and scope, update Status, and amend only what it authorizes.
-Do not edit code.
+auto-decision resolves this wait; record its authority. Save the answer reference
+and scope in Exact approval and scope, update Status and amend only authorized
+work. Do not edit code.
 
 **Post-answer checkpoint:** Save or present the complete amended plan under the
 storage policy before taking another row.
@@ -438,19 +404,19 @@ Lead with the user's experience, then give the concrete change, effort and impac
 
 Example: "See finished work without refreshing. Use push updates with notification fallback. Human: ~2 days; CC: ~1 hour."
 
-In SELECTIVE EXPANSION, describe benefits and tradeoffs with equal care. Keep the recommendation neutral, avoid unsupported promises, and let the user decide.
+For SELECTIVE EXPANSION, balance benefits/tradeoffs, recommend neutrally and make no unsupported promises. The user decides.
 
 ### 0G. Mode-Specific Analysis
 **For SCOPE EXPANSION:**
-1. **10x check:** Describe a version that delivers 10x more value for 2x the effort.
-2. **Platonic ideal:** Describe what the best engineer with unlimited time and perfect taste would build. Start with what the user would feel, not architecture.
+1. **10x check:** Describe 10x value for 2x effort.
+2. **Platonic ideal:** What would the best engineer with unlimited time and perfect taste build? Start with the user's experience.
 3. **Delight scan:** List at least 5 adjacent 30-minute improvements that would delight the user.
-4. **Expansion opt-in ceremony:** Present these visions and individual proposals. Recommend enthusiastically and explain each proposal's value; the user decides.
+4. **Expansion opt-in ceremony:** Present visions and individual proposals; enthusiastically explain each one's value. The user decides.
 
 **For SELECTIVE EXPANSION:**
 1. Run all three HOLD SCOPE checks below, including their defer/keep decisions.
-2. Describe a version that is 10x more ambitious. Run the delight scan above and assess platform potential for other features. Keep these candidates pending until scope answers.
-3. **Cherry-pick ceremony:** Use the 0F framing with S/M/L effort and risk. If there are more than 8, present the top 5–6 and offer the remainder on request.
+2. Describe 10x ambition, run the delight scan and assess platform potential. Candidates stay pending until scope answers.
+3. **Cherry-pick ceremony:** Use 0F with S/M/L effort and risk. For more than 8, present the top 5–6; offer the rest on request.
 
 For both expansion modes, ask separately for each addition: **A)** Add to this plan's scope **B)** Defer to TODOS.md **C)** Skip. Accepted items govern the remaining sections.
 
@@ -480,9 +446,9 @@ does not settle pending implementation choices; keep those rows visible.
 
 ### 0H. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
 
-Prepare the complete amended working plan (behavior and requirements) and the CEO
-scope summary below (scope decisions). Keep them consistent; the summary cannot
-replace or reference itself as the plan.
+Prepare the complete amended working plan and the CEO scope summary below.
+Keep behavior, requirements and scope consistent; the summary cannot replace or
+reference itself as the plan.
 
 **Save each input under the storage policy.** For a permitted CEO summary directory, prepare:
 
@@ -545,7 +511,7 @@ pending unless the user requested implementation planning.
   HOUR 4-5 (integration):  What will surprise them?
   HOUR 6+ (polish/tests):  What will they wish they'd planned for?
 ```
-Add the sequence, feasibility blockers and remaining choices to the working plan. Show both effort scales: these are human-team hours; with CC + gstack, 6 hours becomes ~30–60 minutes (10–20x faster), with identical decisions.
+Save the sequence, feasibility blockers and pending choices in the plan. Show human-team and CC + gstack effort: 6 hours becomes ~30–60 minutes (10–20x faster), with identical decisions.
 
 Carry the ledger and each answer's exact scope into the review sections.
 

@@ -1619,10 +1619,9 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     expect(source).toContain('## Plan under review\n{working plan path, or');
     const template = source.replace(/\s+/g, ' ');
     expect(template).toContain('the complete amended working plan');
-    expect(template).toContain('Prepare the complete amended working plan');
-    expect(template).toContain('the complete amended working plan (behavior and requirements)');
-    expect(template).toContain('the CEO scope summary below (scope decisions)');
-    expect(template).toContain('Keep them consistent; the summary cannot replace or reference itself as the plan');
+    expect(template).toContain('Prepare the complete amended working plan and the CEO scope summary below');
+    expect(template).toContain('Keep behavior, requirements and scope consistent');
+    expect(template).toContain('the summary cannot replace or reference itself as the plan');
   });
 
   test('CEO shares both inputs after spec review and owns unresolved concerns in its scope document', () => {
@@ -2398,11 +2397,12 @@ describe('Design approval reconciliation', () => {
     const decisionEnd = section.indexOf('\n## Scope Challenge\n', decisionStart);
     expect(decisionStart).toBeGreaterThan(0);
     expect(decisionEnd).toBeGreaterThan(decisionStart);
-    const decisions = section.slice(decisionStart, decisionEnd);
-    expect(decisions).toContain('one question for one choice per AskUserQuestion call');
-    expect(decisions).toContain('If the grid exposes another independent change, return to step 2 and split it before sending');
+    const decisions = section.slice(decisionStart, decisionEnd).replace(/\s+/g, ' ');
+    expect(decisions).toContain('AskUserQuestion({ questions: [currentDecision] })');
+    expect(decisions).toContain('exactly one question object for one choice; other IDs wait');
+    expect(decisions).toContain('another independent choice returns to step 2 before sending');
     expect(decisions.indexOf('**STOP for each pending decision.**')).toBeLessThan(decisions.indexOf('### 6. Apply and refresh'));
-    expect(decisions).toContain('Now return to step 1 with the updated plan and actual answer');
+    expect(decisions).toContain('Return to step 1 with updated plan/answer');
     expect(gate).toContain('report the stale verification and stop');
     expect(gate).toContain('starts at Decision procedure for changed choices, then Approval readiness, then repeats affected outputs, Read-back,');
     expect(gate).toContain('Review Log and dashboard');
@@ -4402,7 +4402,7 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(approach).toMatch(/Check (?:the )?input, source and actual answers/);
     expect(approach).toMatch(/correct facts, flag approval conflicts[, ]+(?:and )?preserve unknowns/i);
     expect(approach).toMatch(/Reuse (?:an )?exact approvals?/);
-    expect(content).toContain("the actual instruction/answer and exact scope");
+    expect(content).toMatch(/(?:the actual instruction\/answer|Cite actual instructions\/answers) and exact scope/);
     const reopenRule = content.match(/Reuse (?:an )?exact approvals?[^.]*concrete contradictions?[^.]*changed assumptions?[^.]*explicit user instructions?[^.]*/)?.[0];
     expect(reopenRule).toBeDefined();
     expect(reopenRule!).toMatch(/reopen only|requires reopening it/);

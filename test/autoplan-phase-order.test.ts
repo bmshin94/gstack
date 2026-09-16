@@ -111,8 +111,8 @@ describe('autoplan phase order (Eng always last)', () => {
   });
 
   test('single final gate: premises queue for the gate, never a mid-run stop', () => {
-    expect(tmpl).toContain('Never auto-decide User Challenges');
-    expect(tmpl.replace(/\s+/g, ' ')).toContain('or a premise is clearly wrong. Queue them for the Final Approval Gate, never mid-run stops');
+    expect(tmpl.replace(/\s+/g, ' ')).toContain('Never auto-decide User Challenges');
+    expect(tmpl.replace(/\s+/g, ' ')).toContain("or a premise is clearly wrong. Use Decision Classification; ask once at Final Approval Gate, never mid-run");
     expect(tmpl).not.toContain('Premise gate passed (user confirmed)');
     const ceo = read('autoplan/sections/ceo-phase.md.tmpl');
     expect(ceo).not.toContain('GATE: Present premises to user for confirmation');
@@ -125,10 +125,10 @@ describe('autoplan phase order (Eng always last)', () => {
     const skill = read('autoplan/SKILL.md');
     const phase0 = skill.slice(skill.indexOf('### Step 3:'), skill.indexOf('## Phase 1:'));
     const setup = phase0.split('**Section skip list')[0]!;
-    expect(setup).toContain('Resolve this phase');
-    expect(setup).toContain('Do not prefetch future phase sections or review skills');
-    expect(setup).toContain('Missing skill: report the\nmissing phase and setup repair');
-    expect(setup).toContain('Read each at its trigger');
+    expect(setup.replace(/\s+/g, ' ')).toContain('Resolve this phase');
+    expect(setup.replace(/\s+/g, ' ')).toContain("Read skills/sections only at their triggers, never prefetch future phases");
+    expect(setup.replace(/\s+/g, ' ')).toContain("Missing skill: report phase and setup repair");
+    expect(setup.replace(/\s+/g, ' ')).toContain("Run all applicable skills and lazy sections fully");
     // Locating paths at intake does not load or execute their future phases.
     expect(setup).not.toMatch(/^Read `[^`]+\/SKILL\.md` in full now/gm);
 
@@ -172,8 +172,8 @@ describe('autoplan phase execution checkpoints', () => {
 
   test('loads full review skills at phase entry instead of prefetching future phases', () => {
     const intake = tmpl.split('### Step 3:')[1]?.split('## Phase 0.5:')[0] ?? '';
-    expect(intake).toContain("Resolve this phase's source to absolute `<REVIEW_SKILL>`; load via its checkpoint");
-    expect(intake).toContain('Do not prefetch future phase sections or review skills');
+    expect(intake.replace(/\s+/g, ' ')).toContain("Resolve this phase's source to absolute `<REVIEW_SKILL>`; load via its checkpoint");
+    expect(intake.replace(/\s+/g, ' ')).toContain("Read skills/sections only at their triggers, never prefetch future phases");
     for (const phase of phases) {
       const section = read(`autoplan/sections/${phase}-phase.md.tmpl`);
       expect(section).toMatch(/^Before dispatch, Read \{\{AUTOPLAN_REVIEW_FILE:plan-[a-z-]+:with-sections\}\}/);
@@ -222,12 +222,12 @@ describe('autoplan phase execution checkpoints', () => {
 
   test('the parent completes only the current phase and cannot waive native work for context pressure', () => {
     const contract = tmpl.split('## Sequential Execution')[1]?.split('---')[0] ?? '';
-    expect(contract).toContain('Keep ONE phase active');
-    expect(contract).toContain('Never draft future-phase reviews or outputs');
-    expect(contract).toContain('After compaction, reload current phase instructions/skill/sections');
-    expect(contract).toContain('reconcile saved artifacts and sent conversation messages separately');
-    expect(contract).toContain('Load its phase instructions and full skill/sections');
-    expect(contract).toContain("Complete the phase's required preliminary work (CEO: all Step 0");
+    expect(contract.replace(/\s+/g, ' ')).toContain('Keep ONE phase active');
+    expect(contract.replace(/\s+/g, ' ')).toContain('Never draft future-phase reviews or outputs');
+    expect(contract.replace(/\s+/g, ' ')).toContain('After compaction, reload current phase instructions/skill/sections');
+    expect(contract.replace(/\s+/g, ' ')).toContain('reconcile saved artifacts and sent conversation messages separately');
+    expect(contract.replace(/\s+/g, ' ')).toContain('Load its phase instructions and full skill/sections');
+    expect(contract.replace(/\s+/g, ' ')).toContain("Complete the phase's required preliminary work (CEO: all Step 0");
     expect(contract.replace(/\s+/g, ' ')).toContain('then create the fresh snapshot and dispatch its nativeDispatchPrompt unchanged');
     expect(contract.replace(/\s+/g, ' ')).toContain("Consume the native terminal result and apply the phase's failure policy");
     expect(contract.replace(/\s+/g, ' ')).toContain("consume enabled outside results. Complete the phase's remaining primary review sections after these results");
@@ -242,17 +242,17 @@ describe('autoplan phase execution checkpoints', () => {
     expect(workflow).toContain('an inapplicable phase; do not load its review or close steps');
     expect(workflow).toContain('reload `phase-close` and resume its first incomplete numbered operation');
     expect(workflow).toContain('resume the close procedure at step 6 (Publish) before advancing');
-    expect(contract).toContain('A missing gate means the current phase remains open');
-    expect(contract).toContain('Read requests/self-reports and INPUT hashes do not prove uptake or review quality');
-    expect(contract).toContain('Pending is not unavailable');
-    expect(contract).toContain('Time/context pressure or your own review never permits\nskipping native passes or required sections');
-    expect(contract).toContain('Never read raw agent transcripts');
+    expect(contract.replace(/\s+/g, ' ')).toContain('A missing gate means the current phase remains open');
+    expect(contract.replace(/\s+/g, ' ')).toContain('Read requests/self-reports and INPUT hashes do not prove uptake or review quality');
+    expect(contract.replace(/\s+/g, ' ')).toContain('Pending is not unavailable');
+    expect(contract.replace(/\s+/g, ' ')).toContain("Never skip native passes/required sections for time, context pressure or your own review");
+    expect(contract.replace(/\s+/g, ' ')).toContain('Never read raw agent transcripts');
     const rerun = tmpl.split('**Starting an affected-phase rerun:**')[1]!.split('---')[0]!.replace(/\s+/g, ' ');
     expect(rerun).toContain('record verbatim into fenced history');
     expect(rerun).toContain('retaining its original source SHA');
     expect(rerun).toContain('`baselineEdits.record` and `sourceSha256`');
     expect(rerun).toContain('compaction resumes the existing invocation');
-    expect(tmpl).toContain('LOG each decision; record ALL accepted obligations below and run `amend-input` before continuing');
+    expect(tmpl.replace(/\s+/g, ' ')).toContain("LOG decisions, record ALL accepted obligations below and run `amend-input` before continuing");
   });
 
   test('each phase binds its fixed amendment checkpoint before loading the shared close', () => {
@@ -379,27 +379,27 @@ describe('autoplan phase execution checkpoints', () => {
 describe('autoplan current implementation-plan identity', () => {
   test('pins the assigned active plan and keeps accepted amendments separate from review analyses', () => {
     const intake = read('autoplan/SKILL.md.tmpl').split('## Phase 0: Intake')[1]?.split('### Step 2:')[0] ?? '';
-    expect(intake).toContain('ACTIVE_PLAN (harness-assigned plan, else SOURCE_PLAN)');
-    expect(intake).toContain('Save plan amendments and review artifacts to ACTIVE_PLAN');
-    expect(intake).toContain('Send phase announcements and the final approval request in the conversation');
-    expect(intake).toContain("init backs up SOURCE_PLAN exactly");
-    expect(intake).toContain('without losing requirements');
-    expect(intake).toContain('init "<SOURCE_PLAN>" "<ACTIVE_PLAN>" "<RESTORE_PATH>"');
-    expect(intake).toContain('Use returned paths/`scope`');
-    expect(intake).toContain('On helper errors, stop');
-    expect(intake).toContain('analysis stays in `## Review record`');
+    expect(intake.replace(/\s+/g, ' ')).toContain('ACTIVE_PLAN (harness-assigned plan, else SOURCE_PLAN)');
+    expect(intake.replace(/\s+/g, ' ')).toContain('Save plan amendments and review artifacts to ACTIVE_PLAN');
+    expect(intake.replace(/\s+/g, ' ')).toContain('Send phase announcements and the final approval request in the conversation');
+    expect(intake.replace(/\s+/g, ' ')).toContain("init backs up SOURCE_PLAN exactly");
+    expect(intake.replace(/\s+/g, ' ')).toContain('without losing requirements');
+    expect(intake.replace(/\s+/g, ' ')).toContain('init "<SOURCE_PLAN>" "<ACTIVE_PLAN>" "<RESTORE_PATH>"');
+    expect(intake.replace(/\s+/g, ' ')).toContain('Use returned paths/`scope`');
+    expect(intake.replace(/\s+/g, ' ')).toContain('On helper errors, stop');
+    expect(intake.replace(/\s+/g, ' ')).toContain('analysis stays in `## Review record`');
     // Binding belongs to the lazy execution site, not a stale intake variable.
     expect(intake).not.toContain('Bind `<review_plan_path>`');
   });
 
   test('DX scope consumes the deterministic full-input result and permits only enabling overrides', () => {
     const intake = read('autoplan/SKILL.md.tmpl').split('### Step 2: Read context')[1]?.split('### Step 3:')[0] ?? '';
-    expect(intake).toContain('scope "<ACTIVE_PLAN>"');
-    expect(intake).toContain('Use returned `dxRequired`');
-    expect(intake).toContain('threshold is 2+ term matches');
-    expect(intake).toContain('`--developer-tool` or `--agent-primary`');
-    expect(intake).toContain('no context label can negate a positive result');
-    expect(intake).toContain('false and neither semantic trigger applies');
+    expect(intake.replace(/\s+/g, ' ')).toContain('scope "<ACTIVE_PLAN>"');
+    expect(intake.replace(/\s+/g, ' ')).toContain('Use returned `dxRequired`');
+    expect(intake.replace(/\s+/g, ' ')).toContain('threshold is 2+ term matches');
+    expect(intake.replace(/\s+/g, ' ')).toContain('`--developer-tool` or `--agent-primary`');
+    expect(intake.replace(/\s+/g, ' ')).toContain('no context label can negate a positive result');
+    expect(intake.replace(/\s+/g, ' ')).toContain('false and neither semantic trigger applies');
   });
 
   test('every native and outside call site binds the fresh snapshot, retaining requested outside consensus', () => {

@@ -664,37 +664,35 @@ regenerate and reread the full packet if the implementation or accepted decision
   Never dispatch `<CEO_STEP0_CHECKPOINT>`: it is the stable amendment baseline, not current review input.
   `nativePrompt` is the file's review body, not the Agent prompt. Resume at the first incomplete gate.
 
-Pending is not unavailable. Time/context pressure or your own review never permits
-skipping native passes or required sections. Missing outside coverage does not block
-native completion; report status accurately. Never read raw agent transcripts.
+Pending is not unavailable. Never skip native passes/required sections for time,
+context pressure or your own review. Missing outside coverage does not block native
+completion; report accurately. Never read raw agent transcripts.
 
 ---
 
 ## What "Auto-Decide" Means
 
-Auto-decide replaces the USER'S answer, not the ANALYSIS. Execute every loaded
-section at full interactive depth; answer its AskUserQuestion using the 6 principles.
+Auto-decide replaces the USER'S answer, not ANALYSIS. Run each loaded section at
+full interactive depth; answer AskUserQuestion using the 6 principles.
 
-**Default resolution: the recommended option.** Take `(recommended)`; modes use
-the skill's context default. Use the 6 principles when no recommendation exists
-or to break ties. If a principle disagrees, take the recommendation and surface
-the disagreement as Taste at the final gate.
+**Default resolution: the recommended option.** Take `(recommended)` or the mode's
+context default. Use the 6 principles for missing recommendations/ties. On principle
+disagreement, take the recommendation and surface the disagreement as Taste at the final gate.
 
 **Never auto-decide User Challenges:** both models agree to change the user's
-direction or reinterpret settled decisions, or a premise is clearly wrong. Queue them
-for the Final Approval Gate, never mid-run stops. Interrupt the user once, there;
-they have context models lack. Use Decision Classification above.
+direction/settled decisions, or a premise is clearly wrong. Use Decision
+Classification; ask once at Final Approval Gate, never mid-run. The user has
+context models lack.
 
-Read referenced code, diffs and files; identify and decide every issue. Produce
-all required diagrams, tables, registries and artifacts on disk or in the plan.
-LOG each decision; record ALL accepted obligations below and run `amend-input` before continuing.
-Missing deliverables mean an incomplete review.
+Read referenced code/diffs/files; decide every issue. Produce all required
+diagrams, tables, registries and artifacts on disk or in the plan. LOG decisions,
+record ALL accepted obligations below and run `amend-input` before continuing.
+Missing deliverables make the review incomplete.
 
-Never replace required outputs with summaries or compress sections into one-line
-rows; fewer than 3 sentences likely means compression. "No issues found" requires
-1-2 sentences stating what you examined and why nothing was flagged. State the
-evidence and reason for any inapplicable section; only Phase 0's skip list permits
-skipping. Never abort or redirect to interactive review: the user chose /autoplan.
+No summary substitutes or one-line sections; fewer than 3 sentences likely means
+compression. "No issues found" needs 1-2 sentences stating what was examined and why nothing was flagged.
+Explain inapplicability with evidence; skip only under Phase 0's list. Never abort
+or redirect to interactive review: the user chose /autoplan.
 
 **Accepted obligations:** One unfenced block per phase in `Review record`:
 ```markdown
@@ -780,13 +778,12 @@ Resolve this phase's source to absolute `<REVIEW_SKILL>`; load via its checkpoin
 - Phase 2.5: `~/.claude/skills/gstack/plan-devex-review/SKILL.md` (only if DX scope detected)
 - Phase 3: `~/.claude/skills/gstack/plan-eng-review/SKILL.md`
 
-Use the same installed skill registry as /autoplan. Resolve sibling paths from its
-discovered SKILL.md directory, never cwd/runtime assets. Missing skill: report the
-missing phase and setup repair; never substitute another harness or claim completion.
+Use /autoplan's installed registry; resolve siblings from its discovered SKILL.md
+directory, never cwd/runtime assets. Missing skill: report phase and setup repair,
+without substituting a harness or claiming completion.
 
-Do not prefetch future phase sections or review skills. Read each at its trigger;
-load the tasks aggregator at Phase 4. All applicable skills and required lazy
-sections still run in full.
+Read skills/sections only at their triggers, never prefetch future phases. Load
+the tasks aggregator at Phase 4. Run all applicable skills and lazy sections fully.
 
 **Section skip list — when following a loaded skill file, SKIP these sections
 (they are already handled by /autoplan):**
@@ -856,7 +853,9 @@ Branch on the echoed `CODEX_MODE`:
 - **`model_unusable`** — authed but the account cannot use gstack's selected Codex model (#2477: HTTP 400 on every call). Relay the probe's HINT lines, tell the user the one-line fix (set `GSTACK_CODEX_MODEL=<supported-model>` or pass an explicit `-c model=...` override), and fall back to the Claude subagent path. The ~10s round trip is cached for 1h; timeouts fail open to `ready`.
 - **`ready`** — run the Codex pass below.
 
-Disabled/unavailable: retain each applicable native pass. Recheck before each outside dispatch. Track provider and completed/unavailable/disabled/skipped per phase; CEO completion covers only CEO. Missing voices: N/A, never CONFIRMED. Skipped scope stays skipped.
+Disabled/unavailable retains applicable native passes. Recheck each outside dispatch.
+Record provider and completed/unavailable/disabled/skipped per phase; CEO covers
+only CEO. Missing voices: N/A, never CONFIRMED. Skipped scope stays skipped.
 
 
 ## Phase 1: CEO Review (Strategy & Scope)
