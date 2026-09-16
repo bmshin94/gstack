@@ -242,7 +242,7 @@ and carry exact approvals forward without asking again.
 **Keep the stated limits.** Record each measure, value, unit and prerequisite. Count all deliverables, including reused code. Changing a limit needs evidence and user approval.
 
 **Storage policy: choose before writing.** Honor user/host restrictions for each artifact and cleanup. Working/active plan means the requested output, otherwise the reviewed plan, otherwise the host's active plan; it is one document.
-- Use native Write/Edit for permitted plan documents (host editor if unavailable); use each other artifact's specified writer.
+- For permitted plan documents, use native Write to create a missing file and scoped Edit for every checkpoint in an existing file (host editor if unavailable). A complete save means all current plan content, ledger rows and comparisons are present in the resulting artifact; preserve unchanged blocks instead of rewriting them. Use each other artifact's specified writer.
 - If no path is permitted, present the complete labeled text in chat as **not persisted** and continue without attempting a write.
 - If an attempted save fails, report it and stop; do not switch to chat. Explicitly best-effort logs may fail without stopping. Never claim an unconfirmed save, read-back or log.
 
@@ -317,14 +317,25 @@ fixes. Do not add unrelated work just to create another option.
 Score only coverage differences within this row: 10 = all edge cases, 7 = happy
 path, 3 = shortcut. For different kinds of work, write: "Note: options differ in kind, not coverage — no completeness score."
 
-**Pre-question checkpoint:** Save or present the complete plan under the storage
-policy: current values, pending rows and finished comparisons. Include
-`currentDecision` as question/header text and complete labeled option paragraphs;
-prefix selectors if absent. Validate every description: effort is S/M/L/XL and
-risk is low/medium/high. Fix invalid values in `currentDecision` and repeat step 3.
-Read back: verify every field against `currentDecision` and each citation against
-its source. For chat, verify the complete **not persisted** text. A grid, summary
-or pointer is insufficient. Stop on failed save/mismatch. A changed decision repeats step 3.
+**Pre-question checkpoint:** Complete this sequence for every question, including
+new findings discovered in later sections.
+
+- **Row.** Find exactly one ledger row with the ID that `currentDecision` and the question
+   cite. Check its owner, Current/Proposed, Status and Exact approval and scope.
+   If the row is missing or duplicated, return to 0D step 2 (Record the pending choice) and repair it first.
+- **Fields.** Validate every description: effort is S/M/L/XL and risk is low/medium/high.
+   Each is one exact value, never a range. Fix invalid values in `currentDecision`
+   and repeat 0D step 3.
+- **Save.** Save or present the complete plan under the storage policy: current values,
+   pending rows and finished comparisons. Include `currentDecision` as
+   question/header text and complete labeled option paragraphs; prefix selectors
+   if absent. Copy these fields completely; keep the exact native header and labels.
+- **Read-back.** Read back: verify every field against `currentDecision` and each citation against
+   its source. Inspect both the ledger row and the complete saved `currentDecision`;
+   verify their IDs match the question before asking it. For chat, verify the
+   complete **not persisted** text. A grid, summary or pointer is insufficient.
+
+Stop on failed save/mismatch. A changed decision repeats 0D step 3.
 
 **4. Ask, record the answer, and amend.**
 Ask one row per call, citing its ID, using the unchanged verified `currentDecision`.

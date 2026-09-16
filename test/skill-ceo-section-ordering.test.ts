@@ -186,15 +186,26 @@ test('CEO defines pending choices and storage before its first decision procedur
   expect(policy).toBeLessThan(firstDecision);
   expect(choice).toBeLessThan(firstDecision);
   const compare = compactProse(step0.split('**3. Compare and save')[1]!.split('**4. Ask, record')[0]!);
-  expect(compare).toContain('**Pre-question checkpoint:** Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
+  expect(compare).toContain('Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
   // Native c6fc D3 saved and asked Effort 0: matching copies did not validate the domain.
   expect(compare).toContain('For a choice with no implementation work, use S and state the zero work in its summary');
+  // cdd D3 cited a missing ledger row; a completed comparison did not create it.
+  const rowCheck = compare.indexOf('Find exactly one ledger row with the ID');
+  expect(rowCheck).toBeGreaterThan(compare.indexOf('**Pre-question checkpoint:**'));
+  expect(compare).toContain('return to 0D step 2 (Record the pending choice) and repair it first');
+  expect(compare).toContain('Each is one exact value, never a range');
+  expect(compare).toContain('Inspect both the ledger row and the complete saved `currentDecision`');
+  expect(compare).toContain('keep the exact native header and labels');
   const validate = compare.indexOf('Validate every description: effort is S/M/L/XL and risk is low/medium/high');
-  const repair = compare.indexOf('Fix invalid values in `currentDecision` and repeat step 3');
+  const repair = compare.indexOf('Fix invalid values in `currentDecision` and repeat 0D step 3');
   const readback = compare.indexOf('Read back: verify every field against `currentDecision`');
   expect(validate).toBeGreaterThan(compare.indexOf('**Pre-question checkpoint:**'));
+  expect(validate).toBeGreaterThan(rowCheck);
   expect(repair).toBeGreaterThan(validate);
   expect(readback).toBeGreaterThan(repair);
+  expect(step0).toContain('use native Write to create a missing file and scoped Edit for every checkpoint in an existing file');
+  expect(step0).toContain('all current plan content, ledger rows and comparisons are present in the resulting artifact');
+  expect(step0).toContain('preserve unchanged blocks instead of rewriting them');
   const persistence = step0.split('### 0H.')[1]!.split('### 0I.')[0]!;
   expect(persistence.indexOf('**Save each input under the storage policy.**')).toBeLessThan(persistence.indexOf('mkdir -p'));
   expect(persistence).toContain('**Otherwise:**');
@@ -236,7 +247,7 @@ test('CEO saves compared proposals before recording an actual answer in its sepa
   const actualAnswer = procedure.indexOf('Record its reference and scope in Exact approval and scope');
   const amend = procedure.indexOf('update Status, and amend only what it authorizes');
   expect(0 <= compare && compare < save && save < ask && ask < actualAnswer && actualAnswer < amend).toBe(true);
-  expect(procedure.slice(compare, ask)).toContain('**Pre-question checkpoint:** Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
+  expect(procedure.slice(compare, ask)).toContain('Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
   expect(procedure.slice(compare, ask)).toContain('show unchanged, shared and pending values');
   expect(source).toContain('If an attempted save fails, report it and stop');
   expect(procedure.slice(0, compare)).toContain('Draft rows before comparing options. Do not prewrite approval or implementation tasks');
@@ -251,7 +262,7 @@ test('CEO value comparisons and decline-all outcomes stay explicit before approv
   const pendingSave = procedure.indexOf('Draft rows before comparing options.');
   const values = procedure.indexOf('Commitment | Source/approval or pending | Current | A | B | C');
   expect(values).toBeGreaterThan(-1);
-  const comparedSave = procedure.indexOf('**Pre-question checkpoint:** Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
+  const comparedSave = procedure.indexOf('Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
   const ask = procedure.indexOf('**4. Ask, record');
   expect(pendingSave >= 0 && pendingSave < values && values < comparedSave && comparedSave < ask).toBe(true);
   const comparison = procedure.slice(values, ask);
@@ -353,7 +364,7 @@ test('CEO outside findings reuse authority-first decisions without turning unkno
   expect(procedure).toContain('Draft rows before comparing options. Do not prewrite approval or implementation tasks');
   expect(skeleton).toContain('If an attempted save fails, report it and stop; do not switch to chat');
   expect(skeleton).toContain('Honor user/host restrictions for each artifact and cleanup');
-  expect(procedure).toContain('**Pre-question checkpoint:** Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
+  expect(procedure).toContain('Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
   expect(procedure).toContain('Ask one row per call, citing its ID');
   expect(procedure).toContain('Record its reference and scope in Exact approval and scope');
   expect(procedure).toContain('amend only what it authorizes');
@@ -1104,7 +1115,7 @@ describe('CEO complete question persistence before dispatch', () => {
     expect(policy).toContain('If an attempted save fails, report it and stop; do not switch to chat');
     expect(cycle).toContain('For chat, verify the complete **not persisted** text');
     expect(cycle).toContain('Stop on failed save/mismatch');
-    expect(cycle).toContain('A changed decision repeats step 3');
+    expect(cycle).toContain('A changed decision repeats 0D step 3');
     expect(cycle).toContain("Use prose/auto-decision transport only as the preamble authorizes");
     expect(cycle).toContain('Only a preamble-authorized auto-decision resolves this wait; record its authority');
     expect(cycle).toContain('A recommendation is not approval');

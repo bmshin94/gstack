@@ -80,6 +80,8 @@ and required verification.
 
 **Resolve.** If this section needs a new decision or evidence warrants reopening
 one, complete 0D through its post-answer save, then continue to Apply below.
+Use the same row ID in the ledger, `currentDecision` and question; complete 0D's
+pre-question checkpoint before each new or reopened question.
 If all choices are settled, cite their exact answers and go straight to Apply.
 Resolve critical risks now. Reference other pending rows in their owner sections;
 do not decide them here. Keep independent safety fixes and throughput improvements
