@@ -503,6 +503,119 @@ for(const status of ['deferred','not required','not needed','superseded','no lon
 // Current choice identity is in the title; current defect and exact inventory
 // belong to this same native question's source and explanation.
 import currentChoiceCab3 from './fixtures/eng-current-choice-cab3.json';
+
+const countedCf74 = (index: number) => structuredClone(currentChoiceCab3.currentCountCf74.calls[index]) as NativePlanQuestionCall;
+const countedResultCf74 = (call: NativePlanQuestionCall) => evaluateEngSeedCoverage(
+  {status:'ready', calls:[call], assistantMessages:[]}, '', currentChoiceCab3.currentCountCf74.startedAt, currentChoiceCab3.currentCountCf74.finishedAt).decisions;
+const countedChangeCf74 = (index:number, edit:(q:NativePlanQuestionCall['questions'][number])=>void) => {
+  const c=countedCf74(index), old=c.questions[0]!.question, answer=c.answers![old]!;
+  edit(c.questions[0]!);c.answers={[c.questions[0]!.question]:c.questions[0]!.options.some(o=>o.label===answer)?answer:c.questions[0]!.options[0]!.label};return c;
+};
+for(const [index,name] of [[0,'current undefined-class removal'],[1,'current facade reduction']] as const)
+  test('cf74 counted complexity: '+name+' uses its complete current question and one offered alternative',()=>{
+    const c=countedCf74(index);expect(countedResultCf74(c)).toEqual({complexity:`${c.sessionId}:${c.toolUseId}`});
+    expect(isEngSeedDecisionAUQ(nativePlanCallFingerprint(c,0,true),[],currentChoiceCab3.currentCountCf74.startedAt,currentChoiceCab3.currentCountCf74.finishedAt)).toBe(true);
+  });
+function countedCheckCf74(index:number,name:string,expected:boolean,edit:(q:NativePlanQuestionCall['questions'][number])=>void) {
+  test(`cf74 counted complexity ${index}: ${name}`,()=>{
+    const c=countedChangeCf74(index,edit);
+    expect(countedResultCf74(c)).toEqual(expected?{complexity:`${c.sessionId}:${c.toolUseId}`}:{ });
+  });
+}
+for(const index of [0,1]) {
+  for(const [name,edit] of Object.entries({
+    'foreign source':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','OTHER.md');},
+    'same-basename foreign path':(q:any)=>{q.question=q.question.replaceAll('PLAN.md','archive/PLAN.md');},
+    'duplicate source':(q:any)=>{q.question+='\nProject/branch/task: OTHER.md';},
+    'only quoted source':(q:any)=>{q.question=q.question.replace(/^Project\/branch\/task: (.+)$/m,'Project/branch/task: "$1"');},
+    'quoted explanation':(q:any)=>{q.question=q.question.replace(/^ELI10: (.+)$/m,'ELI10: "$1"');},
+    'single-quoted explanation':(q:any)=>{q.question=q.question.replace(/^ELI10: (.+)$/m,"ELI10: '$1'");},
+    'historical explanation':(q:any)=>{q.question=q.question.replace('ELI10: ','ELI10: Historical example: ');},
+    'quoted title':(q:any)=>{q.question=q.question.replace(/^([^\n]+)/,'"$1"');},
+    'conditional choice':(q:any)=>{q.question+='\nThis decision applies only if approved.';},
+    'withdrawn choice':(q:any)=>{q.question+='\nThis decision is withdrawn.';},
+    'quoted current withdrawn choice':(q:any)=>{q.question+='\nThis decision is "withdrawn".';},
+    'reopened choice':(q:any)=>{q.question+='\nThis decision is reopened.';},
+    'missing current explanation':(q:any)=>{q.question=q.question.replace(/^ELI10: .+$/m,'ELI10: A general design discussion.');},
+  })) countedCheckCf74(index,name,false,edit);
+  const reduction=(q:any)=>q.options.find((o:any)=>/^(?:Defer TokenStore|Drop the facade)/.test(o.label));
+  for(const [name,edit] of Object.entries({
+    'quoted complete remedy':(q:any)=>{const o=reduction(q);o.description='"'+o.description+'"';},
+    'withdrawn remedy':(q:any)=>{reduction(q).description+='\nThis remedy is withdrawn.';},
+    'quoted current withdrawn remedy':(q:any)=>{reduction(q).description+='\nThis option is "withdrawn".';},
+    'conditional remedy':(q:any)=>{reduction(q).description+='\nThis remedy applies only if approved.';},
+    'foreign remedy':(q:any)=>{reduction(q).description+='\nThis remedy applies to another project.';},
+    'adapter replacement':(q:any)=>{reduction(q).description+='\nReplace the existing adapter.';},
+    'subordinate extra work':(q:any)=>{reduction(q).description+='\nWhile implementing a new database.';},
+    'same option adds another feature':(q:any)=>{reduction(q).description+='\nAlso add a new persistence engine.';},
+    'descriptive negated removal':(q:any)=>{reduction(q).description+='\nThis option never drops '+(index===0?'TokenStore.':'the facade.');},
+    'imperative negated removal':(q:any)=>{reduction(q).description+='\nDo not drop '+(index===0?'TokenStore.':'the facade.');},
+    'only history contains remedy':(q:any)=>{const o=reduction(q);o.description='Earlier note: "'+o.description+'"';},
+  })) countedCheckCf74(index,name,false,edit);
+  for(const [name,edit] of Object.entries({
+    'options may reorder':(q:any)=>{q.options.reverse();},
+    'decision number may change':(q:any)=>{q.question=q.question.replace(/^D\d+/,'D77');},
+    'current question can cite earlier quoted history':(q:any)=>{q.question+='\nEarlier note: "This decision is withdrawn."';},
+    'formatting does not own the evidence':(q:any)=>{q.question=q.question.replaceAll('`','');},
+  })) countedCheckCf74(index,name,true,edit);
+}
+for(const [name,edit] of Object.entries({
+  'mismatched baseline count':(q:any)=>{q.question=q.question.replace('12 files, 4 new classes','12 files, 5 new classes');},
+  'missing current baseline count':(q:any)=>{q.question=q.question.replace('12 files, 4 new classes','an unspecified scope');},
+  'duplicate baseline count':(q:any)=>{q.question=q.question.replace('12 files, 4 new classes','12 files, 4 new classes; 12 files, 5 new classes');},
+  'no stated contract gap':(q:any)=>{q.question=q.question.replace('without saying what it stores that the adapter does not','with a documented persistence contract');},
+  'foreign component has the missing contract':(q:any)=>{q.question=q.question.replace('class called TokenStore (PLAN.md:35)','class called OtherStore (PLAN.md:35)');},
+  'existing adapter does not store tokens':(q:any)=>{q.question=q.question.replace('adapter stores tokens','adapter does not store tokens');},
+  'existing adapter does not expire tokens':(q:any)=>{q.question=q.question.replace('evicts expired ones','retains expired ones');},
+  'current independent responsibility':(q:any)=>{q.question+='\nCorrection: TokenStore has a documented independent persistence purpose.';},
+  'already removed from current refactor':(q:any)=>{q.question+='\nCorrection: TokenStore is already removed from this refactor.';},
+  'no current keep option':(q:any)=>{q.options[1].label='Discuss storage';},
+  'keep option actually removes class':(q:any)=>{q.options[1].description+='\nAlso remove TokenStore.';},
+  'removal offers no smaller count':(q:any)=>{q.options[0].description=q.options[0].description.replace('Drops one of the 4 new classes','Keeps all 4 new classes');},
+  'same-option negated count':(q:any)=>{q.options[0].description=q.options[0].description.replace('Drops one of the 4 new classes','Never drops one of the 4 new classes');},
+  'same-option retained class':(q:any)=>{q.options[0].description+='\nTokenStore remains in this refactor.';},
+  'adapter ownership moved to keep option':(q:any)=>{const s='One token source of truth: the retained adapter behind the AuthCache facade.';q.options[0].description=q.options[0].description.replace(s,'No current storage choice.');q.options[1].description+=' '+s;},
+  'adapter ownership negated':(q:any)=>{q.options[0].description=q.options[0].description.replace('One token source of truth','Not one token source of truth');},
+})) countedCheckCf74(0,name,false,edit);
+for(const [name,edit] of Object.entries({
+  'wrong total count':(q:any)=>{q.question=q.question.replace('four new types:', 'five new types:');},
+  'wrong grouped service count':(q:any)=>{q.question=q.question.replace('two services (AuthBroker, SessionMint)','three services (AuthBroker, SessionMint)');},
+  'duplicate grouped service':(q:any)=>{q.question=q.question.replace('two services (AuthBroker, SessionMint)','two services (AuthBroker, AuthBroker)');},
+  'foreign current service':(q:any)=>{q.question=q.question.replace('two services (AuthBroker, SessionMint)','two services (AuthBroker, OtherService)');},
+  'independent current facade':(q:any)=>{q.question+='\nCorrection: AuthCache now has independent behavior.';},
+  'no current facade behavior gap':(q:any)=>{q.question=q.question.replace('it adds no behavior of its own','it owns independent policy behavior');},
+  'quoted gap only':(q:any)=>{q.question=q.question.replace('so it adds no behavior of its own','so "it adds no behavior of its own"');},
+  'smaller-count arithmetic wrong':(q:any)=>{q.options[1].description=q.options[1].description.replace('Three new types instead of four','Two new types instead of four');},
+  'before-count arithmetic wrong':(q:any)=>{q.options[1].description=q.options[1].description.replace('Three new types instead of four','Three new types instead of five');},
+  'negated smaller count':(q:any)=>{q.options[1].description=q.options[1].description.replace('Three new types instead of four','Not three new types instead of four');},
+  'current keep count contradicts baseline':(q:any)=>{q.options[0].description=q.options[0].description.replace('carrying 3 new ones','carrying 2 new ones');},
+  'no keep option':(q:any)=>{q.options[0].label='Discuss interfaces';},
+  'keep option removes facade':(q:any)=>{q.options[0].description+='\nAlso drop the facade.';},
+  'smaller alternative retains facade':(q:any)=>{q.options[1].description+='\nKeep the AuthCache facade.';},
+  'direct adapter action only in another option':(q:any)=>{q.options[1].label='Drop the facade';q.options[0].description+=' Use the adapter directly.';},
+  'count only in another option':(q:any)=>{const s='Three new types instead of four';q.options[1].description=q.options[1].description.replace(s,'A different arrangement');q.options[0].description+=' '+s;},
+  'existing adapter tests not retained':(q:any)=>{q.options[1].description=q.options[1].description.replace("adapter's existing tests",'new implementation tests');},
+})) countedCheckCf74(1,name,false,edit);
+countedCheckCf74(0,'equivalent current question and numeric baseline',true,q=>{
+  q.question=q.question.replace('Does TokenStore stay in this refactor, or is it cut/deferred?','Keep TokenStore in this refactor or remove it?').replace('12 files, 4 new classes','12 files, four new classes');
+});
+countedCheckCf74(1,'flat explicit inventory and numeric reduction',true,q=>{
+  q.question=q.question.replace('four new types: two services (AuthBroker, SessionMint), RequestPolicy, and AuthCache.','4 new classes: AuthBroker, SessionMint, RequestPolicy, and AuthCache.');
+  q.options[1]!.description=q.options[1]!.description!.replace('Three new types instead of four','3 new classes instead of 4');
+});
+countedCheckCf74(0,'duplicate current metadata count is ambiguous',false,q=>{q.question=q.question.replace('12 files, 4 new classes','12 files, 4 new classes; 12 files, 4 new classes');});
+countedCheckCf74(0,'later contradictory removal count cannot borrow earlier reduction',false,q=>{q.options[0]!.description+=' Drops one of the 5 new classes.';});
+countedCheckCf74(1,'duplicate complete current inventory is ambiguous',false,q=>{q.question=q.question.replace('ELI10: ','ELI10: The plan adds four new types: AuthBroker, SessionMint, RequestPolicy, and AuthCache. ');});
+countedCheckCf74(1,'later contradictory option count stays operative',false,q=>{q.options[1]!.description+=' Four new types instead of four.';});
+test('cf74 counted complexity keeps complete native ACK and distinct-seed requirements',()=>{
+  const x=currentChoiceCab3.currentCountCf74, c=countedCf74(0), fp=nativePlanCallFingerprint(c,0,true);
+  for(const option of c.questions[0]!.options){c.answers={[c.questions[0]!.question]:option.label};expect(countedResultCf74(c).complexity).toBeDefined();}
+  expect(isEngSeedDecisionAUQ(fp,[countedCf74(0)],x.startedAt,x.finishedAt)).toBe(false);
+  expect(isEngSeedDecisionAUQ(nativePlanCallFingerprint(countedCf74(1),0,true),[countedCf74(0)],x.startedAt,x.finishedAt)).toBe(false);
+  for(const edit of [(c:any)=>{c.answered=false;},(c:any)=>{c.failed=true;},(c:any)=>{c.answers={};},(c:any)=>{c.unansweredQuestionIndices=[0];},(c:any)=>{c.answeredAt=new Date(x.finishedAt+1).toISOString();}]){const v=countedCf74(0);edit(v);expect(countedResultCf74(v)).toEqual({});}
+  const packet=countedCf74(0),other=countedCf74(1);packet.questions.push(other.questions[0]!);packet.answers![other.questions[0]!.question]=other.answers![other.questions[0]!.question]!;
+  expect(countedResultCf74(packet)).toEqual({});
+});
 const cab3Call=(index:number)=>structuredClone(currentChoiceCab3.calls[index]) as NativePlanQuestionCall;
 const cab3Result=(c:NativePlanQuestionCall)=>evaluateEngSeedCoverage({status:'ready',calls:[c],assistantMessages:[]},'',0,Date.parse(currentChoiceCab3.captureAt)).decisions;
 const cab3Change=(index:number,edit:(q:NativePlanQuestionCall['questions'][number])=>void)=>{const c=cab3Call(index);edit(c.questions[0]!);c.answers={[c.questions[0]!.question]:c.questions[0]!.options[0]!.label};return c;};

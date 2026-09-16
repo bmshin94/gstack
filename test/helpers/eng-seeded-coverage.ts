@@ -130,6 +130,12 @@ function seedSubjects(q: NativePlanQuestionCall['questions'][number]): Seed[] {
   // current explanation; a bare component name cannot own a generic shortcut.
   if (q.question.includes('\n') && /^TokenStore\s*:/.test(decisionTitle) &&
       /\b(?:this|the current) PR\b/i.test(decisionTitle)) return explainedSeedSubjects(q);
+  // Current class choices can name keep/remove in the title and put the count
+  // in metadata or an explanation. They still require owned source evidence;
+  // a title-only shortcut must not rescue a failed comparison.
+  if (q.question.includes('\n') && (
+      /\bTokenStore\b/.test(decisionTitle) && /\b(?:this|the current) (?:PR|refactor)\b/i.test(decisionTitle) && /\b(?:keep|include|retain|stay)\b/i.test(decisionTitle) && /\b(?:defer(?:red)?|cut|remove|drop)\b/i.test(decisionTitle) ||
+      /\bAuthCache\b/.test(decisionTitle) && /\bfacade\b/i.test(decisionTitle) && /\b(?:class(?:es)?|arrangement|structure)\b/i.test(decisionTitle))) return explainedSeedSubjects(q);
   const offered = q.options.map(o => `${o.label} ${o.description ?? ''}`).join('\n');
   const directAction = title.match(/\b(?:should|shall|can|do|would)\s+(?:we|I)\s+([^?]+)\?\s*$/i)?.[1];
   const action = (re: RegExp) => re.test(offered) || Boolean(directAction && new RegExp(`^(?:${re.source})`, re.flags).test(directAction));
@@ -320,6 +326,10 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     const settledStructure = (raw: string) => !new RegExp(`\\b${owner} (?:is|was|has been) ${unsettled}\\b`, 'i').test(current(raw.replace(
       new RegExp(`(${owner} (?:is|was|has been) )["“'‘\\x60](${unsettled})["”'’\\x60]`, 'gi'), '$1$2')));
     const structureOptions = q.options.map(o => `${o.label}\n${o.description ?? ''}`).filter(settledStructure).map(current).filter(active);
+    const quotedClassField = q.question.split('\n').some(line => {
+      const value = /^(?:ELI10|Project\/branch\/task):\s*(.+)$/.exec(line)?.[1]?.trim();
+      return value && [['"','"'],["'","'"],['“','”'],['‘','’']].some(([open,close]) => value.startsWith(open!) && value.endsWith(close!));
+    });
     // A structure comparison may spell out its counted alternatives in ELI10
     // and abbreviate the native labels. Join only matching option letters and
     // counts; both the smaller body and its own native option must reuse the
@@ -368,26 +378,68 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     // Removing one undefined class is also a complexity decision. Its own
     // counted baseline and one complete removal/retained-store alternative
     // establish the reduction, without borrowing a later inventory summary.
-    const candidateScope = /^TokenStore\s*:/.test(title) && /\b(?:this|the current) PR\b/i.test(title) &&
-      /\b(?:keep|include|retain)\b/i.test(title) && /\b(?:defer|cut|remove|drop)\b/i.test(title);
+    const candidateScope = /\bTokenStore\b/.test(title) && /\b(?:this|the current) (?:PR|refactor)\b/i.test(title) &&
+      /\b(?:keep|include|retain|stay)\b/i.test(title) && /\b(?:defer(?:red)?|cut|remove|drop)\b/i.test(title);
     if (candidateScope) {
+      if (quotedClassField) return [];
       const listed = /\bplan (?:lists|includes) TokenStore as one of (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new classes\b/i.exec(explanation);
-      const count = listed ? counts[listed[1]!.toLowerCase()] ?? Number(listed[1]) : 0;
-      const removedAlready = /\bTokenStore (?:is |has been )?(?:already |now )?(?:removed|cut|dropped|deferred|not included|no longer included) (?:from|in) (?:this |the )?PR\b/i;
+      const metadataCounts = [...metadata[0]!.matchAll(/\b[1-9]\d* files, (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new classes\b/gi)];
+      const currentCounts = [...(listed ? [listed[1]!] : []), ...metadataCounts.map(m => m[1]!)].map(n => counts[n.toLowerCase()] ?? Number(n));
+      const count = metadataCounts.length <= 1 && currentCounts.length && new Set(currentCounts).size === 1 ? currentCounts[0]! : 0;
+      const removedAlready = /\bTokenStore (?:is |has been )?(?:already |now )?(?:removed|cut|dropped|deferred|not included|no longer included) (?:from|in) (?:this |the )?(?:PR|refactor)\b/i;
       const alternative = structureOptions.some(option => {
         const [label, ...rest] = option.split('\n'), description = rest.join('\n');
-        return /^(?:[A-D][):.]\s*)?(?:Defer|Cut|Remove|Drop)(?: TokenStore)?(?: \(recommended\))?$/i.test(label!) &&
+        const countedDrops = [...description.matchAll(/\b(?:removes?|drops?|cuts?) one of (?:the )?(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new classes\b/gi)];
+        const countedDrop = countedDrops[0];
+        return /^(?:[A-D][):.]\s*)?(?:Defer|Cut|Remove|Drop)(?: TokenStore)?(?: entirely)?(?: \(recommended\))?$/i.test(label!) &&
+          countedDrops.length <= 1 && (!countedDrop || (counts[countedDrop[1]!.toLowerCase()] ?? +countedDrop[1]!) === count) &&
           (/\b(?:removes?|drops?|cuts?) (?:an? undefined |this |the )class from (?:this |the )?PR\b/i.test(description) ||
-            /\bone fewer (?:file\/class|class(?: and file)?)\b/i.test(description)) &&
-          /\badapter remains the (?:single|only) source of truth for (?:cached )?tokens\b|\btoken storage is the adapter's job\b/i.test(description) &&
-          !/\b(?:never|does not|doesn't|will not|won't) (?:removes?|drops?|cuts?)\b|\bnot one fewer (?:file\/class|class(?: and file)?)\b/i.test(description) &&
-          !/\bTokenStore (?:still |now |will )*(?:remains?|stays?|is retained) in (?:this |the )?PR\b|\b(?:keep|retain|include) TokenStore in (?:this |the )?PR\b/i.test(option);
+            /\bone fewer (?:file\/class|class(?: and file)?)\b/i.test(description) || countedDrop && (counts[countedDrop[1]!.toLowerCase()] ?? +countedDrop[1]!) === count) &&
+          /\badapter remains the (?:single|only) source of truth for (?:cached )?tokens\b|\btoken storage is the adapter's job\b|\b(?:one|single) token source of truth: (?:the )?retained adapter behind (?:the )?AuthCache facade\b/i.test(description) &&
+          !/\b(?:do not|don't|never|does not|doesn't|will not|won't) (?:removes?|drops?|cuts?)\b|\bnot one fewer (?:file\/class|class(?: and file)?)\b/i.test(description) &&
+          !/\bTokenStore (?:still |now |will )*(?:remains?|stays?|is retained) in (?:this |the )?(?:PR|refactor)\b|\b(?:keep|retain|include) TokenStore in (?:this |the )?(?:PR|refactor)\b/i.test(option) &&
+          !/\b(?:not (?:one|a single)|no single) token source of truth\b|\b(?:replace|remove|drop|change) (?:the )?(?:existing|retained) adapter\b|\b(?:also|then|while|and) (?:add(?:ing)?|creat(?:e|ing)|implement(?:ing)?|install(?:ing)?|enabl(?:e|ing)|disabl(?:e|ing)|deploy(?:ing)?)\b|\b(?:other|another|foreign|different) (?:project|remedy|option)\b/i.test(option);
       });
       return count > 1 && settledStructure(q.question) && !independentStore.test(text) && !removedAlready.test(text) &&
-        /\bnever (?:says|states|describes) (?:what it does|its (?:purpose|responsibility|contract))\b|\bhas no (?:stated|defined|documented) (?:purpose|responsibility|contract)\b/i.test(explanation) &&
-        /\bexisting (?:cache )?adapter already (?:stores|holds) tokens\b/i.test(explanation) &&
-        /\bhandles (?:expiry and invalidation|invalidation and expiry)\b/i.test(explanation) &&
-        structureOptions.some(option => /^(?:[A-D][):.]\s*)?(?:Include|Keep|Retain)(?: TokenStore)?(?: \(recommended\))?\n/i.test(option)) && alternative ? ['complexity'] : [];
+        /\bnever (?:says|states|describes) (?:what it does|its (?:purpose|responsibility|contract))\b|\bhas no (?:stated|defined|documented) (?:purpose|responsibility|contract)\b|\bTokenStore(?: \(PLAN\.md:[1-9]\d*(?:[-–][1-9]\d*)?\))? without (?:saying|stating|describing) what it stores that the adapter does not\b/i.test(explanation) &&
+        /\bexisting (?:cache )?adapter (?:already )?(?:stores|holds) tokens\b/i.test(explanation) &&
+        (/\bhandles (?:expiry and invalidation|invalidation and expiry)\b/i.test(explanation) || /\bevicts expired\b/i.test(explanation) && /\binvalidates on\b/i.test(explanation)) &&
+        structureOptions.some(option => /^(?:[A-D][):.]\s*)?(?:Include|Keep|Retain)(?: TokenStore)?(?: \(recommended\))?\n/i.test(option) &&
+          !/\b(?:remove|drop|cut|defer) TokenStore\b/i.test(option.split('\n').slice(1).join('\n'))) && alternative ? ['complexity'] : [];
+    }
+    // Named service groups are still an explicit inventory: expand only a
+    // counted group whose names match its count, then check the total. Keep the
+    // smaller count and direct-adapter action in the same offered option.
+    const groupedInventories = [...explanation.matchAll(/\bplan (?:still )?(?:adds|introduces|contains|has) (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new (?:types|classes|components): ([^.]+)\./gi)];
+    const grouped = groupedInventories.length === 1 ? groupedInventories[0] : undefined;
+    if (grouped && /\bAuthCache\b/.test(title) && /\bfacade\b/i.test(title) && ownedStoreChoice) {
+      const total = counts[grouped[1]!.toLowerCase()] ?? +grouped[1]!;
+      let valid = true;
+      const expanded = grouped[2]!.replace(/(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) services \(([^)]+)\)/gi, (_, n, list) => {
+        const names = namesIn(list); if (names.length !== (counts[n.toLowerCase()] ?? +n) || new Set(names).size !== names.length) valid = false;
+        return list;
+      });
+      const names = namesIn(expanded);
+      const independentFacade = /\bAuthCache (?:now |already )?(?:adds|provides|has) (?:independent|distinct|new) (?:behavior|rules|policy)|\bAuthCache is no longer (?:a )?(?:pass-through|pure forwarder|thin wrapper)\b/i;
+      const lower = structureOptions.some(option => {
+        const [label, ...rest] = option.split('\n'), description = rest.join('\n');
+        const deltas = [...description.matchAll(/\b(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new (?:types|classes|components) instead of (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*)\b/gi)], delta = deltas[0];
+        return /^(?:[A-D][):.]\s*)?(?:Drop|Remove|Cut) (?:the |AuthCache )?facade, (?:use|call) (?:the )?(?:existing )?adapter directly(?: \(recommended\))?$/i.test(label!) && deltas.length === 1 && delta &&
+          (counts[delta[1]!.toLowerCase()] ?? +delta[1]!) === total - 1 && (counts[delta[2]!.toLowerCase()] ?? +delta[2]!) === total &&
+          /\badapter's existing tests\b/i.test(description) && /\btwo services\b[^.!?]*\badapter calls\b/i.test(description) &&
+          !/\b(?:do not|don't|never|does not|doesn't|will not|won't) (?:drops?|removes?|cuts?|uses?|calls?)\b|\b(?:not|never) (?:one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new (?:types|classes|components)\b|\b(?:keep|retain|restore) (?:the )?(?:AuthCache )?facade\b|\bAuthCache (?:still |now |will )*(?:remains?|stays?|is retained)\b|\b(?:replace|remove|drop|change) (?:the )?(?:existing|retained) adapter\b|\b(?:also|then|while|and) (?:add(?:ing)?|creat(?:e|ing)|implement(?:ing)?|install(?:ing)?|enabl(?:e|ing)|disabl(?:e|ing)|deploy(?:ing)?)\b|\b(?:other|another|foreign|different) (?:project|remedy|option)\b/i.test(option);
+      });
+      const kept = structureOptions.some(option => {
+        if (!/^(?:[A-D][):.]\s*)?(?:Keep|Retain) AuthCache facade(?: \(recommended\))?\n/i.test(option) ||
+            /\b(?:drop|remove|cut) (?:the |AuthCache )?facade\b/i.test(option.split('\n').slice(1).join('\n'))) return false;
+        const carries = [...option.matchAll(/\bcarrying (one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) new (?:ones|types|classes)\b/gi)];
+        return carries.every(m => (counts[m[1]!.toLowerCase()] ?? +m[1]!) + (/\bone more type\b/i.test(option) ? 1 : 0) === total);
+      });
+      if (!quotedClassField && valid && total > 2 && names.length === total && new Set(names).size === total &&
+          ['AuthBroker','SessionMint','AuthCache'].every(name => names.includes(name)) && settledStructure(q.question) &&
+          /\bAuthCache (?:is |is described as )?(?:a )?facade over the existing (?:cache )?adapter\b/i.test(explanation) &&
+          /\b(?:adds no behavior|no new behavior)\b/i.test(explanation) && /\b(?:thin wrapper|pass-through|pure forwarder)\b/i.test(explanation) && !independentFacade.test(text) &&
+          kept && lower) ids.push('complexity');
     }
     const repeatedStore = /\bTokenStore (?:is never (?:described|specified|defined)|has no (?:stated|defined|documented) (?:purpose|responsibility|contract))\b/i.test(explanation)
       && /\b(?:its name|TokenStore(?:'s)? (?:name|role)) (?:says it does what the adapter already does|duplicates (?:the )?(?:existing )?adapter's (?:job|role|responsibility))\b/i.test(explanation);

@@ -107,4 +107,71 @@
       "answeredAt": "2026-09-15T19:37:23.037Z"
     }
   }
+,
+  "currentCountCf74": {
+    "source": "cf74db538a2f4c4361f2573316abb91e01663564",
+    "startedAt": 1789522030257,
+    "finishedAt": 1789522274613.0,
+    "calls": [
+      {
+        "sessionId": "594a8522-7239-4615-a26d-d819aad1794c",
+        "toolUseId": "toolu_01SWGy7L6rVbJVwb4XzkB81i",
+        "questions": [
+          {
+            "header": "Scope cut",
+            "question": "D4 — Does TokenStore stay in this refactor, or is it cut/deferred?\nProject/branch/task: main; Scope Challenge complexity gate on PLAN.md \"Multi-tenant Auth Refactor\" (12 files, 4 new classes + AuthBroker).\nELI10: The plan already says the existing cache adapter stores tokens keyed by tenant, issuer, audience and policy version, evicts expired ones, and invalidates on logout/revocation/suspension (PLAN.md:7-13). Then it adds a brand-new class called TokenStore (PLAN.md:35) without saying what it stores that the adapter does not. Two places that hold tokens means two places that can disagree about whether a token is still valid. That is the exact bug class a multi-tenant auth system cannot afford.\nStakes if we pick wrong: keep it with no defined role and you ship a second token source of truth; cut it and it turns out to hold something the adapter cannot (say, refresh tokens with a different lifetime) and SessionMint has nowhere to put them.\nRecommendation: B (defer) because nothing in the plan names a TokenStore responsibility the retained adapter lacks; if a real one surfaces during implementation it comes back as its own scoped decision with a stated contract.\nNote: options differ in kind, not coverage — no completeness score.\nNet: fewer moving parts and one token source of truth vs keeping a slot open for a responsibility the plan has not written down.",
+            "options": [
+              {
+                "label": "Defer TokenStore (recommended)",
+                "description": "✅ One token source of truth: the retained adapter behind the AuthCache facade. ✅ Drops one of the 4 new classes and its file(s) from a 12-file diff. ❌ If refresh tokens or non-cache token state truly need a home, that comes back as a follow-up decision (human: ~1 day / CC: ~20 min later)."
+              },
+              {
+                "label": "Keep TokenStore",
+                "description": "✅ Keeps the plan's original shape; no re-planning of SessionMint's storage. ✅ Room for token state the cache adapter does not model, if that exists. ❌ Second token holder with undefined contract next to an adapter that already keys, evicts and invalidates tokens; drift and stale-token bugs live in that gap."
+              },
+              {
+                "label": "Cut TokenStore entirely",
+                "description": "✅ Cleanest scope: the name disappears from the plan and cannot creep back silently. ✅ Same simplification win as deferring. ❌ If a real need appears mid-implementation you re-open scope instead of picking up a recorded deferral."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D4 — Does TokenStore stay in this refactor, or is it cut/deferred?\nProject/branch/task: main; Scope Challenge complexity gate on PLAN.md \"Multi-tenant Auth Refactor\" (12 files, 4 new classes + AuthBroker).\nELI10: The plan already says the existing cache adapter stores tokens keyed by tenant, issuer, audience and policy version, evicts expired ones, and invalidates on logout/revocation/suspension (PLAN.md:7-13). Then it adds a brand-new class called TokenStore (PLAN.md:35) without saying what it stores that the adapter does not. Two places that hold tokens means two places that can disagree about whether a token is still valid. That is the exact bug class a multi-tenant auth system cannot afford.\nStakes if we pick wrong: keep it with no defined role and you ship a second token source of truth; cut it and it turns out to hold something the adapter cannot (say, refresh tokens with a different lifetime) and SessionMint has nowhere to put them.\nRecommendation: B (defer) because nothing in the plan names a TokenStore responsibility the retained adapter lacks; if a real one surfaces during implementation it comes back as its own scoped decision with a stated contract.\nNote: options differ in kind, not coverage — no completeness score.\nNet: fewer moving parts and one token source of truth vs keeping a slot open for a responsibility the plan has not written down.": "Defer TokenStore (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-16T01:30:25.299Z"
+      },
+      {
+        "sessionId": "594a8522-7239-4615-a26d-d819aad1794c",
+        "toolUseId": "toolu_01MeFnELpenLJp1CQAaUHNrz",
+        "questions": [
+          {
+            "header": "Structure",
+            "question": "D6 — Which class arrangement for the remaining scope: AuthBroker + SessionMint + RequestPolicy + AuthCache facade, or drop the facade?\nProject/branch/task: main; Scope Challenge structure gate on PLAN.md with TokenStore deferred (D4) and RequestPolicy kept (D5).\nELI10: After D4/D5 the plan adds four new types: two services (AuthBroker, SessionMint), RequestPolicy, and AuthCache. AuthCache is described as a facade over the existing cache adapter that 'retains unchanged validity and tenant-key rules' (PLAN.md:9-13), so it adds no behavior of its own; it is a thin wrapper that gives the two services one narrow cache API. The alternative is to have both services call the existing adapter directly and skip the wrapper. This question is about shape only. How the services obtain the cache (the shared mutable global in PLAN.md:19-20) is a separate architecture decision that stays pending in both options.\nStakes if we pick wrong: keep a pass-through layer nobody needed and every cache change touches two files forever; drop it and the two services each grow their own adapter glue, which is the DRY violation you asked me to flag aggressively.\nRecommendation: A because two consumers of the same adapter is exactly when a shared facade pays for itself, and the facade is the natural seam for whatever we decide about the shared-instance problem in Section 1.\nNote: options differ in kind, not coverage — no completeness score.\nNet: one thin extra file that centralizes cache access for two services vs one fewer type at the cost of duplicated adapter glue.",
+            "options": [
+              {
+                "label": "Keep AuthCache facade (recommended)",
+                "description": "✅ AuthBroker and SessionMint share one narrow cache API; adapter details live in one place. ✅ Gives Section 1 a clean seam for fixing the shared mutable instance without touching the adapter. ❌ One more type in a diff already carrying 3 new ones; a pure pass-through until it earns behavior (human: ~half day / CC: ~10 min)."
+              },
+              {
+                "label": "Drop the facade, use adapter directly",
+                "description": "✅ Three new types instead of four; the adapter's existing tests are the only cache tests needed. ✅ No pass-through layer to keep in sync with the adapter. ❌ Two services each carry their own adapter calls and key construction; a cache contract change means editing both."
+              }
+            ]
+          }
+        ],
+        "answered": true,
+        "failed": false,
+        "answers": {
+          "D6 — Which class arrangement for the remaining scope: AuthBroker + SessionMint + RequestPolicy + AuthCache facade, or drop the facade?\nProject/branch/task: main; Scope Challenge structure gate on PLAN.md with TokenStore deferred (D4) and RequestPolicy kept (D5).\nELI10: After D4/D5 the plan adds four new types: two services (AuthBroker, SessionMint), RequestPolicy, and AuthCache. AuthCache is described as a facade over the existing cache adapter that 'retains unchanged validity and tenant-key rules' (PLAN.md:9-13), so it adds no behavior of its own; it is a thin wrapper that gives the two services one narrow cache API. The alternative is to have both services call the existing adapter directly and skip the wrapper. This question is about shape only. How the services obtain the cache (the shared mutable global in PLAN.md:19-20) is a separate architecture decision that stays pending in both options.\nStakes if we pick wrong: keep a pass-through layer nobody needed and every cache change touches two files forever; drop it and the two services each grow their own adapter glue, which is the DRY violation you asked me to flag aggressively.\nRecommendation: A because two consumers of the same adapter is exactly when a shared facade pays for itself, and the facade is the natural seam for whatever we decide about the shared-instance problem in Section 1.\nNote: options differ in kind, not coverage — no completeness score.\nNet: one thin extra file that centralizes cache access for two services vs one fewer type at the cost of duplicated adapter glue.": "Keep AuthCache facade (recommended)"
+        },
+        "unansweredQuestionIndices": [],
+        "answeredAt": "2026-09-16T01:31:13.613Z"
+      }
+    ],
+    "note": "Exact complete public cf74 retry D4 and D6 requests, selected labels and successful ACKs. No standalone or combined replay grants paid acceptance."
+  }
 }
