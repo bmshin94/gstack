@@ -1,6 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [1.87.5.0] - 2026-09-16
+
+**Checks preserve the result.**
+**Reviews finish before they advance.**
+
+Generation now validates every host and expected artifact, and evaluation records retain failed execution and assertions. Plan reviews carry approved decisions through scope changes and save complete reports before declaring completion. Engineering reviews save and verify each question before asking it; Autoplan reads the current plan and its publication instructions together before advancing.
 
 ### Fixed
 - Skill generation awaits every artifact across all hosts. Freshness checks detect missing output, validate generated content, preserve files and directories during dry runs, and report generation errors instead of accepting partial output.
