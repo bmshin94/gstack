@@ -49,8 +49,12 @@ change with no UI, API, schema, pricing, or developer onboarding change.
 - Cache operations are synchronous and atomic in the single JS event loop.
   On any cache failure the existing adapter bypasses the cache until an empty
   cache is reinitialized; repository errors keep the current typed API error
-  mapping. The existing per-key
-  single-flight wrapper coalesces simultaneous misses and releases on failure.
+  mapping. The existing per-key single-flight wrapper sits inside
+  repository.read, coalesces simultaneous store reads and releases on failure.
+  A committed repository.write retires that key's old read cohort before its
+  promise resolves. A later repository.read starts a fresh cohort; a rejected
+  write leaves the cohort unchanged. Already-started readers may finish with
+  their earlier snapshot. This admission rule does not inspect cache fills.
 - The repository uses an in-process transactional store, with no network
   transport between this wrapper and the store. repository.write is atomic:
   a resolved promise means committed, and every
@@ -107,7 +111,32 @@ the rollout and records the results against the acceptance targets.
 Distributed caching, cross-process coherence, prewarming, changing consistency
 semantics, or adding new product surfaces. The repository interface preserves a
 future replacement path without introducing a general cache framework now.
+
+## Author's review and acceptance requirements
+This is a full CEO scope and feasibility review. The author has approved the
+retained contracts, limits, rollout and acceptance targets above. Evaluate the
+proposed wrapper against them; the wrapper itself remains unapproved. An actual
+contradiction or missing proof must be reported and resolved, not assumed away.
+For a demonstrated gap, amend the plan with the required guarantee, a feasible
+remedy, its tradeoffs and deterministic regression scenarios. Those repairs
+and their required verification are within the requested scope. The exact data
+structures, full function bodies and executable test code belong to subsequent
+engineering planning; do not select or implement them during this review when
+the required behavior and feasibility can already be established.
+
+Use the existing deterministic repository-contract test harness. Required wrapper
+acceptance includes both completion orders of overlapping reads and writes,
+missing-record creation, rejected reads/writes, overlapping writes, and isolation
+across controller instance changes. Use existing telemetry to record any added
+branch on the current dashboard with no key labels; no new alert threshold or metric
+project is requested. These are future acceptance requirements, not tests already
+implemented or passing. Preserve all 11 review outcomes, required registries,
+diagrams, tasks, completion summary and the full GSTACK REVIEW REPORT.
 `;
+
+// This actor can accept repairs to the stated contracts, not every recommended
+// implementation project or change to the retained scope.
+export const CEO_SECTION_DECISION_POLICY = '- You represent the plan author and must follow the review depth and acceptance requirements in PLAN.md. Authorize complete remedies and required verification that restore its retained contracts and acceptance targets; use the recommended option only among alternatives within that scope. Do not authorize weaker consistency, changed limits, optional scope, new observability projects or implementation-code selection reserved for later engineering planning. Do not create an implementation choice when the required guarantee and feasibility already resolve this CEO review; record the requirement and leave those details to engineering. Preserve every finding and required output. If a concrete incompatibility or missing required proof remains, resolve it through the normal decision procedure; never hide it or claim approval when no offered alternative satisfies these constraints. Save and verify any actual decision, record its authority and exact scope, and continue without asking a human.';
 
 /** All six events must form one ordered, same-key, post-write reader trace. */
 function hasNumberedStaleFillTrace(text: string): boolean {

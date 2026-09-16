@@ -119,6 +119,67 @@ describe('pre-write snapshot vocabulary in the actual U finding', () => {
 });
 
 describe('CEO section-loading cache fixture', () => {
+  test.each([
+    { retires: false, rejects: false },
+    { retires: true, rejects: false },
+    { retires: true, rejects: true },
+  ])('cohort admission is distinct from the actual wrapper fill: %j', async ({ retires, rejects }) => {
+    const pending: Array<{ value: string; finish: () => void }> = [];
+    const flights = new Map<string, Promise<string>>();
+    let stored = 'old';
+    const failure = new Error('rolled back');
+    const repository = {
+      read(key: string) {
+        if (flights.has(key)) return flights.get(key)!;
+        const value = stored;
+        let finish!: () => void;
+        const flight = new Promise<string>(resolve => { finish = () => resolve(value); })
+          .finally(() => { if (flights.get(key) === flight) flights.delete(key); });
+        pending.push({ value, finish }); flights.set(key, flight);
+        return flight;
+      },
+      async write(key: string, value: string) {
+        if (rejects) throw failure;
+        stored = value;
+        if (retires) flights.delete(key);
+        return value;
+      },
+    };
+    const cache = new Map<string, string>();
+    const { readProfile, writeProfile } = new Function('cache', 'repository',
+      CACHE_READ_WRITE_SKETCH + '\nreturn { readProfile, writeProfile };')(cache, repository);
+    const earlier = readProfile('tenant:profile');
+    if (rejects) await expect(writeProfile('tenant:profile', 'new')).rejects.toBe(failure);
+    else await writeProfile('tenant:profile', 'new');
+    const later = readProfile('tenant:profile');
+    expect(pending).toHaveLength(retires && !rejects ? 2 : 1);
+    if (retires && !rejects) {
+      pending[1]!.finish();
+      expect(await later).toBe('new');
+    }
+    pending[0]!.finish();
+    expect(await earlier).toBe('old');
+    if (!retires || rejects) expect(await later).toBe('old');
+    // Even correct repository admission cannot stop this exact new sketch
+    // from caching its older result after the committed write. Keep that gap.
+    expect(await readProfile('tenant:profile')).toBe('old');
+    expect(stored).toBe(rejects ? 'old' : 'new');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('single-flight wrapper sits inside\n  repository.read');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('A committed repository.write retires');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('This admission rule does not inspect cache fills');
+    expect(CEO_SECTION_CACHE_PLAN).toContain(CACHE_READ_WRITE_SKETCH);
+    expect(hasStaleFillRaceFinding(CEO_SECTION_CACHE_PLAN)).toBe(false);
+  });
+
+  test('author bounds implementation depth without preapproving the wrapper or weakening required proof', () => {
+    expect(CEO_SECTION_CACHE_PLAN).toContain('wrapper itself remains unapproved');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('actual\ncontradiction or missing proof must be reported and resolved');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('exact data\nstructures, full function bodies and executable test code belong to subsequent\nengineering planning');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('not tests already\nimplemented or passing');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('Preserve all 11 review outcomes');
+    expect(CEO_SECTION_CACHE_PLAN).toContain('full GSTACK REVIEW REPORT');
+  });
+
   test('declared absence decoding and atomic write failure do not add independent wrapper defects', async () => {
     const missing = Object.freeze({ found: false });
     const absent = Symbol('adapter-private absence');

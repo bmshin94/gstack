@@ -479,6 +479,44 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
     });
   });
 
+  test.each([
+    ['changed error contract', 'Consider converting a database error into undefined.', 'existing contracts'],
+    ['omitted required proof', 'Consider dropping the closed-database batch acceptance test.', 'missing required proof still requires resolution'],
+    ['optional batch cap', 'Consider rejecting batches larger than 100 keys.', 'arbitrary size limits'],
+  ])('bounded Eng actor receives the accepted recipe and rejection constraint for %s', async (_name, proposal, constraint) => {
+    // This proves delivery to the actual capture/CLI boundary, not a fake model's
+    // semantic choice. Only a subsequent paid invocation can prove that choice.
+    const { repositoryPlanFixtures } = await import('./helpers/carve-plan-fixture');
+    const registration = fs.readFileSync(path.join(import.meta.dir, 'helpers/carve-section-case.ts'), 'utf8');
+    const literal = /decisionPolicy: guard\.skill === 'plan-eng-review'\s*\? ('[^\n]+')\s*:/.exec(registration)?.[1];
+    expect(literal).toBeDefined();
+    const policy = new Function('return ' + literal)() as string;
+    await withFakeClaude(async (dir, observed) => {
+      const fixtures = repositoryPlanFixtures('# Ignored Eng seed', 'plan-eng-review');
+      for (const [relative, contents] of Object.entries(fixtures)) {
+        const target = path.resolve(dir, relative);
+        expect(path.relative(dir, target).startsWith('..')).toBe(false);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, contents);
+      }
+      await captureSectionReads({ planDir: dir, skillName: 'plan-eng-review',
+        scenario: 'Review PLAN.md. ' + proposal, decisionPolicy: policy,
+        reportFile: 'PLAN.md', testName: 'bounded-recipe-delivery', timeout: 5_000 });
+      const child = observed();
+      expect(child.prompt).toContain(proposal);
+      expect(child.prompt).toContain(policy);
+      expect(child.prompt).toContain(constraint);
+      expect(child.prompt).toContain('do not hide it or claim approval when no offered alternative meets these constraints');
+      expect(child.prompt).not.toContain("silently pick the skill's recommended option");
+      expect(child.prompt).toContain('execute the complete workflow, actually Read every required section');
+      expect(child.prompt).toContain('After all required writes are complete');
+      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent');
+      expect(fs.readFileSync(path.join(dir, 'PLAN.md'), 'utf8')).toBe(fixtures['PLAN.md']);
+      expect(fixtures['PLAN.md']).toContain('accepted requirements to review against');
+      expect(fixtures['PLAN.md']).toContain('implementation itself remains proposed and unapproved');
+    });
+  });
+
   test('CEO-specific writing guidance leaves another skill capture prompt unchanged', async () => {
     await withFakeClaude(async (dir, observed) => {
       const scenario = 'Keep the requested release workflow and report.';

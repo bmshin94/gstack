@@ -109,6 +109,28 @@ test('existing repository objects and separate SQLite handles observe each other
   }
 });
 
+test('engineering fixture fixes the author acceptance recipe without approving the implementation or hiding review defects', () => {
+  const plan = repositoryPlanFixtures('# Ignored Eng seed', 'plan-eng-review')['PLAN.md'];
+  expect(plan).toContain('accepted requirements to review against');
+  expect(plan).toContain('implementation itself remains proposed and unapproved');
+  expect(plan).toContain('conflicts with it or a required proof is missing');
+  expect(plan).toContain('normal decision procedure');
+  for (const requirement of [
+    "built-in `bun test` runner", '`src/repository.test.ts`',
+    'integer, float, zero and negative', 'overwrite',
+    'invalid empty, overlong and non-string keys', 'NaN and either infinity',
+    'second repository over the same database', 'exit 0 and exactly `2 2 undefined\\n`',
+    'empty input returns `[]` on open and closed databases without querying',
+    'mixed known/missing results preserve order and length', 'readonly tuple',
+    'adjacent and non-adjacent duplicates', 'stored zero differs from an absent key',
+    'first, middle and last positions', '128-character key succeeds', '129-character key fails',
+    'missing table throws rather than returning `undefined`', '[1]', '[5, 5]',
+  ]) expect(plan).toContain(requirement);
+  expect(plan).toContain('No dependency, package.json or runner configuration is added');
+  expect(plan).toContain('Keep the review\'s complete architecture, code-quality, test and performance');
+  expect(plan).toContain('not tests\nalready implemented or passing');
+});
+
 test('existing scalar round trips and database errors remain distinct from missing values', () => {
   const db = new Database(':memory:');
   const repo = new CounterRepository(db);

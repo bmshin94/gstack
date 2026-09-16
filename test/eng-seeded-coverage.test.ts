@@ -376,3 +376,76 @@ for(const id of ['R7','D12','T1','T9'])for(const status of ['withdrawn','optiona
 for(const text of ['\n## Historical assessment\nR7 is withdrawn.','\n## Current assessment\n"T1 is withdrawn."','\n## Payment regression suite\nThe regression suite is withdrawn.','\n## Current assessment\nT88 is withdrawn.'])test(`unowned or unrelated cancellation cannot revoke current baseline: ${text}`,()=>expect(regression(plan+text)).toBe('plan'));
 
 });
+
+import c6fc from './fixtures/eng-count-c6fc-public.json';
+import { isEngSeedDecisionAUQ } from './helpers/eng-seeded-coverage';
+describe('complete source-owned native fields identify current seeded subjects', () => {
+  const capturedCalls = c6fc.transcript.calls as NativePlanQuestionCall[];
+  const classify = (call: NativePlanQuestionCall) => isEngSeedDecisionAUQ(nativePlanCallFingerprint(call, 1, false), [], c6fc.startedAt, c6fc.finishedAt);
+  test('actual component and error decisions cover the two missing subjects without relabeling the cancellation', () => {
+    expect(classify(capturedCalls[4]!)).toBe(true);
+    expect(classify(capturedCalls[6]!)).toBe(true);
+    const result = evaluateEngSeedCoverage(c6fc.transcript as PlanCountTranscript, c6fc.report, c6fc.startedAt, c6fc.finishedAt);
+    expect(result.ok).toBe(true);
+    expect(new Set(Object.values(result.decisions)).size).toBe(4);
+    expect(result.regression).toBe('plan');
+    expect(c6fc.actualOutcome).toBe('CANCELLED');
+  });
+  test('subject assessment and complete offered remedies cannot be borrowed or withdrawn', () => {
+    for (const index of [4, 6]) {
+      const original = capturedCalls[index]!;
+      const edits: ((c: NativePlanQuestionCall) => void)[] = [
+        c => { c.answered = false; }, c => { c.failed = true; },
+        c => { c.answers = {}; }, c => { c.answeredAt = new Date(c6fc.startedAt - 1).toISOString(); },
+        c => question(c, c.questions[0]!.question.replace('PLAN.md', 'FOREIGN.md')),
+        c => question(c, c.questions[0]!.question.replace('Project/branch/task:', 'Historical source:')),
+        c => question(c, c.questions[0]!.question.replace('ELI10: ', 'ELI10: Historical example: ')),
+        c => question(c, c.questions[0]!.question.replace(/ELI10: (.+)/, 'ELI10: "$1"')),
+        c => question(c, c.questions[0]!.question + '\nThis finding is withdrawn.'),
+        c => question(c, c.questions[0]!.question + '\nThis finding is "not current".'),
+        c => question(c, c.questions[0]!.question + '\nThis remedy is rejected.'),
+        c => question(c, c.questions[0]!.question + `\nD${index + 1} is withdrawn.`),
+        c => question(c, c.questions[0]!.question + '\nThis finding applies only if approved.'),
+        c => { c.questions[0]!.options[0]!.label = 'Do not ' + c.questions[0]!.options[0]!.label; },
+        c => { c.questions[0]!.options[0]!.description = 'A complete unrelated option.'; },
+        c => { c.questions[0]!.options[0]!.label = 'An unrelated alternative'; },
+        c => { c.questions[0]!.options[0]!.description = 'Historical example: ' + c.questions[0]!.options[0]!.description; },
+      ];
+      for (const edit of edits) { const c = structuredClone(original); edit(c); expect(classify(c), c.questions[0]!.question).toBe(false); }
+    }
+  });
+});
+
+
+test('complete native subject claims preserve their own counts and current remedy facts', () => {
+  const check = (c: NativePlanQuestionCall) => isEngSeedDecisionAUQ(nativePlanCallFingerprint(c, 1, false), [], c6fc.startedAt, c6fc.finishedAt);
+  const bad: [number, (c: NativePlanQuestionCall) => void][] = [
+    [4, c => question(c, c.questions[0]!.question.replace('remaining four components', 'remaining three components'))],
+    [4, c => { const q = c.questions[0]!; q.options[0]!.label = q.options[0]!.label.replace('3 units:', '1 unit:'); c.answers![q.question] = q.options[0]!.label; }],
+    [4, c => { c.questions[0]!.options[0]!.description += '\nCorrection: RequestPolicy remains a class with independent state.'; }],
+    [6, c => { c.questions[0]!.options[0]!.description = c.questions[0]!.options[0]!.description!.replace('fail-closed by construction', 'not fail-closed by construction'); }],
+    [6, c => { c.questions[0]!.options[0]!.description = c.questions[0]!.options[0]!.description!.replace('a structured log line', 'no structured log line'); }],
+    [6, c => { c.questions[0]!.options[0]!.description = c.questions[0]!.options[0]!.description!.replace('Every error class maps', 'Not every error class maps'); }],
+    [6, c => { c.questions[0]!.options[0]!.description += '\nCorrection: this remedy stays fail-open on unknown errors; those errors remain silent.'; }],
+  ];
+  for (const [index, edit] of bad) { const c = structuredClone(c6fc.transcript.calls[index]!) as NativePlanQuestionCall; edit(c); expect(check(c)).toBe(false); }
+  for (const index of [4, 6]) {
+    const c = structuredClone(c6fc.transcript.calls[index]!) as NativePlanQuestionCall;
+    c.questions[0]!.options[0]!.description += '\n❌ If the implementation ignores this contract, bugs could remain; the accepted requirements still apply.';
+    expect(check(c)).toBe(true);
+    const conditional = index === 4
+      ? "❌ If RequestPolicy remains a class, this option's purity contract has not been implemented."
+      : "❌ If errors remain silent, this option's explicit-outcome contract has not been implemented.";
+    c.questions[0]!.options[0]!.description += '\n' + conditional;
+    expect(check(c)).toBe(true);
+    c.questions[0]!.options[0]!.description += index === 4
+      ? '\nCorrection: RequestPolicy remains a class with independent state.'
+      : '\nCorrection: this remedy stays fail-open on unknown errors; those errors remain silent.';
+    expect(check(c)).toBe(false);
+    for (const source of ['other/PLAN.md', '/another-project/PLAN.md']) {
+      const foreign = structuredClone(c6fc.transcript.calls[index]!) as NativePlanQuestionCall;
+      question(foreign, foreign.questions[0]!.question.replaceAll('PLAN.md', source));
+      expect(check(foreign)).toBe(false);
+    }
+  }
+});

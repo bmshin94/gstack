@@ -23,6 +23,11 @@ function prose(text: string, omitLiteralProse = false): string {
 }
 
 function seedSubjects(q: NativePlanQuestionCall['questions'][number]): Seed[] {
+  // Complete native tradeoff fields use the existing owned explanation parser.
+  if (q.options.every(o => /✅/.test(o.description ?? '') && /❌/.test(o.description ?? ''))) {
+    const explained = explainedSeedSubjects(q);
+    if (explained.length) return explained;
+  }
   // The actual issue subject, not cross-references in recommendations or other options,
   // assigns credit. ELI10 can identify what a terse Promise.all title operates on.
   const subject = q.question.split('\n').find(line => line.trim())?.trim() ?? '';
@@ -216,6 +221,45 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
   // scope decisions have reduced the inventory. Bind the current inventory,
   // unchanged adapter behavior and both class counts to this one question.
   const counts: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
+  const citations = [...metadata[0]!.matchAll(/(?:^|[\s(,;])([^\s(),;]+\.md)(?::[1-9]\d*(?:[-–][1-9]\d*)?)?(?=[\s),;.]|$)/g)].map(match => match[1]);
+  const ownsPlan = citations.length > 0 && citations.every(file => file === 'PLAN.md') &&
+    !/\b(?:other|another|different|foreign|historical|quoted|copied) (?:plan|source|review)\b/i.test(metadata[0]!);
+  // Inventory can be declared in the subject while the explanation owns the
+  // unnecessary state/lifecycle boundary. Read one option's complete native
+  // benefits together; never borrow an action from another choice or question.
+  const completeOptions = q.options.map(o => {
+    const body = o.description ?? '';
+    return { label: current(o.label), body: current(body),
+      promises: [...body.matchAll(/✅\s*([^✅❌]+)/g)].map(block => current(block[1]!)).join(' '),
+      // A conditional Cons sentence describes noncompliance risk, not the
+      // offered remedy. A following current correction remains authoritative.
+      facts: current(body.replace(/❌\s*(?:If|Unless)\b[^.!?\n]*(?:[.!?]|$)/gi, '')) };
+  })
+    .filter(o => active(`${o.label}\n${o.body}`) && !/^(?:do not|don't|never)\b/i.test(o.label));
+  const nativeTradeoffs = q.options.every(o => {
+    const blocks = [...(o.description ?? '').matchAll(/([✅❌])\s*([^✅❌]+)/g)];
+    return (o.description ?? '').trim().startsWith('✅') && blocks.filter(b => b[1] === '✅').length >= 2 && blocks.some(b => b[1] === '❌');
+  });
+  const sourceOwned = nativeTradeoffs && ownsPlan;
+  const declaredComponents = /\bclass arrangement\b[^?]*\(([^)]+)\)/i.exec(title)?.[1]?.split(/,\s*/);
+  const declaredCount = /\b(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) components\b/i.exec(title)?.[1];
+  if (sourceOwned && declaredComponents && declaredCount && (counts[declaredCount.toLowerCase()] ?? Number(declaredCount)) === declaredComponents.length && new Set(declaredComponents).size === declaredComponents.length &&
+      ['AuthBroker', 'SessionMint', 'AuthCache', 'RequestPolicy'].every(name => declaredComponents.includes(name)) &&
+      /\bclasses carry no state\b/.test(explanation) && /\bRequestPolicy\b/.test(explanation) && /\bAuthCache\b/.test(explanation) &&
+      /\bwrapper\b/.test(explanation) && /\badapter\b/.test(explanation) &&
+      !/\b(?:RequestPolicy|AuthCache) (?:now |already )?(?:has|holds|carries|needs) (?:independent |its own )?state\b/i.test(text) &&
+      completeOptions.some(o => { const count = /^([1-9]\d*) units?:/.exec(o.label)?.[1];
+        const retained = /\b([A-Z]\w*(?: \+ [A-Z]\w*)+) classes\b/.exec(o.promises)?.[1]?.split(' + ') ?? [];
+        return count && +count < declaredComponents.length && +count === retained.length && new Set(retained).size === retained.length &&
+          retained.every(name => declaredComponents.includes(name)) && ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => retained.includes(name)) &&
+          /\bRequestPolicy becomes a pure exported [A-Za-z]\w*\([^)]*\) function\b/.test(o.promises) &&
+          !/\bRequestPolicy (?:now |already )?(?:(?:has|holds|carries|needs) (?:independent |its own )?state|remains (?:a )?class)\b/i.test(o.facts); })) ids.push('complexity');
+  if (sourceOwned && /\bvalidateAndDispatch\(\)/.test(title) && /\b(?:three|3) nested try\/catch blocks\b/.test(explanation) &&
+      /\beach catch (?:quietly )?(?:eats|swallows) (?:one kind of error|a different error class)\b/.test(explanation) &&
+      !/\b(?:no longer|does not|doesn't|never) (?:quietly )?(?:eats|swallows)\b|\bvalidateAndDispatch\(\) (?:now |already )?rethrows every error\b/i.test(text) &&
+      completeOptions.some(o => /\b(?:flat|linear) pipeline\b/i.test(o.label) && /\btyped errors\b/i.test(o.label) &&
+        /\bEvery error class maps to an explicit outcome\b/.test(o.promises) && /\bdeny\b/.test(o.promises) && /\bstructured log\b/.test(o.promises) && /\bfail-closed\b/.test(o.promises) &&
+        !/\b(?:not|never) fail-closed\b|\b(?:no|without) (?:a )?structured log\b|\b(?:this|the|that) (?:remedy|option|action) (?:is|stays|remains) fail-open\b|\b(?:those |these |all |every )?(?:errors?|failures?) (?:remain|stay|are) (?:silent|ignored|swallowed)\b/i.test(o.facts))) ids.push('swallowed-errors');
   const inventory = /\bplan (?:has|contains|retains|introduces|adds) ([1-9]\d*|one|two|three|four|five|six|seven|eight|nine) new classes:\s*([A-Za-z][\w]*(?:(?:,\s*|\s+and\s+|\s*\+\s*)[A-Za-z][\w]*)+)\./i.exec(explanation);
   const components = inventory?.[2]?.split(/,\s*|\s+and\s+|\s*\+\s*/) ?? [];
   const componentCount = inventory ? (counts[inventory[1]!.toLowerCase()] ?? Number(inventory[1])) : 0;
@@ -287,9 +331,6 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
   // Current native briefs may name a choice in their title and carry the
   // defect in ELI10. Bind source, inventory and repair within that one brief;
   // mentions of other findings in Net or an unchosen option supply no evidence.
-  const citations = [...metadata[0]!.matchAll(/(?:^|[\s(,;])([^\s(),;]+\.md)(?::[1-9]\d*(?:[-–][1-9]\d*)?)?(?=[\s),;.]|$)/g)].map(match => match[1]);
-  const ownsPlan = citations.length > 0 && citations.every(file => file === 'PLAN.md') &&
-    !/\b(?:other|another|different|foreign|historical|quoted|copied) (?:plan|source|review)\b/i.test(metadata[0]!);
   if (ownsPlan) {
     // A concurrency choice can put today's ordering defect in ELI10 while
     // its metadata describes the planned repair. Bind both to these five

@@ -10,7 +10,7 @@ export function isEngCompletionHandoff(fp: AskUserQuestionFingerprint, reviewedP
       !Array.isArray(call.unansweredQuestionIndices) || call.unansweredQuestionIndices.length ||
       (fp.nativeQuestionIndex !== undefined && fp.nativeQuestionIndex !== 0) ||
       Object.keys(call.answers ?? {}).length !== 1 || !Number.isFinite(Date.parse(call.answeredAt ?? ''))) return false;
-  if (isPublishedTaskPauseNavigation(fp, reviewedPlan, priorCalls) || isCurrentLedgerNavigation(fp, reviewedPlan, priorCalls) || isApprovedInvestigationRecap(fp, reviewedPlan, priorCalls) || isPublishedReadyNavigation(fp, reviewedPlan) || isApprovedMaintenanceRecap(fp, reviewedPlan, priorCalls) || isPublishedPrerequisiteHandoff(fp, reviewedPlan)) return true;
+  if (isPublishedTaskPauseNavigation(fp, reviewedPlan, priorCalls) || isCurrentLedgerNavigation(fp, reviewedPlan, priorCalls) || isApprovedInvestigationRecap(fp, reviewedPlan, priorCalls) || isPublishedReadyNavigation(fp, reviewedPlan, priorCalls) || isApprovedMaintenanceRecap(fp, reviewedPlan, priorCalls) || isPublishedPrerequisiteHandoff(fp, reviewedPlan)) return true;
   const q = call.questions[0]!;
   if (q.multiSelect || q.header.trim() !== 'Next steps' || q.options.length !== 2 ||
       fp.options.length !== 2 || !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) ||
@@ -592,7 +592,8 @@ function isPublishedPrerequisiteHandoff(fp: AskUserQuestionFingerprint, reviewed
 /** A completed ready/optional-review menu may recap the already-published task
  * and lane catalog. This classifies administration; the runner still proves the
  * owned, fresh report and the later native ExitPlanMode independently. */
-function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan: string): boolean {
+function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan: string,
+  prior: readonly NativePlanQuestionCall[] = []): boolean {
   const call = fp.nativeCall!, q = call.questions[0]!;
   const compact = (s: string) => s.replace(/\s+/g, ' ').trim();
   const label = (s: string) => compact(s).replace(/^(?:[1-9]\d*)?[A-Z][).:]\s*/, '').replace(/\s*\((?:recommended|optional)\)$/i, '');
@@ -633,7 +634,7 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
     /\b(?:the only question left is whether to (?:start building|implement) or (?:first )?get (?:a )?(?:strategy-level second look|strategy review)|only the next (?:step|workflow) remains: implementation or an optional strategy review)\b/i.test(body);
   const namedPlans = [...q.question.matchAll(/\breviewed\s+[\w./-]+\.md\s+["“]([^"”\n]+)["”]/gi)];
   if (!/\b(?:what(?:['’]s| is)? (?:the )?next|next steps?|where (?:do|should) we go)\b/i.test(body) ||
-      !new RegExp(String.raw`\b${eng}\s+(?:(?:is|are|has been|have been)\s+)?(?:now\s+)?${complete}\b`, 'i').test(body) ||
+      !new RegExp(String.raw`\b${eng}\s+(?:(?:is|are|has been|have been)\s+)?(?:(?:now|saved and)\s+)?${complete}\b`, 'i').test(body) ||
       !(explicitNavigation || completedChoice && (namedPlans.length === 1 || catalogChoice))) return false;
   if (/`{3}|~{3}|(?:^|\n)\s*>|\b(?:example|sample|quoted|historical)\s*:/i.test(context) ||
       new RegExp(String.raw`\b${eng}\b[^.!?;\n]{0,100}\b(?:not|never|incomplete|unfinished|pending|withdrawn|superseded|cancelled|canceled|reopened)\b`, 'i').test(context) ||
@@ -656,6 +657,7 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   if(!laneRefs.length && !completedChoice)return false;
   // Only active, unfenced sections own a recap. A copied report/task list cannot.
   const published: string[] = [];
+  const hierarchy: { depth: number; inactive: boolean }[] = [];
   let fence: { marker: string; length: number } | undefined;
   for (const line of reviewedPlan.split(/\r?\n/)) {
     if (fence) {
@@ -665,7 +667,13 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
     }
     const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (open && (open[1]![0] !== '`' || !open[2]!.includes('`'))) { fence = {marker:open[1]![0]!,length:open[1]!.length}; continue; }
-    if (!/^(?: {4}|\t| {0,3}>)/.test(line)) published.push(line);
+    if (/^(?: {4}|\t| {0,3}>)/.test(line)) continue;
+    const heading = /^(#{1,6}) (.+)$/.exec(line);
+    if (heading) {
+      while (hierarchy.at(-1) && hierarchy.at(-1)!.depth >= heading[1]!.length) hierarchy.pop();
+      hierarchy.push({ depth: heading[1]!.length, inactive: /\b(?:history|historical|archived?|withdrawn|superseded|example|quoted|template)\b/i.test(heading[2]!) });
+    }
+    if (!hierarchy.some(entry => entry.inactive)) published.push(line);
   }
   if (fence) return false;
   if (!explicitNavigation || catalogChoice) {
@@ -690,6 +698,16 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   if(!tasks||!lanes||!report||!/\| Eng Review \|[^\n]*\| CLEAR(?: \([^\n|]*\))? \|/.test(report)||
       !/^(?:[-*] )?(?:\*\*)?VERDICT:(?:\*\*)? ENG CLEARED\b/m.test(report)||
       report.trim().split('\n').at(-1)!=='NO UNRESOLVED DECISIONS')return false;
+  // The newly supported saved-and-complete assertion is an admission class.
+  // Its ownership proof is mandatory even if a caller drops or renames fields.
+  const savedCompletion = /\bsaved and (?:clear(?:ed)?|complete[d]?|done|finished)\b/i.test(body);
+  const currentLedger = section('Decision ledger');
+  const targetLines = published.filter(line => /^Reviewed target:/.test(line));
+  const ownedTarget = targetLines.length === 1 ? /^Reviewed target: `([^`]+)` \("([^"\n]+)"\)[^\n]*, branch `([^`]+)`[^\n]*$/m.exec(targetLines[0]!) : null;
+  if (savedCompletion && (!currentScope ||
+      [...q.question.matchAll(/^ELI10: (.+)$/gm)].length !== 1 || !ownedTarget || ownedTarget[1] !== currentScope[2] || ownedTarget[2] !== currentScope[3] || ownedTarget[3] !== currentScope[1] ||
+      published.filter(line => /^# (?:Reviewed )?Plan: /i.test(line)).length !== 1 || compact(published.find(line => /^# (?:Reviewed )?Plan: /i.test(line))!.replace(/^# (?:Reviewed )?Plan: /i, '')) !== compact(currentScope[3]!) ||
+      !currentLedger || !hasCompletedOwnedLedger(call, prior, currentLedger, report))) return false;
   const entries=[...tasks.matchAll(/^- \[ \] \*\*T([1-9]\d*)\b[^\n]+/gm)];
   for(const ref of taskRefs) {
     const first=Number(ref[1]),last=Number(ref[2]??ref[1]);
@@ -700,6 +718,13 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
       const end=entries.find(e=>e.index!>own[0]!.index!)?.index??tasks.length;
       if(new RegExp(`\\bT${id}\\b[^.!?\\n]*\\b(?:withdrawn|cancelled|canceled|rejected|not approved|pending approval)\\b`,'i').test(tasks.slice(own[0]!.index!,end)))return false;
     }
+  }
+  const parallel = [...context.matchAll(/\blanes ([A-Z](?:[+/][A-Z])+) in parallel\b/gi)];
+  if (parallel.length) {
+    const launches = [...lanes.matchAll(/\blaunch ([A-Z](?: \+ [A-Z])+) in parallel\b/g)];
+    const names = (value: string) => value.split(/\s*[+/]\s*/).sort();
+    return parallel.length === 1 && launches.length === 1 && JSON.stringify(names(parallel[0]![1]!)) === JSON.stringify(names(launches[0]![1]!)) &&
+      names(parallel[0]![1]!).every(id => new RegExp(`\\bLane ${id}:`).test(lanes));
   }
   const groups=(text:string)=>[...text.matchAll(/\b[A-Z](?:\s*\+\s*[A-Z])*\b/g)].map(m=>m[0].replace(/\s/g,''));
   const execution=lanes.split('\n').filter(line=>/^Execution:/.test(line));
@@ -886,4 +911,41 @@ function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: st
     .replace(/\b(?:this question|this choice) (?:approves?|authorizes?) no (?:new )?implementation changes?\b/gi, '');
   const action = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|while|before (?:implementation|building|review))\s+)(?:please\s+)?(?:adds?|adding|append(?:s|ing)?|remov(?:e|es|ing)|delet(?:e|es|ing)|cut(?:s|ting)?|drop(?:s|ping)?|replac(?:e|es|ing)|rewrit(?:e|es|ing)|chang(?:e|es|ing)|alter(?:s|ing)?|modif(?:y|ies|ying)|enabl(?:e|es|ing)|disabl(?:e|es|ing)|implement(?:s|ing)?|install(?:s|ing)?|introduc(?:e|es|ing)|build(?:s|ing)?|writ(?:e|es|ing)|record(?:s|ing)?|captur(?:e|es|ing)|creat(?:e|es|ing)|switch(?:es|ing)?|migrat(?:e|es|ing)|externaliz(?:e|es|ing)|refactor(?:s|ing)?|expand(?:s|ing)?|reduc(?:e|es|ing)|deploy(?:s|ing)?|approv(?:e|es|ing))\b/i;
   return !action.test(actions) && !/\brun\s+(?!\/ship\b)|\b(?:new|additional|extra) (?:work|implementation|scope|task|requirement|dependency|feature|datastore|database|cache|test|prerequisite)\b|\b(?:must|shall|should|needs? to|required to|depends on)\s+\S|\b(?:only|skip|drop|omit) (?:the )?tasks?\b/i.test(actions);
+}
+
+/** Current field ownership is independent of navigation wording. A superseded
+ * status is inert only in an explicit History field/child section. */
+function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly NativePlanQuestionCall[],
+  ledger: string, report: string): boolean {
+  if (!hasCompleteEarlierNativeAnswers(call, prior)) return false;
+  const field = (s: string, name: string) => { const all = [...s.matchAll(new RegExp(`^${name}: (.+)$`, 'gm'))]; return all.length === 1 ? all[0]![1]! : undefined; };
+  const approvals = new Map(prior.map(previous => [/^(D[1-9]\d*)\s*[—–:-]/.exec(previous.questions[0]?.question ?? '')?.[1], previous]));
+  const finalOrdinal = /^D([1-9]\d*)\s*[—–:-]/.exec(call.questions[0]!.question)?.[1];
+  if (!finalOrdinal || approvals.size !== +finalOrdinal - 1 || Array.from({ length: +finalOrdinal - 1 }, (_, i) => `D${i + 1}`).some(id => !approvals.has(id))) return false;
+  const records = ledger.split(/\n(?=### R[1-9]\d*:)/).filter(row => /^### R[1-9]\d*:/.test(row.trim()));
+  const ids = new Set<string>(), answers = new Set<string>(), owned = new Map<string, string>();
+  if (!records.length) return false;
+  for (const record of records) {
+    const id = /^### (R[1-9]\d*):/.exec(record.trim())![1]!;
+    if (ids.has(id)) return false; ids.add(id);
+    // Only History's explicit child section or indented continuation is inert.
+    const current = record.replace(/^#### History\n[\s\S]*?(?=^#### |$(?![\s\S]))/gm, '')
+      .replace(/^History: [^\n]*(?:\n(?: {2,}|\t)[^\n]*)*/gm, '');
+    const state = field(current, 'State'), answer = field(current, 'Actual answer'), scope = field(current, 'Accepted scope');
+    const answered = answer && /^"(.+)" \((D[1-9]\d*)\)$/.exec(answer);
+    const previous = answered ? approvals.get(answered[2]!) : undefined;
+    const questions = [...current.matchAll(/^Question (D[1-9]\d*):(?: (.*))?$/gm)];
+    if (state !== 'approved' || !scope || !answered || answers.has(answered[2]!) || !previous ||
+        previous.answers?.[previous.questions[0]!.question] !== answered[1] ||
+        !/^Finding: [^\n]*\bPLAN\.md:[1-9]\d*/m.test(current) ||
+        questions.length !== 1 || questions[0]![1] !== answered[2] ||
+        /^(?:State|Accepted scope|Actual answer): (?:pending|unanswered|reopened|withdrawn|cancelled|canceled|rejected|revoked|none|not approved)\b/im.test(current)) return false;
+    const revoked = new RegExp(`\\b(?:${id}|${answered[2]}|(?:this|the|that) (?:decision|approval|scope))(?:(?: decision| approval| scope| state))?\\s*(?::|is|was|has been|remains)\\s*(?:now |still )?(?:pending|unanswered|reopened|withdrawn|cancelled|canceled|rejected|revoked|not approved|no longer approved)\\b`, 'i');
+    if (revoked.test(current) || revoked.test(report)) return false;
+    answers.add(answered[2]!); owned.set(id, answered[2]!);
+  }
+  const readiness = field(ledger, 'Approval readiness');
+  const readyRefs = readiness ? [...readiness.matchAll(/\b(R[1-9]\d*) \((D[1-9]\d*)\)/g)] : [];
+  if (!readiness?.startsWith('PASS') || readyRefs.length !== ids.size || new Set(readyRefs.map(r => r[1])).size !== ids.size || readyRefs.some(r => owned.get(r[1]!) !== r[2]!)) return false;
+  return true;
 }

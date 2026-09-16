@@ -464,8 +464,14 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
     const facts = [...fieldText.matchAll(/(?:^|[.!?,;]["”'’]?\s+|\n\s*)(Effort(?: estimate)?|Risk(?: level)?|Pros|Cons)\s*:?\s+/gi)];
     const fields = Object.fromEntries(facts.map((fact, index) => [fact[1]!.split(' ')[0]!.toLowerCase(),
       details.slice(fact.index! + fact[0].length, facts[index + 1]?.index ?? details.length).trim()]));
+    // A Cons condition states a contingent cost of this current alternative;
+    // it does not make the option, its promised benefit or its metadata
+    // hypothetical. Keep withdrawal/source/history checks on the clause and
+    // the whole option, and keep every other field's currentness unchanged.
+    const currentFact = (field: string, value: string) => current(field === 'cons'
+      ? value.replace(/^(?:if|unless)\s+(?=\S)/i, '') : value);
     const complete = facts.length === 4 && Object.keys(fields).length === 4 && current(text) && !withdrawnOption.test(optionText(text)) &&
-      ['effort', 'risk', 'pros', 'cons'].every(field => fields[field] && current(fields[field]!)) &&
+      ['effort', 'risk', 'pros', 'cons'].every(field => fields[field] && currentFact(field, fields[field]!)) &&
       /^(?:S|M|L|XL)\b/i.test(fields.effort!) && /^(?:low|medium|high)\b/i.test(fields.risk!);
     return { label, summary: text, bindingText: label + ' ' + details.slice(0, facts[0]?.index ?? details.length), complete };
   };
