@@ -37,3 +37,38 @@ test.each(['progress', 'deadline', 'late-completion'] as const)('autoplan native
     expect(fs.readdirSync(dir).filter(name => name.startsWith('gstack-autoplan-chain-'))).toEqual([]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }, 15_000);
+
+test.each(['entry-omission', 'entry-valid', 'entry-late', 'entry-equal', 'entry-foreign',
+  'entry-child', 'entry-error', 'entry-missing-ack', 'entry-alias', 'entry-foreign-alias', 'entry-foreign-report'] as const)
+('actual chain caller preserves the phase entry boundary: %s', mode => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-entry-caller-')));
+  const factsPath = path.join(dir, 'facts.json');
+  try {
+    const child = spawnSync(process.execPath, ['test', path.join(ROOT, 'test/fixtures/autoplan-caller.fixture.test.ts')], {
+      cwd: ROOT, encoding: 'utf8', timeout: 10_000,
+      env: { ...process.env, EVALS: '', EVALS_ALL: '', EVALS_TIER: '',
+        AUTOPLAN_CALLER_SCENARIO: mode, AUTOPLAN_CALLER_FACTS: factsPath, TMPDIR: dir, TMP: dir, TEMP: dir },
+    });
+    const violation = ['entry-omission', 'entry-late', 'entry-foreign-report'].includes(mode);
+    expect(child.error, child.stderr).toBeUndefined();
+    expect(child.status, child.stderr).toBe(violation ? 1 : 0);
+    const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'));
+    expect(facts.inputs).toEqual(['/autoplan\r']);
+    expect(facts.closed).toBe(true);
+    expect(facts.elapsedMs).toBe(15000);
+    expect(facts.elapsedMs).toBeLessThan(AUTOPLAN_CHAIN_BUDGET.workMs);
+    const terminal = facts.captured.at(-1);
+    if (violation) {
+      expect(child.stderr).toContain('outcome=premature_phase_entry');
+      expect(terminal.state).toBe('premature_phase_entry');
+      expect(terminal.prematurePhaseEntry).toMatchObject({ phase: 'design', requiredPhase: 1,
+        readToolUseId: 'toolu_01XvX1QbuKqv1xWjpdHsFLnj' });
+    } else {
+      // No early abort is not an added ordering/coverage claim (notably equality).
+      // The existing independent completion assertions still run in the caller.
+      expect(terminal.state).toBe('chain_complete');
+      expect(terminal.prematurePhaseEntry).toBeNull();
+    }
+    expect(fs.readdirSync(dir).filter(name => name.startsWith('gstack-autoplan-chain-'))).toEqual([]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}, 15_000);

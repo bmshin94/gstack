@@ -213,10 +213,12 @@ test('phase progress text permits immediate tool continuation in the same turn',
   expect(contract).toContain('in the same turn');
   expect(contract).not.toContain('This parent response contains no tool calls');
   const shared = source('autoplan/sections/phase-close.md.tmpl').replace(/\s+/g, ' ');
-  expect(shared).toContain('Send visible parent assistant text');
-  expect(shared).toContain('Only after the report text may this same response Read/create/dispatch the next phase');
-  expect(shared.indexOf('First content block: the phase report below.')).toBeLessThan(
-    shared.indexOf('Subsequent tool calls: the next step from that row.'));
+  expect(shared).toContain('send the filled report below now as visible parent assistant text');
+  expect(shared).toContain("After the report message has been sent, Read/create/dispatch the next step in this phase's row");
+  const publish = shared.indexOf('6. **Publish the phase report.**');
+  const continueAt = shared.indexOf('7. **Continue to the next step.**');
+  expect(publish).toBeGreaterThan(-1);
+  expect(continueAt).toBeGreaterThan(publish);
   expect(shared).toContain('in the same turn');
   expect(shared).not.toContain('This message contains no tool calls');
   for (const phase of ['ceo', 'design', 'dx', 'eng']) {
@@ -224,5 +226,42 @@ test('phase progress text permits immediate tool continuation in the same turn',
     expect(close).toContain('{{SECTION:phase-close}}');
     expect(close.trim().endsWith('{{SECTION:phase-close}}')).toBe(true);
     expect(close).not.toContain('**Phase ');
+  }
+});
+
+test('the captured cf74 full readback did not publish a CEO report before the Design Read', () => {
+  // Public projection from chain-ceo-close/receipt.json (0b1ede1e…0e9de0),
+  // source cf74db538a2f4c4361f2573316abb91e01663564. The complete retained
+  // parent window contains no assistant text between this Read ACK and Design.
+  const lastParentMessage = {
+    sessionId: '647c542b-5f7a-45d7-b1d9-8e2d984eab17',
+    timestamp: '2026-09-16T01:27:36.112Z',
+    text: 'Tasks JSONL written (13 rows). Now the phase-close procedure for CEO.',
+  };
+  const readbackAck = { toolUseId: 'toolu_01SpARevKkyf9P9MqwN8w9Ms',
+    timestamp: '2026-09-16T01:27:53.896Z', startLine: 1, numLines: 109, totalLines: 109 };
+  const nextPhaseUse = { toolUseId: 'toolu_01XvX1QbuKqv1xWjpdHsFLnj',
+    timestamp: '2026-09-16T01:28:04.501Z', name: 'Read',
+    input: { file_path: '/home/vercel-sandbox/gstack/autoplan/sections/design-phase.md' } };
+  const boundary = Date.parse(nextPhaseUse.timestamp);
+  expect(Date.parse(readbackAck.timestamp)).toBeLessThan(boundary);
+  expect(readbackAck.numLines).toBe(readbackAck.totalLines);
+  const observe = (messages: typeof lastParentMessage[], through = boundary) =>
+    autoplanPhaseCompletions({ status: 'ready', calls: [],
+      assistantMessages: messages.filter(message => Date.parse(message.timestamp) <= through) },
+    Date.parse(lastParentMessage.timestamp));
+  expect(observe([lastParentMessage])).toEqual([]);
+
+  // Synthetic controls exercise the unchanged public observer's timestamps.
+  // A later announcement remains later; it cannot populate the earlier boundary.
+  const report = { ...lastParentMessage, timestamp: new Date(boundary - 1).toISOString(),
+    text: '**Phase 1 complete.**\nCodex: disabled. Claude subagent: completed: 9 issues.\n'
+      + 'Consensus: N/A (voice coverage missing).\nPassing to Phase 2 (Design Review).' };
+  expect(observe([lastParentMessage, report])).toEqual([{ phase: 1, ts: boundary - 1 }]);
+  const late = { ...report, timestamp: new Date(boundary + 1).toISOString() };
+  expect(observe([lastParentMessage, late])).toEqual([]);
+  expect(observe([lastParentMessage, late], boundary + 1)).toEqual([{ phase: 1, ts: boundary + 1 }]);
+  for (const text of [`\`\`\`text\n${report.text}\n\`\`\``, 'I will send the CEO completion report after Design.']) {
+    expect(observe([lastParentMessage, { ...report, text }])).toEqual([]);
   }
 });

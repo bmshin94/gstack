@@ -5,9 +5,11 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { prepareMethodology, createSnapshot } from '../bin/gstack-autoplan-snapshot';
-import { auditAutoplanMethodReads, loadAutoplanMethodologyBinding } from './helpers/autoplan-method-read-audit';
+import { auditAutoplanMethodReads, loadAutoplanMethodologyBinding, prematureAutoplanPhaseEntry,
+  type AutoplanPhaseInstruction } from './helpers/autoplan-method-read-audit';
 import { readPlanCountTranscript, type NativePublicToolEvent } from './helpers/plan-count-transcript';
 import recorded from './fixtures/autoplan-method-read-aa-events.json';
+import phaseEntry from './fixtures/autoplan-phase-entry-cf74.json';
 const ROOT = resolve(import.meta.dir, '..');
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const events = () => clone(recorded.events) as NativePublicToolEvent[];
@@ -162,6 +164,110 @@ loadAutoplanMethodologyBinding(input.prompt, input.roots);
       } else {
         expect(() => loadAutoplanMethodologyBinding(f.snapshot.nativeDispatchPrompt, [f.dir]), kind).toThrow();
       }
+    }
+  });
+});
+
+describe('completed parent phase-instruction Reads require an earlier published report', () => {
+  function entryFixture() {
+    const events = clone(phaseEntry.events) as NativePublicToolEvent[];
+    const transcript = { status: 'ready' as const, calls: [], assistantMessages: clone(phaseEntry.assistantMessages) };
+    const file = events[1]!.file as { filePath: string; content: string };
+    const instruction: AutoplanPhaseInstruction = { phase: 'design', requiredPhase: 1,
+      paths: [file.filePath], content: file.content };
+    const at = Date.parse(events[0]!.timestamp);
+    const startedAt = Date.parse(transcript.assistantMessages[0]!.timestamp);
+    const addReport = (delta: number, sessionId = events[0]!.sessionId) => transcript.assistantMessages.push({
+      sessionId, timestamp: new Date(at + delta).toISOString(), text: 'Phase 1 complete.' });
+    return { events, transcript, instruction, at, startedAt, addReport,
+      audit: () => prematureAutoplanPhaseEntry(events, transcript, [instruction], startedAt) };
+  }
+  test('the exact cf74 completed Design Read fails despite successful full CEO export readback', () => {
+    const f = entryFixture();
+    expect(phaseEntry.originalOutcome).toContain('root cancellation, no Bun verdict invented');
+    expect(phaseEntry.readback.equalsCurrentExport).toBe(true);
+    expect(f.audit()).toMatchObject({ phase: 'design', requiredPhase: 1,
+      readToolUseId: 'toolu_01XvX1QbuKqv1xWjpdHsFLnj', readAt: '2026-09-16T01:28:04.501Z' });
+  });
+  test.each([-1, 0, 1, 1000])('a report at request %+d ms preserves its actual temporal meaning', delta => {
+    const f = entryFixture(); f.addReport(delta);
+    // Equality is indeterminate, not evidence of ordering. Neither null result
+    // nor this early abort adds a completion to the unchanged end assertions.
+    expect(f.audit() === null).toBe(delta <= 0);
+    if (delta > 0) expect(f.audit()!.reportAt).toBe(new Date(f.at + delta).toISOString());
+  });
+  test('another parent session or source/future text cannot supply the required report', () => {
+    const f = entryFixture(); f.addReport(-1, 'different-session');
+    expect(f.audit()).not.toBeNull();
+    f.transcript.assistantMessages.push({ sessionId: f.events[0]!.sessionId,
+      timestamp: new Date(f.at - 1).toISOString(), text: '```text\nPhase 1 complete.\n```\nI will publish after Design.' });
+    expect(f.audit()).not.toBeNull();
+  });
+  test.each(['foreign-request', 'foreign-result', 'foreign-session', 'unpaired', 'missing-result', 'missing-use',
+    'error', 'unknown-status', 'backward-time', 'backward-order', 'stale', 'content', 'total', 'offset', 'limit',
+    'empty-id', 'invalid-time', 'conflicting-result', 'conflicting-request'] as const)
+  ('%s does not establish an owned successful phase entry', change => {
+    const f = entryFixture(), use = f.events[0]!, result = f.events[1]!, file = result.file as any;
+    if (change === 'foreign-request') use.input!.file_path = '/foreign/autoplan/sections/design-phase.md';
+    if (change === 'foreign-result') file.filePath = '/foreign/autoplan/sections/design-phase.md';
+    if (change === 'foreign-session') result.sessionId = 'other';
+    if (change === 'unpaired') result.toolUseId += '-other';
+    if (change === 'missing-result') f.events.pop();
+    if (change === 'missing-use') f.events.shift();
+    if (change === 'error') result.isError = true;
+    if (change === 'unknown-status') delete result.isError;
+    if (change === 'backward-time') result.timestamp = new Date(f.at - 1).toISOString();
+    if (change === 'backward-order') f.events.reverse();
+    if (change === 'stale') use.timestamp = new Date(f.startedAt - 1).toISOString();
+    if (change === 'content') file.content += 'Changed';
+    if (change === 'total') file.totalLines++;
+    if (change === 'offset') use.input!.offset = 2;
+    if (change === 'limit') use.input!.limit = 1;
+    if (change === 'empty-id') use.toolUseId = result.toolUseId = '';
+    if (change === 'invalid-time') use.timestamp = 'invalid';
+    if (change === 'conflicting-result') f.events.push({ ...result, isError: true });
+    if (change === 'conflicting-request') f.events.unshift({ ...use, input: { file_path: '/foreign/design-phase.md' } });
+    expect(f.audit()).toBeNull();
+  });
+  test('identical duplicate records and a successful partial source Read still establish entry', () => {
+    const f = entryFixture(); f.events.push(clone(f.events[1]!));
+    expect(f.audit()).not.toBeNull();
+    const partial = entryFixture(), file = partial.events[1]!.file as any;
+    partial.events[0]!.input!.offset = file.startLine = 2;
+    partial.events[0]!.input!.limit = file.numLines = 3;
+    file.content = partial.instruction.content.split('\n').slice(1, 4).join('\n');
+    expect(partial.audit()).not.toBeNull();
+  });
+  test.each([['design', 1], ['dx', 2], ['eng', 2.5]] as const)
+  ('current %s instruction is bound to required phase %s', (phase, requiredPhase) => {
+    const f = entryFixture(), path = join(ROOT, 'autoplan', 'sections', `${phase}-phase.md`);
+    f.instruction = { phase, requiredPhase, paths: [path], content: readFileSync(path, 'utf8') };
+    f.events[0]!.input = { file_path: path };
+    f.events[1]!.file = { filePath: path, content: f.instruction.content, startLine: 1,
+      numLines: f.instruction.content.split('\n').length, totalLines: f.instruction.content.split('\n').length };
+    expect(prematureAutoplanPhaseEntry(f.events, f.transcript, [f.instruction], f.startedAt))
+      .toMatchObject({ phase, requiredPhase });
+    f.transcript.assistantMessages.push({ sessionId: f.events[0]!.sessionId,
+      timestamp: new Date(f.at - 1).toISOString(), text: `Phase ${requiredPhase} complete.` });
+    expect(prematureAutoplanPhaseEntry(f.events, f.transcript, [f.instruction], f.startedAt)).toBeNull();
+  });
+  test('the existing native parent reader excludes child and foreign-cwd phase Reads', () => {
+    const f = entryFixture(), dir = mkdtempSync(join(tmpdir(), 'gstack-phase-entry-')); owned.push(dir);
+    const project = join(dir, 'projects', 'fixture'); mkdirSync(project, { recursive: true });
+    const cwd = '/owned/fixture';
+    const rows = f.events.map(event => ({ cwd, isSidechain: false, sessionId: event.sessionId,
+      timestamp: event.timestamp, message: { role: event.kind === 'use' ? 'assistant' : 'user', content: [event.kind === 'use'
+        ? { type: 'tool_use', id: event.toolUseId, name: event.name, input: event.input }
+        : { type: 'tool_result', tool_use_id: event.toolUseId, is_error: event.isError, content: event.content }] },
+      toolUseResult: event.kind === 'result' ? { file: event.file } : undefined }));
+    const journal = join(project, `${f.events[0]!.sessionId}.jsonl`);
+    for (const variant of ['parent', 'child', 'foreign-cwd']) {
+      writeFileSync(journal, rows.map(row => JSON.stringify({ ...row,
+        ...(variant === 'child' ? { isSidechain: true } : {}),
+        ...(variant === 'foreign-cwd' ? { cwd: '/other/fixture' } : {}) })).join('\n') + '\n');
+      const projected: NativePublicToolEvent[] = [];
+      const transcript = readPlanCountTranscript(dir, cwd, event => projected.push(event));
+      expect(prematureAutoplanPhaseEntry(projected, transcript, [f.instruction], f.startedAt) !== null).toBe(variant === 'parent');
     }
   });
 });

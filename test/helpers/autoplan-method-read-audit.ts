@@ -2,7 +2,8 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, sep } from 'node:path';
-import type { NativePublicToolEvent } from './plan-count-transcript';
+import type { NativePublicToolEvent, PlanCountTranscript } from './plan-count-transcript';
+import { autoplanPhaseCompletions } from './autoplan-phase-observer';
 
 export interface MethodologyReadBinding {
   phase: string;
@@ -141,4 +142,68 @@ export function auditAutoplanMethodReads(
     } catch (error) { audit.error = String(error); }
   }
   return audits;
+}
+
+export interface AutoplanPhaseInstruction {
+  phase: 'design' | 'dx' | 'eng';
+  requiredPhase: 1 | 2 | 2.5;
+  /** Exact canonical source plus installed aliases verified by the fixture. */
+  paths: string[];
+  content: string;
+}
+export interface AutoplanPhaseEntryViolation {
+  phase: AutoplanPhaseInstruction['phase'];
+  requiredPhase: AutoplanPhaseInstruction['requiredPhase'];
+  sessionId: string;
+  readToolUseId: string;
+  readAt: string;
+  resultAt: string;
+  reportAt?: string;
+}
+
+/**
+ * Fail early only on demonstrated entry before publication. The caller supplies
+ * owned parent records and exact frozen source bindings. Equal timestamps cannot
+ * establish block order: they cause no early abort and supply no ordering credit.
+ */
+export function prematureAutoplanPhaseEntry(
+  events: NativePublicToolEvent[],
+  transcript: PlanCountTranscript,
+  instructions: AutoplanPhaseInstruction[],
+  commandStartedAt: number,
+): AutoplanPhaseEntryViolation | null {
+  if (transcript.status !== 'ready' || !Number.isFinite(commandStartedAt)) return null;
+  const seen = new Set<string>();
+  for (const request of events) {
+    if (request.kind !== 'use' || request.name !== 'Read' || !identity(request.sessionId) ||
+        !identity(request.toolUseId)) continue;
+    const instruction = instructions.find(item => item.paths.includes(request.input?.file_path as string));
+    const at = Date.parse(request.timestamp);
+    if (!instruction || !Number.isFinite(at) || at < commandStartedAt) continue;
+    const key = `${request.sessionId}:${request.toolUseId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const pair = events.filter(event => event.sessionId === request.sessionId && event.toolUseId === request.toolUseId);
+    const uses = [...new Map(pair.filter(event => event.kind === 'use').map(event => [JSON.stringify(event), event])).values()];
+    const results = [...new Map(pair.filter(event => event.kind === 'result').map(event => [JSON.stringify(event), event])).values()];
+    if (uses.length !== 1 || results.length !== 1) continue;
+    const result = results[0]!;
+    const resultAt = Date.parse(result.timestamp);
+    if (events.indexOf(result) < events.indexOf(request) || !Number.isFinite(resultAt) || resultAt < at || result.isError !== false) continue;
+    const file = result.file;
+    const lines = instruction.content.split('\n');
+    if (!object(file) || !instruction.paths.includes(file.filePath) || typeof file.content !== 'string' ||
+        !integer(file.startLine) || !integer(file.numLines) || file.totalLines !== lines.length ||
+        file.startLine + file.numLines - 1 > lines.length || (request.input?.offset ?? 1) !== file.startLine ||
+        (request.input?.limit !== undefined && (!integer(request.input.limit) || file.numLines > request.input.limit)) ||
+        file.content !== lines.slice(file.startLine - 1, file.startLine - 1 + file.numLines).join('\n')) continue;
+    const report = autoplanPhaseCompletions({ ...transcript,
+      assistantMessages: transcript.assistantMessages.filter(message => message.sessionId === request.sessionId) },
+    commandStartedAt).find(hit => hit.phase === instruction.requiredPhase);
+    if (report && report.ts <= at) continue;
+    return { phase: instruction.phase, requiredPhase: instruction.requiredPhase, sessionId: request.sessionId,
+      readToolUseId: request.toolUseId, readAt: request.timestamp, resultAt: result.timestamp,
+      ...(report ? { reportAt: new Date(report.ts).toISOString() } : {}) };
+  }
+  return null;
 }
