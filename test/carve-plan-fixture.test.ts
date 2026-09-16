@@ -115,6 +115,14 @@ test('engineering fixture fixes the author acceptance recipe without approving t
   expect(plan).toContain('implementation itself remains proposed and unapproved');
   expect(plan).toContain('conflicts with it or a required proof is missing');
   expect(plan).toContain('normal decision procedure');
+  expect(plan).toContain('required static proof during review, separate from runtime test execution');
+  expect(plan).toContain("const keys = ['orders', 'missing'] as const; repo.getMany(keys)");
+  expect(plan).toContain('Explain why that readonly tuple is assignable to `readonly string[]`');
+  expect(plan).toContain('Reject a\nmutable `string[]` parameter, a cast that removes readonly, or `any`');
+  expect(plan).toContain('assert `[2, undefined]` at runtime');
+  expect(plan).toContain('do not claim it proves the static signature or that a\ncompiler ran');
+  expect(plan).toContain('No checker dependency, config or future-checker promise replaces\nthis required static proof');
+  expect(plan).toContain('A genuine type incompatibility still requires the\nnormal decision procedure');
   for (const boundary of ['fixed implementation package', 'existing CLI call-site integration', 'synchronization of existing contract documentation', 'Interchangeable', 'delegated\nimplementation details', 'Record their\nconcrete findings and disposition', 'does\nnot approve the proposed implementation', 'Optional polish, duplicate contract', 'new instrumentation and independent proof projects remain excluded', 'material contract change, missing required proof', 'conflict with the author', 'report the unresolved\nconflict', 'Preserve every required review section, artifact and verification']) expect(plan).toContain(boundary);
   for (const requirement of [
     "built-in `bun test` runner", '`src/repository.test.ts`',

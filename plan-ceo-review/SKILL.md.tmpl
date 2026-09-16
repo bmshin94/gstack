@@ -296,8 +296,13 @@ For tests:
 Draft rows before comparing options. Do not prewrite approval or implementation tasks.
 
 **3. Compare and save that row's options.**
-Build one `currentDecision` using the preamble's rules: full question/header and
-2–3 options with exact labels and full descriptions. Prefer 3 for non-trivial plans;
+Build one `currentDecision` using the preamble's rules before saving or asking:
+`question` is the entire native decision brief, from its D-numbered title through
+the Project, ELI10, Stakes, Recommendation and applicable completeness/net text.
+It is not just the title. Finish the native `header` and all option labels now;
+keep them within the host's limits. Include 2–3 options with full descriptions.
+These finished strings are the payload to save and dispatch, not notes from
+which to compose another question later. Prefer 3 for non-trivial plans;
 explain a lone viable option. Each description needs a 1–2 sentence summary,
 S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage.
 For a choice with no implementation work, use S and state the zero work in its summary.
@@ -330,15 +335,40 @@ new findings discovered in later sections.
    pending rows and finished comparisons. Include `currentDecision` as
    question/header text and complete labeled option paragraphs; prefix selectors
    if absent. Copy these fields completely; keep the exact native header and labels.
+   Keep the comparison grid before the payload fields, then save the entire
+   `Question`, `Header` and options together under this decision's own heading.
+   Use this Markdown layout without fencing the saved record:
+
+   ```text
+   ## currentDecision (ROW-ID)
+   Commitment comparison: <complete grid>
+
+   Question: <entire currentDecision.question, including every brief paragraph>
+   Header: <exact currentDecision.header>
+   A) <exact first option label; add a selector only if absent>
+   <full first option description>
+   B) <exact second option label; add a selector only if absent>
+   <full second option description; include C when offered>
+   ```
+
+   Replace this decision's whole payload when revising it. Keep other answered
+   decisions under separate headings with their answers; never prepend a new
+   payload above a prior question/header/options inside the same current record.
 - **Read-back.** Read back: verify every field against `currentDecision` and each citation against
-   its source. Inspect both the ledger row and the complete saved `currentDecision`;
-   verify their IDs match the question before asking it. For chat, verify the
-   complete **not persisted** text. A grid, summary or pointer is insufficient.
+   its source. After the latest successful Write or Edit, Read both the ledger row
+   and the complete saved payload; verify their IDs and every payload string.
+   This verification Read is required even when Edit says the file state is
+   current in context and there is no need to Read it back. Any repair, including
+   a one-word field correction, needs a new Read. For chat, verify the complete
+   **not persisted** text. A grid, summary or pointer is insufficient.
 
 Stop on failed save/mismatch. A changed decision repeats 0D step 3.
 
 **4. Ask, record the answer, and amend.**
 Ask one row per call, citing its ID, using the unchanged verified `currentDecision`.
+Copy the read-back question, header, labels and descriptions literally into the
+native call. Do not add the preamble brief, shorten labels or rebuild options here;
+those fields were finished in step 3. Any change returns to its save and Read-back.
 Use prose/auto-decision transport only as the preamble authorizes.
 A recommendation is not approval.
 

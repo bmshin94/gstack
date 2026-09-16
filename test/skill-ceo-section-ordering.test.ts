@@ -194,7 +194,7 @@ test('CEO defines pending choices and storage before its first decision procedur
   expect(rowCheck).toBeGreaterThan(compare.indexOf('**Pre-question checkpoint:**'));
   expect(compare).toContain('return to 0D step 2 (Record the pending choice) and repair it first');
   expect(compare).toContain('Each is one exact value, never a range');
-  expect(compare).toContain('Inspect both the ledger row and the complete saved `currentDecision`');
+  expect(compare).toContain('After the latest successful Write or Edit, Read both the ledger row and the complete saved payload');
   expect(compare).toContain('keep the exact native header and labels');
   const validate = compare.indexOf('Validate every description: effort is S/M/L/XL and risk is low/medium/high');
   const repair = compare.indexOf('Fix invalid values in `currentDecision` and repeat 0D step 3');
@@ -1102,11 +1102,22 @@ describe('CEO complete question persistence before dispatch', () => {
     expect(stages.every(position => position >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     const built = cycle.slice(cycle.indexOf('Build one `currentDecision`'), cycle.indexOf('**Pre-question checkpoint:**'));
-    for (const field of ['full question/header', 'exact labels and full descriptions', '1–2 sentence summary', 'S/M/L/XL effort', 'low/medium/high risk', '2–3 pros/cons', 'reuse and verification coverage', 'options differ in kind, not coverage — no completeness score']) expect(built).toContain(field);
+    for (const field of ['`question` is the entire native decision brief', 'Finish the native `header` and all option labels now', '2–3 options with full descriptions', '1–2 sentence summary', 'S/M/L/XL effort', 'low/medium/high risk', '2–3 pros/cons', 'reuse and verification coverage', 'options differ in kind, not coverage — no completeness score']) expect(built).toContain(field);
     const save = cycle.slice(cycle.indexOf('**Pre-question checkpoint:**'), cycle.indexOf('**4. Ask'));
     expect(save).toContain("`currentDecision` as question/header text and complete labeled option paragraphs");
     expect(save).toContain('A grid, summary or pointer is insufficient');
     expect(save).toContain('Read back: verify every field');
+    // Native 043a questions were recomposed after title-only saves; the final
+    // Edit ACK also said a Read was unnecessary. These are workflow guards,
+    // not proof that a model followed the instructions.
+    expect(built).toContain('from its D-numbered title through the Project, ELI10, Stakes, Recommendation');
+    expect(save).toContain('Replace this decision\'s whole payload when revising it');
+    expect(save).toContain('Keep other answered decisions under separate headings with their answers');
+    expect(save).toContain('This verification Read is required even when Edit says');
+    expect(save).toContain('a one-word field correction, needs a new Read');
+    const dispatch = cycle.slice(cycle.indexOf('**4. Ask'), cycle.indexOf('**STOP for the actual answer'));
+    expect(dispatch).toContain('Copy the read-back question, header, labels and descriptions literally into the native call');
+    expect(dispatch).toContain('Any change returns to its save and Read-back');
   });
 
   test('CEO save verification retains forbidden-write, failed-save, automatic and changed-decision branches', () => {

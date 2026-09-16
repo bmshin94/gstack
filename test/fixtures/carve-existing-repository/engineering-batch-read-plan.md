@@ -67,7 +67,21 @@ finding. Preserve every required review section, artifact and verification.
 
 - Use Bun's existing built-in `bun test` runner and a new `src/repository.test.ts`. Each test opens an in-memory SQLite database and closes it during cleanup. No dependency, package.json or runner configuration is added.
 - Pin the existing regression contract: integer, float, zero and negative get/set round trips; overwrite; missing key yields `undefined`; invalid empty, overlong and non-string keys retain the exact existing TypeError message; NaN and either infinity retain the exact value TypeError message. A second repository over the same database observes the stored value. An integration test runs the existing `example.ts` under Bun and asserts exit 0 and exactly `2 2 undefined\n`. The intentional example change is its proposed `getMany` call; existing get/set and error behavior remain unchanged.
-- Pin `getMany` acceptance: empty input returns `[]` on open and closed databases without querying; mixed known/missing results preserve order and length; a readonly tuple is accepted by the TypeScript signature; adjacent and non-adjacent duplicates are retained; a stored zero differs from an absent key. Invalid keys in first, middle and last positions throw the existing error and return no array. A 128-character key succeeds and a 129-character key fails. A nonempty batch after database close throws; a missing table throws rather than returning `undefined` (do not pin an undocumented SQLite error message). The write-between-batches trace observes `[1]`, then after a write observes `[5, 5]`.
+- Pin `getMany` acceptance: empty input returns `[]` on open and closed databases without querying; mixed known/missing results preserve order and length; an uncast readonly tuple call returns the expected ordered results; adjacent and non-adjacent duplicates are retained; a stored zero differs from an absent key. Invalid keys in first, middle and last positions throw the existing error and return no array. A 128-character key succeeds and a 129-character key fails. A nonempty batch after database close throws; a missing table throws rather than returning `undefined` (do not pin an undocumented SQLite error message). The write-between-batches trace observes `[1]`, then after a write observes `[5, 5]`.
+
+
+The readonly tuple must also be accepted by the TypeScript signature. This is a
+required static proof during review, separate from runtime test execution:
+verify the proposed declaration is `getMany(keys: readonly string[]): Array<number | undefined>`
+and the uncast call `const keys = ['orders', 'missing'] as const; repo.getMany(keys)`.
+Explain why that readonly tuple is assignable to `readonly string[]`. Reject a
+mutable `string[]` parameter, a cast that removes readonly, or `any` that bypasses
+the required type contract. Keep the tuple call in `src/repository.test.ts` to
+assert `[2, undefined]` at runtime. `bun test` executes TypeScript without
+checking assignability; do not claim it proves the static signature or that a
+compiler ran. No checker dependency, config or future-checker promise replaces
+this required static proof. A genuine type incompatibility still requires the
+normal decision procedure; this clarification does not approve implementation.
 
 
 Review the method's type and control flow, its call-site use in the CLI, and all

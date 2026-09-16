@@ -427,29 +427,36 @@ describe('Eng approved-work decision gate', () => {
     expect(identify).toContain('interchangeable implementation details stay together');
   });
 
-  test('saves the final brief and re-audits substantive revisions before sending', () => {
+  test('finishes native fields before save and dispatches the literal final read-back', () => {
     const audit = gate.slice(gate.indexOf('### 3. Compare one choice'), gate.indexOf('**Save a pending remedy before asking:**'));
     const save = gate.slice(gate.indexOf('**Save a pending remedy before asking:**'), gate.indexOf('### 5. Ask and wait'));
     const send = gate.slice(gate.indexOf('### 5. Ask and wait'));
     expect(audit).toContain("the preamble's complete decision brief");
     expect(audit).toContain('Build `currentDecision` now');
     expect(save).toContain('save this record, complete grid and exact brief');
-    expect(save).toContain('Fill the question and option fields below directly from `currentDecision`');
+    expect(audit).toContain('Finish these native strings before saving');
+    expect(audit).toContain("the header and labels already satisfy the host's limits");
+    expect(audit).toContain('do not add a second Pros/cons block only to the saved question or remove one when dispatching');
+    expect(save).toContain('Copy the finished `currentDecision` fields below');
     expect(save).toContain('retain an existing selector; otherwise prefix the exact label with that record selector');
     expect(save).toContain('Compare the label separately from added record notation');
-    expect(save).toContain('Check the write result, then read back this current record from the chosen report file');
+    expect(save).toContain('Check the latest Write/Edit result, then Read the entire current record');
     expect(save).toContain('Verify its question text, header, all option labels and descriptions against `currentDecision`');
-    expect(save).toContain('A chat reference, abbreviated summary or planned later write does not satisfy this check');
-    expect(save).toContain('Correct a mismatch and verify again before dispatch');
-    expect(save).toContain('then repeat the applicable verification');
+    expect(save).toContain('This Read is required even when Edit says the file state is current in context');
+    expect(save).toContain('A heading/field-name grep, chat reference, abbreviated summary or planned later write does not verify the payload');
+    expect(save).toContain('repeat the complete Read after the final edit before dispatch');
+    expect(save).toContain('replace its whole current payload');
+    expect(save).toContain('never adjacent duplicate Question/Header/Options fields');
     expect(save).toContain('In read-only mode, present the complete record and grid as **not persisted**');
     expect(save).toContain('an unreadable or unverifiable saved record takes the same path');
-    expect(save).toContain('If outcomes, work or meaning change before dispatch, repeat step 3 and save the revised record first');
-    expect(send).toContain('Send it without substantive additions');
+    expect(save).toContain('Any payload edit, including a shortened label or reformatted question, returns to step 3, whole-payload save and verification');
+    expect(send).toContain('Copy the read-back question, header, labels and descriptions literally');
+    expect(send).toContain('Do not add the preamble brief, strip question paragraphs or rebuild options at dispatch');
     expect(send).toContain("After step 4's verification, dispatch the unchanged `currentDecision`");
     expect(send).toContain('For authorized prose or auto-decision transport, use the same verified brief and alternatives');
     expect(send).toContain('one question for one choice per AskUserQuestion call');
     expect(send).toContain("Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference");
+    expect(send).toContain("The host's current-in-context hint does not replace this verification Read");
     expect(save).toContain('A failed save takes **Blocked outcome** before asking');
   });
 

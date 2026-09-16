@@ -74,12 +74,12 @@ Keep a behavior with its necessary code, tests and docs. To decide whether a mec
 
 ### 3. Compare one choice
 
-Select one pending ID. Build `currentDecision` now: the single question object containing the preamble's complete decision brief in `question`, its `header`, and every alternative's exact `label` and full `description` in `options`. Include the recommendation and tradeoffs in these fields:
+Select one pending ID. Build `currentDecision` now: the single question object containing the preamble's complete decision brief in `question`, its `header`, and every alternative's exact `label` and full `description` in `options`. Finish these native strings before saving: the D-numbered question includes its Project, ELI10, Stakes, Recommendation and applicable completeness/net text; the header and labels already satisfy the host's limits. Include the recommendation and tradeoffs in these fields:
 - Describe the problem with file and line references. Offer 2–3 alternatives, including “do nothing” when reasonable; Outside Voice uses its four-option menu.
 - Include effort (human: ~X / CC: ~Y), risk and maintenance for each option. Connect the recommendation to the engineering preferences; prefer complete coverage when its extra CC effort is marginal.
 - Coverage choices vary implementation or proof depth: use `Completeness: N/10` (10 covers all relevant in-scope edge cases, 7 the happy path, 3 a shortcut). Different approaches instead get `Note: options differ in kind, not coverage — no completeness score.` Bundled policies are not extra completeness. Test stars measure existing test quality, not decisions or findings.
 
-Build a **comparison grid** covering the entire brief: one row per independently selectable behavior, approach, guarantee or bound. Show current and per-option values/work, including shared recommendations, fixed and pending choices. Cite approvals; use concrete values, not package names.
+Build a **comparison grid** covering the entire brief: one row per independently selectable behavior, approach, guarantee or bound. Show current and per-option values/work, including shared recommendations, fixed and pending choices. Cite approvals; use concrete values, not package names. The grid and record annotations are separate from the native fields. Put option deliberation in the finished question or descriptions now; do not add a second Pros/cons block only to the saved question or remove one when dispatching.
 
 Check each row:
 - The selected choice may vary between options. Every other approved value stays fixed; every other pending choice stays undecided. A new value common to all options is still a choice requiring approval.
@@ -97,7 +97,7 @@ After the jitter answer, carry that value into both options of the later cap que
 
 ### 4. Save the pending record
 
-**Save a pending remedy before asking:** Under **Review record and write policy**, save this record, complete grid and exact brief before the report's final `## GSTACK REVIEW REPORT`. Fill the question and option fields below directly from `currentDecision`, preserving their full text, including the recommendation. Each saved option line has one A–D selector: retain an existing selector; otherwise prefix the exact label with that record selector. Compare the label separately from added record notation. Repeat the option block for every offered alternative. Preserve other content and approvals.
+**Save a pending remedy before asking:** Under **Review record and write policy**, save this record, complete grid and exact brief before the report's final `## GSTACK REVIEW REPORT`. Copy the finished `currentDecision` fields below, preserving their full text, including the recommendation. Each saved option line has one A–D selector: retain an existing selector; otherwise prefix the exact label with that record selector. Compare the label separately from added record notation. Repeat the option block for every offered alternative. When revising this choice, replace its whole current payload; keep other choices under their own headings and superseded payloads in `History`, never adjacent duplicate Question/Header/Options fields. Preserve other content and approvals.
 
 ```markdown
 ## Decision ledger
@@ -122,17 +122,17 @@ Accepted scope: <exact approved work; none if no change approved>
 History: <earlier values, briefs, answers and reason for reopening>
 ```
 
-**Verify the saved record:** Check the write result, then read back this current record from the chosen report file. Verify its question text, header, all option labels and descriptions against `currentDecision`, and its complete grid against step 3. A chat reference, abbreviated summary or planned later write does not satisfy this check. Correct a mismatch and verify again before dispatch. A failed save takes **Blocked outcome** before asking; an unreadable or unverifiable saved record takes the same path after the policy's stated recovery.
+**Verify the saved record:** Check the latest Write/Edit result, then Read the entire current record from the chosen report file. Verify its question text, header, all option labels and descriptions against `currentDecision`, and its complete grid against step 3. This Read is required even when Edit says the file state is current in context and there is no need to Read it back. A heading/field-name grep, chat reference, abbreviated summary or planned later write does not verify the payload. Correct a mismatch and repeat the complete Read after the final edit before dispatch. A failed save takes **Blocked outcome** before asking; an unreadable or unverifiable saved record takes the same path after the policy's stated recovery.
 
 **Read-only branch:** In read-only mode, present the complete record and grid as **not persisted** and check that presentation against `currentDecision`. Continue only within the policy's chat-review route; it cannot pass the saved-report gate.
 
-**Changed brief:** An old comparison or critic's recommendation cannot replace this record. If outcomes, work or meaning change before dispatch, repeat step 3 and save the revised record first, then repeat the applicable verification.
+**Changed brief:** An old comparison or critic's recommendation cannot replace this record. Any payload edit, including a shortened label or reformatted question, returns to step 3, whole-payload save and verification. The verified strings are the dispatch payload, not notes from which to compose a new question.
 
 ### 5. Ask and wait
 
 Use the preamble's tool resolution, failure fallback and authorized auto-decision rules. Setup and Scope Challenge selectors use this same dispatch order with their own recording rules.
 
-After step 4's verification, dispatch the unchanged `currentDecision`. Send it without substantive additions using `AskUserQuestion({ questions: [currentDecision] })`: one question for one choice per AskUserQuestion call. The array contains exactly one question object; other pending IDs wait for later calls. For authorized prose or auto-decision transport, use the same verified brief and alternatives with the preamble's rendering and answer rules.
+After step 4's verification, dispatch the unchanged `currentDecision`. Copy the read-back question, header, labels and descriptions literally using `AskUserQuestion({ questions: [currentDecision] })`: one question for one choice per AskUserQuestion call. Do not add the preamble brief, strip question paragraphs or rebuild options at dispatch; those strings were finished in step 3. The array contains exactly one question object; other pending IDs wait for later calls. For authorized prose or auto-decision transport, use the same verified brief and alternatives with the preamble's rendering and answer rules.
 
 **STOP for each pending decision.** Wait for its actual answer before applying the remedy, moving to the next section or calling ExitPlanMode. Do not queue another call while an answer is pending. An obvious fix still needs an answer unless exact prior approval covers it.
 
@@ -141,7 +141,7 @@ After step 4's verification, dispatch the unchanged `currentDecision`. Send it w
 **Apply the answer:**
 1. Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference. These three adjacent fields form one mutable resolution block after the options; replace the whole block together, never only its answer/scope tail. Each field occurs once outside `History`. Set this current record’s `State` to `approved` for the actual accepted scope; keep `pending` when the answer leaves a remedy unresolved. Preserve the draft options; superseded states belong in `History`. When resuming an older record with separated fields, bring all three into this block and remove their old occurrences in the same edit.
 2. Apply only those amendments to the working plan with a scoped Edit that also saves the current record. Other choices stay unchanged. In read-only mode, present the amended record and plan as **not persisted**.
-3. Check the Edit result and read back the entire saved resolution block, including its `State` line. Verify its single current state, actual answer and accepted scope agree; an answer-only search does not verify the block. In read-only mode, verify the presentation. Correct discrepancies before advancing; save or read-back failures follow **Review record and write policy**.
+3. Check the Edit result and read back the entire saved resolution block, including its `State` line. Verify its single current state, actual answer and accepted scope agree; an answer-only search does not verify the block. The host's current-in-context hint does not replace this verification Read. In read-only mode, verify the presentation. Correct discrepancies before advancing; save or read-back failures follow **Review record and write policy**.
 
 Now return to step 1 with the updated plan and actual answer. Hold the chosen value fixed while rebuilding the next relevant pending choice through steps 2–5; record why an irrelevant choice needs no question. Advance to the next finding or section only when no choice in this section awaits an answer.
 
