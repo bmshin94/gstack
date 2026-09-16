@@ -246,6 +246,65 @@ describe('CEO section-loading cache fixture', () => {
     expect(CEO_SECTION_CACHE_PLAN).toContain('fresh single-flight cohort before admitting new work');
   });
 
+  test('an internal store commit still overlaps the unfinished public wrapper write', async () => {
+    let stored = 'old';
+    let commitWrite!: () => void;
+    let wrapperReturned = false;
+    const cache = new Map([['tenant:profile', 'old']]);
+    const repository = {
+      read: async () => stored,
+      write: () => new Promise<string>(resolve => {
+        commitWrite = () => { stored = 'new'; resolve('new'); };
+      }),
+    };
+    const { readProfile, writeProfile } = new Function('cache', 'repository',
+      CACHE_READ_WRITE_SKETCH + '\nreturn { readProfile, writeProfile };')(cache, repository);
+    const writing = writeProfile('tenant:profile', 'new').then((value: string) => {
+      wrapperReturned = true;
+      return value;
+    });
+    commitWrite();
+    expect(stored).toBe('new');
+    expect(wrapperReturned).toBe(false);
+    // Invocation precedes the wrapper's invalidation/return continuation.
+    // Its old cache hit is permitted; a later caller is still protected.
+    const overlappingRead = readProfile('tenant:profile');
+    await writing;
+    expect(wrapperReturned).toBe(true);
+    expect(cache.has('tenant:profile')).toBe(false);
+    expect(await overlappingRead).toBe('old');
+    expect(await readProfile('tenant:profile')).toBe('new');
+    const contract = CEO_SECTION_CACHE_PLAN.replace(/\s+/g, ' ');
+    expect(contract).toContain("when writeProfile's promise fulfills after cache.delete, not when repository.write commits or resolves");
+    expect(contract).toContain('Reads that overlap an unfinished writeProfile may return an earlier snapshot');
+  });
+
+  test('an old miss filled before the completed write is correctly invalidated', async () => {
+    let stored = 'old';
+    let releaseRead!: () => void;
+    let first = true;
+    const cache = new Map<string, string>();
+    const repository = {
+      read: () => {
+        if (!first) return Promise.resolve(stored);
+        first = false;
+        const snapshot = stored;
+        return new Promise<string>(resolve => { releaseRead = () => resolve(snapshot); });
+      },
+      write: async (_key: string, value: string) => { stored = value; return value; },
+    };
+    const { readProfile, writeProfile } = new Function('cache', 'repository',
+      CACHE_READ_WRITE_SKETCH + '\nreturn { readProfile, writeProfile };')(cache, repository);
+    const earlierRead = readProfile('tenant:profile');
+    releaseRead();
+    expect(await earlierRead).toBe('old');
+    expect(cache.get('tenant:profile')).toBe('old');
+    await writeProfile('tenant:profile', 'new');
+    expect(stored).toBe('new');
+    expect(cache.has('tenant:profile')).toBe(false);
+    expect(await readProfile('tenant:profile')).toBe('new');
+  });
+
   test('the exact proposed wrapper retains a reproducible stale-fill race', async () => {
     let releaseRead!: (value: string) => void;
     let stored = 'old';

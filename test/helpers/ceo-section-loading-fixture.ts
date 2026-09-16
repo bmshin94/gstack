@@ -60,8 +60,12 @@ change with no UI, API, schema, pricing, or developer onboarding change.
   a resolved promise means committed, and every
   rejected promise guarantees no commit; its transaction rolled back before
   rejection. Existing contract tests exercise that guarantee.
-- A read already in progress when a write commits may return its earlier DB
-  snapshot to that caller. Every read begun after that write completes must
+- Consistency is measured at the public wrapper boundary. A write completes
+  when writeProfile's promise fulfills after cache.delete, not when
+  repository.write commits or resolves. A read begins when readProfile is
+  invoked. Reads that overlap an unfinished writeProfile may return an earlier
+  snapshot, including reads begun after the store commit but before the wrapper
+  promise fulfills. Every read begun after that write completes must
   observe the committed version. TTL expiry is not a substitute for this rule.
 
 ## Proposed wrapper integration
