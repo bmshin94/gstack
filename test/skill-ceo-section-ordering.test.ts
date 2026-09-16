@@ -187,6 +187,14 @@ test('CEO defines pending choices and storage before its first decision procedur
   expect(choice).toBeLessThan(firstDecision);
   const compare = compactProse(step0.split('**3. Compare and save')[1]!.split('**4. Ask, record')[0]!);
   expect(compare).toContain('**Pre-question checkpoint:** Save or present the complete plan under the storage policy: current values, pending rows and finished comparisons');
+  // Native c6fc D3 saved and asked Effort 0: matching copies did not validate the domain.
+  expect(compare).toContain('For a choice with no implementation work, use S and state the zero work in its summary');
+  const validate = compare.indexOf('Validate every description: effort is S/M/L/XL and risk is low/medium/high');
+  const repair = compare.indexOf('Fix invalid values in `currentDecision` and repeat step 3');
+  const readback = compare.indexOf('Read back: verify every field against `currentDecision`');
+  expect(validate).toBeGreaterThan(compare.indexOf('**Pre-question checkpoint:**'));
+  expect(repair).toBeGreaterThan(validate);
+  expect(readback).toBeGreaterThan(repair);
   const persistence = step0.split('### 0H.')[1]!.split('### 0I.')[0]!;
   expect(persistence.indexOf('**Save each input under the storage policy.**')).toBeLessThan(persistence.indexOf('mkdir -p'));
   expect(persistence).toContain('**Otherwise:**');

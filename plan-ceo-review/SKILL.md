@@ -936,6 +936,7 @@ Build one `currentDecision` using the preamble's rules: full question/header and
 2–3 options with exact labels and full descriptions. Prefer 3 for non-trivial plans;
 explain a lone viable option. Each description needs a 1–2 sentence summary,
 S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage.
+For a choice with no implementation work, use S and state the zero work in its summary.
 Weigh diff size and long-term architecture equally, including whether a rewrite is better.
 
 In Proposed, compare every commitment in the labels, descriptions and pros/cons:
@@ -955,9 +956,11 @@ path, 3 = shortcut. For different kinds of work, write: "Note: options differ in
 **Pre-question checkpoint:** Save or present the complete plan under the storage
 policy: current values, pending rows and finished comparisons. Include
 `currentDecision` as question/header text and complete labeled option paragraphs;
-prefix selectors if absent. Read back: verify every field against `currentDecision`
-and each citation against its source. For chat, verify the complete **not persisted** text. A grid, summary or pointer is insufficient. Stop on
-failed save/mismatch. A changed decision repeats step 3.
+prefix selectors if absent. Validate every description: effort is S/M/L/XL and
+risk is low/medium/high. Fix invalid values in `currentDecision` and repeat step 3.
+Read back: verify every field against `currentDecision` and each citation against
+its source. For chat, verify the complete **not persisted** text. A grid, summary
+or pointer is insufficient. Stop on failed save/mismatch. A changed decision repeats step 3.
 
 **4. Ask, record the answer, and amend.**
 Ask one row per call, citing its ID, using the unchanged verified `currentDecision`.
