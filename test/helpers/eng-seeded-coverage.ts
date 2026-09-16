@@ -241,19 +241,42 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     return (o.description ?? '').trim().startsWith('✅') && blocks.filter(b => b[1] === '✅').length >= 2 && blocks.some(b => b[1] === '❌');
   });
   const sourceOwned = nativeTradeoffs && ownsPlan;
-  const declaredComponents = /\bclass arrangement\b[^?]*\(([^)]+)\)/i.exec(title)?.[1]?.split(/,\s*/);
-  const declaredCount = /\b(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) components\b/i.exec(title)?.[1];
-  if (sourceOwned && declaredComponents && declaredCount && (counts[declaredCount.toLowerCase()] ?? Number(declaredCount)) === declaredComponents.length && new Set(declaredComponents).size === declaredComponents.length &&
-      ['AuthBroker', 'SessionMint', 'AuthCache', 'RequestPolicy'].every(name => declaredComponents.includes(name)) &&
-      /\bclasses carry no state\b/.test(explanation) && /\bRequestPolicy\b/.test(explanation) && /\bAuthCache\b/.test(explanation) &&
-      /\bwrapper\b/.test(explanation) && /\badapter\b/.test(explanation) &&
+  const declaredNames = /\bclass arrangement\b[^?]*\(([^)]+)\)/i.exec(title)?.[1]?.split(/,\s*/);
+  const declaredCount = /\b(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) (?:new )?(?:components|classes)\b/i.exec(title)?.[1];
+  const beforeCount = declaredCount ? counts[declaredCount.toLowerCase()] ?? Number(declaredCount) : 0;
+  // The retained-class field may carry the inventory. The same option must
+  // account for each removed class, rather than borrowing a neighboring remedy.
+  if (sourceOwned && /\bclass arrangement\b/i.test(title) && beforeCount &&
+      /\bRequestPolicy\b/.test(explanation) && /\bAuthCache\b/.test(explanation) &&
+      /\b(?:classes carry no state|RequestPolicy is described as stateless)\b/.test(explanation) &&
+      /\b(?:wrapper|facade|wrappers)\b/.test(explanation) && /\badapter\b/.test(explanation) &&
       !/\b(?:RequestPolicy|AuthCache) (?:now |already )?(?:has|holds|carries|needs) (?:independent |its own )?state\b/i.test(text) &&
-      completeOptions.some(o => { const count = /^([1-9]\d*) units?:/.exec(o.label)?.[1];
-        const retained = /\b([A-Z]\w*(?: \+ [A-Z]\w*)+) classes\b/.exec(o.promises)?.[1]?.split(' + ') ?? [];
-        return count && +count < declaredComponents.length && +count === retained.length && new Set(retained).size === retained.length &&
-          retained.every(name => declaredComponents.includes(name)) && ['AuthBroker', 'SessionMint', 'AuthCache'].every(name => retained.includes(name)) &&
-          /\bRequestPolicy becomes a pure exported [A-Za-z]\w*\([^)]*\) function\b/.test(o.promises) &&
-          !/\bRequestPolicy (?:now |already )?(?:(?:has|holds|carries|needs) (?:independent |its own )?state|remains (?:a )?class)\b/i.test(o.facts); })) ids.push('complexity');
+      completeOptions.some(o => {
+        const count = /^([1-9]\d*) (?:units?|classes)(?:\s*\+\s*([1-9]\d*) functions?)?(?=:|\s*\(|$)/.exec(o.label);
+        const names = /\b([A-Z]\w*(?:(?:, | \+ )[A-Z]\w*)+)(?: as)? classes\b/.exec(o.promises)?.[1];
+        const retained = names?.split(/, | \+ /) ?? [];
+        const removesStore = /\bTokenStore folded into AuthCache\b/.test(title) &&
+          /\bTokenStore is named once\b[^\n]*\bno described job\b/.test(explanation) &&
+          /\bOne cache wrapper \(AuthCache\) over the one existing adapter; no TokenStore\/AuthCache split-brain\b/.test(o.promises);
+        const inventory = declaredNames?.every(name => /^[A-Z]\w*$/.test(name)) ? declaredNames :
+          [...retained, 'RequestPolicy', ...(removesStore ? ['TokenStore'] : [])];
+        const retainsIndependentClass = [...o.facts.matchAll(/(?:^|[.!?;]\s+|\n|\bCorrection:\s*)(?:Correction:\s*)?(RequestPolicy|TokenStore)\s+([^.!?;\n]+)/g)].some(([,name,predicate]) =>
+          predicate!.split(/\s+(?:but|however|and(?: then)?)\s+/i).some(part => {
+            const clause = part.replace(/^(?:also|instead)\s+/i,'').replace(new RegExp(`^${name}\\s+`),'');
+            // Negation applies to its own assertion, not a following contrast.
+            const declaration = /^(?:is|remains|stays|keeps|has|holds|carries|stores|needs)\s+(.*)$/i.exec(clause);
+            if (!declaration || /^(?:not|no|never|no longer)\b/i.test(declaration[1]!)) return false;
+            return /\b(?:stateful|mutable (?:tenant )?state|independent state|(?:its |their )?own class|a (?:separate |distinct )?class)\b/i.test(declaration[1]!);
+          }));
+        const pure = /\bRequestPolicy becomes a pure exported [A-Za-z]\w*\([^)]*\) function\b/.test(o.promises) ||
+          count?.[2] === '1' && /\bRequestPolicy as a pure function\b/.test(title) &&
+          /\bRequestPolicy becomes [A-Za-z]\w*\([^)]*\) in a policy module\b/.test(o.promises);
+        return Boolean(count && +count[1]! < beforeCount && +count[1]! === retained.length &&
+          inventory.length === beforeCount && new Set(inventory).size === beforeCount &&
+          new Set(retained).size === retained.length && ['AuthBroker','SessionMint','AuthCache'].every(name => retained.includes(name)) &&
+          retained.every(name => inventory.includes(name)) && pure && !retainsIndependentClass &&
+          !/\bRequestPolicy (?:now |already )?(?:(?:has|holds|carries|needs) (?:independent |its own )?state|remains (?:a )?class)\b|\bTokenStore (?:now |still )?(?:remains|is retained|has (?:independent|distinct) (?:state|responsibility))\b/i.test(o.facts));
+      })) ids.push('complexity');
   if (sourceOwned && /\bvalidateAndDispatch\(\)/.test(title) && /\b(?:three|3) nested try\/catch blocks\b/.test(explanation) &&
       /\beach catch (?:quietly )?(?:eats|swallows) (?:one kind of error|a different error class)\b/.test(explanation) &&
       !/\b(?:no longer|does not|doesn't|never) (?:quietly )?(?:eats|swallows)\b|\bvalidateAndDispatch\(\) (?:now |already )?rethrows every error\b/i.test(text) &&

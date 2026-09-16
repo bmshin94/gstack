@@ -741,7 +741,7 @@ function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: st
   const compact = (s: string) => s.replace(/\s+/g, ' ').trim();
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const label = (s: string) => compact(s.replace(/\*\*/g, '')).replace(/^(?:[1-9]\d*)?[A-Z][).:]\s*/, '').replace(/\s*\((?:recommended|optional)\)$/i, '');
-  if (q.multiSelect || !/^Next steps?$/i.test(q.header.trim()) || q.options.length !== 2 || fp.options.length !== 2 ||
+  if (q.multiSelect || !/^Next(?: steps?)?$/i.test(q.header.trim()) || q.options.length !== 2 || fp.options.length !== 2 ||
       !fp.options.every((o, i) => o.index === i + 1 && o.label === q.options[i]!.label) || !hasCompleteEarlierNativeAnswers(call, prior)) return false;
   const ready = q.options.find(o => /^Ready to implement(?:\s*[,—–-]\s*run \/ship when done)?$/i.test(label(o.label)));
   const pause = q.options.find(o => /^Pause here(?:, no further action this session)?$/i.test(label(o.label)));
@@ -755,9 +755,9 @@ function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: st
   const incomplete = new RegExp(`\\b${eng}\\b[^.!?;\\n]{0,100}\\b(?:not|never|incomplete|unfinished|pending|withdrawn|revoked|superseded|cancelled|canceled|reopened)\\b|\\b${eng}\\s+(?:will|would|may|might|could|should) (?:be )?${complete}\\b|\\b${eng}\\b[^.!?;\\n]{0,100}\\b${complete}\\b[^.!?;\\n]{0,80}\\b(?:if|when|once|unless|provided|assuming|after)\\b|\\b(?:if|when|once|unless|provided|assuming)\\b[^.!?;\\n]{0,80}\\b${eng}\\b`, 'i');
   if (!/^D[1-9]\d*\s*[—–:-]\s*Next steps? after this eng(?:ineering)? review\?/i.test(positive) ||
       !new RegExp(`\\b${eng} (?:is |has been )?${complete}\\b`, 'i').test(positive) ||
-      !/\b(?:every decision is|all decisions are) (?:answered|settled)\b/i.test(positive) ||
+      !/\b(?:(?:every decision is|all decisions are) (?:answered|settled)|(?:0|no) unresolved decisions)\b/i.test(positive) ||
       !/\b(?:navigation|routing) only\b/i.test(positive) ||
-      !/\b(?:this question|this choice) (?:approves?|authorizes?) no (?:new )?implementation changes?\b/i.test(positive) ||
+      !/\b(?:approves?|authorizes?) no (?:new )?implementation changes?\b/i.test(positive) ||
       /(?:^|\n)\s*>|`{3}|~{3}|\b(?:example|sample|quoted|historical)\s*:/i.test(context) || incomplete.test(status) ||
       /\bnot (?:all|every) decisions?\b|\bdecisions?\s+(?:(?:is|are|remains?)\s+|status:\s*)?(?:still )?(?:unanswered|unresolved|pending|reopened|not answered|not settled|open)\b/i.test(status)) return false;
 
@@ -778,7 +778,18 @@ function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: st
   const owners = [...current.matchAll(/^Reviewed target: `([^`\n]+\.md)` \("Plan: ([^"\n]+)"\) in repo `([^`\n]+)`, branch `([^`\n]+)`, commit `[a-f0-9]+`\.$/gm)];
   if (titles.length !== 1 || owners.length !== 1 || titles[0]![1] !== owners[0]![2]) return false;
   const metadata = `Project/branch/task: ${owners[0]![3]} on ${owners[0]![4]}, reviewing ${owners[0]![1]} (${owners[0]![2]}).`;
-  const sameOwner = (text: string) => { const found = text.split('\n').filter(s => /^Project\/branch\/task:/.test(s)); return found.length === 1 && found[0] === metadata; };
+  const sameOwner = (text: string) => {
+    const found = text.split('\n').filter(s => /^Project\/branch\/task:/.test(s));
+    if (found.length !== 1) return false;
+    if (found[0] === metadata) return true;
+    const value = found[0]!.slice('Project/branch/task: '.length);
+    const paths = [...value.matchAll(/[^\s,;"“”()]+\.md\b/g)].map(m => m[0]);
+    const namedRepos = [...value.matchAll(/\brepo(?:sitory)?[ :]+`?([\w./-]+)`?/gi)].map(m=>m[1]);
+    return value.startsWith(`${owners[0]![4]} branch`) && /^(?:$|[ ,;])/.test(value.slice(`${owners[0]![4]} branch`.length)) &&
+      namedRepos.every(repo=>repo===owners[0]![3]) && paths.length > 0 && paths.every(path => path === owners[0]![1]) &&
+      (!/PLAN\.md ["“]/.test(value) || value.includes(`PLAN.md "${owners[0]![2]}"`)) &&
+      !/\b(?:other|another|foreign|different|quoted|historical) (?:branch|repo|project|plan)\b/i.test(value);
+  };
   if (!sameOwner(q.question) || prior.some(c => c.questions.length !== 1 || !sameOwner(c.questions[0]!.question))) return false;
   const section = (heading: RegExp) => {
     const starts = published.flatMap((line, i) => heading.test(line) ? [i] : []);
@@ -789,7 +800,7 @@ function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: st
   const ledger = section(/^## Decision ledger$/), tasks = section(/^## Implementation Tasks$/), graph = section(/^## Worktree parallelization strategy$/), report = section(/^## GSTACK REVIEW REPORT$/);
   if (!ledger || !tasks || !graph || !report || report.trim().split('\n').at(-1) !== 'NO UNRESOLVED DECISIONS' || incomplete.test(report) || /\b[1-9]\d* unresolved decisions?\b/i.test(report) ||
       report.split('\n').filter(s => /^\| Eng Review \|/.test(s)).length !== 1 ||
-      !/^\| Eng Review \|[^\n]*\| CLEAR \|[^\n]*\b0 critical gaps\b/m.test(report) ||
+      !/^\| Eng Review \|[^\n]*\| CLEAR(?: \([^\n|]*\))? \|[^\n]*\b0 critical gaps\b/m.test(report) ||
       report.split('\n').filter(s => /^(?:- )?\*\*VERDICT:\*\*/.test(s)).length !== 1 ||
       !/^(?:- )?\*\*VERDICT:\*\* ENG CLEARED\b/m.test(report)) return false;
   const finalId = /^(D[1-9]\d*)\s*[—–:-]/.exec(q.question)?.[1];
@@ -799,53 +810,128 @@ function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: st
     const explicit = /^(?:[1-9]\d*)?([A-Z])[).:]\s/.exec(a.selected)?.[1];
     const named = [...a.q.question.matchAll(/^([A-Z])\) (.+)$/gm)].filter(m => label(m[2]!.replace(/\s+\(human:.*$/, '')) === label(a.selected));
     const recommendation = [...a.q.question.matchAll(/^Recommendation: ([A-Z]) because\b/gm)];
-    return explicit ?? (named.length === 1 ? named[0]![1]! : /\(recommended\)$/i.test(a.selected) &&
-      a.q.options.filter(o => /\(recommended\)$/i.test(o.label)).length === 1 && recommendation.length === 1 ? recommendation[0]![1] : undefined);
+    return explicit ?? (named.length === 1 ? named[0]![1]! : /\(recommended\)$/i.test(a.selected) && recommendation.length === 1 ? recommendation[0]![1] : String.fromCharCode(65 + a.q.options.findIndex(o => o.label === a.selected)));
   };
   if (approvals.some(a => !selectedLetter(a))) return false;
+  const initialScope = (a: typeof approvals[number]) => {
+    const text = a.q.question;
+    const otherRemediesPending = /\b(?:remedies|coverage)\b[^\n]*(?:pending|own decision|own sections)/i.test(text);
+    const scopeOnly = /\b(?:this question is scope only|this question chooses structure only)\b/i.test(text);
+    const chosen = a.q.options.find(o=>o.label===a.selected)?.description ?? '';
+    // This exception chooses only scope/structure. A selected current approval
+    // of a remedy cannot borrow the question's pending-remedies disclaimer.
+    const optionClaims = chosen.replace(/"[^"\n]*"|“[^”\n]*”/g,'').split(/[✅❌\n]|[.!?;]\s+|\bCorrection:\s*/i);
+    const bundledApproval = optionClaims.some(statement => {
+      if (/^\s*(?:If|Unless|When|Once|Assuming|Historically|Previously|Example:)\b/i.test(statement)) return false;
+      return statement.split(/\s+(?:but|however|and(?: then)?)\s+/i).some(clause => {
+        const claim = clause.trim().replace(/^(?:also|instead)\s+/i,'');
+        return /^(?:(?:(?:this|the|that|selected) (?:option|choice)|we|it)\s+)?(?:approves?|accepts?|authorizes?|fix(?:es)?|implements?)\b/i.test(claim) &&
+          /\b(?:remed(?:y|ies)|regression|invalidation|error handling|performance fix)\b/i.test(claim);
+      });
+    });
+
+    const structural = /\bclass arrangement\b/i.test(text.split('\n')[0]!) && /\b[2-9]\d* new classes\b/i.test(text) &&
+      a.q.options.some(o => /^[1-9]\d* classes?/.test(o.label));
+    const cut = /\b(?:keep|split|defer)\b/i.test(text.split('\n')[0]!) &&
+      a.q.options.some(o => /\b(?:defer|follow-up)\b/i.test(o.label)) &&
+      a.q.options.some(o => /\b(?:keep|rewrite|bundle)\b/i.test(o.label));
+    return sameOwner(text) && scopeOnly && otherRemediesPending && !bundledApproval && (structural || cut) &&
+      !/\b(?:also|now) (?:approve|accept|implement) (?:the )?(?:regression|cache|error|performance)/i.test(text);
+  };
+  const scopeAgrees = (a: typeof approvals[number], scope: string): boolean => {
+    if (introducesSourceContext(scope) || /^(?:[>\"“]|Earlier|History|Historical|Previous)\b/.test(scope)) return false;
+    const value = scope.replace(/`/g,'');
+    const selected = a.q.options.find(o=>o.label===a.selected)!;
+    if (/\b(?:defer|follow-up)\b/i.test(selected.label)) {
+      const functions = [...a.q.question.split('\n')[0]!.matchAll(/\b([A-Za-z]\w*)\(\)/g)].map(m=>m[1]!);
+      if (new Set(functions).size !== 1) return false;
+      const fn = escape(functions[0]!)+'\\(\\)';
+      return new RegExp(`\\bthis PR does not (?:modify|rewrite|change) ${fn}`).test(value) &&
+        /\b(?:rewrite|swap)(?:\/swap)? moves to a follow-up PR\b/.test(value) &&
+        !new RegExp(`\\b(?:this PR|we) (?:now )?(?:modif(?:y|ies)|rewrites?|changes?) ${fn}`).test(value) &&
+        !/\b(?:follow-up|deferral|rewrite|swap) (?:is |has been |remains )?(?:cancelled|canceled|withdrawn|not deferred)|\b(?:do not|don't|never) defer\b/i.test(value);
+    }
+    const count = /^([1-9]\d*) classes? \+ ([1-9]\d*) functions?\b/.exec(selected.label);
+    const retained = /\b([A-Z]\w*(?:, [A-Z]\w*)+) as classes\b/.exec(selected.description ?? '')?.[1]?.split(', ');
+    const scoped = /([A-Z]\w*(?:, [A-Z]\w*)+) as classes\b/.exec(value)?.[1]?.split(', ');
+    const policy = /\b([A-Z]\w*) as a pure function\b/.exec(a.q.question.split('\n')[0]! )?.[1];
+    const absorbed = /\b([A-Z]\w*) folded into ([A-Z]\w*)\b/.exec(a.q.question.split('\n')[0]!);
+    return Boolean(count && count[2]==='1' && retained && scoped && +count[1]! === retained.length &&
+      new Set(scoped).size===retained.length && retained.every(name=>scoped.includes(name)) && policy && absorbed &&
+      new RegExp(`\\b${policy} implemented as pure function [A-Za-z]\\w*\\(`).test(value) &&
+      new RegExp(`\\b${absorbed[1]} not created[;,.][^\\n]*\\babsorbed by ${absorbed[2]}\\b`).test(value) &&
+      /\bcache adapter contract unchanged\b/.test(value) &&
+      !new RegExp(`\\b(?:${policy}|${absorbed[1]}) (?:is |remains |has |now )*(?:a class|stateful|independent state|created)\\b`).test(value) &&
+      !/\b(?:do not|not|never|no longer) (?:preserve|retain|absorb)|\badapter contract (?:is )?(?:changed|modified|replaced)\b/i.test(value));
+  };
+  const firstRemedy = approvals.findIndex(a => !/^(?:Routing|Learnings|Cross-project)$/i.test(a.q.header) && !initialScope(a));
   const revoked = /\b(?:[DRT][1-9]\d*|approval|decision|scope|task|TODO|routing rules)(?: (?:decision|scope|state|approval|task))?\s*(?::|is|was|has been|remains)?\s*(?:now |still )?(?:withdrawn|revoked|cancelled|canceled|rejected|reopened|superseded|not approved|no longer approved|pending approval|pending|unanswered|unresolved)\b/i;
   if ([status, currentText(current), ...approvals.map(a => currentText(a.q.question))].some(s => revoked.test(s.replace(/["“”'‘’]/g, '')))) return false;
   const rows = ledger.split(/\n(?=### )/).filter(s => /^### R[1-9]\d*:/.test(s.trim()));
   const rowIds = rows.map(s => /^### (R[1-9]\d*):/.exec(s.trim())![1]!);
   if (!rows.length || new Set(rowIds).size !== rows.length ||
-      [...ledger.matchAll(/^State:/gm)].length !== rows.reduce((n, row) => n + [...row.matchAll(/^State:/gm)].length, 0)) return false;
+      ledger.split(/\n(?=### )/).filter(row => !/^### (?:R[1-9]\d*:|TODO decision \(D[1-9]\d*\))/.test(row.trim())).some(row => /^State:/m.test(row))) return false;
   const owned = new Map<string, string>();
+  const rowLetters = new Map<string, string>();
   for (const row of rows) {
-    const states = [...row.matchAll(/^State: (.+)$/gm)], ids = [...row.matchAll(/^Question (D[1-9]\d*):$/gm)];
+    const states = [...row.matchAll(/^State: (.+)$/gm)], ids = [...row.matchAll(/^Question (D[1-9]\d*):(?: .*|)$/gm)];
     // An explicit past dispatch annotation can accompany exactly one current
     // state. Duplicate current states and contradictory updates stay invalid.
     if (states.filter(s => s[1] === 'approved').length !== 1 || states.length > 2 ||
         states.some(s => s[1] !== 'approved' && s[1] !== 'approved (was pending at dispatch; see Actual answer)') || ids.length !== 1) return false;
     const id = ids[0]![1]!, a = approvals.find(a => a.id === id);
-    const answers = [...row.matchAll(/^Actual answer: \*\*([A-Z]) [—–-] (.+)\*\* \((D[1-9]\d*) answer\)\.$/gm)];
-    if (!a || owned.has(id) || answers.length !== 1 || answers[0]![1] !== selectedLetter(a) || answers[0]![3] !== id || label(answers[0]![2]!) !== label(a.selected) ||
-        row.split(a.q.question).length !== 2 || row.split('\n').filter(s => /^Accepted scope: \S/.test(s)).length !== 1) return false;
-    owned.set(id, rowIds[rows.indexOf(row)]!);
+    const answers = [...row.matchAll(/^Actual answer: (.+)$/gm)];
+    const answer = answers.length === 1 ? /^(?:\*\*)?([A-Z]) [—–-] (?:"(.+)"|(.+?)\*\*) \((?:answer to (D[1-9]\d*)|(D[1-9]\d*) answer)\)\.?$/.exec(answers[0]![1]!) : null;
+    const selector = a && initialScope(a) && (firstRemedy < 0 || approvals.indexOf(a) < firstRemedy);
+    const acceptedScope = [...row.matchAll(/^Accepted scope: (.+)$/gm)];
+    if (selector && (acceptedScope.length !== 1 || !scopeAgrees(a,acceptedScope[0]![1]!))) return false;
+    if (!a || owned.has(id) || !answer || (!selector && answer[1] !== selectedLetter(a) || selector && !new RegExp(`^${answer[1]}\\) ${escape(a.selected)}$`, 'm').test(row)) || (answer[4] ?? answer[5]) !== id || label(answer[2] ?? answer[3]!) !== label(a.selected) ||
+        !selector && row.split(a.q.question).length !== 2 || row.split('\n').filter(s => /^Accepted scope: \S/.test(s)).length !== 1) return false;
+    const payload = selector ? row.slice(row.indexOf('Question ')) : row.slice(row.indexOf(a.q.question) + a.q.question.length);
+    const headers = [...payload.matchAll(/^Header: (.+)$/gm)], optionFields = [...payload.matchAll(/^Options:\s*$/gm)];
+    if (headers.length !== 1 || headers[0]![1] !== a.q.header || optionFields.length !== 1) return false;
+    const optionText = payload.slice(optionFields[0]!.index! + optionFields[0]![0].length).split(/\n(?:State|Actual answer|Accepted scope|History):/)[0]!;
+    const offered = [...optionText.matchAll(/^([A-Z])\) (.+)\n?([\s\S]*?)(?=^[A-Z]\) |$(?![\s\S]))/gm)];
+    if (offered.length !== a.q.options.length || new Set(offered.map(o=>o[1])).size !== offered.length ||
+        new Set(offered.map(o=>o[2])).size !== offered.length || offered.some(o => {
+          const native = a.q.options.find(n=>n.label===o[2]);
+          return !native || !selector && compact(o[3]!) !== compact(native.description ?? '');
+        })) return false;
+    owned.set(id, rowIds[rows.indexOf(row)]!); rowLetters.set(id, answer[1]!);
   }
   const readiness = ledger.split('\n').filter(s => /^(?:\*\*)?Approval readiness:/.test(s));
-  if (readiness.length !== 1 || !/^\*\*Approval readiness: PASS\.\*\*/.test(readiness[0]!)) return false;
+  if (readiness.length !== 1 || !/^Approval readiness: PASS(?:\.| —)/.test(readiness[0]!.replace(/\*\*/g,''))) return false;
   for (const ref of readiness[0]!.matchAll(/\b(D[1-9]\d*) → ([A-Z])/g)) {
     const a = approvals.find(a => a.id === ref[1]);
     if (!a || selectedLetter(a) !== ref[2]) return false;
   }
-  const readyRows = [...readiness[0]!.matchAll(/\b(R[1-9]\d*) \((D[1-9]\d*) → ([A-Z])\)/g)];
+  const readyRows = [...readiness[0]!.matchAll(/\b(R[1-9]\d*) \((D[1-9]\d*)(?: →|:) ([A-Z])\)/g)];
   if (readyRows.length !== rows.length || new Set(readyRows.map(r => r[1])).size !== rows.length ||
-      readyRows.some(r => owned.get(r[2]!) !== r[1] || selectedLetter(approvals.find(a => a.id === r[2])!) !== r[3])) return false;
+      readyRows.some(r => owned.get(r[2]!) !== r[1] || rowLetters.get(r[2]!) !== r[3])) return false;
 
   const maintenance = /Routing rules \((D[1-9]\d*)\) and TODOS\.md \((D[1-9]\d*)\) still need writing once plan mode exits/i.exec(context);
-  if (!maintenance) return false;
-  const routing = approvals.find(a => a.id === maintenance[1]), todo = approvals.find(a => a.id === maintenance[2]);
-  if (!routing || !todo || routing.q.header !== 'Routing' || label(routing.selected) !== 'Add routing rules to CLAUDE.md' ||
-      todo.q.header !== 'TODO' || label(todo.selected) !== 'Add to TODOS.md' ||
-      !new RegExp(`^- \\*\\*${routing.id}\\*\\* routing rules in CLAUDE\\.md → ${selectedLetter(routing)} \\(add\\)\\.`, 'm').test(ledger)) return false;
-  const todos = section(/^## TODOS\.md \(not persisted in plan mode; write after exit\)$/);
-  const todoRows = ledger.split(/\n(?=### )/).filter(s => new RegExp(`^### ${todo.id}: TODO [—–-]`).test(s.trim()));
-  const subject = /^D[1-9]\d*\s*[—–:-]\s*Capture "([^"\n]+)" as a TODO\?/.exec(todo.q.question)?.[1];
-  if (!todos || !subject || todoRows.length !== 1 || !new RegExp(`^Actual answer: \\*\\*${selectedLetter(todo)} [—–-] Add to TODOS\\.md\\.\\*\\*`, 'm').test(todoRows[0]!) ||
-      !new RegExp(`^- \\*\\*${escape(subject)}\\*\\* \\(${todo.id} → ${selectedLetter(todo)}\\)$`, 'mi').test(todos)) return false;
-  // Setup/scope answers that lack an R row still have a unique saved selector.
+  const routing = approvals.find(a => a.q.header === 'Routing'), todo = approvals.find(a => a.q.header === 'TODO');
+  if (!routing || !todo || !/^Add routing rules(?: to CLAUDE\.md)?$/.test(label(routing.selected)) ||
+      label(todo.selected) !== 'Add to TODOS.md' || !/CLAUDE\.md/.test(routing.q.question) || !/TODOS\.md/.test(todo.q.question)) return false;
+  if (maintenance) {
+    if (routing.id !== maintenance[1] || todo.id !== maintenance[2] ||
+        !new RegExp(`^- \\*\\*${routing.id}\\*\\* routing rules in CLAUDE\\.md → ${selectedLetter(routing)} \\(add\\)\\.`, 'm').test(ledger)) return false;
+    const todos = section(/^## TODOS\.md \(not persisted in plan mode; write after exit\)$/);
+    const todoRows = ledger.split(/\n(?=### )/).filter(s => new RegExp(`^### ${todo.id}: TODO [—–-]`).test(s.trim()));
+    const subject = /^D[1-9]\d*\s*[—–:-]\s*Capture "([^"\n]+)" as a TODO\?/.exec(todo.q.question)?.[1];
+    if (!todos || !subject || todoRows.length !== 1 || !new RegExp(`^Actual answer: \\*\\*${selectedLetter(todo)} [—–-] Add to TODOS\\.md\\.\\*\\*`, 'm').test(todoRows[0]!) ||
+        !new RegExp(`^- \\*\\*${escape(subject)}\\*\\* \\(${todo.id} → ${selectedLetter(todo)}\\)$`, 'mi').test(todos)) return false;
+  } else {
+    const todoRows = ledger.split(/\n(?=### )/).filter(s => new RegExp(`^### TODO decision \\(${todo.id}\\)`).test(s.trim()));
+    if (todoRows.length !== 1 ||
+        !new RegExp(`^State: approved\\. Actual answer: ${selectedLetter(todo)} — "${escape(todo.selected)}" \\(answer to ${todo.id}\\)\\. Accepted scope: [^\\n]+$`, 'm').test(todoRows[0]!) ||
+        !new RegExp(`^### TODO item \\(accepted ${todo.id}; \\*\\*not persisted\\*\\*`, 'm').test(current) ||
+        !/deferred CLAUDE\.md\/TODOS\.md writes happen right after plan mode exits/i.test(context) ||
+        !/Deferred CLAUDE\.md routing rules and TODOS\.md entry stay unwritten/i.test(context)) return false;
+  }
   for (const a of approvals.filter(a => !owned.has(a.id!) && a !== todo)) {
-    const saved = [...ledger.matchAll(new RegExp(`^- \\*\\*${a.id}\\*\\* [^\\n]*?→ (?:\\*\\*)?([A-Z])(?=[ :(.])`, 'gm'))];
+    const setup = ledger.split('\n').filter(line => /^Setup questions \(not remedies\):/.test(line));
+    const saved = [...ledger.matchAll(new RegExp(`^- \\*\\*${a.id}\\*\\* [^\\n]*?→ (?:\\*\\*)?([A-Z])(?=[ :(.])`, 'gm')), ...setup.flatMap(line => [...line.matchAll(new RegExp(`\\b${a.id} [^.;]*?→ ([A-Z])(?= \\()`, 'g'))])];
     if (saved.length !== 1 || saved[0]![1] !== selectedLetter(a)) return false;
   }
 
@@ -856,6 +942,50 @@ function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: st
     const first = +ref[1]!, last = +(ref[2] ?? ref[1])!;
     if (last < first || last - first >= ids.length) return false;
     for (let n = first; n <= last; n++) if (!ids.includes(`T${n}`)) return false;
+  }
+  const action = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|while|before (?:implementation|building|review))\s+)(?:please\s+)?(?:adds?|adding|append(?:s|ing)?|remov(?:e|es|ing)|delet(?:e|es|ing)|cut(?:s|ting)?|drop(?:s|ping)?|replac(?:e|es|ing)|rewrit(?:e|es|ing)|chang(?:e|es|ing)|alter(?:s|ing)?|modif(?:y|ies|ying)|enabl(?:e|es|ing)|disabl(?:e|es|ing)|implement(?:s|ing)?|install(?:s|ing)?|introduc(?:e|es|ing)|build(?:s|ing)?|writ(?:e|es|ing)|record(?:s|ing)?|captur(?:e|es|ing)|creat(?:e|es|ing)|switch(?:es|ing)?|migrat(?:e|es|ing)|externaliz(?:e|es|ing)|refactor(?:s|ing)?|expand(?:s|ing)?|reduc(?:e|es|ing)|deploy(?:s|ing)?|approv(?:e|es|ing))\b/i;
+  // A lane recap binds the published step graph rather than inventing a second
+  // ordering of task IDs. Every task remains in the catalog; each dependency
+  // must precede its consumer, including dependencies within a serial lane.
+  const laneOrder = /\blanes ([A-Z](?:\s*[-/+,]\s*[A-Z])*)\s+(?:can start )?in parallel(?: worktrees)?, then ([A-Z])\b/i.exec(context);
+  if (laneOrder) {
+    const steps = [...graph.matchAll(/^\| ([A-Z][1-9]\d*) ([^|\n]+) \| ([^|\n]+) \| ([^|\n]+) \|$/gm)];
+    const stepIds = steps.map(step => step[1]!);
+    const lanes = [...graph.matchAll(/\bLane ([A-Z]): ([A-Z][1-9]\d*(?: → [A-Z][1-9]\d*)*) \(([^)]+)\)/g)];
+    if (!steps.length || new Set(stepIds).size !== steps.length || !lanes.length || new Set(lanes.map(l => l[1])).size !== lanes.length) return false;
+    const range = /^([A-Z])-([A-Z])$/.exec(laneOrder[1]!.replace(/\s/g,''));
+    if (range && (range[2]! < range[1]! || range[2]!.charCodeAt(0)-range[1]!.charCodeAt(0)>=lanes.length)) return false;
+    const parallel = range ? Array.from({length:range[2]!.charCodeAt(0)-range[1]!.charCodeAt(0)+1},(_,i)=>String.fromCharCode(range[1]!.charCodeAt(0)+i)) : laneOrder[1]!.split(/\s*[/+,]\s*/);
+    const orderedLanes = [...parallel,laneOrder[2]!];
+    if (new Set(orderedLanes).size !== lanes.length || lanes.some(l => !orderedLanes.includes(l[1]!))) return false;
+    const positions = new Map<string,[number,number]>();
+    for (const lane of lanes) for (const [i,id] of lane[2]!.split(' → ').entries()) {
+      if (!stepIds.includes(id) || positions.has(id)) return false;
+      positions.set(id,[parallel.includes(lane[1]!) ? 0 : 1,i]);
+    }
+    if (positions.size !== steps.length) return false;
+    const earlier = (a:string,b:string) => { const x=positions.get(a),y=positions.get(b); return Boolean(x&&y&&(x[0]<y[0] || x[0]===y[0] &&
+      lanes.some(l=>l[2]!.split(' → ').includes(a)&&l[2]!.split(' → ').includes(b)) && x[1]<y[1])); };
+    for (const step of steps) {
+      const deps = /^[—–-]$/.test(step[4]!) ? [] : step[4]!.split(/,\s*/);
+      if (new Set(deps).size !== deps.length || deps.some(dep => !earlier(dep,step[1]!))) return false;
+    }
+    // Task-module identity is independent of its T ordinal. Auxiliary artifacts
+    // explicitly tied to catalog tasks or the acknowledged TODO are retained.
+    for (let i=0;i<entries.length;i++) {
+      const body=tasks.slice(entries[i]!.index!,entries[i+1]?.index??tasks.length);
+      const module=entries[i]![2]!;
+      const direct=steps.filter(step=>step[3]!.split(/,\s*/).some(m=>m.replace(/ \([^)]*\)$/,'')===module));
+      const sameFiles = /^  - Files: same as (T[1-9]\d*(?:, T[1-9]\d*)*)$/m.exec(body);
+      const references = sameFiles?.[1]?.split(', ') ?? [];
+      if (!direct.length && !(references.length && references.every(id=>id!==entries[i]![1] && ids.includes(id) &&
+          steps.some(step=>step[3]!.split(/,\s*/).some(m=>m.replace(/ \([^)]*\)$/,'')===entries.find(e=>e[1]===id)![2])))) &&
+          !(module==='repo' && body.includes('TODOS.md') && body.includes(todo.id!))) return false;
+    }
+    const actions=currentText(context).replace(laneOrder[0],'')
+      .replace(/\b(?:approves?|authorizes?) no (?:new )?implementation changes?\b/gi,'');
+    return !action.test(actions) && !/\b(?:new|additional|extra) (?:work|implementation|scope|task|requirement|dependency|feature|datastore|database|cache|test|prerequisite)\b|\b(?:must|shall|should|needs? to|required to|depends on)\s+\S|\b(?:only|skip|drop|omit) (?:the )?tasks?\b/i.test(actions) &&
+      !/\brun\s+(?!\/ship\b)/i.test(actions.replace(/\byou can run (?:any )?(?:other|another|optional) review later\b/gi,''));
   }
   const orders = [...context.matchAll(/\b(?:order the plan specifies|published task order) \(([^)]+)\)/gi)];
   if (orders.length !== 1) return false;
@@ -909,7 +1039,7 @@ function isPublishedTaskPauseNavigation(fp: AskUserQuestionFingerprint, plan: st
   }
   let actions = currentText(context).replace(orders[0]![0], '').replace(maintenance[0], '')
     .replace(/\b(?:this question|this choice) (?:approves?|authorizes?) no (?:new )?implementation changes?\b/gi, '');
-  const action = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|next|while|before (?:implementation|building|review))\s+)(?:please\s+)?(?:adds?|adding|append(?:s|ing)?|remov(?:e|es|ing)|delet(?:e|es|ing)|cut(?:s|ting)?|drop(?:s|ping)?|replac(?:e|es|ing)|rewrit(?:e|es|ing)|chang(?:e|es|ing)|alter(?:s|ing)?|modif(?:y|ies|ying)|enabl(?:e|es|ing)|disabl(?:e|es|ing)|implement(?:s|ing)?|install(?:s|ing)?|introduc(?:e|es|ing)|build(?:s|ing)?|writ(?:e|es|ing)|record(?:s|ing)?|captur(?:e|es|ing)|creat(?:e|es|ing)|switch(?:es|ing)?|migrat(?:e|es|ing)|externaliz(?:e|es|ing)|refactor(?:s|ing)?|expand(?:s|ing)?|reduc(?:e|es|ing)|deploy(?:s|ing)?|approv(?:e|es|ing))\b/i;
+
   return !action.test(actions) && !/\brun\s+(?!\/ship\b)|\b(?:new|additional|extra) (?:work|implementation|scope|task|requirement|dependency|feature|datastore|database|cache|test|prerequisite)\b|\b(?:must|shall|should|needs? to|required to|depends on)\s+\S|\b(?:only|skip|drop|omit) (?:the )?tasks?\b/i.test(actions);
 }
 
