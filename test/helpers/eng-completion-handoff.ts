@@ -602,9 +602,9 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
       new Set(q.options.map(o => label(o.label))).size !== q.options.length ||
       !q.options.some(o => o.label === call.answers?.[q.question])) return false;
   const ready = q.options.find(o => /^Ready to implement(?: [—–-] run \/ship when done)?$/i.test(label(o.label)));
-  const ceo = q.options.find(o => /^Run \/plan-ceo-review(?: first)?$/i.test(label(o.label)));
-  const devex = q.options.find(o => /^Run \/plan-devex-review(?: first)?$/i.test(label(o.label)));
-  const design = q.options.find(o => /^Run \/plan-design-review(?: first)?$/i.test(label(o.label)));
+  const ceo = q.options.find(o => /^(?:Run )?\/plan-ceo-review(?: first)?$/i.test(label(o.label)));
+  const devex = q.options.find(o => /^(?:Run )?\/plan-devex-review(?: first)?$/i.test(label(o.label)));
+  const design = q.options.find(o => /^(?:Run )?\/plan-design-review(?: first)?$/i.test(label(o.label)));
   if (!ready || q.options.some(o => ![ready, ceo, devex, design].includes(o))) return false;
   // Only the current prose can assert completion; quoted examples cannot.
   const body = compact(q.question.replace(/"[^"]*"|“[^”]*”/g, '')).replace(/^D[1-9]\d*\s*[—–:-]\s*/i, '');
@@ -627,8 +627,10 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   // and plan title. Earlier calls in that same session bind the source path.
   // Option count and an unquoted lane count are presentation, not approval.
   const ledgerOwner = metadata.length === 1 ? /^(?:([^\s,;]+) on )?([^\s,;]+) [—–-] (.+?)(?: plan)?, (?:eng|engineering) review\b/i.exec(metadata[0]![1]!) : null;
+  const namedSource = ledgerOwner && /^(.*?) (?:plan )?\(([\w./-]+\.md)\)$/.exec(ledgerOwner[3]!);
+  if (namedSource) ledgerOwner![3] = namedSource[1]!;
   const approvedCount = /\b([1-9]\d*) approved decisions\b/i.exec(body);
-  const settled = /\bevery (?:open )?call (?:was|is) decided\b|\b(?:all (?:[\w]+ )?decisions (?:are |were )?(?:answered|settled)|every decision (?:is |was )?(?:answered|settled))\b/i.test(body);
+  const settled = /\bevery (?:open )?call (?:was|is) decided\b|\b(?:all (?:[\w]+ )?decisions (?:are |were )?(?:answered|settled|approved)|every decision (?:is |was )?(?:answered|settled|locked))\b/i.test(body);
   const ledgerChoice = Boolean(ledgerOwner && settled);
   if ((devex || design || ledgerOwner) && !ledgerChoice) return false;
   const scopeRecap = ledgerChoice ? prior.find(c => c.questions[0]?.header === 'Structure')?.questions[0] : undefined;
@@ -642,13 +644,13 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   if (catalogMenu && !currentScope) return false;
   const catalogChoice = Boolean(catalogMenu && currentScope);
   if ((catalogChoice || ledgerChoice) && (
-      [...metadata[0]![1]!.matchAll(/[^\s,;"“”]+\.md\b/g)].some(m=>m[0]!=='PLAN.md')
+      [...metadata[0]![1]!.matchAll(/[^\s,;"“”()]+\.md\b/g)].some(m=>m[0]!=='PLAN.md')
       || /\b(?:review|eng gate|verdict) (?:is |has been |remains? )?(?:no longer|not) (?:clear|complete|done|finished)\b|\b[1-9]\d* unresolved decisions\b/i.test(statusContext)
       || /(?:^|[.!?;]\s+|\n|[✅❌]\s*|["“'‘]\s*|\b(?:and|but|also|first|then|now|while)\s+)(?:approve|deploy)(?:ing)?\b/i.test(statusContext))) return false;
   const completedChoice = ledgerChoice || Boolean(catalogChoice) || /\b(?:all decisions (?:are )?(?:answered|settled)|every decision (?:is )?(?:answered|settled))\b/i.test(body) &&
     /\b(?:the only question left is whether to (?:start building|implement) or (?:first )?get (?:a )?(?:strategy-level second look|strategy review)|only the next (?:step|workflow) remains: implementation or an optional strategy review)\b/i.test(body);
   const namedPlans = [...q.question.matchAll(/\breviewed\s+[\w./-]+\.md\s+["“]([^"”\n]+)["”]/gi)];
-  if (!/\b(?:what(?:['’]s| is)? (?:the )?next|next steps?|where (?:do|should) we go)\b/i.test(body) ||
+  if (!/\b(?:what(?:['’]s| is)? (?:the )?next|next steps?|where next|where (?:do|should) we go)\b/i.test(body) ||
       !new RegExp(String.raw`\b${eng}\s+(?:(?:is|are|has been|have been)\s+)?(?:(?:now|saved and)\s+)?${complete}\b`, 'i').test(body) ||
       !(explicitNavigation || completedChoice && (namedPlans.length === 1 || catalogChoice || ledgerChoice))) return false;
   if (/`{3}|~{3}|(?:^|\n)\s*>|\b(?:example|sample|quoted|historical)\s*:/i.test(context) ||
@@ -666,6 +668,7 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
     .replace(/\b(?:does not|doesn't|will not|won't|neither) (?:authorize|approve|add|change|alter|modify)(?: nor (?:authorize|approve|add|change|alter|modify))? (?:any )?(?:new )?(?:implementation|scope|requirements?|work)(?: changes?)?\b/gi,'')
     .replace(/\bwithout (?:any )?(?:new )?(?:implementation|scope) changes?\b/gi,'')
     .replace(ledgerChoice ? /\brun (?:another|an optional) (?:kind of )?review first\b/gi : /$^/, '')
+    .replace(ledgerChoice && ceo ? /\brun (?:a |the )?(?:CEO(?:-style)?|strategic|strategy) review\b/gi : /$^/, '')
     .replace(ledgerChoice && scopeCount && reducedCount ? /\bthe scope was already challenged and cut in Step 0\b/gi : /$^/, '')
     .replace(ledgerChoice && scopeCount && reducedCount ? new RegExp(`\\bStep 0 already ran the scope challenge and cut ${scopeCount} classes to ${reducedCount}\\b`, 'gi') : /$^/, '');
   const commands = new Set(['/ship', ...(ceo ? ['/plan-ceo-review'] : []), ...(ledgerChoice && devex ? ['/plan-devex-review'] : []), ...(ledgerChoice && design ? ['/plan-design-review'] : [])]);
@@ -700,12 +703,12 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
   }
   if (fence) return false;
   if (!explicitNavigation || catalogChoice || ledgerChoice) {
-    const titles = published.filter(line => /^# /.test(line));
+    const titles = published.filter(line => /^# /.test(line) && line !== '# Review output');
     // A reviewed wrapper may retain its same-title original plan. Neither a
     // second wrapper nor a foreign original may supply current ownership.
     if (titles.length === 2 && /^# Reviewed Plan: /.test(titles[0]!) && titles[1] === titles[0]!.replace('# Reviewed Plan:', '# Plan:')) titles.pop();
     const named = ledgerChoice ? ledgerOwner![3]! : catalogChoice ? currentScope![3]! : namedPlans[0]![1]!;
-    if (titles.length !== 1 || compact(titles[0]!.replace(/^# (?:(?:Reviewed )?Plan: )?/i, '').replace(/\s+\(reviewed\)$/i, '')) !== compact(named)) return false;
+    if (titles.length !== 1 || compact(titles[0]!.replace(/^# (?:(?:Reviewed )?Plan: )?/i, '').replace(/\s+\(reviewed\)$|\s+[—–-] Reviewed Implementation Plan$/i, '')) !== compact(named)) return false;
     if (catalogChoice) {
       const targets = published.filter(line => /^Reviewed target:/.test(line));
       const target = targets.length === 1 ? /^Reviewed target: `?([\w./-]+\.md)`? \(repo root, branch `?([^`\s)]+)`?\)/.exec(targets[0]!) : null;
@@ -722,7 +725,7 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
     return published.slice(start+1,end<0?undefined:end).join('\n');
   };
   const tasks=section('Implementation Tasks'), lanes=section('Worktree parallelization strategy'), report=section('GSTACK REVIEW REPORT');
-  if(!tasks||!lanes||!report||!/\| Eng Review \|[^\n]*\| CLEAR(?: \([^\n|]*\))? \|/.test(report)||
+  if(!tasks||!lanes||!report||!hasReadyReviewRow(report)||
       !/^(?:[-*] )?(?:\*\*)?VERDICT:(?:\*\*)? ENG CLEARED\b/m.test(report)||
       report.trim().split('\n').at(-1)!=='NO UNRESOLVED DECISIONS')return false;
   // The newly supported saved-and-complete assertion is an admission class.
@@ -735,8 +738,9 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
     const targetLine = targetLines.length === 1 ? targetLines[0]! : '';
     const target = /^Reviewed target: `([^`\n]+\.md)` \("([^"\n]+)"\) on branch `([^`\n]+)`, commit `[a-f0-9]+`\.$/.exec(targetLine);
     const located = /^Reviewed target: `([^`\n]+\.md)` \(`(\/[^`\n]+)`, branch `([^`\n]+)`, commit `[a-f0-9]+`\)$/.exec(targetLine);
-    const source = target?.[1] ?? located?.[1], title = target?.[2] ?? ledgerOwner![3], branch = target?.[3] ?? located?.[3];
-    if (!source || title !== ledgerOwner![3] || branch !== ledgerOwner![2] || located && !located[2]!.endsWith('/' + source) || !currentLedger || approvedCount && +approvedCount[1]! !== prior.length ||
+    const inDirectory = /^Reviewed target: `([^`\n]+\.md)` \("(?:Plan: )?([^"\n]+)"\) in `(\/[^`\n]+)`, branch `([^`\n]+)`, commit `[a-f0-9]+`\.$/.exec(targetLine);
+    const source = target?.[1] ?? located?.[1] ?? inDirectory?.[1], title = target?.[2] ?? inDirectory?.[2] ?? ledgerOwner![3], branch = target?.[3] ?? located?.[3] ?? inDirectory?.[4];
+    if (!source || namedSource && namedSource[2] !== source || title !== ledgerOwner![3] || branch !== ledgerOwner![2] || located && !located[2]!.endsWith('/' + source) || !currentLedger || approvedCount && +approvedCount[1]! !== prior.length ||
         !hasCompletedOwnedLedger(call, prior, currentLedger, report, { source, title: title!, branch: branch!, publication: published.join('\n') })) return false;
   }
   if (savedCompletion && (!currentScope ||
@@ -744,6 +748,11 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
       published.filter(line => /^# (?:Reviewed )?Plan: /i.test(line)).length !== 1 || compact(published.find(line => /^# (?:Reviewed )?Plan: /i.test(line))!.replace(/^# (?:Reviewed )?Plan: /i, '')) !== compact(currentScope[3]!) ||
       !currentLedger || !hasCompletedOwnedLedger(call, prior, currentLedger, report))) return false;
   const entries=[...tasks.matchAll(/^- \[ \] \*\*T([1-9]\d*)\b[^\n]+/gm)];
+  const todoRecaps = [...context.matchAll(/\b(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) TODOS\.md entries\b/gi)];
+  if (ledgerChoice && ([...context.matchAll(/[^\s,;"“”()]+\.md\b/g)].some(m => !['PLAN.md', 'TODOS.md'].includes(m[0])) ||
+      /\bTODOS\.md\b/.test(context) && !todoRecaps.length)) return false;
+  if (todoRecaps.length && (!ledgerChoice || todoRecaps.length !== 1 ||
+      !hasRecordedTodoEntries(published, prior, Number(todoRecaps[0]![1]) || 'zero one two three four five six seven eight nine'.split(' ').indexOf(todoRecaps[0]![1]!.toLowerCase())))) return false;
   for(const ref of taskRefs) {
     const first=Number(ref[1]),last=Number(ref[2]??ref[1]);
     if(last<first||last-first+1>entries.length)return false;
@@ -758,16 +767,16 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
     // Parse the published dependency graph once. A conditional lane belongs to
     // the later schedule, but never to the menu's unconditional start set.
     const graph = lanes.replace(/`/g, '');
-    const steps = [...graph.matchAll(/^\| ([ST][1-9]\d*) ([^|\n]+) \| ([^|\n]+) \| ([^|\n]+) \|$/gm)];
-    const laneRows = [...graph.matchAll(/\bLane ([A-Z]): ([ST][1-9]\d*(?: → [ST][1-9]\d*)*) \(([^)]+)\)/g)];
-    const launch = [...graph.matchAll(/\bLaunch ([A-Z](?: \+ [A-Z])*)(?: \(\+ ([A-Z]) when ([^)]+)\))? in parallel(?: worktrees)?\. Merge(?: all)?\. Then ([ST][1-9]\d*(?: → [ST][1-9]\d*)*|[A-Z])(?: sequentially)?\./gi)];
+    const steps = [...graph.matchAll(/^\| ([ST]?[1-9]\d*) ([^|\n]+) \| ([^|\n]+) \| ([^|\n]+) \|$/gm)];
+    const laneRows = [...graph.matchAll(/\bLane ([A-Z]): ([ST]?[1-9]\d*(?: → [ST]?[1-9]\d*)*) \(([^)]+)\)/g)];
+    const launch = [...graph.matchAll(/\bLaunch ([A-Z](?:(?: \+ |, )[A-Z])*)(?: \(\+ ([A-Z]) when ([^)]+)\))? in parallel(?: worktrees)?\. Merge(?: all(?: (?:two|three|four|five|[1-9]\d*))?)?\. Then ([ST]?[1-9]\d*(?: → [ST]?[1-9]\d*)*|[A-Z])(?: sequentially)?\./gi)];
     const ids = steps.map(s => s[1]!), laneIds = laneRows.map(l => l[1]!);
     const recapped = new Set(taskRefs.flatMap(ref => Array.from({length: +(ref[2] ?? ref[1])! - +ref[1]! + 1}, (_, i) => +ref[1]! + i)));
     const counts = [...context.matchAll(/\b([1-9]\d*) lanes\b/g)];
     if (!steps.length || new Set(ids).size !== ids.length || !laneRows.length || new Set(laneIds).size !== laneRows.length || launch.length !== 1 ||
         counts.length > 1 || counts.length === 1 && +counts[0]![1]! !== laneRows.length ||
         entries.length !== recapped.size || new Set(entries.map(e => e[1])).size !== entries.length) return false;
-    const initial = launch[0]![1]!.split(' + '), conditional = launch[0]![2], later = launch[0]![4]!;
+    const initial = launch[0]![1]!.split(/ \+ |, /), conditional = launch[0]![2], later = launch[0]![4]!;
     const laterLane = laneRows.find(l => l[1] === later);
     const allLanes = [...initial, ...(conditional ? [conditional] : []), ...(laterLane ? [later] : [])];
     if (new Set(allLanes).size !== allLanes.length || JSON.stringify(allLanes.sort()) !== JSON.stringify([...laneIds].sort())) return false;
@@ -809,7 +818,7 @@ function isPublishedReadyNavigation(fp: AskUserQuestionFingerprint, reviewedPlan
       // New commands and newly started lanes elsewhere remain substantive.
       const rest = context.replace(selected![0], '').replace(condition[0], '');
       if (/\b(?:start|launch)\b/i.test(rest) || /\blane [A-Z]\b/.test(rest)) return false;
-    } else if (laneRows.some(l => /\bblocked\b/i.test(l[3]!)) || counts.length !== 1 ||
+    } else if (laneRows.some(l => /\bblocked\b/i.test(l[3]!)) || counts.length > 1 ||
         laneRefs.some(ref => JSON.stringify(ref[1]!.split(/\s*\+\s*/).sort()) !== JSON.stringify([...laneIds].sort()))) return false;
     return true;
   }
@@ -1143,6 +1152,67 @@ function hasWithdrawnPrerequisite(text: string): boolean {
   return /\b(?:author input|responsibility|prerequisite|condition)\b[^.;\n]{0,80}\b(?:waived|withdrawn|revoked|cancelled|canceled|optional|not required|no longer required|can be skipped)\b/i.test(text);
 }
 
+/** Navigation reads table roles, not the writer's six-column presentation.
+ * This does not replace the report/terminal checks or supply seed coverage. */
+function hasReadyReviewRow(report: string): boolean {
+  const lines = report.split('\n'), cells = (line: string) => line.trim().slice(1, -1).split('|').map(s => s.trim());
+  const headers = lines.flatMap((line, i) => /^\|.*\|$/.test(line) && cells(line).some(c => /^Review$/i.test(c)) ? [i] : []);
+  if (headers.length !== 1) return false;
+  const at = headers[0]!, header = cells(lines[at]!), separator = lines[at + 1];
+  const role = (name: RegExp) => header.flatMap((cell, i) => name.test(cell) ? [i] : []);
+  const roles = [role(/^Review$/i), role(/^Runs$/i), role(/^Status$/i), role(/^(?:Findings|Key finding)$/i)];
+  if (roles.some(r => r.length !== 1) || !separator || !/^\|.*\|$/.test(separator) ||
+      cells(separator).length !== header.length || cells(separator).some(c => !/^:?-+:?$/.test(c))) return false;
+  const rows: string[][] = [];
+  for (let i = at + 2; i < lines.length && /^\|.*\|$/.test(lines[i]!); i++) rows.push(cells(lines[i]!));
+  if (rows.some(row => row.length !== header.length)) return false;
+  const eng = rows.filter(row => row[roles[0]![0]!] === 'Eng Review');
+  return eng.length === 1 && lines.filter(line => /^\|.*\|$/.test(line) && cells(line)[roles[0]![0]!] === 'Eng Review').length === 1 &&
+    /^CLEAR(?: \([^\n|]*\))?$/.test(eng[0]![roles[2]![0]!]!) &&
+    /^[1-9]\d*(?: runs?)?$/.test(eng[0]![roles[1]![0]!]!) &&
+    /\b0 critical gaps\b/.test(eng[0]![roles[3]![0]!]!) && !/\b[1-9]\d* critical gaps?\b/.test(eng[0]![roles[3]![0]!]!);
+}
+
+/** The count in a menu refers to saved dispositions, never newly invented work. */
+function hasRecordedTodoEntries(published: readonly string[], prior: readonly NativePlanQuestionCall[], count: number): boolean {
+  const starts = published.flatMap((line, i) => /^## TODOS\.md updates\b/.test(line) ? [i] : []);
+  if (starts.length !== 1) return false;
+  const at = starts[0]!, end = published.findIndex((line, i) => i > at && /^## /.test(line));
+  const section = published.slice(at + 1, end < 0 ? undefined : end).join('\n');
+  const entries = [...section.matchAll(/^\*\*TODO ([1-9]\d*) [—–-] (.+)\*\* \((D[1-9]\d*): add\)\n([^]*?)(?=^\*\*TODO |$(?![\s\S]))/gm)];
+  const calls = prior.filter(c => /^D[1-9]\d* [—–-] TODO:/.test(c.questions[0]!.question));
+  if (entries.length !== count || calls.length !== count || new Set(entries.map(e => e[1])).size !== count || new Set(entries.map(e => e[3])).size !== count) return false;
+  const action = (s: string) => s.replace(/`/g, '').split(/;|\b(?:where|inside)\b/)[0]!.replace(/\s+/g, ' ').trim();
+  // A summary can split a native clause or omit its explanatory tail, but
+  // every saved clause must still come from that proposal. The primary action
+  // alone cannot authorize an appended action or a different location/actor.
+  const words = (s: string) => (s.replace(/`/g, '').replace(/\bfor (?:the same|one) key\b/g, 'for key')
+    .match(/[a-z0-9]+(?:\.[a-z0-9]+)*/gi) ?? []).map(w => w.toLowerCase()).filter(w => !['a','the','are','then','afterwards'].includes(w));
+  const clausesOwned = (saved: string, native: string) => {
+    const offered = native.split(';').map(words), clauses = saved.split(';').map(words);
+    return clauses.every(clause => clause.length >= 2 && offered.some(source =>
+      source.some((_, i) => clause.every((word, j) => source[i + j] === word))));
+  };
+  return entries.every(entry => {
+    const call = calls.find(c => c.questions[0]!.question.startsWith(entry[3] + ' —'));
+    if (!call) return false;
+    const q = call.questions[0]!, selected = q.options.find(o => o.label === call.answers![q.question]);
+    const native = [...q.question.matchAll(/^What: (.+)$/gm)], saved = [...entry[4]!.matchAll(/^- What: (.+)$/gm)];
+    return selected?.label.replace(/^[A-Z]\) /, '').replace(/ \(recommended\)$/, '') === 'Add to TODOS.md' &&
+      /\bNo implementation now\./.test(selected.description ?? '') && native.length === 1 && saved.length === 1 &&
+      hasTodoTopic(entry[2]!, q.question.split('\n')[0]!) && action(native[0]![1]!) === action(saved[0]![1]!) &&
+      clausesOwned(saved[0]![1]!, native[0]![1]!);
+  });
+}
+
+function hasTodoTopic(summary: string, complete: string): boolean {
+  const words = (text: string) => (text.replace(/\b(?:then|after)\b[\s\S]*/i, '').replace(/\+/g, ' and ').match(/[a-z0-9]+(?:\.[a-z0-9]+)*/gi) ?? [])
+    .map(w => w.toLowerCase()).filter(w => !['the', 'of', 'in', 'vs', 'against'].includes(w));
+  const needed = words(summary), offered = words(complete); let index = 0;
+  for (const word of offered) if (word === needed[index]) index++;
+  return needed.length >= 3 && index === needed.length;
+}
+
 /** Current field ownership is independent of navigation wording. A superseded
  * status is inert only in an explicit History field/child section. */
 function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly NativePlanQuestionCall[],
@@ -1153,7 +1223,7 @@ function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly N
   const approvals = new Map(prior.map(previous => [/^(D[1-9]\d*)\s*[—–:-]/.exec(previous.questions[0]?.question ?? '')?.[1], previous]));
   const finalOrdinal = /^D([1-9]\d*)\s*[—–:-]/.exec(call.questions[0]!.question)?.[1];
   if (!finalOrdinal || approvals.size !== +finalOrdinal - 1 || Array.from({ length: +finalOrdinal - 1 }, (_, i) => `D${i + 1}`).some(id => !approvals.has(id))) return false;
-  const records = ledger.split(/\n(?=### [SRT][1-9]\d*:)/).filter(row => (owner ? /^### [SRT][1-9]\d*:/ : /^### R[1-9]\d*:/).test(row.trim()));
+  const records = ledger.split(/\n(?=### [SRT](?:0|[1-9]\d*):|### Approval readiness:)/).filter(row => (owner ? /^### [SRT](?:0|[1-9]\d*):/ : /^### R[1-9]\d*:/).test(row.trim()));
   const ids = new Set<string>(), answers = new Set<string>(), owned = new Map<string, string>();
   if (!records.length) return false;
   const compact = (s: string) => s.replace(/\s+/g, ' ').trim();
@@ -1162,7 +1232,7 @@ function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly N
   const selectedLetters = new Map<string, string>();
   const currentNative = (s: string) => s.replace(/^(?:Earlier|Previous|Historical|Example|Quoted)\b[^\n]*:\s*(?:"[^"\n]*"|“[^”\n]*”)\s*$/gm, '').replace(/["“”'‘’]/g, '');
   if (owner) {
-    const source = new RegExp(`^Project/branch/task: ${escape(owner.branch)} [—–-] (?:(?:reviewing )?${escape(owner.source)} "${escape(owner.title)}"(?:[;,]|$)|${escape(owner.title)} \\(${escape(owner.source)}\\)[.,;])`);
+    const source = new RegExp(`^Project/branch/task: ${escape(owner.branch)} [—–-] (?:(?:reviewing )?${escape(owner.source)} "${escape(owner.title)}"(?:[;,]|$)|${escape(owner.title)}(?: plan)? \\(${escape(owner.source)}\\)[.,;])`);
     if (records.length !== prior.length || prior.some(c => {
       const metadata = c.questions[0]!.question.split('\n').filter(l => /^Project\/branch\/task:/.test(l));
       return c.questions.length !== 1 || metadata.length !== 1 || !source.test(metadata[0]!) ||
@@ -1170,7 +1240,7 @@ function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly N
     })) return false;
   }
   for (const record of records) {
-    const id = /^### ([SRT][1-9]\d*):/.exec(record.trim())![1]!;
+    const id = /^### ([SRT](?:0|[1-9]\d*)):/.exec(record.trim())![1]!;
     if (ids.has(id)) return false; ids.add(id);
     // Only History's explicit child section or indented continuation is inert.
     const current = record.replace(/^#### History\n[\s\S]*?(?=^#### |$(?![\s\S]))/gm, '')
@@ -1178,7 +1248,8 @@ function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly N
     const state = field(current, 'State'), answer = field(current, 'Actual answer'), scope = field(current, 'Accepted scope');
     // The selected letter is the native option identity; a copied caption is
     // optional, and when present must still match that selected native label.
-    const selection = owner && answer ? /^([A-Z])(?: [—–-] "(.+)")? \((D[1-9]\d*) answer(?:, this session)?\)(?: [—–-] [^\n]+)?$/.exec(answer) : null;
+    const referenced = owner && answer ? /^([A-Z])[).:] (.+?) [—–-] user answer to (D[1-9]\d*)(?: \([^\n]+\))?\.$/.exec(answer) : null;
+    const selection = referenced ?? (owner && answer ? /^([A-Z])(?: [—–-] "(.+)")? \((D[1-9]\d*) answer(?:, this session)?\)(?: [—–-] [^\n]+)?$/.exec(answer) : null);
     const answered = selection ? ['', selection[2], selection[3]!] : answer && /^"(.+)" \((D[1-9]\d*)\)$/.exec(answer);
     const previous = answered ? approvals.get(answered[2]!) : undefined;
     const questions = [...current.matchAll(/^Question (D[1-9]\d*):(?: (.*))?$/gm)];
@@ -1192,12 +1263,34 @@ function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly N
       const letter = /^([A-Z])\) /.exec(selected.label)?.[1] ??
         (/\(recommended\)$/i.test(selected.label) ? /^Recommendation: ([A-Z]) because\b/m.exec(q.question)?.[1] : undefined);
       const summary = questions[0]![2];
+      // Scope Challenge records actual answers after its initial selectors;
+      // unlike substantive briefs it need not save Header/Options fields.
+      // Bind the native arrangement's action roles, not a caption alone.
+      const arrangement = previous === prior[0] && summary !== undefined &&
+        /^D[1-9]\d* [—–-] Complexity gate: /i.test(q.question) && /\b(?:classes|modules|units)\b/i.test(q.question.split('\n')[0]!) &&
+        q.options.length >= 2 && q.options.length <= 3;
+      const arrangementScope = (text: string) => {
+        const value = compact(text.replace(/`/g, '').replace(/\bpure exported function\b/g, 'pure function'));
+        if (!/^[\w, ]+ as classes[.;] \w+ becomes (?:a )?pure function \w+\([^)]*\)(?: in a policy module)?[.;] \w+ folds into \w+(?: \(one facade over the one backing adapter\))?\. (?:Structure only; all other remedies stay pending|No other remedy approved by this answer)\.$/.test(value)) return undefined;
+        const classes = /^([\w, ]+) as classes[.;]/.exec(value)?.[1]?.split(/,\s*/).sort();
+        const functions = [...value.matchAll(/\b(\w+) becomes (?:a )?pure function (\w+\([^)]*\))/g)].map(m => `${m[1]}:${m[2]!.replace(/\s/g, '')}`);
+        const folds = [...value.matchAll(/\b(\w+) folds into (\w+)\b/g)].map(m => `${m[1]}:${m[2]}`);
+        return classes?.length && functions.length === 1 && folds.length === 1 ? {classes, functions, folds} : undefined;
+      };
+      const initialArrangement = arrangement && arrangementScope(selected.description ?? '');
+      if (arrangement) {
+        const title = q.question.split('\n')[0]!.replace(/^D[1-9]\d* [—–-] /, '');
+        const offered = q.options.map(o => o.label).join(', ');
+        if (!initialArrangement || summary !== title + ' Options ' + offered + '. Structure only; all other remedies stayed pending.' ||
+            JSON.stringify(arrangementScope(scope)) !== JSON.stringify(initialArrangement) ||
+            !/\bNo other remedy approved by this answer\.$/.test(scope)) return false;
+      }
       const disposition = /^D[1-9]\d* TODO$/.test(q.header) && /^D[1-9]\d* [—–-] TODO: /.test(q.question) &&
         summary?.startsWith('TODO question (TODOS-format). Options: ') && /^TODO recorded in ["“][^"”]+["”] below\.$/.test(scope);
-      if (!selection || selection[1] !== letter || (field(current, 'Header') !== q.header && !(disposition && field(current, 'Header') === undefined)) ||
+      if (!selection || selection[1] !== letter || (field(current, 'Header') !== q.header && !((disposition || arrangement) && field(current, 'Header') === undefined)) ||
           /^(?:[>"“'‘]|(?:If|When|Once|Unless|Historical|Example|Quoted)\b)/i.test(scope)) return false;
       const options = [...current.matchAll(/^Options:\s*$/gm)];
-      if (options.length !== (disposition ? 0 : 1)) return false;
+      if (options.length !== (disposition || arrangement ? 0 : 1)) return false;
       if (disposition) {
         const offered = [...summary!.slice(summary!.indexOf('Options: ') + 9).replace(/\.$/,'').matchAll(/(?:^| )([A-Z])\) (.*?)(?= [A-Z]\) |$)/g)];
         if (label(selected.label) !== 'Add to TODOS' || offered.length !== q.options.length || offered.some((o,i) => o[1] !== String.fromCharCode(65+i) || label(o[2]!) !== label(q.options[i]!.label))) return false;
@@ -1206,20 +1299,14 @@ function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly N
         // and native What action to one active published proposal.
         const topic = /^### T[1-9]\d*: TODO [—–-] (.+)$/m.exec(current)?.[1];
         const caption = /^D[1-9]\d* [—–-] TODO: (.+)$/m.exec(q.question)?.[1];
-        const words = (text: string) => (text.replace(/\b(?:then|after)\b[\s\S]*/i, '').replace(/\+/g, ' and ').match(/[a-z0-9]+(?:\.[a-z0-9]+)*/gi) ?? []).map(w => w.toLowerCase());
-        const sameTopic = (summary: string, complete: string) => {
-          const needed = words(summary), offered = words(complete); let index = 0;
-          for (const word of offered) if (word === needed[index]) index++;
-          return needed.length >= 3 && index === needed.length;
-        };
         const action = (text: string) => compact(text.replace(/`/g, '').split(/[;(]/)[0]!);
         const nativeWhats = [...q.question.matchAll(/^What: (.+)$/gm)];
         const nativeWhat = nativeWhats.length === 1 ? nativeWhats[0]![1] : undefined;
         const proposals = [...(owner.publication ?? '').matchAll(/^### ([^\n]+)\n([\s\S]*?)(?=^#{1,3} |$(?![\s\S]))/gm)]
-          .filter(p => !introducesSourceContext((owner.publication ?? '').slice(0,p.index).trimEnd().split('\n').at(-1) ?? '') && topic && sameTopic(topic, p[1]!) && [...p[2]!.matchAll(/^\*\*What:\*\* (.+)$/gm)].length === 1);
+          .filter(p => !introducesSourceContext((owner.publication ?? '').slice(0,p.index).trimEnd().split('\n').at(-1) ?? '') && topic && hasTodoTopic(topic, p[1]!) && [...p[2]!.matchAll(/^\*\*What:\*\* (.+)$/gm)].length === 1);
         const savedWhat = proposals.length === 1 ? /^\*\*What:\*\* (.+)$/m.exec(proposals[0]![2]!)?.[1] : undefined;
-        if (!topic || !caption || !sameTopic(topic, caption) || !nativeWhat || !savedWhat || action(nativeWhat) !== action(savedWhat)) return false;
-      } else {
+        if (!topic || !caption || !hasTodoTopic(topic, caption) || !nativeWhat || !savedWhat || action(nativeWhat) !== action(savedWhat)) return false;
+      } else if (!arrangement) {
         const initialHeader = (h: string) => /^(?:Perf scope|Structure|D[1-9]\d* (?:scope|structure))$/.test(h);
         const initial = initialHeader(q.header) && prior.slice(0, prior.indexOf(previous)).every(c => initialHeader(c.questions[0]!.header));
         // Initial feature-deferral and structure selectors are saved after their
@@ -1260,10 +1347,23 @@ function hasCompletedOwnedLedger(call: NativePlanQuestionCall, prior: readonly N
         prior.some(c => Date.parse(c.answeredAt!) > Date.parse(previous.answeredAt!) && revoked.test(currentNative(c.questions[0]!.question))))) return false;
     answers.add(answered[2]!); owned.set(id, answered[2]!);
   }
-  const readiness = field(ledger, 'Approval readiness');
+  const headingReadiness = [...ledger.matchAll(/^### Approval readiness: (.+)\n([^]*?)(?=^### |^## |$(?![\s\S]))/gm)];
+  const readinessFields = [...ledger.matchAll(/^(?:\*\*)?Approval readiness:(?:\*\*)? (.+)$/gm)];
+  if (headingReadiness.length + readinessFields.length !== 1) return false;
+  const readiness = field(ledger, 'Approval readiness') ?? (headingReadiness.length === 1 ? headingReadiness[0]![1] : undefined);
   const readyRefs = readiness ? [...readiness.matchAll(owner ? /\b([SRT][1-9]\d*) \((D[1-9]\d*)(?:=|→)([A-Z])\)/g : /\b(R[1-9]\d*) \((D[1-9]\d*)\)/g)] : [];
-  if (!readiness?.startsWith('PASS') || readyRefs.length !== ids.size || new Set(readyRefs.map(r => r[1])).size !== ids.size || readyRefs.some(r => owned.get(r[1]!) !== r[2]!)) return false;
-  return !owner || readyRefs.every(r => selectedLetters.get(r[2]!) === r[3]) &&
-    report.split('\n').filter(l => /^\| Eng Review \|/.test(l)).length === 1 && /^\| Eng Review \|[^\n]*\| CLEAR(?: \([^\n|]*\))? \|[^\n]*\b0 critical gaps\b/m.test(report) &&
-    new RegExp(`\\b(?:${records.length} decisions approved, 0 unresolved|all ${records.length} decisions answered, 0 critical gaps)\\b`).test(report);
+  const summarizedReadiness = owner && headingReadiness.length === 1 && readiness === 'PASS' &&
+    /\bEvery record\b/.test(headingReadiness[0]![2]!) && /\bno record is pending\b/.test(headingReadiness[0]![2]!);
+  if (summarizedReadiness) {
+    const range = /\bEvery record ([SRT])(0|[1-9]\d*)[–-]([SRT])(0|[1-9]\d*) has\b/.exec(headingReadiness[0]![2]!);
+    const decisions = /\bactual answer \(D([1-9]\d*)[–-]D([1-9]\d*)\)/.exec(headingReadiness[0]![2]!);
+    if (!range || range[1] !== range[3] || +range[4]! - +range[2]! + 1 !== ids.size ||
+        Array.from({length: ids.size}, (_, i) => `${range[1]}${+range[2]! + i}`).some(id => !ids.has(id)) ||
+        !decisions || +decisions[1]! !== 1 || +decisions[2]! !== prior.length ||
+        /\b(?:[SRT](?:0|[1-9]\d*)|D[1-9]\d*|approval|scope) (?:is|was|has been) (?:revoked|withdrawn|pending|reopened|rejected|cancelled|canceled)\b/i.test(currentNative(headingReadiness[0]![2]!))) return false;
+  }
+  if (!readiness?.startsWith('PASS') || !summarizedReadiness && (readyRefs.length !== ids.size || new Set(readyRefs.map(r => r[1])).size !== ids.size || readyRefs.some(r => owned.get(r[1]!) !== r[2]!))) return false;
+  const counts = [...report.matchAll(/\b(?:all )?([1-9]\d*) decisions (?:approved|answered)\b/g)];
+  return !owner || (summarizedReadiness || readyRefs.every(r => selectedLetters.get(r[2]!) === r[3])) &&
+    hasReadyReviewRow(report) && counts.length === 1 && +counts[0]![1]! === records.length;
 }

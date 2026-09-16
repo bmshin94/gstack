@@ -4,11 +4,117 @@ import os from 'node:os';
 import path from 'node:path';
 import a from './fixtures/eng-published-navigation.json';
 import {isEngCompletionHandoff} from './helpers/eng-completion-handoff';
+import {evaluateEngSeedCoverage} from './helpers/eng-seeded-coverage';
 import {nativePlanCallFingerprint,hasNativePlanTerminal,planCountQuestionPhase} from './helpers/claude-pty-runner';
 import type {NativePlanQuestionCall,PlanCountTranscript} from './helpers/plan-count-transcript';
 import heldPackets from './fixtures/eng-native-packets-b955.json';
 import retryPacket from './fixtures/eng-a689-retry-public.json';
 import countPacket from './fixtures/eng-69193-count-public.json';
+import e366Packet from './fixtures/eng-e366-count-public.json';
+const e366Navigation=()=>({plan:e366Packet.report,call:structuredClone(e366Packet.calls.at(-1)!) as NativePlanQuestionCall,priorCalls:structuredClone(e366Packet.calls.slice(0,-1)) as NativePlanQuestionCall[]});
+function e366Check(name:string,expected:boolean,edit?:(x:ReturnType<typeof e366Navigation>)=>void){test('current native navigation: '+name,()=>{const x=e366Navigation(),before=JSON.stringify(x);edit?.(x);if(edit)expect(JSON.stringify(x)).not.toBe(before);expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);});}
+function e366Record(x:ReturnType<typeof e366Navigation>,id:number,edit:(s:string)=>string){x.plan=x.plan.replace(new RegExp(`^### R${id}:[\\s\\S]*?(?=^### |^## |$(?![\\s\\S]))`,'m'),edit);}
+e366Check('actual D11 and unchanged owned report is administrative',true);
+test('current native navigation supplies no complete-report acceptance',()=>{
+ const x=e366Navigation();
+ expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(true);
+ const coverage=evaluateEngSeedCoverage({status:'ready',calls:[...x.priorCalls,x.call],assistantMessages:[],planReadyRequests:[]},x.plan,Date.parse(e366Packet.windowStart),Date.parse(e366Packet.windowEnd));
+ expect(coverage.ok).toBe(false);
+ expect(coverage.problems).toContain('mandatory legacy regression coverage absent');
+});
+
+e366Check('TODO same prefix cannot append new work',false,x=>{x.plan=x.plan.replace('- What: per-key in-flight promise map;','- What: per-key in-flight promise map; also add customer analytics;');});
+e366Check('TODO same prefix cannot change inside constraint',false,x=>{x.plan=x.plan.replace('- What: per-key in-flight promise map;','- What: per-key in-flight promise map inside SessionMint;');});
+e366Check('TODO same prefix cannot change where constraint',false,x=>{x.plan=x.plan.replace('- What: flag-gated shadow mode;','- What: flag-gated shadow mode where the new flow decides;');});
+e366Check('readiness appended current withdrawal rejected',false,x=>{x.plan=x.plan.replace('No remedy was implemented; the plan text above reflects only approved values.','No remedy was implemented; the plan text above reflects only approved values.\nCorrection: R3 is revoked.');});
+
+e366Check('duplicate readiness assertion rejected',false,x=>{x.plan=x.plan.replace('### Approval readiness: PASS','Approval readiness: PASS\n### Approval readiness: PASS');});
+e366Check('readiness later withdrawal rejected',false,x=>{x.plan=x.plan.replace('### Approval readiness: PASS','### Approval readiness: PASS\nCorrection: R3 is revoked.');});
+e366Check('readiness wrong native range rejected',false,x=>{x.plan=x.plan.replace("user's actual answer (D1–D10)","user's actual answer (D1–D9)");});
+e366Check('disconnected conflicting Eng row rejected',false,x=>{x.plan=x.plan.replace('OUTSIDE COVERAGE:','| Eng Review | ISSUES OPEN | 1 run | 1 critical gap |\n\nOUTSIDE COVERAGE:');});
+e366Check('foreign recap artifact rejected',false,x=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('TODOS.md','OTHER.md');});
+e366Check('unbound TODO recap rejected',false,x=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('two TODOS.md entries','new TODOS.md entries');});
+
+e366Check('option order is immaterial',true,x=>x.call.questions[0]!.options.reverse());
+e366Check('native CEO choice remains navigation',true,x=>{const q=x.call.questions[0]!;x.call.answers={[q.question]:q.options[1]!.label};});
+e366Check('report role order is immaterial',true,x=>{x.plan=x.plan.replace(/^(\|[^\n]+\|)$/gm,line=>{const c=line.split('|').slice(1,-1);return c.length===4?'|'+[c[0],c[2],c[3],c[1]].join('|')+'|':line;});});
+e366Check('canonical Findings role also binds',true,x=>{x.plan=x.plan.replace('| Key finding |','| Findings |');});
+e366Check('current History does not revoke approval',true,x=>e366Record(x,3,s=>s.replace('History: none.','History: R3 is revoked.')));
+for(const [name,edit] of Object.entries({
+ 'unanswered handoff':(x:ReturnType<typeof e366Navigation>)=>{x.call.answered=false;},
+ 'failed handoff':(x:ReturnType<typeof e366Navigation>)=>{x.call.failed=true;},
+ 'unknown selected label':(x:ReturnType<typeof e366Navigation>)=>{x.call.answers={[x.call.questions[0]!.question]:'Other'};},
+ 'header alone':(x:ReturnType<typeof e366Navigation>)=>question(x,_=>'D11 — Where next?'),
+ 'missing earlier call':(x:ReturnType<typeof e366Navigation>)=>{x.priorCalls.splice(3,1);},
+ 'duplicated earlier identity':(x:ReturnType<typeof e366Navigation>)=>{x.priorCalls[3]!.toolUseId=x.priorCalls[2]!.toolUseId;},
+ 'foreign earlier session':(x:ReturnType<typeof e366Navigation>)=>{x.priorCalls[3]!.sessionId='foreign';},
+ 'later earlier answer':(x:ReturnType<typeof e366Navigation>)=>{x.priorCalls[3]!.answeredAt=x.call.answeredAt;},
+ 'foreign current title':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s.replace('Multi-tenant Auth Refactor','Foreign')),
+ 'foreign current branch':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s.replace('main —','foreign —')),
+ 'foreign current source':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s.replace('(PLAN.md)','(OTHER.md)')),
+ 'duplicate current source':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s.replace('(PLAN.md)','(PLAN.md OTHER.md)')),
+ 'foreign target':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('Reviewed target: `PLAN.md`','Reviewed target: `OTHER.md`');},
+ 'foreign target title':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('("Plan: Multi-tenant Auth Refactor")','("Plan: Other")');},
+ 'foreign target branch':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('branch `main`, commit','branch `other`, commit');},
+ 'foreign wrapper':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('# Plan: Multi-tenant Auth Refactor','# Plan: Other');},
+ 'duplicate wrapper':(x:ReturnType<typeof e366Navigation>)=>{x.plan='# Plan: Other\n'+x.plan;},
+ 'duplicate target':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('## Context',x.plan.split('\n')[2]+'\n## Context');},
+ 'missing current record':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,3,_=>''),
+ 'missing initial summary':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,0,_=>''),
+ 'unknown initial acceptance':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,0,s=>s.replace(/^Accepted scope: .+$/m,'Accepted scope: approved')),
+ 'changed initial offered label':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,0,s=>s.replace('B) 4 units','B) 10 units')),
+ 'changed initial selected class':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,0,s=>s.replace('Accepted scope: AuthBroker','Accepted scope: AnotherBroker')),
+ 'changed initial function':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,0,s=>s.replace('`decideAccess(claims, ctx)`','`other(claims, ctx)`')),
+ 'changed initial fold':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,0,s=>s.replace('TokenStore folds into AuthCache.','TokenStore folds into OtherCache.')),
+ 'extra initial work':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,0,s=>s.replace('No other remedy approved','Add Redis. No other remedy approved')),
+ 'initial summary later correction':(x:ReturnType<typeof e366Navigation>)=>e366Record(x,0,s=>s.replace('Structure only; all other remedies stayed pending.','Correction: add Redis. Structure only; all other remedies stayed pending.')),
+ 'missing readiness':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('### Approval readiness: PASS','### Result: PASS');},
+ 'wrong readiness range':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('Every record R0–R9','Every record R0–R8');},
+ 'conflicting readiness':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('### Approval readiness: PASS','Approval readiness: FAIL\n### Approval readiness: PASS');},
+ 'current withdrawal':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s+'\nR3 is revoked.'),
+ 'quoted current withdrawal':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s+'\nR3 is "revoked".'),
+ 'new task':(x:ReturnType<typeof e366Navigation>)=>{x.call.questions[0]!.options[0]!.description+=' Start T10.';},
+ 'missing task':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('**T4 (','**T44 (');},
+ 'extra catalog task':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('## Implementation Tasks','## Implementation Tasks\n- [ ] **T10 (P1)** — Add Redis');},
+ 'withdrawn task':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('  - Files: test/auth/legacy','  - Correction: T1 is withdrawn.\n  - Files: test/auth/legacy');},
+ 'new ready work':(x:ReturnType<typeof e366Navigation>)=>{x.call.questions[0]!.options[0]!.description+=' Also add Redis.';},
+ 'new optional work':(x:ReturnType<typeof e366Navigation>)=>{x.call.questions[0]!.options[1]!.description+=' Then rewrite the router.';},
+ 'new quoted work':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s+'\nAlso "add Redis".'),
+ 'new dependency':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s+'\nT1 depends on T9.'),
+ 'new task ordering':(x:ReturnType<typeof e366Navigation>)=>question(x,s=>s+'\nT8 before T1.'),
+ 'missing graph step':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace(/^\| 4 AuthBroker.+\n/m,'');},
+ 'unknown graph dependency':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('| 2, 3 |','| 2, 99 |');},
+ 'wrong graph launch':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('launch A, B, C in parallel','launch A, B in parallel');},
+ 'reordered dependent graph step':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('4 → 6 → 7 → 8 → 9','6 → 4 → 7 → 8 → 9');},
+ 'new TODO count':(x:ReturnType<typeof e366Navigation>)=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('two TODOS.md entries','three TODOS.md entries');},
+ 'changed TODO disposition':(x:ReturnType<typeof e366Navigation>)=>{const c=x.priorCalls[8]!,q=c.questions[0]!;c.answers={[q.question]:q.options[1]!.label};},
+ 'missing TODO entry':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace(/^\*\*TODO 2 [^]*?(?=^## Unresolved decisions)/m,'');},
+ 'changed TODO proposal':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('- What: per-key in-flight promise map;','- What: add customer analytics;');},
+ 'missing report':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.slice(0,x.plan.indexOf('## GSTACK REVIEW REPORT'));},
+ 'historical report':(x:ReturnType<typeof e366Navigation>)=>{x.plan='## Historical example\n'+x.plan.replace(/^# /gm,'### ');},
+ 'fenced report':(x:ReturnType<typeof e366Navigation>)=>{x.plan='```md\n'+x.plan+'\n```';},
+ 'trailing report prose':(x:ReturnType<typeof e366Navigation>)=>{x.plan+='\nstatus ready\n';},
+ 'missing sentinel':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('NO UNRESOLVED DECISIONS','Unresolved status');},
+ 'current critical gap':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('12 issues, 0 critical gaps (','12 issues, 1 critical gap (');},
+ 'duplicate status role':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('| Key finding |','| Status |');},
+ 'duplicate findings role':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('| Runs | Key finding |','| Findings | Key finding |');},
+ 'missing runs role':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('| Runs |','| Effort |');},
+ 'missing findings role':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('| Key finding |','| Commentary |');},
+ 'conflicting status row':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('| Design Review |','| Eng Review | ISSUES OPEN | 1 | 1 critical gap |\n| Design Review |');},
+ 'duplicate Eng row':(x:ReturnType<typeof e366Navigation>)=>{const row=x.plan.match(/^\| Eng Review \|.+$/m)![0];x.plan=x.plan.replace(row,row+'\n'+row);},
+ 'wrong reported decision count':(x:ReturnType<typeof e366Navigation>)=>{x.plan=x.plan.replace('10 decisions approved (D1–D10)','9 decisions approved (D1–D10)');},
+}))e366Check('rejects '+name,false,edit);
+for(const id of [1,3,5,8,9]){
+ e366Check(`record R${id} current State required`,false,x=>e366Record(x,id,s=>s.replace('State: approved','State: pending')));
+ e366Check(`record R${id} duplicate state rejected`,false,x=>e366Record(x,id,s=>s.replace('State: approved','State: approved\nState: approved')));
+ e366Check(`record R${id} exact question required`,false,x=>e366Record(x,id,s=>s.replace(x.priorCalls[id]!.questions[0]!.question,'Summary only.')));
+ e366Check(`record R${id} exact header required`,false,x=>e366Record(x,id,s=>s.replace(/^Header: .+$/m,'Header: Other')));
+ e366Check(`record R${id} exact option description required`,false,x=>e366Record(x,id,s=>s.replace(x.priorCalls[id]!.questions[0]!.options[1]!.description!,'Another option description')));
+ e366Check(`record R${id} native answer reference required`,false,x=>e366Record(x,id,s=>s.replace('user answer to D'+(id+1),'user answer to D99')));
+}
+for(const suffix of ['-extra','/extra','.ts','?mode=extra'])e366Check('rejects command suffix '+suffix,false,x=>{x.call.questions[0]!.options[1]!.description+=` Run /plan-ceo-review${suffix}.`;});
+
+
 const countNavigation=()=>({plan:countPacket.report,call:structuredClone(countPacket.calls.at(-1)!) as NativePlanQuestionCall,priorCalls:structuredClone(countPacket.calls.slice(0,-1)) as NativePlanQuestionCall[]});
 function countNavigationCheck(name:string,expected:boolean,edit?:(x:ReturnType<typeof countNavigation>)=>void){test('owned conditional navigation: '+name,()=>{const x=countNavigation(), before=JSON.stringify(x);edit?.(x);if(edit)expect(JSON.stringify(x)).not.toBe(before);expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);});}
 function countRecord(x:ReturnType<typeof countNavigation>,id:number,edit:(s:string)=>string){
