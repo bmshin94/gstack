@@ -151,6 +151,18 @@ export interface AutoplanPhaseInstruction {
   paths: string[];
   content: string;
 }
+
+/** Bind only supported installed aliases to this instruction's frozen source. */
+export function registerAutoplanPhaseInstructionAliases(instructions: AutoplanPhaseInstruction[], configDir: string): void {
+  for (const instruction of instructions) for (const skill of [['autoplan'], ['gstack', 'autoplan']]) {
+    const installed = join(configDir, 'skills', ...skill, 'sections', `${instruction.phase}-phase.md`);
+    try {
+      if (realpathSync(installed) === instruction.paths[0] && readFileSync(installed, 'utf8') === instruction.content &&
+          !instruction.paths.includes(installed)) instruction.paths.push(installed);
+    } catch { /* Missing or unreadable aliases establish no source identity. */ }
+  }
+}
+
 export interface AutoplanPhaseEntryViolation {
   phase: AutoplanPhaseInstruction['phase'];
   requiredPhase: AutoplanPhaseInstruction['requiredPhase'];

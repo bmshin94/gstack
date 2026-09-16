@@ -17,6 +17,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { tmpdir } from 'node:os';
 import { prepareMethodology, createSnapshot, preparePhaseClose } from '../bin/gstack-autoplan-snapshot';
+import { SECTION } from '../scripts/resolvers/sections';
+import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
+import { ALL_HOST_CONFIGS } from '../hosts';
 
 const ROOT = path.join(import.meta.dir, '..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf-8');
@@ -27,10 +30,10 @@ const phases = [
   { child: 'eng', id: '3', next: ['4'] },
 ];
 
-// Exercise the actual close renderer; the shared section now delegates its
-// publication to this packet instead of carrying a separate copied template.
-const closePackets = new Map<string, string>();
-function closeContent(phase: string) {
+// Exercise the actual packet's bound report data; the shared close procedure
+// owns the separate native-message operation that consumes those fields.
+const closePackets = new Map<string, ReturnType<typeof preparePhaseClose> & { text: string }>();
+function closePacket(phase: string) {
   if (closePackets.has(phase)) return closePackets.get(phase)!;
   const dir = fs.mkdtempSync(path.join(tmpdir(), 'autoplan-order-'));
   try {
@@ -43,9 +46,11 @@ function closeContent(phase: string) {
     fs.appendFileSync(active, `<!-- autoplan-accepted:${phase} -->\nNone: current behavior is retained.\n<!-- /autoplan-accepted:${phase} -->\n`);
     const packet = preparePhaseClose(phase, active, checkpoint, restore, method);
     const text = fs.readFileSync(packet.closePacketPath, 'utf8');
-    closePackets.set(phase, text); return text;
+    const result = { ...packet, text }; closePackets.set(phase, result); return result;
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 }
+
+function closeContent(phase: string) { return closePacket(phase).text; }
 
 describe('autoplan phase order (Eng always last)', () => {
   const tmpl = read('autoplan/SKILL.md.tmpl');
@@ -77,9 +82,9 @@ describe('autoplan phase order (Eng always last)', () => {
 
   test.each(phases)('carved child completion and handoff IDs match the pipeline: %j', ({ child, id, next }) => {
     const section = read(`autoplan/sections/${child}-phase.md.tmpl`);
-    const shared = closeContent(child);
-    const announced = [...shared.matchAll(/\*\*Phase ([\d.]+) complete\.\*\*/g)].map(match => match[1]);
-    const handoff = shared.split('Passing to ')[1]?.split('\n')[0] ?? '';
+    const report = closePacket(child).report;
+    const announced = [report.number];
+    const handoff = report.next;
     expect(section.trim().endsWith('{{SECTION:phase-close}}')).toBe(true);
     const pointer = section.indexOf('{{SECTION:phase-close}}');
     expect(pointer).toBeGreaterThan(section.indexOf('**Close this phase:**'));
@@ -228,13 +233,15 @@ describe('autoplan phase execution checkpoints', () => {
     expect(contract.replace(/\s+/g, ' ')).toContain("consume enabled outside results. Complete the phase's remaining primary review sections after these results");
     const workflow = contract.replace(/\s+/g, ' ');
     expect(workflow).toContain("At the phase's exit, load its `phase-close` section afresh");
-    expect(workflow).toContain('the complete current readback followed by semantic reconciliation and the visible parent completion message in the same ordered artifact');
+    expect(workflow).toContain('prepare the current packet, Read it completely, reconcile it semantically, then SEND the parent completion message');
+    expect(workflow).toContain('Publication is a separate operation in that procedure');
     expect(workflow).toContain('an earlier Read is not this close');
     expect(workflow).toContain('Only after the message has been sent may the driver load/create/dispatch the next phase');
     expect(workflow).toContain("Then continue to the next phase's tool calls in the same turn");
     expect(workflow).toContain('after Eng, proceed to final synthesis/approval');
     expect(workflow).toContain('an inapplicable phase; do not load its review or close steps');
-    expect(workflow).toContain('reload `phase-close` and resume its first incomplete step');
+    expect(workflow).toContain('reload `phase-close` and resume its first incomplete numbered operation');
+    expect(workflow).toContain('resume the close procedure at step 6 (Publish) before advancing');
     expect(contract).toContain('A missing gate means the current phase remains open');
     expect(contract).toContain('Read requests/self-reports and INPUT hashes do not prove uptake or review quality');
     expect(contract).toContain('Pending is not unavailable');
@@ -256,7 +263,7 @@ describe('autoplan phase execution checkpoints', () => {
       const publication = read('autoplan/sections/phase-close.md.tmpl');
       expect(barrier).toBeGreaterThan(-1);
       expect(pointer).toBeGreaterThan(barrier);
-      expect(closeContent(phase)).toContain(`**Phase ${number} complete.**`);
+      expect(closePacket(phase).report.number).toBe(number);
       expect(section.match(/\{\{SECTION:phase-close\}\}/g)).toHaveLength(1);
       const binding = section.slice(barrier, pointer).replace(/\s+/g, ' ');
       const checkpoint = phase === 'ceo' ? 'CEO_STEP0_CHECKPOINT' : `${phase.toUpperCase()}_INPUT`;
@@ -268,11 +275,12 @@ describe('autoplan phase execution checkpoints', () => {
     }
   });
 
-  test('the shared close prepares the full packet before its verification and publication', () => {
+  test('the shared close separates complete readback, verification, publication and driver return', () => {
     const template = read('autoplan/sections/phase-close.md.tmpl');
     const close = template.replace(/\s+/g, ' ');
     const stages = ['1. **Finish and save the review.**', '2. **Reconcile accepted requirements.**',
-      "3. **Prepare this phase's close packet.**", '4. **Read and execute the complete close packet.**'];
+      "3. **Prepare this phase's close packet.**", '4. **Read the complete current packet.**',
+      '5. **Verify the current implementation.**', '6. **Publish the parent report.**', '7. **Return to the driver.**'];
     const positions = stages.map(stage => template.indexOf(stage));
     expect(positions.every(position => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
@@ -287,60 +295,69 @@ describe('autoplan phase execution checkpoints', () => {
     expect(close).toContain('Keep the amendment checkpoint fixed for this invocation, including after compaction');
     expect(template).toContain('prepare-close "<PHASE>" "<ACTIVE_PLAN>" "<AMENDMENT_CHECKPOINT>" "<RESTORE_PATH>" "<methodologyPath>"');
     expect(close).toContain("For every returned `readRanges` entry, issue a Read of `closePacketPath` with that entry's exact `offset` and `limit`");
-    expect(close).toContain('Finish all ranges through EOF, including the continuation after the implementation');
+    expect(close).toContain('Finish all ranges through EOF');
     expect(close).toContain('A Read of only the edited tail does not satisfy this step; previous snapshots do not satisfy it');
     expect(close).toContain('If a result is truncated, read its missing ranges');
     expect(close).toContain('If a Read fails, repair it and finish the missing ranges');
     expect(close).toContain('Do not advance on a request without its result');
     expect(close).toContain('regenerate the packet with the same checkpoint and Read the entire new packet before publication');
-    const packet = closeContent('ceo').replace(/\s+/g, ' ');
-    expect(packet).toContain('Compare the complete current implementation with the accepted decisions, source requirements, conditions, tests and required outputs');
-    expect(packet).toContain('Retention checks prove bytes; counts, hashes, keyword probes and a saved “Read-back” sentence do not perform this semantic review');
-    expect(packet).toContain('Fix omissions, then repeat preparation and the full packet readback');
-    expect(packet).toContain('Review history stays in Review record');
-    expect(packet).toContain('send the filled report below now as visible parent assistant text');
-    expect(packet).toContain('using actual findings and voice statuses');
-    expect(packet).toContain('Use N/A when either review voice is missing; confirmed counts require both voices');
-    expect(packet).toContain('Saving it in ACTIVE_PLAN or printing it through Bash does not publish it');
-    expect(packet).toContain('return to the driver in the same turn');
-    expect(packet).toContain('Do not wait for a “continue” reply');
-    expect(close).not.toContain('This message contains no tool calls');
+    expect(close).toContain('Any later implementation or accepted-decision edit returns to step 3, including after compaction');
+    const verification = template.slice(positions[4], positions[5]).replace(/\s+/g, ' ');
+    expect(verification).toContain('Compare the complete current implementation with accepted decisions, source requirements, conditions, tests and required outputs');
+    expect(verification).toContain('Retention checks prove bytes; counts, hashes, keyword probes and a saved “Read-back” sentence do not perform this semantic review');
+    expect(verification).toContain('Recheck step 1');
+    expect(verification).toContain('If any prerequisite is incomplete, keep this phase open and finish the missing work');
+    expect(verification).toContain('Review history stays in Review record');
+    expect(close).not.toContain('The packet owns the close continuation');
     expect(read('autoplan/sections/phase-close.md')).toContain(template.trim());
   });
 
-  test('publication precedes driver continuation without a repair bypass or user wait', () => {
-    const packet = closeContent('ceo').replace(/\s+/g, ' ');
-    const verify = packet.indexOf('## Verify and publish this phase');
-    const report = packet.indexOf('**Phase 1 complete.**');
-    const continueAt = packet.indexOf('After sending the actual parent report');
-    expect(verify).toBeGreaterThan(-1);
-    expect(report).toBeGreaterThan(verify);
+  test('native publication precedes driver continuation without a repair bypass or user wait', () => {
+    const close = read('autoplan/sections/phase-close.md.tmpl').replace(/\s+/g, ' ');
+    const publish = close.indexOf('6. **Publish the parent report.**');
+    const report = close.indexOf('**Phase <report.number> complete.**');
+    const continueAt = close.indexOf('7. **Return to the driver.**');
+    expect(publish).toBeGreaterThan(-1);
+    expect(report).toBeGreaterThan(publish);
     expect(continueAt).toBeGreaterThan(report);
-    expect(packet.slice(verify, report)).toContain('If any prerequisite is incomplete, keep this phase open: repair and finish all required work and fresh readback before publishing');
-    expect(packet.slice(verify, report)).toContain('send the filled report below now as visible parent assistant text');
-    expect(packet.slice(continueAt)).toContain('The driver alone advances phases');
-    expect(packet.slice(continueAt)).toContain('Do not wait for a “continue” reply');
-    expect(packet.slice(continueAt)).toContain('a skip is never a completion');
+    expect(close.slice(publish, report)).toContain('After successful verification, SEND the filled report below now as visible parent assistant text');
+    expect(close.slice(publish, report)).toContain('This message is the next operation before any next-phase tool call');
+    expect(close.slice(publish, report)).toContain('using actual findings and voice statuses');
+    expect(close.slice(publish, report)).toContain('N/A when either review voice is missing; confirmed counts require both voices');
+    expect(close.slice(continueAt)).toContain('After sending the actual parent report');
+    expect(close.slice(continueAt)).toContain('the driver in the same turn');
+    expect(close.slice(continueAt)).toContain('The driver alone advances phases');
+    expect(close.slice(continueAt)).toContain('Do not wait for a “continue” reply');
+    expect(close.slice(continueAt)).toContain('a skip is never a completion');
+    expect(close).toContain('Saving it in ACTIVE_PLAN or printing it through Bash does not publish it');
+    expect(close).toContain("The sent conversation message is step 6's output");
+    expect(close).not.toContain('This message contains no tool calls');
     const driver = tmpl.split('## Sequential Execution')[1]!.split('---')[0]!.replace(/\s+/g, ' ');
     expect(driver).toContain('Only after the message has been sent may the driver load/create/dispatch the next phase');
     expect(driver).toContain('after Eng, proceed to final synthesis/approval');
-    expect(read('autoplan/sections/phase-close.md.tmpl')).not.toContain('Read/create/dispatch');
   });
 
-  test('a fresh packet carries publication data without recovering the pre-compaction caller', () => {
+  test('all four phase formats consume the current packet data in the shared publication step', () => {
     const totals: Record<string, string> = {ceo: '6', design: 'rows in the completed design litmus scorecard', dx: '6', eng: '6'};
     const numbers: Record<string, string> = {ceo: '1', design: '2', dx: '2.5', eng: '3'};
+    const publication = read('autoplan/sections/phase-close.md.tmpl').split('6. **Publish the parent report.**')[1]!.split('7. **Return')[0]!;
+    expect(publication).toContain('**Phase <report.number> complete.**');
+    expect(publication).toContain('Outside review: <completed: N concerns / unavailable / disabled>');
+    expect(publication).toContain('Native subagent: <completed: N issues / unavailable>');
+    expect(publication).toContain("the actual host's reviewer names");
+    expect(publication).toContain('N/A (voice coverage missing)');
+    expect(publication).toContain('X/<report.total> native+outside confirmed');
+    expect(publication).toContain('Include the DX metrics line only when `report.includeDxMetrics` is true');
+    expect(publication).toContain('DX overall: <score>/10. TTHW: <observed> min → <target> min.');
+    expect(publication).toContain("Resolve\n   `report.next` using the driver's applicable scope/skip rules");
     for (const child of phases) {
-      const packet = closeContent(child);
-      const publication = packet.split('## Verify and publish this phase')[1]!;
-      expect(publication).toContain(`**Phase ${numbers[child]} complete.**`);
-      expect(publication).toContain('Outside review: [completed: N concerns / unavailable / disabled]');
-      expect(publication).toContain('Native subagent: [completed: N issues / unavailable]');
-      expect(publication).toContain("Use the actual host's reviewer names");
-      expect(publication).toContain('N/A (voice coverage missing)');
-      expect(publication).toContain(`X/${totals[child]} native+outside confirmed`);
-      expect(publication.includes('DX overall: [N]/10. TTHW: [N] min → [target] min.')).toBe(child === 'dx');
-      expect([...publication.matchAll(/\*\*Phase ([\d.]+) complete\.\*\*/g)].map(m => m[1])).toEqual([numbers[child]]);
+      const packet = closePacket(child);
+      expect(packet.report.number).toBe(numbers[child]);
+      expect(packet.report.total).toBe(totals[child]);
+      expect(packet.report.includeDxMetrics).toBe(child === 'dx');
+      expect(packet.phaseComplete).toBe(false);
+      expect(packet.text).not.toMatch(/Phase [\d.]+ complete/);
+      expect(packet.text).not.toContain('Passing to ');
       const caller = read(`autoplan/sections/${child}-phase.md.tmpl`).split('**Close this phase:**')[1]!;
       expect(caller.trim().endsWith('{{SECTION:phase-close}}')).toBe(true);
       expect(caller).not.toContain('**Phase ');
@@ -351,7 +368,7 @@ describe('autoplan phase execution checkpoints', () => {
   test('Design hands off to conditional DX and DX never requests a future Eng result', () => {
     const design = read('autoplan/sections/design-phase.md.tmpl');
     const dx = read('autoplan/sections/dx-phase.md.tmpl');
-    expect(closeContent('design')).toContain('Phase 2.5 (DX Review) if DX scope was detected; otherwise Phase 3 (Eng Review)');
+    expect(closePacket('design').report.next).toContain('Phase 2.5 (DX Review) if DX scope was detected; otherwise Phase 3 (Eng Review)');
     expect(design).not.toContain('> Passing to Phase 3.');
     expect(dx).toContain("Design: <insert Design consensus summary, or 'skipped, no UI scope'>");
     expect(dx).not.toContain('Eng: <insert Eng consensus summary>');
@@ -414,5 +431,28 @@ describe('autoplan current implementation-plan identity', () => {
     const eng = read('autoplan/sections/eng-phase.md.tmpl');
     expect(eng).toContain('no summaries or prior reviews');
     expect(eng).toContain('DX: <insert DX consensus table summary');
+  });
+});
+
+
+describe('phase-close control ownership across installed hosts', () => {
+  test.each(ALL_HOST_CONFIGS)('$name loads or inlines the same numbered close procedure', host => {
+    const ctx = {host: host.name, paths: HOST_PATHS[host.name], skillName: 'autoplan', tmplPath: ''} as TemplateContext;
+    const rendered = SECTION(ctx, ['phase-close']);
+    const template = read('autoplan/sections/phase-close.md.tmpl').trimEnd();
+    if (host.name === 'claude') {
+      expect(rendered).toContain(`${ctx.paths.skillRoot}/autoplan/sections/phase-close.md`);
+      expect(rendered).toContain('and execute it');
+    } else {
+      expect(rendered).toBe(template);
+      const operations = ['4. **Read the complete current packet.**', '5. **Verify the current implementation.**',
+        '6. **Publish the parent report.**', '7. **Return to the driver.**'];
+      const positions = operations.map(operation => rendered.indexOf(operation));
+      expect(positions.every(position => position >= 0)).toBe(true);
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+      expect(rendered).toContain('in the same turn');
+      expect(rendered).toContain('Do not wait for a “continue” reply');
+      expect(rendered).not.toContain('The packet owns the close continuation');
+    }
   });
 });

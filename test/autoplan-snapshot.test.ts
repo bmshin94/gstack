@@ -66,10 +66,10 @@ describe('phase-close packets preserve full readback before publication', () => 
     expect(text).toContain(JSON.stringify(packet.sourceSha256));
     expect(text).toContain(JSON.stringify(packet.checkpointPath));
     expect(text).toContain(input);
-    expect(text.indexOf('## Verify and publish this phase')).toBeGreaterThan(text.indexOf(input) + input.length);
+    expect(text.indexOf('## Return to the close procedure')).toBeGreaterThan(text.indexOf(input) + input.length);
     expect(text).toContain('````text\n' + input);
     expect(input).toBe(readFileSync(f.checkpoint.snapshotPath, 'utf8'));
-    expect(input).not.toContain('## Verify and publish this phase');
+    expect(input).not.toContain('## Return to the close procedure');
     expect(packet.phaseComplete).toBe(false);
     let offset = 1;
     const lines = text.split('\n'), delivered: string[] = [];
@@ -89,23 +89,24 @@ describe('phase-close packets preserve full readback before publication', () => 
     ['design', '2', 'rows in the completed design litmus scorecard', ['2.5', '3']],
     ['dx', '2.5', '6', ['3']],
     ['eng', '3', '6', ['4']],
-  ])('%s close carries only its current report and driver continuation after the data', (phase, number, total, next) => {
+  ])('%s close supplies bound report data without publishing or advancing', (phase, number, total, next) => {
     const packet = closeFixture(phase as string).prepare();
     const text = readFileSync(packet.closePacketPath, 'utf8');
-    const continuation = text.slice(text.indexOf('## Verify and publish this phase'));
-    expect(continuation).toContain(`**Phase ${number} complete.**`);
-    expect(continuation).toContain(`X/${total} native+outside confirmed`);
-    expect(continuation).toContain('Outside review: [completed: N concerns / unavailable / disabled]');
-    expect(continuation).toContain('Native subagent: [completed: N issues / unavailable]');
-    expect(continuation).toContain('N/A (voice coverage missing)');
-    const passing = continuation.split('Passing to ')[1]!.split('\n')[0]!;
-    expect([...passing.matchAll(/Phase (\d+(?:\.\d+)?)/g)].map(m => m[1])).toEqual(next);
-    expect(continuation.includes('DX overall:')).toBe(phase === 'dx');
-    expect(continuation).toContain('visible parent assistant text');
-    expect(continuation.replace(/\s+/g, ' ')).toContain('Saving it in ACTIVE_PLAN or printing it through Bash does not publish it');
-    expect(continuation).toContain('If any prerequisite is incomplete, keep this phase open');
-    expect(continuation).toContain('return to the driver');
-    expect(text).not.toContain('Read/create/dispatch');
+    const binding = JSON.parse(text.split('Binding: ')[1]!.split('\n')[0]!);
+    expect(packet.report.number).toBe(number);
+    expect(packet.report.total).toBe(total);
+    expect([...packet.report.next.matchAll(/Phase (\d+(?:\.\d+)?)/g)].map(m => m[1])).toEqual(next);
+    expect(packet.report.includeDxMetrics).toBe(phase === 'dx');
+    expect(binding.report).toEqual(packet.report);
+    expect(binding.phase).toBe(phase);
+    const continuation = text.slice(text.indexOf('## Return to the close procedure'));
+    expect(continuation.replace(/\s+/g, ' ')).toContain('Continue at phase-close step 5 (Verify), then step 6 (Publish)');
+    expect(continuation).toContain('separate parent operations');
+    expect(continuation).toContain('do not authorize phase advancement');
+    expect(text).not.toMatch(/Phase [\d.]+ complete/);
+    expect(text).not.toContain('Passing to ');
+    expect(text).not.toContain('## Verify and publish this phase');
+    expect(packet.phaseComplete).toBe(false);
   });
 
   test('many inline code spans do not overflow the fence maximum calculation', () => {

@@ -36,7 +36,7 @@ import { autoplanSetupDecision, autoplanBlockingQuestionBoundary, type AutoplanS
 import { autoplanPhaseCompletions, type AutoplanPhaseHit } from './helpers/autoplan-phase-observer';
 import { readPlanCountTranscript, type PlanCountTranscript, type NativePublicToolEvent } from './helpers/plan-count-transcript';
 import { readPendingQuestion, pendingQuestionRecorderStatus } from './helpers/plan-count-pending-question';
-import { auditAutoplanMethodReads, loadAutoplanMethodologyBinding, prematureAutoplanPhaseEntry,
+import { auditAutoplanMethodReads, loadAutoplanMethodologyBinding, prematureAutoplanPhaseEntry, registerAutoplanPhaseInstructionAliases,
   type AutoplanMethodReadAudit, type AutoplanPhaseInstruction, type AutoplanPhaseEntryViolation } from './helpers/autoplan-method-read-audit';
 import { getHermeticDirs } from './helpers/hermetic-env';
 import { createPlanCountSnapshotWriter } from './helpers/plan-count-artifacts';
@@ -144,12 +144,7 @@ describeE2E('/autoplan native chain ordering (periodic)', () => {
         };
 
         try {
-          // Only aliases in this session's registry that resolve to the bound
-          // source are equivalent. A same-basename foreign file is not.
-          if (session.hermeticConfigDir) for (const instruction of phaseInstructions) {
-            const installed = path.join(session.hermeticConfigDir, 'skills', 'gstack', 'autoplan', 'sections', `${instruction.phase}-phase.md`);
-            if (fs.existsSync(installed) && fs.realpathSync(installed) === instruction.paths[0]) instruction.paths.push(installed);
-          }
+          if (session.hermeticConfigDir) registerAutoplanPhaseInstructionAliases(phaseInstructions, session.hermeticConfigDir);
           await Bun.sleep(8000);
           session.mark();
           commandStartedAt = Date.now();

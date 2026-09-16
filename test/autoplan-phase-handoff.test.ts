@@ -126,7 +126,7 @@ test('CEO applies Step 0 decisions before each spec dispatch and refreshes the n
 test('compaction recovery separates saved artifacts, sent messages and pending reviewer state', () => {
   const contract = source('autoplan/SKILL.md.tmpl').split('## Sequential Execution')[1]!.split('---')[0]!;
   expect(contract).toContain('reconcile saved artifacts and sent conversation messages separately');
-  expect(contract).toContain("verified phase lacks its announcement, execute the packet's publication before advancing");
+  expect(contract).toContain("verified phase lacks its announcement, resume the close procedure at step 6 (Publish) before advancing");
   expect(contract).toContain('regenerate and reread the full packet if the implementation or accepted decisions changed');
   expect(contract).toContain('If its reviewer is pending, wait for that same reviewer');
   expect(contract).toContain('Read `snapshot.json` beside that final `<PHASE_INPUT>`');
@@ -214,13 +214,16 @@ test('phase progress text permits immediate tool continuation in the same turn',
   expect(contract).toContain('in the same turn');
   expect(contract).not.toContain('This parent response contains no tool calls');
   const shared = source('autoplan/sections/phase-close.md.tmpl').replace(/\s+/g, ' ');
-  expect(shared).toContain("Execute the packet's verification and publication continuation now");
-  expect(shared).toContain('The packet owns the close continuation; the driver owns advancement after the actual visible parent report');
-  const prepare = shared.indexOf("3. **Prepare this phase's close packet.**");
-  const readback = shared.indexOf('4. **Read and execute the complete close packet.**');
-  expect(prepare).toBeGreaterThan(-1);
-  expect(readback).toBeGreaterThan(prepare);
-  expect(shared).toContain('including the continuation after the implementation');
+  const operations = ["3. **Prepare this phase's close packet.**", '4. **Read the complete current packet.**',
+    '5. **Verify the current implementation.**', '6. **Publish the parent report.**', '7. **Return to the driver.**'];
+  const positions = operations.map(operation => shared.indexOf(operation));
+  expect(positions.every(position => position >= 0)).toBe(true);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  expect(shared).toContain('SEND the filled report below now as visible parent assistant text');
+  expect(shared).toContain('This message is the next operation before any next-phase tool call');
+  expect(shared).toContain('After sending the actual parent report, continue to the driver in the same turn');
+  expect(shared).toContain("The sent conversation message is step 6's output");
+  expect(shared).not.toContain('The packet owns the close continuation');
   expect(shared).not.toContain('This message contains no tool calls');
   for (const phase of ['ceo', 'design', 'dx', 'eng']) {
     const close = source(`autoplan/sections/${phase}-phase.md.tmpl`).split('**Close this phase:**')[1]!;
@@ -264,5 +267,40 @@ test('the captured cf74 full readback did not publish a CEO report before the De
   expect(observe([lastParentMessage, late], boundary + 1)).toEqual([{ phase: 1, ts: boundary + 1 }]);
   for (const text of [`\`\`\`text\n${report.text}\n\`\`\``, 'I will send the CEO completion report after Design.']) {
     expect(observe([lastParentMessage, { ...report, text }])).toEqual([]);
+  }
+});
+
+// Minimal exact public projection of the two f359 CEO close failures. Packet
+// hashes/complete ranges were authenticated against each original Read result;
+// only this parent-message boundary is replayed here, not semantic compliance.
+test.each([
+  { attempt: 'uREF54', sessionId: '94599121-1626-4188-a553-e68579eeb329',
+    lastAt: '2026-09-16T07:37:49.858Z',
+    lastText: 'One stale phrase in R1: "production p95 ≤ 300ms over each 48h cohort hold" contradicts row 40 (hold = max(48h, power-based minimum)). Fixing both copies, then regenerating the packet.',
+    readId: 'toolu_01AEEg5eZxFJdurZgdDQsUs3', readAt: '2026-09-16T07:38:07.954Z', lines: 137,
+    packetSha256: '6e1349a485c2d21bb62588df2730439f5dfffbcc5faaf6f9dc500178dbb3fe1d',
+    designId: 'toolu_01VCEDJEdVHpqX3d6VuLBMrx', designAt: '2026-09-16T07:38:18.984Z' },
+  { attempt: 'RhTXQ5', sessionId: '45abf2fa-0d62-471f-9efa-9a0d5b2ec1b5',
+    lastAt: '2026-09-16T08:26:23.970Z',
+    lastText: 'Task JSONL written (11 lines). Now reading `phase-close.md` afresh to close Phase 1.',
+    readId: 'toolu_01AnPNRCY2c9Lg6nvSMpdYsp', readAt: '2026-09-16T08:26:42.105Z', lines: 138,
+    packetSha256: '0de1420a316b222df62b5454bcea6d812b4e5040d873a225bfe89840c5a1652f',
+    designId: 'toolu_0116k1GsR8JxowqSYBJtJbpi', designAt: '2026-09-16T08:26:52.230Z' },
+])('captured f359 $attempt complete packet leaves publication pending', evidence => {
+  const message = { sessionId: evidence.sessionId, timestamp: evidence.lastAt, text: evidence.lastText };
+  const boundary = Date.parse(evidence.designAt);
+  const observe = (messages: typeof message[]) => autoplanPhaseCompletions({ status: 'ready', calls: [],
+    assistantMessages: messages.filter(row => Date.parse(row.timestamp) <= boundary) }, Date.parse(evidence.lastAt));
+  expect(Date.parse(evidence.readAt)).toBeLessThan(boundary);
+  expect(observe([message])).toEqual([]);
+  // Synthetic publication tests only the missing native operation and its order.
+  const report = { ...message, timestamp: new Date(boundary - 1).toISOString(),
+    text: '**Phase 1 complete.**\nOutside review: disabled. Native subagent: completed: 9 issues.\n'
+      + 'Consensus: N/A (voice coverage missing).\nPassing to Phase 2 (Design Review).' };
+  expect(observe([message, report])).toEqual([{phase: 1, ts: boundary - 1}]);
+  expect(observe([message, {...report, timestamp: new Date(boundary + 1).toISOString()}])).toEqual([]);
+  for (const text of ['```text\n' + report.text + '\n```', '> Phase 1 complete.',
+    'Expected output:\n' + report.text, 'I will publish Phase 1 complete after Design.']) {
+    expect(observe([message, {...report, text}])).toEqual([]);
   }
 });

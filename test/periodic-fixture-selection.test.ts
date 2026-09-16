@@ -44,6 +44,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/autoplan-dual-voice-evidence.test.ts', ['autoplan-dual-voice']],
     ['test/fixtures/autoplan-dual-false-positive-6bd.json', ['autoplan-dual-voice']],
     ['test/helpers/autoplan-method-read-audit.ts', ['autoplan-chain-pty', 'autoplan-dual-voice']],
+    ['test/fixtures/autoplan-phase-entry-alias-f359.json', ['autoplan-chain-pty']],
     ['test/fixtures/autoplan-method-read-aa-events.json', ['autoplan-chain-pty', 'autoplan-dual-voice']],
     ['test/helpers/outside-voice-evidence.ts', ['autoplan-dual-voice', 'outside-plan-disabled-no-fallback',
       'outside-voice-claude-code-to-codex', 'outside-voice-codex-to-claude-code']],

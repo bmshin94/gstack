@@ -1,15 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { prepareMethodology, createSnapshot } from '../bin/gstack-autoplan-snapshot';
-import { auditAutoplanMethodReads, loadAutoplanMethodologyBinding, prematureAutoplanPhaseEntry,
+import { auditAutoplanMethodReads, loadAutoplanMethodologyBinding, prematureAutoplanPhaseEntry, registerAutoplanPhaseInstructionAliases,
   type AutoplanPhaseInstruction } from './helpers/autoplan-method-read-audit';
 import { readPlanCountTranscript, type NativePublicToolEvent } from './helpers/plan-count-transcript';
 import recorded from './fixtures/autoplan-method-read-aa-events.json';
 import phaseEntry from './fixtures/autoplan-phase-entry-cf74.json';
+import aliasEntry from './fixtures/autoplan-phase-entry-alias-f359.json';
 const ROOT = resolve(import.meta.dir, '..');
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const events = () => clone(recorded.events) as NativePublicToolEvent[];
@@ -269,5 +271,103 @@ describe('completed parent phase-instruction Reads require an earlier published 
       const transcript = readPlanCountTranscript(dir, cwd, event => projected.push(event));
       expect(prematureAutoplanPhaseEntry(projected, transcript, [f.instruction], f.startedAt) !== null).toBe(variant === 'parent');
     }
+  });
+});
+
+describe('owned installed phase aliases use the actual chain registration', () => {
+  function aliasFixture(phase: AutoplanPhaseInstruction['phase'] = 'design') {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'gstack-phase-alias-'))); owned.push(dir);
+    const source = join(dir, 'source', 'autoplan'), config = join(dir, '.claude');
+    const canonical = join(source, 'sections', `${phase}-phase.md`);
+    const content = readFileSync(join(ROOT, 'autoplan', 'sections', `${phase}-phase.md`), 'utf8');
+    // Populate the owned source before installing links; never write through a registration.
+    mkdirSync(join(source, 'sections'), { recursive: true }); writeFileSync(canonical, content);
+    mkdirSync(join(config, 'skills', 'gstack'), { recursive: true });
+    const short = join(config, 'skills', 'autoplan'), legacy = join(config, 'skills', 'gstack', 'autoplan');
+    for (const alias of [short, legacy]) symlinkSync(source, alias, 'junction');
+    const events = clone(aliasEntry.events) as NativePublicToolEvent[];
+    const transcript = { status: 'ready' as const, calls: [], assistantMessages: clone(aliasEntry.assistantMessages) };
+    const instruction: AutoplanPhaseInstruction = { phase, requiredPhase: phase === 'design' ? 1 : phase === 'dx' ? 2 : 2.5,
+      paths: [canonical], content };
+    const usePath = (filePath: string) => {
+      events[0]!.input!.file_path = filePath;
+      events[1]!.file = { ...(events[1]!.file as object), filePath, content,
+        numLines: content.split('\n').length, totalLines: content.split('\n').length };
+    };
+    usePath(join(short, 'sections', `${phase}-phase.md`));
+    const register = () => registerAutoplanPhaseInstructionAliases([instruction], config);
+    const startedAt = Date.parse(transcript.assistantMessages[0]!.timestamp);
+    const audit = () => prematureAutoplanPhaseEntry(events, transcript, [instruction], startedAt);
+    return { dir, source, config, canonical, short, legacy, instruction, events, transcript, startedAt, register, usePath, audit };
+  }
+  test('the retained f359 short alias Read/ACK establishes the missed premature Design entry', () => {
+    const f = aliasFixture();
+    expect(createHash('sha256').update(f.instruction.content).digest('hex')).toBe(aliasEntry.sourceSha256);
+    expect(f.instruction.content).toBe((aliasEntry.events[1]!.file as { content: string }).content);
+    expect(f.transcript.assistantMessages).toHaveLength(34);
+    expect(f.audit()).toBeNull(); // Canonical alone reproduces the actual unregistered path.
+    f.register();
+    expect(f.audit()).toMatchObject({ phase: 'design', requiredPhase: 1,
+      sessionId: '45abf2fa-0d62-471f-9efa-9a0d5b2ec1b5', readToolUseId: 'toolu_0116k1GsR8JxowqSYBJtJbpi',
+      readAt: '2026-09-16T08:26:52.230Z', resultAt: '2026-09-16T08:26:52.251Z' });
+  });
+  test.each(['design', 'dx', 'eng'] as const)('both supported %s aliases and the canonical source retain the same boundary', phase => {
+    const f = aliasFixture(phase); f.register(); f.register();
+    const paths = [f.canonical, ...[f.short, f.legacy].map(alias => join(alias, 'sections', `${phase}-phase.md`))];
+    expect([...f.instruction.paths].sort()).toEqual(paths.sort());
+    for (const filePath of paths) {
+      f.usePath(filePath);
+      expect(f.audit()).toMatchObject({ phase, requiredPhase: f.instruction.requiredPhase });
+    }
+  });
+  test.each(['foreign-target', 'unregistered-path', 'changed-source', 'missing-alias'] as const)
+  ('%s cannot register an owned-looking phase entry', change => {
+    const f = aliasFixture();
+    const foreign = join(f.dir, 'foreign', 'autoplan'); mkdirSync(join(foreign, 'sections'), { recursive: true });
+    writeFileSync(join(foreign, 'sections', 'design-phase.md'), f.instruction.content);
+    if (change === 'foreign-target' || change === 'missing-alias') {
+      rmSync(f.short);
+      symlinkSync(change === 'foreign-target' ? foreign : join(f.dir, 'missing'), f.short, 'junction');
+    }
+    if (change === 'unregistered-path') f.usePath(join(foreign, 'sections', 'design-phase.md'));
+    if (change === 'changed-source') writeFileSync(f.canonical, f.instruction.content + 'Changed after binding.\n');
+    f.register();
+    expect(f.audit()).toBeNull();
+  });
+  test.each(['foreign-result', 'changed-result', 'error', 'unknown-status', 'unpaired', 'missing-ack', 'backward-ack'] as const)
+  ('a registered alias with %s cannot establish a successful entry', change => {
+    const f = aliasFixture(); f.register(); const result = f.events[1]!, file = result.file as any;
+    if (change === 'foreign-result') file.filePath = join(f.dir, 'foreign', 'design-phase.md');
+    if (change === 'changed-result') file.content += 'Changed';
+    if (change === 'error') result.isError = true;
+    if (change === 'unknown-status') delete result.isError;
+    if (change === 'unpaired') result.toolUseId += '-orphan';
+    if (change === 'missing-ack') f.events.pop();
+    if (change === 'backward-ack') result.timestamp = new Date(Date.parse(f.events[0]!.timestamp) - 1).toISOString();
+    expect(f.audit()).toBeNull();
+  });
+  test.each([-1, 0, 1, 30_000])('publication at alias request %+d ms keeps request-time ordering even with a later ACK', delta => {
+    const f = aliasFixture(); f.register(); const at = Date.parse(f.events[0]!.timestamp);
+    f.events[1]!.timestamp = new Date(at + 60_000).toISOString();
+    f.transcript.assistantMessages.push({ sessionId: f.events[0]!.sessionId,
+      timestamp: new Date(at + delta).toISOString(), text: 'Phase 1 complete.' });
+    expect(f.audit() === null).toBe(delta <= 0);
+  });
+  test.each(['parent', 'child', 'foreign-cwd', 'pending-ack'] as const)
+  ('the owned native reader preserves %s semantics for the captured short alias', variant => {
+    const f = aliasFixture(); f.register();
+    const project = join(f.config, 'projects', 'fixture'); mkdirSync(project, { recursive: true });
+    const rows = f.events.slice(0, variant === 'pending-ack' ? 1 : 2).map(event => ({
+      cwd: variant === 'foreign-cwd' ? join(f.dir, 'foreign-cwd') : f.dir, isSidechain: variant === 'child',
+      sessionId: event.sessionId, timestamp: event.timestamp,
+      message: { role: event.kind === 'use' ? 'assistant' : 'user', content: [event.kind === 'use'
+        ? { type: 'tool_use', id: event.toolUseId, name: event.name, input: event.input }
+        : { type: 'tool_result', tool_use_id: event.toolUseId, is_error: event.isError, content: event.content }] },
+      toolUseResult: event.kind === 'result' ? { file: event.file } : undefined,
+    }));
+    writeFileSync(join(project, `${f.events[0]!.sessionId}.jsonl`), rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    const projected: NativePublicToolEvent[] = [];
+    const transcript = readPlanCountTranscript(f.config, f.dir, event => projected.push(event));
+    expect(prematureAutoplanPhaseEntry(projected, transcript, [f.instruction], f.startedAt) !== null).toBe(variant === 'parent');
   });
 });
