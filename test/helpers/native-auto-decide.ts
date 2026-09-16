@@ -55,8 +55,37 @@ function selectedMode(value: string): string | null {
   // boundary for declarations and corrections: explanation punctuation cannot
   // turn a completed choice into a withdrawal. modeField checks the full value
   // first so conditional or unfinished explanations still fail closed.
-  const match = /^(.+?)(?:\s+\([^()]*\)[.!;]?$|[.,;:]|\s+[—–-]\s+\S|$)/.exec(value);
-  return match?.[1]?.trim().toUpperCase() ?? null;
+  const match = /^(.+?)(?:(\s+\()|[.,;:]|\s+[—–-]\s+\S|$)/.exec(value);
+  const mode = match?.[1]?.trim().toUpperCase() ?? null;
+  // The new completed-field form belongs to the closed review-mode vocabulary.
+  // Generic Skill annotations keep their prior mode delimiter behavior.
+  if (!mode || !modeNames.includes(mode)) {
+    const original = /^(.+?)(?:\s+\([^()]*\)[.!;]?$|[.,;:]|\s+[—–-]\s+\S|$)/.exec(value);
+    return original?.[1]?.trim().toUpperCase() ?? null;
+  }
+  // A balanced explanation can contain punctuation, nesting and following
+  // prose. Validate its whole field before recognizing the opening boundary;
+  // an unfinished explanation or a glued-on alternative is not a declaration.
+  let depth = 0;
+  let firstParentheticalEnd = -1;
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === '(') depth++;
+    if (value[i] === ')') {
+      if (--depth < 0) return null;
+      if (depth === 0 && firstParentheticalEnd < 0) firstParentheticalEnd = i;
+      if (depth === 0 && value[i + 1] && !/[\s.,;:—–-]/.test(value[i + 1]!)) return null;
+    }
+  }
+  if (depth !== 0) return null;
+  if (match?.[2]) {
+    // One current field names one mode. A different mode after its explanation
+    // is ambiguous regardless of the joining word or punctuation; it cannot be
+    // discarded as suffix prose. A separate later Mode field is checked below.
+    const suffix = value.slice(firstParentheticalEnd + 1);
+    if (modeNames.some(other => other !== mode &&
+      new RegExp(`\\b${other.replaceAll(' ', '[ _]+')}\\b`, 'i').test(suffix))) return null;
+  }
+  return mode;
 }
 
 function withdrawn(text: string, option: string): boolean {

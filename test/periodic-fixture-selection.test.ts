@@ -5,6 +5,7 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
     ['test/ceo-current-decision-record.test.ts', ['plan-ceo-finding-count']],
+    ['test/fixtures/auto-decide-mode-selector-749df.json', ['auto-decide-preserved']],
     ['test/fixtures/ceo-current-decision-cdd-public.json', ['plan-ceo-finding-count']],
     ['test/fixtures/eng-count-c6fc-public.json', ['plan-eng-finding-count']],
     ['test/fixtures/eng-cdd-regression-task.json', ['plan-eng-finding-count']],
@@ -383,7 +384,7 @@ test('explanatory native mode evidence selects all observers with their existing
     'plan-ceo-review-plan-mode', 'plan-design-review-plan-mode', 'plan-devex-review-plan-mode',
     'plan-eng-review-plan-mode', 'plan-mode-no-op'];
   for (const file of ['test/helpers/native-auto-decide.ts', 'test/auto-decide-explanatory-mode.test.ts',
-    'test/fixtures/auto-decide-explanatory-mode-043a.json']) {
+    'test/fixtures/auto-decide-explanatory-mode-043a.json', 'test/fixtures/auto-decide-explanatory-mode-749df.json']) {
     expect([...selectTests([file], E2E_TOUCHFILES).selected].sort()).toEqual(expected);
     expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
   }

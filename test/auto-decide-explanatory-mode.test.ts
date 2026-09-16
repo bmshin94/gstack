@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { findNativeAutoDecision } from './helpers/native-auto-decide';
 import capture from './fixtures/auto-decide-explanatory-mode-043a.json';
+import captured749 from './fixtures/auto-decide-explanatory-mode-749df.json';
 import annotations from './fixtures/native-auto-decide-ag.json';
 
 const clone = () => structuredClone(capture) as any;
@@ -132,3 +133,131 @@ for (const field of ['Mode', 'Mode decision', 'Review mode', 'Review mode decisi
     expect(decide(f)).toBeNull();
   });
 }
+
+const clone749 = () => structuredClone(captured749) as any;
+const declaration749 = (f: any) => f.transcript.assistantMessages.find((m: any) =>
+  m.timestamp === '2026-09-16T12:13:02.513Z');
+
+test('actual 749 public declaration agrees with its retained owned append', () => {
+  // Exact public tools, final declaration and owned log were captured while the
+  // paid observer was still waiting. This free replay does not promote that run.
+  const f = clone749();
+  const result = decide(f);
+  expect(result?.option).toBe('HOLD SCOPE');
+  expect(result?.annotation).toBe(declaration749(f).text);
+  expect(result?.stateRecord).toEqual(f.options.stateEvidence.records[0]);
+});
+
+const explanatoryTails = [
+  ' (saved preference; no prompt required). The review remains paused.',
+  ' (saved preference (confirmed for this project); no prompt required). The review remains paused.',
+  ' (saved preference), recorded for this invocation.',
+  ' (saved preference): recorded for this invocation.',
+  ' (saved preference) — recorded for this invocation.',
+  ' (saved preference)\nThe review remains paused.',
+  '. Selected from the saved preference (recorded).',
+  '; selected from the saved preference (recorded).',
+];
+for (const tail of explanatoryTails) {
+  test(`balanced explanation with following prose is a complete declaration: ${JSON.stringify(tail)}`, () => {
+    const f = clone749(); declaration749(f).text = `Mode decision: HOLD SCOPE${tail}`;
+    expect(decide(f)?.option).toBe('HOLD SCOPE');
+  });
+  test(`matching later explanation preserves the current decision: ${JSON.stringify(tail)}`, () => {
+    const f = clone749(); declaration749(f).text += `\n\nMode: HOLD SCOPE${tail}`;
+    expect(decide(f)?.option).toBe('HOLD SCOPE');
+  });
+  test(`conflicting later explanation withdraws the current decision: ${JSON.stringify(tail)}`, () => {
+    const f = clone749(); declaration749(f).text += `\n\nMode: SCOPE EXPANSION${tail}`;
+    expect(decide(f)).toBeNull();
+  });
+}
+
+const incompleteFields = [
+  'Mode: HOLD SCOPE (saved preference; recorded.',
+  'Mode: HOLD SCOPE (saved preference (recorded).',
+  'Mode: HOLD SCOPE (saved preference)). Recorded.',
+  'Mode: HOLD SCOPE (saved preference)SCOPE EXPANSION',
+  'Mode: HOLD SCOPE. A following explanation (unfinished.',
+  'Mode: HOLD SCOPE (saved preference). If approved.',
+  'Mode: HOLD SCOPE (saved preference (if approved)). Recorded.',
+  'Mode: HOLD SCOPE (saved preference). Not yet selected.',
+  'Mode: HOLD SCOPE (saved preference). I did not auto-decide the review mode.',
+  'Mode: HOLD SCOPE (saved preference). This decision is withdrawn.',
+  'Mode decision pending: HOLD SCOPE (saved preference). Recorded.',
+  'Mode decision tentative: HOLD SCOPE (saved preference). Recorded.',
+  'Mode: CUSTOM MODE (saved preference). Recorded.',
+  'Mode: HOLD SCOPE / SCOPE EXPANSION (saved preference). Recorded.',
+  'Mode: HOLD SCOPE (saved preference).\nMode decision pending: HOLD SCOPE',
+];
+for (const field of incompleteFields) {
+  test(`explanatory prose cannot complete an unsupported field: ${JSON.stringify(field)}`, () => {
+    const f = clone749(); declaration749(f).text = field;
+    expect(decide(f)).toBeNull();
+  });
+  test(`later unsupported field retracts the earlier decision: ${JSON.stringify(field)}`, () => {
+    const f = clone749(); declaration749(f).text += `\n\n${field}`;
+    expect(decide(f)).toBeNull();
+  });
+}
+
+for (const [name, mutate] of Object.entries({
+  'missing owned append': (f: any) => { f.options.stateEvidence.records = []; },
+  'foreign owned session': (f: any) => { f.options.stateEvidence.records[0].session_id = 'foreign'; },
+  'duplicate owned append': (f: any) => { f.options.stateEvidence.records.push({ ...f.options.stateEvidence.records[0] }); },
+  'conflicting logged choice': (f: any) => { f.options.stateEvidence.records[0].user_choice = 'SCOPE EXPANSION'; },
+  'failed preamble': (f: any) => {
+    const preamble = f.tools.find((e: any) => e.kind === 'use' && e.input?.command?.includes('gstack-skill-start'));
+    f.tools.find((e: any) => e.kind === 'result' && e.toolUseId === preamble.toolUseId).isError = true;
+  },
+  'native question': (f: any) => { f.transcript.calls.push({ sessionId: f.options.sessionId }); },
+  'declaration before owned append': (f: any) => { declaration749(f).timestamp = '2026-09-16T12:12:00.000Z'; },
+  'quoted declaration': (f: any) => { declaration749(f).text = '> Mode: HOLD SCOPE (saved preference). Recorded.'; },
+  'example declaration': (f: any) => { declaration749(f).text = 'Example:\nMode: HOLD SCOPE (saved preference). Recorded.'; },
+})) test(`captured explanatory mode still requires ${name}`, () => {
+  const f = clone749(); mutate(f); expect(decide(f)).toBeNull();
+});
+
+const reviewModes = ['HOLD SCOPE', 'SCOPE EXPANSION', 'SELECTIVE EXPANSION', 'SCOPE REDUCTION'];
+for (const mode of reviewModes) {
+  for (const tail of [' (saved preference). Recorded for this invocation.',
+    ' (saved preference (confirmed); recorded). No further mode decision.',
+    ` (saved preference). ${mode} is recorded for this invocation.`]) {
+    test(`each complete review mode supports an unambiguous explanatory suffix: ${mode}${tail}`, () => {
+      const f = clone749();
+      Object.assign(f.options.stateEvidence.records[0], { user_choice: mode, recommended: mode });
+      declaration749(f).text = `Mode: ${mode}${tail}`;
+      expect(decide(f)?.option).toBe(mode);
+    });
+  }
+  for (const other of reviewModes.filter(value => value !== mode)) {
+    for (const connector of [' or ', ' versus ', ' vs. ', ' / ', ' | ', '; or ', ', choose ',
+      '. Alternatively, select ', ' — instead choose ', ' (otherwise choose ', ' rather than ']) {
+      test(`a second distinct mode in the suffix stays ambiguous: ${mode}${connector}${other}`, () => {
+        const f = clone749();
+        Object.assign(f.options.stateEvidence.records[0], { user_choice: mode, recommended: mode });
+        const tail = connector.startsWith(' (') ? ')' : '';
+        declaration749(f).text = `Mode: ${mode} (saved preference)${connector}${other}${tail}`;
+        expect(decide(f)).toBeNull();
+      });
+    }
+  }
+}
+
+test('alternate current mode spellings remain ambiguous after an explanatory parenthetical', () => {
+  for (const alternative of ['scope expansion', 'SCOPE_EXPANSION', 'SCOPE   EXPANSION']) {
+    const f = clone749(); declaration749(f).text = `Mode: HOLD SCOPE (saved preference); ${alternative}`;
+    expect(decide(f)).toBeNull();
+  }
+});
+
+test('generic annotation vocabulary retains its original parenthetical boundaries', () => {
+  for (const suffix of ['', ' or Startup', '; or Startup', ' versus Startup', '. Recorded for this invocation.']) {
+    const f = structuredClone(annotations.attempts[0]) as any;
+    f.options.skillName = 'office-hours';
+    f.tools.find((e: any) => e.kind === 'use' && e.name === 'Skill').input.skill = 'office-hours';
+    const message = f.transcript.assistantMessages.find((m: any) => m.text.startsWith('Auto-decided'));
+    message.text = `Auto-decided workflow → **Builder** (your preference). Change with /plan-tune.\n\nMode: Builder (saved preference)${suffix}`;
+    expect(decide(f)?.option ?? null).toBe(suffix ? null : 'Builder');
+  }
+});
