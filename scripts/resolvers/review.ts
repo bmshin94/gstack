@@ -81,16 +81,18 @@ ${['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName) ? 'Display a fr
 export function generatePlanFileReviewReport(ctx: TemplateContext): string {
   const beforeLog = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'plan-devex-review'].includes(ctx.skillName);
   const ceo = ctx.skillName === 'plan-ceo-review';
+  const eng = ctx.skillName === 'plan-eng-review';
+  const reviewFile = eng ? 'report file' : 'plan file';
   const conditionalWrites = ceo || ctx.skillName === 'plan-eng-review';
   const storagePolicy = ceo ? 'Step 0 storage policy' : 'Review record and write policy';
   const result = `## Plan File Review Report
 
-${beforeLog ? (conditionalWrites ? `Produce the complete accepted plan and review output, including this report, under the ${storagePolicy} before announcing completion.` : 'Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.') : `After displaying the Review Readiness Dashboard in conversation output, also update the
+${beforeLog ? (conditionalWrites ? (eng ? 'In finish step 2, save the working plan and complete review body with the terminal report below. Apply **Review record and write policy**.' : `Produce the complete accepted plan and review output, including this report, under the ${storagePolicy} before announcing completion.`) : 'Save the accepted plan changes and full review output, including the report below, before logging or announcing completion.') : `After displaying the Review Readiness Dashboard in conversation output, also update the
 **plan file** itself so review status is visible to anyone reading the plan.`}
 
 ### ${ctx.skillName === 'plan-eng-review' ? 'Use the selected report file' : 'Detect the plan file'}
 
-${ctx.skillName === 'plan-eng-review' ? 'Use the report file selected under **Review record and write policy** for the Scope gate\'s target. "Plan file" in the writer and EXIT gate means this file, including a standalone code-review report. Do not discover or substitute another plan. Apply that policy if the destination is unavailable.' : beforeLog ? `Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. ${conditionalWrites ? `Apply the ${storagePolicy}. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.` : 'If no file is in scope, skip this section; ordinary no-file review logging still applies.'}` : `1. Check if there is an active plan file in this conversation (the host provides plan file
+${ctx.skillName === 'plan-eng-review' ? 'Use the report file already selected under **Review record and write policy**. Do not choose another destination here.' : beforeLog ? `Use an explicitly requested output/report file first. Otherwise use the reviewed plan named by the user, then the host active plan. ${conditionalWrites ? `Apply the ${storagePolicy}. Without a permitted file, produce the complete reviewed plan and report in chat, labeled not persisted; do not skip report generation.` : 'If no file is in scope, skip this section; ordinary no-file review logging still applies.'}` : `1. Check if there is an active plan file in this conversation (the host provides plan file
    paths in system messages — look for plan file references in the conversation context).
 2. If not found, skip this section silently — not every review runs in plan mode.`}
 
@@ -156,16 +158,16 @@ This avoids double-counting: list THIS review's open items from context; for pri
 sum \\\`unresolved\\\` over the latest fresh row per skill (dashboard 7-day window) after you
 DROP the current skill's row; emit the sentinel only when both are zero.
 
-### Write to the plan file
+### Write to the ${reviewFile}
 
-${beforeLog ? (conditionalWrites ? `If the ${ctx.skillName === 'plan-eng-review' ? 'report destination' : 'target'} is absent or writing is forbidden, assemble the same complete plan, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed.${ctx.skillName === 'plan-eng-review' ? ' Then follow **Blocked outcome** in the entrypoint.' : ''} Otherwise save only accepted changes, keeping unresolved choices pending:` : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
+${beforeLog ? (conditionalWrites ? `If the ${ctx.skillName === 'plan-eng-review' ? 'report destination' : 'target'} is absent or writing is forbidden, assemble the same complete ${eng ? 'working plan' : 'plan'}, review output and terminal report in chat, labeled not persisted. Do not run the file-writing steps below or claim their Read-back gate passed.${ctx.skillName === 'plan-eng-review' ? ' Then follow **Blocked outcome** in the entrypoint.' : ''} Otherwise save only accepted changes, keeping unresolved choices pending:` : '**PLAN MODE EXCEPTION — ALWAYS RUN:** Save the complete reviewed plan/report with only accepted changes applied; keep unresolved choices pending.') : `**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.`}
 
-The report must always be the LAST section of the plan file — never mid-file.
+The report must always be the LAST section of the ${reviewFile} — never mid-file.
 Use a single delete-then-append flow:
 
-${beforeLog ? `1. Read the existing plan/report, if present. Preserve its content and apply only
+${beforeLog ? `1. Read the existing ${eng ? 'report file' : 'plan/report'}, if present. Preserve its content and apply only
    accepted changes; include the full review output. Locate any existing
    \`## GSTACK REVIEW REPORT\` section.` : `1. Read the plan file (Read tool) to see its full current content. Search the read
    output for a \\\`## GSTACK REVIEW REPORT\\\` heading anywhere in the file.`}
@@ -173,7 +175,7 @@ ${beforeLog ? `1. Read the existing plan/report, if present. Preserve its conten
    \\\`## GSTACK REVIEW REPORT\\\` through either the next \\\`## \\\` heading or end of
    file, whichever comes first. Replace with the empty string. This applies
    regardless of where the section currently lives — mid-file deletion is
-   intentional, not a special case. ${ceo ? 'If the Edit fails, report the error and stop before Review Log or decision logging.' : 'If the Edit fails (e.g., concurrent edit\n   changed the content), re-read the plan file and retry once.'}
+   intentional, not a special case. ${ceo ? 'If the Edit fails, report the error and stop before Review Log or decision logging.' : `If the Edit fails (e.g., concurrent edit\n   changed the content), re-read the ${reviewFile} and retry once.`}
 3. If a report was deleted, Read the updated file. Append the new
    \\\`## GSTACK REVIEW REPORT\\\` at EOF. Use Edit to match the suffix
    confirmed by the latest Read, or Write the full file with the report last.${beforeLog ? ' Append whether or not a prior report existed.' : ''}
@@ -257,10 +259,10 @@ changed choices, then Approval readiness, then repeats affected outputs,
 Read-back, Review Log and dashboard.
 
 Verify all five checks against the selected report file:
-1. Read the plan file after your most recent write.
+1. Read the report file after your most recent write.
 2. Its LAST \`## \` heading is exactly \`## GSTACK REVIEW REPORT\`.
-3. The report contains a Runs / Status / Findings table and VERDICT; include
-   OUTSIDE COVERAGE / CROSS-MODEL when applicable.
+3. The report table has all six columns: Review / Trigger / Why / Runs / Status /
+   Findings. It includes VERDICT and, when applicable, OUTSIDE COVERAGE / CROSS-MODEL.
 4. Its final non-whitespace line is the exact unbolded \`NO UNRESOLVED DECISIONS\`,
    or the last bullet under \`**UNRESOLVED DECISIONS:**\`. A bolded sentinel,
    missing status or trailing prose fails this check.
@@ -932,7 +934,7 @@ When the mode is anything except \`disabled\`, print one line so the off-switch
 stays discoverable: "Running the outside voice automatically (standard step). Disable: \`gstack-config set codex_reviews disabled\`."
 
 **Construct the plan review prompt** for every remaining mode, including native fallback modes (skip only on \`disabled\`).
-${ctx.skillName === 'plan-ceo-review' ? 'Use the current complete working plan, whether saved or in chat under the storage policy. Include the CEO scope summary when available for this mode; do not substitute stale file content.' : `Read the plan file being reviewed (the file the user pointed this review at, or the branch
+${ctx.skillName === 'plan-ceo-review' ? 'Use the current complete working plan, whether saved or in chat under the storage policy. Include the CEO scope summary when available for this mode; do not substitute stale file content.' : ctx.skillName === 'plan-eng-review' ? 'Use the current working plan, target evidence and actual decisions, whether saved or in chat under the write policy. Read any earlier CEO scope document for its scope decisions and vision; do not substitute stale file content.' : `Read the plan file being reviewed (the file the user pointed this review at, or the branch
 diff scope). If a CEO scope document from an earlier \`/plan-ceo-review\` is available, read that too — it contains
 the scope decisions and vision.`}
 

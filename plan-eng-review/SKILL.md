@@ -687,10 +687,10 @@ changed choices, then Approval readiness, then repeats affected outputs,
 Read-back, Review Log and dashboard.
 
 Verify all five checks against the selected report file:
-1. Read the plan file after your most recent write.
+1. Read the report file after your most recent write.
 2. Its LAST `## ` heading is exactly `## GSTACK REVIEW REPORT`.
-3. The report contains a Runs / Status / Findings table and VERDICT; include
-   OUTSIDE COVERAGE / CROSS-MODEL when applicable.
+3. The report table has all six columns: Review / Trigger / Why / Runs / Status /
+   Findings. It includes VERDICT and, when applicable, OUTSIDE COVERAGE / CROSS-MODEL.
 4. Its final non-whitespace line is the exact unbolded `NO UNRESOLVED DECISIONS`,
    or the last bullet under `**UNRESOLVED DECISIONS:**`. A bolded sentinel,
    missing status or trailing prose fails this check.
@@ -702,7 +702,7 @@ an unrecovered save cannot pass. If any check fails, follow **Blocked outcome**
 without success telemetry or ExitPlanMode. Body prose cannot replace the
 separate terminal structured report.
 
-After the gate passes: **Telemetry (run last)** once with `OUTCOME=success`, then cache refresh. Make no further plan or approval changes between verification and exit.
+After the gate passes: **Telemetry (run last)** once with `OUTCOME=success`, then cache refresh. Make no further working-plan or approval changes between verification and exit.
 
 ## Brain Cache Background Refresh
 

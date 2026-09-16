@@ -138,7 +138,7 @@ describe('workflow judge excerpts', () => {
     const { skillPath, startMarker, endMarker } = ENG_REVIEW_EXCERPT;
     const eng = readWorkflowExcerpt(skillPath, startMarker, endMarker);
     const stages = ['## Review preparation', '## Retrospective learning', '## Confidence Calibration', '## Decision procedure',
-      '**Decision gate (all sections and outside voice):**', '## Review Sections',
+      '### 1. Establish current state', '## Review Sections',
       '### 1. Architecture review', '### 2. Code quality review', '### 3. Test review', '### 4. Performance review']
       .map(heading => eng.indexOf(heading));
     expect(stages.every(index => index >= 0)).toBe(true);
@@ -148,12 +148,12 @@ describe('workflow judge excerpts', () => {
     const headings = marked.lexer(procedure).filter(token => token.type === 'heading' && token.depth === 3);
     expect(headings.map(token => token.text)).toEqual(['1. Establish current state', '2. Separate independent choices', '3. Compare one choice',
       '4. Save the pending record', '5. Ask and wait', '6. Apply and refresh']);
-    expect(procedure).toContain('**Save a pending remedy before asking:**');
+    expect(procedure).toContain("### 4. Save the pending record");
     expect(procedure).toContain('### 5. Ask and wait');
-    expect(procedure).toContain('**Apply the answer:**');
+    expect(procedure).toContain("### 6. Apply and refresh");
     const outputs = ['### TODOS.md updates', '## Approval readiness', '## Required outputs', '## Implementation Tasks',
       '### Unresolved decisions', '### Completion summary', '## Plan File Review Report',
-      '### Write to the plan file', '## Review Log'].map(heading => eng.indexOf(heading));
+      '### Write to the report file', '## Review Log'].map(heading => eng.indexOf(heading));
     expect(outputs.every(index => index > stages[stages.length - 1]!)).toBe(true);
     expect(outputs).toEqual([...outputs].sort((a, b) => a - b));
   });
@@ -229,11 +229,11 @@ console.log(JSON.stringify({calls, results}));
     const tests = eng.slice(eng.indexOf('### 3. Test review'), eng.indexOf('### 4. Performance review'));
     const scope = tests.indexOf('### LLM/eval scope');
     const decisions = tests.indexOf('**Step 5. Add missing tests to the plan:**');
-    const stop = tests.indexOf('**STOP for each pending decision.**', decisions);
+    const stop = tests.indexOf("**STOP for each pending decision.**", decisions);
     const artifact = tests.indexOf('### Test Plan Artifact');
     expect(0 <= scope && scope < decisions && decisions < stop && stop < artifact).toBe(true);
     expect(tests.match(/For LLM\/prompt changes:/g)).toHaveLength(1);
-    expect(tests.slice(artifact)).not.toContain('**STOP for each pending decision.**');
+    expect(tests.slice(artifact)).not.toContain("**STOP for each pending decision.**");
     const fastPath = tests.slice(tests.indexOf('**Fast path:**'), scope);
     expect(fastPath).toContain('Still check LLM/eval scope and produce the Test Plan Artifact');
   });
@@ -245,10 +245,10 @@ console.log(JSON.stringify({calls, results}));
     expectOutsideReviewControlFlow(eng, '**Construct the plan review prompt**');
     expect(eng).toContain('Agreement between reviewers is evidence, not approval');
     expect(eng).toContain('new or reopened choices still need their own answers');
-    const pendingDecision = eng.slice(eng.indexOf('### 5. Ask and wait'), eng.indexOf('**Apply the answer:**'));
-    expect(pendingDecision).toContain('**STOP for each pending decision.**');
-    expect(pendingDecision.replace(/\s+/g, ' ')).toContain('Before remedies, another call, the next section or ExitPlanMode, await its actual answer');
-    expect(eng.replace(/\s+/g, ' ')).toContain('Scoped Edit saves the record and only authorized plan amendments; other choices stay unchanged');
+    const pendingDecision = eng.slice(eng.indexOf('### 5. Ask and wait'), eng.indexOf("### 6. Apply and refresh"));
+    expect(pendingDecision).toContain("**STOP until the actual answer arrives.**");
+    expect(pendingDecision.replace(/\s+/g, ' ')).toContain("Do not apply a remedy, make another call, start the next section or call ExitPlanMode while the choice awaits an answer");
+    expect(eng.replace(/\s+/g, ' ')).toContain("Use a scoped Edit to save this record and only the authorized working-plan amendments. Leave other choices unchanged");
     const design = readWorkflowExcerpt('plan-design-review/SKILL.md', '## Review Sections', '## CRITICAL RULE');
     expect(design).toContain('wait for approval, then edit the plan and re-rate');
     const pass4 = design.slice(design.indexOf('### Pass 4:'), design.indexOf('### Pass 5:'));
