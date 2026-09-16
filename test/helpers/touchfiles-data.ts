@@ -345,6 +345,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // the selector sets GSTACK_CARVE_SKILL=<name> to scope cost to the changed
   // skill (D-CODEX A). Touching the registry/helper or sections.ts runs all.
   'carve-section-loading':       [
+    'bin/gstack-review-log', 'bin/gstack-review-read', 'lib/review-evidence.ts',
+    'bin/gstack-slug', 'bin/gstack-wtree', 'bin/gstack-config', 'bin/gstack-brain-enqueue',
     'test/autoplan-amend-input.test.ts', 'test/fixtures/autoplan-amend-input-77.json',
     'test/autoplan-phase-handoff.test.ts', 'test/fixtures/autoplan-phase-handoff-6714.json','scripts/resolvers/learnings.ts', 'test/gstack-paths.test.ts',
     "test/plan-scope-recovery-av.test.ts",

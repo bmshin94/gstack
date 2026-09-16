@@ -96,6 +96,12 @@ export function registerCarveSectionCase(skill: string): void {
           planDir,
           skillName: guard.skill,
           scenario: guard.scenario,
+          // The final gate requires real local log/writeback helpers. Their
+          // state belongs to this capture; outside dispatch stays disabled.
+          ...(guard.skill === 'plan-eng-review' ? {
+            nativeReviewOnly: true,
+            artifactCommands: `Bash may run only the canonical local review helpers \`${path.resolve(__dirname, '../../bin/gstack-review-log')}\` with the actual review JSON and \`${path.resolve(__dirname, '../../bin/gstack-review-read')}\`. Use these paths instead of their installed-root equivalents. Keep the inherited GSTACK_HOME and GSTACK_STATE_ROOT unchanged; they identify this capture's private state. The helpers' internal read-only git inspection is permitted. Do not run other shell commands, provider tools, git mutations, implementation, or tests. Keep the complete legacy QA/task artifacts labeled not persisted when their specified paths are outside this fixture, as the review's write policy requires.`,
+          } : {}),
           // This actor approves the supplied bounded change, not every optional
           // addition a recommendation might bundle into it.
           decisionPolicy: guard.skill === 'plan-eng-review'

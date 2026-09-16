@@ -180,6 +180,16 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
   }
 });
 
+test('Eng section local review helpers select their carve evaluation', () => {
+  for (const file of ['bin/gstack-review-log', 'bin/gstack-review-read', 'lib/review-evidence.ts',
+    'bin/gstack-slug', 'bin/gstack-wtree', 'bin/gstack-config', 'bin/gstack-brain-enqueue']) {
+    const result = selectTests([file], E2E_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    expect(result.selected).toContain('carve-section-loading');
+  }
+  expect(E2E_TIERS['carve-section-loading']).toBe('periodic');
+});
+
 test('offering source lookup dependencies select all four gate audits', () => {
   const expected = ['codex-offered-office-hours', 'codex-offered-ceo-review',
     'codex-offered-design-review', 'codex-offered-eng-review'].sort();

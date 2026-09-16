@@ -264,6 +264,29 @@ export async function captureSectionReads(opts: {
   exitReason: SkillTestResult['exitReason']; toolCalls: SkillTestResult['toolCalls'];
   transcript: SkillTestResult['transcript']; output: string }> {
   const outFile = path.join(opts.planDir, opts.reportFile ?? 'REPORT.md');
+  // The Eng actor may run local review writers. Reject foreign destinations
+  // before creating its state or starting a child, including symlink escapes.
+  // Tool approval is not a filesystem sandbox; this checks fixture ownership.
+  if (opts.skillName === 'plan-eng-review' && opts.nativeReviewOnly && opts.artifactCommands) {
+    if (fs.lstatSync(opts.planDir).isSymbolicLink()) throw new Error('Eng section fixture root must not be a symlink');
+    const owner = fs.realpathSync(opts.planDir);
+    const isInside = (root: string, target: string) => {
+      const relative = path.relative(root, target);
+      return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+    };
+    if (path.resolve(outFile) === path.resolve(opts.planDir) || !isInside(path.resolve(opts.planDir), path.resolve(outFile))) {
+      throw new Error('Eng section report must stay inside its fixture root');
+    }
+    let existing = path.resolve(outFile);
+    for (;;) {
+      try { fs.lstatSync(existing); break; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        existing = path.dirname(existing);
+      }
+    }
+    if (!isInside(owner, fs.realpathSync(existing))) throw new Error('Eng section report must stay inside its fixture root');
+  }
   const readReport = (): Buffer | undefined => {
     try { return fs.readFileSync(outFile); }
     catch (error) {

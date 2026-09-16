@@ -3,6 +3,113 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+test('Eng carve executes its required canonical review helpers only in capture-owned state', async () => {
+  const root = path.resolve(import.meta.dir, '..');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eng-local-review-'));
+  const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
+  const observedFile = path.join(dir, 'observed.jsonl');
+  const source = path.join(root, 'test/helpers/auq-sdk-capture.ts');
+  const operatorState = path.join(dir, 'operator-state'); fs.mkdirSync(operatorState);
+  fs.writeFileSync(path.join(operatorState, 'config.yaml'), 'codex_reviews: enabled\n');
+  fs.writeFileSync(path.join(bin, 'claude'), String.raw`#!${process.execPath}
+const fs = require('node:fs'), path = require('node:path');
+const {spawnSync} = require('node:child_process');
+const prompt = await Bun.stdin.text(), args = process.argv.slice(2);
+const state = process.env.GSTACK_HOME;
+const helpers = [...prompt.matchAll(/\x60([^\x60]+\/bin\/gstack-review-(?:log|read))\x60/g)].map(m => m[1]);
+if (helpers.length !== 2) throw new Error('Missing canonical helpers');
+if (process.env.GSTACK_STATE_ROOT !== state || path.dirname(state) !== process.cwd()) throw new Error('Foreign state');
+if (!/^codex_reviews: disabled$/m.test(fs.readFileSync(path.join(state,'config.yaml'),'utf8'))) throw new Error('Outside dispatch enabled');
+const tools = args[args.indexOf('--tools') + 1].split(',');
+if (!tools.includes('Bash') || tools.includes('Agent')) throw new Error('Wrong local tool capability');
+console.log(JSON.stringify({type:'system',subtype:'init'}));
+const emit = (id, name, input, output, failed=false) => {
+ console.log(JSON.stringify({type:'assistant',message:{content:[{type:'tool_use',id,name,input}]}}));
+ console.log(JSON.stringify({type:'user',message:{content:[{type:'tool_result',tool_use_id:id,content:output,is_error:failed}]}}));
+};
+const section=path.join(process.cwd(),'plan-eng-review/sections/review-sections.md');
+emit('section','Read',{file_path:section},fs.readFileSync(section,'utf8'));
+const report=path.join(process.cwd(),'PLAN.md');
+fs.appendFileSync(report,'\n## GSTACK REVIEW REPORT\nSynthetic smoke artifact; no model review credit.\n');
+const record={skill:'plan-eng-review',timestamp:new Date().toISOString(),status:'issues_open',unresolved:1,critical_gaps:0,issues_found:1,mode:'BIG_CHANGE',outside_status:'disabled',plan_sha256:require('node:crypto').createHash('sha256').update(fs.readFileSync(report)).digest('hex')};
+const input=prompt.includes('invalid-json-control') ? '{' : JSON.stringify(record);
+const write=spawnSync(helpers[0],[input],{cwd:process.cwd(),env:process.env,encoding:'utf8',timeout:5000});
+emit('log','Bash',{command:helpers[0]+' '+JSON.stringify(input)},write.stdout+write.stderr,write.status!==0);
+const read=spawnSync(helpers[1],[],{cwd:process.cwd(),env:process.env,encoding:'utf8',timeout:5000});
+emit('dashboard','Bash',{command:helpers[1]},read.stdout+read.stderr,read.status!==0);
+const files = fs.readdirSync(state,{recursive:true}).map(String).filter(f=>f.endsWith('-reviews.jsonl'));
+fs.appendFileSync(${JSON.stringify(observedFile)},JSON.stringify({args,prompt,state,stateRoot:process.env.GSTACK_STATE_ROOT,helpers,record,writeStatus:write.status,readStatus:read.status,readOutput:read.stdout,files,rows:files.flatMap(file=>fs.readFileSync(path.join(state,file),'utf8').trim().split('\n').map(JSON.parse))})+'\n');
+console.log(JSON.stringify({type:'result',subtype:write.status===0&&read.status===0?'success':'error_during_execution',is_error:write.status!==0||read.status!==0,result:'Local executable smoke only.'}));
+`, { mode: 0o755 });
+  const script = path.join(dir, 'capture.fixture.test.ts');
+  fs.writeFileSync(script, `import {mock,describe,expect} from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+mock.module(${JSON.stringify(path.join(root,'test/helpers/eval-store.ts'))},()=>({getProjectEvalDir:()=>${JSON.stringify(path.join(dir,'evals'))}}));
+const capture=await import(${JSON.stringify(source)});
+const actualCapture=capture.captureSectionReads;
+mock.module(${JSON.stringify(path.join(root,'test/helpers/e2e-gate.ts'))},()=>({describeE2ETier:()=>describe}));
+mock.module(${JSON.stringify(source)},()=>({...capture,captureSectionReads:async opts=>{
+  expect(opts.nativeReviewOnly).toBe(true); expect(opts.timeout).toBe(480000); expect(opts.maxTurns).toBeUndefined();
+  expect(opts.artifactCommands).toContain('Do not run other shell commands, provider tools, git mutations, implementation, or tests');
+  expect(opts.decisionPolicy).toContain('Do not authorize optional scope');
+  const stateDirs=()=>fs.readdirSync(opts.planDir).filter(n=>n.startsWith('.gstack-section-state-'));
+  try {
+    const successful=await actualCapture({...opts,runId:undefined,timeout:5000,model:'fake-model'});
+    expect(successful.exitReason).toBe('success'); expect(successful.reportProduced).toBe(true);
+    expect(successful.toolCalls.map(c=>c.tool)).toEqual(['Read','Bash','Bash']);
+    expect(stateDirs()).toEqual([]);
+    const failed=await actualCapture({...opts,scenario:'invalid-json-control',runId:undefined,timeout:5000,model:'fake-model'});
+    expect(failed.reportWritten).toBe(true); expect(failed.reportProduced).toBe(false);
+    expect(failed.exitReason).not.toBe('success'); expect(stateDirs()).toEqual([]);
+    const outside=path.join(${JSON.stringify(dir)},'foreign-report.md'); fs.writeFileSync(outside,'preserve');
+    const check=async reportFile=>expect(actualCapture({...opts,reportFile,runId:undefined,model:'fake-model'})).rejects.toThrow();
+    await check(path.relative(opts.planDir,outside));
+    fs.symlinkSync(outside,path.join(opts.planDir,'foreign-link.md')); await check('foreign-link.md');
+    fs.symlinkSync(outside+'.missing',path.join(opts.planDir,'dangling.md')); await check('dangling.md');
+    fs.symlinkSync(${JSON.stringify(dir)},path.join(opts.planDir,'foreign-dir')); await check('foreign-dir/new.md');
+    const alias=opts.planDir+'-alias'; fs.symlinkSync(opts.planDir,alias);
+    try { await expect(actualCapture({...opts,planDir:alias,runId:undefined,model:'fake-model'})).rejects.toThrow('root must not be a symlink'); }
+    finally { fs.unlinkSync(alias); }
+    expect(fs.readFileSync(outside,'utf8')).toBe('preserve'); expect(fs.existsSync(outside+'.missing')).toBe(false);
+    expect(stateDirs()).toEqual([]);
+    return successful;
+  } finally { fs.rmSync(opts.planDir,{recursive:true,force:true}); }
+}}));
+await import(${JSON.stringify(path.join(root,'test/carve-section-loading-plan-eng-review.test.ts'))});
+`);
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`, TMPDIR: dir, TMP: dir, TEMP: dir,
+    GSTACK_HOME: operatorState, GSTACK_STATE_ROOT: operatorState, EVALS_HERMETIC: '1', EVALS: '', EVALS_ALL: '', GSTACK_CARVE_SKILL: '' };
+  delete env.CI;
+  const child = Bun.spawn([process.execPath, 'test', script], { env, cwd: dir, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+  const timer = setTimeout(() => child.kill(), 20_000);
+  try {
+    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect(code, stdout + stderr).toBe(0);
+    const launches = fs.readFileSync(observedFile,'utf8').trim().split('\n').map(line=>JSON.parse(line));
+    expect(launches).toHaveLength(2); // Rejected foreign roots never start a child.
+    expect(new Set(launches.map(c=>c.state)).size).toBe(2);
+    for (const launch of launches) {
+      expect(launch.state).not.toBe(operatorState); expect(launch.stateRoot).toBe(launch.state);
+      expect(fs.existsSync(launch.state)).toBe(false);
+      expect(launch.helpers).toEqual(['gstack-review-log','gstack-review-read'].map(name=>path.join(root,'bin',name)));
+      expect(launch.args[launch.args.indexOf('--tools')+1]).toBe('Read,Grep,Glob,Write,Edit,Bash');
+      expect(launch.args[launch.args.indexOf('--max-turns')+1]).toBe('25');
+      expect(launch.readStatus).toBe(0);
+    }
+    expect(launches[0].writeStatus).toBe(0); expect(launches[0].rows).toHaveLength(1);
+    expect(launches[0].rows[0]).toMatchObject(launches[0].record);
+    expect(launches[0].readOutput).toContain(JSON.stringify(launches[0].rows[0]));
+    expect(launches[1].writeStatus).not.toBe(0); expect(launches[1].rows).toEqual([]);
+    expect(launches[1].readOutput).toContain('NO_REVIEWS');
+    expect(fs.readdirSync(operatorState)).toEqual(['config.yaml']);
+    expect(fs.readFileSync(path.join(operatorState,'config.yaml'),'utf8')).toBe('codex_reviews: enabled\n');
+  } finally {
+    clearTimeout(timer); if (child.exitCode === null) child.kill(); await child.exited;
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+}, 25_000);
+
 test('Eng section producer checkpoints complete outcomes and never credits an exhausted draft', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eng-section-checkpoints-'));
   const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
