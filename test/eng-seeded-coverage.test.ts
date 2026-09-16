@@ -1036,3 +1036,58 @@ describe('current native explanations and scheduled legacy baseline from a689', 
   });
 
 });
+
+// Complete public fields from the cancelled 6aef attempt, without paid verdict credit.
+import current6aef from './fixtures/eng-6aef-count-public.json';
+const current6aefClass = () => structuredClone(current6aef.calls[2]) as NativePlanQuestionCall;
+for (const [name, expected, edit] of [
+  ['actual focused class-to-function choice', true, undefined],
+  ['foreign plan', false, (c:any)=>{c.questions[0].question=c.questions[0].question.replace('PLAN.md','OTHER.md');}],
+  ['missing cited plan', false, (c:any)=>{c.questions[0].question=c.questions[0].question.replace('PLAN.md','the plan');}],
+  ['missing count reduction', false, (c:any)=>{c.questions[0].options[0].description=c.questions[0].options[0].description.replace('New class count drops 5 to 4.','');}],
+  ['inconsistent count reduction', false, (c:any)=>{c.questions[0].options[0].description=c.questions[0].options[0].description.replace('drops 5 to 4','drops 5 to 3');}],
+  ['stateful current component', false, (c:any)=>{c.questions[0].question+='\nCorrection: RequestPolicy now holds mutable state.';}],
+  ['withdrawn current choice', false, (c:any)=>{c.questions[0].question+='\nCorrection: D3 is withdrawn.';}],
+  ['unanswered current choice', false, (c:any)=>{c.answered=false;}],
+] as const) test('6aef complexity: '+name,()=>{
+ const c=current6aefClass(); edit?.(c);
+ expect(isEngSeedDecisionAUQ(nativePlanCallFingerprint(c,0,false),current6aef.calls.slice(0,2) as NativePlanQuestionCall[],Date.parse(current6aef.windowStart))).toBe(expected);
+});
+
+const current6aefRegression=()=>({report:current6aef.report,calls:structuredClone(current6aef.calls) as NativePlanQuestionCall[]});
+function current6aefRecord(x:ReturnType<typeof current6aefRegression>,id:number,change:(s:string)=>string){
+ const re=new RegExp(`^### R${id}:[^]*?(?=^### R[1-9]\\d*:|^## |$(?![^]))`,'m');
+ const before=x.report.match(re)?.[0]; expect(before).toBeDefined(); const after=change(before!); expect(after).not.toBe(before); x.report=x.report.replace(re,after);
+}
+for(const [name,expected,edit] of [
+ ['complete original report and all native decisions',true,undefined],
+ ['missing baseline capture',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('Characterization tests written against the current','Tests written against the new'))],
+ ['legacy changed before capture',false,(x:any)=>{x.report+='\nlegacyAuthFlow() is changed before T1.\n';}],
+ ['baseline after adapter',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('BEFORE the adapter lands','AFTER the adapter lands'))],
+ ['replay different fixtures',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('old and new on identical fixtures','old and new on different fixtures'))],
+ ['unapproved difference',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('Intentional differences: zero.','Intentional differences: one.'))],
+ ['additional error change',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('Intentional differences: zero.','Intentional differences: zero. Also allow unknown errors to be denied.'))],
+ ['missing return assertion',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('Assertions: return shape,','Assertions:'))],
+ ['missing error assertion',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('Assertions: return shape, thrown/returned error per class,','Assertions: return shape,'))],
+ ['missing cache assertion',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('and which cache keys are read/written.',''))],
+ ['missing matrix case',false,(x:any)=>current6aefRecord(x,7,s=>s.replaceAll('wrong issuer; ',''))],
+ ['wrong answer reference',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('E2E (D7 answer)','E2E (D8 answer)'))],
+ ['wrong answer caption',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('Actual answer: A) Full characterization + E2E','Actual answer: A) Different suite'))],
+ ['changed saved question',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('D7 — How should','D7 — Why should'))],
+ ['changed saved option',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('Effort: human ~3 days / CC ~30 min.','Effort: human ~1 day / CC ~30 min.'))],
+ ['no CRITICAL requirement',false,(x:any)=>{x.report=x.report.replace(/CRITICAL/g,'RECOMMENDED');}],
+ ['explicit non-CRITICAL requirement',false,(x:any)=>current6aefRecord(x,7,s=>s.replace('P1 CRITICAL','P1 non-CRITICAL'))],
+ ['current withdrawal',false,(x:any)=>{x.report+='\nR7 is withdrawn.\n';}],
+ ['historical withdrawal is inert',true,(x:any)=>current6aefRecord(x,7,s=>s.replace('History: none','History: R7 is withdrawn'))],
+ ['missing original error approval',false,(x:any)=>{x.calls.splice(5,1);}],
+ ['changed current error contract',false,(x:any)=>current6aefRecord(x,6,s=>s.replace('No observable behavior change for callers.','Unknown errors now produce a different outcome.'))],
+ ['wrong task dependency',false,(x:any)=>{x.report=x.report.replace('Must be green before T5.','Must be green before T4.');}],
+ ['changed replay result',false,(x:any)=>{x.report=x.report.replace('Run T1 suite + differential + E2E: zero diffs.','Run T1 suite + differential + E2E: one diff.');}],
+ ['foreign task source',false,(x:any)=>{x.report=x.report.replace('Test review — T1 / R7 (D7 → A)','Test review — OTHER.md:3 T1 / R7 (D7 → A)');}],
+ ['foreign native session',false,(x:any)=>{x.calls[6].sessionId='foreign';}],
+ ['missing native answer',false,(x:any)=>{x.calls[6].answered=false;}],
+] as const) test('6aef regression: '+name,()=>{
+ const x=current6aefRegression();edit?.(x);
+ const result=evaluateEngSeedCoverage({status:'ready',calls:x.calls,assistantMessages:[],planReadyRequests:[]},x.report,Date.parse(current6aef.windowStart),Date.parse(current6aef.windowEnd));
+ expect(result.ok).toBe(expected);
+});

@@ -296,6 +296,24 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     !/\b(?:other|another|different|foreign|historical|quoted|copied) (?:plan|source|review|project)\b/i.test(subject);
   const currentOwner = neutralChoice && currentSource;
   const fields = completeOptions.map(o => ({ ...o, label: o.label.replace(/^(?:[1-9]\d*)?[A-D][).:]\s*/, '') }));
+  // A focused class decision can reduce the current inventory without
+  // reopening every other component. Its own cited explanation must establish
+  // the stateless boundary, and one complete option must own the one-class cut.
+  const focusedNames = [...new Set(title.match(/\b[A-Z][a-z]+(?:[A-Z]\w*)+\b/g) ?? [])];
+  const focusedClass = focusedNames.length === 1 ? focusedNames[0]! : undefined;
+  if (focusedClass && ownsPlan && currentSource && /\bclass\b/i.test(title) && /\bpure function\b/i.test(title) &&
+      new RegExp(`\\b${focusedClass}\\b`).test(explanation) && /\b(?:hold[s]? no state|stateless|no state)\b/i.test(explanation) &&
+      /\b(?:make[s]? no calls|no (?:network )?calls|call-free)\b/i.test(explanation) &&
+      !new RegExp(`\\b${focusedClass} (?:now |already )?(?:has|holds|carries|needs|requires) (?:its own |independent |mutable )*state\\b`, 'i').test(text) &&
+      fields.some(o => new RegExp(`\\b${focusedClass} (?:stays|remains|is retained) (?:as )?a class\\b`).test(o.body)) &&
+      fields.some(o => {
+        const reduction = /\bnew class count (?:drops|falls|reduces) (\d+) to (\d+)\b/i.exec(o.body);
+        const exported = /\b([A-Za-z]\w*)\.ts exports ([A-Za-z]\w*)\([^)]*\)/.exec(o.body);
+        return /\bpure function\b/i.test(o.label) && reduction && +reduction[1]! >= 2 && +reduction[2]! === +reduction[1]! - 1 &&
+          exported?.[1]?.toLowerCase() === focusedClass.toLowerCase() &&
+          /\bno instance to (?:construct|create) or mock\b/i.test(o.body) &&
+          !/\b(?:not|never) (?:pure|stateless)|\b(?:also|instead) (?:add|create|keep|retain|restore)\b|\b(?:add|create|introduce|build) (?:an? |another |new |additional )*(?:class|state|side effect)\b/i.test(o.body);
+      })) ids.push('complexity');
   const names = (s: string) => s.split(/\s*\+\s*|,\s*(?:and\s+)?|\s+and\s+/);
   const number = (s: string) => counts[s.toLowerCase()] ?? Number(s);
   const quantity = '(one|two|three|four|five|six|seven|eight|nine|[1-9]\\d*)';
@@ -2221,9 +2239,9 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
     const namedAnswer=/^([A-D])\) (.+) — (?:(D[1-9]\d*) answer "(.+)"|(?:user )?answer to (D[1-9]\d*)(?: \(([^)]+)\))?)\.?$/.exec(answers[0]!);
     // A selector already resolves to one fully matched native option. A saved
     // caption is optional, but must agree with that same option when present.
-    const quotedAnswer=/^([A-D])(?: — "([^"]+)")? \((D[1-9]\d*) answer(?:, this session)?\)$/.exec(answers[0]!);
+    const quotedAnswer=/^([A-D])(?:(?: — "([^"]+)")|(?:\) (.+)))? \((D[1-9]\d*) answer(?:, this session)?\)$/.exec(answers[0]!);
     const answer=namedAnswer ? { selector:namedAnswer[1]!, caption:namedAnswer[2], decision:namedAnswer[3] ?? namedAnswer[5], literal:namedAnswer[4], note:namedAnswer[6] } :
-      quotedAnswer ? { selector:quotedAnswer[1]!, caption:quotedAnswer[2], decision:quotedAnswer[3], literal:undefined, note:undefined } : undefined;
+      quotedAnswer ? { selector:quotedAnswer[1]!, caption:quotedAnswer[2] ?? quotedAnswer[3], decision:quotedAnswer[4], literal:undefined, note:undefined } : undefined;
     const caption=(s:string)=>s.replace(/^[A-D]\) /, '').replace(/\s*\(recommended\)$/, '').trim();
     if (!selected || question[0]![2]!.trim() !== prose(q.question).trim() || question[0]![3] !== q.header ||
         saved.length !== q.options.length || new Set(saved.map(o=>o.selector)).size !== saved.length ||
@@ -2286,6 +2304,13 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
     if (/^idp call count(?:\/| and )order$/.test(fact)) return ['count','order'];
     return ['unsupported'];
   });
+  const caseInventory=(value:string)=>value.toLowerCase()
+        .replace(/wrong tenant\/issuer\/audience/g,'wrong tenant, wrong issuer, wrong audience')
+        .replace(/cache hit(?:\/| vs )miss/g,'cache hit, cache miss')
+        .replace(/concurrent (same|cross)(?:-? and |\/)(same|cross)[ -]tenant/g,'concurrent $1-tenant, concurrent $2-tenant')
+        .replace(/stale policy version/g,'stale policy')
+        .replace(/each of the (\d+) currently-swallowed error classes/g,'$1 swallowed error classes')
+        .split(/[,;]\s*/).map(value=>value.trim());
   for (const section of current.filter(s=>/\bregression contract\b/i.test(s.title) && /\blegacyAuthFlow\b/.test(s.title))) {
     const record=nativeRecord(section);
     if (!record || suiteWithdrawn) continue;
@@ -2300,7 +2325,7 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
     let target:string, error:NonNullable<ReturnType<typeof nativeRecord>>, oracle:typeof error|undefined;
     let tableCount:number|undefined, tableFile:string|undefined;
     let matrixContract: { file: string; decisions: string[]; records: NonNullable<ReturnType<typeof nativeRecord>>[] } | undefined;
-    let suiteContract: { count:number; decision:string } | undefined;
+    let suiteContract: { count:number; decision:string; unchangedCases?:string[] } | undefined;
     if (roles.length === 3 && ['Behavior to preserve','Intentional differences','Acceptance'].every(name=>role(name).length === 1)) {
       const preservation=role('Behavior to preserve')[0]![2]!, difference=role('Intentional differences')[0]![2]!, acceptance=role('Acceptance')[0]![2]!;
       const pair=/\blegacyAuthFlow\(\) and ([A-Za-z][\w.]*\(\)) produce the same outcome class\b/.exec(preservation)?.[1];
@@ -2328,7 +2353,41 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
         .map(m=>({number:Number(m[1] ?? m[2]),body:m[3]!}));
       const matrix=/\bfixture matrix \(([^)]+)\)/.exec(nativePromise);
       const suitePromise=/\b(?:write|capture|record) the (?:regression|characterization) suite against legacyAuthFlow\(\) before (?:any|the) rewrite covering ([^;]+); assert ([^.]+)\. (?:The )?new flow must pass (?:it|the same suite); intentional (D[1-9]\d*) differences are listed and asserted explicitly\./i.exec(unquoted(nativePromise));
-      if (suitePromise) {
+      // The selected option may preserve every outcome with no approved
+      // product delta. Its matrix, ordered legacy capture and identical replay
+      // still bind the same native record and task roles below.
+      const unchangedMatrix=/\b(?:input|fixture) matrix \(([^)]+)\)/.exec(nativePromise);
+      const unchangedReplay=/\brun (?:the same (?:tests?|suite) )?unchanged against (?:the )?([A-Za-z][\w]*)\b/.exec(nativePromise);
+      if (unchangedMatrix && unchangedReplay) {
+        const capture=steps.filter(step=>/\b(?:tests?|suite) written against the current legacyAuthFlow\(\)/i.test(step.body));
+        const comparison=steps.filter(step=>/\bdifferential harness\b/i.test(step.body));
+        const e2e=steps.filter(step=>/\bE2E\b/.test(step.body));
+        const cases=capture[0]?.body.match(/\bcovering: ([^]+?)\. Assertions:/)?.[1];
+        const assertions=capture[0]?.body.split('. Assertions: ')[1] ?? '';
+        const zero=/\bIntentional differences: zero\./.test(record.scope);
+        const noExtraChanges=!/\b(?:except|unless|other|additional) (?:intentional |product )?(?:differences|changes|deltas)\b|\b(?:allow|accept|permit)\b[^.;\n]*\b(?:difference|delta|changed outcome|errors?|failures?)\b/i.test(productScope);
+        if (roles.length || steps.length !== 3 || steps.some((step,i)=>step.number!==i+1) ||
+            capture.length!==1 || comparison.length!==1 || e2e.length!==1 ||
+            capture[0]!.number>=comparison[0]!.number || comparison[0]!.number>=e2e[0]!.number ||
+            !/\bCRITICAL\b/.test(record.finding) || !zero || !noExtraChanges || !cases ||
+            !sameInventory(caseInventory(unchangedMatrix[1]!),caseInventory(cases)) ||
+            !/\b(?:tests?|suite) against current legacyAuthFlow\(\)/i.test(nativePromise) ||
+            !new RegExp(`\\bBEFORE the ${unchangedReplay[1]} lands\\b`,'i').test(capture[0]!.body) ||
+            !/\brunning old and new on (?:the )?identical fixtures\b/i.test(comparison[0]!.body) ||
+            !/\bone E2E login through the real entry point\b/i.test(nativePromise) ||
+            !/\bone E2E login through the real entry point\b/i.test(e2e[0]!.body) ||
+            !/\breturn shape\b/.test(assertions) || !/\bthrown\/returned error per class\b/.test(assertions) ||
+            !/\bwhich cache keys are read\/written\b/.test(assertions) || !proofActive(nativePromise)) continue;
+        const errors=current.map(nativeRecord).filter(r=>r && r.answeredAt<record.answeredAt &&
+          seedSubjects({...r.question,options:[r.selected]}).includes('swallowed-errors'));
+        if(errors.length!==1)continue;
+        error=errors[0]!; target=unchangedReplay[1]!;
+        if (!proofActive(error.scope) ||
+            !/\bmaps each (?:known|currently-swallowed) error class to (?:its current observable outcome|the outcome callers observe today)\b/.test(prose(error.selected.description ?? '')) ||
+            !/\bmaps each currently-swallowed error class to the outcome callers observe today\b/.test(error.scope) ||
+            !/\bNo observable behavior change for callers\b/.test(error.scope)) continue;
+        suiteContract={count:caseInventory(cases).length,decision:record.decision,unchangedCases:caseInventory(cases)};
+      } else if (suitePromise) {
         // A paragraph can own the same ordered baseline/replay contract as
         // numbered clauses. Bind its cases and assertions to the chosen native
         // option, then require one task to schedule both runs of that suite.
@@ -2477,12 +2536,24 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
     const tasks=pairedTasks.filter(task=>pairedTasks.filter(t=>t.id === task.id).length === 1 && proofActive(task.body) &&
       !/\b(?:not|never|skip|omit|defer) (?:run|capture|record|assert|verify|compare)\b/i.test(unquoted(task.body)) &&
       ['Files','Verify','Surfaced by'].every(field=>taskField(task.body,field).length === 1) &&
-      (suiteContract ? new RegExp(`\\(${record.decision}\\)`) : tableCount ? new RegExp(`\\b${record.decision}=${record.choice}(?:\\s|$)`) : new RegExp(`\\(${record.decision} (?:→|->) ${record.choice}\\)`)).test(taskField(task.body,'Surfaced by')[0]!) &&
+      (suiteContract && !suiteContract.unchangedCases ? new RegExp(`\\(${record.decision}\\)`) : tableCount ? new RegExp(`\\b${record.decision}=${record.choice}(?:\\s|$)`) : new RegExp(`\\(${record.decision} (?:→|->) ${record.choice}\\)`)).test(taskField(task.body,'Surfaced by')[0]!) &&
       [...taskField(task.body,'Surfaced by')[0]!.matchAll(/\bD[1-9]\d*\b/g)].length === 1 &&
       [...taskField(task.body,'Surfaced by')[0]!.matchAll(/\b[\w./-]+\.md\b/g)].every(m=>m[0] === 'PLAN.md'));
     const orderedTable=tasks.filter(task=> {
       if (suiteContract) {
         const action=task.body.split('\n')[0]!, verify=taskField(task.body,'Verify')[0]!;
+        if(suiteContract.unchangedCases){
+          const matrix=/\bmatrix \(([^)]+)\)/.exec(action);
+          const before=/\b(?:must be )?green before (T[1-9]\d*)\b/i.exec(action);
+          const later=before && pairedTasks.filter(t=>t.id===before[1]);
+          return Boolean(matrix && before && later?.length===1 && proofActive(later[0]!.body) &&
+            /\bWrite characterization tests against the CURRENT legacyAuthFlow\(\)/i.test(action) &&
+            /\bsuite passes against unchanged legacyAuthFlow\(\); later passes unchanged against the adapter with zero diffs\b/.test(verify) &&
+            new RegExp(`\\bRun ${task.id} suite \\+ differential \\+ E2E: zero diffs\\.`).test(later[0]!.body) &&
+            new RegExp(`\\b${task.id} suite green unchanged; differential harness reports 0 differences; E2E login passes\\b`).test(taskField(later[0]!.body,'Verify')[0] ?? '') &&
+            /\bKeep the exported signature; body delegates to\b/.test(later[0]!.body) &&
+            sameInventory(suiteContract.unchangedCases,caseInventory(matrix[1]!)));
+        }
         return /\b(?:Write|Capture|Record) the (?:regression|characterization) suite against legacyAuthFlow\(\)/i.test(action) &&
           /\bbefore any rewrite\b/i.test(action) && new RegExp(`\\(${suiteContract.count} scenarios, outcome class \\+ cache state\\)`).test(action) &&
           new RegExp(`^suite green against legacy; later green against new flow with only listed ${suiteContract.decision} differences$`).test(verify) &&
@@ -2511,13 +2582,15 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
       /\bparity \+ E2E green\b/.test(taskField(task.body,'Verify')[0]!));
     if (baseline.length !== 1 || replay.length !== 1 || !tableCount && !matrixContract && !suiteContract && baseline[0]!.id === replay[0]!.id) continue;
     const files=(task:typeof pairedTasks[number])=>taskField(task.body,'Files')[0]!.split(/,\s*/).map(value=>value.replace(/ \(new\)$/,''));
-    if (matrixContract ? !files(baseline[0]!).some(file=>!file.includes('..') && !file.startsWith('/') && (file === matrixContract!.file || file.endsWith('/'+matrixContract!.file))) : tableFile ? !files(baseline[0]!).includes(tableFile) : !files(baseline[0]!).some(file=>/^test\//.test(file) && files(replay[0]!).includes(file))) continue;
+    if (matrixContract ? !files(baseline[0]!).some(file=>!file.includes('..') && !file.startsWith('/') && (file === matrixContract!.file || file.endsWith('/'+matrixContract!.file))) : tableFile ? !files(baseline[0]!).includes(tableFile) : suiteContract?.unchangedCases ? !files(baseline[0]!).some(file=>!file.includes('..') && /\b(?:auth\/)?__tests__\/[^ )]+\.test\./.test(file)) : !files(baseline[0]!).some(file=>/^test\//.test(file) && files(replay[0]!).includes(file))) continue;
     const owner=`(?:${record.row}|${record.decision}|${error.row}|${error.decision}|${oracle ? oracle.row+'|'+oracle.decision+'|' : ''}${matrixContract ? matrixContract.records.flatMap(r=>[r.row,r.decision]).join('|')+'|' : ''}${baseline[0]!.id}|${replay[0]!.id}|(?:the|this) (?:legacy )?(?:parity|regression) (?:suite|contract|baseline))`;
     const status='(?:withdrawn|rejected|cancelled|canceled|deferred|optional|superseded|not required|no longer required)';
     const revoked=current.some(s=>unquoted(s.body.join('\n').split(/^History:/m)[0]!.replace(new RegExp(`(\\b${owner} (?:is|was|has been|will be) )["“](${status})["”]`,'gi'),'$1$2')).split(/\n|[.!?;]\s+/).some(line=>!sourceFrame(line) &&
       (new RegExp(`\\b${owner} (?:is|was|has been|will be) ${status}\\b`,'i').test(line) ||
        new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|was|has been|will be) (?:changed|modified|rewritten|removed|deleted) before (?:${baseline[0]!.id}${tableCount ? '|step 1' : ''})\\b`,'i').test(line))));
-    if (suiteContract) {
+    // An unchanged suite's paired tasks already bind capture before the named
+    // adapter task and its later replay; no second prose schedule is needed.
+    if (suiteContract && !suiteContract.unchangedCases) {
       const orders=current.filter(s=>/\b(?:implementation|execution) order\b/i.test(s.title));
       if (orders.length !== 1 || !proofActive(orders[0]!.body.join('\n'))) continue;
       const steps=orders[0]!.body.flatMap(line=>{const m=/^([1-9]\d*)\. (.+)/.exec(line);return m ? [{number:Number(m[1]),body:m[2]!}] : [];});

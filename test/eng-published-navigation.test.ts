@@ -785,3 +785,75 @@ test('cf74 reconciled navigation retains independent native freshness and exit r
     fs.writeFileSync(file,'## GSTACK REVIEW REPORT\n');fs.utimesSync(file,x.report.mtimeMs/1000,x.report.mtimeMs/1000);expect(check()).toBe(false);
   } finally { Date.now=now;fs.rmSync(dir,{recursive:true,force:true}); }
 });
+
+import current6aef from './fixtures/eng-6aef-count-public.json';
+const current6aefNavigation=()=>({plan:current6aef.report,call:structuredClone(current6aef.calls.at(-1)!) as NativePlanQuestionCall,priorCalls:structuredClone(current6aef.calls.slice(0,-1)) as NativePlanQuestionCall[]});
+function current6aefCheck(name:string,expected:boolean,edit?:(x:ReturnType<typeof current6aefNavigation>)=>void){test('6aef navigation: '+name,()=>{const x=current6aefNavigation(),before=JSON.stringify(x);edit?.(x);if(edit)expect(JSON.stringify(x)!==before).toBe(true);expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);});}
+function current6aefRecord(x:ReturnType<typeof current6aefNavigation>,id:number,edit:(s:string)=>string){const before=x.plan;x.plan=x.plan.replace(new RegExp(`^### R${id}:[\\s\\S]*?(?=^### |^## |$(?![\\s\\S]))`,'m'),edit);expect(x.plan!==before).toBe(true);}
+current6aefCheck('original complete public navigation is administrative',true);
+current6aefCheck('outside review choice remains navigation',true,x=>{const q=x.call.questions[0]!;x.call.answers={[q.question]:q.options[1]!.label};});
+current6aefCheck('option order remains native',true,x=>x.call.questions[0]!.options.reverse());
+current6aefCheck('unnumbered header remains navigation',true,x=>{x.call.questions[0]!.header='Next step';});
+current6aefCheck('historical approval withdrawal is inert',true,x=>current6aefRecord(x,2,s=>s.replace('History: none','History: R2 is revoked.')));
+current6aefCheck('historical deferred feature reversal is inert',true,x=>current6aefRecord(x,1,s=>s.replace('History: none','History: Promise.all stays in this refactor.')));
+for(const [name,edit] of Object.entries({
+  'foreign navigation ordinal':(x:ReturnType<typeof current6aefNavigation>)=>{x.call.questions[0]!.header='D99 Next step';},
+  'header alone':(x:ReturnType<typeof current6aefNavigation>)=>question(x,_=>'D9 — Next step?'),
+  'unanswered navigation':(x:ReturnType<typeof current6aefNavigation>)=>{x.call.answered=false;},
+  'unselected label':(x:ReturnType<typeof current6aefNavigation>)=>{x.call.answers={[x.call.questions[0]!.question]:'Other'};},
+  'missing earlier answer':(x:ReturnType<typeof current6aefNavigation>)=>{x.priorCalls[0]!.answers={};},
+  'foreign earlier session':(x:ReturnType<typeof current6aefNavigation>)=>{x.priorCalls[0]!.sessionId='foreign';},
+  'duplicate earlier identity':(x:ReturnType<typeof current6aefNavigation>)=>{x.priorCalls[1]!.toolUseId=x.priorCalls[0]!.toolUseId;},
+  'foreign earlier source':(x:ReturnType<typeof current6aefNavigation>)=>{x.priorCalls[0]!.questions[0]!.question=x.priorCalls[0]!.questions[0]!.question.replace('PLAN.md','OTHER.md');},
+  'missing target':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('Review target:','Unowned target:');},
+  'foreign target source':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('Review target: `PLAN.md`','Review target: `OTHER.md`');},
+  'foreign target title':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('("Plan: Multi-tenant Auth Refactor")','("Plan: Other")');},
+  'foreign target branch':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('branch `main`, commit','branch `other`, commit');},
+  'duplicate wrapper':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan='# Plan: Other\n'+x.plan;},
+  'foreign original title':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('# Plan: Multi-tenant Auth Refactor','# Plan: Other');},
+  'wrong answer reference':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,3,s=>s.replace('(D3 answer)','(D2 answer)')),
+  'wrong selected answer caption':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,3,s=>s.replace('Actual answer: B) Pure function module','Actual answer: B) Keep as a class')),
+  'missing initial scope':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,1,s=>s.replace(/^Accepted scope: .+$/m,'Accepted scope: approved')),
+  'initial foreign header ordinal':(x:ReturnType<typeof current6aefNavigation>)=>{x.priorCalls[2]!.questions[0]!.header='D99 RequestPolicy';},
+  'initial deferral loses prerequisite':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,1,s=>s.replace('once regression tests and flattened error handling exist','without regression tests')),
+  'initial deferral currently reversed':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,1,s=>s.replace('History: none','Correction: Promise.all stays in this refactor.\nHistory: none')),
+  'initial adapter changes owner':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,2,s=>s.replace('AuthBroker.validateAndDispatch()','ForeignBroker.validateAndDispatch()')),
+  'initial adapter loses proof before delete':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,2,s=>s.replace('after production proves equivalence','before production proves equivalence')),
+  'initial function changes class count':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,3,s=>s.replace('Class count 5 → 4','Class count 5 → 14')),
+  'initial function adds work':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,3,s=>s.replace('Class count 5 → 4.','Class count 5 → 4. Add Redis.')),
+  'initial conditional implementation now approved':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,4,s=>s.replace('No implementation approved.','Implementation is approved.')),
+  'initial conditional responsibility missing':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,4,s=>s.replace('required (responsibility,','required (')),
+  'substantive saved question changed':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,5,s=>s.replace('ELI10:','Explanation:')),
+  'substantive saved header changed':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,6,s=>s.replace('Header:','Caption:')),
+  'substantive description changed':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,7,s=>s.replace('Characterization tests against current','Characterization tests after changes to')),
+  'current state revoked':(x:ReturnType<typeof current6aefNavigation>)=>current6aefRecord(x,8,s=>s.replace('State: approved','State: revoked')),
+  'missing readiness':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('**Approval readiness:','**Review status:');},
+  'duplicate readiness':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('**Approval readiness:','Approval readiness: PASS\n**Approval readiness:');},
+  'readiness wrong letter':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('R3 (D3 → B)','R3 (D3 → A)');},
+  'readiness missing reference':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('R3 (D3 → B), ','');},
+  'readiness current reversal':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('**Approval readiness: PASS.**','**Approval readiness: PASS.** R3 is revoked.');},
+  'wrong stated decision count':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('- **VERDICT:** ENG CLEARED','9 decisions approved\n- **VERDICT:** ENG CLEARED');},
+  'missing task':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('**T2 (','**T22 (');},
+  'extra task':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('## Implementation Tasks','## Implementation Tasks\n- [ ] **T8 (P1)** — Add Redis');},
+  'withdrawn task':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('Must be green before T5.','Must be green before T5. T1 is withdrawn.');},
+  'before dependency reversed':(x:ReturnType<typeof current6aefNavigation>)=>question(x,s=>s.replace('before T5 (adapter)','after T5 (adapter)')),
+  'before dependency removed':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('Must be green before T5.','May run after T5.');},
+  'independent task actually depends':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('| — (grep for duplicate deny logic first, C3) |','| 1 |');},
+  'independent task module changed':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('  - Files: `auth/requestPolicy.ts`','  - Files: `auth/otherPolicy.ts`');},
+  'conditional task loses blocker':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('(blocks any TokenStore code)','(TokenStore can proceed)');},
+  'unknown graph dependency':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('| 2, 3 |','| 2, 99 |');},
+  'changed lane count':(x:ReturnType<typeof current6aefNavigation>)=>question(x,s=>s.replace('5 worktree lanes','6 worktree lanes')),
+  'new launch schedule':(x:ReturnType<typeof current6aefNavigation>)=>{x.call.questions[0]!.options[0]!.description+=' Launch lanes A and D now.';},
+  'new ready action':(x:ReturnType<typeof current6aefNavigation>)=>{x.call.questions[0]!.options[0]!.description+=' Also add Redis.';},
+  'new outside action':(x:ReturnType<typeof current6aefNavigation>)=>{x.call.questions[0]!.options[1]!.description+=' Then rewrite the router.';},
+  'outside configuration different':(x:ReturnType<typeof current6aefNavigation>)=>{x.call.questions[0]!.options[1]!.description=x.call.questions[0]!.options[1]!.description!.replace('codex_reviews enabled','model Other');},
+  'outside command suffix':(x:ReturnType<typeof current6aefNavigation>)=>{x.call.questions[0]!.options[1]!.description=x.call.questions[0]!.options[1]!.description!.replace('/plan-eng-review','/plan-eng-review-extra');},
+  'outside stale disabled state':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace(/^(\| Outside Review \|[^\n]+)$/m,s=>s.replace('DISABLED','CLEAN'));},
+  'missing final sentinel':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('NO UNRESOLVED DECISIONS','No pending');},
+  'conflicting Eng report row':(x:ReturnType<typeof current6aefNavigation>)=>{x.plan=x.plan.replace('- **VERDICT:** ENG CLEARED','| Eng Review | Always | Required | 1 | ISSUES OPEN | 1 critical gap |\n\n- **VERDICT:** ENG CLEARED');},
+}))current6aefCheck(name,false,edit);
+
+current6aefCheck('before task prose cannot override missing graph prerequisite',false,x=>{x.plan=x.plan.replace('| 1, 4 |','| 4 |');});
+current6aefCheck('before task prose cannot override reversed graph prerequisite',false,x=>{x.plan=x.plan.replace('| 1, 4 |','| 4, 7 |');});
+current6aefCheck('before task prose cannot override reversed execution phases',false,x=>{x.plan=x.plan.replace('Launch A + B + C in parallel worktrees. Merge all three. Then launch D and E in parallel.','Launch D and E in parallel worktrees. Merge both. Then launch A+B+C in parallel.');});
+current6aefCheck('independent task claims require distinct lanes',false,x=>{x.plan=x.plan.replace('Lane B: step 2 (','Lane B: step 2 → step 3 (').replace('Lane C: step 3 (','Lane C: step 4 (').replace('Lane D: step 4 → step 6 → step 7 (','Lane D: step 6 → step 7 (');});
