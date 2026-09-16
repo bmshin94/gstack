@@ -39,23 +39,31 @@ function publicProse(text: string): string {
 
 // The same current-mode field grammar owns declarations and later corrections.
 function modeField(line: string): { value: string; completed: boolean } | null {
-  const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode(?:( decision)(?: ([^:\r\n]+))?)?:\s*(.*)$/i.exec(line.replace(/^\s*[-*+]\s+/, '').trim());
+  const match = /^(?:(?:Correction|Actually|Update):\s*)?(?<label>(?:Review )?Mode(?: decision)?|Decision)(?: (?<status>[^:\r\n]+))?:\s*(?<value>.*)$/i.exec(line.replace(/^\s*[-*+]\s+/, '').trim());
   if (!match) return null;
   // "Mode" and "Mode decision" are both field labels. If an explicit status
   // follows, only the completion class is supported. Pending, cancelled,
   // unfinished and unknown statuses also invalidate an earlier declaration.
-  const completeStatus = !match[2] || /^(?:done|complete|completed)$/i.test(match[2].trim());
-  const value = plain(match[3]!);
+  const { label, status, value: rawValue } = match.groups!;
+  const completeStatus = !status || /^(?:done|complete|completed)$/i.test(status.trim());
+  const explicitMode = /^(?:the )?(?:review )?mode\b(?:\s+is\b|:)?\s*/i;
+  // An unqualified Decision field owns a review mode only when its value
+  // names that vocabulary. Keep unrelated decisions out of withdrawal checks;
+  // partial/negated mode names still own a field and therefore fail closed.
+  if (/^Decision$/i.test(label!) && !explicitMode.test(rawValue!) &&
+      !/\b(?:HOLD|SCOPE|SELECTIVE)\b/i.test(rawValue!)) return null;
+  const value = plain(rawValue!).replace(explicitMode, '');
   const unfinishedValue = /\b(?:withdrawn|retracted|revoked|cancelled|canceled|undecided|unfinished|incomplete|not complete(?:d)?|not selected|not decided|not yet|pending|proposed|if|unless|would|might|will)\b/i.test(value);
-  return { value, completed: completeStatus && !unfinishedValue };
+  const negatedMode = modeNames.some(mode => new RegExp(`\\b(?:not|never|no longer)\\s+${mode.replaceAll(' ', '[ _]+')}\\b`, 'i').test(value));
+  return { value, completed: completeStatus && !unfinishedValue && !negatedMode };
 }
 
-function selectedMode(value: string): string | null {
+function selectedMode(value: string, questionSummary?: string): string | null {
   // The label ends before an explanatory clause or parenthetical. Use this same
   // boundary for declarations and corrections: explanation punctuation cannot
   // turn a completed choice into a withdrawal. modeField checks the full value
   // first so conditional or unfinished explanations still fail closed.
-  const match = /^(.+?)(?:(\s+\()|[.,;:]|\s+[—–-]\s+\S|$)/.exec(value);
+  const match = /^(.+?)(?:(\s+\()|[.,;:]|\s+[—–-]\s+\S|(\s+for\s+\S)|$)/i.exec(value);
   const mode = match?.[1]?.trim().toUpperCase() ?? null;
   // The new completed-field form belongs to the closed review-mode vocabulary.
   // Generic Skill annotations keep their prior mode delimiter behavior.
@@ -77,18 +85,29 @@ function selectedMode(value: string): string | null {
     }
   }
   if (depth !== 0) return null;
-  if (match?.[2]) {
+  if (match?.[3]) {
+    // A target clause must belong to the same completed audit decision. A
+    // matching mode alone cannot authenticate another draft or future review.
+    const target = (text: string) => /\bfor\s+(.+?)(?=\s+\(|[,;:]|[.!?](?=\s|$)|$)/i.exec(text)?.[1]?.trim();
+    const normalize = (text: string) => text.replace(/^the\s+/i, '').replace(/\s+/g, ' ').toLowerCase();
+    const declared = target(value), recorded = questionSummary && target(questionSummary);
+    const noncurrent = /\b(?:future|previous|prior|earlier|past|later|next|another|different|other|historical|hypothetical|example|quoted)\s+(?:draft|plan|review|invocation|session)\b/i;
+    if (!questionSummary || !declared || noncurrent.test(declared) ||
+        (!/^(?:this|the current) (?:draft|plan|review|invocation|session)$/i.test(declared) &&
+          (!recorded || normalize(declared) !== normalize(recorded)))) return null;
+  }
+  if (match?.[2] || match?.[3]) {
     // One current field names one mode. A different mode after its explanation
     // is ambiguous regardless of the joining word or punctuation; it cannot be
     // discarded as suffix prose. A separate later Mode field is checked below.
-    const suffix = value.slice(firstParentheticalEnd + 1);
+    const suffix = value.slice(match[2] ? firstParentheticalEnd + 1 : match[1]!.length);
     if (modeNames.some(other => other !== mode &&
       new RegExp(`\\b${other.replaceAll(' ', '[ _]+')}\\b`, 'i').test(suffix))) return null;
   }
   return mode;
 }
 
-function withdrawn(text: string, option: string): boolean {
+function withdrawn(text: string, option: string, questionSummary?: string): boolean {
   const prose = publicProse(text);
   if (/\b(?:I|we)\s+(?:retract|withdraw|revoke|cancel)\b[^.!?\n]{0,100}\b(?:auto[- ]decision|annotation|decision|selection|choice)\b/i.test(prose) ||
       /\b(?:I|we)\s+(?:did not|didn't|have not|haven't|will not|won't|no longer)\s+auto-decide\b/i.test(prose) ||
@@ -98,7 +117,7 @@ function withdrawn(text: string, option: string): boolean {
     const parsed = modeField(line);
     if (parsed === null) return false;
     if (!parsed.completed) return true;
-    return selectedMode(parsed.value)?.toLowerCase() !== option.toLowerCase();
+    return selectedMode(parsed.value, questionSummary)?.toLowerCase() !== option.toLowerCase();
   });
 }
 
@@ -177,17 +196,18 @@ const modeNames = ['HOLD SCOPE', 'SCOPE EXPANSION', 'SELECTIVE EXPANSION', 'SCOP
 const modeValue = (value: unknown) => typeof value === 'string' && modeNames.includes(value.replaceAll('_', ' '))
   ? value.replaceAll('_', ' ') : null;
 
-function currentModeStatement(text: string): { option: string; statement: string } | null {
+function currentModeStatement(text: string, questionSummary?: string): { option: string; statement: string } | null {
   const prose = publicProse(text);
   const lines = prose.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const statement = lines[i]!.replace(/^\s*[-*+]\s+/, '').trim();
     const field = modeField(statement);
-    const option = field?.completed ? selectedMode(field.value) : null;
+    const option = field?.completed ? selectedMode(field.value, questionSummary) : null;
     if (!option || !modeNames.includes(option)) continue;
     // Source/example introductions and conditional selections cannot supply
     // a current declaration merely by putting a Mode field on the next line.
-    if (/\b(?:example|hypothetical|historical|previous|quoted)\b/i.test(lines.slice(0, i + 1).join('\n'))) continue;
+    const context = lines.slice(0, i + 1).join('\n').replace(/\b[\w/-]+(?:\.[\w-]+)+\b/g, '');
+    if (/\b(?:example|hypothetical|historical|previous|quoted)\b/i.test(context)) continue;
     return { option, statement: lines[i]!.trim() };
   }
   return null;
@@ -246,10 +266,10 @@ function structuredModeDecision(transcript: PlanCountTranscript, tools: NativePu
           typeof row.question_summary === 'string' && row.question_summary.trim() &&
           loggedAt >= time(start.result.timestamp) && loggedAt <= opts.now) {
         for (const message of current) {
-          const declared = currentModeStatement(message.text);
+          const declared = currentModeStatement(message.text, row.question_summary);
           if (time(message.timestamp) < loggedAt || !declared || declared.option !== modeValue(row.user_choice)) continue;
           const after = current.filter(m => time(m.timestamp) >= time(message.timestamp)).map(m => m.text).join('\n\n');
-          if (withdrawn(after, declared.option)) continue;
+          if (withdrawn(after, declared.option, row.question_summary)) continue;
           return { sessionId: opts.sessionId, timestamp: message.timestamp, summary: row.question_summary,
             option: declared.option, annotation: message.text, preambleToolUseId: start.use.toolUseId, stateRecord: row };
         }
@@ -295,11 +315,11 @@ function structuredModeDecision(transcript: PlanCountTranscript, tools: NativePu
   const logged = logs[0]!;
   for (const message of current) {
     if (time(message.timestamp) < time(logged.result!.timestamp)) continue;
-    const declared = currentModeStatement(message.text);
+    const declared = currentModeStatement(message.text, logged.log.question_summary);
     if (!declared || declared.option !== modeValue(logged.log.user_choice)) continue;
     const after = current.filter(m => time(m.timestamp) >= time(message.timestamp)).map(m => m.text).join('\n\n');
-    if (withdrawn(after, declared.option) || current.some(m => time(m.timestamp) >= time(message.timestamp) &&
-        currentModeStatement(m.text)?.option !== undefined && currentModeStatement(m.text)!.option !== declared.option)) continue;
+    if (withdrawn(after, declared.option, logged.log.question_summary) || current.some(m => time(m.timestamp) >= time(message.timestamp) &&
+        currentModeStatement(m.text, logged.log.question_summary)?.option !== undefined && currentModeStatement(m.text, logged.log.question_summary)!.option !== declared.option)) continue;
     return { sessionId: opts.sessionId, timestamp: message.timestamp, summary: logged.log.question_summary,
       option: declared.option, annotation: message.text, preambleToolUseId: start.use.toolUseId,
       preferenceToolUseId: check.use.toolUseId, questionLogToolUseId: logged.use.toolUseId };
