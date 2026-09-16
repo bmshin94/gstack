@@ -407,7 +407,11 @@ describe('Eng approved-work decision gate', () => {
     expect(compactProse(gate)).toContain("optional verification method or depth");
     expect(compactProse(options)).toContain("build `currentDecision`");
     expect(compactProse(options)).toContain("`options`: every exact label and full description");
-    const nativeFields = options.split('Select one pending ID')[1]!.split('Build the complete **comparison grid**')[0]!;
+    const nativeStart = options.indexOf('Select one pending ID');
+    const gridStart = options.indexOf('Build a separate **comparison grid**');
+    expect(nativeStart).toBeGreaterThanOrEqual(0);
+    expect(gridStart).toBeGreaterThan(nativeStart);
+    const nativeFields = options.slice(nativeStart, gridStart);
     expect(nativeFields).toContain("`question`: the complete D-numbered preamble brief, including Project, ELI10, Stakes, Recommendation");
     expect(nativeFields).toContain("Put the problem and file:line in the native fields");
     expect(nativeFields).toContain("Each option must explain human/CC effort, risk and maintenance. Tie the recommendation to the engineering preferences");
