@@ -6,9 +6,101 @@ import { createCeoPaymentFindingCounter } from './helpers/ceo-payment-findings';
 import { nativePlanCallFingerprint, ceoFirstReviewAUQ } from './helpers/claude-pty-runner';
 import captured from './fixtures/ceo-current-decision-cdd-public.json';
 import exactFields from './fixtures/ceo-native-fields-f359.json';
+import retryRecord from './fixtures/ceo-current-record-6aef.json';
 
 type Capture = typeof captured.captures[number];
 const clone = <T>(value: T): T => structuredClone(value);
+
+// The original retry changed its question, B label and every description after
+// a complete Read. The separate anchor regression uses explicitly synchronized
+// counterfactual fields; neither route promotes the original failed attempt.
+const retryProjection = retryRecord.segments.map(segment => segment.text).join('\n');
+const retryQuestion = retryRecord.call.questions[0]!;
+const retryRecordStart = retryProjection.indexOf('## currentDecision (R4)');
+const retryFieldsStart = retryProjection.indexOf('Question:', retryRecordStart);
+const retryExactFields = `Question: ${retryQuestion.question}\nHeader: ${retryQuestion.header}\n` +
+  retryQuestion.options.map((option, index) =>
+    `${/^[A-D][).:]\s/.test(option.label) ? '' : `${'ABCD'[index]}) `}${option.label}\n${option.description}`).join('\n') + '\n';
+const retrySynchronized = retryProjection.slice(0, retryFieldsStart) + retryExactFields;
+function countRetryRecord(plan: string, call = clone(retryRecord.call)) {
+  const counter = createCeoPaymentFindingCounter(retryRecord.seed, () => plan, () => false);
+  const counted = counter.isReviewAUQ(nativePlanCallFingerprint(call, 1, false));
+  return { counted, trace: counter.trace };
+}
+test('6aef retry literal source projection preserves actual native drift rejection', () => {
+  for (const segment of retryRecord.segments)
+    expect(createHash('sha256').update(segment.text).digest('hex')).toBe(segment.sha256);
+  expect(retryRecordStart).toBeGreaterThan(0); expect(retryFieldsStart).toBeGreaterThan(retryRecordStart);
+  expect(retryRecord.call.answered).toBe(true);
+  expect(() => countRetryRecord(retryProjection)).toThrow(/Unsupported/);
+  expect(countRetryRecord(retrySynchronized)).toMatchObject({ counted: true });
+  expect(countRetryRecord(retrySynchronized).trace.at(-1)).toMatchObject({ kind: 'recorded-decision', ledgerId: 'R4' });
+});
+for (const heading of [
+  '### Per-item coverage (pending R4)', '### Test coverage for R4', '### TODO follow-up (R4)',
+  '### R4 section notes', '### R4 implementation tasks',
+]) test(`an incidental current row heading does not own a second record: ${heading}`, () => {
+  expect(countRetryRecord(retrySynchronized.replace('### Per-item coverage (pending R4)', heading)).counted).toBe(true);
+});
+test('a contextual parent row heading does not borrow the nested record fields', () => {
+  const plan = retrySynchronized.replace('## currentDecision (R4)', '## R4 coverage context\n\n### currentDecision (R4)');
+  expect(countRetryRecord(plan).counted).toBe(true);
+});
+for (const heading of ['## R4 decision', '## Pending R4 options', '## R4 comparison'])
+  test(`a generic owned heading can introduce complete native fields: ${heading}`, () => {
+    expect(countRetryRecord(retrySynchronized.replace('## currentDecision (R4)', heading)).counted).toBe(true);
+  });
+// A declaration owns a record regardless of row/name order or whether its
+// fields have been filled yet; incompleteness cannot remove an ambiguity.
+for (const kind of ['decision', 'review', 'options', 'approaches', 'comparison'])
+  for (const heading of [`## ${kind} R4`, `## R4 ${kind}`, `## Pending R4 ${kind}`, `## Current ${kind} for R4`])
+    for (const body of ['', '\n\nStatus: pending'])
+      test(`an explicit record declaration competes before its fields exist: ${heading} ${body}`, () => {
+        expect(() => countRetryRecord(retrySynchronized + '\n\n' + heading + body)).toThrow(/Unsupported/);
+      });
+
+for (const [name, record] of Object.entries({
+  'empty named heading': '## currentDecision (R4)',
+  'explicit decision status': '## Decision R4\n\nStatus: pending',
+  'explicit review state': '## Review R4\n\nState: current',
+  'empty decision declaration': '## Decision R4',
+  'empty review declaration': '## Review R4',
+  'incomplete named heading': '## currentDecision (R4)\n\nQuestion: incomplete',
+  'empty named paragraph': '**currentDecision: R4**',
+  'explicit options declaration': 'Options for R4:',
+  'question fields': '## R4 other record\n\nQuestion: another question',
+  'header fields': '## R4 other record\n\nHeader: another question',
+  'option paragraph': '## R4 other record\n\nA) Another option\nB) Another choice',
+  'option list': '## R4 other record\n\n- A) Another option\n- B) Another choice',
+  'option comparison table': '## R4 other record\n\n| Option | Effort |\n| --- | --- |\n| A | S |\n| B | M |',
+  'column comparison table': '## R4 other record\n\n| Commitment | A | B |\n| --- | --- | --- |\n| Work | fixed | changed |',
+  'literal comparison grid': '## R4 other record\n\n```text\nCommitment | A | B\nWork | fixed | changed\n```',
+  'complete duplicate': '## currentDecision (R4)\n\n' + retryExactFields,
+})) test(`a competing current record remains ambiguous: ${name}`, () => {
+  const plan = retrySynchronized + '\n\n' + record + '\n';
+  expect(() => countRetryRecord(plan)).toThrow(/Unsupported/);
+});
+for (const example of [
+  '> Question: example only', '```text\nQuestion: example only\nHeader: example\n```',
+  '"Question: example only"', '`Question: example only`',
+]) test(`quoted field examples do not own another current record: ${JSON.stringify(example)}`, () => {
+  expect(countRetryRecord(retrySynchronized + '\n\n## R4 explanatory notes\n\n' + example).counted).toBe(true);
+});
+for (const [name, change] of Object.entries({
+  question: (s: string) => s.replace(retryQuestion.question, retryQuestion.question + ' Changed.'),
+  label: (s: string) => s.replace(retryQuestion.options[1]!.label, 'B) Changed choice'),
+  description: (s: string) => s.replace(retryQuestion.options[0]!.description!, 'Shortened description.'),
+  source: (s: string) => s.replaceAll('PLAN.md', 'other/PLAN.md'),
+  row: (s: string) => s.replace('## currentDecision (R4)', '## currentDecision (R99)'),
+})) test(`incidental headings cannot bypass native or source identity: ${name}`, () => {
+  const plan = change(retrySynchronized); expect(plan).not.toBe(retrySynchronized);
+  expect(() => countRetryRecord(plan)).toThrow(/Unsupported/);
+});
+test('a complete saved record still needs an actual answer', () => {
+  const call = clone(retryRecord.call); call.answered = false;
+  expect(() => countRetryRecord(retrySynchronized, call)).toThrow(/Unsupported|Invalid/);
+});
+
 const paired = captured.captures[0]!, distinct = captured.captures[1]!, retry = captured.captures[2]!;
 function replay(row: Capture, plan = row.savedPlan, calls = clone(row.calls)) {
   const counter = createCeoPaymentFindingCounter(row.source, () => plan, ceoFirstReviewAUQ);

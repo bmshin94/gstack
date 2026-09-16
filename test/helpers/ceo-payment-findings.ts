@@ -697,6 +697,31 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
         (t.type === 'heading' && current(plain(t.text)) && mentions(plain(t.text), id)) ||
         (t.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(t.raw)) && mentions(plain(t.raw), id)) ||
         paragraphRecord(i) ? [i] : []);
+      // A row reference in a coverage/task heading does not declare another
+      // saved decision. Keep broad legacy discovery, but count ownership only
+      // where a record is declared or its own fields/comparison begin. Explicit
+      // empty/incomplete records still conflict; never borrow a child record.
+      const recordAnchors = anchors.filter(start => {
+        const anchor = tokens[start]!;
+        const heading = plain(anchor.raw).replace(/^#+\s*/, '');
+        const rowName = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const kind = '(?:decision|review|options|approaches|comparison)';
+        const declared = new RegExp(`^(?:(?:current|pending)\\s+)?(?:${kind}\\s+(?:for\\s+)?${rowName}\\b|${rowName}\\s+${kind}\\b)`, 'i');
+        if (paragraphRecord(start) || /^currentDecision\b/i.test(heading) || declared.test(heading) ||
+            (anchor.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(anchor.raw)))) return true;
+        let end = start + 1;
+        while (end < tokens.length && tokens[end]!.type !== 'heading') end++;
+        return tokens.slice(start + 1, end).some(token => {
+          if (token.type === 'paragraph') return !/^[`"'“‘]/.test(token.raw.trim()) &&
+            /^(?:(?:Question|Header):|[A-D][).:]\s+\S)/m.test(plain(token.raw));
+          if (token.type === 'list') return token.items.some(item => !/^[`"'“‘]/.test(item.text.trim()) &&
+            /^[A-D][).:]\s+\S/.test(plain(item.text)));
+          const columns = token.type === 'table' ? token.header.map(cell => plain(cell.text)) :
+            token.type === 'code' ? (token.text.split('\n').find(line => line.includes('|')) ?? '').split('|').map(plain) : [];
+          return columns.some(column => /^(?:Option|Approach)\b/i.test(column)) ||
+            columns.filter(column => /^[A-D]$/.test(column)).length >= 2;
+        });
+      });
       let matchedPhase: string | undefined;
       for (const start of anchors) {
         if ((quotedProposal || contractCitation) && !currentContext(start)) continue;
@@ -719,11 +744,11 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
           const ownedComparison = pendingRowContext(tokens, tokens.indexOf(table), read('id')) &&
               sourceRecords.length <= 1 && sourceRecords.every(source => source === 'PLAN.md') &&
               !hasForeignContractSource(cells[fields.evidence[0]!]!.text, sourcePlan) &&
-              currentRows.filter(value => value === id).length === 1 && anchors.filter(currentContext).length === 1;
+              currentRows.filter(value => value === id).length === 1 && recordAnchors.filter(currentContext).length === 1;
           if (paragraphRecord(start) && (!pendingRowContext(tokens, tokens.indexOf(table), read('id')) ||
               sourceRecords.some(source => source !== 'PLAN.md') ||
               hasForeignContractSource(cells[fields.evidence[0]!]!.text, sourcePlan) ||
-              currentRows.filter(value => value === id).length !== 1 || anchors.filter(currentContext).length !== 1)) continue;
+              currentRows.filter(value => value === id).length !== 1 || recordAnchors.filter(currentContext).length !== 1)) continue;
           if (ownedComparison && exactNativeFields(section)) matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];
           // Markdown permits an option paragraph followed by a facts list.
           // Bind only the adjacent list to that option; never borrow a later
