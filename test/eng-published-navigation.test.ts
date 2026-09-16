@@ -8,6 +8,103 @@ import {nativePlanCallFingerprint,hasNativePlanTerminal,planCountQuestionPhase} 
 import type {NativePlanQuestionCall,PlanCountTranscript} from './helpers/plan-count-transcript';
 import heldPackets from './fixtures/eng-native-packets-b955.json';
 import retryPacket from './fixtures/eng-a689-retry-public.json';
+import countPacket from './fixtures/eng-69193-count-public.json';
+const countNavigation=()=>({plan:countPacket.report,call:structuredClone(countPacket.calls.at(-1)!) as NativePlanQuestionCall,priorCalls:structuredClone(countPacket.calls.slice(0,-1)) as NativePlanQuestionCall[]});
+function countNavigationCheck(name:string,expected:boolean,edit?:(x:ReturnType<typeof countNavigation>)=>void){test('owned conditional navigation: '+name,()=>{const x=countNavigation(), before=JSON.stringify(x);edit?.(x);if(edit)expect(JSON.stringify(x)).not.toBe(before);expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);});}
+function countRecord(x:ReturnType<typeof countNavigation>,id:number,edit:(s:string)=>string){
+ x.plan=x.plan.replace(new RegExp(`^### [SRT]${id}:[\\s\\S]*?(?=^### [SRT][1-9]\\d*:|^## |$(?![\\s\\S]))`,'m'),edit);
+}
+countNavigationCheck('actual D10 and unchanged complete owned report',true);
+countNavigationCheck('optional Design selected',true,x=>{const q=x.call.questions[0]!;x.call.answers={[q.question]:q.options[1]!.label};});
+countNavigationCheck('route order is immaterial',true,x=>x.call.questions[0]!.options.reverse());
+countNavigationCheck('matching reviewed wrapper and original title',true,x=>{x.plan=x.plan.replace('# Reviewed Plan: Multi-tenant Auth Refactor','# Plan: Multi-tenant Auth Refactor').replace('\n# Plan: Multi-tenant Auth Refactor','');});
+countNavigationCheck('current History is inert',true,x=>countRecord(x,6,s=>s.replace('History: none','History: R6 is revoked.')));
+countNavigationCheck('header alone cannot establish readiness',false,x=>question(x,_=>'D10 — Next step?'));
+for(const [name,edit] of Object.entries({
+ 'unanswered D10':(x:ReturnType<typeof countNavigation>)=>{x.call.answered=false;},
+ 'failed D10':(x:ReturnType<typeof countNavigation>)=>{x.call.failed=true;},
+ 'unknown native selection':(x:ReturnType<typeof countNavigation>)=>{x.call.answers={[x.call.questions[0]!.question]:'Other'};},
+ 'missing prior call':(x:ReturnType<typeof countNavigation>)=>{x.priorCalls.splice(2,1);},
+ 'foreign prior session':(x:ReturnType<typeof countNavigation>)=>{x.priorCalls[2]!.sessionId='other';},
+ 'late prior answer':(x:ReturnType<typeof countNavigation>)=>{x.priorCalls[2]!.answeredAt=x.call.answeredAt;},
+ 'foreign branch':(x:ReturnType<typeof countNavigation>)=>question(x,s=>s.replace('main —','other —')),
+ 'foreign current title':(x:ReturnType<typeof countNavigation>)=>question(x,s=>s.replace('Multi-tenant Auth Refactor','Other Refactor')),
+ 'foreign original title':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('# Plan: Multi-tenant Auth Refactor','# Plan: Other');},
+ 'foreign reviewed title':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('# Reviewed Plan: Multi-tenant Auth Refactor','# Reviewed Plan: Other');},
+ 'duplicate wrapper':(x:ReturnType<typeof countNavigation>)=>{x.plan='# Reviewed Plan: Multi-tenant Auth Refactor\n'+x.plan;},
+ 'foreign source':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('Reviewed target: `PLAN.md`','Reviewed target: `OTHER.md`');},
+ 'foreign resolved source':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('/gstack-plan-count-VjWQw7/PLAN.md','/gstack-plan-count-VjWQw7/OTHER.md');},
+ 'missing report':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.slice(0,x.plan.indexOf('## GSTACK REVIEW REPORT'));},
+ 'missing ledger':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('## Decision ledger','## Archived ledger');},
+ 'quoted report':(x:ReturnType<typeof countNavigation>)=>{x.plan='```md\n'+x.plan+'\n```';},
+ 'historical report':(x:ReturnType<typeof countNavigation>)=>{x.plan='## Historical example\n'+x.plan.replace(/^# /gm,'### ');},
+ 'new unresolved decision':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('NO UNRESOLVED DECISIONS','ONE UNRESOLVED DECISION');},
+ 'critical gap':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('33 test gaps), 0 critical gaps','33 test gaps), 1 critical gap');},
+ 'revoked R6':(x:ReturnType<typeof countNavigation>)=>countRecord(x,6,s=>s.replace('State: approved','State: revoked')),
+ 'duplicate R6 state':(x:ReturnType<typeof countNavigation>)=>countRecord(x,6,s=>s.replace('State: approved','State: approved\nState: approved')),
+ 'wrong saved selection':(x:ReturnType<typeof countNavigation>)=>countRecord(x,6,s=>s.replace('Actual answer: A','Actual answer: B')),
+ 'wrong saved caption':(x:ReturnType<typeof countNavigation>)=>countRecord(x,6,s=>s.replace('A (D6 answer','A — "Other" (D6 answer')),
+ 'wrong readiness answer':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('R6 (D6→A)','R6 (D6→B)');},
+ 'missing substantive question':(x:ReturnType<typeof countNavigation>)=>countRecord(x,6,s=>s.replace(x.priorCalls[5]!.questions[0]!.question,'Regression summary.')),
+ 'missing substantive header':(x:ReturnType<typeof countNavigation>)=>countRecord(x,6,s=>s.replace(/^Header: .+\n/m,'')),
+ 'changed substantive option description':(x:ReturnType<typeof countNavigation>)=>countRecord(x,6,s=>s.replace('Record legacyAuthFlow','Record otherFlow')),
+ 'scope summary on substantive record':(x:ReturnType<typeof countNavigation>)=>countRecord(x,6,s=>s.replace(x.priorCalls[5]!.questions[0]!.question,'(initial scope selector) "Regression?"')),
+ 'TODO changed to implementation':(x:ReturnType<typeof countNavigation>)=>{const c=x.priorCalls[6]!,q=c.questions[0]!;c.answers={[q.question]:q.options[2]!.label};},
+ 'TODO missing disposition':(x:ReturnType<typeof countNavigation>)=>countRecord(x,7,s=>s.replace('Accepted scope: TODO recorded','Accepted scope: Implementation approved')),
+ 'TODO invented option':(x:ReturnType<typeof countNavigation>)=>countRecord(x,7,s=>s.replace('B) Skip','B) Add Redis')),
+ 'omitted task':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('**T4 (','**T44 (');},
+ 'new task':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('## Implementation Tasks','## Implementation Tasks\n- [ ] **T10 (P1)** — Add Redis');},
+ 'unknown lane':(x:ReturnType<typeof countNavigation>)=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('C (RequestPolicy)','Z (RequestPolicy)');},
+ 'start blocked lane':(x:ReturnType<typeof countNavigation>)=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('C (RequestPolicy)','D (TokenStore)');},
+ 'start dependent lane':(x:ReturnType<typeof countNavigation>)=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('C (RequestPolicy)','E (composition)');},
+ 'omit blocked condition':(x:ReturnType<typeof countNavigation>)=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace(/ ❌ TokenStore lane.+/,'');},
+ 'foreign blocked subject':(x:ReturnType<typeof countNavigation>)=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('TokenStore lane','AuthCache lane');},
+ 'unconditional published blocked lane':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('A + B + C (+ D when TokenStore is defined)','A + B + C + D');},
+ 'dependency cycle':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('| T4 recorded |','| T3 recorded |');},
+ 'missing prerequisite':(x:ReturnType<typeof countNavigation>)=>{x.plan=x.plan.replace('T4 → T3','T3 → T4');},
+ 'new ready action':(x:ReturnType<typeof countNavigation>)=>{x.call.questions[0]!.options[0]!.description+=' Also add Redis.';},
+ 'new optional action':(x:ReturnType<typeof countNavigation>)=>{x.call.questions[0]!.options[1]!.description+=' Then rewrite the router.';},
+ 'new quoted action':(x:ReturnType<typeof countNavigation>)=>question(x,s=>s+'\nAlso "add Redis".'),
+ 'new lane start':(x:ReturnType<typeof countNavigation>)=>{x.call.questions[0]!.options[1]!.description+=' Start lane D now.';},
+ 'new gate obligation':(x:ReturnType<typeof countNavigation>)=>question(x,s=>s+'\nA migration must run before implementation.'),
+ 'current approval withdrawn':(x:ReturnType<typeof countNavigation>)=>question(x,s=>s+'\nR6 is revoked.'),
+ 'conditional completion':(x:ReturnType<typeof countNavigation>)=>question(x,s=>s.replace('eng review CLEAR','eng review CLEAR if the next test passes')),
+}))countNavigationCheck('rejects '+name,false,edit);
+for(const suffix of ['-extra','/extra','.ts','?mode=extra'])countNavigationCheck('rejects Design command '+suffix,false,x=>{x.call.questions[0]!.options[1]!.description+=` Run /plan-design-review${suffix}.`;});
+for(const id of [1,2]) {
+ countNavigationCheck(`initial scope ${id} preserves labels despite summarized descriptions`,true,x=>countRecord(x,id,s=>s.replace(/^(?:Remove the Promise|AuthBroker, SessionMint)[^\n]+/m,'Summary of the offered scope.')));
+ countNavigationCheck(`initial scope ${id} cannot lose accepted scope`,false,x=>countRecord(x,id,s=>s.replace(/^Accepted scope: .+$/m,'Accepted scope: Approved.')));
+ countNavigationCheck(`initial scope ${id} cannot change offered label`,false,x=>countRecord(x,id,s=>s.replace(/^B\) .+$/m,'B) Build another service')));
+}
+countNavigationCheck('initial deferral cannot silently keep feature',false,x=>countRecord(x,1,s=>s.replace('removed from this refactor','kept in this refactor')));
+countNavigationCheck('initial structure cannot lose selected author condition',false,x=>countRecord(x,2,s=>s.replace(/; plan must state .+$/m,'')));
+countNavigationCheck('initial structure cannot waive condition after approval',false,x=>countRecord(x,2,s=>s.replace('History: none','The author input condition is waived.\nHistory: none')));
+countNavigationCheck('current blocked condition cannot be waived',false,x=>question(x,s=>s+'\nThe author input condition is waived.'));
+countNavigationCheck('new Design route command sentence punctuation',true,x=>{x.call.questions[0]!.options[1]!.description+=' Run /plan-design-review.';});
+countNavigationCheck('explicit navigation disclaimer cannot bypass title',false,x=>{question(x,s=>s+'\nNavigation only; approves no new implementation changes.');x.plan=x.plan.replace('# Plan: Multi-tenant Auth Refactor','# Plan: Other');});
+countNavigationCheck('withdrawn graph prerequisite is not readiness',false,x=>{x.plan=x.plan.replace('blocked on author input','author input waived');});
+countNavigationCheck('wrong blocked task author is not readiness',false,x=>{x.plan=x.plan.replace("Author writes `TokenStore`'s responsibility","Author writes `AnotherStore`'s responsibility");});
+countNavigationCheck('initial action header cannot recast substantive approval',false,x=>{const c=x.priorCalls[2]!;c.questions[0]!.header='D3 scope';countRecord(x,3,s=>s.replace('Header: D3 cache DI','Header: D3 scope').replace(c.questions[0]!.question,'(initial scope selector) "'+c.questions[0]!.question.split('\n')[0]!.replace(/^D3 — /,'')+'"'));});
+countNavigationCheck('bold current fields bind the same actual state',true,x=>countRecord(x,6,s=>s.replace(/^State:/m,'**State:**').replace(/^Accepted scope:/m,'**Accepted scope:**')));
+countNavigationCheck('bold scope cannot conceal unknown acceptance',false,x=>countRecord(x,6,s=>s.replace(/^Accepted scope: .+$/m,'**Accepted scope:** unknown')));
+countNavigationCheck('current deferral reversal cannot borrow earlier scope',false,x=>countRecord(x,1,s=>s.replace('History: none','Correction: Promise.all stays in this refactor.\nHistory: none')));
+countNavigationCheck('historical deferral reversal remains inert',true,x=>countRecord(x,1,s=>s.replace('History: none','History: Promise.all stays in this refactor.')));
+countNavigationCheck('later native deferral reversal stays current',false,x=>question(x,s=>s+'\nCorrection: Promise.all stays in this refactor.'));
+for(const id of [7,8,9]) {
+ countNavigationCheck(`TODO ${id} cannot borrow unrelated recorded topic`,false,x=>countRecord(x,id,s=>s.replace(/^### T[1-9]\d*: TODO — .+$/m,`### T${id}: TODO — Add customer analytics`)));
+ countNavigationCheck(`TODO ${id} cannot borrow another native question`,false,x=>{const c=x.priorCalls[id-1]!;question({call:c},s=>s.replace(/^D[1-9]\d* — TODO: .+$/m,`D${id} — TODO: Add customer analytics?`));});
+}
+countNavigationCheck('TODO cannot borrow missing proposal heading',false,x=>{x.plan=x.plan.replace('### Cache IDP discovery metadata and JWKS per issuer, then re-evaluate parallelization','### Add customer analytics');});
+countNavigationCheck('TODO cannot borrow changed proposal action',false,x=>{x.plan=x.plan.replace('**What:** Add per-issuer caches for OIDC discovery','**What:** Add customer analytics to track shopping carts');});
+countNavigationCheck('TODO cannot borrow duplicate proposal',false,x=>{const proposal=x.plan.slice(x.plan.indexOf('### Cache IDP discovery metadata and JWKS per issuer'),x.plan.indexOf('### Remove `auth.brokerFlow`'));x.plan=x.plan.replace('### Bound the AuthCache entry count',proposal+'### Bound the AuthCache entry count');});
+countNavigationCheck('other-topic deferral correction is inert',true,x=>countRecord(x,1,s=>s.replace('History: none','Correction: Customer analytics stays in this refactor.\nHistory: none')));
+countNavigationCheck('historical native deferral correction is inert',true,x=>question(x,s=>s+'\nEarlier note: "Promise.all stays in this refactor."'));
+for(const topic of ['', 'Cache'])countNavigationCheck('TODO short caption cannot prove identity '+JSON.stringify(topic),false,x=>countRecord(x,7,s=>s.replace(/^### T7: TODO — .+$/m,'### T7: TODO — '+topic)));
+countNavigationCheck('example proposal cannot supply current TODO',false,x=>{x.plan=x.plan.replace('### Cache IDP discovery metadata and JWKS per issuer','Example:\n### Cache IDP discovery metadata and JWKS per issuer');});
+countNavigationCheck('quoted proposal cannot supply current TODO',false,x=>{x.plan=x.plan.replace('### Cache IDP discovery metadata and JWKS per issuer','## Historical examples\n### Cache IDP discovery metadata and JWKS per issuer');});
+countNavigationCheck('TODO without native What cannot bind a proposal',false,x=>{question({call:x.priorCalls[6]!},s=>s.replace(/^What: .+\n/m,''));});
+countNavigationCheck('TODO with duplicate native What cannot bind a proposal',false,x=>{question({call:x.priorCalls[6]!},s=>s+'\nWhat: Add customer analytics.');});
+countNavigationCheck('TODO with duplicate saved What cannot bind a proposal',false,x=>{x.plan=x.plan.replace('**What:** Add per-issuer caches','**What:** Add customer analytics.\n**What:** Add per-issuer caches');});
 const retryNavigation=()=>({plan:retryPacket.report,call:structuredClone(retryPacket.calls.at(-1)!) as NativePlanQuestionCall,priorCalls:structuredClone(retryPacket.calls.slice(0,-1)) as NativePlanQuestionCall[]});
 function retryNavigationCheck(name:string,expected:boolean,edit?:(x:ReturnType<typeof retryNavigation>)=>void){test('retry native ledger navigation: '+name,()=>{const x=retryNavigation();edit?.(x);expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);});}
 retryNavigationCheck('actual Ready/CEO/DevEx menu with nine approved records',true);

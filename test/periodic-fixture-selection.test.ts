@@ -4,6 +4,8 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
+    ['test/eng-error-flow-seed.test.ts', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
+    ['test/fixtures/eng-69193-count-public.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/ceo-current-decision-record.test.ts', ['plan-ceo-finding-count']],
     ['test/fixtures/ceo-current-decision-cdd-public.json', ['plan-ceo-finding-count']],
     ['test/fixtures/eng-count-c6fc-public.json', ['plan-eng-finding-count']],

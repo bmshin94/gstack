@@ -440,6 +440,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'test/helpers/autoplan-phase-order.ts', 'test/autoplan-phase-observation.test.ts', 'lib/fs-atomic.ts', 'test/helpers/owned-claude-transcript.ts', 'test/helpers/plan-skill-completion.ts', 'test/plan-skill-completion.test.ts', 'test/eval-budgets-policy.test.ts', 'test/fixtures/webfetch-permission.json', 'test/plan-skill-webfetch-permission.test.ts', 'test/helpers/ceo-finding-fixture.ts', 'test/ceo-finding-fixture.test.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'test/helpers/ceo-paired-fixture.ts', 'test/ceo-paired-payment-fixture.test.ts', 'test/fixtures/ceo-paired-option-values.json', 'test/fixtures/paired-payment/**', 'test/fixtures/ceo-existing-payment/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/tasks-section.ts'
   ],
   'plan-eng-finding-count':      [
+    'test/eng-error-flow-seed.test.ts', 'test/fixtures/eng-69193-count-public.json',
     'test/eng-initial-selector-043a.test.ts',
     'test/fixtures/eng-initial-selector-043a.json',
     'test/fixtures/eng-count-c6fc-public.json',
@@ -618,6 +619,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // confirm" plan write. runPlanSkillFloorCheck cannot detect that shape
   // (it exits on first AUQ); runPlanSkillCounting can.
   'plan-eng-multi-finding-batching': [
+    'test/eng-error-flow-seed.test.ts', 'test/fixtures/eng-69193-count-public.json',
     'test/eng-initial-selector-043a.test.ts',
     'test/fixtures/eng-initial-selector-043a.json',
     'test/fixtures/eng-batching-prefixed-ledger-f359.json',
