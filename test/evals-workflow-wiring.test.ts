@@ -137,7 +137,7 @@ describe('evals-periodic.yml sliced-lane wiring', () => {
     };
     const planner = workflow.jobs['plan-slices'];
     const executor = workflow.jobs['eval-slices'];
-    const plannerSteps = planner.steps.filter(step => step.run?.includes('--emit-plan '));
+    const plannerSteps = planner.steps.filter(step => step.run?.includes('EVALS_TIER=periodic ') && step.run.includes('--emit-plan '));
     const executorSteps = executor.steps.filter(step => step.run?.includes('--plan '));
     expect(plannerSteps).toHaveLength(1);
     expect(executorSteps).toHaveLength(1);
@@ -185,9 +185,12 @@ describe('evals-periodic.yml sliced-lane wiring', () => {
     expect(periodicYml).toMatch(/EVALS_TIER=periodic bun run scripts\/test-paid-shards\.ts --tier periodic --report /);
     const planned = plannedSlices(periodicYml);
     const matrices = matrixSlices(periodicYml);
-    expect(planned).toHaveLength(1);
-    expect(matrices).toHaveLength(1);
-    expect(matrices[0]).toEqual(Array.from({ length: planned[0] }, (_, i) => i + 1));
+    // Periodic work and the full gate census have distinct immutable plans.
+    expect(planned).toHaveLength(2);
+    expect(matrices).toHaveLength(2);
+    for (const [index, count] of planned.entries()) {
+      expect(matrices[index]).toEqual(Array.from({ length: count }, (_, i) => i + 1));
+    }
   });
 });
 

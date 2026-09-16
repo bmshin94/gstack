@@ -104,7 +104,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   ],
 
   // Office Hours
-  'office-hours-spec-review':     ['office-hours/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
+  'office-hours-spec-review':     ['test/paid-retry-supervision.test.ts', 'office-hours/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
     'bin/gstack-office-hours-review', 'lib/office-hours-review.ts', 'lib/fs-atomic.ts', 'scripts/resolvers/review.ts', 'test/helpers/skill-fixture.ts', 'test/helpers/office-hours-completion.ts'
   ],
   'office-hours-forcing-energy':  ['office-hours/**', 'scripts/resolvers/preamble.ts', 'test/fixtures/mode-posture/**', 'test/helpers/llm-judge.ts', 'test/skill-e2e-office-hours.test.ts', 'test/office-posture-recording.test.ts',
@@ -115,33 +115,33 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   ],
 
   // Plan reviews
-  'plan-ceo-review':                  ['plan-ceo-review/**', 'test/skill-e2e-plan.test.ts',
+  'plan-ceo-review':                  ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'test/skill-e2e-plan.test.ts',
     'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-ceo-review-selective':        ['plan-ceo-review/**', 'test/skill-e2e-plan.test.ts',
+  'plan-ceo-review-selective':        ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'test/skill-e2e-plan.test.ts',
     'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-ceo-review-benefits':         ['plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
+  'plan-ceo-review-benefits':         ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
     'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-ceo-review-expansion-energy': ['plan-ceo-review/**', 'scripts/resolvers/preamble.ts', 'test/fixtures/mode-posture/**', 'test/helpers/llm-judge.ts', 'test/skill-e2e-plan.test.ts',
+  'plan-ceo-review-expansion-energy': ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/resolvers/preamble.ts', 'test/fixtures/mode-posture/**', 'test/helpers/llm-judge.ts', 'test/skill-e2e-plan.test.ts',
     'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-eng-review':           [
+  'plan-eng-review':           ['test/paid-retry-supervision.test.ts',
     'scripts/resolvers/learnings.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json", 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'test/skill-e2e-plan.test.ts',
     "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts", "scripts/resolvers/preamble/generate-completion-status.ts",
     'scripts/resolvers/testing.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/review.ts', 'test/plan-review-cases.test.ts'
   ],
-  'plan-eng-review-artifact':  [
+  'plan-eng-review-artifact':  ['test/paid-retry-supervision.test.ts',
     'scripts/resolvers/learnings.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json", 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'test/skill-e2e-plan.test.ts',
     "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts", "scripts/resolvers/preamble/generate-completion-status.ts",
     'scripts/resolvers/testing.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/review.ts', 'test/plan-review-cases.test.ts'
   ],
-  'plan-review-report':        [
+  'plan-review-report':        ['test/paid-retry-supervision.test.ts',
     'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts',
     'test/plan-review-report-recording.test.ts', 'test/fixtures/plan-review-report-public.json',
     'scripts/resolvers/learnings.ts',
@@ -169,7 +169,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     "test/fixtures/eng-option-b-scope-al.json",
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'lib/fs-atomic.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-eng-review-plan-mode':    [
+  'plan-eng-review-plan-mode':    ['test/paid-retry-supervision.test.ts',
     'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json',
     'test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts',
     'scripts/resolvers/learnings.ts',
@@ -225,7 +225,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // (--max-concurrency + --retry 1), so worst-case cost is ~2x a single
   // pass of each, sharing the API budget with sibling tests — not the
   // sequential ~+10min a local read suggests.
-  'plan-mode-no-op':              [
+  'plan-mode-no-op':              ['test/paid-retry-supervision.test.ts',
     'scripts/resolvers/learnings.ts',
     "test/fixtures/plan-scope-target-aw.json",
 
@@ -262,7 +262,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // written a never-ask preference, AUQ should still auto-decide rather than
   // surfacing the question. Touches the question-tuning + preference
   // infrastructure plus the resolvers that own the AUTO_DECIDE preamble.
-  'auto-decide-preserved':        [
+  'auto-decide-preserved':        ['test/paid-retry-supervision.test.ts',
     'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json',
     'test/fixtures/auto-decide-completed-mode-f359.json',
     'test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts','test/pty-screen-unicode-ap.test.ts',
@@ -293,7 +293,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'auq-format-gate':                           ['plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completeness-section.ts', 'scripts/resolvers/preamble.ts', 'test/helpers/auq-sdk-capture.ts', 'test/helpers/session-runner.ts', 'test/helpers/llm-judge.ts', 'test/skill-e2e-ask-user-question-format-compliance.test.ts',
     'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-ceo-mode-routing':       [
+  'plan-ceo-mode-routing':       ['test/paid-retry-supervision.test.ts',
     'test/fixtures/ceo-hold-preservation-f359.json',
     'test/fixtures/ceo-expansion-complete-inventory-6f.json',
     'test/fixtures/ceo-expansion-posture-kind-dacc.json',
@@ -593,7 +593,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // review-phase AskUserQuestion). Uses runPlanSkillFloorCheck — minimal
   // "did agent fire ANY AUQ?" observer that exits early on first non-permission
   // numbered-option render. ~1-3 min typical wall time per test, ~$2-6 total.
-  'plan-eng-finding-floor':      [
+  'plan-eng-finding-floor':      ['test/paid-retry-supervision.test.ts',
     'scripts/resolvers/learnings.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json", 'test/eng-scope-entry-ap.test.ts', 'bin/gstack-skill-start', 'bin/gstack-skill-end', 'plan-eng-review/**', 'scripts/resolvers/preamble.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'scripts/resolvers/review.ts', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/fixtures/forcing-finding-seeds.ts', 'test/skill-e2e-plan-eng-finding-floor.test.ts', 'test/eng-first-review-t.test.ts', 'test/fixtures/eng-batching-t-calls.json', 'test/eng-scope-y.test.ts', 'test/fixtures/eng-scope-y-calls.json', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/eng-binding-z.test.ts', 'test/fixtures/eng-binding-z-calls.json', 'test/eng-binding-retry-z.test.ts', 'test/fixtures/eng-binding-retry-z-calls.json', 'test/helpers/plan-floor-target.ts', 'test/plan-floor-target.test.ts', 'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts', 'test/helpers/plan-count-artifacts.ts', 'test/plan-count-artifacts.test.ts',
@@ -602,7 +602,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts",
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'lib/fs-atomic.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'scripts/resolvers/testing.ts', 'test/plan-review-cases.test.ts'
   ],
-  'plan-ceo-finding-floor':      ['bin/gstack-skill-start', 'bin/gstack-skill-end', 'plan-ceo-review/**', 'scripts/resolvers/preamble.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'scripts/resolvers/review.ts', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/fixtures/forcing-finding-seeds.ts', 'test/skill-e2e-plan-ceo-finding-floor.test.ts', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/helpers/plan-floor-target.ts', 'test/plan-floor-target.test.ts', 'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts', 'test/helpers/plan-count-artifacts.ts', 'test/plan-count-artifacts.test.ts',
+  'plan-ceo-finding-floor':      ['test/paid-retry-supervision.test.ts', 'bin/gstack-skill-start', 'bin/gstack-skill-end', 'plan-ceo-review/**', 'scripts/resolvers/preamble.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'scripts/resolvers/review.ts', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/fixtures/forcing-finding-seeds.ts', 'test/skill-e2e-plan-ceo-finding-floor.test.ts', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/helpers/plan-floor-target.ts', 'test/plan-floor-target.test.ts', 'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts', 'test/helpers/plan-count-artifacts.ts', 'test/plan-count-artifacts.test.ts',
     "test/ceo-section-ordering-aq.test.ts", "test/fixtures/ceo-section-ordering-aq.json",
     "test/ceo-transaction-contract-ar.test.ts", "test/fixtures/ceo-transaction-contract-ar.json", "test/ceo-section-declarative-ar.test.ts", "test/fixtures/ceo-section-declarative-ar.json",
     'test/pty-workspace-trust.test.ts', 'test/fixtures/pty-companion-cli.ts', 'lib/fs-atomic.ts', 'test/helpers/pty-current-screen.ts', 'test/pty-current-screen.test.ts', 'test/fixtures/native-viewport.ts', 'test/helpers/plan-skill-questions.ts', 'test/fixtures/eng-auq-validation-error.json', 'test/fixtures/bash-directory-permission.json', 'test/fixtures/design-tasks-bash-permission.json', 'test/plan-skill-read-permission.test.ts', 'test/fixtures/read-permission.json', 'test/plan-skill-questions.test.ts', 'test/helpers/plan-skill-question-events.ts', 'test/plan-skill-question-events.test.ts', 'test/helpers/plan-skill-question-hook-scope.ts', 'test/helpers/skill-census.ts', 'test/plan-skill-question-hook-scope.test.ts', 'scripts/resolvers/tasks-section.ts'
@@ -695,20 +695,20 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
 
   // AskUserQuestion format regression (RECOMMENDATION + Completeness: N/10)
   // Fires when either template OR the two preamble resolvers change.
-  'plan-ceo-review-format-mode':      ['plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completeness-section.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/helpers/llm-judge.ts', 'test/skill-e2e-plan-format.test.ts',
+  'plan-ceo-review-format-mode':      ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completeness-section.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/helpers/llm-judge.ts', 'test/skill-e2e-plan-format.test.ts',
     'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-ceo-review-format-approach':  ['plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completeness-section.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/helpers/llm-judge.ts', 'test/skill-e2e-plan-format.test.ts',
+  'plan-ceo-review-format-approach':  ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completeness-section.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/helpers/llm-judge.ts', 'test/skill-e2e-plan-format.test.ts',
     'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-eng-review-format-coverage':  [
+  'plan-eng-review-format-coverage':  ['test/paid-retry-supervision.test.ts',
     'scripts/resolvers/learnings.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json", 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completeness-section.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/helpers/llm-judge.ts', 'test/skill-e2e-plan-format.test.ts',
     "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts", "scripts/resolvers/preamble/generate-completion-status.ts",
     'scripts/resolvers/testing.ts', 'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'scripts/resolvers/review.ts', 'test/plan-review-cases.test.ts'
   ],
-  'plan-eng-review-format-kind':      [
+  'plan-eng-review-format-kind':      ['test/paid-retry-supervision.test.ts',
     'scripts/resolvers/learnings.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json", 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completeness-section.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/helpers/llm-judge.ts', 'test/skill-e2e-plan-format.test.ts',
@@ -719,7 +719,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // v1.7.0.0 Pros/Cons format cadence + format + negative-escape evals.
   // Dependencies: same as format-mode + the 4 plan-review templates + overlay.
   // All periodic-tier (non-deterministic Opus 4.7 behavior).
-  'plan-ceo-review-prosons-cadence':  [
+  'plan-ceo-review-prosons-cadence':  ['test/paid-retry-supervision.test.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json",
     "test/fixtures/design-scope-checkpoint-at.json",'test/eng-scope-entry-ap.test.ts', 'plan-ceo-review/**', 'plan-eng-review/**', 'plan-design-review/**', 'plan-devex-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/skill-e2e-plan-prosons.test.ts',
@@ -728,7 +728,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts", "scripts/resolvers/preamble/generate-completion-status.ts",
     'scripts/resolvers/testing.ts', 'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'scripts/resolvers/review.ts', 'test/plan-review-cases.test.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-review-prosons-format':       [
+  'plan-review-prosons-format':       ['test/paid-retry-supervision.test.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json",
     "test/fixtures/design-scope-checkpoint-at.json",'test/eng-scope-entry-ap.test.ts', 'plan-ceo-review/**', 'plan-eng-review/**', 'plan-design-review/**', 'plan-devex-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/skill-e2e-plan-prosons.test.ts',
@@ -737,10 +737,10 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts", "scripts/resolvers/preamble/generate-completion-status.ts",
     'scripts/resolvers/testing.ts', 'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'scripts/resolvers/review.ts', 'test/plan-review-cases.test.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-review-prosons-hardstop-neg': ['plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/skill-e2e-plan-prosons.test.ts',
+  'plan-review-prosons-hardstop-neg': ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/skill-e2e-plan-prosons.test.ts',
     'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'plan-review-prosons-neutral-neg':  ['plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/skill-e2e-plan-prosons.test.ts',
+  'plan-review-prosons-neutral-neg':  ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble.ts', 'model-overlays/opus-4-7.md', 'test/skill-e2e-plan-prosons.test.ts',
     'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'scripts/resolvers/tasks-section.ts'
   ],
 
@@ -757,16 +757,16 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'plan-tune-dream-cycle':       ['bin/gstack-distill-free-text', 'bin/gstack-distill-apply', 'hosts/claude/hooks/**', 'plan-tune/**', 'test/skill-e2e-plan-tune-cathedral.test.ts', 'lib/jsonl-store.ts', 'lib/is-conductor.ts', 'test/plan-tune-cathedral-fixture.test.ts'],
 
   // Codex offering verification
-  'codex-offered-office-hours':  ['office-hours/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
+  'codex-offered-office-hours':  ['test/paid-retry-supervision.test.ts', 'office-hours/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
     'test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts', 'test/fixtures/codex-offering-cdd-public.json',
     'test/helpers/workflow-judge-input.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts'
   ],
-  'codex-offered-ceo-review':    ['plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
+  'codex-offered-ceo-review':    ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'test/skill-e2e-plan.test.ts',
     'test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts', 'test/fixtures/codex-offering-cdd-public.json',
     'test/helpers/workflow-judge-input.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts',
     'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/tasks-section.ts'
   ],
-  'codex-offered-design-review': [
+  'codex-offered-design-review': ['test/paid-retry-supervision.test.ts',
     'test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts', 'test/fixtures/codex-offering-cdd-public.json',
     'test/helpers/workflow-judge-input.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts',
     "test/plan-scope-recovery-av.test.ts",
@@ -777,7 +777,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts", "scripts/resolvers/preamble/generate-completion-status.ts",
     'scripts/resolvers/preamble/generate-ask-user-format.ts'
   ],
-  'codex-offered-eng-review':    [
+  'codex-offered-eng-review':    ['test/paid-retry-supervision.test.ts',
     'test/helpers/codex-offering-fixture.ts', 'test/codex-offering-fixture.test.ts', 'test/fixtures/codex-offering-cdd-public.json',
     'test/helpers/workflow-judge-input.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts',
     'scripts/resolvers/learnings.ts',
@@ -1235,10 +1235,10 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'plan-devex-peer-comparison-classification': ['test/skill-e2e-plan-devex-peer-comparison-classification.test.ts', 'test/fixtures/devex-peer-comparison-classification.ts', 'test/devex-peer-comparison-calibration.test.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/helpers/e2e-helpers.ts', 'test/helpers/eval-store.ts', 'test/helpers/eval-budgets.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'docs/askuserquestion-split.md', 'plan-devex-review/SKILL.md.tmpl', 'plan-devex-review/sections/review-sections.md.tmpl'],
   'plan-decision-classification': ['test/skill-e2e-plan-decision-classification.test.ts', 'test/fixtures/plan-decision-classification.ts', 'test/plan-review-calibration.test.ts', 'test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts', 'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts', 'test/helpers/llm-judge.ts', 'lib/eval-model.ts', 'test/helpers/e2e-helpers.ts', 'test/helpers/eval-store.ts', 'test/helpers/eval-budgets.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'docs/askuserquestion-split.md', 'plan-ceo-review/SKILL.md.tmpl', 'plan-ceo-review/sections/review-sections.md.tmpl', 'scripts/resolvers/tasks-section.ts'],
   'health-reporting': ['health/**', 'test/skill-e2e-health.test.ts', 'test/helpers/health-eval-fixture.ts'],
-  'codex-plan-ceo-format-mode': ['plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts'],
-  'codex-plan-ceo-format-approach': ['plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts'],
-  'codex-plan-eng-format-coverage': ['scripts/resolvers/learnings.ts', 'test/review-entry-and-design-clarity-au.test.ts', 'test/fixtures/plan-scope-recovery-av.json', 'test/plan-scope-recovery-av.test.ts', 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts', 'test/plan-review-cases.test.ts'],
-  'codex-plan-eng-format-kind': ['scripts/resolvers/learnings.ts', 'test/review-entry-and-design-clarity-au.test.ts', 'test/fixtures/plan-scope-recovery-av.json', 'test/plan-scope-recovery-av.test.ts', 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts', 'test/plan-review-cases.test.ts'],
+  'codex-plan-ceo-format-mode': ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts'],
+  'codex-plan-ceo-format-approach': ['test/paid-retry-supervision.test.ts', 'plan-ceo-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts'],
+  'codex-plan-eng-format-coverage': ['test/paid-retry-supervision.test.ts', 'scripts/resolvers/learnings.ts', 'test/review-entry-and-design-clarity-au.test.ts', 'test/fixtures/plan-scope-recovery-av.json', 'test/plan-scope-recovery-av.test.ts', 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts', 'test/plan-review-cases.test.ts'],
+  'codex-plan-eng-format-kind': ['test/paid-retry-supervision.test.ts', 'scripts/resolvers/learnings.ts', 'test/review-entry-and-design-clarity-au.test.ts', 'test/fixtures/plan-scope-recovery-av.json', 'test/plan-scope-recovery-av.test.ts', 'test/eng-scope-entry-ap.test.ts', 'plan-eng-review/**', 'scripts/gen-skill-docs.ts', 'scripts/resolvers/**', 'model-overlays/gpt.md', 'model-overlays/gpt-5.4.md', 'test/helpers/codex-session-runner.ts', 'test/helpers/codex-eval.ts', 'test/codex-e2e-plan-format.test.ts', 'test/plan-review-cases.test.ts'],
   'overlay-harness-claude-dedicated-tools-vs-bash': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'test/agent-sdk-runner.test.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-claude-dedicated-tools-vs-bash.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
   'overlay-harness-opus-4-7-effort-match-trivial': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'test/agent-sdk-runner.test.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-effort-match-trivial.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],
   'overlay-harness-opus-4-7-literal-interpretation': ['model-overlays/**', 'test/fixtures/overlay-nudges.ts', 'test/helpers/agent-sdk-runner.ts', 'test/agent-sdk-runner.test.ts', 'scripts/resolvers/model-overlay.ts', 'test/skill-e2e-overlay-harness-opus-4-7-literal-interpretation.test.ts', 'test/helpers/overlay-measurement.ts', 'test/helpers/overlay-workspace.ts', 'test/helpers/overlay-attempt.ts', 'test/overlay-measurement.test.ts', 'test/helpers/overlay-case.ts', 'test/helpers/overlay-case-policy.ts', 'test/helpers/overlay-lifecycle.ts', 'test/overlay-lifecycle.test.ts', 'test/overlay-sdk-cancel-eof.test.ts', 'test/overlay-recording-order.test.ts', 'test/paid-overlay-scheduling.test.ts', 'test/fixtures/overlay-admission-child.ts'],

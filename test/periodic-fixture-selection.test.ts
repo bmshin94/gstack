@@ -422,3 +422,28 @@ test('CEO carved sections select the judge that consumes their complete content'
       .toEqual(['plan-ceo-review/SKILL.md modes']);
   }
 });
+
+
+test('file supervision regression selects all affected callers with their existing tiers', () => {
+  const gate = [
+    'codex-offered-ceo-review', 'codex-offered-design-review', 'codex-offered-eng-review',
+    'codex-offered-office-hours', 'office-hours-spec-review', 'plan-ceo-finding-floor',
+    'plan-ceo-review-benefits', 'plan-mode-no-op', 'plan-review-report',
+  ];
+  const periodic = [
+    'auto-decide-preserved', 'codex-plan-ceo-format-approach', 'codex-plan-ceo-format-mode',
+    'codex-plan-eng-format-coverage', 'codex-plan-eng-format-kind', 'plan-ceo-mode-routing',
+    'plan-ceo-review', 'plan-ceo-review-expansion-energy', 'plan-ceo-review-format-approach',
+    'plan-ceo-review-format-mode', 'plan-ceo-review-prosons-cadence', 'plan-ceo-review-selective',
+    'plan-eng-finding-floor', 'plan-eng-review', 'plan-eng-review-artifact',
+    'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-eng-review-plan-mode',
+    'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg',
+  ];
+  const changed = ['test/paid-retry-supervision.test.ts'];
+  const result = selectTests(changed, E2E_TOUCHFILES);
+  expect(result.reason).toBe('diff');
+  expect(result.selected.sort()).toEqual([...gate, ...periodic].sort());
+  for (const id of gate) expect(E2E_TIERS[id]).toBe('gate');
+  for (const id of periodic) expect(E2E_TIERS[id]).toBe('periodic');
+  expect(selectTests(changed, LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+});

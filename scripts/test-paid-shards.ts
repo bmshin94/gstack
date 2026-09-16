@@ -64,7 +64,7 @@ import {
 } from './test-strict-output';
 import { PAID_TEST_GLOBS, isPaidTestFile } from '../test/helpers/paid-test-set';
 import { PERIODIC_CI_EXCLUDE } from '../test/helpers/periodic-exclude-data';
-import { AUTOPLAN_CHAIN_BUDGET, FINDING_RETRY_BUDGETS } from '../test/helpers/eval-budgets';
+import { AUTOPLAN_CHAIN_BUDGET, FILE_RETRY_BUDGETS, STRICT_RETRY_CASE_BUDGETS } from '../test/helpers/eval-budgets';
 import { getProjectEvalDir, getClaudeCliVersion, isFinalizedEvalResultFile } from '../test/helpers/eval-store';
 import { preflightAnthropicApi } from '../test/helpers/anthropic-preflight';
 import { OVERLAY_MIN_FILE_WALL_MS } from '../test/helpers/overlay-case-policy';
@@ -376,7 +376,7 @@ export function planPaidShards(
   const shards: string[][] = [];
   let pending: string[] = [];
   for (const file of unique) {
-    if (file === AUTOPLAN_CHAIN_BUDGET.file || FINDING_RETRY_BUDGETS.some(budget => budget.file === file)) {
+    if (file === AUTOPLAN_CHAIN_BUDGET.file || FILE_RETRY_BUDGETS.some(budget => budget.file === file)) {
       if (pending.length) shards.push(pending);
       pending = [];
       shards.push([file]);
@@ -399,8 +399,8 @@ export interface PaidShardBudget {
 export function resolvePaidShardBudget(files: string[], overrideMs?: number): PaidShardBudget {
   const autoplan = files.map(normalizeRelativePath).includes(AUTOPLAN_CHAIN_BUDGET.file);
   if (autoplan && files.length !== 1) throw new Error('Autoplan budget requires its own shard');
-  const finding = FINDING_RETRY_BUDGETS.find(budget => files.map(normalizeRelativePath).includes(budget.file));
-  if (finding && files.length !== 1) throw new Error('Finding retry budget requires its own shard');
+  const finding = FILE_RETRY_BUDGETS.find(budget => files.map(normalizeRelativePath).includes(budget.file));
+  if (finding && files.length !== 1) throw new Error('Registered retry budget requires its own shard');
   if (overrideMs !== undefined && (!Number.isSafeInteger(overrideMs) || overrideMs <= 0 || overrideMs > 2_147_483_647)) {
     throw new Error('Shard timeout must be a finite positive timer-safe integer');
   }
@@ -943,7 +943,7 @@ export function buildRunManifest(opts: {
   const ordinary = runnable.filter(files => !files.some(isOverlayTestFile) &&
     !(opts.dedicatedAutoplanSlice && files[0] === AUTOPLAN_CHAIN_BUDGET.file));
   const registered = ordinary.filter(files => files[0] === AUTOPLAN_CHAIN_BUDGET.file ||
-    FINDING_RETRY_BUDGETS.some(budget => budget.file === files[0]));
+    FILE_RETRY_BUDGETS.some(budget => budget.file === files[0]));
   const allocations = new Map<string, number>();
   if (registered.length && ordinarySlices > 1) {
     const loads = Array<number>(ordinarySlices).fill(0);
@@ -968,7 +968,7 @@ export function buildRunManifest(opts: {
       : files.some(isOverlayTestFile) ? overlaySlice
         : allocations.get(files[0]) ?? (ordinaryIndex++ % ordinarySlices) + 1;
     entries.push({ file: files[0], slice, status: 'planned',
-      ...(autoplan || FINDING_RETRY_BUDGETS.some(budget => budget.file === files[0])
+      ...(autoplan || FILE_RETRY_BUDGETS.some(budget => budget.file === files[0])
         ? { budget: resolvePaidShardBudget(files, opts.timeoutMs) } : {}) });
   });
   for (const s of skipped) entries.push({ file: s.files[0], slice: 0, status: 'skipped-by-diff', reason: s.reason });
@@ -1026,13 +1026,13 @@ export function parseRunManifest(raw: string): PaidRunManifest {
     const expected = resolvePaidShardBudget([entry.file], entry.budget.source === 'explicit' ? entry.budget.timeoutMs : undefined);
     if (!sameBudget(entry.budget, expected)) throw new Error('Autoplan manifest budget differs from declared policy');
   }
-  for (const budget of FINDING_RETRY_BUDGETS) {
+  for (const budget of FILE_RETRY_BUDGETS) {
     const entries = parsed.entries.filter(entry => normalizeRelativePath(entry.file) === budget.file);
-    if (entries.length > 1) throw new Error(`Duplicate finding manifest entry: ${budget.file}`);
+    if (entries.length > 1) throw new Error(`Duplicate registered manifest entry: ${budget.file}`);
     for (const entry of entries.filter(entry => entry.status === 'planned')) {
-      if (!entry.budget) throw new Error(`Finding manifest needs an explicit budget record: ${budget.file}`);
+      if (!entry.budget) throw new Error(`Registered manifest needs an explicit budget record: ${budget.file}`);
       const expected = resolvePaidShardBudget([entry.file], entry.budget.source === 'explicit' ? entry.budget.timeoutMs : undefined);
-      if (!sameBudget(entry.budget, expected)) throw new Error(`Finding manifest budget differs from declared policy: ${budget.file}`);
+      if (!sameBudget(entry.budget, expected)) throw new Error(`Registered manifest budget differs from declared policy: ${budget.file}`);
     }
   }
   return parsed;
@@ -1078,13 +1078,14 @@ export function verifySliceResults(
       if (outcome.files.map(normalizeRelativePath).includes(AUTOPLAN_CHAIN_BUDGET.file) && outcome.files.length !== 1) {
         problems.push('Autoplan result must report its own shard');
       }
-      if (outcome.files.some(file => FINDING_RETRY_BUDGETS.some(budget => budget.file === normalizeRelativePath(file))) && outcome.files.length !== 1) {
-        problems.push('Finding result must report its own shard');
+      if (outcome.files.some(file => FILE_RETRY_BUDGETS.some(budget => budget.file === normalizeRelativePath(file))) && outcome.files.length !== 1) {
+        problems.push('Registered result must report its own shard');
       }
       const file = normalizeRelativePath(outcome.files[0] ?? '');
       if (reported.has(file)) problems.push(`${file} reported by two slices`);
       reported.set(file, { slice: result.sliceIndex, status: outcome.status });
-      const finding = FINDING_RETRY_BUDGETS.find(budget => budget.file === file);
+      const registered = FILE_RETRY_BUDGETS.find(budget => budget.file === file);
+      const finding = STRICT_RETRY_CASE_BUDGETS.find(budget => budget.file === file);
       if (finding) {
         // Full-census runs must account for every registered case. A manifest
         // explicitly marked selective may report its executed subset.
@@ -1093,12 +1094,14 @@ export function verifySliceResults(
             (manifest.evalsAll !== false && outcome.executedTests !== finding.cases) || outcome.skippedTests !== 0) {
           problems.push(`Finding workflow must execute real unskipped cases with exit zero: ${file}`);
         }
+      }
+      if (registered) {
         try {
           const planned = manifest.entries.find(entry => normalizeRelativePath(entry.file) === file)?.budget;
           const expected = resolvePaidShardBudget([file], result.timeoutOverrideMs ??
             (planned?.source === 'explicit' ? planned.timeoutMs : undefined));
-          if (!sameBudget(outcome.budget, expected)) problems.push(`Finding effective result budget differs from its planned/explicit allocation: ${file}`);
-        } catch { problems.push(`Invalid finding effective result budget: ${file}`); }
+          if (!sameBudget(outcome.budget, expected)) problems.push(`Registered effective result budget differs from its planned/explicit allocation: ${file}`);
+        } catch { problems.push(`Invalid registered effective result budget: ${file}`); }
       }
       if (file === AUTOPLAN_CHAIN_BUDGET.file) {
         if (outcome.exitCode !== 0 || outcome.executedTests !== 1 || outcome.skippedTests !== 0) {

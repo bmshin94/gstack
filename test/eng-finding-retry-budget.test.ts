@@ -18,8 +18,8 @@ for (const budget of FINDING_RETRY_BUDGETS) {
     expect([...source.matchAll(/1_500_000\s*\/\* physical ceiling:/g)]).toHaveLength(budget.cases);
     // Current periodic CI already supports this supervision wall.
     const workflow = fs.readFileSync(path.join(import.meta.dir, '../.github/workflows/evals-periodic.yml'), 'utf8');
-    expect(workflow).toMatch(/timeout-minutes: 330/);
-    expect(budget.shardMs).toBeLessThan(330 * 60_000);
+    expect(workflow).toMatch(/timeout-minutes: 355/);
+    expect(budget.shardMs).toBeLessThan(355 * 60_000);
   });
 
   test(`${budget.file}: own-shard allocation leaves ordinary and explicit limits intact`, () => {
@@ -97,14 +97,14 @@ test('actual shard launcher honors the explicit saved planner limit without a pr
 const livePlan = (discovered?: string[]) => buildRunManifest({ tier: 'periodic', sliceCount: 7,
   evalsAll: true, dedicatedAutoplanSlice: true, env: { EVALS_ALL: '1' }, discovered });
 
-test('live periodic census fits the unchanged CI wall including setup', () => {
+test('live periodic census fits the declared CI wall including setup', () => {
   const m = livePlan();
   const walls = Array.from({ length: 7 }, (_, index) => {
     const files = m.entries.filter(e => e.status === 'planned' && e.slice === index + 1).map(e => e.file);
-    return paidShardWallUpperBoundMs(files, index === 5 ? 1 : 2) / 60_000;
+    return paidShardWallUpperBoundMs(files, index === 5 ? 1 : 2);
   });
-  expect(walls).toEqual([306, 307, 307, 296, 300, 183, 172]);
-  expect(Math.max(...walls) + 20).toBeLessThanOrEqual(330);
+  expect(walls).toEqual([19_140_000, 19_480_000, 19_880_000, 19_800_000, 19_800_000, 10_980_000, 10_320_000]);
+  expect(Math.max(...walls) + 20 * 60_000).toBeLessThanOrEqual(355 * 60_000);
   expect(m.entries.filter(e => e.status === 'planned')).toHaveLength(97);
   expect(m.entries.filter(e => e.status === 'planned' && e.slice === 6).every(e => e.file.includes('overlay-harness-'))).toBe(true);
   expect(m.entries.filter(e => e.status === 'planned' && e.slice === 7).map(e => e.file)).toEqual([AUTOPLAN_CHAIN_BUDGET.file]);
@@ -145,15 +145,15 @@ test('single-slice manifest retains all registered files with one allocation', (
   for (const budget of FINDING_RETRY_BUDGETS) expect(m.entries.find(e => e.file === budget.file)?.budget).toEqual(resolvePaidShardBudget([budget.file]));
 });
 
-test('current detach supervision covers the unchanged live-census floor', () => {
+test('current detach supervision covers the live-census floor', () => {
   const files = selectPaidTestFiles(collectPaidTestFiles(), 'periodic').selected;
   const excess = files.reduce((n, file) => n + Math.max(0, resolvePaidShardBudget([file]).timeoutMs - DEFAULT_SHARD_TIMEOUT_MS), 0);
   const floor = Math.ceil((Math.ceil(files.length / DEFAULT_JOBS) * DEFAULT_SHARD_TIMEOUT_MS + excess) / 1000 * 1.05);
   const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dir, '../package.json'), 'utf8'));
   const configured = Number(pkg.scripts['eval:bg:periodic'].match(/--timeout\s+(\d+)/)[1]);
-  expect(floor).toBe(45171);
+  expect(floor).toBe(60039);
   expect(configured).toBeGreaterThanOrEqual(floor);
-  expect(pkg.scripts['eval:bg:gate']).toContain('--timeout 25200');
+  expect(pkg.scripts['eval:bg:gate']).toContain('--timeout 28800');
 });
 
 for (const jobs of [1, 2, 3]) test(`FIFO bound covers partial durations with ${jobs} workers`, () => {

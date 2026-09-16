@@ -54,9 +54,21 @@ describe('run manifest (planner)', () => {
       expect(entry.slice).toBeGreaterThanOrEqual(1);
       expect(entry.slice).toBeLessThanOrEqual(5);
     }
-    // Round-robin balance: slice sizes differ by at most 1.
-    const sizes = [1, 2, 3, 4, 5].map((i) => planned.filter((e) => e.slice === i).length);
-    expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+    // Live registered files balance supervised time, so file counts can differ.
+    expect([...new Set(planned.map(entry => entry.slice))].sort()).toEqual([1, 2, 3, 4, 5]);
+    // Uniform, unregistered work retains the original round-robin contract.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ordinary-manifest-balance-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'test'));
+      const discovered = Array.from({ length: 12 }, (_, i) => `test/skill-e2e-ordinary-${i}.test.ts`);
+      for (const file of discovered) fs.writeFileSync(path.join(dir, file), '// ordinary unregistered fixture');
+      const ordinary = buildRunManifest({ tier: 'gate', sliceCount: 5, evalsAll: true,
+        env: { EVALS_ALL: '1' }, rootDir: dir, discovered }).entries;
+      expect(ordinary).toHaveLength(discovered.length);
+      expect(ordinary.every(entry => entry.status === 'planned' && !entry.budget)).toBe(true);
+      const sizes = [1, 2, 3, 4, 5].map(i => ordinary.filter(entry => entry.slice === i).length);
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
     // Non-runnable entries carry slice 0 and a reason.
     for (const entry of manifest.entries.filter((e) => e.status !== 'planned')) {
       expect(entry.slice).toBe(0);
