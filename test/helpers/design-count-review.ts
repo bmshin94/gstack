@@ -100,7 +100,13 @@ function ordinaryDesignIssue(fp: AskUserQuestionFingerprint): boolean {
     (distinguishedPrimaryIssue && /^How should ([A-Za-z][A-Za-z0-9 _-]{0,39}) (?:be distinguished|stand out) from /i.exec(issue[2]!)) ??
     (headerActionIssue && new RegExp(`^Issue ${issue[1]}: ([A-Za-z][A-Za-z0-9 _-]{0,39})$`, 'i').exec(q.header.trim()));
   if (declaredPrimaryIssue && (!primary || q.options.length > 4 || Object.keys(call.answers ?? {}).length !== 1)) return false;
-  const primaryEmphasisIssue = !!signaledPrimaryIssue || !!distinguishedPrimaryIssue || !!declaredPrimaryIssue || /^Give [A-Za-z][A-Za-z0-9 _-]{0,39} primary emphasis in the header action group$/i.test(issue[2]!);
+  // An attributed native option can put the fill before or after its color.
+  // It still names the primary, every ghost peer and DESIGN.md in one action.
+  const namedTokenStyle = primary && new RegExp(`^(?:✅\\s*)?(?:Matches DESIGN\\.md exactly|(?:Apply|Use) DESIGN\\.md(?: tokens)?): ${primary[1]} ` +
+    '(?:#[0-9a-f]{6} filled(?: with)? (?:white|black) text|filled #[0-9a-f]{6}(?: with)? (?:white|black) text); ' +
+    '([A-Za-z][A-Za-z0-9 ,/_-]{0,99}) (?:as )?neutral ghost(?: buttons)?\\.', 'i');
+  const namedTokenIssue = !!namedTokenStyle && q.options.some(o => namedTokenStyle.test(o.description ?? ''));
+  const primaryEmphasisIssue = namedTokenIssue || !!signaledPrimaryIssue || !!distinguishedPrimaryIssue || !!declaredPrimaryIssue || /^Give [A-Za-z][A-Za-z0-9 _-]{0,39} primary emphasis in the header action group$/i.test(issue[2]!);
   const scopedPrimaryStatus = !!headerActionIssue || primaryEmphasisIssue;
   const explicitStyle = primary && `${primary[1]} filled (?:primary )?#[0-9a-f]{6}(?:/| with )(?:white|black)(?: text)?; ` +
     '[A-Za-z][A-Za-z0-9 ,/_-]{0,99} neutral ghost(?: buttons)?\\.';
@@ -235,7 +241,32 @@ function ordinaryDesignIssue(fp: AskUserQuestionFingerprint): boolean {
         new RegExp(`^(?:✅\\s*)?${primary[1]} is #[0-9a-f]{6} with (?:white|black) text; ([A-Za-z][A-Za-z0-9 ,_-]{0,119}) are neutral ghost buttons per DESIGN\\.md\\.`, 'i').exec(body) ??
         new RegExp(`^(?:✅\\s*)?${primary[1]} becomes the only filled button \\(#[0-9a-f]{6}, (?:white|black) text\\); ([A-Za-z][A-Za-z0-9 ,/_-]{0,119}) use the existing neutral ghost variant` +
           '(?: \\(human: ~?[0-9]+(?:\\.[0-9]+)?(?:h|min) / CC: ~?[0-9]+(?:\\.[0-9]+)?(?:h|min)\\))?\\. (?:✅\\s*)?Matches DESIGN\\.md exactly\\b', 'i').exec(body) ?? roleStyle);
-      const style = declaredPrimaryIssue ? declaredStyle?.[0] : distinguishedPrimaryIssue ? distinguishedStyle?.[0] : headerActionIssue ? headerStyle?.[0] : amendments.map(pattern => pattern.exec(body)).find(Boolean)?.[0];
+      const attributedStyle = namedTokenStyle?.exec(body);
+      let namedTokenValid = false;
+      if (namedTokenIssue) {
+        const peers = primaryAssessment?.replace(new RegExp(`^(?:Right now|Today) ${primary![1]},\\s*`, 'i'), '')
+          .replace(/\s+(?:(?:all )?look (?:the same|identical)|are (?:all )?(?:(?:two|three|four|five|six|seven|eight|nine|ten|[1-9]\d*) )?identical buttons)$/, '');
+        const sources = (prefix.join(' ') + ' ' + assessment).match(/[\w./-]+\.md\b/g) ?? [];
+        const sourceRoles = [...assessment.matchAll(new RegExp(`(?:^|[.!?]\\s+)DESIGN\\.md (?:already )?(?:says|states|specifies|requires|defines|names the treatment):? ${primary![1]} is the (?:only|single) filled button ` +
+          '\\((#[0-9a-f]{6})(?:,| with) (white|black) text(?:, (?:~|about )?[0-9]+(?:\\.[0-9]+)?:1 contrast)?\\)(?:,| and) (?:the )?other ' +
+          '(two|three|four|five|six|seven|eight|nine|ten|[1-9]\\d*) are neutral ghost(?:s| buttons)\\.', 'gi'))];
+        const assertedRoles = sourceRoles.length === 1 ? sourceRoles[0] : undefined;
+        // Additional imperative work cannot borrow this styling decision's ACK.
+        // Explanatory subjects, negated work and quoted history are not commands.
+        const extraAction = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|\b(?:and|but|while)\s+)(?:(?:also|then|now|first|next|please)\s+)*(?:approve|add|build|create|implement|replace|remove|delete|deploy|install|configure|rewrite|migrate|launch|fix|repair|resolve)\b/i;
+        const wrongTokens = !assertedRoles || !attributedStyle ||
+            numberValue(assertedRoles[3]!) !== otherControls ||
+            attributedStyle[0].match(/#[0-9a-f]{6}/i)?.[0].toLowerCase() !== assertedRoles[1]!.toLowerCase() ||
+            attributedStyle[0].match(/\b(?:white|black) text\b/i)?.[0].toLowerCase() !== assertedRoles[2]!.toLowerCase() + ' text' ||
+            extraAction.test(questionText) || q.options.some(o => extraAction.test(currentText(o.label + '\n' + (o.description ?? ''))));
+        namedTokenValid = Boolean(!wrongTokens && attributedStyle && peers && q.options.length <= 4 && Object.keys(call.answers ?? {}).length === 1 &&
+            (questionText.match(/^Project\/branch\/task:/gm)?.length ?? 0) === 1 &&
+            !conditionalHeader(questionText) && !conditionalHeader(body) &&
+            sources.includes('DESIGN.md') && sources.every(source => ['PLAN.md', 'DESIGN.md'].includes(source)) &&
+            JSON.stringify(controlNames(attributedStyle[1]!.replaceAll('/', ','))) === JSON.stringify(controlNames(peers)) &&
+            new Set(controlNames(peers)).size === otherControls && !invalidContract.test(body));
+      }
+      const style = declaredPrimaryIssue ? declaredStyle?.[0] : distinguishedPrimaryIssue ? distinguishedStyle?.[0] : headerActionIssue ? headerStyle?.[0] : (namedTokenValid ? attributedStyle?.[0] : undefined) ?? amendments.map(pattern => pattern.exec(body)).find(Boolean)?.[0];
       if ((declaredPrimaryIssue || distinguishedPrimaryIssue) &&
           /(?:^|[.!?;]\s+|\n)(?:Correction:\s*)?(?:the|this) (?:current )?(?:amendment|fix) keeps (?:all )?(?:two|three|four|five|six|seven|eight|nine|ten|[1-9]\d*) (?:header )?buttons identical\b/i.test(body)) return false;
       if (distinguishedPrimaryIssue && (!distinguishedStyle || conditionalHeader(body) || invalidContract.test(body) ||
@@ -261,7 +292,8 @@ function ordinaryDesignIssue(fp: AskUserQuestionFingerprint): boolean {
           sourceAssessment.test(body) || withdrawn.test(body) || closedGap.test(body) || cancelledStyle.test(body) || withdrawnStyles.test(body)) return false;
       return opposed.some(defer => {
         const declined = currentText(defer.description ?? '');
-        if (pendingPrimaryApproval(declined)) return false;
+        if (pendingPrimaryApproval(declined) || (namedTokenIssue && (conditionalHeader(declined) ||
+          /(?:^|[.!?;]\s+|\n)(?:this|the) (?:option|deferral) (?:(?:now|already|actually) )?(?:fixes|resolves|closes) (?:the |this )?(?:hierarchy |primary-action )?gap\b/i.test(declined)))) return false;
         if (declaredPrimaryIssue) return defer !== amendment &&
           new RegExp(`^${issue[1]}[A-Z][).:]?\\s+Defer(?: \\(recommended\\))?$`, 'i').test(defer.label) &&
           new RegExp(`^Leave ${declaredGap ? `G${declaredGap}` : `Issue ${issue[1]}`} open and record it as unresolved\\.`, 'i').test(declined) &&
@@ -293,7 +325,8 @@ function ordinaryDesignIssue(fp: AskUserQuestionFingerprint): boolean {
             /^(?:❌\s*)?Ships a (?:known|documented) DESIGN\.md violation; the review score stays capped and users keep scanning a flat row\./i.test(remaining);
         }
         return defer !== amendment && !sourceAssessment.test(declined) && !withdrawn.test(declined) && !closedGap.test(declined) && !cancelledHeaderDeferral &&
-          ((retainedButtons && numberValue(retainedButtons[1]!) === otherControls + 1 &&
+          ((namedTokenValid && /^(?:Leaves|Keeps|Retains) (?:a documented|the(?: documented)?) DESIGN\.md violation (?:in place|unresolved|open)\b/i.test(remaining)) ||
+            (retainedButtons && numberValue(retainedButtons[1]!) === otherControls + 1 &&
               (!cancelledRetainedButtons || numberValue(cancelledRetainedButtons[1]!) !== otherControls + 1)) ||
             /^(?:❌\s*)?(?:Leaves a documented DESIGN\.md violation in place|Keeps the documented DESIGN\.md violation and the scan problem|Violates DESIGN\.md and leaves the mis-click on [A-Za-z][A-Za-z /_-]{0,79} unaddressed|Ships a (?:known|documented) DESIGN\.md violation and the primary action (?:stays|remains) undiscoverable|Ships a header with no primary action; PLAN\.md['’]s own gap stays open|Ships the documented violation;[^.\n]*\bthe gap remains open|Primary-action ambiguity ships; documented DESIGN\.md violation remains|Decline the fix; gap stays documented and lowers the score|Decline the fix; document the violation as accepted|Keep all (?:two|three|four|five|six|seven|eight|nine|ten|[1-9]\d*) identical; record as an open DESIGN\.md violation)\b/i.test(remaining) ||
             (variantRepair && /^(?:Violates DESIGN\.md and leaves users guessing which action is primary; Pass [1-7] stays at [0-9](?:\.[0-9]+)?\/10|Documented DESIGN\.md violation ships and Pass [1-7] stays at [0-9](?:\.[0-9]+)?\/10)\.$/i.test(remaining)));

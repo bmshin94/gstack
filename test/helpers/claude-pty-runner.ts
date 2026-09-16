@@ -1941,7 +1941,7 @@ function designClosureText(text: string, expectedPlanPath: string): string {
       state.test(value.slice(1, -1)) ? value.slice(1, -1) : '');
 }
 function conflictingDesignClosure(text: string): boolean {
-  const owner = '(?:(?:the )?Design review(?: of PLAN\\.md)?|DESIGN CLEARED|(?:the )?(?:Design review )?exit gate|(?:the |this )?(?:review|report|gate|verdict|reviewed plan)|(?:(?:this|the|one|a|[1-9]\\d*) )?(?:design )?(?:decision|issue|finding)s?)';
+  const owner = '(?:(?:the )?Design review(?: of PLAN\\.md)?|DESIGN CLEARED|(?:the )?(?:Design review )?exit gate|(?:the |this )?(?:review(?: report)?|report|gate|verdict|reviewed plan)|(?:(?:this|the|one|a|[1-9]\\d*) )?(?:design )?(?:decision|issue|finding)s?)';
   return new RegExp(`(?:^|[.!?;]\\s+|\\n)(?:Correction:\\s*)?${owner} (?:(?:is|are|remains?|was|were|has been|have been) (?:(?:still|now) )?(?:not (?:the )?(?:complete|passed|current)|incomplete|unfinished|pending|failed|unresolved|open|withdrawn|superseded|cancelled|canceled|historical)|failed|did not pass|has not passed)\\b|${owner} (?:requires approval|applies only if approved)\\b|${owner}[^.!?\\n]*\\b(?:only if|conditional on|subject to)\\b|${owner} (?:belongs to|applies only to) (?:an? )?(?:another|different) (?:plan|project|review)\\b`, 'i').test(text) ||
     new RegExp(`(?:^|[.!?;]\\s+|\\n)(?:If|When|Once|Unless|Assuming|Provided)\\b[^.!?\\n]*\\b${owner}\\b`, 'i').test(text);
 }
@@ -2125,7 +2125,7 @@ export function hasNativePlanTerminal(
   // headings/field emphasis and explanatory prose are presentation, not a
   // second approval or a substitute for the strict native/report checks.
   const completionHeadings = lines.map((line, index) =>
-    /^(?:#{1,6}\s+)?(?:\*\*)?(?:Completion(?:\s+summary)?|(?:Design\s+)?Review\s+(?:complete|completion(?:\s+summary)?))(?:\*\*)?:?\s*$/i.test(line.replace(/\*\*/g, '').trim()) ? index : -1)
+    /^(?:#{1,6}\s+)?(?:\*\*)?(?:Completion(?:\s+(?:summary|report))?|(?:Design\s+)?Review\s+(?:complete|completion(?:\s+summary)?))(?:\*\*)?:?\s*$/i.test(line.replace(/\*\*/g, '').trim()) ? index : -1)
     .filter(index => index >= 0);
   if (completionHeadings.length === 1) {
     const start = completionHeadings[0]!;
@@ -2138,9 +2138,9 @@ export function hasNativePlanTerminal(
     // These clauses establish no new permission, next action or plan-mode exit.
     const harmlessClosure = !done?.[2] || done[2].split(/[.;!]\s*/).filter(Boolean).every(clause =>
       /^(?:No (?:unresolved|open|pending) (?:design )?(?:decisions|issues|findings)|(?:(?:I am|We are) )?(?:Staying|Remaining) in plan mode|Nothing outside (?:the )?(?:plan|report) file (?:was|has been) (?:edited|changed|modified)|No implementation (?:was|has been) (?:started|performed)|Implementation (?:has not started|was not started))$/i.test(clause.trim()));
-    const pathFields = plain.filter(line => /^(?:[-*]\s+)?(?:Plan (?:written|saved) to\b|(?:What changed|Plan|Report|Output|Artifact):)/i.test(line));
+    const pathFields = plain.filter(line => /^(?:[-*]\s+)?(?:Plan (?:written|saved)(?: to\b|:)|(?:What changed|Plan|Report|Output|Artifact):)/i.test(line));
     const saved = pathFields.filter(line => {
-      const value = line.replace(/^[-*]\s+/, '').replace(/^(?:What changed|Plan|Report|Output|Artifact):\s*/i, '').trim();
+      const value = line.replace(/^[-*]\s+/, '').replace(/^Plan (written|saved):\s*/i, 'Plan $1 to ').replace(/^(?:What changed|Plan|Report|Output|Artifact):\s*/i, '').trim();
       if (DESIGN_CLOSURE_PROVISIONAL.test(value) || /^(?:[>"“'‘]|`{3}|~{3})/.test(value)) return false;
       // The expected absolute path or its exact basename identifies this one
       // caller-owned report. Reject foreign/ambiguous paths before stripping
@@ -2158,7 +2158,14 @@ export function hasNativePlanTerminal(
         new RegExp(`^${token}\\s+(?:now\\s+)?(?:contains|carries|includes|records)\\s+`, 'i').test(current) &&
           /\b(?:review report|reviewed plan)\b/i.test(current);
     });
-    if (!section.some(line => /^#{1,6}\s/.test(line)) &&
+    // A typed completion's status cannot substitute for the actual answers.
+    // Failed calls retain the shared later-answer resolution rule above.
+    const ownedAnswers = answered.every(call => call.sessionId && call.toolUseId &&
+      call.questions.length > 0 && new Set(call.questions.map(q => q.question)).size === call.questions.length &&
+      Object.keys(call.answers ?? {}).length === call.questions.length &&
+      Array.isArray(call.unansweredQuestionIndices) && call.unansweredQuestionIndices.length === 0 &&
+      call.questions.every(q => q.options.some(o => o.label === call.answers?.[q.question])));
+    if (ownedAnswers && !section.some(line => /^#{1,6}\s/.test(line)) &&
         !/\b(?:example|sample|template|historical|previous|earlier|quote|source|emit|print)\b.*[:：]\s*$/i.test(preceding) &&
         status.length === 1 && done && harmlessClosure && !DESIGN_CLOSURE_PROVISIONAL.test(done[1] ?? '') &&
         pathFields.length === 1 && saved.length === 1 &&

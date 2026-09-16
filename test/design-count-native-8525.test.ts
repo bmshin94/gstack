@@ -273,3 +273,163 @@ for (const index of [1, 2]) for (const suffix of ['Also approve the design syste
     const f = phaseMutation77(index, c => { c.questions[0]!.question += '\n' + suffix; });
     expect(designStep0Boundary(f)).toBe(false); expect(isDesignCountSetup(f)).toBe(false);
   });
+
+
+const cf74 = fixture.cf74Retry;
+function cf74Calls() { return structuredClone(cf74.transcript.calls) as NativePlanQuestionCall[]; }
+function cf74Completion() {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'design-cf74-completion-'));
+  const file=path.join(dir,path.basename(cf74.provenance.planPath));
+  const transcript=structuredClone(cf74.transcript) as PlanCountTranscript;
+  const final=transcript.assistantMessages.at(-1)!;
+  final.text=final.text.replaceAll(cf74.provenance.planPath,file);
+  const startedAt=Math.min(...transcript.calls.map(c=>Date.parse(c.answeredAt!)))-1000;
+  const write=(body=cf74.report)=>{fs.writeFileSync(file,body);fs.utimesSync(file,cf74.provenance.reportMtimeMs/1000,cf74.provenance.reportMtimeMs/1000);};
+  write();
+  return {dir,file,transcript,final,startedAt,write,check:()=>hasNativePlanTerminal(transcript,file,startedAt,'completion_summary'),cleanup:()=>fs.rmSync(dir,{recursive:true,force:true})};
+}
+test('cf74 complete current styling decision starts the seven acknowledged review choices',()=>{
+  const input=cf74Calls();let started=false;const counts={step0:0,review:0,administrative:0};
+  expect(isDesignCountFirstReview(fp(input[0]!))).toBe(true);
+  for(const call of input){const p=planCountQuestionPhase(fp(call),started,designStep0Boundary,isDesignCountFirstReview,isDesignCountSetup,isDesignCompletionHandoff);counts[p.administrative?'administrative':p.preReview?'step0':'review']++;started=p.reviewStarted;}
+  expect(counts).toEqual({step0:0,review:7,administrative:0});
+  expect(counts.review).toBeGreaterThanOrEqual(4);expect(counts.review).toBeLessThanOrEqual(7);
+});
+test('cf74 actual completed native report envelope binds the fresh owned Design report',()=>{
+  const f=cf74Completion();try{expect(f.check()).toBe(true);}finally{f.cleanup();}
+});
+
+const changeCf74=(change:(q:NativePlanQuestionCall['questions'][number])=>void)=>{
+  const call=cf74Calls()[0]!,q=call.questions[0]!;change(q);call.answers={[q.question]:q.options[0]!.label};return call;
+};
+for(const primary of ['Save','Submit'])for(const peerOrder of ['Reset, Cancel, Export','Export, Cancel, Reset'])for(const prefix of ['Matches DESIGN.md exactly','Apply DESIGN.md tokens','Use DESIGN.md'])
+  test(`cf74 complete attributed styling keeps named role ownership: ${primary}/${peerOrder}/${prefix}`,()=>{
+    const call=changeCf74(q=>{q.question=q.question.replaceAll('Save',primary);q.options.forEach(o=>{o.label=o.label.replaceAll('Save',primary);o.description=o.description?.replaceAll('Save',primary);});
+      q.options[0]!.description=q.options[0]!.description!.replace('Matches DESIGN.md exactly',prefix).replace('Reset, Cancel, Export',peerOrder);});
+    for(const chosen of call.questions[0]!.options){call.answers={[call.questions[0]!.question]:chosen.label};expect(isDesignCountFirstReview(fp(call))).toBe(true);}
+  });
+for(const [name,change] of Object.entries({
+  'foreign current source':(q:NativePlanQuestionCall['questions'][number])=>{q.question=q.question.replaceAll('DESIGN.md','OTHER.md');},
+  'quoted source':(q:NativePlanQuestionCall['questions'][number])=>{q.question=q.question.replaceAll('DESIGN.md','"DESIGN.md"');},
+  'duplicate source field':(q:NativePlanQuestionCall['questions'][number])=>{q.question+='\nProject/branch/task: another source.';},
+  'foreign owner':(q:NativePlanQuestionCall['questions'][number])=>{q.question+='\nThis finding belongs to another project.';},
+  'historical premise':(q:NativePlanQuestionCall['questions'][number])=>{q.question=q.question.replace('ELI10: Right now','ELI10: Historically');},
+  'quoted premise':(q:NativePlanQuestionCall['questions'][number])=>{q.question=q.question.replace(/ELI10: (.+)/,'ELI10: "$1"');},
+  'single-quoted premise':(q:NativePlanQuestionCall['questions'][number])=>{q.question=q.question.replace(/ELI10: (.+)/,"ELI10: '$1'");},
+  'quoted entire question':(q:NativePlanQuestionCall['questions'][number])=>{q.question='> '+q.question.replaceAll('\n','\n> ');},
+  'no current equal-weight defect':(q:NativePlanQuestionCall['questions'][number])=>{q.question=q.question.replace('look identical','already have distinct correct styles');},
+  'withdrawn issue':(q:NativePlanQuestionCall['questions'][number])=>{q.question+='\nThis issue is withdrawn.';},
+  'quoted current withdrawn status':(q:NativePlanQuestionCall['questions'][number])=>{q.question+='\nThis issue is "withdrawn".';},
+  'single quoted withdrawn status':(q:NativePlanQuestionCall['questions'][number])=>{q.question+="\nThis issue is 'withdrawn'.";},
+  'withdrawn contract':(q:NativePlanQuestionCall['questions'][number])=>{q.question+='\nThe DESIGN.md contract is no longer current.';},
+  'wrong issue header':(q:NativePlanQuestionCall['questions'][number])=>{q.header='Issue 2';},
+  'setup header':(q:NativePlanQuestionCall['questions'][number])=>{q.header='Focus';},
+  'foreign option IDs':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.label=q.options[0]!.label.replace('1A','2A');},
+  'missing primary styling':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description='✅ Matches DESIGN.md exactly. ❌ Work required.';},
+  'foreign primary styling':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description=q.options[0]!.description!.replace('Save #','Publish #');},
+  'foreign peer styling':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description=q.options[0]!.description!.replace('Reset, Cancel, Export','Reset, Cancel, Download');},
+  'missing peer':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description=q.options[0]!.description!.replace('Reset, Cancel, Export','Reset, Cancel');},
+  'duplicate peer':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description=q.options[0]!.description!.replace('Reset, Cancel, Export','Reset, Reset, Export');},
+  'primary also a ghost':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description=q.options[0]!.description!.replace('Reset, Cancel, Export','Reset, Cancel, Save');},
+  'quoted remedy':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description='"'+q.options[0]!.description+'"';},
+  'conditional remedy':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description+=' If approved, apply these styles.';},
+  'withdrawn remedy':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description+=' This option is withdrawn.';},
+  'withdrawn quoted remedy status':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description+=' This option is "withdrawn".';},
+  'cancelled styling':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description+=' Do not apply these styles.';},
+  'missing retained violation':(q:NativePlanQuestionCall['questions'][number])=>{q.options[2]!.description='This closes the hierarchy gap completely.';},
+  'quoted retained violation':(q:NativePlanQuestionCall['questions'][number])=>{q.options[2]!.description='"'+q.options[2]!.description+'"';},
+  'conditional retained violation':(q:NativePlanQuestionCall['questions'][number])=>{q.options[2]!.description+=' If approved, leave the gap open.';},
+  'withdrawn retained violation':(q:NativePlanQuestionCall['questions'][number])=>{q.options[2]!.description+=' This option is withdrawn.';},
+  'foreign retained violation':(q:NativePlanQuestionCall['questions'][number])=>{q.options[2]!.description+=' This deferral belongs to another project.';},
+}))test(`cf74 current style rejects ${name}`,()=>{expect(isDesignCountFirstReview(fp(changeCf74(change)))).toBe(false);});
+test('cf74 current styling still requires its own complete native answer and identities',()=>{
+  for(const change of [
+    (c:NativePlanQuestionCall)=>{c.answered=false;},(c:NativePlanQuestionCall)=>{c.failed=true;},
+    (c:NativePlanQuestionCall)=>{c.answers={};},(c:NativePlanQuestionCall)=>{c.unansweredQuestionIndices=[0];},
+    (c:NativePlanQuestionCall)=>{c.answeredAt='invalid';},(c:NativePlanQuestionCall)=>{c.sessionId='';},
+    (c:NativePlanQuestionCall)=>{c.questions.push(structuredClone(c.questions[0]!));},
+    (c:NativePlanQuestionCall)=>{c.questions[0]!.options.push(structuredClone(c.questions[0]!.options[0]!));},
+  ]){const call=cf74Calls()[0]!;change(call);expect(isDesignCountFirstReview(fp(call))).toBe(false);}
+  const f=fp(cf74Calls()[0]!);expect(isDesignCountFirstReview({...f,signature:'foreign:call'})).toBe(false);
+});
+test('cf74 first eight-review failure remains eight with no threshold or TODO exclusion change',()=>{
+  let started=false;const counts={setup:0,review:0,administrative:0};
+  for(const call of cf74.firstFailureCalls as NativePlanQuestionCall[]){const p=planCountQuestionPhase(fp(call),started,designStep0Boundary,isDesignCountFirstReview,isDesignCountSetup,isDesignCompletionHandoff);counts[p.administrative?'administrative':p.preReview?'setup':'review']++;started=p.reviewStarted;}
+  expect(counts).toEqual({setup:2,review:8,administrative:0});expect(counts.review).toBeGreaterThan(7);
+});
+for(const heading of ['## Completion report','### Completion summary','## Completion'])for(const field of ['Plan written:','Plan saved:','Plan written to'])
+  test(`cf74 complete typed delivery: ${heading}/${field}`,()=>{
+    const f=cf74Completion();try{f.final.text=f.final.text.replace('## Completion report',heading).replace('Plan written:',field);expect(f.check()).toBe(true);}finally{f.cleanup();}
+  });
+for(const [name,change]of Object.entries({
+  'pending status':(s:string)=>s.replace('STATUS: DONE','STATUS: PENDING'),
+  'conditional status':(s:string)=>s.replace('STATUS: DONE','STATUS: DONE if approved'),
+  'quoted status':(s:string)=>s.replace('**STATUS: DONE**','`STATUS: DONE`'),
+  'duplicate status':(s:string)=>s+'\nSTATUS: DONE',
+  'quoted whole report':(s:string)=>'> '+s.replaceAll('\n','\n> '),
+  'historical report':(s:string)=>s.replace('## Completion report','Historical source:\n\n## Completion report'),
+  'duplicate report':(s:string)=>s+'\n## Completion report\nSTATUS: DONE',
+  'future write':(s:string)=>s.replace('Plan written:','Plan will be written:'),
+  'conditional write':(s:string)=>s.replace('Plan written:', 'Plan written if approved:'),
+  'quoted written field':(s:string)=>s.replace('- **Plan written:**','> **Plan written:**'),
+  'ambiguous path':(s:string)=>s.replace(' — accepted behavior',' and another-report.md — accepted behavior'),
+  'foreign path':(s:string)=>s.replaceAll('gstack-test-plan-design.md','foreign-report.md'),
+  'withdrawn report':(s:string)=>s+'\nThe review report is withdrawn.',
+  'unresolved decision':(s:string)=>s+'\nOne design decision is unresolved.',
+  'quoted current unresolved status':(s:string)=>s+'\nOne design decision is "unresolved".',
+}))test(`cf74 typed completion rejects ${name}`,()=>{const f=cf74Completion();try{f.final.text=change(f.final.text);expect(f.check()).toBe(false);}finally{f.cleanup();}});
+test('cf74 typed envelope cannot bypass fresh own Design report and native chronology',()=>{
+  const f=cf74Completion();try{
+    const base=structuredClone(f.transcript);
+    for(const change of [
+      (t:PlanCountTranscript)=>{t.calls[0]!.answered=false;},(t:PlanCountTranscript)=>{t.calls[0]!.failed=true;},
+      (t:PlanCountTranscript)=>{t.calls[0]!.answers={};},(t:PlanCountTranscript)=>{t.calls[0]!.unansweredQuestionIndices=[0];},
+      (t:PlanCountTranscript)=>{t.calls[0]!.sessionId='foreign';},(t:PlanCountTranscript)=>{t.calls[0]!.answeredAt=t.assistantMessages.at(-1)!.timestamp;},
+    ]){Object.assign(f.transcript,structuredClone(base));change(f.transcript);expect(f.check()).toBe(false);}
+    Object.assign(f.transcript,structuredClone(base));
+    for(const report of [cf74.report.replace('| 1 | clean |','| 1 | pending |'),cf74.report.replace('DESIGN CLEARED','DESIGN NOT CLEARED'),cf74.report.replace('NO UNRESOLVED DECISIONS','**UNRESOLVED DECISIONS:**\n- One pending'),cf74.report+'\n## Another section\n', '# Draft']){f.write(report);expect(f.check()).toBe(false);}
+    f.write();fs.utimesSync(f.file,1,1);expect(f.check()).toBe(false);
+    fs.rmSync(f.file);expect(f.check()).toBe(false);
+    const target=path.join(f.dir,'other.md');fs.writeFileSync(target,cf74.report);fs.symlinkSync(target,f.file);expect(f.check()).toBe(false);
+  }finally{f.cleanup();}
+});
+
+for(const [name,change] of Object.entries({
+  'mismatched source color':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description=q.options[0]!.description!.replace('#1d4ed8','#aa0000');},
+  'mismatched source foreground':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description=q.options[0]!.description!.replace('white text','black text');},
+  'unrelated additional approval':(q:NativePlanQuestionCall['questions'][number])=>{q.options[0]!.description+=' Also approve deployment.';},
+  'unrelated extra question action':(q:NativePlanQuestionCall['questions'][number])=>{q.question+='\nThen delete the audit log.';},
+  'retained option actually fixes':(q:NativePlanQuestionCall['questions'][number])=>{q.options[2]!.description+=' This option resolves the hierarchy gap.';},
+}))test(`cf74 complete role transfer rejects ${name}`,()=>expect(isDesignCountFirstReview(fp(changeCf74(change)))).toBe(false));
+test('cf74 concrete token identity is source-owned rather than fixed to one palette',()=>{
+  const call=changeCf74(q=>{q.question=q.question.replaceAll('#1d4ed8','#234567').replaceAll('white text','black text');q.options.forEach(o=>{o.description=o.description?.replaceAll('#1d4ed8','#234567').replaceAll('white text','black text');});});
+  expect(isDesignCountFirstReview(fp(call))).toBe(true);
+});
+
+for(const field of ['question','option'] as const)for(const action of ['Also implement a webhook handler.','Then replace the database.'])
+  test(`cf74 peer extra work rejects ${field}/${action}`,()=>{
+    const call=changeCf74(q=>{if(field==='question')q.question+='\n'+action;else q.options[0]!.description+=' '+action;});
+    expect(isDesignCountFirstReview(fp(call))).toBe(false);
+  });
+
+for(const field of ['question','option','opposed'] as const)for(const [prefix,work]of [
+  ['Also ','build a webhook handler'],['Then ','migrate the database'],['Please ','configure a new service'],
+  ['Next ','install the worker'],['Now ','rewrite the API'],['First ','create an audit endpoint'],
+  ['and ','add a billing screen'],['but ','remove the login check'],['while ','launch a second deployment'],
+] as const)test(`cf74 imperative work class rejects ${field}/${prefix}${work}`,()=>{
+  const call=changeCf74(q=>{const action=prefix+work+'.';if(field==='question')q.question+='\n'+action;else q.options[field==='option'?0:2]!.description+=' '+action;});
+  expect(isDesignCountFirstReview(fp(call))).toBe(false);
+});
+for(const field of ['question','option'] as const)for(const text of [
+  'The implementation may replace an existing button variant.',
+  'Replacing the style makes the primary action clearer.',
+  'Do not implement a webhook handler.',
+  'No database replacement belongs to this review.',
+  'Historical note: "Also implement a webhook handler."',
+  "Historical note: 'Then replace the database.'",
+  'Previous example: `Also configure a worker.`',
+  '\n> Also implement a webhook handler.',
+] as const)test(`cf74 imperative guard preserves explanation/history ${field}/${text}`,()=>{
+  const call=changeCf74(q=>{if(field==='question')q.question+='\n'+text;else q.options[0]!.description+=' '+text;});
+  expect(isDesignCountFirstReview(fp(call))).toBe(true);
+});
