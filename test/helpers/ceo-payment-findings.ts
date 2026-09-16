@@ -122,8 +122,22 @@ function hasForeignContractSource(value: string, sourcePlan: string): boolean {
   const attribution = value.replace(/"([^"\n]+)"|“([^”\n]+)”/g,
     (whole, straight, curly) => (straight ?? curly).trim().split(/\s+/).length >= 6 &&
       currentContractQuote(straight ?? curly, sourcePlan) ? '' : whole);
-  const paths = attribution.match(/(?:[A-Za-z]:)?(?:[./\\]*[\w.-]+[\\/])+[\w.-]+|\b[\w-]+\.(?:md|markdown)\b/gi) ?? [];
-  return paths.some(path => path !== 'PLAN.md');
+  const paths = [...attribution.matchAll(/(?:(?:(?:[A-Za-z]:|~)?[\\/]+|\.{1,2}[\\/])(?:[\w.-]+[\\/])*|(?:[\w.-]+[\\/])+)[\w.-]+|\b[\w-]+\.(?:md|markdown)\b/gi)];
+  return paths.some(match => {
+    const path = match[0];
+    if (path === 'PLAN.md') return false;
+    // A slash alone also joins ordinary prose (read/write, success/failure).
+    // Filesystem syntax, a filename extension or an explicit reference owns
+    // a path; a compound in the surrounding explanation does not.
+    if (!/[\\/]/.test(path) || /^(?:[A-Za-z]:[\\/]|[\\/]|\.{1,2}[\\/]|~[\\/])/.test(path) ||
+        /\\/.test(path) || /(?:^|[\\/])[^\\/]+\.[\w-]+/.test(path)) return true;
+    const before = attribution.slice(0, match.index), after = attribution.slice(match.index! + path.length);
+    return /^(?:[\\/]|:\d+\b|#[\w-]+)/.test(after) ||
+      (/[`"'“‘<]$/.test(before) && /^[`"'”’>]/.test(after)) ||
+      /\]\(\s*<?$/.test(before) || /(?:^|\n)\s*\[[^\]]+\]:\s*<?$/.test(before) ||
+      /\b(?:source(?:\s+(?:plan|file))?|file|path|document|evidence|citation|reference)\s*[:=]\s*$/i.test(before) ||
+      /\b(?:read|see|consult|from|per|according to|documented in|specified in|cited in)\s+$/i.test(before);
+  });
 }
 function currentContractCitation(value: string, sourcePlan: string): boolean {
   if (!/^Contracts?:\s*\S/i.test(value) || hasForeignContractSource(value, sourcePlan)) return false;

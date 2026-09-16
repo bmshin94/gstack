@@ -797,7 +797,9 @@ describe('outside-voice commitment queue', () => {
             '**Pre-question checkpoint:**', '**4. Ask, record the answer, and amend.**'].map(stage => skeleton.indexOf(stage));
           expect(stages.every(position => position >= 0)).toBe(true);
           expect(stages).toEqual([...stages].sort((a, b) => a - b));
-          expect(skeleton).toContain('Ask one row per call, citing its ID');
+          expect(skeleton).toContain('`D<N> — <ROW-ID>: <one-line question>`, using this pending row\'s exact ID');
+          expect(skeleton).toContain('Ask one row per call using the unchanged verified `currentDecision`');
+          expect(skeleton).toContain('Copy the read-back question, header, labels and descriptions literally');
           expect(skeleton).toContain('Record its reference and scope in Exact approval and scope');
           expect(skeleton).toContain('amend only what it authorizes');
           expect(queue).toContain('Keep preserves the current disposition; investigation and deferral do not authorize implementation');

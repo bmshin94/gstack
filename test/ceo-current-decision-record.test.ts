@@ -182,3 +182,68 @@ test('the actual CEO save layout preserves the full native payload and separates
     expect(() => exactCount(saved(changed))).toThrow(/Unsupported/);
   }
 });
+
+test('prepared native identity distinguishes the question number from its ledger row before saving', () => {
+  const template = readFileSync(`${import.meta.dir}/../plan-ceo-review/SKILL.md.tmpl`, 'utf8');
+  const titleLayout = template.match(/`(D<N> — <ROW-ID>: <one-line question>)`/)?.[1];
+  expect(titleLayout).toBeDefined();
+  const withoutId = q.question.replace(/^D1 — /, 'D7 — ');
+  const title = titleLayout!.replace('<N>', '7').replace('<ROW-ID>', 'D1')
+    .replace('<one-line question>', q.question.split('\n')[0]!.replace(/^D1 — /, ''));
+  const prepared = withoutId.replace(withoutId.split('\n')[0]!, title);
+  const callWithQuestion = (question: string) => {
+    const call = clone(exactFields.call);
+    call.questions[0]!.question = question;
+    // Counterfactual native questions need their matching answer key too.
+    // This does not alter or approve an original captured question.
+    call.answers = { [question]: Object.values(call.answers)[0]! } as typeof call.answers;
+    return call;
+  };
+  const payload = (call: typeof exactFields.call) => {
+    const current = call.questions[0]!;
+    return ['Question: '+current.question, 'Header: '+current.header,
+      ...current.options.map(option => option.label+'\n'+option.description)].join('\n');
+  };
+  const saved = (call: typeof exactFields.call) => exactPlan('### currentDecision (D1)', payload(call));
+  const missing = callWithQuestion(withoutId), ready = callWithQuestion(prepared);
+  // 749df paired retry copied every field and read them all, but omitted its
+  // row ID. The distinct attempt added the ID only after the saved Read.
+  expect(() => exactCount(saved(missing), missing)).toThrow(/Unsupported/);
+  expect(() => exactCount(saved(missing), ready)).toThrow(/Unsupported/);
+  expect(() => exactCount(saved(ready), missing)).toThrow(/Unsupported/);
+  expect(exactCount(saved(ready), ready)).toBe(true);
+  const foreign = callWithQuestion(prepared.replace('D7 — D1:', 'D7 — R999:'));
+  expect(() => exactCount(saved(foreign), foreign)).toThrow(/Unsupported/);
+  expect(() => exactCount(saved(ready)+'\n\n### currentDecision (D1)\n'+payload(ready), ready)).toThrow(/Unsupported/);
+
+  // A late recommended suffix or a brief-only tradeoff list cannot stand in
+  // for the final saved native labels and complete option descriptions.
+  expect(() => exactCount(saved(ready).replace(q.options[0]!.label,
+    q.options[0]!.label.replace(' (recommended)', '')), ready)).toThrow(/Unsupported/);
+  const briefOnly = callWithQuestion(prepared+'\nPros / cons:\n'+q.options.map(option =>
+    option.label+'\n'+option.description!.split('\n').slice(1).join('\n')).join('\n'));
+  for (const option of briefOnly.questions[0]!.options)
+    option.description = option.description!.replaceAll('✅', 'Pros:').replaceAll('❌', 'Cons:');
+  expect(() => exactCount(saved(briefOnly), briefOnly)).toThrow(/Unsupported/);
+  expect(exactCount(saved(ready), ready)).toBe(true);
+});
+
+// The 749df R2 evidence used "punctuation/Unicode" as ordinary prose. This
+// must not become a foreign source, while actual cited paths remain closed.
+const withEvidence = (text: string) => exactPlan('### currentDecision (D1)')
+  .replace('Evidence: PLAN.md lines 18-23 state the exact contracts;',
+    `Evidence: PLAN.md lines 18-23 state the exact contracts; ${text};`);
+for (const compound of ['punctuation/Unicode', 'read/write', 'success/failure', 'input/output', 'request/response'])
+  test(`current native record permits ordinary slash prose ${compound}`, () => {
+    expect(exactCount(withEvidence(`The contract preserves ${compound} behavior`))).toBe(true);
+  });
+for (const reference of [
+  'other/PLAN.md', 'other/handler.ts', '/PLAN', '/elsewhere/PLAN', './PLAN', '../PLAN', '~/PLAN',
+  'C:\\other\\PLAN', 'C:/other/PLAN', '\\\\host\\share\\PLAN',
+  '`other/PLAN`', '"other/PLAN"', '[source](other/PLAN)', '<other/PLAN>',
+  'Source: other/PLAN', 'file: other/PLAN', 'see other/PLAN', 'according to other/PLAN',
+  'other/PLAN:21', 'other/PLAN#L21',
+  '"read other/PLAN for the current external source contract"',
+]) test(`slash prose cannot conceal an explicit foreign reference ${reference}`, () => {
+  expect(() => exactCount(withEvidence(`The contract preserves read/write behavior; ${reference}`))).toThrow(/Unsupported/);
+});

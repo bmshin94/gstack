@@ -933,14 +933,19 @@ Draft rows before comparing options. Do not prewrite approval or implementation 
 
 **3. Compare and save that row's options.**
 Build one `currentDecision` using the preamble's rules before saving or asking:
-`question` is the entire native decision brief, from its D-numbered title through
-the Project, ELI10, Stakes, Recommendation and applicable completeness/net text.
-It is not just the title. Finish the native `header` and all option labels now;
-keep them within the host's limits. Include 2–3 options with full descriptions.
-These finished strings are the payload to save and dispatch, not notes from
-which to compose another question later. Prefer 3 for non-trivial plans;
-explain a lone viable option. Each description needs a 1–2 sentence summary,
-S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage.
+- **Question.** `question` is the entire native decision brief. Start its title
+  `D<N> — <ROW-ID>: <one-line question>`, using this pending row's exact ID;
+  the D-number counts questions and the row ID identifies the choice. Include
+  Project, ELI10, Stakes, Recommendation and applicable completeness/net text.
+- **Header and labels.** Finish the native `header` and all option labels within
+  the host's limits. Put `(recommended)` on exactly one final option label now.
+- **Descriptions.** Finish each native option's full `description`: a 1–2 sentence
+  summary, S/M/L/XL effort, low/medium/high risk, reuse, verification coverage and
+  the preamble's native tradeoffs: at least 2 ✅ pros and 1 ❌ con per description.
+  Preserve the preamble's bullet lengths and authorized hard-stop exception.
+
+These finished strings are the payload to save and dispatch. Include 2–3 options
+with full descriptions; prefer 3 for non-trivial plans and explain a lone viable option.
 For a choice with no implementation work, use S and state the zero work in its summary.
 Weigh diff size and long-term architecture equally, including whether a rewrite is better.
 
@@ -961,12 +966,13 @@ path, 3 = shortcut. For different kinds of work, write: "Note: options differ in
 **Pre-question checkpoint:** Complete this sequence for every question, including
 new findings discovered in later sections.
 
-- **Row.** Find exactly one ledger row with the ID that `currentDecision` and the question
-   cite. Check its owner, Current/Proposed, Status and Exact approval and scope.
+- **Row.** Find exactly one ledger row with the ID assigned to this choice in 0D step 2.
+   Check its owner, Current/Proposed, Status and Exact approval and scope.
    If the row is missing or duplicated, return to 0D step 2 (Record the pending choice) and repair it first.
-- **Fields.** Validate every description: effort is S/M/L/XL and risk is low/medium/high.
-   Each is one exact value, never a range. Fix invalid values in `currentDecision`
-   and repeat 0D step 3.
+- **Fields.** Check the prepared title's row ID, header, final labels (including
+   `(recommended)`) and full descriptions against step 3. Validate every description:
+   effort is S/M/L/XL and risk is low/medium/high. Each is one exact value, never a range.
+   Fix missing, changed or invalid fields in `currentDecision` and repeat 0D step 3.
 - **Save.** Save or present the complete plan under the storage policy: current values,
    pending rows and finished comparisons. Include `currentDecision` as
    question/header text and complete labeled option paragraphs; prefix selectors
@@ -992,7 +998,9 @@ new findings discovered in later sections.
    payload above a prior question/header/options inside the same current record.
 - **Read-back.** Read back: verify every field against `currentDecision` and each citation against
    its source. After the latest successful Write or Edit, Read both the ledger row
-   and the complete saved payload; verify their IDs and every payload string.
+   and the complete saved payload, through the last offered option's full description.
+   Check the returned range and Read any omitted continuation before verifying
+   their IDs and every payload string.
    This verification Read is required even when Edit says the file state is
    current in context and there is no need to Read it back. Any repair, including
    a one-word field correction, needs a new Read. For chat, verify the complete
@@ -1001,7 +1009,7 @@ new findings discovered in later sections.
 Stop on failed save/mismatch. A changed decision repeats 0D step 3.
 
 **4. Ask, record the answer, and amend.**
-Ask one row per call, citing its ID, using the unchanged verified `currentDecision`.
+Ask one row per call using the unchanged verified `currentDecision`.
 Copy the read-back question, header, labels and descriptions literally into the
 native call. Do not add the preamble brief, shorten labels or rebuild options here;
 those fields were finished in step 3. Any change returns to its save and Read-back.
