@@ -227,8 +227,8 @@ test('Eng loads its one remedy procedure before Scope Challenge findings and ret
     expect(skeleton).toContain('Scope Challenge is mandatory before Section 1');
     expect(skeleton.split(suffix ? '{{SECTION:review-sections}}' : '> **STOP.** Before starting the Scope Challenge')).toHaveLength(2);
     expect(compactProse(scope)).toContain('apply only accepted scope changes');
-    expect(compactProse(sections)).toContain('choose report/write policy → Prior Learnings → Retrospective learning → evidence calibration');
-    expect(compactProse(sections)).toContain('Read Decision procedure, then execute Scope Challenge once and Sections 1–4 in order');
+    expect(compactProse(sections)).toContain("follow the preparation sections below through Confidence Calibration");
+    expect(compactProse(sections)).toContain("Read Decision procedure as the rule for later choices. Start the review at Scope Challenge, then complete Sections 1–4 in order");
     const preparationOrder = ['## Review record and write policy',
       suffix ? '{{LEARNINGS_SEARCH}}' : '## Prior Learnings', '## Retrospective learning',
       suffix ? '{{CONFIDENCE_CALIBRATION}}' : '## Confidence Calibration',
@@ -276,7 +276,7 @@ test('Eng loads its one remedy procedure before Scope Challenge findings and ret
     expect(compactProse(boundary)).toContain('Keep behavior with necessary code/tests/docs');
     expect(compactProse(sections)).toContain("For one fixed approved contract, coverage choices vary implementation or proof depth");
     expect(compactProse(boundary)).toContain('Never cut established contracts or required proof');
-    expect(compactProse(boundary)).toContain('separately selectable runtime effects need separate choices');
+    expect(compactProse(boundary)).toContain("Give each independently selectable runtime outcome its own ID");
     expect(compactProse(boundary)).toContain('If exact approval covers all needed work, cite answer and disposition');
     expect(compactProse(boundary)).toContain('later-discovered required proof without re-asking');
     expect(compactProse(boundary)).toContain('exactly one question object for one choice');
@@ -304,9 +304,10 @@ describe('Eng approved-work decision gate', () => {
   test('preserves the full selected scope and reopens contradictory options before applying them', () => {
     const compare = gate.slice(gate.indexOf('### 3. Compare one choice'), gate.indexOf('### 4. Save the pending record'));
     const apply = gate.slice(gate.indexOf('**Apply the answer:**'), gate.indexOf('## Scope Challenge'));
-    expect(compare).toContain("each option's full label, description and comparison column");
-    expect(compare).toContain('each option\'s full label, description and comparison column');
-    expect(compare).toContain('including conditions');
+    expect(compare).toContain("each option's full label, description and grid column against every row");
+    expect(compare).toContain("each option's full label, description and grid column against every row");
+    expect(compare).toContain("They must agree on all commitments and conditions");
+    expect(compare).toContain('a label cannot override its description or grid');
     expect(compare).toContain("They approve no implementation, even a conditional fix");
     expect(compare).toContain('keep that choice pending');
     expect(compare).toContain('another independent choice returns to step 2 before sending');
@@ -348,8 +349,8 @@ describe('Eng approved-work decision gate', () => {
     expect(apply.indexOf('Correct discrepancies before advancing')).toBeGreaterThan(verify);
     expect(apply.indexOf('Return to step 1')).toBeGreaterThan(verify);
     const outputs = template.split('## Required outputs')[1]!.split('### "NOT in scope"')[0]!;
-    expect(compactProse(outputs)).toContain('Approval readiness reconciles current `State`, actual answer and accepted scope');
-    expect(compactProse(outputs)).toContain('count unresolved current records');
+    expect(compactProse(outputs)).toContain("Derive the unresolved count from each record's current `State`, actual answer and accepted scope");
+    expect(compactProse(outputs)).toContain("Reuse the current Approval readiness result");
   });
 
   test('identifies commitments before comparing values, then saves before asking', () => {
@@ -448,9 +449,9 @@ describe('Eng approved-work decision gate', () => {
     expect(compactProse(audit)).toContain("`options` with exact labels/full descriptions");
     expect(compactProse(audit)).toContain('Build the complete **comparison grid** for the entire brief');
     expect(compactProse(audit)).toContain('another independent choice returns to step 2 before sending');
-    expect(compactProse(identify)).toContain('Hold its contract fixed: interchangeable mechanisms stay together');
-    expect(compactProse(identify)).toContain('separately selectable runtime effects need separate choices');
-    expect(compactProse(identify)).toContain('interchangeable mechanisms stay together');
+    expect(compactProse(identify)).toContain("Compare alternative mechanisms for that same fixed behavior in one question");
+    expect(compactProse(identify)).toContain("Give each independently selectable runtime outcome its own ID");
+    expect(compactProse(identify)).toContain("alternative mechanisms for that same fixed behavior in one question");
   });
 
   test('finishes native fields before save and dispatches the literal final read-back', () => {
@@ -616,8 +617,8 @@ describe('Eng approved-work decision gate', () => {
     expect(compactProse(policy)).toContain("including active-plan-only");
     expect(compactProse(policy)).toContain("**Check each artifact and parent directory's permission before writing.**");
     expect(compactProse(policy)).toContain("one path authorizes no other");
-    expect(compactProse(policy)).toContain("No implementation edits without explicit authority");
-    expect(compactProse(policy)).toContain("forbidden writes or silent destination substitution");
+    expect(compactProse(policy)).toContain("Edit implementation only with explicit authority");
+    expect(compactProse(policy)).toContain("Never write forbidden paths or silently replace a requested destination");
     expect(compactProse(policy)).toContain("Present completely as **not persisted** and continue");
     expect(compactProse(policy)).toContain("Request a permitted destination if the user can supply one; wait without completion telemetry");
     expect(compactProse(policy)).toContain("With none permitted, review fully in chat as **not persisted**, then use **Blocked outcome**");

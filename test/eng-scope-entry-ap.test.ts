@@ -54,6 +54,12 @@ test('entry binds a current target and delays bootstrap until scope resolves', (
   expect(order.every(position => position >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((a, b) => a - b));
   expect(startup).toContain('Keep the reviewed target fixed');
+  expect(startup).toContain('Continue at **Engineering review → Step 0** below');
+  expect(startup).not.toContain('Read `sections/review-sections.md` in full');
+  const entry = template.slice(template.indexOf('## Engineering review'), template.indexOf('## Section self-check'));
+  expect(entry.split('{{SECTION:review-sections}}')).toHaveLength(2);
+  expect(entry.indexOf('Before Step 0, require resolved scope')).toBeLessThan(entry.indexOf('{{SECTION:review-sections}}'));
+  expect(entry.indexOf('**STOP while a Scope Challenge complexity question')).toBeLessThan(entry.indexOf('{{SECTION:review-sections}}'));
 });
 
 test('existing plan selection exceptions and unseeded hard STOP remain explicit', () => {
@@ -80,9 +86,15 @@ test('Eng alone defers canonical question rules until scope and keeps one counte
     expect(format.indexOf(exception)).toBeLessThan(format.indexOf('Branch on the skill-start STATUS lines'));
     expect(format.split(continuous)).toHaveLength(2);
     expect(format).not.toContain(standard);
-    // Only the bootstrap exception and counter differ from the other plan
-    // reviews: all actual STATUS, failure, consent and format rules survive.
-    expect(format.replace(exception + '\n\n', '').replace(continuous, standard))
+    // Eng's bootstrap/counter and two local cross-references differ; the
+    // complete STATUS, failure, consent and format rules stay byte-identical.
+    expect(format).not.toContain('Spawned session block');
+    expect(format).not.toContain('**Spawned session** block');
+    expect(format).toContain('at every decision point under this rule');
+    expect(format).toContain('follow Tool resolution item 1: auto-choose');
+    expect(format.replace(exception + '\n\n', '').replace(continuous, standard)
+      .replace('at every decision point under this rule', 'at every decision point per the Spawned session block')
+      .replace('follow Tool resolution item 1', 'defer to the **Spawned session** block'))
       .toBe(generateAskUserFormat({...ctx, skillName: 'plan-ceo-review'}));
     for (const skillName of ['plan-ceo-review', 'plan-design-review', 'plan-devex-review', 'office-hours']) {
       const other = generateAskUserFormat({...ctx, skillName});

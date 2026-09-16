@@ -1,6 +1,6 @@
 ## Review preparation
 
-After the entrypoint's startup: choose report/write policy → Prior Learnings → Retrospective learning → evidence calibration. Read Decision procedure, then execute Scope Challenge once and Sections 1–4 in order.
+After startup, follow the preparation sections below through Confidence Calibration. Read Decision procedure as the rule for later choices. Start the review at Scope Challenge, then complete Sections 1–4 in order.
 
 ## Review record and write policy
 
@@ -13,7 +13,7 @@ Keep the Scope gate's target fixed throughout the review:
 | Specific file or directory | Existing behavior within that path and its relevant callers/tests | Proposed remedies recorded in the report |
 
 For code targets, "plan" means the remedy plan, never implementation files. Trace
-selected code and proposed remedies separately from future requirements. Give
+what the selected code does now and how each proposed remedy would change it. Give
 Outside Voice the target, current remedy plan and actual decisions within its
 size limit. All test, evidence and output requirements apply.
 
@@ -27,9 +27,9 @@ holds narrative, report and the **decision ledger** (records, grids, briefs,
 actual answers), and supplies the final gate.
 
 **Check each artifact and parent directory's permission before writing.** Honor
-user/host limits, including active-plan-only; one path authorizes no other. No
-implementation edits without explicit authority, forbidden writes or silent
-destination substitution.
+user/host limits, including active-plan-only; one path authorizes no other. Edit
+implementation only with explicit authority. Never write forbidden paths or
+silently replace a requested destination.
 
 | Artifact | Destination | If writing is forbidden |
 |---|---|---|
@@ -48,8 +48,8 @@ block it. This policy governs all later steps.
 {{LEARNINGS_SEARCH}}
 
 ## Retrospective learning
-Check branch history for review refactors/reverts; record overlap with this plan
-and scrutinize prior problem areas.
+Inspect recent review/refactor/revert commits for the selected paths. Record
+recurring issues or reversals and check those paths during this review.
 
 **Plan-review evidence:** Implementation/validation steps are proposals. Calibrate
 findings below: quote the motivating plan requirement (file:line) and check existing interfaces
@@ -99,8 +99,9 @@ If one change can be accepted while another stays approved or undecided, separat
 their IDs, even within one finding/function/patch. Reopening keeps the choice ID
 and takes the next continuous `D<N>`.
 
-Keep behavior with necessary code/tests/docs. Hold its contract fixed: interchangeable
-mechanisms stay together; separately selectable runtime effects need separate choices.
+Keep behavior with necessary code/tests/docs. Compare alternative mechanisms for
+that same fixed behavior in one question. Give each independently selectable
+runtime outcome its own ID.
 Optional depth of one verification is one choice. Independent instrumentation,
 follow-ups, guarantees and policies remain separate; their tests await approval.
 
@@ -119,8 +120,9 @@ behavior, approach, guarantee or bound, with concrete current/per-option values,
 work and approval citations, including shared, fixed and pending choices. Put all
 deliberation in the finished question/descriptions; no saved-only Pros/cons block.
 
-Before saving, check every row against each option's full label, description and
-comparison column; they must agree, including conditions. Captions override nothing:
+Before saving, check each option's full label, description and grid column
+against every row. They must agree on all commitments and conditions; a label
+cannot override its description or grid:
 - Only this choice varies; other approved values stay fixed and pending choices stay undecided. A new shared value still needs approval.
 - Necessary implementation/proof of an approved contract is common work: cite its answer, no new approval row. Never cut established contracts or required proof.
 - Investigate/Defer specify bounded investigation and unchanged/pending values. They approve no implementation, even a conditional fix; keep that choice pending.
@@ -183,7 +185,7 @@ verify against `currentDecision`. This chat-review route cannot pass the saved-r
 
 **Changed brief:** Every payload edit, even label shortening/reformatting, returns
 to step 3, whole-payload save and verification. Old comparisons or critic advice
-cannot substitute. Verified strings are the payload, not notes for recomposition.
+cannot substitute.
 
 ### 5. Ask and wait
 
@@ -233,7 +235,7 @@ audit trail, leaving User Challenges for its final gate.
 Before reviewing, answer:
 1. **What existing code partly or fully solves each sub-problem?** Can existing outputs replace parallel flows?
 2. **What minimum changes achieve the goal?** Flag work deferrable without blocking it; challenge scope creep.
-3. **Complexity check:** If the plan touches 8+ files or introduces 2+ new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
+3. **Complexity check:** Count touched files and new classes/services; consider whether the same goal needs fewer moving parts. Apply the complexity gate below.
 4. **Search check:** For each new architectural pattern, infrastructure component
    or concurrency approach, research built-ins, current practice and pitfalls
    through Aside (entrypoint readiness), one read-only request per pattern:
@@ -357,8 +359,8 @@ Do NOT just append vague bullet points. A TODO without context is worse than no 
 
 Execute this sequence once; output formats below start no additional review cycle.
 
-1. **Check decisions.** Approval readiness reconciles current `State`, actual answer
-   and accepted scope; count unresolved current records. It needs no report/log.
+1. **Check decisions.** Reuse the current Approval readiness result. Derive the
+   unresolved count from each record's current `State`, actual answer and accepted scope.
 2. **Prepare outputs.** Save accepted plan sections, Implementation Tasks and
    Completion summary under the write policy/formats; unresolved choices stay pending.
 3. **Save and verify the report.** Follow **Plan File Review Report**, including
