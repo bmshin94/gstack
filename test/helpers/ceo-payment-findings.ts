@@ -370,7 +370,9 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
     !/\b(?:historical|archiv(?:ed|al)|withdrawn|retracted|superseded|obsolete|not current|no longer current)\b/i.test(text);
   const sectionContext = (document: ReturnType<typeof marked.lexer>, index: number) => {
     const headings: Array<{ depth: number; text: string }> = [];
-    for (const token of document.slice(0, index)) if (token.type === 'heading') {
+    // Enter the current heading before checking context: a completed sibling
+    // (and its descendants) is not an ancestor of the section that follows.
+    for (const token of document.slice(0, index + 1)) if (token.type === 'heading') {
       while (headings.length && headings.at(-1)!.depth >= token.depth) headings.pop();
       headings.push({ depth: token.depth, text: plain(token.text) });
     }
@@ -488,6 +490,48 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
     Boolean(selector(offered) && selector(offered) === selector(saved) &&
       labelWords(offered).some(word => labelWords(saved + ' ' + summary).includes(word))) ||
     (!selector(offered) && completeCaption(offered, saved, summary));
+  // Bare grid columns supply no action text. Bind their declaration to the
+  // whole native caption, preserving targets, scope, counts and negation.
+  // Assertion summaries may omit "assert full", count precision, a mock
+  // already named in the native brief, and source-bound scalar call arguments.
+  const declaredOption = (offered: typeof q.options[number], saved: string) => {
+    const assignment = '[a-z_][a-z0-9_]*=(?:[0-9]+|[a-z_][a-z0-9_]*)';
+    const argumentsKey = (value: string) => {
+      const pairs = value.match(new RegExp(assignment, 'gi')) ?? [];
+      return pairs.length && new Set(pairs.map(pair => pair.split('=')[0])).size === pairs.length
+        ? pairs.sort().join(',') : null;
+    };
+    const sourceArguments = (value: string) => {
+      const key = argumentsKey(value), sourceTokens = marked.lexer(sourcePlan);
+      if (!key) return false;
+      return sourceTokens.some((token, index) => {
+        if (!sectionContext(sourceTokens, index)) return false;
+        const parts = token.type === 'paragraph' ? [token] : token.type === 'list'
+          ? token.items.flatMap(item => item.tokens.filter(part => part.type === 'text' || part.type === 'paragraph')) : [];
+        return parts.some(part => {
+          const text = prose(part.raw.replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g, '')).replace(/\s+/g, ' ');
+          if (!activeSection(text) || /\b(?:not|never|if|unless|hypothetical|previously|formerly)\b/i.test(text)) return false;
+          const calls = new RegExp(`\\bcall\\s+[a-z_][a-z0-9_.]*(?:\\(\\))?\\s+with\\s+(${assignment}(?:\\s*(?:,|\\band\\b)\\s*${assignment})*)(?=\\s*(?:[,.;]|$))`, 'gi');
+          return [...text.matchAll(calls)].some(call => argumentsKey(call[1]!) === key);
+        });
+      });
+    };
+    const normalize = (value: string) => {
+      let text = caption(value);
+      if (/^assert\s+/i.test(text)) {
+        text = text.replace(/^assert\s+(?:full\s+)?/i, '')
+          .replace(/\bexactly\s+(?=(?:[0-9]+|one|two|three|four)\b)/gi, '');
+        if (/\bmock\b/i.test(prose(offered.description ?? '')))
+          text = text.replace(/\bmock\s+(?=[a-z_][a-z0-9_]*\s+call\b)/gi, '');
+        text = text.replace(new RegExp(`(\\bcall)\\s+with\\s+(${assignment}(?:,\\s*${assignment})*)$`, 'i'),
+          (whole, call, args) => sourceArguments(args) ? call : whole);
+      }
+      return text.toLowerCase().replace(/\+|\bplus\b/g, ' and ').match(/[a-z0-9_]+|[^\s.,]/g) ?? [];
+    };
+    const left = normalize(offered.label), right = normalize(saved);
+    return selector(offered.label) === selector(saved) && left.length > 0 &&
+      left.length === right.length && left.every((word, index) => word === right[index]);
+  };
   // A saved "as planned" alternative names the owned baseline. Resolve that
   // reference before ordinary caption matching; a letter or a shared word is
   // insufficient, and retaining a baseline cannot silently append an action.
@@ -713,7 +757,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
                 (!(bare || separate) || !withdrawnOption.test(optionText(facts))); });
             const matched = q.options.map(offered => optionColumns.filter(i => /^[A-D]$/i.test(headers[i]!)
               ? selector(offered.label) === gridSelector(headers[i]!) && declarations.length === q.options.length &&
-                declarations.filter(saved => selector(saved) === gridSelector(headers[i]!) && sameOption(offered.label, saved, '')).length === 1
+                declarations.filter(saved => selector(saved) === gridSelector(headers[i]!) && declaredOption(offered, saved)).length === 1
               : completeCaption(offered.label, headers[i]!, '')));
             if (complete && matched.every(found => found.length === 1) && new Set(matched.flat()).size === q.options.length)
               matchedPhase = anchor.type === 'heading' ? plain(anchor.text) : plain(anchor.raw).split('\n')[0];

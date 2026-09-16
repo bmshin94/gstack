@@ -1085,6 +1085,26 @@ test('cf74 inactive comparison ownership ignores an archived sibling beside the 
   const plan = cf74Plan + '\n## Archived unrelated comparison\n### OLD — Prior decision\nRetained history.\n';
   expect(cf74Count(emailCf74, plan).counted).toBe(true);
 });
+for (const location of ['comparison', 'saved source', 'input source'] as const)
+  for (const descendant of [false, true])
+    test(`cf74 current section ancestry excludes inactive siblings at ${location}, descendant=${descendant}`, () => {
+      const heading = location === 'comparison' ? '### T1 — Test 1 assertion depth'
+        : location === 'saved source' ? '## Existing behavior retained (from PLAN.md)' : '## Existing behavior retained';
+      const depth = location === 'comparison' ? 3 : 2;
+      const archived = '#'.repeat(depth) + ' Archived unrelated comparison\nRetained history.\n\n' +
+        (descendant ? '#'.repeat(depth + 1) + ' Withdrawn child\nPrior details.\n\n' : '');
+      const plan = location === 'input source' ? pairedCf74Plan : replaceCf74(pairedCf74Plan, heading, archived + heading);
+      const source = location === 'input source' ? replaceCf74(pairedCf74.seed, heading, archived + heading) : pairedCf74.seed;
+      expect(cf74Count(pairedCf74, plan, cf74Question(pairedCf74), source)).toMatchObject({
+        counted: true, trace: [{ kind: 'recorded-decision', ledgerId: 'T1' }],
+      });
+    });
+test('cf74 current section ancestry preserves archived ancestors and native ownership', () => {
+  const plan = replaceCf74(pairedCf74Plan, '## 0D comparisons', '## Archived 0D comparisons');
+  expect(() => cf74Count(pairedCf74, plan)).toThrow(/Unsupported/);
+  const q = cf74Question(pairedCf74); q.nativeCall!.answered = false;
+  expect(() => cf74Count(pairedCf74, pairedCf74Plan, q)).toThrow(/Invalid/);
+});
 const baselineCurrentCf74 = 'Inline email, no error handling, exception propagates to ingress → HTTP 500 → Stripe retry';
 for (const value of [
   'Inline email, exception propagates to another endpoint → HTTP 500',
@@ -1330,6 +1350,55 @@ for (const [name,change] of Object.entries({
   'mismatched option declaration':(p:string)=>replaceOnce8bf(p,'B) assert full receipt equality only.','B) delete the database.'),
 })) test(`8bf grid provenance rejects ${name}`,()=>{
   expect(()=>replay8bf(current8bf.grid,change(current8bf.grid.savedPlan))).toThrow(/Unsupported/);
+});
+for (const declaration of [
+  'delete the receipt', 'assert full invoice equality only', 'assert full receipt inequality only',
+  'do not assert full receipt equality only', 'assert full receipt equality only and delete the receipt',
+  'assert only receipt equality', 'assert full receipt equality without currency',
+  'assert full receipt != equality only', 'assert full "receipt equality only"',
+]) test(`8bf bare declaration rejects conflicting whole choice: ${declaration}`, () => {
+  const plan = replaceOnce8bf(current8bf.grid.savedPlan, 'B) assert full receipt equality only.', `B) ${declaration}.`);
+  expect(() => replay8bf(current8bf.grid, plan)).toThrow(/Unsupported/);
+});
+for (const side of ['saved', 'native'] as const)
+  test(`8bf bare declaration preserves complete action counts on ${side}`, () => {
+    const call = clone(current8bf.grid.call);
+    const plan = side === 'saved' ? replaceOnce8bf(current8bf.grid.savedPlan,
+      'plus exactly one mock charge call', 'plus exactly two mock charge calls') : current8bf.grid.savedPlan;
+    if (side === 'native') {
+      const q = call.questions[0]!;
+      q.options[0]!.label = q.options[0]!.label.replace('one charge call', 'two charge calls');
+      call.answers = { [q.question]: q.options[0]!.label };
+    }
+    expect(() => replay8bf(current8bf.grid, plan, call)).toThrow(/Unsupported/);
+  });
+for (const connector of ['+', 'plus', 'and'])
+  test(`8bf bare declaration accepts complete nominal assertion with ${connector}`, () => {
+    const plan = replaceOnce8bf(current8bf.grid.savedPlan,
+      'A) assert full receipt equality plus exactly one mock charge call with amountCents=1000, currency=USD.',
+      `A) Receipt equality ${connector} one charge call.`);
+    expect(replay8bf(current8bf.grid, plan)).toMatchObject({ counted: true, trace: [{ kind: 'recorded-decision', ledgerId: 'R1' }] });
+  });
+for (const argumentsText of [
+  'amountCents=1001, currency=USD', 'amountCents=1000, currency=EUR', 'amountCents=1000, currency=usd',
+  'amountcents=1000, currency=USD', 'amountCents=1000, currency=USD, deleteReceipt=1',
+  'amountCents=1000, currency=USD, max_retries=1', 'amountCents=1000, amountCents=1000, currency=USD',
+]) test(`8bf bare declaration rejects unbound call arguments: ${argumentsText}`, () => {
+  const plan = replaceOnce8bf(current8bf.grid.savedPlan, 'with amountCents=1000, currency=USD', `with ${argumentsText}`);
+  expect(() => replay8bf(current8bf.grid, plan)).toThrow(/Unsupported/);
+});
+test('8bf bare declaration source arguments retain identity across order and inert history', () => {
+  const plan = replaceOnce8bf(current8bf.grid.savedPlan, 'with amountCents=1000, currency=USD', 'with currency=USD, amountCents=1000');
+  const row = { ...current8bf.grid, seed: current8bf.grid.seed + '\n## Archived calls\nCall processPayment with amountCents=1001 and currency=usd.\n' };
+  expect(replay8bf(row, plan)).toMatchObject({ counted: true, trace: [{ kind: 'recorded-decision', ledgerId: 'R1' }] });
+});
+for (const [name, source] of Object.entries({
+  'quoted call': current8bf.grid.seed.replace('processPayment with amountCents=1000 and currency=USD', '"processPayment with amountCents=1000 and currency=USD"'),
+  'changed operand': current8bf.grid.seed.replace('processPayment with amountCents=1000 and currency=USD', 'processPayment with amountCents=1001 and currency=USD'),
+  'inactive source section': current8bf.grid.seed.replace('## Proposed tests', '## Archived Proposed tests'),
+})) test(`8bf bare declaration cannot borrow source arguments from ${name}`, () => {
+  expect(source).not.toBe(current8bf.grid.seed);
+  expect(() => replay8bf({ ...current8bf.grid, seed: source })).toThrow(/Unsupported/);
 });
 for (const [name,change] of Object.entries({
   'missing native pros':(c:typeof current8bf.grid.call)=>{c.questions[0]!.options[1]!.description='❌ There is no stated benefit.';},
