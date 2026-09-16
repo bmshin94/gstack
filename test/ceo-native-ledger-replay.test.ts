@@ -1003,6 +1003,205 @@ test('6bd comparison ignores quoted historical baseline corrections',()=>{
   const plan=comparison6bd.savedPlan.replace('unless D5 adds tests.','unless D5 adds tests. Historical note: "This baseline is no longer current."');
   expect(comparisonCount6bd(plan,q).counted).toBe(true);
 });
+
+const currentCf74 = fixture.currentComparisonsCf74;
+const emailCf74 = currentCf74.groups.find(g => g.case === 'distinct5')!;
+const pairedCf74 = currentCf74.groups.find(g => g.attempt.endsWith('7XHXDl'))!;
+const incompleteCf74 = currentCf74.groups.find(g => g.attempt.endsWith('U4p1F0'))!;
+const cf74Question = (group = emailCf74) => nativePlanCallFingerprint(clone(group.calls.at(-1)!.call), 1, true);
+const cf74Count = (group = emailCf74, plan = group.calls.at(-1)!.savedPlan, question = cf74Question(group), source = group.seed) => {
+  const counter = createCeoPaymentFindingCounter(source, () => plan, ceoFirstReviewAUQ);
+  const counted = counter.isReviewAUQ(question, group.calls.slice(0, -1).map(row => row.call));
+  return { counted, trace: counter.trace };
+};
+test('cf74 captured current comparisons count complete source-bound choices with native ACKs', () => {
+  for (const group of [emailCf74, pairedCf74]) {
+    let plan = '', count = 0;
+    const counter = createCeoPaymentFindingCounter(group.seed, () => plan, ceoFirstReviewAUQ);
+    const prior: typeof group.calls[number]['call'][] = [];
+    for (const row of group.calls) {
+      plan = row.savedPlan;
+      if (plan) {
+        expect(createHash('sha256').update(plan).digest('hex')).toBe(row.savedPlanSha256!);
+        expect(Date.parse(row.savedAt!)).toBeLessThan(Date.parse(row.questionIssuedAt));
+      }
+      expect(Date.parse(row.questionIssuedAt)).toBeLessThanOrEqual(Date.parse(row.call.answeredAt!));
+      count += Number(counter.isReviewAUQ(nativePlanCallFingerprint(clone(row.call), 1, true), prior));
+      prior.push(row.call);
+    }
+    expect(count).toBe(group === emailCf74 ? 3 : 1);
+    expect(counter.trace.at(-1)).toMatchObject({ kind: 'recorded-decision', ledgerId: group === emailCf74 ? 'R3' : 'T1' });
+    expect(ceoPaymentFinding(cf74Question(group), group.seed, plan)).toBeNull();
+  }
+});
+test('cf74 missing saved comparisons and mixed setup-review packets remain rejected', () => {
+  expect(() => cf74Count(incompleteCf74)).toThrow(/Unsupported/);
+  const counter = createCeoPaymentFindingCounter('', () => { throw new Error('mixed packet must not read a plan'); }, ceoFirstReviewAUQ);
+  expect(() => counter.isReviewAUQ(nativePlanCallFingerprint(clone(currentCf74.mixedSetupReview), 1, true))).toThrow(/Invalid/);
+});
+
+const cf74Plan = emailCf74.calls.at(-1)!.savedPlan;
+const pairedCf74Plan = pairedCf74.calls.at(-1)!.savedPlan;
+const replaceCf74 = (text: string, from: string, to: string) => {
+  expect(text.split(from).length).toBe(2);
+  return text.replace(from, to);
+};
+const quotedTradeoffCf74 = '"retry only the notification." Cons:';
+for (const ending of ['"notification."', '“notification.”', "'notification.'", '‘notification.’', '"notification!"', '"notification?"'])
+  test(`cf74 prose fields remain operative after ${ending}`, () => {
+    const plan = replaceCf74(cf74Plan, quotedTradeoffCf74, ending + '\n  Cons:');
+    expect(cf74Count(emailCf74, plan).counted).toBe(true);
+  });
+for (const literal of ['"Cons: this is a quoted example."', '`Cons: a code-only example.`', '“Risk: high. Cons: an example.”'])
+  test(`cf74 literal field names cannot replace current fields: ${literal}`, () => {
+    const plan = replaceCf74(cf74Plan, quotedTradeoffCf74, 'the notification. ' + literal);
+    expect(() => cf74Count(emailCf74, plan)).toThrow(/Unsupported/);
+  });
+test('cf74 quoted and code field names beside complete current facts stay inert', () => {
+  const plan = replaceCf74(cf74Plan, quotedTradeoffCf74,
+    'the notification. Historical example: "Effort XL. Risk high. Pros: old. Cons: old." `Risk: low.` Cons:');
+  expect(cf74Count(emailCf74, plan).counted).toBe(true);
+});
+for (const marker of ['Effort S, risk low. Pros: payment alert', 'risk low. Pros: payment alert', 'Pros: payment alert', 'Cons: the handler now'])
+  test(`cf74 quoted current fact cannot supply ${marker}`, () => {
+    const plan = replaceCf74(cf74Plan, marker, '"' + marker + '"');
+    expect(() => cf74Count(emailCf74, plan)).toThrow(/Unsupported/);
+  });
+for (const suffix of [' Cons: a second current cost.', ' This decision is withdrawn.', ' This option is no longer current.'])
+  test(`cf74 complete facts reject current correction ${suffix}`, () => {
+    const plan = replaceCf74(cf74Plan, 'rescue must be class-specific and covered by a test.', 'rescue must be class-specific and covered by a test.' + suffix);
+    expect(() => cf74Count(emailCf74, plan)).toThrow(/Unsupported/);
+  });
+for (const state of ['Archived', 'Withdrawn', 'Retracted', 'Superseded', 'Obsolete', 'Historical'])
+  for (const owner of ['comparison', 'comparison ancestor', 'ledger'] as const)
+    test(`cf74 inactive comparison ownership rejects ${state} ${owner}`, () => {
+      const from = owner === 'comparison' ? '### R3 — Email leg:' : owner === 'comparison ancestor'
+        ? '## Step 0D. Alternatives' : '## Decision ledger';
+      const to = owner === 'comparison' ? `### ${state} R3 — Email leg:` : owner === 'comparison ancestor'
+        ? `## ${state} Step 0D. Alternatives` : `## ${state} Decision ledger`;
+      expect(() => cf74Count(emailCf74, replaceCf74(cf74Plan, from, to))).toThrow(/Unsupported/);
+    });
+test('cf74 inactive comparison ownership ignores an archived sibling beside the current comparison', () => {
+  const plan = cf74Plan + '\n## Archived unrelated comparison\n### OLD — Prior decision\nRetained history.\n';
+  expect(cf74Count(emailCf74, plan).counted).toBe(true);
+});
+const baselineCurrentCf74 = 'Inline email, no error handling, exception propagates to ingress → HTTP 500 → Stripe retry';
+for (const value of [
+  'Inline email, exception propagates to another endpoint → HTTP 500',
+  'Inline email, exception propagates to ingress → HTTP 200',
+  'Inline email, exception never propagates to ingress → HTTP 500',
+  'Previously, exception propagates to ingress → HTTP 500',
+  'If approved, exception propagates to ingress → HTTP 500',
+  'Inline email; "exception propagates to ingress → HTTP 500"',
+  'Inline email; exception propagates to ingress → HTTP 500; exception propagates to ingress → HTTP 500',
+]) test(`cf74 short baseline does not borrow ${value}`, () => {
+  expect(() => cf74Count(emailCf74, replaceCf74(cf74Plan, baselineCurrentCf74, value))).toThrow(/Unsupported/);
+});
+for (const [name, from, to] of [
+  ['foreign own grid caption', '| B: rethrow (as written) |', '| B: forward (as written) |'],
+  ['duplicate option column', '| C: enqueue send after commit |', '| B: rethrow (as written) |'],
+  ['different own outcome', '| HTTP result on mail failure | pending | 500 | 200 | 500 | 200 |', '| HTTP result on mail failure | pending | 500 | 200 | 200 | 200 |'],
+  ['different current outcome', '| HTTP result on mail failure | pending | 500 | 200 | 500 | 200 |', '| HTTP result on mail failure | pending | 200 | 200 | 500 | 200 |'],
+  ['missing outcome', '| HTTP result on mail failure | pending | 500 | 200 | 500 | 200 |', ''],
+  ['duplicate outcome', '| HTTP result on mail failure | pending | 500 | 200 | 500 | 200 |', '| HTTP result on mail failure | pending | 500 | 200 | 500 | 200 |\n| HTTP result on mail failure | pending | 500 | 200 | 500 | 200 |'],
+  ['quoted outcome', '| HTTP result on mail failure | pending | 500 | 200 | 500 | 200 |', '| HTTP result on mail failure | pending | "500" | 200 | 500 | 200 |'],
+  ['foreign ledger identity', '| R3 (plan author) |', '| OTHER (plan author) |'],
+  ['historical owned comparison', '### R3 — Email leg:', '### Historical R3 — Email leg:'],
+] as const) test(`cf74 short baseline rejects ${name}`, () => {
+  expect(() => cf74Count(emailCf74, replaceCf74(cf74Plan, from, to))).toThrow(/Unsupported/);
+});
+for (const side of ['saved', 'native'] as const) for (const correction of [
+  'This option is withdrawn.', 'This baseline is no longer current.', 'This option is now "rejected".',
+  "This option is now 'withdrawn'.", 'This option is now ‘withdrawn’.',
+  'This option does not rethrow to ingress.', 'Also delete the audit log.', 'Then deploy the handler.',
+  'Instead return HTTP 200.',
+]) test(`cf74 short baseline rejects ${side} correction ${correction}`, () => {
+  const q = cf74Question();
+  const plan = side === 'saved' ? replaceCf74(cf74Plan, 'every mail blip pages as a payment failure; two retry channels for one receipt.',
+    'every mail blip pages as a payment failure; two retry channels for one receipt. ' + correction) : cf74Plan;
+  if (side === 'native') q.nativeCall!.questions[0]!.options[1]!.description += ' ' + correction;
+  expect(() => cf74Count(emailCf74, plan, q)).toThrow(/Unsupported/);
+});
+for (const label of ['B) Rethrow to foreignIngress, HTTP 500 (as written)', 'B) Rethrow to ingress, HTTP 200 (as written)',
+  'B) Rethrow without ingress, HTTP 500 (as written)', 'B) Rethrow to ingress and deploy, HTTP 500 (as written)'])
+  test(`cf74 short baseline requires exact native operands ${label}`, () => {
+    const q = cf74Question(); q.nativeCall!.questions[0]!.options[1]!.label = label; reanswer(q);
+    expect(() => cf74Count(emailCf74, cf74Plan, q)).toThrow(/Unsupported/);
+  });
+test('cf74 short baseline binds a coherent action/destination/result class without email-specific names', () => {
+  const q = cf74Question();
+  q.nativeCall!.questions[0]!.options[1]!.label = 'B) Forward to gateway, status 503 (as written)'; reanswer(q);
+  let plan = replaceCf74(cf74Plan, baselineCurrentCf74, 'Exception flows to gateway → status 503');
+  plan = replaceCf74(plan, '| B: rethrow (as written) |', '| B: forward (as written) |');
+  plan = replaceCf74(plan, '**B) Rethrow (as written).**', '**B) Forward (as written).**');
+  plan = replaceCf74(plan, '| HTTP result on mail failure | pending | 500 | 200 | 500 | 200 |', '| Status result on mail failure | pending | 503 | 200 | 503 | 200 |');
+  expect(cf74Count(emailCf74, plan, q).counted).toBe(true);
+});
+const t1EvidenceCf74 = 'Test 1 success-path assertion depth. Evidence: §Existing behavior gives exact receipt; §Proposed tests 1 says "assert only truthy". Code unverified in this checkout.';
+for (const source of ['OTHER.md', 'docs/PLAN.md', '../PLAN.md', '/tmp/PLAN.md', 'PLAN.md and OTHER.md'])
+  test(`cf74 section ownership rejects current heading source ${source}`, () => {
+    const plan = pairedCf74Plan.replaceAll('(from PLAN.md)', '(from ' + source + ')');
+    expect(() => cf74Count(pairedCf74, plan)).toThrow(/Unsupported/);
+  });
+for (const [name, evidence] of [
+  ['unknown section', 'Evidence: §Unknown section gives exact receipt.'],
+  ['partial section name', 'Evidence: §Existing behav gives exact receipt.'],
+  ['prefix lookalike', 'Evidence: §Existing behaviorExtra gives exact receipt.'],
+  ['foreign citation', 'OTHER.md ' + t1EvidenceCf74],
+  ['mixed foreign/current citation', 'PLAN.md + OTHER.md ' + t1EvidenceCf74],
+  ['quoted sections only', 'Evidence: "§Existing behavior gives exact receipt; §Proposed tests says truthy".'],
+  ['single quoted sections only', "Evidence: '§Existing behavior gives exact receipt; §Proposed tests says truthy'."],
+  ['curly single quoted sections only', 'Evidence: ‘§Existing behavior gives exact receipt; §Proposed tests says truthy’.'],
+  ['coded sections only', 'Evidence: `§Existing behavior` gives exact receipt; `§Proposed tests` says truthy.'],
+  ['historical attribution', 'Historical ' + t1EvidenceCf74],
+  ['withdrawn attribution', t1EvidenceCf74 + ' This decision is withdrawn.'],
+] as const) test(`cf74 section ownership rejects ${name}`, () => {
+  expect(() => cf74Count(pairedCf74, replaceCf74(pairedCf74Plan, t1EvidenceCf74, evidence))).toThrow(/Unsupported/);
+});
+for (const [name, mutate] of Object.entries({
+  'missing current source heading': (p: string) => p.replaceAll('(from PLAN.md)', ''),
+  'duplicate current source heading': (p: string) => p + '\n## Existing behavior retained (from PLAN.md)\nDuplicate.\n',
+  'quoted source heading': (p: string) => p.replaceAll('## Existing behavior retained (from PLAN.md)', '> ## Existing behavior retained (from PLAN.md)'),
+  'historical source heading': (p: string) => p.replaceAll('## Existing behavior retained (from PLAN.md)', '## Historical Existing behavior retained (from PLAN.md)'),
+  'withdrawn source heading': (p: string) => p.replaceAll('## Existing behavior retained (from PLAN.md)', '## Existing behavior withdrawn (from PLAN.md)'),
+  'duplicate global source': (p: string) => p + '\nSource: PLAN.md\n\nSource: PLAN.md\n',
+  'foreign global source': (p: string) => p + '\nSource: OTHER.md\n',
+  'foreign current ledger': (p: string) => p.replace('| T1 (user / processPayment suite) |', '| OTHER (user / processPayment suite) |'),
+  'historical comparison': (p: string) => p.replace('### T1 — Test 1 assertion depth', '### Historical T1 — Test 1 assertion depth'),
+  'historical ledger': (p: string) => p.replace('## Decision ledger', '## Historical Decision ledger'),
+  'withdrawn ledger heading': (p: string) => p.replace('## Decision ledger', '## Decision ledger (withdrawn)'),
+  'archived comparison ancestor': (p: string) => p.replace('## 0D comparisons', '## Archived 0D comparisons'),
+  'withdrawn source ancestor': (p: string) => p.replace('## Existing behavior retained (from PLAN.md)', '## Source material (withdrawn)\n### Existing behavior retained (from PLAN.md)'),
+  'archived source ancestor': (p: string) => p.replace('## Existing behavior retained (from PLAN.md)', '## Archived source material\n### Existing behavior retained (from PLAN.md)'),
+})) test(`cf74 section ownership rejects ${name}`, () => {
+  const plan = mutate(pairedCf74Plan); expect(plan).not.toBe(pairedCf74Plan);
+  expect(() => cf74Count(pairedCf74, plan)).toThrow(/Unsupported/);
+});
+for (const source of [
+  pairedCf74.seed.replace('## Existing behavior retained', '## Different behavior'),
+  pairedCf74.seed + '\n## Existing behavior retained\nSecond declaration.\n',
+  pairedCf74.seed.replace('## Existing behavior retained', '## Historical Existing behavior retained'),
+  pairedCf74.seed.replace('## Proposed tests', '## Different tests'),
+  pairedCf74.seed.replace('## Existing behavior retained', '## Previous material (withdrawn)\n### Existing behavior retained'),
+  pairedCf74.seed.replace('## Existing behavior retained', '## Archived material\n### Existing behavior retained'),
+]) test(`cf74 section citations authenticate actual source headings ${createHash('sha256').update(source).digest('hex').slice(0,8)}`, () => {
+  expect(() => cf74Count(pairedCf74, pairedCf74Plan, cf74Question(pairedCf74), source)).toThrow(/Unsupported/);
+});
+test('cf74 source descriptors and inert historical headings do not change current ownership', () => {
+  const plan = pairedCf74Plan.replaceAll(' retained (from PLAN.md)', ' (from PLAN.md)') +
+    '\n## Historical record\n### Existing behavior retained (from OTHER.md)\nObsolete record.\n';
+  expect(cf74Count(pairedCf74, plan).counted).toBe(true);
+});
+for (const group of [emailCf74, pairedCf74]) test(`cf74 complete ${group.case} current comparisons still require native ownership`, () => {
+  for (const change of [
+    (q: ReturnType<typeof cf74Question>) => { q.nativeCall!.answered = false; },
+    (q: ReturnType<typeof cf74Question>) => { q.nativeCall!.failed = true; },
+    (q: ReturnType<typeof cf74Question>) => { q.signature = 'foreign:call'; },
+    (q: ReturnType<typeof cf74Question>) => { q.nativeCall!.answers = {}; },
+    (q: ReturnType<typeof cf74Question>) => { q.nativeCall!.unansweredQuestionIndices = [0]; },
+    (q: ReturnType<typeof cf74Question>) => { q.nativeCall!.questions.push(clone(q.nativeCall!.questions[0]!)); },
+  ]) { const q = cf74Question(group); change(q); expect(() => cf74Count(group, group.calls.at(-1)!.savedPlan, q)).toThrow(/Invalid/); }
+});
 for(const side of ['saved','native'] as const)for(const correction of [
   'This option is withdrawn.','This option is now "rejected".',
   'This option does not register through a thin adapter shim.',

@@ -323,7 +323,8 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
   const tokens = marked.lexer(savedPlan);
   // A current document may declare its source once and cite that plan's
   // sections in each row. An unrelated mention elsewhere is not provenance.
-  const currentContext = (index: number) => currentDocumentContext(tokens, index);
+  const currentContext = (index: number) => sectionContext(tokens, index) &&
+    (tokens[index]?.type !== 'heading' || activeSection(plain(tokens[index].text)));
   const sourceRecords = currentDocumentSources(tokens);
   const namedSource = sourceRecords.length === 1 && sourceRecords[0] === 'PLAN.md';
   const lineCitation = (evidence: string) => {
@@ -336,6 +337,39 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
   const inheritedSource = (evidence: string) => namedSource &&
     (/\bEvidence:\s*plan text\b|\bplan\s+§\s*\S|\bplan\s+sections?\s+\S|^Plan(?: contract)?:\s*\S/i.test(evidence) ||
       lineCitation(evidence) || currentContractCitation(evidence, sourcePlan));
+  // A section citation can name the source in its current heading instead
+  // of a special document-wide declaration. Resolve every cited section
+  // against the actual input, and require an attributed current section.
+  const activeSection = (text: string) => current(text) &&
+    !/\b(?:historical|archiv(?:ed|al)|withdrawn|retracted|superseded|obsolete|not current|no longer current)\b/i.test(text);
+  const sectionContext = (document: ReturnType<typeof marked.lexer>, index: number) => {
+    const headings: Array<{ depth: number; text: string }> = [];
+    for (const token of document.slice(0, index)) if (token.type === 'heading') {
+      while (headings.length && headings.at(-1)!.depth >= token.depth) headings.pop();
+      headings.push({ depth: token.depth, text: plain(token.text) });
+    }
+    return headings.every(heading => activeSection(heading.text));
+  };
+  const sectionCitation = (raw: string) => {
+    const evidence = plain(raw.replace(/`[^`]*`|"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g, ''));
+    if (!activeSection(evidence) || hasForeignContractSource(raw, sourcePlan) || sourceRecords.length > 1 || sourceRecords.some(source => source !== 'PLAN.md')) return false;
+    const attributed = tokens.flatMap((token, index) => {
+      if (token.type !== 'heading' || !sectionContext(tokens, index) || !activeSection(plain(token.text))) return [];
+      const match = /^(.+?)(?:\s+retained)?\s+\(from\s+([^()]+)\)$/i.exec(plain(token.text));
+      return match ? [{ section: match[1]!.toLowerCase(), source: match[2]! }] : [];
+    });
+    if (!attributed.length || attributed.some(row => row.source !== 'PLAN.md') ||
+        new Set(attributed.map(row => row.section)).size !== attributed.length) return false;
+    const sourceTokens = marked.lexer(sourcePlan);
+    const headings = sourceTokens.flatMap((token, index) => token.type === 'heading' &&
+      sectionContext(sourceTokens, index) && activeSection(plain(token.text)) ? [plain(token.text).replace(/\s+retained$/i, '').toLowerCase()] : []);
+    const references = [...evidence.matchAll(/§\s*/g)].map(match => {
+      const tail = evidence.slice(match.index! + match[0].length).toLowerCase();
+      return headings.filter(heading => tail.startsWith(heading) && /^(?:\s|[.,;:]|$)/.test(tail.slice(heading.length)));
+    });
+    return references.length > 0 && references.every(matches => matches.length === 1) &&
+      references.some(matches => attributed.some(row => row.section === matches[0]));
+  };
   // The same option may give both dimensions as a parenthesized tuple,
   // with the value before or after its field, or a bare finite effort size.
   // Risk must remain explicit. Inventory every metadata tuple before accepting
@@ -368,6 +402,10 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
         (risk[2] && levels.indexOf(risk[1]!.toLowerCase()) >= levels.indexOf(risk[2]!.toLowerCase()))) return null;
     return raw.slice(0, match.index) + `. Effort ${facts.effort}. Risk ${facts.risk}.` + raw.slice(match.index! + match[0].length);
   };
+  const optionText = (raw:string) => raw
+    .replace(/((?:this|that|the) (?:option|alternative|baseline) (?:is|was|has been)\s+(?:(?:already|now)\s+)?)["“'‘]([^"”'’\n]+)["”'’]/gi,'$1$2')
+    .replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g,'');
+  const withdrawnOption = /\b(?:this|that|the) (?:option|alternative|baseline) (?:is|was|has been) (?:already |now )?(?:withdrawn|retracted|rejected|superseded|not current|no longer (?:current|valid)|historical|quoted)\b/i;
   // The skill requires complete per-option facts, not a GFM option table.
   // Code and quoted children cannot supply a prose/list option's fields.
   const proseOption = (parts: readonly any[]) => {
@@ -382,10 +420,17 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
         ?? /^([A-D][).:]\s+.+?)[.:]\s+/i.exec(text)?.[1];
     if (!label || !/^[A-D][).:]\s+\S/i.test(label)) return null;
     const details = text.slice(label.length).replace(/^[.:\s—–-]+/, '');
-    const facts = [...details.matchAll(/(?:^|[.,;]\s+|\n\s*)(Effort(?: estimate)?|Risk(?: level)?|Pros|Cons)\s*:?\s+/gi)];
+    // Mask quoted/code field names without changing offsets. A real field
+    // may follow a quoted sentence, but the quotation cannot supply a field.
+    const fieldText = plain(normalized.replace(/`[^`]*`|"(?:\\.|[^"\\])*"|“[^”]*”|(?<![\p{L}\p{N}])'[^']*'(?![\p{L}\p{N}])|‘[^’]*’/gu, raw => {
+      const literal = raw.replace(/[`*_]/g, '');
+      const ending = /[.!?,;]["”'’]$/.exec(literal)?.[0] ?? '';
+      return literal.slice(0, literal.length - ending.length).replace(/[^\s]/g, ' ') + ending;
+    })).slice(text.length - details.length);
+    const facts = [...fieldText.matchAll(/(?:^|[.!?,;]["”'’]?\s+|\n\s*)(Effort(?: estimate)?|Risk(?: level)?|Pros|Cons)\s*:?\s+/gi)];
     const fields = Object.fromEntries(facts.map((fact, index) => [fact[1]!.split(' ')[0]!.toLowerCase(),
       details.slice(fact.index! + fact[0].length, facts[index + 1]?.index ?? details.length).trim()]));
-    const complete = facts.length === 4 && Object.keys(fields).length === 4 && current(text) &&
+    const complete = facts.length === 4 && Object.keys(fields).length === 4 && current(text) && !withdrawnOption.test(optionText(text)) &&
       ['effort', 'risk', 'pros', 'cons'].every(field => fields[field] && current(fields[field]!)) &&
       /^(?:S|M|L|XL)\b/i.test(fields.effort!) && /^(?:low|medium|high)\b/i.test(fields.risk!);
     return { label, summary: text, bindingText: label + ' ' + details.slice(0, facts[0]?.index ?? details.length), complete };
@@ -453,18 +498,24 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
       const quotedProposal = !current(read('proposed')) && /^(?:unresolved|reopened)\b/i.test(read('status')) &&
         (!sourceRecords.length || namedSource) && currentContext(tokens.indexOf(table)) &&
         quotedSourceProposal(cells[fields.proposed[0]!]!.text, sourcePlan);
+      const sectionEvidence = sectionCitation(cells[fields.evidence[0]!]!.text);
+      const headingCitation = !namedSource && /§/.test(read('evidence')) && tokens.some(token =>
+        token.type === 'heading' && /\(from\s+[^()]+\)$/i.test(plain(token.text)));
+      if (headingCitation && !sectionEvidence) continue;
       if (!id || !mentions(title, id) || !/^(?:unresolved|reopened|approved|deferred|declined)\b/i.test(read('status')) ||
           !read('current') || !read('proposed') || read('current') === read('proposed') ||
           !current(read('evidence')) || (!current(read('proposed')) && !quotedProposal)) continue;
-      if (!/\bPLAN\.md\b/.test(read('evidence')) && !inheritedSource(read('evidence'))) continue;
+      if (!/\bPLAN\.md\b/.test(read('evidence')) && !inheritedSource(read('evidence')) && !sectionEvidence) continue;
       const contractCitation = /^Contracts?:/i.test(read('evidence'));
       if (contractCitation && (!currentContext(tokens.indexOf(table)) || hasForeignContractSource(read('evidence'), sourcePlan))) continue;
+      if (sectionEvidence && !sectionContext(tokens, tokens.indexOf(table))) continue;
       const anchors = tokens.flatMap((t, i) =>
         (t.type === 'heading' && current(plain(t.text)) && mentions(plain(t.text), id)) ||
         (t.type === 'paragraph' && /^(?:Options|Approaches|Comparison)\b/i.test(plain(t.raw)) && mentions(plain(t.raw), id)) ? [i] : []);
       let matchedPhase: string | undefined;
       for (const start of anchors) {
         if ((quotedProposal || contractCitation) && !currentContext(start)) continue;
+        if (sectionEvidence && (!sectionContext(tokens, start) || !activeSection(plain(tokens[start]!.raw)))) continue;
         const anchor = tokens[start]!;
         let end = start + 1;
         while (end < tokens.length && !(tokens[end]!.type === 'heading' &&
@@ -487,14 +538,11 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
             return [proseOption([token, ...facts])];
           }).filter(option => option !== null);
           const baselineOption = (offered: string, saved: NonNullable<typeof options[number]>) => {
-            const ownText = (raw:string) => raw
-              .replace(/((?:this|that|the) (?:option|alternative|baseline) (?:is|was|has been)\s+(?:(?:already|now)\s+)?)["“]([^"”\n]+)["”]/gi,'$1$2')
-              .replace(/"[^"\n]*"|“[^”\n]*”|(?<!\w)'[^'\n]*'|‘[^’\n]*’/g,'');
             const addedAction = /(?:^|[.!?;]\s+|\n|[✅❌]\s*|\b(?:and|but|also|first|then|now|next|while)\s+)(?:please\s+)?(?:add(?:ing)?|remov(?:e|ing)|delet(?:e|ing)|cut(?:ting)?|drop(?:ping)?|replac(?:e|ing)|rewrit(?:e|ing)|chang(?:e|ing)|alter(?:ing)?|modif(?:y|ying)|enabl(?:e|ing)|disabl(?:e|ing)|implement(?:ing)?|install(?:ing)?|introduc(?:e|ing)|build(?:ing)?|writ(?:e|ing)|record(?:ing)?|captur(?:e|ing)|creat(?:e|ing)|switch(?:ing)?|migrat(?:e|ing)|externaliz(?:e|ing)|refactor(?:ing)?|expand(?:ing)?|reduc(?:e|ing)|deploy(?:ing)?|approv(?:e|ing)|run(?:ning)?)\b/i;
             const unchanged = (action:string) => [saved.summary.slice(saved.label.length),q.options.find(o=>o.label===offered)?.description ?? ''].every(raw=>{
-              const text=ownText(raw), escaped=action.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+              const text=optionText(raw), escaped=action.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
               return current(text) && !addedAction.test(text) &&
-                !/\b(?:this|that|the) (?:option|alternative|baseline) (?:is|was|has been) (?:already |now )?(?:withdrawn|retracted|rejected|superseded|not current|no longer (?:current|valid)|historical|quoted)\b/i.test(text) &&
+                !withdrawnOption.test(text) &&
                 !new RegExp(`\\b(?:not|never|no longer|doesn't|does not|will not)\\s+(?:(?:currently|now|actually)\\s+)?${escaped}(?:s|es)?\\b`,'i').test(text);
             });
             if (/\bvia\b/i.test(caption(offered)) !== /\bvia\b/i.test(caption(saved.label)) &&
@@ -512,9 +560,32 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
                 const valueWords=baselineWords(value);
                 const verb=(word:string)=>word===full[0] || word===full[0]+'s' || (full[0]!.endsWith('s') && word===full[0]+'es');
                 const hits=valueWords.flatMap((word,i)=>verb(word) && full.slice(1).every((next,j)=>valueWords[i+j+1]===next)?[i]:[]);
+                // A one-word action caption can omit an explicit destination
+                // and numeric outcome. Both must occur together in Current;
+                // the same-letter grid must name that action and retain the
+                // exact outcome. This is not unordered word-overlap matching.
+                const result = /^([a-z][a-z0-9_]*)\s+([0-9]+)$/i.exec(offeredBaseline.caption.split(',').at(-1)!.trim());
+                const operands = valueWords.flatMap((_, i) => full.slice(1).every((word, j) => valueWords[i+j] === word) ? [i] : []);
+                const explicitOutcome = short.length === 1 && /^(?:to|from|through|via)$/.test(full[1] ?? '') &&
+                  selector(offered) === selector(saved.label) && result && operands.length === 1 &&
+                  [saved.summary.slice(saved.label.length), q.options.find(o => o.label === offered)?.description ?? ''].every(raw =>
+                    [...optionText(raw).matchAll(new RegExp(`\\b${result[1]}\\s+([0-9]+)\\b`, 'gi'))]
+                      .every(claim => claim[1] === result[2])) && section.some(token => {
+                    if (token.type !== 'table' || !currentContext(tokens.indexOf(token))) return false;
+                    const headers = token.header.map(cell => plain(cell.text)), ids = headers.map(selector);
+                    const own = ids.indexOf(selector(offered)), currentColumn = headers.findIndex(h => /^Current$/i.test(h));
+                    const commitment = headers.findIndex(h => /^Commitment$/i.test(h));
+                    if (headers.length !== q.options.length + 3 || own < 0 || currentColumn < 0 || commitment < 0 ||
+                        !headers.some(h => /^Source(?:\b|\/)/i.test(h)) ||
+                        !q.options.every(o => ids.filter(id => id === selector(o.label)).length === 1) ||
+                        !sameBaseline(retainedCaption(headers[own]!), baseline.caption)) return false;
+                    const rows = token.rows.filter(row => plain(row[commitment]!.text).split(/\s/, 1)[0]!.toLowerCase() === result[1]!.toLowerCase());
+                    return rows.length === 1 && plain(rows[0]![currentColumn]!.text) === result[2] && plain(rows[0]![own]!.text) === result[2];
+                  });
                 return namedSource && currentContext(tokens.indexOf(table)) && current(value) &&
                   !/\b(?:not|never|no longer|[a-z]+n['’]t|will|would|could|should|may|might|previously|formerly|historical|hypothetical|if|unless|withdrawn|retracted|superseded|(?:other|another|foreign) (?:plan|project))\b/i.test(value) &&
-                  (!selector(offered) || selector(offered)===selector(saved.label)) && hits.length===1 && unchanged(full[0]!);
+                  (!selector(offered) || selector(offered)===selector(saved.label)) &&
+                  (hits.length===1 || explicitOutcome) && unchanged(full[0]!);
               }
             }
             if (!baseline || (!baseline.generic && !/^(?:keep|retain|preserve)\b/i.test(baselineCaption(offered))))
@@ -565,6 +636,7 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
         for (const comparison of tokens.slice(start + 1, end)) {
           if (comparison.type !== 'table') continue;
           if ((quotedProposal || contractCitation) && !currentContext(tokens.indexOf(comparison))) continue;
+          if (sectionEvidence && !sectionContext(tokens, tokens.indexOf(comparison))) continue;
           const headers = comparison.header.map(c => plain(c.text));
           // The declared commitment grid transposes the option table: each
           // complete alternative is a column. Its saved effort/risk row and
