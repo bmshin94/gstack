@@ -2,10 +2,37 @@
 
 ## [1.87.4.0] - 2026-09-16
 
-### Fixed
+**Failed checks stay failed.**
+**Health scores show what actually ran.**
+
+`/health` now keeps each checker's exit status and counts diagnostics from its complete output. Reports still show only the final 50 log lines. Scores name the checked and unavailable categories, so a partial run carries its coverage beside the number. Runs with no checks produce no numeric score or history entry.
+
+### The three numbers that matter
+
+Source: the synthetic checker in `test/health-capture.test.ts`, which emits 60 type errors followed by 80 context lines and exits 2. These measurements compare the v1.87.3.0 capture example with this version under default Bash without `pipefail`. Run `bun test test/health-capture.test.ts` to verify current behavior. These are correctness measurements, not production statistics.
+
+| Metric | Before | After | Δ |
+|---|---:|---:|---:|
+| Reported checker exit status | 0 | 2 | +2 |
+| Type errors available for scoring | 0 | 60 | +60 |
+| Displayed checker log lines | 50 | 50 | 0 |
+
+The failing checker no longer looks successful because `tail` succeeded. All 60 errors count even when the displayed tail contains only context.
+
+### What this means for developers
+
+You can distinguish a score backed by several checks from one based on a single available tool. Empty runs report `N/A — no checks ran`; capture errors also remain unscored and leave existing history unchanged. Trends compare only matching categories, so installing a new checker does not manufacture a regression or improvement. Run `/health` to see the score and its coverage together.
+
+### Itemized changes
+
+#### Fixed
 
 - **`/health` preserves failed checks and complete diagnostic counts.** Reports show the final 50 output lines while scoring the full log and the checker's actual exit status. Temporary capture errors remain explicit errors.
 - **Health scores disclose coverage.** Partial runs list checked and unavailable categories. Runs with no checks report `N/A — no checks ran`, leave numeric history unchanged, and have no trend. Score comparisons require matching categories.
+
+#### Changed
+
+- Routing evaluations choose among installed GStack skills, keeping built-in CLI skills outside the evaluated catalog. The model still chooses by matching the request to each skill's description.
 
 ## [1.87.3.0] - 2026-09-15
 
