@@ -261,3 +261,174 @@ test('the batching caller keeps its saved-brief counter, floor and limit', () =>
     if (!file.includes('multi-finding')) { expect(source).toContain('approveEngTestPlanEdits: true');expect(source).toContain('isCompletionHandoffAUQ:'); }
   }
 });
+
+const inline8bf = fixture.inline8bf;
+const inlineCall = () => structuredClone(inline8bf.calls[3]) as NativePlanQuestionCall;
+const inlinePlan = inline8bf.frames[3].preAskPlan as string;
+const inlineEvaluate = (call = inlineCall(), plan = inlinePlan, prior: NativePlanQuestionCall[] = []) =>
+  evaluate(call, plan, prior);
+
+test('actual 8bf retry chat pointer remains missing pre-ask evidence despite the later answer', () => {
+  const retry = fixture.retry8bf;
+  const call = retry.call as NativePlanQuestionCall;
+  expect(retry.originalOutcome).toBe('plan_ready');
+  expect(retry.originalCounts).toEqual({review: 0, setup: 15});
+  expect(call.answered && !call.failed).toBe(true);
+  expect(Date.parse(retry.chronology.reportObservedAt)).toBeLessThan(Date.parse(retry.chronology.askedAt));
+  expect(Date.parse(retry.chronology.askedAt)).toBeLessThan(Date.parse(call.answeredAt!));
+  expect(Date.parse(call.answeredAt!)).toBeLessThan(Date.parse(retry.chronology.laterReportObservedAt));
+  expect(retry.preAskPlan).toContain('Question D4: see chat brief D4 (options A/B/C as above; A recommended).');
+  expect(retry.laterQuestionLine).not.toContain('see chat brief');
+  expect(evaluate(call, retry.preAskPlan)).toBe(false);
+
+  // Synthetic control: actually save the same native question and all its
+  // options before asking. This is no retrospective credit for the paid retry.
+  const question = call.questions[0]!;
+  const complete = ['Question D4:', question.question, `Header: ${question.header}`, 'Options:',
+    ...question.options.flatMap(option => [option.label, option.description!])].join('\n');
+  const repaired = retry.preAskPlan.replace(/^Question D4:.*$/m, complete);
+  expect(evaluate(call, repaired)).toBe(true);
+  const unlabelled = structuredClone(call);
+  for (const option of unlabelled.questions[0]!.options) option.label = option.label.replace(/^[A-D]\) /, '');
+  unlabelled.answers![question.question] = unlabelled.questions[0]!.options[0]!.label;
+  expect(evaluate(unlabelled, repaired)).toBe(true);
+  for (const heading of ['Current', 'Current (plan)', 'Current (plan baseline)',
+    'Current (approved plan)', 'Current (original proposal)', '**Current** (baseline)', '`Current` (plan)']) {
+    expect(evaluate(call, repaired.replace('Current (plan)', heading)), heading).toBe(true);
+    expect(evaluate(call, retry.preAskPlan.replace('Current (plan)', heading)), heading).toBe(false);
+  }
+  for (const heading of ['Historical', 'Proposed', 'Current (historical)', 'Current (proposed)',
+    'Current (not current)', 'Current (plan', 'Current plan)', 'Current ((plan))',
+    'Current (plan) and proposed', 'Current (plan; delete jobs)']) {
+    expect(evaluate(call, repaired.replace('Current (plan)', heading)), heading).toBe(false);
+  }
+  // The unchanged pre-ask bytes stay rejected even though a later complete
+  // version is available. An answered native call cannot fill missing storage.
+  expect(evaluate(call, retry.preAskPlan)).toBe(false);
+});
+
+test('actual 8bf history counts owned inline-ledger choices, preserving its original zero and every ACK', () => {
+  let plan = ''; const counter = factory(() => plan);
+  const calls = inline8bf.calls as NativePlanQuestionCall[];
+  expect(inline8bf.originalOutcome).toEqual({ review: 0, setup: 13 });
+  const counted = calls.filter((call, i) => {
+    expect(call.answered && !call.failed).toBe(true);
+    plan = inline8bf.frames[i].preAskPlan;
+    return counter.isReviewAUQ(nativePlanCallFingerprint(call, i, true), calls.slice(0, i));
+  });
+  expect(counted).toHaveLength(5);
+  expect(counter.trace.map(row => row.issue)).toEqual(['record:R1', 'record:R5', 'record:R6', 'record:R9', 'record:R10']);
+  // Four other native issues lack sufficient same-column caption identity under
+  // these guards. Setup, TODO and those unproved links receive no credit.
+  expect([0,1,2,4,5,6,9,12].some(i => counted.includes(calls[i]!))).toBe(false);
+});
+
+test('the actual caller consumes each pre-ask report rather than a later approval or sibling', () => {
+  const source = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-plan-eng-multi-finding-batching.test.ts'), 'utf8');
+  const start = source.indexOf('const findings = createEngBatchingIssueCounter');
+  const stop = source.indexOf('const obs = await runPlanSkillCounting', start);
+  const make = new Function('fs','planPath','createEngBatchingIssueCounter','engSetupAUQ',
+    new Bun.Transpiler({loader:'ts'}).transformSync(source.slice(start,stop)) + 'return findings;');
+  let report = ''; const counter = make({lstatSync:()=>({isFile:()=>true,isSymbolicLink:()=>false}),readFileSync:()=>report},
+    '/captured/owned-report.md', factory, engSetupAUQ);
+  const calls = inline8bf.calls as NativePlanQuestionCall[];
+  const accepted = calls.filter((call,i) => { report=inline8bf.frames[i].preAskPlan;
+    return counter.isReviewAUQ(nativePlanCallFingerprint(call,i,true),calls.slice(0,i)); });
+  expect(accepted).toHaveLength(5);
+  expect(inlineEvaluate(inlineCall(), inline8bf.frames.at(-1).preAskPlan)).toBe(false);
+});
+
+for (const [name, transform] of Object.entries({
+  'absent current report': (_: string) => '',
+  'missing current row': (p:string) => p.slice(0,p.indexOf('### R1:')),
+  'wrong current record': (p:string) => p.replace('### R1:', '### R91:'),
+  'missing current source': (p:string) => p.replace('confidence 8/10, PLAN.md:6-8','confidence 8/10, unknown'),
+  'foreign current source': (p:string) => p.replace('confidence 8/10, PLAN.md:6-8','confidence 8/10, OTHER.md:6-8'),
+  'mixed current sources': (p:string) => p.replace('confidence 8/10, PLAN.md:6-8','confidence 8/10, PLAN.md:6-8 and OTHER.md:6-8'),
+  'quoted current source': (p:string) => p.replace('confidence 8/10, PLAN.md:6-8','confidence 8/10, "PLAN.md:6-8"'),
+  'wrong source range': (p:string) => p.replace('confidence 8/10, PLAN.md:6-8','confidence 8/10, PLAN.md:60-80'),
+  'missing current baseline': (p:string) => p.replace(/^Plan baseline:.*$/m,'Plan baseline:'),
+  'missing State': (p:string) => p.replace('State: pending',''),
+  'withdrawn State': (p:string) => p.replace('State: pending','State: withdrawn'),
+  'two conflicting States': (p:string) => p.replace('State: pending','State: pending\nState: approved'),
+  'wrong D link': (p:string) => p.replace('Question D4:','Question D40:'),
+  'duplicate D link': (p:string) => p.replace('Question D4:','Question D4: another\nQuestion D4:'),
+  'quoted inline record': (p:string) => p.replace('Question D4: Scheduler','Question D4: "Scheduler'),
+  'historical inline record': (p:string) => p.replace('Question D4: Scheduler','Question D4: Historical Scheduler'),
+  'missing saved options': (p:string) => p.replace(/^Question D4:.*$/m,'Question D4: Scheduler ownership.'),
+  'missing own comparison': (p:string) => p.replace(/^\| R1 scheduler.*$/m,''),
+  'foreign comparison identity': (p:string) => p.replace('| R1 scheduler ownership','| R19 scheduler ownership'),
+  'empty own comparison': (p:string) => p.replace('| custom inline per worker | job library','| | job library'),
+  'wrong saved alternative': (p:string) => p.replace('A) Library retry hooks + one shared backoff function (recommended);','A) Delete customer records;'),
+  'duplicate saved alternatives': (p:string) => p.replace('B) Keep the custom inline scheduler as planned;','A) Keep the custom inline scheduler as planned;'),
+  'historical ledger ancestor': (p:string) => p.replace('## Decision ledger','# Archived review\n\n## Decision ledger'),
+  'withdrawn ledger ancestor': (p:string) => p.replace('## Decision ledger','# Withdrawn review\n\n## Decision ledger'),
+  'quoted whole report': (p:string) => p.split('\n').map(l=>'> '+l).join('\n'),
+  'fenced whole report': (p:string) => '```markdown\n'+p+'\n```',
+  'duplicate current R': (p:string) => p+'\n'+p.slice(p.indexOf('### R1:')).replace('Question D4:','Question D40:'),
+  'ambiguous current R': (p:string) => p+'\n'+p.slice(p.indexOf('### R1:')).replaceAll('R1','R91'),
+})) test('inline current ledger rejects '+name,()=>expect(inlineEvaluate(inlineCall(),transform(inlinePlan))).toBe(false));
+
+for (const [name, change] of Object.entries({
+  'unanswered native call': (c:NativePlanQuestionCall)=>{c.answered=false;},
+  'failed native ACK': (c:NativePlanQuestionCall)=>{c.failed=true;},
+  'missing native ACK timestamp': (c:NativePlanQuestionCall)=>{delete c.answeredAt;},
+  'unoffered native answer': (c:NativePlanQuestionCall)=>{c.answers={[c.questions[0]!.question]:'Approve unrelated work'};},
+  'foreign native source': (c:NativePlanQuestionCall)=>reword(c,'PLAN.md:6-8','OTHER.md:6-8'),
+  'quoted native source': (c:NativePlanQuestionCall)=>reword(c,'PLAN.md:6-8','"PLAN.md:6-8"'),
+  'mixed native source': (c:NativePlanQuestionCall)=>reword(c,'PLAN.md:6-8','PLAN.md:6-8 and OTHER.md:6-8'),
+  'wrong native D': (c:NativePlanQuestionCall)=>reword(c,'D4 —','D40 —'),
+  'multiple native D': (c:NativePlanQuestionCall)=>reword(c,'D4 —','D4 — D40 —'),
+  'unrelated native topic': (c:NativePlanQuestionCall)=>{c.questions[0]!.header='Database';reword(c,c.questions[0]!.question.split('\n')[0]!, 'D4 — Replace the database or delete the customer tables?');},
+  'missing own pro': (c:NativePlanQuestionCall)=>{c.questions[0]!.options[1]!.description=c.questions[0]!.options[1]!.description!.replace(/✅[^✅❌]*/,'');},
+  'missing own con': (c:NativePlanQuestionCall)=>{c.questions[0]!.options[1]!.description=c.questions[0]!.options[1]!.description!.replace(/❌[^✅❌]*/,'');},
+  'borrowed option prose': (c:NativePlanQuestionCall)=>{c.questions[0]!.options[1]!.description='Option A: '+c.questions[0]!.options[1]!.description;},
+  'quoted whole option': (c:NativePlanQuestionCall)=>{c.questions[0]!.options[1]!.description='“'+c.questions[0]!.options[1]!.description+'”';},
+  'extra native action': (c:NativePlanQuestionCall)=>{c.questions[0]!.options[0]!.label+=' and delete customer records';c.answers![c.questions[0]!.question]=c.questions[0]!.options[0]!.label;},
+  'opposite native action': (c:NativePlanQuestionCall)=>{c.questions[0]!.options[0]!.label='Do not use library hooks or shared backoff';c.answers![c.questions[0]!.question]=c.questions[0]!.options[0]!.label;},
+  'repeated options': (c:NativePlanQuestionCall)=>{c.questions[0]!.options[1]!.label=c.questions[0]!.options[0]!.label;},
+  'quoted native question': (c:NativePlanQuestionCall)=>reword(c,c.questions[0]!.question,'> '+c.questions[0]!.question.replaceAll('\n','\n> ')),
+})) test('inline current native brief rejects '+name,()=>{const call=inlineCall();change(call);expect(inlineEvaluate(call)).toBe(false);});
+
+for (const owner of ['R1','D4','This decision']) for (const status of ['withdrawn','"withdrawn"','`withdrawn`'])
+  test(`inline current ${owner} ${status} cannot regain credit`,()=>{
+    const call=inlineCall();reword(call,call.questions[0]!.question,call.questions[0]!.question+`\n${owner} is ${status}.`);
+    expect(inlineEvaluate(call)).toBe(false);
+  });
+
+test('same-row option order can change coherently but foreign fingerprint and repeated R stay rejected',()=>{
+  const call=inlineCall();call.questions[0]!.options.reverse();expect(inlineEvaluate(call)).toBe(true);
+  const fp=nativePlanCallFingerprint(call,0,true);fp.signature='foreign:call';expect(factory(()=>inlinePlan).isReviewAUQ(fp,[])).toBe(false);
+  let plan=inlinePlan;const counter=factory(()=>plan);const first=inlineCall();
+  expect(counter.isReviewAUQ(nativePlanCallFingerprint(first,0,true),[])).toBe(true);
+  const again=inlineCall();again.toolUseId+='-again';reword(again,'D4 —','D14.2 —');plan=plan.replace('Question D4:','Question D14.2:');
+  expect(counter.isReviewAUQ(nativePlanCallFingerprint(again,0,true),[first])).toBe(false);
+});
+
+test('decimal D and named source identity stay bound to one current report target',()=>{
+  const call=structuredClone(inline8bf.calls[7]) as NativePlanQuestionCall;
+  const plan=inline8bf.frames[7].preAskPlan;
+  expect(inlineEvaluate(call,plan)).toBe(true);
+  for(const altered of [plan.replace('Reviewed target: `PLAN.md`','Reviewed target: `OTHER.md`'),
+    plan.replace('# Eng review: Plan — Add background job retry framework','# Eng review: Plan — Replace all customer data'),
+    plan.replace('Reviewed target:','Reviewed target: `OTHER.md` and'),
+    plan.replace('Reviewed target:','Reviewed target: `PLAN.md`\nReviewed target:'),
+    plan.replace('# Eng review: Plan —','# Archived Eng review: Plan —')]) expect(inlineEvaluate(call,altered)).toBe(false);
+});
+
+for (const [native, saved] of [['Copy source to cache','Copy cache to source'], ['Move origin to destination','Move destination to origin']])
+  test('inline abbreviation preserves action operand roles: '+native,()=>{
+    const call=inlineCall();call.questions[0]!.options[2]!.label=native;
+    const plan=inlinePlan.replace("Investigate the library's hook API first, then decide.",saved)
+      .replace('C) Investigate library first',`C) ${saved}`);
+    expect(inlineEvaluate(call,plan)).toBe(false);
+  });
+
+for (const context of ['## History','## Archived source','Quoted source:\n'])
+  test('named source cannot borrow the target field from '+context,()=>{
+    const call=structuredClone(inline8bf.calls[7]) as NativePlanQuestionCall;
+    let plan=inline8bf.frames[7].preAskPlan as string;
+    const target=plan.split('\n').find(line=>line.startsWith('Reviewed target:'))!;
+    plan=plan.replace(target,'').replace('## Decision ledger',`${context}\n\n${target}\n\n## Decision ledger`);
+    expect(inlineEvaluate(call,plan)).toBe(false);
+  });

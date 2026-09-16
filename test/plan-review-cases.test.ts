@@ -326,12 +326,14 @@ describe('Eng approved-work decision gate', () => {
     expect(commitments).toContain('Optional depth for one fixed verification is one choice');
     expect(gate).toContain("name each bound's measure and unit");
     expect(gate).toContain('optional verification method/depth');
-    expect(options).toContain("Prepare the preamble's complete decision brief, recommendation, option labels, descriptions and tradeoffs");
+    expect(options).toContain('Build `currentDecision` now');
+    expect(options).toContain("every alternative's exact `label` and full `description` in `options`");
+    expect(options).toContain('Include the recommendation and tradeoffs in these fields');
     expect(options).toContain('Build a **comparison grid** covering the entire brief');
     expect(gate).toContain('save this record, complete grid and exact brief');
     expect(gate).toContain('A failed save takes **Blocked outcome** before asking');
     expect(template.split('## Review record and write policy')[1]!.split('{{LEARNINGS_SEARCH}}')[0]!).toContain('Honor user and host limits, including an active-plan-only restriction');
-    expect(gate).toContain('In read-only mode, present the same material as not persisted');
+    expect(gate).toContain('In read-only mode, present the complete record and grid as **not persisted**');
     expect(gate).toContain('one question for one choice per AskUserQuestion call');
     expect(ledger).toContain('State: <pending, or approved>');
     expect(gate).toContain('Otherwise keep the remedy pending');
@@ -361,7 +363,8 @@ describe('Eng approved-work decision gate', () => {
     expect(ledger).toContain('Actual answer: <unanswered, or actual option and answer reference>');
     expect(ledger).toContain('Accepted scope: <exact approved work; none if no change approved>');
     const audit = gate.slice(gate.indexOf('### 3. Compare one choice'), gate.indexOf('**Save a pending remedy before asking:**'));
-    expect(audit).toContain("Prepare the preamble's complete decision brief, recommendation, option labels, descriptions and tradeoffs");
+    expect(audit).toContain('Build `currentDecision` now');
+    expect(audit).toContain("every alternative's exact `label` and full `description` in `options`");
     expect(audit).toContain('Build a **comparison grid** covering the entire brief');
     expect(audit).toContain('If the grid exposes another independent change, return to step 2 and split it before sending');
     expect(identify).toContain('To decide whether a mechanism is necessary, hold the contract fixed and check alternatives');
@@ -374,9 +377,22 @@ describe('Eng approved-work decision gate', () => {
     const save = gate.slice(gate.indexOf('**Save a pending remedy before asking:**'), gate.indexOf('### 5. Ask and wait'));
     const send = gate.slice(gate.indexOf('### 5. Ask and wait'));
     expect(audit).toContain("the preamble's complete decision brief");
+    expect(audit).toContain('Build `currentDecision` now');
     expect(save).toContain('save this record, complete grid and exact brief');
+    expect(save).toContain('Fill the question and option fields below directly from `currentDecision`');
+    expect(save).toContain('retain an existing selector; otherwise prefix the exact label with that record selector');
+    expect(save).toContain('Compare the label separately from added record notation');
+    expect(save).toContain('Check the write result, then read back this current record from the chosen report file');
+    expect(save).toContain('Verify its question text, header, all option labels and descriptions against `currentDecision`');
+    expect(save).toContain('A chat reference, abbreviated summary or planned later write does not satisfy this check');
+    expect(save).toContain('Correct a mismatch and verify again before dispatch');
+    expect(save).toContain('then repeat the applicable verification');
+    expect(save).toContain('In read-only mode, present the complete record and grid as **not persisted**');
+    expect(save).toContain('an unreadable or unverifiable saved record takes the same path');
     expect(save).toContain('If outcomes, work or meaning change before dispatch, repeat step 3 and save the revised record first');
     expect(send).toContain('Send it without substantive additions');
+    expect(send).toContain("After step 4's verification, dispatch the unchanged `currentDecision`");
+    expect(send).toContain('For authorized prose or auto-decision transport, use the same verified brief and alternatives');
     expect(send).toContain('one question for one choice per AskUserQuestion call');
     expect(send).toContain('Record the actual option, answer reference and accepted scope');
     expect(save).toContain('A failed save takes **Blocked outcome** before asking');
@@ -428,7 +444,12 @@ describe('Eng approved-work decision gate', () => {
     expect(gate.indexOf(ledger)).toBeGreaterThan(save);
     expect(gate.indexOf(ledger)).toBeLessThan(ask);
     expect(ledger).toContain('Comparison grid: <complete grid from step 3>');
-    expect(ledger).toContain('Question D2: <exact complete brief, every option label and recommendation>');
+    expect(ledger).toContain('Question D2:\n<currentDecision.question in full, including its D2 title and recommendation>');
+    expect(ledger).toContain('Header: <currentDecision.header>');
+    for (const [ordinal, selector] of [['first', 'A'], ['second', 'B']]) {
+      expect(ledger).toContain(`<${ordinal} option's exact label, with one ${selector}) record selector>`);
+      expect(ledger).toContain(`<${ordinal} option's full description>`);
+    }
     expect(gate.slice(compare, save)).toContain('one row per independently selectable behavior, approach, guarantee or bound');
     expect(gate.slice(compare, save)).toContain('Show current and per-option values/work, including shared recommendations, fixed and pending choices');
     expect(gate.slice(compare, save)).toContain('Every other approved value stays fixed; every other pending choice stays undecided');
@@ -448,7 +469,7 @@ describe('Eng approved-work decision gate', () => {
     expect(identity).toContain('Retain earlier values, briefs and answers as history');
     expect(identity).toContain('its new question gets the next continuous `D<N>`');
     expect(ledger).toContain('### R1: <one independently selectable choice>');
-    expect(ledger).toContain('Question D2: <exact complete brief, every option label and recommendation>');
+    expect(ledger).toContain('Question D2:\n<currentDecision.question in full, including its D2 title and recommendation>');
     expect(ledger).toContain('History: <earlier values, briefs, answers and reason for reopening>');
     expect(identity).toContain('Test stars measure existing test quality, not decisions or findings');
     expect(template).not.toContain('issue NUMBER + option LETTER');

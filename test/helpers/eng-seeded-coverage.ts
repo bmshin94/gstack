@@ -682,10 +682,10 @@ export function isEngBatchingIssueAUQ(fp: AskUserQuestionFingerprint, priorCalls
 function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string): string | undefined {
   const q = call.questions[0]!;
   const text = prose(q.question, true), lines = text.split('\n').filter(line => line.trim());
-  const title = lines[0] ?? '', decision = /^D([1-9]\d*)\s*[—–:-]\s+\S/.exec(title);
+  const title = lines[0] ?? '', decision = /^D([1-9]\d*(?:\.[1-9]\d*)?)\s*[—–:-]\s+\S/.exec(title);
   const metadata = (lines[1] ?? '').replace(/"[^"\n]*"|“[^”\n]*”/g, ''), explanation = lines[2] ?? '';
   const source = /\bPLAN\.md:([1-9]\d*(?:[-–][1-9]\d*)?)\b/.exec(metadata)?.[1];
-  if (!decision || !/\bPLAN\.md\b/.test(metadata) || !/^Project\/branch\/task: \S/.test(metadata) ||
+  if (!decision || !/^Project\/branch\/task: \S/.test(metadata) ||
       !/^ELI10: \S/.test(explanation) || /^ELI10:\s*(?:".*"|“.*”)\s*$/.test(explanation) ||
       /^(?:ELI10:\s*)?(?:source|quoted|historical|example|hypothetical)\b/i.test(explanation) ||
       lines.filter(line => /^Project\/branch\/task:/.test(line)).length !== 1 ||
@@ -705,12 +705,40 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
       while (ancestors.length && ancestors.at(-1)!.depth >= token.depth) ancestors.pop();
       ancestors.push(token);
     }
-    return !ancestors.some(owner => /\b(?:copied|quoted|historical|history|example|hypothetical|template)\b/i.test(clean(owner.text)));
+    return !ancestors.some(owner => /\b(?:copied|quoted|historical|history|example|hypothetical|template|archived|withdrawn|superseded)\b/i.test(clean(owner.text)));
   };
   if (!currentHeading(start)) return;
+  // A named plan may inherit its file identity only from this report's one
+  // current target declaration and matching title, never from quoted examples.
+  const sourceNames = [...metadata.matchAll(/\b[\w./-]+\.md\b/g)].map(match => match[0]);
+  const rawSourceNames = [...(lines[1] ?? '').matchAll(/\b[\w./-]+\.md\b/g)];
+  const directSource = sourceNames.length > 0 && sourceNames.every(name => name === 'PLAN.md') &&
+    new Set([...metadata.matchAll(/\bPLAN\.md:([1-9]\d*(?:[-–][1-9]\d*)?)\b/g)].map(match => match[1])).size <= 1;
+  const targetName = (s: string) => clean(s).replace(/^Eng(?:ineering)? review:\s*/i, '')
+    .replace(/^Plan\s*[:—–-]\s*/i, '').toLowerCase();
+  const named = [...(lines[1] ?? '').matchAll(/"(Plan:\s*[^"\n]+)"|“(Plan:\s*[^”\n]+)”/g)]
+    .map(match => targetName(match[1] ?? match[2]!));
+  const titles = tokens.slice(0, start).filter(token => token.type === 'heading' && token.depth === 1);
+  const targetFields = tokens.slice(0, start).flatMap((token, at) => {
+    if (token.type !== 'paragraph' || !currentHeading(at)) return [];
+    const previous = tokens.slice(0, at).filter(t => t.type !== 'space').at(-1);
+    const quotedContext = /\b(?:quoted|copied|historical|example|hypothetical|archived)\b[^\n]*:\s*$/i;
+    if (previous?.type === 'paragraph' && quotedContext.test(previous.raw)) return [];
+    const parts = token.raw.split('\n');
+    return parts.filter((line, i) => /^Reviewed target:/.test(line) &&
+      !parts.slice(0, i).some(part => quotedContext.test(part)));
+  });
+  const namedSource = !rawSourceNames.length && named.length === 1 && titles.length === 1 &&
+    titles[0]!.type === 'heading' && currentHeading(tokens.indexOf(titles[0]!)) &&
+    /^Eng(?:ineering)? review:\s*Plan\s*[:—–-]/i.test(clean(titles[0]!.text)) &&
+    targetName(titles[0]!.text) === named[0] && targetFields.length === 1 &&
+    /^Reviewed target:\s*`?PLAN\.md`?(?:\s|$)/.test(targetFields[0]!) &&
+    [...targetFields[0]!.matchAll(/\b[\w./-]+\.md\b/g)].length === 1;
+  if (!directSource && !namedSource) return;
   const withdrawn = (value: string, owners: string) => new RegExp(
     `(?:^|[.!?;]\\s+|\\n)(?:Correction:\\s*)?(?:${owners}) (?:is|was|has been) ["“'‘]?(?:withdrawn|cancelled|canceled|rejected|superseded|resolved|closed|hypothetical|not current|no longer current)\\b`, 'i').test(prose(value, true));
-  if (withdrawn(q.question, `D${decision[1]}`)) return;
+  const decisionOwner = `D${decision[1].replace('.', '\\.')}`;
+  if (withdrawn(q.question, decisionOwner)) return;
   const previous = tokens.slice(0, start).filter(t => t.type !== 'space').at(-1);
   if (previous && /\b(?:copied|quoted|historical|example|hypothetical|template)\b.*[:：]\s*$/i.test(previous.raw)) return;
   // Records may continue in the current Architecture/Code quality/Tests/Performance
@@ -725,6 +753,25 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
   };
   const words = (s: string) => (clean(s).toLowerCase().replace(/\(recommended\)/g, '').match(/[a-z][a-z0-9_]*/g) ?? [])
     .filter(word => !['the', 'a', 'an', 'and', 'or', 'with', 'to', 'of', 'as', 'is', 'it', 'one', 'first', 'now', 'option', 'recommended', 'planned'].includes(word));
+  const captionWords = (s: string) => words(s.replace(/['’]s\b/g, '')).filter(word =>
+    !['by', 'on', 'at', 'per', 'then', 'only', 'what', 'how', 'should', 'does', 'each', 'every'].includes(word))
+    .map(word => word.length > 4 && /ies$/.test(word) ? word.slice(0, -3) + 'y'
+      : word.length > 3 && /s$/.test(word) && !/ss$/.test(word) ? word.slice(0, -1) : word);
+  const inlineLabelScore = (native: string, saved: string) => {
+    const modifiers = (s: string) => s.replace(/\b([a-z][a-z0-9_]*)-keyed\b/gi, 'keyed by $1');
+    const left = captionWords(modifiers(native)), right = captionWords(modifiers(saved));
+    const negated = (ws: string[]) => ws.some(word => ['no', 'not', 'never', 'without', 'dont'].includes(word));
+    // Normalize the keyed modifier, then preserve action/operand order. A
+    // caption cannot swap the source and destination of the same operation.
+    if (left.length < 2 || right.length < 2 || left[0] !== right[0] || negated(left) !== negated(right)) return 0;
+    let cursor = 0;
+    for (const word of left) {
+      const at = right.indexOf(word, cursor);
+      if (at < 0) return 0;
+      cursor = at + 1;
+    }
+    return left.length / right.length;
+  };
   const labelScore = (native: string, saved: string) => {
     const normalize = (s: string) => clean(s).replace(/^[A-D][).:]\s+/, '')
       .replace(/\s*\(recommended\)/gi, '').toLowerCase()
@@ -759,7 +806,7 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
     let stop = i + 1;
     while (stop < recordEnd && !(tokens[stop]!.type === 'heading' && (tokens[stop] as any).depth <= record.depth)) stop++;
     const body = tokens.slice(i + 1, stop);
-    if (withdrawn(body.filter(t => t.type === 'paragraph').map(t => t.raw).join('\n'), `${id}|D${decision[1]}`)) continue;
+    if (withdrawn(body.filter(t => t.type === 'paragraph').map(t => t.raw).join('\n'), `${id}|${decisionOwner}`)) continue;
     const paragraphs = body.filter(t => t.type === 'paragraph').map(t => t.raw);
     const fields = paragraphs.join('\n').split('\n').map(line => line.replace(/\*\*/g, '').trim());
     const field = (name: string) => fields.filter(line => line.startsWith(name + ':')).map(line => line.slice(name.length + 1).trim());
@@ -767,20 +814,42 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
     if (finding.length !== 1 || baseline.length !== 1 || !baseline[0] || state.length !== 1 ||
         !/^(?:pending|approved)$/i.test(state[0]!) ||
         /\b(?:copied|quoted|historical|example|hypothetical|withdrawn|superseded)\b/i.test(finding[0]!)) continue;
-    const sources = [...finding[0]!.matchAll(/\bPLAN\.md:([1-9]\d*(?:[-–][1-9]\d*)?)\b/g)];
-    if (sources.length !== 1 || source && sources[0]![1] !== source) continue;
-    const questions = fields.flatMap((line, at) => line === `Question D${decision[1]}:` ? [at] : []);
-    if (questions.length !== 1 || clean(fields[questions[0]! + 1] ?? '') !== clean(title)) continue;
+    const marker = `Question D${decision[1]}:`;
+    const questions = fields.flatMap((line, at) => line.startsWith(marker) ? [at] : []);
+    if (questions.length !== 1) continue;
+    const inlineBrief = fields[questions[0]!]!.slice(marker.length).trim();
+    const inline = Boolean(inlineBrief);
+    if (!inline && (namedSource || clean(fields[questions[0]! + 1] ?? '') !== clean(title))) continue;
+    const sources = [...finding[0]!.matchAll(/\b([\w./-]+\.md)(?::([1-9]\d*(?:[-–][1-9]\d*)?))?\b/g)];
+    if (sources.length !== 1 || sources[0]![1] !== 'PLAN.md' ||
+        !inline && !sources[0]![2] || source && sources[0]![2] !== source) continue;
+    if (inline) {
+      const topic = captionWords(`${record.text} ${inlineBrief.split('Options:')[0]}`);
+      const nativeTopic = new Set(captionWords(`${q.header} ${title}`));
+      const completeOptions = q.options.every(option => {
+        const description = prose(option.description ?? '', true).replace(/"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’/g, '').trim();
+        const blocks = [...description.matchAll(/([✅❌])\s*([^✅❌]+)/g)];
+        return description.startsWith('✅') && blocks.every(block => /[A-Za-z0-9]/.test(block[2]!)) &&
+          blocks.filter(block => block[1] === '✅').length >= 2 && blocks.some(block => block[1] === '❌');
+      });
+      const sameId = tokens.slice(start + 1, recordEnd).filter(token => token.type === 'heading' &&
+        new RegExp(`^${id}:`).test(clean(token.text)));
+      if (!completeOptions || sameId.length !== 1 || new Set(topic.filter(word => nativeTopic.has(word))).size < 2 ||
+          [...title.matchAll(/\bD[1-9]\d*(?:\.[1-9]\d*)?\b/g)].length !== 1 ||
+          /["“'‘][^"”'’\n]*\b[\w./-]+\.md\b/.test(finding[0]!) ||
+          /^(?:["“'‘`]|quoted\b|copied\b|historical\b|example\b|hypothetical\b)/i.test(inlineBrief)) continue;
+    }
     // The source requires the complete brief, not a literal Options field.
     // Read option records only inside this Question block, before answer/history.
     // Code, quotations and foreign blocks never contribute saved option labels.
     const briefLines = body.flatMap(token => token.type === 'paragraph' ? token.raw.split('\n') :
       token.type === 'list' ? token.items.flatMap(item => item.tokens.filter(child => child.type === 'text' || child.type === 'paragraph').flatMap(child => child.raw.split('\n'))) : [])
       .map(line => line.replace(/\*\*/g, '').replace(/^\s*[-*+]\s+(?=[A-D][).:]\s)/, '').trim());
-    const questionAt = briefLines.indexOf(`Question D${decision[1]}:`);
+    const questionAt = briefLines.findIndex(line => line.startsWith(marker));
     if (questionAt < 0) continue;
-    const remaining = briefLines.slice(questionAt + 2);
-    const boundary = remaining.findIndex(line => /^(?:Question D[1-9]\d*|Finding|Plan baseline|Runtime evidence|State|Actual answer|Accepted scope|History):/.test(line));
+    const remaining = inline ? [inlineBrief.includes('Options:') ? inlineBrief.slice(inlineBrief.indexOf('Options:')) : '',
+      ...briefLines.slice(questionAt + 1)] : briefLines.slice(questionAt + 2);
+    const boundary = remaining.findIndex(line => /^(?:Question D[1-9]\d*(?:\.[1-9]\d*)?|Finding|Plan baseline|Runtime evidence|State|Actual answer|Accepted scope|History):/.test(line));
     const brief = remaining.slice(0, boundary < 0 ? remaining.length : boundary);
     if (brief.some(line => /^(?:quoted|copied|historical|example|hypothetical|template)(?:\s+[^:]*)?:/i.test(line))) continue;
     const labels: Array<[string, string, string]> = [];
@@ -797,7 +866,11 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
       if (table.type !== 'table') return false;
       const headers = table.header.map(c => clean(c.text));
       const columnIds = headers.slice(2).map(header => /^([A-D])(?:[).:]?\s+\S.*)?$/.exec(header)?.[1]);
-      if (headers[0] !== 'Choice' || headers[1] !== 'Current' ||
+      // The role is Current; a baseline-context caption may qualify it. Do
+      // not strip arbitrary parenthetical prose: historical/proposed/negated
+      // values cannot masquerade as the current baseline column.
+      const currentColumn = /^Current(?:\s+\((?:(?:approved|original) )?(?:plan(?: baseline)?|baseline|proposal)\))?$/i.test(headers[1] ?? '');
+      if (headers[0] !== 'Choice' || !currentColumn ||
           JSON.stringify(columnIds) !== JSON.stringify(q.options.map((_, at) => String.fromCharCode(65 + at)))) return false;
       // R5a/R5b are dimensions of the one R5 decision, not extra asks. Keep
       // the record boundary and unique row identities; R50 is another issue.
@@ -806,7 +879,7 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
       if (!rows.length || new Set(rowIds).size !== rowIds.length || rows.some(row => !row.every(cell => clean(cell.text)))) return false;
       const optionColumns = q.options.map(option => {
         const scores = labels.map((label, at) => {
-          const direct = labelScore(option.label, label[2]!);
+          const direct = labelScore(option.label, label[2]!) || inline && inlineLabelScore(option.label, label[2]!);
           const caption = headers[at + 2]!.replace(/^[A-D][).:]?\s*/, '');
           const captionWords = words(caption), savedWords = words(label[2]!);
           const negated = (tokens: string[]) => tokens.some(word => ['no', 'not', 'never', 'without', 'dont'].includes(word));
@@ -815,7 +888,9 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
           // column's action to a short native caption.
           const boundCaption = captionWords.filter(word => savedWords.includes(word)).length >= 2 &&
             negated(captionWords) === negated(savedWords);
-          const captionScore = boundCaption ? labelScore(option.label, caption) : 0;
+          if (inline && !boundCaption && !rows.some(row => labelScore(label[2]!, row[at + 2]!.text) ||
+              inlineLabelScore(label[2]!, row[at + 2]!.text))) return 0;
+          const captionScore = boundCaption ? labelScore(option.label, caption) || inline && inlineLabelScore(option.label, caption) : 0;
           // Extra native detail must also exist in that option's saved grid
           // column; a shared caption cannot authorize an added action.
           const extendsCaption = clean(option.label).toLowerCase().startsWith(clean(label[2]!).toLowerCase() + ' ');
