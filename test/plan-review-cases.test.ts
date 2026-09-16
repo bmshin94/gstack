@@ -303,6 +303,16 @@ describe('Eng approved-work decision gate', () => {
     expect(apply).toContain('Set this current record’s `State` to `approved` for the actual accepted scope');
     expect(apply).toContain('keep `pending` when the answer leaves a remedy unresolved');
     expect(apply).toContain('superseded states belong in `History`');
+    // c6fc retained both pending and approved fields after an acknowledged answer.
+    const replace = apply.indexOf("Replace the current record's `State`, `Actual answer` and `Accepted scope` fields");
+    const save = apply.indexOf('with a scoped Edit that also saves the current record');
+    const verify = apply.indexOf('Verify its single current state, actual answer and accepted scope agree');
+    expect(replace).toBeGreaterThan(-1);
+    expect(apply).toContain('Each field occurs once outside `History`');
+    expect(save).toBeGreaterThan(replace);
+    expect(verify).toBeGreaterThan(save);
+    expect(apply.indexOf('Correct discrepancies before advancing')).toBeGreaterThan(verify);
+    expect(apply.indexOf('Now return to step 1')).toBeGreaterThan(verify);
     const outputs = template.split('## Required outputs')[1]!.split('### "NOT in scope"')[0]!;
     expect(outputs).toContain('current `State`, actual answer and accepted scope agree');
     expect(outputs).toContain('derive the unresolved count from current pending records');
@@ -325,8 +335,8 @@ describe('Eng approved-work decision gate', () => {
     expect(options).toContain('return to step 2');
     expect(options).toContain('including shared recommendations, fixed and pending choices');
     expect(gate.slice(save, ask)).toContain('save this record, complete grid and exact brief');
-    expect(gate.slice(ask)).toContain('Record the actual option, answer reference and accepted scope');
-    expect(gate.slice(ask)).toContain('separately from the draft options');
+    expect(gate.slice(ask)).toContain("Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference");
+    expect(gate.slice(ask)).toContain('Preserve the draft options');
   });
 
   test('current contracts and completed comparisons precede saved questions without approving a fix', () => {
@@ -428,7 +438,7 @@ describe('Eng approved-work decision gate', () => {
     expect(send).toContain("After step 4's verification, dispatch the unchanged `currentDecision`");
     expect(send).toContain('For authorized prose or auto-decision transport, use the same verified brief and alternatives');
     expect(send).toContain('one question for one choice per AskUserQuestion call');
-    expect(send).toContain('Record the actual option, answer reference and accepted scope');
+    expect(send).toContain("Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference");
     expect(save).toContain('A failed save takes **Blocked outcome** before asking');
   });
 
@@ -791,7 +801,8 @@ describe('outside-voice commitment queue', () => {
           const procedure = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
           expect(procedure).toContain('Reopen an approval only for a concrete new risk, contradictory evidence or changed assumption');
           expect(procedure).toContain('save this record, complete grid and exact brief');
-          expect(procedure).toContain('Record the actual option, answer reference and accepted scope separately from the draft options');
+          expect(procedure).toContain("Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference");
+          expect(procedure).toContain('Preserve the draft options');
           expect(procedure).toContain('Apply only those amendments to the working plan with a scoped Edit');
           expect(queue).toContain("A) Apply this change; B) Keep this row's current value; C) Investigate before choosing; D) Defer this proposed change only");
           expect(queue).toContain('D leaves this proposal row unresolved');

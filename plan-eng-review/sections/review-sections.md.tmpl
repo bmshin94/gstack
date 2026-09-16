@@ -137,7 +137,10 @@ After step 4's verification, dispatch the unchanged `currentDecision`. Send it w
 
 ### 6. Apply and refresh
 
-**Apply the answer:** Record the actual option, answer reference and accepted scope separately from the draft options. Set this current record’s `State` to `approved` for the actual accepted scope; keep `pending` when the answer leaves a remedy unresolved. Apply only those amendments to the working plan with a scoped Edit that also saves the current record; present them in read-only mode. Other choices stay unchanged; superseded states belong in `History`.
+**Apply the answer:**
+1. Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference. Each field occurs once outside `History`. Set this current record’s `State` to `approved` for the actual accepted scope; keep `pending` when the answer leaves a remedy unresolved. Preserve the draft options; superseded states belong in `History`.
+2. Apply only those amendments to the working plan with a scoped Edit that also saves the current record. Other choices stay unchanged. In read-only mode, present the amended record and plan as **not persisted**.
+3. Check the Edit result and read back the amended record. Verify its single current state, actual answer and accepted scope agree. In read-only mode, verify the presentation. Correct discrepancies before advancing; save or read-back failures follow **Review record and write policy**.
 
 Now return to step 1 with the updated plan and actual answer. Hold the chosen value fixed while rebuilding the next relevant pending choice through steps 2–5; record why an irrelevant choice needs no question. Advance to the next finding or section only when no choice in this section awaits an answer.
 
