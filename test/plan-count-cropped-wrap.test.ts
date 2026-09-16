@@ -44,6 +44,35 @@ test('synthetic unchanged next row uses the same old-file line anchor',()=>{
   const r=replay(f=>{f.screen=f.screen.replace(/^ 69 -/m,' 69  ');});expect(r.epoch?.pendingId).toBe(captured.hook.pendingId);
 });
 
+// cf74 batching stopped at an owned Edit because the first physical row ended
+// in "so the ". Joining individually trimmed rows changed it to "so thewin".
+// Preserve source bytes across any wrap position, including inside whitespace.
+const wrappedSource = 'Proof: timing around fetch + recompute is included so the win is measurable after ship.';
+test.each([1, 5, 53, 56, 57, 58, 59, 60, 61, wrappedSource.length - 1])(
+  'source whitespace survives a native wrap at column %d', split => {
+    const r=replay(f=>{
+      const source=f.before.split('\n');source[67]=wrappedSource;f.before=source.join('\n');
+      f.screen=[wrappedSource.slice(0,split),wrappedSource.slice(split)]
+        .map(row=>'     '+row).join('\n')+'\n'+f.screen.split('\n').slice(6).join('\n');
+    });
+    expect(r.epoch?.pendingId).toBe(captured.hook.pendingId);
+    expect(r.first).toBe('grant');expect(r.again).toBe('handled');
+  },
+);
+
+test('several wrapped whitespace runs stay exact; changes within source text fail',()=>{
+  const tails=['Proof: timing ', ' around fetch + ', 'recompute is included so the ', 'win is measurable after ship.'];
+  for(const changed of [false,true]){
+    const r=replay(f=>{
+      const source=f.before.split('\n');source[67]=tails.join('');f.before=source.join('\n');
+      const rows=[...tails];if(changed)rows[1]=rows[1]!.replace('fetch','send');
+      f.screen=rows.map(row=>'     '+row).join('\n')+'\n'+f.screen.split('\n').slice(6).join('\n');
+    });
+    expect(Boolean(r.epoch)).toBe(!changed);
+    expect(r.first).toBe(changed?'handled':'grant');
+  }
+});
+
 test.each([0,2,3])('synthetic numeric padding %d derives the matching wrap gutter',padding=>{
   const r=replay(f=>{const rows=f.screen.split('\n');f.screen=rows.map((row:string,i:number)=>i<6?' '.repeat(padding+4)+row.slice(5):row.replace(/^ (69 [ -])/,' '.repeat(padding)+'$1')).join('\n');});
   expect(r.epoch?.pendingId).toBe(captured.hook.pendingId);

@@ -95,7 +95,9 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
       ? 6 : nextRow[1]!.length;
     const tails = rows.map(row => row.startsWith(' '.repeat(gutter)) ? row.slice(gutter) : '');
     if (tails.some(tail => !tail.trim() || /^\s*[+\-]/.test(tail))) return undefined;
-    continuation = { tail: tails.map(tail => tail.trimEnd()).join(''), nextLine: Number(nextRow[2]) };
+    // Intermediate row endings are source bytes: a hard wrap can split between
+    // words or inside a whitespace run. Trim only the complete source suffix.
+    continuation = { tail: tails.join('').trimEnd(), nextLine: Number(nextRow[2]) };
     diff = diff.slice(nextRow.index);
   }
   if (!/^(?:\s*\d+\s+[ +\-]?| {4,5}[+\-])/.test(diff) || /[☐□]|^\s*(?:>|`{3}|~{3})/m.test(text)) return undefined;
