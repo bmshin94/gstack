@@ -59,12 +59,41 @@ function currentDocumentContext(tokens: ReturnType<typeof marked.lexer>, index: 
   return headings.every(heading => current(heading.text));
 }
 function currentDocumentSources(tokens: ReturnType<typeof marked.lexer>): string[] {
-  return tokens.flatMap((token, index) => {
-    if (token.type !== 'paragraph' || !currentDocumentContext(tokens, index) || /^[`"'“‘]/.test(token.raw.trim())) return [];
+  // A source declaration is metadata, not the historical/source quotation
+  // excluded by current(). Use one grammar for recognition and currentness,
+  // including foreign/duplicate declarations; callers still require one PLAN.md.
+  const label = '(?:Source(?: (?:plan|document|file))?(?: under review)?|(?:Plan|Document|File) under review|(?:Reviewed|Review target|Input) plan)';
+  const declaration = new RegExp(`^${label}:\\s*`, 'i');
+  const active = (value: string) => current(value.replace(declaration, 'Review attribution: ')) &&
+    !/\b(?:history|historical|archiv(?:ed|al)|withdrawn|retracted|superseded|obsolete|cancelled|canceled|not current|no longer current|previously|formerly|hypothetical)\b/i.test(value) &&
+    !/\b(?:if|unless|might|may|would|could)\b/i.test(value);
+  const headings: Array<{ depth: number; text: string }> = [];
+  return tokens.flatMap(token => {
+    if (token.type === 'heading') {
+      while (headings.length && headings.at(-1)!.depth >= token.depth) headings.pop();
+      headings.push({ depth: token.depth, text: plain(token.text) });
+    }
+    if (token.type !== 'paragraph' || !headings.every(h => active(h.text)) || /^[`"'“‘]/.test(token.raw.trim())) return [];
     const text = plain(token.raw);
-    if (!current(text) && !/^Source(?: plan)?:/i.test(text)) return [];
-    return [...text.matchAll(/(?:^|[.!?]\s+|\n)(?:Source(?: plan)?|Plan under review|(?:Reviewed|Review target|Input) plan):\s*([\w./-]+)/gi)]
-      .map(match => match[1]!.replace(/[.;,]+$/, ''));
+    if (!active(text)) return [];
+    return text.split(/(?<=[.!?])\s+|\n/).flatMap(statement => {
+      const match = declaration.exec(statement.trim());
+      if (!match || !active(statement)) return [];
+      const field = statement.trim().slice(match[0].length).trim();
+      const path = /^([\w./-]+)(?=$|[\s,;!?])/.exec(field);
+      if (!path) return [field];
+      // A declaration names one path, optionally followed by source location,
+      // revision or copy metadata. Unknown tails and additional document paths
+      // remain non-PLAN records, never a silently discarded second declaration.
+      const suffix = field.slice(path[1]!.length);
+      if (suffix.trim() && !/^(?:[.,;]$|\(|@|(?:at|in|on|for)\b|L\d+\b|Validation\b)/i.test(suffix.trim())) return [field];
+      const references = (value: string) => [...value.matchAll(/\b[\w./-]+\.(?:md|markdown)\b/gi)];
+      const attribution = suffix.replace(/\(([^()]*)\)/g, (whole, metadata: string) =>
+        /^(?:copied(?: byte-identically)? (?:in|into|to)|byte-identical to the plan embedded in)\s+/i.test(metadata) &&
+        references(metadata).length === 1 ? '' : whole);
+      if (references(attribution).length) return [field];
+      return [path[1]!.replace(/[.;,]+$/, '')];
+    });
   });
 }
 
