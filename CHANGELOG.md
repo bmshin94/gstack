@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.4.0] - 2026-09-16
+
+### Fixed
+
+- **`/health` preserves failed checks and complete diagnostic counts.** Reports show the final 50 output lines while scoring the full log and the checker's actual exit status. Temporary capture errors remain explicit errors.
+- **Health scores disclose coverage.** Partial runs list checked and unavailable categories. Runs with no checks report `N/A — no checks ran`, leave numeric history unchanged, and have no trend. Score comparisons require matching categories.
+
 ## [1.87.3.0] - 2026-09-15
 
 **Changed code needs another pass.**
