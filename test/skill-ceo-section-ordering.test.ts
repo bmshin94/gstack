@@ -282,7 +282,7 @@ test('CEO Step 0 drafts provisional contracts before menus and saves their compl
       expect(approach).toContain('behavior, limits, test method and coverage');
       expect(approach).toContain('other rows fixed or pending');
       expect(approach).toContain('independently selectable changes separate rows');
-      expect(approach.indexOf('record behavior, limits, test method and coverage in Current/Proposed')).toBeLessThan(approach.indexOf('Compare 2–3 approaches'));
+      expect(approach.indexOf('record behavior, limits, test method and coverage in Current/Proposed')).toBeLessThan(approach.indexOf('Build one `currentDecision`'));
       expect(approach).toContain('Shared values or test frameworks do not make independent changes one decision');
       expect(source).toContain('If an attempted save fails, report it and stop');
       expect(approach).toContain('Draft rows before comparing options. Do not prewrite approval or implementation tasks');
@@ -426,7 +426,7 @@ describe('CEO review decision boundaries contract', () => {
     expect(alternatives).toContain('other rows fixed or pending');
     expect(alternatives).toContain('reuse and verification coverage');
     expect(alternatives).not.toContain('for architecture choices');
-    expect(alternatives.indexOf('record behavior, limits, test method and coverage in Current/Proposed')).toBeLessThan(alternatives.indexOf('Compare 2–3 approaches'));
+    expect(alternatives.indexOf('record behavior, limits, test method and coverage in Current/Proposed')).toBeLessThan(alternatives.indexOf('Build one `currentDecision`'));
     expect(alternatives).toContain('explain necessary coupling');
     expect(alternatives).toContain('Reuse an exact approval');
     expect(alternatives).toContain("Code change and required regressions | Keep together; carry both forward once approved");
@@ -454,7 +454,11 @@ describe('CEO review decision boundaries contract', () => {
     expect(approach).toContain('Use steps 1–4 whenever the requested review needs a decision');
     expect(compactProse(section)).toContain('resolve it through 0D before amending the plan');
     expect(section).toContain('An "obvious fix" still needs approval when it is not covered by an exact accepted choice');
-    expect(approach).toContain("Use the preamble's format, recommendation and preference/session rules");
+    expect(approach).toContain("Build one `currentDecision` using the preamble's rules");
+    const generated = fs.readFileSync(SKELETON, 'utf8');
+    expect(generated).toContain('### Tool resolution (read first)');
+    expect(generated).toContain('SESSION_KIND: spawned');
+    expect(generated).toContain('Auto-decide preferences still apply first');
     expect(gate).toContain('Report settled findings too');
     expect(gate).toContain('say "No issues, moving on." only when there are none');
   });
@@ -464,7 +468,7 @@ describe('CEO review decision boundaries contract', () => {
     const currentAndProposed = alternatives.indexOf('record behavior, limits, test method and coverage in Current/Proposed');
     expect(currentAndProposed).toBeGreaterThan(0);
     expect(currentAndProposed).toBeLessThan(alternatives.indexOf('Score only coverage differences'));
-    expect(alternatives).toContain("Use the preamble's format");
+    expect(alternatives).toContain("Build one `currentDecision` using the preamble's rules");
     expect(alternatives).toContain('10 = all edge cases');
     expect(alternatives).toContain('Note: options differ in kind, not coverage — no completeness score.');
     // Scoring and recommendation details are reused from the existing preamble.
@@ -1051,5 +1055,54 @@ describe('CEO review completion evidence', () => {
     const output = completeReport.replace('SKIPPED (no UI scope)', '___ issues / SKIPPED (no UI scope)');
     expect(() => validateCeoReviewCompletion({ ...completed, output }))
       .toThrow('Section 11 outcome');
+  });
+});
+
+// Both b176 paid attempts saved a comparison without their complete native choices.
+// These guard source ordering and branches; captured controls retain those failures.
+describe('CEO complete question persistence before dispatch', () => {
+  const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
+  const compact = (value: string) => value.replace(/\s+/g, ' ').trim();
+  const cycle = compact(source.split('### 0D.')[1]!.split('### 0E.')[0]!);
+
+  test('CEO constructs and verifies one complete row decision before dispatch', () => {
+    const stages = [
+      '**2. Record the pending choice.**',
+      "Cite each row's source filename/message and section/lines when available",
+      "**3. Compare and save that row's options.**",
+      'Build one `currentDecision`',
+      'Score only coverage differences within this row',
+      '**Pre-question checkpoint:**',
+      'Read back: verify every field against `currentDecision` and each citation against its source',
+      '**4. Ask, record the answer, and amend.**',
+      'Ask one row per call, citing its ID, using the unchanged verified `currentDecision`',
+      '**STOP for the actual answer, even for a lone option.**',
+      'Record its reference and scope in Exact approval and scope',
+      '**Post-answer checkpoint:**',
+    ].map(stage => cycle.indexOf(stage));
+    expect(stages.every(position => position >= 0)).toBe(true);
+    expect(stages).toEqual([...stages].sort((a, b) => a - b));
+    const built = cycle.slice(cycle.indexOf('Build one `currentDecision`'), cycle.indexOf('**Pre-question checkpoint:**'));
+    for (const field of ['full question/header', 'exact labels and full descriptions', '1–2 sentence summary', 'S/M/L/XL effort', 'low/medium/high risk', '2–3 pros/cons', 'reuse and verification coverage', 'options differ in kind, not coverage — no completeness score']) expect(built).toContain(field);
+    const save = cycle.slice(cycle.indexOf('**Pre-question checkpoint:**'), cycle.indexOf('**4. Ask'));
+    expect(save).toContain("`currentDecision` as question/header text and complete labeled option paragraphs");
+    expect(save).toContain('A grid, summary or pointer is insufficient');
+    expect(save).toContain('Read back: verify every field');
+  });
+
+  test('CEO save verification retains forbidden-write, failed-save, automatic and changed-decision branches', () => {
+    const policy = compact(source.split('**Storage policy: choose before writing.**')[1]!.split('Keep one decision ledger')[0]!);
+    expect(policy).toContain('If no path is permitted, present the complete labeled text in chat as **not persisted** and continue without attempting a write');
+    expect(policy).toContain('If an attempted save fails, report it and stop; do not switch to chat');
+    expect(cycle).toContain('For chat, verify the complete **not persisted** text');
+    expect(cycle).toContain('Stop on failed save/mismatch');
+    expect(cycle).toContain('A changed decision repeats step 3');
+    expect(cycle).toContain("Use prose/auto-decision transport only as the preamble authorizes");
+    expect(cycle).toContain('Only a preamble-authorized auto-decision resolves this wait; record its authority');
+    expect(cycle).toContain('A recommendation is not approval');
+    expect(cycle).toContain('amend only what it authorizes');
+    expect(cycle).toContain('If this step needs no new answer');
+    expect(cycle).toContain('invent no alternatives or approval');
+    expect(cycle).toContain('otherwise leave the row unresolved and stop for direction');
   });
 });

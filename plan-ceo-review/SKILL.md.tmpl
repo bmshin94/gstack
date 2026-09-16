@@ -284,6 +284,7 @@ settled answers and go to **Continue after 0D**; invent no alternatives or appro
 **2. Record the pending choice.**
 Give independently selectable changes separate rows; explain necessary coupling.
 Name each owner; record behavior, limits, test method and coverage in Current/Proposed.
+Cite each row's source filename/message and section/lines when available.
 
 For tests:
 | Case | Decision |
@@ -295,10 +296,11 @@ For tests:
 Draft rows before comparing options. Do not prewrite approval or implementation tasks.
 
 **3. Compare and save that row's options.**
-Compare 2–3 approaches, preferring 3 for non-trivial plans. Explain when only one
-is viable. Each needs a name, 1–2 sentence summary, S/M/L/XL effort,
-low/medium/high risk, 2–3 pros/cons, reuse and verification coverage. Weigh diff
-size and long-term architecture equally, including whether a rewrite is better.
+Build one `currentDecision` using the preamble's rules: full question/header and
+2–3 options with exact labels and full descriptions. Prefer 3 for non-trivial plans;
+explain a lone viable option. Each description needs a 1–2 sentence summary,
+S/M/L/XL effort, low/medium/high risk, 2–3 pros/cons, reuse and verification coverage.
+Weigh diff size and long-term architecture equally, including whether a rewrite is better.
 
 In Proposed, compare every commitment in the labels, descriptions and pros/cons:
 
@@ -311,17 +313,23 @@ Shared values or test frameworks do not make independent changes one decision.
 Keep other rows fixed or pending, preserving accepted requirements, tests and
 fixes. Do not add unrelated work just to create another option.
 
+Score only coverage differences within this row: 10 = all edge cases, 7 = happy
+path, 3 = shortcut. For different kinds of work, write: "Note: options differ in kind, not coverage — no completeness score."
+
 **Pre-question checkpoint:** Save or present the complete plan under the storage
-policy: current values, pending rows and finished comparisons. Save once before
-asking; do not save an incomplete draft.
+policy: current values, pending rows and finished comparisons. Include
+`currentDecision` as question/header text and complete labeled option paragraphs;
+prefix selectors if absent. Read back: verify every field against `currentDecision`
+and each citation against its source. For chat, verify the complete **not persisted** text. A grid, summary or pointer is insufficient. Stop on
+failed save/mismatch. A changed decision repeats step 3.
 
 **4. Ask, record the answer, and amend.**
-Use the preamble's format, recommendation and preference/session rules. Ask one
-row per call, citing its ID. A recommendation is not approval. Score only coverage
-differences within this row: 10 = all edge cases, 7 = happy path, 3 = shortcut.
-For different kinds of work, write: "Note: options differ in kind, not coverage — no completeness score."
+Ask one row per call, citing its ID, using the unchanged verified `currentDecision`.
+Use prose/auto-decision transport only as the preamble authorizes.
+A recommendation is not approval.
 
-**STOP for the actual answer, even for a lone option.** Record its reference and
+**STOP for the actual answer, even for a lone option.** Only a preamble-authorized
+auto-decision resolves this wait; record its authority. Record its reference and
 scope in Exact approval and scope, update Status, and amend only what it authorizes.
 Do not edit code.
 
