@@ -2,6 +2,7 @@ import cddRegression from './fixtures/eng-cdd-regression-task.json';
 import ledgerSeedFixture from './fixtures/eng-current-ledger-seeds.json';
 import neutralSeedFixture from './fixtures/eng-neutral-seed-749df.json';
 import pairedSuiteFixture from './fixtures/eng-paired-suite-749df.json';
+import a689Retry from './fixtures/eng-a689-retry-public.json';
 import { describe, expect, test } from 'bun:test';
 import captured from './fixtures/eng-count-ad-v2.json';
 import af from './fixtures/eng-first-category-af.json';
@@ -18,6 +19,117 @@ const start = Date.parse('2026-09-09T19:00:00Z'), end = Date.parse('2026-09-09T1
 const report = '# Reviewed plan\n\n' + captured.reviewedTasks.lines.join('\n') + '\n\n## GSTACK REVIEW REPORT\nEng review complete.\n';
 const transcript = (): PlanCountTranscript => ({ status: 'ready', calls: structuredClone(calls), assistantMessages: [] });
 const evaluate = (t = transcript(), p = report) => evaluateEngSeedCoverage(t, p, start, end);
+
+describe('retry capture and replay remain one owned regression contract', () => {
+  const original = a689Retry.calls as NativePlanQuestionCall[];
+  const check = (plan = a689Retry.report, native = structuredClone(original)) => evaluateEngSeedCoverage(
+    { status: 'ready', calls: native, assistantMessages: [] }, plan,
+    Date.parse(a689Retry.windowStart), Date.parse(a689Retry.windowEnd));
+  const edit = (prefix: string, change: (s: string) => string, plan = a689Retry.report) => {
+    const parts = plan.split(/(?=^#{1,6} )/m), matches = parts.filter(s => s.startsWith(prefix));
+    expect(matches).toHaveLength(1);
+    const before = matches[0]!, after = change(before);
+    expect(after).not.toBe(before);
+    return parts.map(s => s === before ? after : s).join('');
+  };
+  const record = (change: (s: string) => string) => edit('### R6:', change);
+
+  test('exact public retry has four seed decisions and a mandatory legacy-first parity contract', () => {
+    const result = check();
+    expect(result.missing).toEqual([]);
+    expect(Object.keys(result.decisions)).toHaveLength(4);
+    expect(result.regression).toBe('plan');
+    expect(result.ok).toBe(true);
+    // A free metric replay cannot turn the historical timeout into a paid pass.
+    expect(a689Retry.originalOutcome).toBe('timeout');
+  });
+
+  test('equivalent answer notation, option order and assertion inventory order retain ownership', () => {
+    expect(check(a689Retry.report.replaceAll(' answer)', ' answer, this session)')).regression).toBe('plan');
+    const native = structuredClone(original);
+    native.forEach(call => call.questions[0]!.options.reverse());
+    expect(check(a689Retry.report, native).regression).toBe('plan');
+    expect(check(record(s => s.replace('status/decision, dispatched claims, adapter state after, IDP call count and order',
+      'IDP call count and order, adapter state after, dispatched claims, status/decision'))).regression).toBe('plan');
+    expect(check(a689Retry.report.replaceAll('auth-flow.characterization.test.*', 'auth/legacy-parity.test.ts')).regression).toBe('plan');
+  });
+
+  for (const index of [3, 4, 5]) test(`native D${index + 1} selection and complete saved fields bind its evidence`, () => {
+    for (const mutate of [
+      (call: NativePlanQuestionCall) => { call.answers![call.questions[0]!.question] = call.questions[0]!.options[1]!.label; },
+      (call: NativePlanQuestionCall) => { call.answered = false; },
+      (call: NativePlanQuestionCall) => { call.failed = true; },
+      (call: NativePlanQuestionCall) => { call.answeredAt = '2026-09-16T14:31:00Z'; },
+      (call: NativePlanQuestionCall) => { call.questions[0]!.header += ' changed'; },
+      (call: NativePlanQuestionCall) => { call.questions[0]!.options[0]!.description += ' Extra permission required.'; },
+    ]) {
+      const native = structuredClone(original); mutate(native[index]!);
+      expect(check(a689Retry.report, native).regression).toBeUndefined();
+    }
+    for (const change of [
+      (s: string) => s.replace('State: approved', 'State: pending'),
+      (s: string) => s.replace('State: approved', 'State: approved\nState: approved'),
+      (s: string) => s.replace('State: approved\n', ''),
+      (s: string) => s.replace(/^Actual answer: .+\n/m, ''),
+      (s: string) => s.replaceAll('PLAN.md:', 'OTHER.md:'),
+      (s: string) => s.replaceAll('PLAN.md:', 'archive/PLAN.md:'),
+      (s: string) => s.split('\n').map(line => '> ' + line).join('\n'),
+      (s: string) => '## Historical review\n' + s,
+      (s: string) => s + '\n' + s,
+    ]) expect(check(edit(`### R${index + 1}:`, change)).regression).toBeUndefined();
+  });
+
+  const scopeControls: [string, (s: string) => string][] = [
+    ['missing baseline', s => s.replace(/Step 1: [^]*?(?=Step 2:)/, '')],
+    ['missing replay', s => s.replace(/Step 2: [^]*?(?=Intended differences:)/, '')],
+    ['capture new path', s => s.replace('against `legacyAuthFlow()` and record each outcome', 'against `AuthBroker()` and record each outcome')],
+    ['different replay table', s => s.replace('run the identical table', 'run a different table')],
+    ['partial field equality', s => s.replace('assert every field identical', 'assert some fields identical')],
+    ['missing claims assertion', s => s.replace('status/decision, dispatched claims, adapter state after', 'status/decision, adapter state after')],
+    ['missing IDP order assertion', s => s.replace('IDP call count and order). Step 2', 'IDP call count). Step 2')],
+    ['wrong scenario count', s => s.replace('run the 10-scenario table', 'run the 9-scenario table')],
+    ['unapproved product difference', s => s.replace('Intended differences: none in product behavior;', 'Intended differences: new denial behavior;')],
+    ['foreign logging approval', s => s.replace('structured deny log lines (D5)', 'structured deny log lines (D19)')],
+    ['scope noncritical', s => s.replace('This suite is CRITICAL', 'This suite is non-CRITICAL')],
+    ['scope not critical', s => s.replace('This suite is CRITICAL', 'This suite is not CRITICAL')],
+    ['scope withdrawn', s => s.replace('in any environment.', 'in any environment. This suite is withdrawn.')],
+    ['scope optional', s => s.replace('in any environment.', 'in any environment. This suite is optional.')],
+    ['no rollout gate', s => s.replace('must be green before the D4 flag moves past 0%', 'can be green after the D4 flag moves past 0%')],
+  ];
+  for (const [name, change] of scopeControls) test(name, () => expect(check(record(change)).regression).toBeUndefined());
+
+  const taskControls: [string, (s: string) => string][] = [
+    ['missing capture task', s => s.replace(/- \[ \] \*\*T1 [^]*?(?=- \[ \] \*\*T2)/, '')],
+    ['unmapped task file', s => s.replace('`auth-flow.characterization.test.*`', '`different.test.*`')],
+    ['task foreign source', s => s.replace('`PLAN.md:23-25, 36-37`', '`OTHER.md:23-25, 36-37`')],
+    ['task different selection', s => s.replace('D6=A', 'D6=B')],
+    ['task different decision', s => s.replace('D6=A', 'D19=A')],
+    ['task missing baseline run', s => s.replace('suite green against legacy alone, then against both paths', 'suite green against AuthBroker')],
+    ['task missing replay run', s => s.replace('suite green against legacy alone, then against both paths', 'suite green against legacy alone')],
+    ['task reversed run order', s => s.replace('record legacy outcomes first, then assert AuthBroker parity', 'assert AuthBroker parity first, then record legacy outcomes')],
+    ['task wrong scenario count', s => s.replace('Write the 10-scenario', 'Write the 4-scenario')],
+    ['task optional rollout gate', s => s.replace('must pass before flag > 0%', 'may pass after flag > 0%')],
+    ['task duplicate verification', s => s.replace('  - Verify: suite green', '  - Verify: other suite green\n  - Verify: suite green')],
+    ['task not run', s => s.replace('Write the 10-scenario', 'Do not write the 10-scenario')],
+  ];
+  for (const [name, change] of taskControls) test(name, () => expect(check(edit('## Implementation Tasks', change)).regression).toBeUndefined());
+
+  test('unchanged legacy ownership and logging approval must precede the parity choice', () => {
+    expect(check(edit('### R4:', s => s.replace('is retained byte-identical', 'is rewritten'))).regression).toBeUndefined();
+    expect(check(edit('### R5:', s => s.replace('deny + structured log with error class', 'allow + structured log with error class'))).regression).toBeUndefined();
+    for (const index of [3, 4]) {
+      const native = structuredClone(original); native[index]!.answeredAt = native[5]!.answeredAt;
+      expect(check(a689Retry.report, native).regression).toBeUndefined();
+    }
+  });
+
+  for (const status of ['R6 is withdrawn.', 'D6 is "withdrawn".', 'T1 is cancelled.', 'R5 is superseded.', 'D4 is not required.',
+    'legacyAuthFlow() is modified before T1.', 'legacyAuthFlow() will be rewritten before T1.',
+    'legacyAuthFlow() is modified before step 1.']) test(status, () => {
+    expect(check(edit('## Implementation Tasks', s => s + '\nCorrection: ' + status + '\n')).regression).toBeUndefined();
+    expect(check(edit('## Implementation Tasks', s => s + '\nEarlier note: "' + status + '"\n')).regression).toBe('plan');
+  });
+});
 function question(call: NativePlanQuestionCall, text: string) {
   const answer = call.answers![call.questions[0]!.question]!;
   call.questions[0]!.question = text; call.answers = { [text]: answer };

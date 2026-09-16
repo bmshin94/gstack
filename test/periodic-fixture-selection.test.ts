@@ -12,6 +12,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/eng-initial-selector-043a.test.ts', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/eng-initial-selector-043a.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/eng-a689-count-public.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
+    ['test/fixtures/eng-a689-retry-public.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/eng-neutral-seed-749df.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/eng-paired-suite-749df.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/auto-decide-mode-selector-749df.json', ['auto-decide-preserved']],

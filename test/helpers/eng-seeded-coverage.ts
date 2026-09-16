@@ -2166,7 +2166,7 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
       return { selector:block[0],label:matching.length === 1 ? matching[0]!.label : undefined,description };
     });
     const legacyAnswer=/^([A-D])\) (.+) — (D[1-9]\d*) answer "(.+)"$/.exec(answers[0]!);
-    const quotedAnswer=/^([A-D]) — "([^"]+)" \((D[1-9]\d*) answer, this session\)$/.exec(answers[0]!);
+    const quotedAnswer=/^([A-D]) — "([^"]+)" \((D[1-9]\d*) answer(?:, this session)?\)$/.exec(answers[0]!);
     const answer=legacyAnswer ?? quotedAnswer;
     const caption=(s:string)=>s.replace(/^[A-D]\) /, '').replace(/\s*\(recommended\)$/, '').trim();
     if (!selected || question[0]![2]!.trim() !== prose(q.question).trim() || question[0]![3] !== q.header ||
@@ -2219,53 +2219,102 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
   const pairedTasks=taskSections.flatMap(s=>s.body.join('\n').split(/\n(?=-\s)/)).map(body=>({body,id:/^- (?:\[[ xX]\] )?(T[1-9]\d*)\b/.exec(body)?.[1]})).filter(t=>t.id);
   const taskField=(body:string,name:string)=>fieldValues(body,'  - '+name);
   // A fixture-directory deliverable can capture the legacy oracle first and
-  // replay it in a later task. The approved record owns the parity contract;
-  // the tasks own the actual capture and both green runs, not the path spelling.
+  // replay it in a later task, or one task can own both ordered runs. The
+  // approved record owns the parity contract; the tasks own its execution.
+  const tableAssertions=(value:string)=>value.toLowerCase().split(/,\s*/).flatMap(fact=>{
+    if (/^status(?:\/decision)?$/.test(fact)) return ['status'];
+    if (/^(?:dispatched )?claims$/.test(fact)) return ['claims'];
+    if (/^adapter state(?: after)?$/.test(fact)) return ['adapter'];
+    if (/^idp call count(?:\/| and )order$/.test(fact)) return ['count','order'];
+    return ['unsupported'];
+  });
   for (const section of current.filter(s=>/\bregression contract\b/i.test(s.title) && /\blegacyAuthFlow\b/.test(s.title))) {
     const record=nativeRecord(section);
-    if (!record || suiteWithdrawn || !/\bCRITICAL\b/.test(record.finding) || /\b(?:not|non)[ -]CRITICAL\b/i.test(record.finding) || !proofActive(record.scope)) continue;
+    if (!record || suiteWithdrawn) continue;
+    // New-path logging is an observability assertion, not a new-path-only
+    // parity suite. Its earlier approval is checked independently below.
+    const logging=/\bstructured deny log lines \((D[1-9]\d*)\) are asserted present on ([A-Za-z][\w]*) only\./.exec(record.scope);
+    const productScope=logging ? record.scope.replace(logging[0], '') : record.scope;
+    if (!proofActive(productScope) || withdrawn(productScope, record.row) || /\b(?:not|non)[ -]CRITICAL\b/i.test(record.finding+' '+productScope)) continue;
     const roles=[...record.scope.matchAll(/\([1-9]\) (Behavior to preserve|Intentional differences|Acceptance): ([^]*?)(?=\([1-9]\) |$)/g)];
     const role=(name:string)=>roles.filter(r=>r[1] === name);
-    if (roles.length !== 3 || ['Behavior to preserve','Intentional differences','Acceptance'].some(name=>role(name).length !== 1)) continue;
-    const preservation=role('Behavior to preserve')[0]![2]!, difference=role('Intentional differences')[0]![2]!, acceptance=role('Acceptance')[0]![2]!;
-    const target=/\blegacyAuthFlow\(\) and ([A-Za-z][\w.]*\(\)) produce the same outcome class\b/.exec(preservation)?.[1];
-    const approved=/\((D[1-9]\d*) (?:→|->) ([A-D])\)/.exec(difference);
     const nativePromise=prose(record.selected.description ?? '');
-    const assertions=['outcome','cache writes','IDP call set'];
-    if (!target || !approved || !/\bfor every fixture in the matrix\b/.test(preservation) ||
-        !assertions.every(fact=>preservation.includes(fact)) || !/\bthe same cache writes\b/.test(preservation) || !/\bthe same IDP call set\b/.test(preservation) ||
-        !/\bBuild fixtures for the full matrix\b/.test(nativePromise) || !/\bAssert identical outcome, cache writes and IDP call set for legacyAuthFlow\(\) and /i.test(nativePromise) ||
-        !nativePromise.includes(target.replace(/^.*\./,'')) || !new RegExp(`\\btyped outcomes per ${approved[1]}\\b`).test(nativePromise) || !proofActive(nativePromise) ||
-        !/\b(?:Fixtures are built|Build fixtures) before the rewrite starts\b/.test(record.scope) ||
-        !/\bparity suite is green against both implementations\b/.test(acceptance) ||
-        !/\blegacyAuthFlow\(\) is deleted only after that\b/.test(acceptance) || !/\bE2E\b/.test(acceptance)) continue;
-    const errors=current.map(nativeRecord).filter(r=>r?.decision === approved[1]);
-    const types=/\btyped outcomes \(([^)]+)\) instead of swallowed errors\b/.exec(difference)?.[1]?.split(/\s*\/\s*/);
-    if (errors.length !== 1 || !types || types.length < 2 || new Set(types).size !== types.length) continue;
-    const error=errors[0]!;
-    if (error.choice !== approved[2] || error.answeredAt >= record.answeredAt || !proofActive(error.scope) ||
-        !/\btyped outcomes?\b/.test(error.selected.label) || !/\bEvery failure maps to a typed outcome\b/.test(error.selected.description ?? '') ||
-        !types.every(type=>(error.selected.description ?? '').includes(type) && error.scope.includes(type)) ||
-        !/\bnothing swallowed\b/.test(error.selected.description ?? '') || !/\bno catch swallows\b/.test(error.scope)) continue;
+    let target:string, error:NonNullable<ReturnType<typeof nativeRecord>>, oracle:typeof error|undefined;
+    let tableCount:number|undefined, tableFile:string|undefined;
+    if (roles.length === 3 && ['Behavior to preserve','Intentional differences','Acceptance'].every(name=>role(name).length === 1)) {
+      const preservation=role('Behavior to preserve')[0]![2]!, difference=role('Intentional differences')[0]![2]!, acceptance=role('Acceptance')[0]![2]!;
+      const pair=/\blegacyAuthFlow\(\) and ([A-Za-z][\w.]*\(\)) produce the same outcome class\b/.exec(preservation)?.[1];
+      const approved=/\((D[1-9]\d*) (?:→|->) ([A-D])\)/.exec(difference);
+      if (!pair || !approved || !/\bCRITICAL\b/.test(record.finding) || !/\bfor every fixture in the matrix\b/.test(preservation) ||
+          !['outcome','cache writes','IDP call set'].every(fact=>preservation.includes(fact)) || !/\bthe same cache writes\b/.test(preservation) || !/\bthe same IDP call set\b/.test(preservation) ||
+          !/\bBuild fixtures for the full matrix\b/.test(nativePromise) || !/\bAssert identical outcome, cache writes and IDP call set for legacyAuthFlow\(\) and /i.test(nativePromise) ||
+          !nativePromise.includes(pair.replace(/^.*\./,'')) || !new RegExp(`\\btyped outcomes per ${approved[1]}\\b`).test(nativePromise) || !proofActive(nativePromise) ||
+          !/\b(?:Fixtures are built|Build fixtures) before the rewrite starts\b/.test(record.scope) ||
+          !/\bparity suite is green against both implementations\b/.test(acceptance) ||
+          !/\blegacyAuthFlow\(\) is deleted only after that\b/.test(acceptance) || !/\bE2E\b/.test(acceptance)) continue;
+      const errors=current.map(nativeRecord).filter(r=>r?.decision === approved[1]);
+      const types=/\btyped outcomes \(([^)]+)\) instead of swallowed errors\b/.exec(difference)?.[1]?.split(/\s*\/\s*/);
+      if (errors.length !== 1 || !types || types.length < 2 || new Set(types).size !== types.length) continue;
+      error=errors[0]!; target=pair;
+      if (error.choice !== approved[2] || error.answeredAt >= record.answeredAt || !proofActive(error.scope) ||
+          !/\btyped outcomes?\b/.test(error.selected.label) || !/\bEvery failure maps to a typed outcome\b/.test(error.selected.description ?? '') ||
+          !types.every(type=>(error.selected.description ?? '').includes(type) && error.scope.includes(type)) ||
+          !/\bnothing swallowed\b/.test(error.selected.description ?? '') || !/\bno catch swallows\b/.test(error.scope)) continue;
+    } else {
+      // Numbered scope steps carry the same baseline/replay roles. Compare the
+      // count, target and complete field inventory with the selected native
+      // option; no comparison-grid alternative can supply missing evidence.
+      const capture=/\bStep 1: run the ([1-9]\d*)-scenario table against legacyAuthFlow\(\) and record each outcome \(([^)]+)\)\./.exec(record.scope);
+      const replay=/\bStep 2: run the identical table against ([A-Za-z][\w]*)\.validateAndDispatch\(\) with the flag on; assert every field identical\./.exec(record.scope);
+      const promise=/^Record legacyAuthFlow\(\) outcomes for ([1-9]\d*) scenarios \(([^)]+)\); run the same table against ([A-Za-z][\w]*) via the flag; assert identical ([^.]+)\./.exec(nativePromise);
+      const gate=/\bThis suite is CRITICAL and must be green before the (D[1-9]\d*) flag moves past 0%(?=\s|[.;]|$)/.exec(record.scope);
+      const files=[...record.scope.matchAll(/\b([A-Za-z][\w/.-]*\.test\.(?:[jt]sx?)?)(?=[,) ]|$)/g)].map(m=>m[1]!);
+      if (roles.length || !capture || !replay || !promise || !gate || !logging || files.length !== 1 ||
+          capture.index >= replay.index || Number(capture[1]) !== Number(promise[1]) || promise[3] !== replay[1] || logging[2] !== replay[1] ||
+          promise[2]!.split(', ').length !== Number(capture[1]) || new Set(promise[2]!.split(', ')).size !== Number(capture[1]) ||
+          !sameInventory(tableAssertions(capture[2]!), ['status','claims','adapter','count','order']) ||
+          !sameInventory(tableAssertions(promise[4]!), tableAssertions(capture[2]!)) || !proofActive(nativePromise) ||
+          !/\bIntended differences: none in product behavior;/.test(record.scope)) continue;
+      target=replay[1]!; tableCount=Number(capture[1]); tableFile=files[0]!;
+      const errors=current.map(nativeRecord).filter(r=>r?.decision === logging[1]);
+      const oracles=current.map(nativeRecord).filter(r=>r?.decision === gate[1]);
+      if (errors.length !== 1 || oracles.length !== 1) continue;
+      error=errors[0]!; oracle=oracles[0]!;
+      // R5 describes the new implementation. Unknown legacy failure behavior
+      // remains the capture's job; logging approval does not permit unequal
+      // product outcomes or authorize editing the legacy control first.
+      if (error.answeredAt >= record.answeredAt || oracle.answeredAt >= record.answeredAt ||
+          !/\bFlat pipeline \+ typed errors\b/.test(error.selected.label) ||
+          !/\bone boundary catch maps any failure to deny \+ structured log, dispatch errors rethrown\./.test(prose(error.selected.description ?? '')) ||
+          !/\bany error from validate\/decideAccess \(typed or not\) → deny \+ structured log\b/.test(error.scope) ||
+          !/\bDispatchError is rethrown to the caller\./.test(error.scope) || !/\bNo swallowing anywhere\./.test(error.scope) || !proofActive(error.scope) ||
+          !/\bKeep legacyAuthFlow\(\) behind a flag;/.test(prose(oracle.selected.description ?? '')) ||
+          !/\blegacyAuthFlow\(\) is retained byte-identical behind a routing flag\b/.test(oracle.scope) ||
+          !/\blegacy is the control and must not be edited\./.test(oracle.scope) || !proofActive(oracle.scope)) continue;
+    }
     const tasks=pairedTasks.filter(task=>pairedTasks.filter(t=>t.id === task.id).length === 1 && proofActive(task.body) &&
       !/\b(?:not|never|skip|omit|defer) (?:run|capture|record|assert|verify|compare)\b/i.test(unquoted(task.body)) &&
       ['Files','Verify','Surfaced by'].every(field=>taskField(task.body,field).length === 1) &&
-      new RegExp(`\\(${record.decision} (?:→|->) ${record.choice}\\)`).test(taskField(task.body,'Surfaced by')[0]!) &&
+      (tableCount ? new RegExp(`\\b${record.decision}=${record.choice}(?:\\s|$)`) : new RegExp(`\\(${record.decision} (?:→|->) ${record.choice}\\)`)).test(taskField(task.body,'Surfaced by')[0]!) &&
       [...taskField(task.body,'Surfaced by')[0]!.matchAll(/\bD[1-9]\d*\b/g)].length === 1 &&
       [...taskField(task.body,'Surfaced by')[0]!.matchAll(/\b[\w./-]+\.md\b/g)].every(m=>m[0] === 'PLAN.md'));
-    const baseline=tasks.filter(task=>/\b(?:Build|Write|Add) the parity fixture matrix\b/.test(task.body.split('\n')[0]!) &&
+    const orderedTable=tasks.filter(task=>tableCount &&
+      new RegExp(`^-(?: \\[[ xX]\\])? ${task.id}(?: \\([^\\n)]*\\))? [—–-] [A-Za-z][\\w/-]* [—–-] Write the ${tableCount}-scenario differential characterization suite; record legacy outcomes first, then assert ${target} parity$`).test(task.body.split('\n')[0]!) &&
+      /^suite green against legacy alone, then against both paths; must pass before flag > 0%$/.test(taskField(task.body,'Verify')[0]!));
+    const baseline=tableCount ? orderedTable : tasks.filter(task=>/\b(?:Build|Write|Add) the parity fixture matrix\b/.test(task.body.split('\n')[0]!) &&
       /\b(?:run|execute) against legacyAuthFlow\(\) to (?:capture|record) golden (?:values|outcomes|outputs)\b/.test(task.body.split('\n')[0]!) &&
       /^parity suite green against legacy alone$/.test(taskField(task.body,'Verify')[0]!));
-    const replay=tasks.filter(task=>new RegExp(`\\bRun the parity suite against ${target.replace(/^.*\./,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}`).test(task.body.split('\n')[0]!) &&
+    const replay=tableCount ? orderedTable : tasks.filter(task=>new RegExp(`\\bRun the parity suite against ${target.replace(/^.*\./,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}`).test(task.body.split('\n')[0]!) &&
       /\bdelete legacyAuthFlow\(\) only when green\b/.test(task.body.split('\n')[0]!) &&
       /\bparity \+ E2E green\b/.test(taskField(task.body,'Verify')[0]!));
-    if (baseline.length !== 1 || replay.length !== 1 || baseline[0]!.id === replay[0]!.id) continue;
+    if (baseline.length !== 1 || replay.length !== 1 || !tableCount && baseline[0]!.id === replay[0]!.id) continue;
     const files=(task:typeof pairedTasks[number])=>taskField(task.body,'Files')[0]!.split(/,\s*/).map(value=>value.replace(/ \(new\)$/,''));
-    if (!files(baseline[0]!).some(file=>/^test\//.test(file) && files(replay[0]!).includes(file))) continue;
-    const owner=`(?:${record.row}|${record.decision}|${error.row}|${error.decision}|${baseline[0]!.id}|${replay[0]!.id}|(?:the|this) (?:legacy )?(?:parity|regression) (?:suite|contract|baseline))`;
-    const revoked=current.some(s=>unquoted(s.body.join('\n').split(/^History:/m)[0]!).split(/\n|[.!?;]\s+/).some(line=>!sourceFrame(line) &&
-      (new RegExp(`\\b${owner} (?:is|was|has been|will be) (?:withdrawn|rejected|cancelled|deferred|optional|superseded|not required|no longer required)\\b`,'i').test(line) ||
-       new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|will be) (?:changed|rewritten|removed|deleted) before ${baseline[0]!.id}\\b`,'i').test(line))));
+    if (tableFile ? !files(baseline[0]!).includes(tableFile) : !files(baseline[0]!).some(file=>/^test\//.test(file) && files(replay[0]!).includes(file))) continue;
+    const owner=`(?:${record.row}|${record.decision}|${error.row}|${error.decision}|${oracle ? oracle.row+'|'+oracle.decision+'|' : ''}${baseline[0]!.id}|${replay[0]!.id}|(?:the|this) (?:legacy )?(?:parity|regression) (?:suite|contract|baseline))`;
+    const status='(?:withdrawn|rejected|cancelled|canceled|deferred|optional|superseded|not required|no longer required)';
+    const revoked=current.some(s=>unquoted(s.body.join('\n').split(/^History:/m)[0]!.replace(new RegExp(`(\\b${owner} (?:is|was|has been|will be) )["“](${status})["”]`,'gi'),'$1$2')).split(/\n|[.!?;]\s+/).some(line=>!sourceFrame(line) &&
+      (new RegExp(`\\b${owner} (?:is|was|has been|will be) ${status}\\b`,'i').test(line) ||
+       new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|was|has been|will be) (?:changed|modified|rewritten|removed|deleted) before (?:${baseline[0]!.id}${tableCount ? '|step 1' : ''})\\b`,'i').test(line))));
     if (!revoked) return true;
   }
   for (const section of current.filter(s=>/\bregression contract\b/i.test(s.title) && /\blegacyAuthFlow\b/.test(s.title))) {

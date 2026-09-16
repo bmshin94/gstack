@@ -7,6 +7,128 @@ import {isEngCompletionHandoff} from './helpers/eng-completion-handoff';
 import {nativePlanCallFingerprint,hasNativePlanTerminal,planCountQuestionPhase} from './helpers/claude-pty-runner';
 import type {NativePlanQuestionCall,PlanCountTranscript} from './helpers/plan-count-transcript';
 import heldPackets from './fixtures/eng-native-packets-b955.json';
+import retryPacket from './fixtures/eng-a689-retry-public.json';
+const retryNavigation=()=>({plan:retryPacket.report,call:structuredClone(retryPacket.calls.at(-1)!) as NativePlanQuestionCall,priorCalls:structuredClone(retryPacket.calls.slice(0,-1)) as NativePlanQuestionCall[]});
+function retryNavigationCheck(name:string,expected:boolean,edit?:(x:ReturnType<typeof retryNavigation>)=>void){test('retry native ledger navigation: '+name,()=>{const x=retryNavigation();edit?.(x);expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);});}
+retryNavigationCheck('actual Ready/CEO/DevEx menu with nine approved records',true);
+function retryRecord(x:ReturnType<typeof retryNavigation>,id:number,edit:(s:string)=>string){
+ x.plan=x.plan.replace(new RegExp(`^### R${id}:[\\s\\S]*?(?=^### R[1-9]\\d*:|^## |$(?![\\s\\S]))`,'m'),edit);
+}
+retryNavigationCheck('reordered offered review routes',true,x=>x.call.questions[0]!.options.reverse());
+for(const index of [1,2])retryNavigationCheck('optional review selected '+index,true,x=>{const q=x.call.questions[0]!;x.call.answers={[q.question]:q.options[index]!.label};});
+for(const command of ['/ship','/plan-ceo-review','/plan-devex-review']){
+ retryNavigationCheck('exact review command with sentence punctuation '+command,true,x=>{x.call.questions[0]!.options[2]!.description+=` Run ${command}.`;});
+ for(const suffix of ['-extra','/extra','.ts','?mode=extra'])retryNavigationCheck('rejects command token '+command+suffix,false,x=>{x.call.questions[0]!.options[2]!.description+=` Run ${command}${suffix}.`;});
+}
+retryNavigationCheck('equivalent current settled assertion',true,x=>question(x,s=>s.replace('every open call was decided','all decisions are answered')));
+retryNavigationCheck('initial scope and TODO can retain full native questions',true,x=>{
+ for(const id of [1,2,7,8,9])retryRecord(x,id,s=>s.replace(new RegExp(`^Question D${id}: .+$`,'m'),`Question D${id}:\n${x.priorCalls[id-1]!.questions[0]!.question}`));
+});
+retryNavigationCheck('parallel lane declaration order is immaterial',true,x=>{x.plan=x.plan.replace('Launch A + B + C in parallel','Launch C + A + B in parallel');});
+retryNavigationCheck('prior record history cannot revoke its current approval',true,x=>retryRecord(x,6,s=>s.replace('History: none','History: R6 is withdrawn.')));
+retryNavigationCheck('explicit historical quoted withdrawal remains inert',true,x=>question(x,s=>s+'\nEarlier note: "R3 is revoked."'));
+retryNavigationCheck('explicit navigation disclaimer retains the owned title',true,x=>question(x,s=>s+'\nNavigation only; approves no new implementation changes.'));
+for(const [name,edit] of Object.entries({
+ 'foreign title':(s:string)=>s.replace('# Plan: Multi-tenant Auth Refactor (reviewed)','# Plan: Foreign Task (reviewed)'),
+ 'duplicate title':(s:string)=>s.replace('# Plan: Multi-tenant Auth Refactor (reviewed)','# Plan: Multi-tenant Auth Refactor (reviewed)\n# Plan: Foreign Task'),
+ 'missing title':(s:string)=>s.replace('# Plan: Multi-tenant Auth Refactor (reviewed)\n',''),
+}))retryNavigationCheck('explicit disclaimer cannot bypass '+name,false,x=>{question(x,s=>s+'\nNavigation only; approves no new implementation changes.');x.plan=edit(x.plan);});
+retryNavigationCheck('independent source path uses the same native owner',true,x=>{
+ x.plan=x.plan.replaceAll('PLAN.md','AUTH-PLAN.md');
+ for(const call of x.priorCalls)question({call},s=>s.replaceAll('PLAN.md','AUTH-PLAN.md'));
+});
+for(const [name,edit] of Object.entries({
+ 'unanswered navigation':(x:ReturnType<typeof retryNavigation>)=>{x.call.answered=false;x.call.unansweredQuestionIndices=[0];},
+ 'failed navigation':(x:ReturnType<typeof retryNavigation>)=>{x.call.failed=true;},
+ 'missing native acknowledgment':(x:ReturnType<typeof retryNavigation>)=>{delete x.call.answeredAt;},
+ 'unknown selected navigation':(x:ReturnType<typeof retryNavigation>)=>{x.call.answers={[x.call.questions[0]!.question]:'Other'};},
+ 'missing prior answer':(x:ReturnType<typeof retryNavigation>)=>{x.priorCalls[2]!.answered=false;x.priorCalls[2]!.unansweredQuestionIndices=[0];},
+ 'failed prior answer':(x:ReturnType<typeof retryNavigation>)=>{x.priorCalls[2]!.failed=true;},
+ 'missing prior timestamp':(x:ReturnType<typeof retryNavigation>)=>{delete x.priorCalls[2]!.answeredAt;},
+ 'late prior approval':(x:ReturnType<typeof retryNavigation>)=>{x.priorCalls[2]!.answeredAt=x.call.answeredAt;},
+ 'foreign prior session':(x:ReturnType<typeof retryNavigation>)=>{x.priorCalls[2]!.sessionId='foreign';},
+ 'duplicate native identity':(x:ReturnType<typeof retryNavigation>)=>{x.priorCalls[2]!.toolUseId=x.priorCalls[1]!.toolUseId;},
+ 'missing prior native call':(x:ReturnType<typeof retryNavigation>)=>{x.priorCalls.splice(2,1);},
+ 'changed native selection':(x:ReturnType<typeof retryNavigation>)=>{const c=x.priorCalls[2]!,q=c.questions[0]!;c.answers={[q.question]:q.options[1]!.label};},
+ 'foreign current branch':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s.replace(' on main —',' on other —')),
+ 'foreign current title':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s.replace('Multi-tenant Auth Refactor plan','Other Refactor plan')),
+ 'foreign reviewed source':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('Reviewed target: `PLAN.md`','Reviewed target: `OTHER.md`');},
+ 'duplicate current owner':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nProject/branch/task: other on main — Other plan, eng review CLEAR.'),
+ 'foreign native and saved owner':(x:ReturnType<typeof retryNavigation>)=>{const c=x.priorCalls[2]!,old=c.questions[0]!.question;question({call:c},s=>s.replace('main — PLAN.md','other — PLAN.md'));x.plan=x.plan.replace(old,c.questions[0]!.question);},
+ 'conflicting native source':(x:ReturnType<typeof retryNavigation>)=>{const c=x.priorCalls[2]!,old=c.questions[0]!.question;question({call:c},s=>s.replace('structure fixed','OTHER.md applies; structure fixed'));x.plan=x.plan.replace(old,c.questions[0]!.question);},
+ 'no settled decisions':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s.replace('every open call was decided','some open calls remain')),
+ 'conditional completion':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s.replace('eng review CLEAR','eng review CLEAR if another test passes')),
+ 'quoted completion':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s.replace('eng review CLEAR','"eng review CLEAR"').replace('all relevant reviews are complete','all relevant reviews have a report')),
+ 'current completion withdrawn':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nThe engineering review is withdrawn.'),
+ 'current no longer clear':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nThe review is no longer clear.'),
+ 'current newly unresolved count':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nThere are 2 unresolved decisions.'),
+ 'revoked current record':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace('State: approved','State: revoked')),
+ 'unknown accepted scope':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace(/^Accepted scope: .+$/m,'Accepted scope: unknown')),
+ 'conditional accepted scope':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace('Accepted scope: ','Accepted scope: If approved, ')),
+ 'missing accepted scope':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace(/^Accepted scope: .+\n/m,'')),
+ 'duplicate current state':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace('State: approved','State: approved\nState: approved')),
+ 'changed saved answer':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace('Actual answer: A —','Actual answer: B —')),
+ 'missing saved header':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace(/^Header: .+\n/m,'')),
+ 'changed saved option':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace('Record legacyAuthFlow() outcomes for 10 scenarios','Record new-path outcomes for 10 scenarios')),
+ 'incomplete substantive question':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace(x.priorCalls[5]!.questions[0]!.question,'Regression summary only.')),
+ 'substantive summary borrowed from selector rules':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,s=>s.replace(`Question D6:\n${x.priorCalls[5]!.questions[0]!.question}`,'Question D6: How do we prove AuthBroker matches legacyAuthFlow() before the flag reaches 100%?')),
+ 'wrong summarized scope question':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,1,s=>s.replace('Question D1: Defer','Question D1: Implement')),
+ 'wrong readiness answer':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('R6 (D6=A)','R6 (D6=B)');},
+ 'missing current record':(x:ReturnType<typeof retryNavigation>)=>retryRecord(x,6,_=>''),
+ 'later approval withdrawal':(x:ReturnType<typeof retryNavigation>)=>{const c=x.priorCalls[7]!,old=c.questions[0]!.question;question({call:c},s=>s+'\nD3 is revoked.');x.plan=x.plan.replace(old,c.questions[0]!.question);},
+ 'quoted withdrawal in current navigation':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nCorrection: R3 is "revoked".'),
+ 'historical whole catalog':(x:ReturnType<typeof retryNavigation>)=>{x.plan='## Historical example\n'+x.plan.replace(/^# Plan:/,'### Plan:');},
+ 'fenced whole report':(x:ReturnType<typeof retryNavigation>)=>{x.plan='```md\n'+x.plan+'\n```';},
+ 'missing report':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.slice(0,x.plan.indexOf('## GSTACK REVIEW REPORT'));},
+ 'unresolved report':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('NO UNRESOLVED DECISIONS','One decision unresolved');},
+ 'current critical gap in Eng row':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('| 44 issues, 0 critical gaps |','| 44 issues, 2 critical gaps |');},
+ 'new ready implementation':(x:ReturnType<typeof retryNavigation>)=>{x.call.questions[0]!.options[0]!.description+=' Also add Redis.';},
+ 'new CEO implementation':(x:ReturnType<typeof retryNavigation>)=>{x.call.questions[0]!.options[1]!.description+=' Then rewrite the router.';},
+ 'new DevEx implementation':(x:ReturnType<typeof retryNavigation>)=>{x.call.questions[0]!.options[2]!.description+=' Also create a new adapter.';},
+ 'quoted implementation':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nAlso "add Redis" before implementation.'),
+ 'deployment approval':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nApprove deployment.'),
+ 'new arbitrary command':(x:ReturnType<typeof retryNavigation>)=>{x.call.questions[0]!.options[2]!.description+=' Run ./deploy.sh.';},
+ 'new task reference':(x:ReturnType<typeof retryNavigation>)=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('T1–T9','T1–T10');},
+ 'missing interior task':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('**T4 (','**T44 (');},
+ 'new catalog obligation':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('## Implementation Tasks','## Implementation Tasks\n- [ ] **T10 (P1)** — Add Redis');},
+ 'task withdrawal':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('  - Verify: boundary tests:','  - Correction: T2 is withdrawn.\n  - Verify: boundary tests:');},
+ 'skipped task':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nSkip T1.'),
+ 'changed prerequisite':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nT1 depends on T9.'),
+ 'changed task order':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nT3 before T1.'),
+ 'wrong lane count':(x:ReturnType<typeof retryNavigation>)=>{x.call.questions[0]!.options[0]!.description=x.call.questions[0]!.options[0]!.description!.replace('3 lanes','4 lanes');},
+ 'unknown lane in menu':(x:ReturnType<typeof retryNavigation>)=>question(x,s=>s+'\nLanes A+B then Z.'),
+ 'changed launch grouping':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('Launch A + B + C in parallel','Launch A + B in parallel');},
+ 'missing graph step':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace(/^\| S4 .+\n/m,'');},
+ 'unknown dependency':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('| S5, S6 |','| S5, S99 |');},
+ 'dependency after consumer':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('S4 → S5 → S7','S5 → S4 → S7');},
+ 'parallel consumer of another lane':(x:ReturnType<typeof retryNavigation>)=>{x.plan=x.plan.replace('| auth/broker, auth/errors | S1 |','| auth/broker, auth/errors | S1, S3 |');},
+}))retryNavigationCheck('rejects '+name,false,edit);
+test('retry navigation binds its own fingerprint and independent native exit evidence',()=>{
+ const x=retryNavigation(),fp=nativePlanCallFingerprint(x.call,0,false);
+ expect(isEngCompletionHandoff({...fp,signature:'foreign:call'},x.plan,x.priorCalls)).toBe(false);
+ expect(isEngCompletionHandoff({...fp,nativeQuestionIndex:1},x.plan,x.priorCalls)).toBe(false);
+ expect(isEngCompletionHandoff({...fp,options:fp.options.slice(0,2)},x.plan,x.priorCalls)).toBe(false);
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eng-retry-navigation-')),file=path.join(dir,'report.md');
+ try{
+  fs.writeFileSync(file,x.plan);const at=retryPacket.provenance.report.mtimeMs;fs.utimesSync(file,at/1000,at/1000);
+  const transcript:PlanCountTranscript={status:'ready',calls:[...x.priorCalls,x.call],assistantMessages:[],planReadyRequests:structuredClone(retryPacket.planReadyRequests)};
+  const admin=new Set([fp.signature]),start=Date.parse(retryPacket.windowStart);
+  const check=(t=transcript,ids=admin)=>hasNativePlanTerminal(t,file,start,'plan_ready',ids);
+  expect(isEngCompletionHandoff(fp,x.plan,x.priorCalls)).toBe(true);expect(check()).toBe(true);
+  expect(planCountQuestionPhase(fp,true,()=>false,undefined,undefined,()=>true).administrative).toBe('completion-handoff');
+  expect(check(transcript,new Set())).toBe(false);expect(check(transcript,new Set(['foreign:call']))).toBe(false);
+  for(const edit of [
+   (t:PlanCountTranscript)=>{t.planReadyRequests=[];},
+   (t:PlanCountTranscript)=>{t.planReadyRequests![0]!.failed=true;},
+   (t:PlanCountTranscript)=>{t.planReadyRequests![0]!.sessionId='foreign';},
+   (t:PlanCountTranscript)=>{t.planReadyRequests![0]!.timestamp=new Date(start-1).toISOString();},
+   (t:PlanCountTranscript)=>{t.calls[5]!.answeredAt=x.call.answeredAt;},
+  ]){const t=structuredClone(transcript);edit(t);expect(check(t)).toBe(false);}
+  fs.writeFileSync(file,'## GSTACK REVIEW REPORT\n');fs.utimesSync(file,at/1000,at/1000);expect(check()).toBe(false);
+  // Replaying public events tests the detector; it cannot promote the paid run.
+  expect(retryPacket.originalOutcome).toBe('timeout');
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
 const heldNavigation=()=>{const h=structuredClone(heldPackets.held6bd);return {...h,call:h.transcript.calls.at(-1)!,priorCalls:h.transcript.calls.slice(0,-1)};};
 function heldNavigationCheck(name:string,expected:boolean,edit?:(x:any)=>void){test('held6bd navigation '+name,()=>{const x=heldNavigation();edit?.(x);expect(isEngCompletionHandoff(nativePlanCallFingerprint(x.call,0,false),x.plan,x.priorCalls)).toBe(expected);});}
 heldNavigationCheck('actual completed owned menu',true);
