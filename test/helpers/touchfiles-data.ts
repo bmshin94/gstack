@@ -396,6 +396,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // completion-status resolvers because they affect question cadence and
   // terminal output (the regression surface this test catches).
   'plan-ceo-finding-count':      [
+    'test/ceo-incomplete-save-b176.test.ts', 'test/fixtures/ceo-incomplete-save-b176.json',
     'test/fixtures/ceo-recorded-decisions-67147822.json',
     'test/plan-count-cropped-wrap.test.ts',
     'test/fixtures/plan-count-cropped-wrap-6714.json',
@@ -603,6 +604,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // confirm" plan write. runPlanSkillFloorCheck cannot detect that shape
   // (it exits on first AUQ); runPlanSkillCounting can.
   'plan-eng-multi-finding-batching': [
+    'test/eng-batching-current-ledger.test.ts', 'test/fixtures/eng-batching-saved-ledger-b176.json',
     'test/review-count-markdown.test.ts', 'test/fixtures/review-count-markdown-6f.json',
     'test/plan-count-cropped-wrap.test.ts',
     'test/fixtures/plan-count-cropped-wrap-6714.json',

@@ -309,11 +309,11 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
     });
   });
 
-  test('section capture opts into diagnostics but partial Write and old report still time out', async () => {
+  test.each(['plan-ceo-review', 'plan-eng-review'])('%s capture: partial Write and old report still time out', async skillName => {
     await withFakeClaude(async (dir, observed) => {
       fs.writeFileSync(path.join(dir, 'diagnostic-case'), 'partial');
       const started = Date.now();
-      const result = await captureSectionReads({ planDir: dir, skillName: 'plan-ceo-review',
+      const result = await captureSectionReads({ planDir: dir, skillName,
         scenario: 'Complete the review', testName: 'partial-write', timeout: 1_500,
         reportMarker: /## GSTACK REVIEW REPORT/ });
       expect(observed().args).toContain('--include-partial-messages');
@@ -405,6 +405,29 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
       expect(child.prompt).toContain('report outside coverage as disabled');
       expect(child.prompt).toContain('After all required writes are complete');
       expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write');
+    });
+  });
+
+  test('engineering capture preserves complete decision evidence while avoiding whole-plan rewrites', async () => {
+    await withFakeClaude(async (dir, observed) => {
+      const scenario = 'Review the existing batch-read plan without changing its requirements.';
+      await captureSectionReads({ planDir: dir, skillName: 'plan-eng-review', scenario,
+        reportFile: 'PLAN.md', testName: 'eng-report-writing', timeout: 5_000 });
+      const child = observed();
+      expect(child.prompt).toContain(scenario);
+      expect(child.prompt).toContain('all four review sections, every finding and original requirement');
+      expect(child.prompt).toContain('required decision fields and comparisons, exact approvals, verification, diagrams, TODOS dispositions, completion summary and GSTACK REVIEW REPORT');
+      expect(child.prompt).toContain('Give each independent choice one ID and one authoritative decision record');
+      expect(child.prompt).toContain('findings may reference several choice IDs');
+      expect(child.prompt).toContain('complete question and every option before selecting');
+      expect(child.prompt).toContain('apply answers and amendments with scoped Edit operations');
+      expect(child.prompt).toContain('do not regenerate unchanged records or repeat their briefs in the final report');
+      expect(child.prompt).toContain('Do not write full implementation or test code unless needed to specify an accepted change');
+      expect(child.prompt).toContain('execute the complete workflow, actually Read every required section, finish every required artifact and verification');
+      expect(child.prompt).toContain('After all required writes are complete');
+      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent');
+      expect(child.prompt).not.toContain('codex_reviews: disabled');
+      expect(child.prompt).not.toContain('all 11 sections');
     });
   });
 

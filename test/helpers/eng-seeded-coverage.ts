@@ -850,7 +850,53 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
     const remaining = inline ? [inlineBrief.includes('Options:') ? inlineBrief.slice(inlineBrief.indexOf('Options:')) : '',
       ...briefLines.slice(questionAt + 1)] : briefLines.slice(questionAt + 2);
     const boundary = remaining.findIndex(line => /^(?:Question D[1-9]\d*(?:\.[1-9]\d*)?|Finding|Plan baseline|Runtime evidence|State|Actual answer|Accepted scope|History):/.test(line));
-    const brief = remaining.slice(0, boundary < 0 ? remaining.length : boundary);
+    let brief = remaining.slice(0, boundary < 0 ? remaining.length : boundary);
+    // A copied complete question may already deliberate its A-D choices.
+    // Explicit native fields own the offered options; question prose cannot
+    // supply a second set or lend another question's choices to this record.
+    const headers = brief.flatMap((line, at) => /^Header:/.test(line) ? [at] : []);
+    if (headers.length) {
+      const options = brief.flatMap((line, at) => /^Options:/.test(line) ? [at] : []);
+      // These explicit fields must preserve each native label and full
+      // description separately. Matching question prose cannot repair a
+      // contradictory or abbreviated authoritative Options field.
+      const optionRecords: Array<{ selector: string; label: string; description: string[] }> = [];
+      let ownedOptionFields = options.length === 1 && clean(brief[options[0]!]!) === 'Options:';
+      if (ownedOptionFields) for (const line of brief.slice(options[0]! + 1)) {
+        const label = /^([A-D])[).:]\s+(.+)$/.exec(line);
+        if (label) optionRecords.push({ selector: label[1]!, label: label[2]!, description: [] });
+        else if (optionRecords.length) optionRecords.at(-1)!.description.push(line);
+        else if (line.trim()) ownedOptionFields = false;
+      }
+      ownedOptionFields &&= optionRecords.length === q.options.length && optionRecords.every((record, at) => {
+        const selector = String.fromCharCode(65 + at), option = q.options[at]!;
+        const nativeLabel = clean(option.label).replace(new RegExp(`^${selector}[).:]\\s+`), '');
+        return record.selector === selector && clean(record.label) === nativeLabel &&
+          clean(record.description.join('\n')) === clean(option.description ?? '');
+      });
+      if (inline || headers.length !== 1 || options.length !== 1 || !ownedOptionFields ||
+          field('Header').length !== 1 || field('Options').length !== 1 || field('Actual answer').length !== 1 ||
+          options[0]! <= headers[0]! || brief.slice(headers[0]! + 1, options[0]!).some(line => line.trim()) ||
+          clean(brief[headers[0]!]!.slice('Header:'.length)) !== clean(q.header) ||
+          !(() => {
+            const question = [title, ...brief.slice(0, headers[0])];
+            const native = clean(prose(q.question, true));
+            if (clean(prose(question.join('\n'), true)) === native) return true;
+            const deliberations = question.flatMap((line, at) => /^Pros\s*\/\s*cons:$/i.test(line) ? [at] : []);
+            if (deliberations.length !== 1) return false;
+            const at = deliberations[0]!;
+            const expected = clean(q.options.map((option, index) =>
+              `${String.fromCharCode(65 + index)}) ${option.label}\n${option.description}`).join('\n'));
+            // Only an exact copy of the offered choices may be inserted into
+            // the saved question. Added instructions or changed tradeoffs fail.
+            for (let end = at + 2; end <= question.length; end++) {
+              if (clean(question.slice(at + 1, end).join('\n')) !== expected) continue;
+              return clean(prose([...question.slice(0, at), ...question.slice(end)].join('\n'), true)) === native;
+            }
+            return false;
+          })()) continue;
+      brief = brief.slice(options[0]! + 1);
+    }
     if (brief.some(line => /^(?:quoted|copied|historical|example|hypothetical|template)(?:\s+[^:]*)?:/i.test(line))) continue;
     const labels: Array<[string, string, string]> = [];
     for (const line of brief) {
@@ -875,7 +921,13 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
       // R5a/R5b are dimensions of the one R5 decision, not extra asks. Keep
       // the record boundary and unique row identities; R50 is another issue.
       const rows = table.rows.filter(row => new RegExp(`^${id}(?:[a-z])?\\b`).test(clean(row[0]!.text)));
-      const rowIds = rows.map(row => new RegExp(`^(${id}[a-z]?)\\b`).exec(clean(row[0]!.text))![1]);
+      const rowIds = rows.map(row => {
+        const caption = clean(row[0]!.text);
+        const explicit = new RegExp(`^(${id}[a-z])\\b`).exec(caption)?.[1];
+        // Lettered dimensions have explicit identities. Bare R rows instead
+        // identify their distinct commitments by the complete caption.
+        return explicit ?? caption.toLowerCase();
+      });
       if (!rows.length || new Set(rowIds).size !== rowIds.length || rows.some(row => !row.every(cell => clean(cell.text)))) return false;
       const optionColumns = q.options.map(option => {
         const scores = labels.map((label, at) => {
