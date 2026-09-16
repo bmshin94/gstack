@@ -244,6 +244,33 @@ Required Outputs, preserving unresolved decisions in the report.`;
 }
 
 export function generateExitPlanModeGate(ctx: TemplateContext): string {
+  if (ctx.skillName === 'plan-eng-review') return `## EXIT PLAN MODE GATE (BLOCKING)
+
+Run this final verification for every review target, in every host mode. It
+checks the completed work; only the later ExitPlanMode call is plan-mode-only.
+
+Confirm Approval readiness passed for the current decisions. This is a
+read-only verification, not a new approval or output-writing step. If it is
+stale, report the stale verification and stop before success telemetry;
+follow **Blocked outcome**. A resumed repair starts at Decision procedure for
+changed choices, then Approval readiness, then repeats affected outputs,
+Read-back, Review Log and dashboard.
+
+Verify all five checks against the selected report file:
+1. Read the plan file after your most recent write.
+2. Its LAST \`## \` heading is exactly \`## GSTACK REVIEW REPORT\`.
+3. The report contains a Runs / Status / Findings table and VERDICT; include
+   OUTSIDE COVERAGE / CROSS-MODEL when applicable.
+4. Its final non-whitespace line is the exact unbolded \`NO UNRESOLVED DECISIONS\`,
+   or the last bullet under \`**UNRESOLVED DECISIONS:**\`. A bolded sentinel,
+   missing status or trailing prose fails this check.
+5. Confirm \`gstack-review-log\` was called and \`gstack-review-read\` ran at
+   least once for the completed saved review.
+
+Apply **Review record and write policy**: forbidden report/log persistence or
+an unrecovered save cannot pass. If any check fails, follow **Blocked outcome**
+without success telemetry or ExitPlanMode. Body prose cannot replace the
+separate terminal structured report.`;
   // These reviews reconcile issue decisions before summaries and logging.
   // Writing a report or choosing the review's approach cannot supply approval.
   const noApproval = ctx.skillName === 'plan-design-review'
@@ -553,17 +580,19 @@ the review right where we left off."
 
 ${invokeBlock}
 
-After /${first} completes, re-run the design doc check:
+${ctx.skillName === 'plan-eng-review' ? `After /${first} completes, rerun the complete **Design Doc Check** block above.
+This is a fresh execution: the prerequisite may have created a design doc.
+Read the resulting doc if found; otherwise continue the standard review.
+Do not rerun the preamble or re-offer the prerequisite.` : `After /${first} completes, re-run the design doc check:
 \`\`\`bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-${ctx.skillName === 'plan-eng-review' ? `_REVIEW_SLUG=$(~/.claude/skills/gstack/bin/gstack-slug) || exit 1
-eval "$_REVIEW_SLUG"` : `SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')`}
+SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
 ${DESIGN_DOC_DISCOVERY_BLOCK}
 \`\`\`
 
 If a design doc is now found, read it and continue the review.
-If none was produced (user may have cancelled), proceed with standard review.`;
+If none was produced (user may have cancelled), proceed with standard review.`}`;
 }
 
 export function generateCodexSecondOpinion(ctx: TemplateContext): string {
@@ -878,7 +907,19 @@ review. The user turns this off only by asking explicitly
 
 ${outsideVoicePreflight(ctx, { disabledBehavior: 'skip-all' })}
 
-**Disabled is a terminal branch for this section.** If the preflight prints
+${ctx.skillName === 'plan-eng-review' ? `**Outcome routing:** Use this table throughout the section. Missing reviewer
+coverage is non-blocking; approval and artifact-write requirements still apply.
+
+| Outcome | Next step |
+|---|---|
+| Disabled | Record disabled coverage below, then continue to planning decisions. No prompt, outside process or native replacement. |
+| Ready | Construct the prompt and run the foreground outside invocation. |
+| Other preflight mode, including harness mismatch | Report the probe's diagnosis, construct the same prompt and use Native fallback. |
+| Outside execution or output validation fails | Retain its output and diagnosis, finish termination, then use Native fallback. Auth: name the login repair; timeout: report the five-minute limit; empty response: say no response. |
+| Reviewer completes | Present its full output and resolve findings through Decision procedure. |
+| Native fallback unavailable or fails | Record unavailable coverage and continue to planning decisions. No clean-review credit. |
+
+` : ''}**Disabled is a terminal branch for this section.** If the preflight prints
 \`CODEX_MODE: disabled\`, persist \`outside_status: disabled\` with the guarded
 command below, then continue directly to ${needsApprovalReadiness ? 'the remaining planning decisions and Approval readiness' : "the workflow's required outputs"} after this section. Do not construct a challenge,
 invoke an outside CLI, dispatch an Agent/Task fallback, or ask about outside findings.
@@ -932,7 +973,7 @@ THE PLAN:
 
 **If \`CODEX_MODE: ready\` — run ${outsideVoiceFor(ctx).label}:**
 
-${ctx.skillName === 'plan-ceo-review' ? `Run this block only for \`ready\`, in one foreground Bash call
+${['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName) ? `Run this block only for \`ready\`, in one foreground Bash call
 (\`run_in_background: false\`, \`timeout: 300000\`). Its opening harness guard
 rechecks the fresh shell: exit 78 uses the same Native fallback below, never a
 replacement provider. Finish termination before fallback and consume only
@@ -951,7 +992,11 @@ ${outsideVoiceFor(ctx).label.toUpperCase()} SAYS (plan review — outside voice)
 ════════════════════════════════════════════════════════════
 \`\`\`
 
-**Error handling:** All errors are non-blocking — the outside voice is informational.
+${ctx.skillName === 'plan-eng-review' ? `**Native fallback — provider unavailable or execution failed, with reviews enabled:**
+
+Follow Outcome routing above. Immediately before dispatch, check the preflight
+result again: disabled means no replacement. The steps below own native dispatch,
+bounded waiting and cancellation; a native result never supplies outside coverage.` : `**Error handling:** All errors are non-blocking — the outside voice is informational.
 - Auth failure (stderr contains "auth", "login", "unauthorized"): "${outsideVoiceFor(ctx).label} auth failed. Run \\\`${outsideVoiceFor(ctx).id === 'codex' ? 'codex login' : 'claude auth login'}\\\` to authenticate." Fall back to the ${outsideVoiceFor(ctx).nativeLabel} subagent below.
 - Timeout: "${outsideVoiceFor(ctx).label} timed out after 5 minutes." Fall back to the ${outsideVoiceFor(ctx).nativeLabel} subagent below.
 - Empty response: "${outsideVoiceFor(ctx).label} returned no response." Fall back to the ${outsideVoiceFor(ctx).nativeLabel} subagent below.
@@ -965,7 +1010,7 @@ authentication/model selection, a failed preflight${needsApprovalReadiness ? ' (
 The disabled branch never reaches this fallback.
 ${needsApprovalReadiness ? '' : `On \`CODEX_MODE: ${outsideVoiceFor(ctx).id === 'codex' ? 'under_codex' : 'under_current_harness'}\`, report the setup repair and
 \`outside_status: unavailable\`, run no outside CLI, and use the native subagent below.
-A native result never supplies outside coverage.`}
+A native result never supplies outside coverage.`}`}
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { pickDevexCheckpointQuestion, pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runGeneration } from '../scripts/gen-skill-docs';
@@ -9,6 +9,7 @@ import { generateAntiShortcutClause, generateCodexPlanReview, generatePlanFileRe
 import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
 import { generateTestCoverageAuditPlan } from '../scripts/resolvers/testing';
 import { ALL_HOST_CONFIGS } from '../hosts';
+import { runCapturedCommand } from './helpers/sync-command-capture';
 
 const menu = (labels: string[], header = 'Next review', question = "D12 — What's next?"): NativeQuestion => ({
   header, question, multiSelect: false, options: labels.map(label => ({ label, description: 'Offered choice' })),
@@ -16,6 +17,37 @@ const menu = (labels: string[], header = 'Next review', question = "D12 — What
 
 // Generated instruction ordering only; native completion remains a paid check.
 describe('plan report persistence precedes completion logging', () => {
+  test('Eng required Review Log failure stops before best-effort decision logging', () => {
+    const template = readFileSync('plan-eng-review/sections/review-sections.md.tmpl', 'utf8');
+    const logSection = template.split('## Review Log')[1]!.split('{{REVIEW_DASHBOARD}}')[0]!;
+    const block = logSection.match(/```bash\n([\s\S]*?)\n```/)?.[1];
+    expect(block).toBeDefined();
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'eng-required-log-')));
+    try {
+      const bin = join(root, 'bin'); mkdirSync(bin);
+      // These are freshly created ordinary files inside this isolated root;
+      // never write through a host skill-registration symlink.
+      expect(realpathSync(bin)).toBe(join(root, 'bin'));
+      for (const [name, label, exitVar] of [
+        ['gstack-review-log', 'required', 'FIXTURE_REVIEW_EXIT'],
+        ['gstack-decision-log', 'decision', 'FIXTURE_DECISION_EXIT'],
+      ]) writeFileSync(join(bin, name!), `#!/bin/sh\nprintf '%s\\n' '${label}' >> "$FIXTURE_CALL_LOG"\nexit "$${exitVar}"\n`, {mode: 0o755, flag: 'wx'});
+      const command = block!.replaceAll('~/.claude/skills/gstack/bin/', `'${bin}/'`);
+      expect(command).not.toContain('~/.claude/skills');
+      for (const [reviewExit, decisionExit, expectedExit, calls] of [
+        [23, 0, 23, ['required']],
+        [0, 0, 0, ['required', 'decision']],
+        [0, 17, 0, ['required', 'decision']],
+      ] as const) {
+        const file = join(root, `calls-${reviewExit}-${decisionExit}`);
+        const result = runCapturedCommand('bash', ['-c', command], {cwd: root,
+          env: {...process.env, FIXTURE_CALL_LOG: file, FIXTURE_REVIEW_EXIT: String(reviewExit), FIXTURE_DECISION_EXIT: String(decisionExit)},
+          timeout: 5000, captureStdout: true});
+        expect(result.status, result.stderr).toBe(expectedExit);
+        expect(readFileSync(file, 'utf8').trim().split('\n')).toEqual([...calls]);
+      }
+    } finally { rmSync(root, {recursive: true, force: true}); }
+  });
   const plans = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'plan-devex-review'];
   for (const skill of plans) {
     test(`${skill}: save/readback gate precedes its log and dashboard`, () => {
@@ -179,10 +211,12 @@ test('Eng loads its one remedy procedure before Scope Challenge findings and ret
     expect(scope).toContain('leave unapproved fixes pending');
     expect(scope).toContain('This chooses structure only');
     expect(scope).toContain('Ask separately before accepting, rejecting or deferring another remedy');
-    const complexityRule = scope.indexOf('These initial scope selectors do not use the later grid or ledger writes');
+    const complexityRule = scope.indexOf('These initial scope selectors do not use the later grid or **pre-answer** ledger writes');
     expect(complexityRule).toBeGreaterThan(0);
     expect(complexityRule).toBeLessThan(scope.indexOf('1. Explain the excess complexity'));
-    expect(scope.slice(complexityRule)).toContain('Wait for actual answers before applying changes');
+    expect(scope.slice(complexityRule)).toContain('Ask and wait for actual answers before applying changes');
+    expect(scope.slice(complexityRule)).toContain('Once all complexity choices are answered, save their actual answers and accepted scope in the ledger');
+    expect(scope.slice(complexityRule)).toContain('This post-answer record does not retroactively require a pending-record write');
     expect(scope).not.toContain('proceed as-is');
     const stop = skeleton.indexOf('**STOP while a Scope Challenge complexity question');
     const sectionRead = skeleton.indexOf(suffix ? '{{SECTION:review-sections}}' : '> **STOP.** Before starting the Scope Challenge');
@@ -517,23 +551,33 @@ describe('Eng approved-work decision gate', () => {
     expect(policy).toContain('For code targets, "plan" means the remedy plan, never an implementation file');
     expect(policy).toContain('Apply every test, evidence and output requirement');
     expect(policy).toContain('The **decision ledger** holds records, grids, briefs and actual answers');
-    expect(policy).toContain('Choose one **report file** before ledger writes: an output/report path explicitly requested by the user; otherwise the selected plan file; otherwise a new');
+    expect(policy).toContain('Choose one **report file** before ledger writes, in this order:');
     expect(policy).toContain('$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md');
     expect(policy).toContain('gstack-paths');
     expect(policy).toContain('gstack-slug');
     expect(policy).toContain('add a suffix on collision');
     expect(policy).toContain('Never select an unrelated active plan');
     expect(policy).toContain('Use this file for the ledger, narrative output, report and final gate');
-    expect(policy).toContain('QA Test Plan and task JSONL artifacts retain their specified legacy discovery paths; do not relocate them beside the report');
+    expect(policy).toContain('Their specified legacy discovery paths in Test review and Implementation Tasks below');
     expect(policy).toContain('including an active-plan-only restriction');
-    expect(policy).toContain('Before creating directories or writing, check this file and its directory, Test Plan Artifact, task JSONL, TODOs and logs separately');
+    expect(policy).toContain('**Check permission separately for each artifact**, including its parent directory, before creating directories or writing');
     expect(policy).toContain('one permitted path authorizes no other');
     expect(policy).toContain('Do not edit implementation files without explicit authorization');
     expect(policy).toContain('Never write forbidden paths or silently replace a requested destination');
-    expect(policy).toContain('Present any unsavable artifact in full as **not persisted**');
-    expect(policy).toContain('request one when a user can supply it; wait without completion telemetry');
-    expect(policy).toContain('If none is permitted, finish the full review in chat as not persisted, then use **Blocked outcome**');
-    expect(policy).toContain('If stated write recovery fails, use **Blocked outcome**; never claim persistence or silently switch to chat');
+    expect(policy).toContain('Present the complete artifact as **not persisted**; continue the review');
+    expect(policy).toContain('Request a permitted destination when the user can supply one; wait without completion telemetry');
+    expect(policy).toContain('If none is permitted, perform the full review in chat as **not persisted**, then use **Blocked outcome**');
+    expect(policy).toContain('If a permitted save or read-back fails, use its stated recovery; if recovery fails, use **Blocked outcome** immediately');
+    const routes = Object.fromEntries(policy.split('\n').filter(line => line.startsWith('| '))
+      .map(line => line.split('|').slice(1, -1).map(cell => cell.trim())).map(cells => [cells[0], cells[2]]));
+    expect(routes['Decision ledger and complete review report']).toContain('wait without completion telemetry');
+    expect(routes['Decision ledger and complete review report']).toContain('then use **Blocked outcome**');
+    for (const auxiliary of ['QA Test Plan and task JSONL', 'TODOS.md']) {
+      expect(routes[auxiliary]).toContain('**not persisted**');
+      expect(routes[auxiliary]).toContain('continue');
+    }
+    expect(routes['Required Review Log']).toContain('The final gate cannot pass without this log');
+    expect(policy).toContain('A forbidden auxiliary artifact does not block the report; a failed attempted save does');
     expect(gate).toContain('Under **Review record and write policy**');
     const log = template.split('## Review Log')[1]!.split('{{REVIEW_DASHBOARD}}')[0]!;
     expect(log).toContain('After successful Read-back, run these commands only when metadata writes are permitted');
@@ -544,7 +588,15 @@ describe('Eng approved-work decision gate', () => {
 
   test('approval readiness follows TODO decisions and finalization returns forward exactly once', () => {
     const closing = template.split('## Required outputs')[1]!.split('### "NOT in scope" section')[0]!;
-    expect(closing).toContain('Then announce completion, write Review Log and display the dashboard');
+    expect(closing).toContain('Write Review Log, display the dashboard, then present the saved Completion summary');
+    const finish = [...closing.matchAll(/^([1-6])\. \*\*([^*]+)\*\*/gm)].map(match => [match[1], match[2]]);
+    expect(finish).toEqual([['1', 'Check decisions.'], ['2', 'Prepare outputs.'], ['3', 'Save and verify the report.'],
+      ['4', 'Record and publish.'], ['5', 'Choose navigation.'], ['6', 'Finish.']]);
+    const publication = closing.slice(closing.indexOf('4. **Record and publish.**'), closing.indexOf('5. **Choose navigation.**'));
+    expect(publication).toContain('If the required log is forbidden');
+    expect(publication).toContain('Neither path permits a completion announcement or a saved dashboard entry');
+    expect(closing).toContain('Both apply in every mode');
+    expect(closing).toContain('call ExitPlanMode only in host plan mode');
     expect(closing).toContain('A substantive change repeats Decision procedure → approval → affected outputs → Read-back → logs/dashboard');
     expect(closing).toContain('Finish learning hooks after navigation, with no pending question');
     const outputs = ['### TODOS.md updates', '{{PLAN_REVIEW_APPROVAL_CHECK}}', '## Required outputs',
@@ -556,7 +608,7 @@ describe('Eng approved-work decision gate', () => {
     expect(template.split('{{PLAN_REVIEW_APPROVAL_CHECK}}')).toHaveLength(2);
     expect(template).not.toContain('{{BRAIN_CACHE_REFRESH}}');
     expect(template).not.toContain('Run the preamble\'s **Telemetry');
-    expect(template).toContain('do not return to this section after that gate');
+    expect(template).toContain('Do not return to this section after that gate');
     const ending = template.slice(template.indexOf('{{REVIEW_DASHBOARD}}'));
     const navigation = ending.split('## Learning hooks')[0]!;
     expect(navigation).toContain('return to the decision procedure and approval check');
@@ -564,7 +616,7 @@ describe('Eng approved-work decision gate', () => {
     expect(navigation).toContain('A next-step answer alone approves no implementation change');
     const skeleton = readFileSync('plan-eng-review/SKILL.md.tmpl', 'utf8');
     const final = ['{{SECTION:review-sections}}', '## Section self-check', '**Paused question:**', '**Blocked outcome:**', '{{EXIT_PLAN_MODE_GATE}}',
-      'After the gate passes: **Telemetry', '{{BRAIN_CACHE_REFRESH}}', 'After success telemetry and cache dispatch, call ExitPlanMode for the selected next step.']
+      'After the gate passes: **Telemetry', '{{BRAIN_CACHE_REFRESH}}', 'After success telemetry and cache dispatch, call ExitPlanMode for the selected next step only when the host is in plan mode.']
       .map(stage => skeleton.indexOf(stage));
     expect(final.every(position => position >= 0)).toBe(true);
     expect(final).toEqual([...final].sort((a, b) => a - b));
@@ -572,13 +624,13 @@ describe('Eng approved-work decision gate', () => {
     const pause = skeleton.split('**Paused question:**')[1]!.split('**Blocked outcome:**')[0]!;
     expect(pause).toContain('Wait for its actual answer without completion telemetry or ExitPlanMode');
     const blocked = skeleton.split('**Blocked outcome:**')[1]!.split('{{EXIT_PLAN_MODE_GATE}}')[0]!;
-    expect(blocked).toContain('Report `BLOCKED`, missing path/work, attempts and the resume requirement');
-    expect(blocked).toContain('Complete chat-only output stays **not persisted** and cannot pass the persisted-report gate');
-    expect(blocked).toContain('Unavailable report persistence, unrecovered saves and failed gates use this route');
-    expect(blocked).toContain('With startup values and an available, permitted telemetry command');
-    expect(blocked).toContain('`OUTCOME=error`, actual `ERROR_MESSAGE`/`FAILED_STEP`');
-    expect(blocked).toContain('Stop without ExitPlanMode');
-    expect(blocked).toContain('A later resumption starts at the failed step and repeats affected outputs/read-back/logs');
+    expect(blocked).toContain('report `BLOCKED`, the missing path/work, actual attempts and what is needed to resume');
+    expect(blocked).toContain('Label complete chat-only output **not persisted**; it supplies no saved-review or completion credit');
+    expect(blocked).toContain('Stop the review');
+    expect(blocked).toContain('If startup values and a permitted telemetry command are available');
+    expect(blocked).toContain('`OUTCOME=error` and the actual `ERROR_MESSAGE`/`FAILED_STEP`');
+    expect(blocked).toContain('Do not call ExitPlanMode');
+    expect(blocked).toContain('Resume at the failed step and repeat affected outputs, read-back and logs');
     expect(skeleton.slice(skeleton.indexOf('After the gate passes:'))).toContain('once with `OUTCOME=success`, then cache refresh');
     expect(skeleton).toContain('Make no further plan or approval changes between verification and exit');
   });
@@ -653,15 +705,18 @@ describe('outside-voice commitment queue', () => {
       const provider = host.name === 'codex' ? 'Claude Code' : 'Codex';
       const mismatch = host.name === 'codex' ? 'under_current_harness' : 'under_codex';
       expect(eng).toContain(`**If \`CODEX_MODE: ready\` — run ${provider}:**`);
-      const fallback = eng.slice(eng.indexOf('**Native fallback'), eng.indexOf('**Bounded outside-voice wait'));
+      const fallback = eng.slice(eng.indexOf('**Native fallback —'), eng.indexOf('**Bounded outside-voice wait'));
+      const routing = eng.slice(eng.indexOf('**Outcome routing:**'), eng.indexOf('**Disabled is a terminal branch'));
       const preflight = eng.match(/```bash\n([\s\S]*?)\n```/)![1];
       expect(preflight).toContain(mismatch);
-      expect(fallback).toContain('a failed preflight (including harness mismatch), or a failed outside invocation');
+      expect(routing).toContain('Other preflight mode, including harness mismatch');
+      expect(routing).toContain('Outside execution or output validation fails');
+      expect(routing).toContain('finish termination, then use Native fallback');
       const bounded = eng.slice(eng.indexOf('**Bounded outside-voice wait'), eng.indexOf('**Cross-model tension:**'));
       expect(bounded).toContain('A native result never supplies outside coverage.');
       expect(eng).toContain('A completed native fallback uses SOURCE=in-host, OUTSIDE_STATUS=unavailable, and STATUS=clean or issues_found from its findings');
       expect(eng).toContain("These findings are the reviewer's, even if later resolved by the parent");
-      expect(fallback).toContain('The disabled branch never reaches this fallback.');
+      expect(fallback.replace(/\s+/g, ' ')).toContain('Immediately before dispatch, check the preflight result again: disabled means no replacement');
       expect(eng).not.toContain('No in-host substitute is defined here');
       if (host.name === 'codex') {
         expect(eng).toContain('gstack-claude-code');

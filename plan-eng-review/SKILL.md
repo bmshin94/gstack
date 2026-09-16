@@ -66,7 +66,7 @@ After target selection, every question uses the preamble's full decision brief, 
 1. Run the Preamble, including Context Recovery and its setup questions.
 2. Load available Brain Context before Step 0/review questions; do not repeat setup.
 3. Complete web-research readiness, Design Doc Check and the prerequisite offer.
-4. Read the Step 0 section in full; its preparation continues startup without repeating it.
+4. Read `sections/review-sections.md` in full. Start at **Review preparation**: choose the report destination, load learnings and calibrate evidence, then run Scope Challenge. Do not repeat startup.
 
 Keep the reviewed target fixed when selecting the section's separate report destination.
 
@@ -648,31 +648,10 @@ Follow its instructions from top to bottom, **skipping these sections** (already
 
 Execute every other section at full depth. When the loaded skill's instructions are complete, continue with the next step below.
 
-After /office-hours completes, re-run the design doc check:
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-_REVIEW_SLUG=$(~/.claude/skills/gstack/bin/gstack-slug) || exit 1
-eval "$_REVIEW_SLUG"
-_LOCALDOC=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$_LOCALDOC" ] && _LOCALDOC=$(ls -t ~/.gstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
-# Repo-local docs win when at least as fresh (#703): office-hours dual-writes
-# docs/designs/ alongside ~/.gstack, and the committed copy is what teammates
-# see. A stale old repo doc never shadows a newer private session.
-_REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-_REPODOC=""
-if [ -n "$_REPOTOP" ]; then
-  [ -f "$_REPOTOP/DESIGN.md" ] && _REPODOC="$_REPOTOP/DESIGN.md"
-  [ -z "$_REPODOC" ] && _REPODOC=$(ls -t "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
-fi
-DESIGN="$_LOCALDOC"
-if [ -n "$_REPODOC" ] && { [ -z "$_LOCALDOC" ] || [ "$_REPODOC" -nt "$_LOCALDOC" ]; }; then
-  DESIGN="$_REPODOC"
-fi
-[ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
-```
-
-If a design doc is now found, read it and continue the review.
-If none was produced (user may have cancelled), proceed with standard review.
+After /office-hours completes, rerun the complete **Design Doc Check** block above.
+This is a fresh execution: the prerequisite may have created a design doc.
+Read the resulting doc if found; otherwise continue the standard review.
+Do not rerun the preamble or re-offer the prerequisite.
 
 ## Engineering review
 
@@ -693,33 +672,35 @@ Verify you Read `sections/review-sections.md` and fully executed Scope Challenge
 
 **Paused question:** Wait for its actual answer without completion telemetry or ExitPlanMode.
 
-**Blocked outcome:** Report `BLOCKED`, missing path/work, attempts and the resume requirement. Complete chat-only output stays **not persisted** and cannot pass the persisted-report gate. Unavailable report persistence, unrecovered saves and failed gates use this route. With startup values and an available, permitted telemetry command, run **Telemetry (run last)** once: `OUTCOME=error`, actual `ERROR_MESSAGE`/`FAILED_STEP`. Stop without ExitPlanMode. A later resumption starts at the failed step and repeats affected outputs/read-back/logs.
+**Blocked outcome:** Stop the review and report `BLOCKED`, the missing path/work, actual attempts and what is needed to resume. Label complete chat-only output **not persisted**; it supplies no saved-review or completion credit. If startup values and a permitted telemetry command are available, run **Telemetry (run last)** once with `OUTCOME=error` and the actual `ERROR_MESSAGE`/`FAILED_STEP`. Do not call ExitPlanMode. Resume at the failed step and repeat affected outputs, read-back and logs.
 
 ## EXIT PLAN MODE GATE (BLOCKING)
 
-If storage restrictions prevented the plan/report or completion log, present the
-full chat report as not persisted; do not call ExitPlanMode or claim this gate passed, and follow **Blocked outcome**.
-An attempted artifact save that failed still stops the review via **Blocked outcome**.
+Run this final verification for every review target, in every host mode. It
+checks the completed work; only the later ExitPlanMode call is plan-mode-only.
 
 Confirm Approval readiness passed for the current decisions. This is a
-read-only verification, not a new approval or output-writing step. If the
-decisions changed, report the stale verification and stop before success
-telemetry or exit and follow **Blocked outcome**. A resumed repair
-starts at Decision procedure for changed choices, then Approval readiness, then repeats affected outputs, Read-back,
-Review Log and dashboard.
+read-only verification, not a new approval or output-writing step. If it is
+stale, report the stale verification and stop before success telemetry;
+follow **Blocked outcome**. A resumed repair starts at Decision procedure for
+changed choices, then Approval readiness, then repeats affected outputs,
+Read-back, Review Log and dashboard.
 
-Before calling ExitPlanMode, verify all five checks:
+Verify all five checks against the selected report file:
 1. Read the plan file after your most recent write.
 2. Its LAST `## ` heading is exactly `## GSTACK REVIEW REPORT`.
 3. The report contains a Runs / Status / Findings table and VERDICT; include
    OUTSIDE COVERAGE / CROSS-MODEL when applicable.
 4. Its final non-whitespace line is the exact unbolded `NO UNRESOLVED DECISIONS`,
    or the last bullet under `**UNRESOLVED DECISIONS:**`. A bolded sentinel,
-   missing status or any trailing prose fails this check.
+   missing status or trailing prose fails this check.
 5. Confirm `gstack-review-log` was called and `gstack-review-read` ran at
-   least once. Do not substitute an unlogged chat review for saved completion.
+   least once for the completed saved review.
 
-If any check fails, report the missing work and do not call ExitPlanMode and follow **Blocked outcome**. Body prose cannot replace the separate terminal structured report.
+Apply **Review record and write policy**: forbidden report/log persistence or
+an unrecovered save cannot pass. If any check fails, follow **Blocked outcome**
+without success telemetry or ExitPlanMode. Body prose cannot replace the
+separate terminal structured report.
 
 After the gate passes: **Telemetry (run last)** once with `OUTCOME=success`, then cache refresh. Make no further plan or approval changes between verification and exit.
 
@@ -736,4 +717,4 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || tru
 ```
 
 
-After success telemetry and cache dispatch, call ExitPlanMode for the selected next step.
+After success telemetry and cache dispatch, call ExitPlanMode for the selected next step only when the host is in plan mode. Outside plan mode, finish the review in the current conversation; do not call ExitPlanMode.

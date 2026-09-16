@@ -16,14 +16,24 @@ Keep the Scope gate's target fixed throughout the review:
 
 For code targets, "plan" means the remedy plan, never an implementation file. Test review traces selected code and proposed remedies; distinguish existing evidence from future requirements. Give Outside Voice the target content, current remedy plan and actual decisions within its existing size limit. Apply every test, evidence and output requirement.
 
-Choose one **report file** before ledger writes: an output/report path explicitly requested by the user; otherwise the selected plan file; otherwise a new `$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md` (add a suffix on collision). For that default path, run `~/.claude/skills/gstack/bin/gstack-paths` and `~/.claude/skills/gstack/bin/gstack-slug`; use their returned `GSTACK_STATE_ROOT`, `SLUG` and `BRANCH` assignments to form the literal path. If either command fails or a value is absent, that destination is unavailable. Name the reviewed target in its header. Never select an unrelated active plan. Use this file for the ledger, narrative output, report and final gate.
+Choose one **report file** before ledger writes, in this order:
+1. The output/report path explicitly requested by the user.
+2. Otherwise, the selected plan file.
+3. Otherwise, a new `$GSTACK_STATE_ROOT/projects/$SLUG/$BRANCH-eng-review-{YYYYMMDD-HHMMSS}.md`; add a suffix on collision. Run `~/.claude/skills/gstack/bin/gstack-paths` and `~/.claude/skills/gstack/bin/gstack-slug`, then use their returned `GSTACK_STATE_ROOT`, `SLUG` and `BRANCH` assignments to form the literal path. A failed command or absent value makes this destination unavailable.
 
-QA Test Plan and task JSONL artifacts retain their specified legacy discovery paths; do not relocate them beside the report.
+Name the reviewed target in the header. Never select an unrelated active plan. Use this file for the ledger, narrative output, report and final gate. The **decision ledger** holds records, grids, briefs and actual answers.
 
-The **decision ledger** holds records, grids, briefs and actual answers. Its **write/read-only rules** apply per artifact:
-- Honor user and host limits, including an active-plan-only restriction. Before creating directories or writing, check this file and its directory, Test Plan Artifact, task JSONL, TODOs and logs separately; one permitted path authorizes no other. Do not edit implementation files without explicit authorization.
-- Never write forbidden paths or silently replace a requested destination. Present any unsavable artifact in full as **not persisted**. If the report has no permitted destination, request one when a user can supply it; wait without completion telemetry. If none is permitted, finish the full review in chat as not persisted, then use **Blocked outcome**.
-- If stated write recovery fails, use **Blocked outcome**; never claim persistence or silently switch to chat. Explicitly best-effort logs retain their behavior.
+**Check permission separately for each artifact**, including its parent directory, before creating directories or writing. Honor user and host limits, including an active-plan-only restriction; one permitted path authorizes no other. Do not edit implementation files without explicit authorization. Never write forbidden paths or silently replace a requested destination.
+
+| Artifact | Destination | If writing is forbidden |
+|---|---|---|
+| Decision ledger and complete review report | Chosen report file above | Request a permitted destination when the user can supply one; wait without completion telemetry. If none is permitted, perform the full review in chat as **not persisted**, then use **Blocked outcome**. |
+| QA Test Plan and task JSONL | Their specified legacy discovery paths in Test review and Implementation Tasks below | Present the complete artifact as **not persisted**; continue the review. Do not relocate either beside the report. |
+| TODOS.md | The project's TODO file | Present the accepted TODO content as **not persisted**; continue. |
+| Required Review Log | The helper's state location | Present its fields as **not persisted**. The final gate cannot pass without this log. |
+| Explicitly best-effort metadata and learning logs | Their helper-defined locations | Skip forbidden writes; retain their stated best-effort behavior. |
+
+**Attempted write failure is different from a forbidden write.** If a permitted save or read-back fails, use its stated recovery; if recovery fails, use **Blocked outcome** immediately. Do not ask from an unsaved pending record, silently switch a failed save to chat, or claim persistence. A forbidden auxiliary artifact does not block the report; a failed attempted save does. Later steps refer to this policy rather than choosing another route.
 
 ## Prior Learnings
 
@@ -136,6 +146,10 @@ higher confidence.
 
 **Decision gate (all sections and outside voice):** For Scope Challenge findings, Sections 1–4, Outside Voice and late changes, finish one choice before preparing the next. Initial scope selectors keep their separate rules.
 
+`current state → independent choice → complete brief/grid → save and verify → ask/wait → apply answer`
+
+Steps 1–6 below own this loop. The write policy supplies its permitted and read-only paths; the preamble supplies question transport.
+
 ### 1. Establish current state
 
 Read the request, relevant source and actual answers. For each finding, record its number, severity, confidence, file:line and reviewer. Keep two facts separate:
@@ -205,9 +219,11 @@ Accepted scope: <exact approved work; none if no change approved>
 History: <earlier values, briefs, answers and reason for reopening>
 ```
 
-Check the write result, then read back this current record from the chosen report file. Verify its question text, header, all option labels and descriptions against `currentDecision`, and its complete grid against step 3. A chat reference, abbreviated summary or planned later write does not satisfy this check. Correct a mismatch and verify again before dispatch. A failed save takes **Blocked outcome** before asking; an unreadable or unverifiable saved record takes the same path under the write recovery policy.
+**Verify the saved record:** Check the write result, then read back this current record from the chosen report file. Verify its question text, header, all option labels and descriptions against `currentDecision`, and its complete grid against step 3. A chat reference, abbreviated summary or planned later write does not satisfy this check. Correct a mismatch and verify again before dispatch. A failed save takes **Blocked outcome** before asking; an unreadable or unverifiable saved record takes the same path after the policy's stated recovery.
 
-In read-only mode, present the complete record and grid as **not persisted** and check that presentation against `currentDecision`; this does not establish persistence or waive the report destination rules. An old comparison or critic's recommendation cannot replace this record. If outcomes, work or meaning change before dispatch, repeat step 3 and save the revised record first, then repeat the applicable verification.
+**Read-only branch:** In read-only mode, present the complete record and grid as **not persisted** and check that presentation against `currentDecision`. Continue only within the policy's chat-review route; it cannot pass the saved-report gate.
+
+**Changed brief:** An old comparison or critic's recommendation cannot replace this record. If outcomes, work or meaning change before dispatch, repeat step 3 and save the revised record first, then repeat the applicable verification.
 
 ### 5. Ask and wait
 
@@ -256,13 +272,13 @@ Before reviewing, answer:
 
 At 8+ files or 2+ new classes/services, STOP before Section 1. Use the preamble's decision-brief format for this complexity gate:
 
-These initial scope selectors do not use the later grid or ledger writes. Wait for actual answers before applying changes.
+These initial scope selectors do not use the later grid or **pre-answer** ledger writes. Ask and wait for actual answers before applying changes. Once all complexity choices are answered, save their actual answers and accepted scope in the ledger under the write policy, then begin findings. This post-answer record does not retroactively require a pending-record write.
 
 1. Explain the excess complexity. Ask about each needed feature cut or deferral separately first.
 2. Compare original and smaller class/module arrangements with the same feature choices. Preserve contracts and approved security, error handling, test and performance fixes in both; leave unapproved fixes pending.
 3. Offer the concrete original and smaller arrangements as options. This chooses structure only. Ask separately before accepting, rejecting or deferring another remedy.
 
-Once the gate resolves, apply only accepted scope changes and import the scope answers into the decision ledger. Without a complexity gate, proceed to findings.
+Once the gate resolves, apply only accepted scope changes. Without a complexity gate, proceed directly to findings.
 
 **Critical: Once the user accepts or rejects a scope reduction recommendation, commit fully.** Do not re-argue for smaller scope during later review sections. Do not silently reduce scope or skip planned components.
 
@@ -549,6 +565,18 @@ Branch on the echoed `CODEX_MODE`:
 - **`model_unusable`** — authed but the account cannot use gstack's selected Codex model (#2477: HTTP 400 on every call). Relay the probe's HINT lines, tell the user the one-line fix (set `GSTACK_CODEX_MODEL=<supported-model>` or pass an explicit `-c model=...` override), and fall back to the Claude subagent path. The ~10s round trip is cached for 1h; timeouts fail open to `ready`.
 - **`ready`** — run the Codex pass below.
 
+**Outcome routing:** Use this table throughout the section. Missing reviewer
+coverage is non-blocking; approval and artifact-write requirements still apply.
+
+| Outcome | Next step |
+|---|---|
+| Disabled | Record disabled coverage below, then continue to planning decisions. No prompt, outside process or native replacement. |
+| Ready | Construct the prompt and run the foreground outside invocation. |
+| Other preflight mode, including harness mismatch | Report the probe's diagnosis, construct the same prompt and use Native fallback. |
+| Outside execution or output validation fails | Retain its output and diagnosis, finish termination, then use Native fallback. Auth: name the login repair; timeout: report the five-minute limit; empty response: say no response. |
+| Reviewer completes | Present its full output and resolve findings through Decision procedure. |
+| Native fallback unavailable or fails | Record unavailable coverage and continue to planning decisions. No clean-review credit. |
+
 **Disabled is a terminal branch for this section.** If the preflight prints
 `CODEX_MODE: disabled`, persist `outside_status: disabled` with the guarded
 command below, then continue directly to the remaining planning decisions and Approval readiness after this section. Do not construct a challenge,
@@ -606,9 +634,11 @@ THE PLAN:
 
 **If `CODEX_MODE: ready` — run Codex:**
 
-Run the selected backend in one foreground Bash invocation (`run_in_background: false`,
-`timeout: 300000`). Finish a failed attempt's termination before fallback;
-consume only its completed output. No background jobs or shared temporary paths.
+Run this block only for `ready`, in one foreground Bash call
+(`run_in_background: false`, `timeout: 300000`). Its opening harness guard
+rechecks the fresh shell: exit 78 uses the same Native fallback below, never a
+replacement provider. Finish termination before fallback and consume only
+completed output. Use private temporary paths, with no background jobs.
 
 Create a private prompt file: run `umask 077; mktemp "${TMPDIR:-/tmp}/gstack-plan-prompt.XXXXXXXX"` in Bash and keep the returned path. Use Write to put the **complete prompt and context**, including actual plan/spec/source, in that file. Substitute its shell-quoted path for `<prepared-prompt-file>`; never interpolate user text into shell source. Request a final Recommendation: <action> because <specific reason> line, including an explicit no-findings rationale.
 
@@ -658,19 +688,11 @@ CODEX SAYS (plan review — outside voice):
 ════════════════════════════════════════════════════════════
 ```
 
-**Error handling:** All errors are non-blocking — the outside voice is informational.
-- Auth failure (stderr contains "auth", "login", "unauthorized"): "Codex auth failed. Run `codex login` to authenticate." Fall back to the Claude subagent below.
-- Timeout: "Codex timed out after 5 minutes." Fall back to the Claude subagent below.
-- Empty response: "Codex returned no response." Fall back to the Claude subagent below.
-
 **Native fallback — provider unavailable or execution failed, with reviews enabled:**
 
-Immediately before dispatching, check the preflight result again. On
-`CODEX_MODE: disabled`, finish this section with `outside_status: disabled`;
-do not dispatch. Otherwise, use this fallback for missing/broken CLI, failed
-authentication/model selection, a failed preflight (including harness mismatch), or a failed outside invocation.
-The disabled branch never reaches this fallback.
-
+Follow Outcome routing above. Immediately before dispatch, check the preflight
+result again: disabled means no replacement. The steps below own native dispatch,
+bounded waiting and cancellation; a native result never supplies outside coverage.
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
 
@@ -778,12 +800,14 @@ unresolved decisions in the report.
 
 ## Required outputs
 
-Each gate checks these inputs in order, without restarting settled decisions:
+Execute this finish sequence once. The subsections below define its output formats; they do not start another review or approval cycle.
 
-1. **Approval readiness** verifies that each current `State`, actual answer and accepted scope agree. Reconcile stale states from their actual answers before PASS; derive the unresolved count from current pending records. Then write accepted sections, Implementation Tasks and Completion summary under **Review record and write policy** and per-artifact paths.
-2. Save the complete plan/report, including its terminal report, and pass **Read-back**. Then announce completion, write Review Log and display the dashboard. Unavailable persistence follows the no-file rules and **Blocked outcome**.
-3. Complete **Next Steps — Review Chaining**. A substantive change repeats Decision procedure → approval → affected outputs → Read-back → logs/dashboard; navigation alone adds no approval.
-4. Finish learning hooks after navigation, with no pending question. Return once to the entrypoint: **Section self-check** verifies methodology; read-only **EXIT PLAN MODE GATE** verifies current approval, persisted report and completion logs before success telemetry, cache refresh and ExitPlanMode.
+1. **Check decisions.** Confirm Approval readiness: current `State`, actual answer and accepted scope agree. Reconcile stale states from actual answers and derive the unresolved count from current pending records. No completion report or log is needed for this check.
+2. **Prepare outputs.** Write the accepted plan sections, Implementation Tasks and Completion summary using the formats below and the per-artifact write policy. Keep unresolved choices pending.
+3. **Save and verify the report.** Use **Plan File Review Report** below to save the complete review with its terminal `## GSTACK REVIEW REPORT`, then pass its **Read-back** gate. Forbidden report persistence or an unrecovered save takes **Blocked outcome**.
+4. **Record and publish.** Write Review Log, display the dashboard, then present the saved Completion summary. If the required log is forbidden, show its fields as not persisted and use **Blocked outcome**; a failed log uses the write recovery policy. Neither path permits a completion announcement or a saved dashboard entry.
+5. **Choose navigation.** Complete **Next Steps — Review Chaining**. A substantive change repeats Decision procedure → approval → affected outputs → Read-back → logs/dashboard, then returns to navigation. Navigation alone adds no approval.
+6. **Finish.** Finish learning hooks after navigation, with no pending question. Return once to the entrypoint's **Section self-check**, then its read-only **EXIT PLAN MODE GATE**. Both apply in every mode. Only after they pass, run success telemetry and cache refresh; call ExitPlanMode only in host plan mode.
 
 ### "NOT in scope" section
 Every plan review MUST produce a "NOT in scope" section listing work that was considered and explicitly deferred, with a one-line rationale for each item.
@@ -904,7 +928,7 @@ this run (an empty file means "ran, no findings" — distinct from "didn't run")
 From the final decision record, list this review's unanswered or interrupted choices as "Unresolved decisions that may bite you later". Keep their IDs and missing answers; never silently default to an option. Count each open choice once. Keep this count separate from prior reviews, which the report below adds independently.
 
 ### Completion summary
-Prepare this from the final decision record and outputs for the saved review; announce completion after the Read-back gate below:
+Prepare this from the final decision record and outputs for the saved review; publish it at finish step 4 after Read-back and Review Log:
 - Step 0: Scope Challenge — ___ (scope accepted as-is / scope reduced per recommendation)
 - Architecture Review: ___ issues found
 - Code Quality Review: ___ issues found
@@ -1021,7 +1045,7 @@ Do NOT replace the section in place; delete it and append the new report at EOF.
 After successful Read-back, run these commands only when metadata writes are permitted. Otherwise show the fields as not persisted; the dashboard must not count this unlogged run.
 
 ```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-eng-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"MODE","commit":"COMMIT"}'
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-eng-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"MODE","commit":"COMMIT"}' || exit $?
 ~/.claude/skills/gstack/bin/gstack-decision-log '{"decision":"Eng review (MODE): ARCH_SUMMARY","rationale":"KEY_DECISION","scope":"branch","source":"skill","confidence":8}' 2>/dev/null || true
 ```
 
@@ -1182,4 +1206,4 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || tru
 ```
 
 
-Return to the entrypoint's Section self-check now. Continue forward through its read-only final gate, telemetry, cache refresh and ExitPlanMode; do not return to this section after that gate.
+Return to the entrypoint's Section self-check now. Continue forward through its read-only final gate, telemetry and cache refresh; call ExitPlanMode only in host plan mode. Do not return to this section after that gate.

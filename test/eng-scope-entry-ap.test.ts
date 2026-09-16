@@ -50,7 +50,7 @@ test('entry binds a current target and delays bootstrap until scope resolves', (
   expect(scope.match(/\*\*Startup sequence\*\*/g)).toHaveLength(1);
   const startup = scope.slice(scope.indexOf('**Startup sequence**'), scope.indexOf('{{PREAMBLE}}'));
   const order = ['after target selection', 'Preamble', 'Context Recovery', 'Brain Context',
-    'web-research readiness', 'Design Doc Check', 'Step 0 section entry'].map(step => startup.indexOf(step));
+    'web-research readiness', 'Design Doc Check', 'Review preparation'].map(step => startup.indexOf(step));
   expect(order.every(position => position >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((a, b) => a - b));
   expect(startup).toContain('Keep the reviewed target fixed');

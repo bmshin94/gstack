@@ -1858,8 +1858,11 @@ describe('BENEFITS_FROM resolver', () => {
   test('Eng initial and prerequisite recheck both discover the canonical override and stop on slug failure', () => {
     const initial = extractMarkdownSection(engContent, '### Design Doc Check').match(/```bash\n([\s\S]*?)\n```/)![1]!;
     const offer = extractMarkdownSection(engContent, '## Prerequisite Skill Offer');
-    const recheck = offer.slice(offer.indexOf('After /office-hours completes, re-run the design doc check:'))
-      .match(/```bash\n([\s\S]*?)\n```/)![1]!;
+    expect(offer).toContain('After /office-hours completes, rerun the complete **Design Doc Check** block above');
+    expect(offer).toContain('This is a fresh execution');
+    expect(offer).toContain('Do not rerun the preamble or re-offer the prerequisite');
+    expect(offer).not.toContain('_REVIEW_SLUG=');
+    const recheck = initial; // Execute the one canonical block again after the prerequisite.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eng-design-slug-'));
     try {
       const home = path.join(dir, 'home'), cwd = path.join(dir, 'project');
@@ -2357,7 +2360,8 @@ describe('Design approval reconciliation', () => {
   test('Eng cannot exit with unasked findings listed only in an unresolved-decisions report', () => {
     const main = fs.readFileSync(path.join(ROOT, 'plan-eng-review/SKILL.md'), 'utf8');
     const check = extractMarkdownSection(main, '## Section self-check');
-    const gate = extractMarkdownSection(main, '## EXIT PLAN MODE GATE (BLOCKING)');
+    const rawGate = extractMarkdownSection(main, '## EXIT PLAN MODE GATE (BLOCKING)');
+    const gate = rawGate.replace(/\s+/g, ' ');
     const section = fs.readFileSync(path.join(ROOT, 'plan-eng-review/sections/review-sections.md'), 'utf8');
     const readiness = extractMarkdownSection(section, '## Approval readiness');
     const normalizedReadiness = readiness.replace(/\s+/g, ' ');
@@ -2369,9 +2373,9 @@ describe('Design approval reconciliation', () => {
     expect(readiness).not.toMatch(/^ {3}\S/m);
     expect(gate).toContain('Confirm Approval readiness passed for the current decisions');
     expect(gate).toContain('read-only verification, not a new approval or output-writing step');
-    const approvalParagraph = gate.slice(gate.indexOf('Confirm Approval readiness'), gate.indexOf('Before calling ExitPlanMode'));
+    const approvalParagraph = rawGate.slice(rawGate.indexOf('Confirm Approval readiness'), rawGate.indexOf('Verify all five checks'));
     expect(approvalParagraph).not.toMatch(/^ {3}\S/m);
-    expect([...gate.matchAll(/^([1-5])\. /gm)].map(match => match[1])).toEqual(['1', '2', '3', '4', '5']);
+    expect([...rawGate.matchAll(/^([1-5])\. /gm)].map(match => match[1])).toEqual(['1', '2', '3', '4', '5']);
     expect(gate.indexOf('Confirm Approval readiness')).toBeLessThan(gate.indexOf('1. Read the plan file'));
     expect(normalizedReadiness).toContain('check the ledger against every accepted remedy');
     expect(normalizedReadiness).toContain('Each must cite its own actual answer, exact prior approval or authorized auto-decision');
@@ -2396,7 +2400,7 @@ describe('Design approval reconciliation', () => {
     expect(gate).toContain('report the stale verification and stop');
     expect(gate).toContain('starts at Decision procedure for changed choices, then Approval readiness, then repeats affected outputs, Read-back,');
     expect(gate).toContain('Review Log and dashboard');
-    expect(gate).toContain('and follow **Blocked outcome**');
+    expect(gate).toContain('follow **Blocked outcome**');
     const report = extractMarkdownSection(section, '### Write to the plan file');
     expect(report).toContain('Then follow **Blocked outcome** in the entrypoint.');
     expect(report).toContain('report the error and follow **Blocked outcome** before Review Log or decision logging');
@@ -4529,11 +4533,19 @@ describe('EXIT PLAN MODE GATE placement', () => {
         const finalHandoff = tail.slice(tail.indexOf('## Brain Cache Background Refresh'));
         expect(finalHandoff).toContain(skill === 'plan-ceo-review' ? 'Only after a passing gate: call ExitPlanMode' : 'After success telemetry and cache dispatch, call ExitPlanMode');
         expect(tail).not.toContain('short-circuit when no plan file exists');
-        expect(tail).toContain('full chat report as not persisted; do not call ExitPlanMode');
+        if (skill === 'plan-eng-review') {
+          expect(tail.replace(/\s+/g, ' ')).toContain('forbidden report/log persistence or an unrecovered save cannot pass');
+          expect(finalHandoff).toContain('only when the host is in plan mode');
+          expect(finalHandoff).toContain('Outside plan mode, finish the review in the current conversation; do not call ExitPlanMode');
+        } else expect(tail).toContain('full chat report as not persisted; do not call ExitPlanMode');
       } else {
         expect(lastH2, `${skill}/SKILL.md last ## heading (fences stripped)`).toBe('## EXIT PLAN MODE GATE (BLOCKING)');
       }
-      expect(md, `${skill}/SKILL.md gate body`).toContain(['plan-ceo-review', 'plan-eng-review'].includes(skill)
+      if (skill === 'plan-eng-review') {
+        const gate = extractMarkdownSection(md, '## EXIT PLAN MODE GATE (BLOCKING)').replace(/\s+/g, ' ');
+        expect(gate).toContain('Run this final verification for every review target, in every host mode');
+        expect(gate).toContain('If any check fails, follow **Blocked outcome** without success telemetry or ExitPlanMode');
+      } else expect(md, `${skill}/SKILL.md gate body`).toContain(skill === 'plan-ceo-review'
         ? 'If any check fails, report the missing work and do not call ExitPlanMode'
         : 'Failing this gate and calling ExitPlanMode anyway is a contract violation');
     }
@@ -4654,8 +4666,10 @@ describe('GSTACK REVIEW REPORT mandatory unresolved-decisions status', () => {
         const gate = md.split('## EXIT PLAN MODE GATE (BLOCKING)')[1]!.replace(/\s+/g, ' ');
         expect(gate).toContain('final non-whitespace line is the exact unbolded `NO UNRESOLVED DECISIONS`');
         expect(gate).toContain('or the last bullet under `**UNRESOLVED DECISIONS:**`');
-        expect(gate).toContain('A bolded sentinel, missing status or any trailing prose fails this check');
-        expect(gate).toContain('If any check fails, report the missing work and do not call ExitPlanMode');
+        expect(gate).toMatch(/A bolded sentinel, missing status or (?:any )?trailing prose fails this check/);
+        expect(gate).toContain(skill === 'plan-eng-review'
+          ? 'If any check fails, follow **Blocked outcome** without success telemetry or ExitPlanMode'
+          : 'If any check fails, report the missing work and do not call ExitPlanMode');
       } else {
         expect(md).toContain('FINAL non-whitespace line is the unresolved-decisions');
         expect(md).toContain('FAILS the gate');

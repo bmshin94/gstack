@@ -17,14 +17,25 @@ function expectOutsideReviewControlFlow(text: string, promptHeading: string): vo
   expect(text.slice(indices[1], indices[2])).toContain('(skip only on `disabled`)');
 
   const fallback = text.slice(indices[3]);
-  expect(fallback).toContain('The disabled branch never reaches this fallback.');
-  expect(fallback.replace(/\s+/g, ' ')).toMatch(/Otherwise, use this fallback for missing\/broken CLI, failed authentication\/model selection, a failed preflight(?: \(including harness mismatch\))?, or a failed outside invocation\./);
+  if (text.includes('**Outcome routing:**')) {
+    const routing = text.slice(text.indexOf('**Outcome routing:**'), indices[0]);
+    expect(routing).toContain('Other preflight mode, including harness mismatch');
+    expect(routing).toContain('Outside execution or output validation fails');
+    expect(routing).toContain('Retain its output and diagnosis, finish termination, then use Native fallback');
+    expect(routing).toContain('No prompt, outside process or native replacement');
+    expect(fallback.replace(/\s+/g, ' ')).toContain('Immediately before dispatch, check the preflight result again: disabled means no replacement');
+  } else {
+    expect(fallback).toContain('The disabled branch never reaches this fallback.');
+    expect(fallback.replace(/\s+/g, ' ')).toMatch(/Otherwise, use this fallback for missing\/broken CLI, failed authentication\/model selection, a failed preflight(?: \(including harness mismatch\))?, or a failed outside invocation\./);
+  }
   const dispatch = fallback.indexOf('Dispatch via the Agent tool');
   expect(dispatch).toBeGreaterThan(0);
   const recheck = fallback.slice(0, dispatch);
-  expect(recheck).toContain('Immediately before dispatching, check the preflight result again.');
-  expect(recheck).toContain('`CODEX_MODE: disabled`, finish this section with `outside_status: disabled`;');
-  expect(recheck).toContain('do not dispatch.');
+  if (!text.includes('**Outcome routing:**')) {
+    expect(recheck).toContain('Immediately before dispatching, check the preflight result again.');
+    expect(recheck).toContain('`CODEX_MODE: disabled`, finish this section with `outside_status: disabled`;');
+    expect(recheck).toContain('do not dispatch.');
+  }
   expect(fallback).toContain('Availability/native fallback is not outside completion.');
 }
 
