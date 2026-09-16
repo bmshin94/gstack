@@ -582,6 +582,9 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // Document-release
   'document-release': ['document-release/**', 'test/skill-e2e-workflow.test.ts'],
 
+  // /health result capture, coverage, and comparable history (model behavior).
+  'health-reporting': ['health/**', 'test/skill-e2e-health.test.ts', 'test/helpers/health-eval-fixture.ts'],
+
   // Codex (Claude E2E — tests /codex skill via Claude)
   'codex-review': ['codex/**', 'test/skill-e2e-workflow.test.ts'],
 
@@ -1186,6 +1189,7 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
 
   // Document-release — gate (CHANGELOG guardrail)
   'document-release': 'gate',
+  'health-reporting': 'periodic',
 
   // Codex — periodic (Opus, requires codex CLI)
   'codex-review': 'periodic',
