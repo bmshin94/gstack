@@ -309,6 +309,17 @@ describe('Eng approved-work decision gate', () => {
     const verify = apply.indexOf('Verify its single current state, actual answer and accepted scope agree');
     expect(replace).toBeGreaterThan(-1);
     expect(apply).toContain('Each field occurs once outside `History`');
+    const lines = ledger.split('\n');
+    const stateAt = lines.findIndex(line => line.startsWith('State:'));
+    expect(stateAt).toBeGreaterThan(lines.indexOf('Options:'));
+    expect(lines.slice(stateAt, stateAt + 3).map(line => line.split(':')[0])).toEqual([
+      'State', 'Actual answer', 'Accepted scope',
+    ]);
+    expect(lines.filter(line => line.startsWith('State:'))).toHaveLength(1);
+    expect(apply).toContain('replace the whole block together, never only its answer/scope tail');
+    expect(apply).toContain('remove their old occurrences in the same edit');
+    expect(apply).toContain('read back the entire saved resolution block, including its `State` line');
+    expect(apply).toContain('an answer-only search does not verify the block');
     expect(save).toBeGreaterThan(replace);
     expect(verify).toBeGreaterThan(save);
     expect(apply.indexOf('Correct discrepancies before advancing')).toBeGreaterThan(verify);

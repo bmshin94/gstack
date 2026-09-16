@@ -440,6 +440,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'plan-eng-finding-count':      [
     'test/fixtures/eng-count-c6fc-public.json',
     'test/fixtures/eng-cdd-regression-task.json',
+    'test/eng-resolution-block-position.test.ts',
     'test/eng-count-owned-outcomes.test.ts', 'test/fixtures/eng-count-owned-outcomes-f359.json',
     'test/eng-task-pause-navigation-f359.test.ts', 'test/fixtures/eng-task-pause-navigation-f359.json',
     'test/fixtures/eng-current-choice-cab3.json', 'test/fixtures/eng-completed-navigation-cab3.json',
@@ -625,6 +626,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/eng-batching-saved-ledger.test.ts', 'test/fixtures/eng-batching-saved-ledger-dacc.json',
     'scripts/resolvers/learnings.ts',
     'test/helpers/eng-seeded-coverage.ts', 'test/eng-seeded-coverage.test.ts',
+    'test/eng-resolution-block-position.test.ts',
     "test/plan-count-session-cwd.test.ts",
 
     "test/plan-scope-recovery-av.test.ts",

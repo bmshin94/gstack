@@ -106,7 +106,6 @@ After the jitter answer, carry that value into both options of the later cap que
 Finding: <number, severity, confidence, file:line and reviewer>
 Plan baseline: <last approved value, exact scope and answer reference; otherwise the original proposal>
 Runtime evidence: <observed value and source/probe; unknown if unverified>
-State: <pending, or approved>
 Comparison grid: <complete grid from step 3>
 Question D2:
 <currentDecision.question in full, including its D2 title and recommendation>
@@ -116,6 +115,8 @@ Options:
 <first option's full description>
 <second option's exact label, with one B) record selector>
 <second option's full description>
+
+State: <pending, or approved>
 Actual answer: <unanswered, or actual option and answer reference>
 Accepted scope: <exact approved work; none if no change approved>
 History: <earlier values, briefs, answers and reason for reopening>
@@ -138,9 +139,9 @@ After step 4's verification, dispatch the unchanged `currentDecision`. Send it w
 ### 6. Apply and refresh
 
 **Apply the answer:**
-1. Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference. Each field occurs once outside `History`. Set this current record’s `State` to `approved` for the actual accepted scope; keep `pending` when the answer leaves a remedy unresolved. Preserve the draft options; superseded states belong in `History`.
+1. Replace the current record's `State`, `Actual answer` and `Accepted scope` fields using the actual option and answer reference. These three adjacent fields form one mutable resolution block after the options; replace the whole block together, never only its answer/scope tail. Each field occurs once outside `History`. Set this current record’s `State` to `approved` for the actual accepted scope; keep `pending` when the answer leaves a remedy unresolved. Preserve the draft options; superseded states belong in `History`. When resuming an older record with separated fields, bring all three into this block and remove their old occurrences in the same edit.
 2. Apply only those amendments to the working plan with a scoped Edit that also saves the current record. Other choices stay unchanged. In read-only mode, present the amended record and plan as **not persisted**.
-3. Check the Edit result and read back the amended record. Verify its single current state, actual answer and accepted scope agree. In read-only mode, verify the presentation. Correct discrepancies before advancing; save or read-back failures follow **Review record and write policy**.
+3. Check the Edit result and read back the entire saved resolution block, including its `State` line. Verify its single current state, actual answer and accepted scope agree; an answer-only search does not verify the block. In read-only mode, verify the presentation. Correct discrepancies before advancing; save or read-back failures follow **Review record and write policy**.
 
 Now return to step 1 with the updated plan and actual answer. Hold the chosen value fixed while rebuilding the next relevant pending choice through steps 2–5; record why an irrelevant choice needs no question. Advance to the next finding or section only when no choice in this section awaits an answer.
 
