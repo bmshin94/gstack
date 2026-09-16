@@ -69,7 +69,7 @@ describe('native repeated report permission identity',()=>{
 
 for (const variant of ['basic', 'intervening', 'cropped', 'same-basename', 'path-cropped']) test.skipIf(process.platform==='win32')(`real fake CLI grants each current request once: ${variant}`,async()=>{
  const intervening = variant === 'intervening';
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'count-edit-pty-'));const fake=path.join(dir,'fake-claude');const worker=path.join(dir,'worker.ts');const events=path.join(dir,'events.jsonl');const output=path.join(dir,'output.json');const expected=path.join(dir,variant==='same-basename'?'PLAN.md':'report.md');fs.writeFileSync(expected,'original');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ce-'));const fake=path.join(dir,'fake-claude');const worker=path.join(dir,'worker.ts');const events=path.join(dir,'events.jsonl');const output=path.join(dir,'output.json');const expected=path.join(dir,variant==='same-basename'?'PLAN.md':'report.md');fs.writeFileSync(expected,'original');
  const cropped=capturedAc.rows.find(row=>row.job===5)!;
  let screen=variant==='path-cropped' ? capturedPath.screen.replace(capturedPath.screen.split('\n')[0]!,expected).replaceAll(path.dirname(capturedPath.expected),path.dirname(expected)).replaceAll(path.basename(capturedPath.expected),'report.md')
   : variant==='cropped' ? cropped.screen.replaceAll(path.dirname(cropped.hook.expected),path.dirname(expected)).replaceAll(path.basename(cropped.hook.expected),'report.md')

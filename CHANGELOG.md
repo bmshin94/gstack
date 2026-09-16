@@ -1,9 +1,8 @@
 # Changelog
 
-## [1.87.4.0] - 2026-09-15
+## [Unreleased]
 
 ### Fixed
-- `/health` preserves checker exit statuses and complete diagnostics, shows missing coverage, and reports `N/A` when no checks run. Trends compare results with the same coverage.
 - Skill generation awaits every artifact across all hosts. Freshness checks detect missing output, validate generated content, preserve files and directories during dry runs, and report generation errors instead of accepting partial output.
 - Evaluation records follow the runner result and assertions. Timeouts, failed validations, inherited output pipes, and interrupted attempts retain their actual outcomes, captured usage, and bounded cleanup.
 - `gstack-decision-log --help` explains the accepted payload and safe shell quoting without creating state.
@@ -18,6 +17,40 @@
 ### Changed
 - Review fixtures provide the application context and independent contracts their assertions require, declare supported editing and feedback interfaces, and verify existing rollback behavior. The DX count scenario covers a bounded onboarding decision checkpoint and defers independent roadmap work. Design evaluations submit real board feedback before acknowledging it and grant image reads only inside their owned artifact directory. Sol evaluations generate skills in private storage without replacing checkout caches. Native fixtures match complete permission text and offered handoff choices. Shared helper and source-template dependencies select the affected evaluations; overlay tests distinguish correctness from performance measurements.
 - Contributor instructions require focused reproductions and adjacent checks before paid evaluations, independent scheduling, launcher preflight with executed-case counts, reuse of passing checks with unchanged inputs, and one full free-suite acceptance run after the code is frozen. Recurring parser failures require checking the supported input class against the pinned runtime.
+
+## [1.87.4.0] - 2026-09-16
+
+**Failed checks stay failed.**
+**Health scores show what actually ran.**
+
+`/health` now keeps each checker's exit status and counts diagnostics from its complete output. Reports still show only the final 50 log lines. Scores name the checked and unavailable categories, so a partial run carries its coverage beside the number. Runs with no checks produce no numeric score or history entry.
+
+### The three numbers that matter
+
+Source: the synthetic checker in `test/health-capture.test.ts`, which emits 60 type errors followed by 80 context lines and exits 2. These measurements compare the v1.87.3.0 capture example with this version under default Bash without `pipefail`. Run `bun test test/health-capture.test.ts` to verify current behavior. These are correctness measurements, not production statistics.
+
+| Metric | Before | After | Δ |
+|---|---:|---:|---:|
+| Reported checker exit status | 0 | 2 | +2 |
+| Type errors available for scoring | 0 | 60 | +60 |
+| Displayed checker log lines | 50 | 50 | 0 |
+
+The failing checker no longer looks successful because `tail` succeeded. All 60 errors count even when the displayed tail contains only context.
+
+### What this means for developers
+
+You can distinguish a score backed by several checks from one based on a single available tool. Empty runs report `N/A — no checks ran`; capture errors also remain unscored and leave existing history unchanged. Trends compare only matching categories, so installing a new checker does not manufacture a regression or improvement. Run `/health` to see the score and its coverage together.
+
+### Itemized changes
+
+#### Fixed
+
+- **`/health` preserves failed checks and complete diagnostic counts.** Reports show the final 50 output lines while scoring the full log and the checker's actual exit status. Temporary capture errors remain explicit errors.
+- **Health scores disclose coverage.** Partial runs list checked and unavailable categories. Runs with no checks report `N/A — no checks ran`, leave numeric history unchanged, and have no trend. Score comparisons require matching categories.
+
+#### Changed
+
+- Routing evaluations choose among installed GStack skills, keeping built-in CLI skills outside the evaluated catalog. The model still chooses by matching the request to each skill's description.
 
 ## [1.87.3.0] - 2026-09-15
 

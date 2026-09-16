@@ -10,6 +10,26 @@ import owned from './fixtures/plan-count-owned-permission-v.json';
 import {E2E_TOUCHFILES,selectTests} from './helpers/touchfiles';
 const quote=(s:string)=>s.split('\n').map(row=>'> '+row).join('\n');
 
+// A PTY transports bytes, not command-sized stdin events. Share the framing
+// code with the fake CLI so fragmented grants exercise the same receiver.
+function commandBuffer(){
+ let pending='';
+ return (chunk:string)=>{
+  pending+=chunk;const commands:string[]=[];let end:number;
+  while((end=pending.indexOf('\r'))!==-1){commands.push(pending.slice(0,end+1));pending=pending.slice(end+1);}
+  return commands;
+ };
+}
+test('fake CLI preserves command bytes across fragmented and coalesced PTY input',()=>{
+ const expected=['/plan-ceo-review\r','1\r'];
+ for(const chunks of [expected,['/plan-ceo-review\r','1','\r'],[...expected.join('')],[expected.join('')]]){
+  const receive=commandBuffer();expect(chunks.flatMap(receive)).toEqual(expected);
+ }
+ const receive=commandBuffer();
+ expect(receive('1')).toEqual([]);expect(receive('\r2\rtrailing')).toEqual(['1\r','2\r']);
+ expect(receive('\r')).toEqual(['trailing\r']); // no unexpected bytes are discarded
+});
+
 test('the exact wholly quoted AK pane is handled so the dispatcher sends no fallback',()=>{
  const screen=quote(exact.screen);
  expect(classifyPlanCountFrame(screen)).toBe('permission');
@@ -44,7 +64,7 @@ test('the regression selects exactly the existing permission consumers',()=>{
 test.skipIf(process.platform==='win32')('real dispatcher ignores quoted pane then grants the fresh owned native request once',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'count-quoted-frame-')),fake=path.join(dir,'fake-claude'),worker=path.join(dir,'worker.ts'),events=path.join(dir,'events.jsonl'),output=path.join(dir,'result.json'),report=path.join(dir,'report.md');
  fs.writeFileSync(report,'original');
- fs.writeFileSync(fake,`#!${process.execPath}\n`+String.raw`
+ fs.writeFileSync(fake,`#!${process.execPath}\nconst receive=(${commandBuffer.toString()})();\n`+String.raw`
 import fs from 'node:fs';import path from 'node:path';
 const item=JSON.parse(process.env.QUOTED_FRAME_CASE),sid='quoted-frame-main',log=e=>fs.appendFileSync(item.events,JSON.stringify(e)+'\n');
 const transcript=path.join(process.env.CLAUDE_CONFIG_DIR,'projects','owned',sid+'.jsonl');fs.mkdirSync(path.dirname(transcript),{recursive:true});
@@ -56,14 +76,14 @@ const hook=async name=>{for(const entry of settings.hooks[name]??[]){if(entry.ma
  const p=Bun.spawn(['bash','-c',entry.hooks[0].command],{stdin:new Blob([JSON.stringify(event)]),stdout:'pipe',stderr:'pipe'});
  const [code,out,err]=await Promise.all([p.exited,new Response(p.stdout).text(),new Response(p.stderr).text()]);if(code||out||err)throw Error('Hook failed');}};
 const pane=item.screen.replaceAll('PLAN.md',item.report),paint=s=>process.stdout.write('\x1b[2J\x1b[H'+s.replaceAll('\n','\r\n'));
-let stage='startup';process.stdin.setRawMode?.(true);process.stdin.on('data',async data=>{
- const input=data.toString();log({type:'input',stage,input});
+let stage='startup';process.stdin.setRawMode?.(true);const dispatch=async input=>{
+ log({type:'input',stage,input});
  if(stage==='startup'){stage='quoted';paint(item.quotedScreen);setTimeout(async()=>{await hook('PreToolUse');stage='current';paint(pane);},4200);return;}
  if(stage!=='current'){log({type:'unexpected'});return;}
  if(input!=='1\r')throw Error('One-time grant changed');stage='done';await hook('PostToolUse');
  const q={header:'Finding',question:'Apply the reviewed fix?',options:[{label:'Fix'},{label:'Keep'}]};
  native('assistant',[{type:'tool_use',name:'AskUserQuestion',id:'finding',input:{questions:[q]}}]);native('user',[{type:'tool_result',tool_use_id:'finding',content:'Answered'}],{toolUseResult:{answers:{[q.question]:'Fix'}}});paint('Done.\n');
-});process.on('SIGINT',()=>process.exit(0));process.stdin.resume();
+};process.stdin.on('data',async data=>{const chunk=data.toString();log({type:'chunk',stage,input:chunk});for(const input of receive(chunk))await dispatch(input);});process.on('SIGINT',()=>process.exit(0));process.stdin.resume();
 `);fs.chmodSync(fake,0o755);
  // Keep every physical terminal row inside the quote; adding a prefix to an
  // already120-column capture would otherwise wrap an unquoted continuation.
@@ -73,7 +93,10 @@ let stage='startup';process.stdin.setRawMode?.(true);process.stdin.on('data',asy
  const child=Bun.spawn([process.execPath,worker],{env:{...process.env,BROWSE_TERMINAL_BINARY:fake,EVALS_HERMETIC:'1'},stdout:'pipe',stderr:'pipe'}),timer=setTimeout(()=>child.kill('SIGKILL'),30000);
  try{const [code,out,err]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);expect(code,out+err).toBe(0);
   const result=JSON.parse(fs.readFileSync(output,'utf8')),rows=fs.readFileSync(events,'utf8').trim().split('\n').map(s=>JSON.parse(s));
-  expect(result.outcome,JSON.stringify(result)).toBe('ceiling_reached');expect(result.reviewCount).toBe(1);
+  expect(result.outcome,JSON.stringify({result,rows})).toBe('ceiling_reached');expect(result.reviewCount).toBe(1);
+  const chunks=rows.filter(r=>r.type==='chunk');
+  expect(chunks.every(r=>['startup','current'].includes(r.stage))).toBe(true);
+  expect(chunks.map(r=>r.input).join('')).toBe('/plan-ceo-review\r1\r');
   expect(rows.filter(r=>r.type==='input').map(r=>[r.stage,r.input])).toEqual([['startup','/plan-ceo-review\r'],['current','1\r']]);expect(rows.some(r=>r.type==='unexpected')).toBe(false);
   expect(()=>process.kill(rows[0].pid,0)).toThrow();expect(fs.existsSync(rows[0].cwd)).toBe(false);
  }finally{clearTimeout(timer);child.kill('SIGKILL');await child.exited;
