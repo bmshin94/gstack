@@ -37,6 +37,14 @@ const planEng5Findings = (planPath: string) => [
   '',
   '# Plan: Multi-tenant Auth Refactor',
   '',
+  '## Context supplied by the plan author',
+  'The goal is to reorganize existing tenant-auth orchestration without changing',
+  'its product behavior. RequestPolicy groups the existing per-request access',
+  'decision: given already-fetched claims and tenant/request context, it returns',
+  'allow or deny under the existing access policy. AuthBroker.validateAndDispatch()',
+  'calls it after validation and before dispatch. It adds no policy, network call,',
+  'cache mutation or state. Its separate class boundary remains a proposal to review.',
+  '',
   '## Existing contracts retained',
   'The existing cache adapter keys entries by tenant ID, issuer, audience,',
   'and policy version. It evicts expired tokens and invalidates entries on',
@@ -66,7 +74,7 @@ const planEng5Findings = (planPath: string) => [
   'parallelized via Promise.all trivially (calls are independent).',
   '',
   '## Architecture (scope smell)',
-  'This touches 12 files and introduces 4 new classes (TokenStore,',
+  'This touches 12 files and introduces 5 new classes (AuthBroker, TokenStore,',
   'SessionMint, AuthCache, RequestPolicy). Worth flagging the complexity check.',
 ].join('\n');
 
