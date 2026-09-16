@@ -45,8 +45,10 @@ describeIfSelected('Autoplan dual-voice E2E', ['autoplan-dual-voice'], () => {
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-autoplan-dv-state-'));
     const configDir = path.join(stateDir, '.claude');
     const gstackHome = path.join(stateDir, 'gstack-home');
+    const tempDir = path.join(stateDir, 'tmp');
     fs.mkdirSync(configDir);
     fs.mkdirSync(gstackHome);
+    fs.mkdirSync(tempDir, { mode: 0o700 });
     fs.writeFileSync(path.join(configDir, '.claude.json'), JSON.stringify(buildSeedConfig({
       apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
       trustedDirs: [workDir],
@@ -60,6 +62,7 @@ describeIfSelected('Autoplan dual-voice E2E', ['autoplan-dual-voice'], () => {
     seedHermeticRuntimeView(ROOT, runtime);
     attemptEnv = { HOME: stateDir, CLAUDE_CONFIG_DIR: configDir,
       GSTACK_HOME: gstackHome, GSTACK_STATE_ROOT: gstackHome,
+      TMPDIR: tempDir, TEMP: tempDir, TMP: tempDir,
       // Preserve the same outside-reviewer auth/model home across HOME isolation.
       CODEX_HOME: process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex') };
 

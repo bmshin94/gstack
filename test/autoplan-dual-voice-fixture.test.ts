@@ -20,9 +20,9 @@ registration and generation conventions. Its only behavior is to print "hello".
 // Exercise the actual paid registration and Bun retry lifecycle with only the
 // provider replaced. The cab3 public first attempt left accepted requirements
 // and a review record in TEST_PLAN; the next attempt read those as its input.
-test.each(['retry', 'runner', 'no-agent', 'no-codex', 'no-progress', 'success', 'project', 'runtime', 'runtime-missing', 'setup-failure'])(
+test.each(['retry', 'runner', 'no-agent', 'no-codex', 'no-progress', 'success', 'project', 'runtime', 'runtime-missing', 'setup-failure', 'temp', 'temp-retry'])(
   'dual-voice attempt owns fresh inputs and cleanup: %s', scenario => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-dual-free-'));
+    const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-dual-free-')));
     const childHome = path.join(directory, 'home');
     fs.mkdirSync(childHome);
     const script = path.join(directory, 'registration.test.ts');
@@ -158,19 +158,81 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/session-runner.ts'))}
       fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify(attempts));
     }
     if (scenario === 'runner') throw Error('controlled dual-voice runner failure');
-    const noAgent = scenario === 'no-agent' || scenario === 'retry' && attempts.length === 1;
+    const noAgent = scenario === 'no-agent' || ['retry', 'temp-retry'].includes(scenario) && attempts.length === 1;
     const {prepareMethodology, createSnapshot} = await import(${JSON.stringify(path.join(ROOT, 'bin/gstack-autoplan-snapshot.ts'))});
-    const {loadAutoplanDualCommandContract} = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/autoplan-dual-voice-evidence.ts'))});
+    const {autoplanDualVoiceEvidence, loadAutoplanDualCommandContract} = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/autoplan-dual-voice-evidence.ts'))});
     const active = path.join(opts.env.HOME, 'active-plan.md'), restore = path.join(opts.env.HOME, 'restore.md');
     const methodology = prepareMethodology('ceo', path.join(${JSON.stringify(ROOT)}, 'plan-ceo-review/SKILL.md'), restore);
     const snapshot = createSnapshot('ceo', active, restore, methodology.methodologyPath);
-    const calls = [
+    let calls = [
       ...(!noAgent ? [{id: 'native', tool: 'Agent', input: {prompt: scenario === 'no-progress' ? 'Calculate one plus one' : snapshot.nativeDispatchPrompt}, output: 'INPUT: ceo ' + snapshot.sha256 + '\\nFree review output.'}] : []),
       ...(scenario !== 'no-codex' ? [{id: 'probe', tool: 'Bash', input: {command: loadAutoplanDualCommandContract(${JSON.stringify(ROOT)}).probe}, output: 'CODEX_MODE: not_installed'}] : []),
     ];
-    return {output: '', toolCalls: calls,
-      transcript: calls.flatMap(c => [{type: 'assistant', session_id: 'free-parent', message: {content: [{type: 'tool_use', id: c.id, name: c.tool, input: c.input}]}},
-        {type: 'user', session_id: 'free-parent', message: {content: [{type: 'tool_result', tool_use_id: c.id, content: c.output, is_error: false}]}}]),
+    const transcript = calls => calls.flatMap(c => [
+      {type: 'assistant', session_id: 'free-parent', message: {content: [{type: 'tool_use', id: c.id, name: c.tool, input: c.input}]}},
+      ...(c.output === undefined ? [] : [{type: 'user', session_id: 'free-parent', message: {content: [{type: 'tool_result', tool_use_id: c.id, content: c.output, is_error: false}]}}])]);
+    if (scenario === 'temp' || scenario === 'temp-retry') {
+      const {hermeticChildEnv, getHermeticDirs} = await import(${JSON.stringify(path.join(ROOT, 'test/helpers/hermetic-env.ts'))});
+      // Same final environment merge as session-runner. The original cf74
+      // command created its file in inherited shard TMPDIR, beside both roots.
+      const env = hermeticChildEnv({GSTACK_HEADLESS: '1', ...opts.env});
+      const defaults = getHermeticDirs();
+      const cleanupFiles = [];
+      try {
+        const command = 'umask 077; mktemp "$' + '{TMPDIR:-/tmp}/gstack-plan-prompt.XXXXXXXX"';
+        const made = spawnSync('bash', ['-c', command], {cwd, env, encoding: 'utf8', timeout: 5000});
+        if (made.error || made.status !== 0) throw Error('Actual prompt mktemp failed: ' + made.stderr);
+        const prompt = made.stdout.trim();
+        const freeRoot = fs.realpathSync(${JSON.stringify(directory)});
+        if (fs.realpathSync(prompt) !== prompt || !prompt.startsWith(freeRoot + path.sep))
+          throw Error('Refusing to write a prompt outside this free fixture');
+        cleanupFiles.push(prompt);
+        const content = 'You are a CEO/founder advisor reviewing a development plan.\\n'
+          + 'File: ' + snapshot.snapshotPath + '\\n' + fs.readFileSync(snapshot.snapshotPath, 'utf8');
+        fs.writeFileSync(prompt, content);
+        const contract = loadAutoplanDualCommandContract(${JSON.stringify(ROOT)});
+        // Public ACK's exact terminal execution marker from cf74
+        // toolu_01VL37mje4949BYX4AzTZwyr. No provider is executed here.
+        const output = 'OUTSIDE_STATUS: completed provider=codex host=claude';
+        const packet = file => [
+          {id: 'probe', tool: 'Bash', input: {command: contract.probe}, output: 'CODEX_MODE: ready'},
+          {id: 'native', tool: 'Agent', input: {prompt: snapshot.nativeDispatchPrompt}, output: 'INPUT: ceo ' + snapshot.sha256 + '\\nFree review output.'},
+          {id: 'write', tool: 'Write', input: {file_path: file, content}, output: 'File created successfully at: ' + file},
+          {id: 'outside', tool: 'Bash', input: {command: contract.outside.replace("'<prepared-prompt-file>'", "'" + file + "'")}, output},
+        ];
+        const options = {ownedRoots: [cwd, opts.env.HOME], cwd, activePlan: active,
+          methodologySha256: methodology.sha256, commands: contract};
+        const evidence = rows => autoplanDualVoiceEvidence(transcript(rows), options);
+        const outside = path.join(freeRoot, 'foreign-prompt-' + attempts.length);
+        fs.writeFileSync(outside, content, {mode: 0o600}); cleanupFiles.push(outside);
+        const link = path.join(opts.env.HOME, 'linked-prompt');
+        fs.symlinkSync(outside, link); // Never write through this link.
+        const missingAck = packet(prompt).map(c => c.id === 'outside' ? {...c, output: undefined} : c);
+        const previous = attempts.length > 1 ? attempts[0].temp.prompt : outside;
+        fact.temp = {
+          prompt, env: {TMPDIR: env.TMPDIR, TEMP: env.TEMP, TMP: env.TMP},
+          directoryMode: fs.statSync(path.dirname(prompt)).mode & 0o777,
+          promptMode: fs.statSync(prompt).mode & 0o777,
+          owned: evidence(packet(prompt)),
+          outside: evidence(packet(outside)),
+          symlink: evidence(packet(link)),
+          missingAck: evidence(missingAck),
+          previous: evidence(packet(previous)),
+          previousGone: attempts.length < 2 || !fs.existsSync(previous),
+        };
+        calls = packet(prompt).filter(c => !noAgent || c.id !== 'native');
+        fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify(attempts));
+      } finally {
+        for (const file of cleanupFiles) fs.rmSync(file, {force: true});
+        // getHermeticDirs caches the unused default across the mock's retry.
+        if (fs.existsSync(defaults.runRoot)) {
+          if (!fs.realpathSync(defaults.runRoot).startsWith(fs.realpathSync(path.dirname(cwd)) + path.sep))
+            throw Error('Unexpected default hermetic root outside the free fixture');
+          fs.rmSync(defaults.runRoot, {recursive: true, force: true});
+        }
+      }
+    }
+    return {output: '', toolCalls: calls, transcript: transcript(calls),
       exitReason: noAgent ? 'timeout' : 'success', model: 'free-fixture',
       costEstimate: {estimatedCost: 0, turnsUsed: 1}};
   },
@@ -178,17 +240,17 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/session-runner.ts'))}
 await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-autoplan-dual-voice.test.ts'))});
 `);
     try {
-      const child = spawnSync(process.execPath, ['test', ...(scenario === 'retry' ? ['--retry', '1'] : []), script], {
+      const child = spawnSync(process.execPath, ['test', ...(['retry', 'temp-retry'].includes(scenario) ? ['--retry', '1'] : []), script], {
         cwd: ROOT, encoding: 'utf8', timeout: 15_000,
         env: { PATH: process.env.PATH ?? '', HOME: childHome, TMPDIR: directory, TMP: directory, TEMP: directory,
           GIT_CONFIG_NOSYSTEM: '1', ...(process.env.SystemRoot ? {SystemRoot: process.env.SystemRoot} : {}) },
       });
       expect(child.error, child.stderr).toBeUndefined();
-      const shouldPass = ['retry', 'success', 'project', 'runtime'].includes(scenario);
+      const shouldPass = ['retry', 'success', 'project', 'runtime', 'temp', 'temp-retry'].includes(scenario);
       expect(child.status, child.stderr).toBe(shouldPass ? 0 : 1);
       const attempts = JSON.parse(fs.readFileSync(facts, 'utf8'));
-      expect(attempts).toHaveLength(scenario === 'setup-failure' ? 0 : scenario === 'retry' ? 2 : 1);
-      if (scenario === 'retry') expect(attempts[1].initial).toBe(attempts[0].initial);
+      expect(attempts).toHaveLength(scenario === 'setup-failure' ? 0 : ['retry', 'temp-retry'].includes(scenario) ? 2 : 1);
+      if (['retry', 'temp-retry'].includes(scenario)) expect(attempts[1].initial).toBe(attempts[0].initial);
       for (const attempt of attempts) {
         expect(attempt.initial).toBe(ORIGINAL_PLAN);
         expect(attempt.prompt).toBe(`Read ${JSON.stringify(attempt.entryPath)} and execute the standalone CEO dual-voice review described there.`);
@@ -210,12 +272,32 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-autoplan-dual-voic
         expect(fs.existsSync(attempt.env.CLAUDE_CONFIG_DIR)).toBe(false);
         expect(attempt.env.CLAUDE_CONFIG_DIR).toBe(path.join(attempt.env.HOME, '.claude'));
         expect(fs.existsSync(attempt.env.HOME)).toBe(false);
+        if (attempt.temp) {
+          const temp = attempt.temp;
+          const expected = path.join(attempt.env.HOME, 'tmp');
+          expect(temp.env).toEqual({TMPDIR: expected, TEMP: expected, TMP: expected});
+          expect(path.dirname(temp.prompt)).toBe(expected);
+          expect(temp.directoryMode).toBe(0o700);
+          expect(temp.promptMode).toBe(0o600);
+          expect(temp.owned.claudeVoiceFired).toBe(true);
+          expect(temp.owned.codexVoiceFired).toBe(true);
+          for (const name of ['outside', 'symlink', 'missingAck', 'previous']) {
+            expect(temp[name].claudeVoiceFired, name).toBe(true);
+            expect(temp[name].codexVoiceFired, name).toBe(false);
+            expect(temp[name].codexAttempted, name).toBe(false);
+            expect(temp[name].codexUnavailable, name).toBe(false);
+          }
+          expect(temp.previousGone).toBe(true);
+          expect(fs.existsSync(temp.prompt)).toBe(false);
+          expect(fs.existsSync(expected)).toBe(false);
+        }
       }
-      if (scenario === 'retry') {
+      if (['retry', 'temp-retry'].includes(scenario)) {
         expect(attempts[0].cwd).not.toBe(attempts[1].cwd);
         expect(attempts[0].env.GSTACK_HOME).not.toBe(attempts[1].env.GSTACK_HOME);
         expect(attempts[0].env.HOME).not.toBe(attempts[1].env.HOME);
         expect(attempts[0].env.CLAUDE_CONFIG_DIR).not.toBe(attempts[1].env.CLAUDE_CONFIG_DIR);
+        if (scenario === 'temp-retry') expect(attempts[0].temp.prompt).not.toBe(attempts[1].temp.prompt);
       }
       if (scenario === 'runtime-missing') expect(child.stderr).toContain('Required Autoplan snapshot runtime is absent');
       if (scenario === 'runner') expect(child.stderr).toContain('controlled dual-voice runner failure');
