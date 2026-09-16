@@ -175,11 +175,11 @@ console.log(JSON.stringify(results));
     expect(launches).toHaveLength(4);
     for (const launch of launches) {
       expect(launch.prompt).toContain('When Scope Challenge finishes, save its outcome');
-      expect(launch.prompt).toContain('after each completed review section, save');
+      expect(launch.prompt).toContain('After each completed review section, save');
       expect(launch.prompt).toContain('Check the Write/Edit result and Read the saved outcome before advancing');
       expect(launch.prompt).toContain('also apply when no new choice needs approval');
-      expect(launch.prompt).toContain('Preserve all four review sections, every finding and original requirement');
-      expect(launch.prompt).toContain('finish missing required outputs with scoped Edits');
+      expect(launch.prompt).toContain('all four review sections, including an explicit "No issues found" when applicable');
+      expect(launch.prompt).toContain('Finish missing required outputs with scoped Edits');
       expect(launch.prompt).toContain("perform the skill's full final Read-back gate");
       expect(launch.prompt).not.toContain("When the workflow is complete, write the skill's final output");
       expect(launch.args[launch.args.indexOf('--max-turns') + 1]).toBe('25');
@@ -239,8 +239,8 @@ console.log(JSON.stringify({reads:[...capture.readSections],report:capture.repor
     expect(observed.prompt).not.toContain("silently pick the skill's recommended option");
     expect(observed.prompt).toContain('Do not authorize weaker consistency, changed limits, optional scope');
     expect(observed.prompt).toContain('never hide it or claim approval when no offered alternative satisfies these constraints');
-    expect(observed.prompt).toContain('Give all 11 sections an explicit outcome');
-    expect(observed.prompt).toContain('complete all required artifacts before returning');
+    expect(observed.prompt).toContain('all 11 sections, giving each an explicit outcome');
+    expect(observed.prompt).toContain('Complete every required artifact and verification before returning');
     expect(observed.args[observed.args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Write,Edit');
     expect(observed.args[observed.args.indexOf('--max-turns') + 1]).toBe('25');
   } finally {
@@ -326,3 +326,63 @@ console.log(JSON.stringify({plain:plain.exitReason,literal:literal.exitReason,se
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }, 20_000);
+
+
+test('full review capture exposes its actual timeout while other skill requests stay unchanged', async () => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'section-deadline-routing-'));
+  const helper=(name:string)=>path.resolve(import.meta.dir,'helpers',name+'.ts');
+  const script=path.join(dir,'capture.ts');
+  fs.writeFileSync(script,`import {mock} from 'bun:test';
+const observed=[];
+mock.module(${JSON.stringify(helper('session-runner'))},()=>({runSkillTest:async opts=>{observed.push(opts);return {exitReason:'success',toolCalls:[],transcript:[],output:''};}}));
+const {captureSectionReads}=await import(${JSON.stringify(helper('auq-sdk-capture'))});
+for(const skillName of ['plan-ceo-review','plan-eng-review','fixture','ship','office-hours'])for(const timeout of [undefined,480000])await captureSectionReads({planDir:${JSON.stringify(dir)},skillName,scenario:'Complete the supplied scenario.',testName:'deadline-routing',model:'fake-model',...(timeout===undefined?{}:{timeout})});
+console.log(JSON.stringify(observed));`);
+  const child=Bun.spawn([process.execPath,script],{cwd:dir,stdin:'ignore',stdout:'pipe',stderr:'pipe'});
+  try{
+    const [code,out,err]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    expect(code,err).toBe(0);
+    const requests=JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(requests).toHaveLength(10);
+    for(const [i,request] of requests.entries()){
+      const timeout=i%2===0?300000:480000;
+      expect(request.timeout).toBe(timeout);expect(request.model).toBe('fake-model');expect(request.maxTurns).toBe(25);
+      expect(request.tools).toEqual(['Read','Grep','Glob','Write','Edit','Agent']);
+      if(i<4){
+        expect(request.prompt).toContain('Native execution window: '+timeout/1000+' seconds');
+        expect(request.prompt).toContain('reserve the final '+timeout/4000+' seconds');
+        expect(request.prompt).toContain('Every required section, finding, approval and output still has to be completed');
+        if(i<2){
+          expect(request.prompt).toContain('Follow each workflow save/readback checkpoint as it occurs');
+          expect(request.prompt).toContain('As sections finish, add each finding once');
+          expect(request.prompt).not.toContain('When Scope Challenge finishes, save its outcome');
+          expect(request.prompt).not.toContain('After each completed review section, save');
+          expect(request.prompt).not.toContain('Read the saved outcome before advancing');
+        }else{
+          expect(request.prompt).toContain('When Scope Challenge finishes, save its outcome');
+          expect(request.prompt).toContain('After each completed review section, save');
+          expect(request.prompt).toContain('Read the saved outcome before advancing to the next section');
+        }
+      }else{
+        expect(request.prompt).not.toContain('Native execution window:');
+        const skill=['fixture','ship','office-hours'][Math.floor((i-4)/2)]!;
+        const skillPath=path.join(dir,skill,'SKILL.md');
+        const expected=`You are running an automated skill-execution test. No human is present, so AskUserQuestion is unavailable. The ONLY skill file you may read is this absolute path: ${skillPath}. Do NOT Glob/find/search for any other SKILL.md anywhere — especially nothing under ~/.claude or /Users.
+
+Read ${skillPath} and EXECUTE its workflow for this scenario:
+
+Complete the supplied scenario.
+
+Rules for this run:
+- Skip system-audit, environment-setup, telemetry, and unrelated codebase exploration. Read the supplied plan's referenced fixture files when its review requires them.
+- At any decision point that would call AskUserQuestion, silently pick the skill's recommended option and continue. Do NOT stop to ask.
+- This skill's body has been carved into on-demand sections/. When the skill gives a STOP-Read directive (for example "Read \`.../sections/<file>\` and execute it in full"), you MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers. Do not work from memory.
+- Resolve installed-root paths for section and companion Markdown files under ${dir}, where this fixture's skill package is copied.
+- Do NOT run git, gh, commit, push, or any mutating command.
+- When the workflow is complete, write the skill's final output (the full review report / ship plan, including any required report table) to ${path.join(dir,'REPORT.md')}.
+- After all required writes are complete, return a brief completion message and STOP. Do not reproduce the full report in the final response.`;
+        expect(request.prompt).toBe(expected);
+      }
+    }
+  }finally{if(child.exitCode===null)child.kill();await child.exited;fs.rmSync(dir,{recursive:true,force:true});}
+},10000);
