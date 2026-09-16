@@ -26,7 +26,7 @@ const ROOT = path.resolve(import.meta.dir, '..');
 const reviewContext = (host: TemplateContext['host']): TemplateContext => ({
   host, skillName: 'fixture-plan-review', tmplPath: 'fixture-plan-review/SKILL.md.tmpl', paths: HOST_PATHS[host],
 });
-const CEO_FOREGROUND_BRANCH = 'Set `run_in_background: false` when supported; the host may return a task handle';
+const CEO_FOREGROUND_BRANCH = 'Set `run_in_background: false` if that field is available; omit it otherwise';
 
 describe('generated Codex plan-review shell invocation', () => {
   const rendered = generateCodexPlanReview({ ...reviewContext('claude'),
@@ -357,10 +357,12 @@ describe('run_in_background guidance (#2440)', () => {
   test('CEO and autoplan wait for actual reviews when the foreground field is unavailable', () => {
     const ceo = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/SKILL.md'), 'utf8');
     const dispatch = ceo.split('**Step 1: Dispatch reviewer subagent**')[1]?.split('**Step 2:')[0] ?? '';
+    expect(dispatch).toContain("Read Agent's tool definition");
     expect(dispatch).toContain(CEO_FOREGROUND_BRANCH);
-    expect(dispatch).toContain("For a pending task, use the host's wait tool");
-    expect(dispatch).toContain('if none is available, end this response and resume on its completion notification');
-    expect(dispatch).toContain('Do not advance, edit either input or launch another reviewer while waiting');
+    expect(dispatch).toContain('If the result contains a completed review, consume it');
+    expect(dispatch).toContain("If it returns a pending task, use the host's wait tool");
+    expect(dispatch).toContain('With no wait tool, end this response and resume on its completion notification');
+    expect(dispatch).toContain('While waiting, do not advance, edit either input or launch another reviewer');
     expect(dispatch).toContain('Launch one reviewer with both inputs below');
     const phase = fs.readFileSync(path.join(ROOT, 'autoplan/sections/ceo-phase.md'), 'utf8').replace(/\s+/g, ' ');
     expect(phase).toContain('Step 0 (including its completed Spec Review Loop) → Claude CEO voice → Codex CEO voice → consensus → Review Sections → saved summary → phase announcement');

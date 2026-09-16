@@ -444,9 +444,9 @@ ${ceo ? 'Use 0D for any new or reopened amendment; 0H presents both completed in
 
 **Step 1: Dispatch reviewer subagent**
 
-${ceo ? `Launch one reviewer with both inputs below. Set \`run_in_background: false\` when supported; the host may return a task handle.
+${ceo ? `Read Agent's tool definition. Set \`run_in_background: false\` if that field is available; omit it otherwise. Launch one reviewer with both inputs below.
 
-Consume a completed review when it arrives. For a pending task, use the host's wait tool; if none is available, end this response and resume on its completion notification. Do not advance, edit either input or launch another reviewer while waiting. A reported launch failure follows Step 2's unavailable branch.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
+If the result contains a completed review, consume it. If it returns a pending task, use the host's wait tool. With no wait tool, end this response and resume on its completion notification. While waiting, do not advance, edit either input or launch another reviewer. A launch failure uses Step 2's unavailable branch.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
 Subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}. Async launch metadata
 is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
 The reviewer has fresh context: only the document, not the conversation.`}

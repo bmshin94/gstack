@@ -1564,11 +1564,12 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     expect(ceo).not.toContain('design and coaching document');
     expect(ceo).not.toContain('gstack-office-hours-review');
     const dispatch = ceo.slice(ceo.indexOf('**Step 1:'), ceo.indexOf('**Step 2:'));
-    expect(dispatch).toContain('run_in_background: false');
-    expect(dispatch).toContain('host may return a task handle');
-    expect(dispatch).toContain("use the host's wait tool");
-    expect(dispatch).toContain('end this response and resume on its completion notification');
-    expect(dispatch).toContain('Do not advance, edit either input or launch another reviewer while waiting');
+    expect(dispatch).toContain("Read Agent's tool definition");
+    expect(dispatch).toContain('Set `run_in_background: false` if that field is available; omit it otherwise');
+    expect(dispatch).toContain('If the result contains a completed review, consume it');
+    expect(dispatch).toContain("If it returns a pending task, use the host's wait tool");
+    expect(dispatch).toContain('With no wait tool, end this response and resume on its completion notification');
+    expect(dispatch).toContain('While waiting, do not advance, edit either input or launch another reviewer');
     expect(dispatch).toContain('both complete labeled texts');
     expect(dispatch).toContain('all five dimensions');
     const fixes = ceo.slice(ceo.indexOf('**Step 2:'), ceo.indexOf('**Step 3:'));
@@ -1614,13 +1615,14 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
       expect(output).toContain('Flag contradictions, unsupported accepted expansions, and required behavior missing from both');
       expect(output).toContain('report that failure instead of grading a partial input');
     }
-    const template = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
-    expect(template).toContain('## Plan under review\n{working plan path, or');
+    const source = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'), 'utf8');
+    expect(source).toContain('## Plan under review\n{working plan path, or');
+    const template = source.replace(/\s+/g, ' ');
     expect(template).toContain('the complete amended working plan');
-    expect(template).toContain('Prepare two consistent inputs:');
+    expect(template).toContain('Prepare the complete amended working plan');
     expect(template).toContain('the complete amended working plan (behavior and requirements)');
     expect(template).toContain('the CEO scope summary below (scope decisions)');
-    expect(template).toContain('The summary cannot replace or reference itself as the plan');
+    expect(template).toContain('Keep them consistent; the summary cannot replace or reference itself as the plan');
   });
 
   test('CEO shares both inputs after spec review and owns unresolved concerns in its scope document', () => {
@@ -2345,11 +2347,11 @@ describe('Design approval reconciliation', () => {
     expect(check).toContain('findings or no-UI skip.');
     expect(check).toContain('STOP, Read the file and redo the review.');
     const decisions = main.slice(main.indexOf('### 0D.'), main.indexOf('### 0E.')).replace(/\s+/g, ' ');
-    expect(decisions).toContain('Ask one row per call and cite its ID');
+    expect(decisions).toContain('Ask one row per call, citing its ID');
     expect(decisions).toContain('**STOP for the actual answer, even for a lone option.**');
-    expect(decisions).toContain('apply only the authorized amendments before the next row');
-    expect(decisions).toContain('Carry exact approvals forward.');
-    expect(decisions).toContain('Report settled findings; say "No issues, moving on." only for zero findings.');
+    expect(decisions).toContain('amend only what it authorizes');
+    expect(decisions).toContain('Reuse an exact approval unless a concrete contradiction, changed assumption or explicit user instruction requires reopening it');
+    expect(decisions).toContain('Report settled findings too; say "No issues, moving on." only when there are none');
   });
 
   test('Eng cannot exit with unasked findings listed only in an unresolved-decisions report', () => {
@@ -4279,14 +4281,14 @@ describe('CEO accepted requirement preservation', () => {
 
   test('loaded sections keep requirement conflicts unresolved until an authorized decision', () => {
     const section = fs.readFileSync(path.join(ROOT, 'plan-ceo-review/sections/review-sections.md'), 'utf8');
-    const policy = section.slice(section.indexOf('**Preserve accepted requirements.**'), section.indexOf('### Section 1:'));
-    expect(policy).toContain('Report gaps and propose remedies that satisfy them');
-    expect(policy).toContain('Never close a gap by weakening its guarantee, accepting the violation, or changing a test to expect it');
-    expect(policy).toContain('Low frequency, bounded impact and documentation do not satisfy stricter requirements');
-    expect(policy).toContain('keep the proposal pending and original gap unresolved');
-    expect(policy).toContain('Preserve earlier approved changes and explicit authority');
-    expect(policy).toContain('routine auto-decide cannot override user constraints or non-goals');
-    expect(policy).toContain('Carry this distinction into findings, tasks and the report');
+    const policy = section.slice(section.indexOf('**Preserve accepted requirements.**'), section.indexOf('### Section 1:')).replace(/\s+/g, ' ');
+    expect(policy).toContain('Report gaps and propose remedies, including omitted mechanisms in HOLD SCOPE');
+    expect(policy).toContain('Never weaken a guarantee, accept its violation or change a test to expect it');
+    expect(policy).toContain('Low frequency, bounded impact and documentation do not meet stricter requirements');
+    expect(policy).toContain('keep both the proposal and original gap unresolved');
+    expect(policy).toContain('Changing a requirement needs explicit authority');
+    expect(policy).toContain('Routine auto-decide cannot override user constraints or non-goals');
+    expect(policy).toContain('Carry prior approvals into findings, tasks and the report');
   });
 });
 
@@ -4385,21 +4387,22 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions.every(position => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
-    expect(approach).toContain('Read the input, inspected source and actual answers');
+    expect(approach).toContain('Check the input, source and actual answers');
     expect(approach).toContain('Correct facts, flag approval conflicts and preserve unknowns');
-    expect(approach).toContain('Carry exact approvals forward.');
+    expect(approach).toContain('Reuse an exact approval');
     expect(content).toContain("the actual instruction/answer and exact scope");
-    const reopenRule = 'Reopen only for a concrete contradiction, changed assumption or explicit user instruction';
+    const reopenRule = 'Reuse an exact approval unless a concrete contradiction, changed assumption or explicit user instruction requires reopening it';
     expect(content).toContain(reopenRule);
     expect(content.indexOf(reopenRule)).toBeGreaterThan(approachIdx);
     expect(content.indexOf(reopenRule)).toBeLessThan(presentIdx);
     const gate = content.slice(stopIdx, modeIdx);
-    expect(gate).toContain('Finish required approaches before 0E');
+    expect(gate).toContain("When this step's required decisions are settled, go to 0E if you came from 0C");
     expect(gate).toContain('even for a lone option');
-    expect(approach).toContain('recommendations are not approval');
-    expect(approach).toContain('Ask one row per call and cite its ID');
+    expect(approach).toContain('A recommendation is not approval');
+    expect(approach).toContain('Ask one row per call, citing its ID');
     expect(gate).toContain('Record its reference and scope in Exact approval and scope');
-    expect(gate).toContain('update Status, and apply only the authorized amendments before the next row');
+    expect(gate).toContain('update Status, and amend only what it authorizes');
+    expect(gate).toContain('storage policy before taking another row');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
   });
 });

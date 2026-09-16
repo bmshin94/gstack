@@ -2,11 +2,30 @@
 <!-- Regenerate: bun run gen:skill-docs -->
 ## Review Sections (11 sections, after scope and mode are agreed)
 
-**Anti-skip rule:** Evaluate Sections 1–10 in full regardless of plan type (strategy, spec, code, infra). Evaluate Section 11 when the accepted scope includes UI; otherwise record `SKIPPED (no UI scope)`. A strategy document still needs the implementation feasibility checks. For an evaluated section with zero findings, say "No issues found" and move on.
+**Anti-skip rule:** Evaluate Sections 1–10 in full for every plan, including strategy,
+spec, code and infra. Run Section 11 if accepted work adds or changes UI screens,
+components, user interactions, frontend frameworks, user-visible states,
+mobile/responsive behavior or the design system. Otherwise record `SKIPPED (no UI scope)`. In an evaluated section,
+say "No issues found" only when there are zero findings.
 
-**Match the requested deliverable.** In scope prioritization, evaluate all 11 sections for include/defer/cut and feasibility under accepted constraints. Architecture, failure paths, security, dependencies, cost and verification inform these choices; required diagrams and maps show candidate boundaries, failure mechanisms, feasibility conditions and unresolved risks. Resolve material blockers now; reopen priorities on new evidence. Keep non-blocking implementation choices pending with owners and required verification. Ask before expanding into implementation design; do not invent endpoint, method or state-machine contracts. Preserve prior approvals, distinguish unchosen mitigations from approved/verified ones, and report prioritization completion separately from implementation readiness.
+**Use the review depth chosen in Step 0.** For scope prioritization, use each
+section to decide inclusion and feasibility under accepted constraints. Diagrams
+and maps must show candidate boundaries, failure mechanisms, feasibility conditions
+and unresolved risks. Resolve material blockers now; revisit priorities when new
+evidence changes them. Leave non-blocking implementation choices pending with an
+owner and required verification. Ask before designing endpoint, method or
+state-machine contracts beyond the requested depth. Report what is approved,
+what is verified and what remains unchosen; completing prioritization does not
+mean the implementation is ready.
 
-**Preserve accepted requirements.** Compare the implementation with stated invariants and acceptance criteria. Report gaps and propose remedies that satisfy them, including in HOLD SCOPE when the sketch omits a mechanism. Never close a gap by weakening its guarantee, accepting the violation, or changing a test to expect it. Low frequency, bounded impact and documentation do not satisfy stricter requirements. Requirement changes need explicit authority under the approval rules; until approved, keep the proposal pending and original gap unresolved. Preserve earlier approved changes and explicit authority, but routine auto-decide cannot override user constraints or non-goals. Carry this distinction into findings, tasks and the report.
+**Preserve accepted requirements.** Compare the proposed implementation with
+stated invariants and acceptance criteria. Report gaps and propose remedies,
+including omitted mechanisms in HOLD SCOPE. Never weaken a guarantee, accept its
+violation or change a test to expect it. Low frequency, bounded impact and
+documentation do not meet stricter requirements. Changing a requirement needs
+explicit authority; until then, keep both the proposal and original gap unresolved.
+Carry prior approvals into findings, tasks and the report. Routine auto-decide
+cannot override user constraints or non-goals.
 
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan reviews:
@@ -29,8 +48,8 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 
 ## Mode Quick Reference
 
-The selected mode changes scope posture, not review coverage. Review every section
-for the accepted scope; Section 11 is skipped only when that scope has no UI.
+The mode changes which work is included, not review depth or section coverage.
+Apply the review and outputs to the accepted work in every mode.
 
 | Step | SCOPE EXPANSION | SELECTIVE EXPANSION | HOLD SCOPE | SCOPE REDUCTION |
 |------|-----------------|---------------------|------------|-----------------|
@@ -40,8 +59,6 @@ for the accepted scope; Section 11 is skipped only when that scope has no UI.
 | Delight opportunities | At least 5, each opt-in | At least 5, each opt-in | Skip | Skip |
 | Complexity | Review accepted ambition | Review baseline and accepted additions | Simplest correct accepted scope | Minimum valuable scope |
 | Temporal interrogation (0I) | Run | Run | Run | Skip |
-| Error and rescue map | Full accepted scope | Full accepted scope | Full accepted scope | Full remaining scope |
-| Observability and deployment | Review all accepted requirements | Review all accepted requirements | Review all accepted requirements | Review all remaining requirements |
 | Separate CEO archive (0H) | Write | Write | Skip | Skip |
 | Future direction (Section 10) | Review accepted trajectory | Review accepted cherry-picks | Review maintainability; no expansions | Review maintainability of remaining scope |
 | Design (Section 11) | Review if UI scope | Review if UI scope | Review if UI scope | Review if UI scope |
@@ -51,34 +68,34 @@ The separate CEO archive is additional persistence for expansion modes.
 
 ### Working review decisions
 
-Continue Step 0's six-column ledger with each row's owner section. An approach
-approves only its explicit commitments. At each **Decision gate**, follow
-Analyze → Resolve → Apply. Review only; do not change code.
+At each section's **Decision gate**, follow Analyze → Resolve → Apply below.
+Continue the six-column ledger with each row's owner section. Review only;
+do not change code.
 
-**Analyze.** Check input, inspected source and actual approvals. Correct disproven
-claims and dependent test/runbook text without changing approved behavior.
-Preserve contracts and mitigations; later silence revokes neither. Surface
-approval conflicts. Unsupported premises stay unknown: unavailable code proves
-neither failure nor safety. Keep each unknown risk's owner and verification visible.
+**Analyze.** Check input, source and actual approvals. Correct false claims and
+dependent test/runbook text without changing approved behavior. Preserve contracts
+and mitigations even if later text omits them. Flag approval conflicts. Unavailable
+code proves neither failure nor safety; record unknown risks with their owners
+and required verification.
 
-**Resolve.** Call 0D for new or reopened choices, returning after its post-answer
-checkpoint. Cross-reference exact settled answers instead of asking again.
-Resolve new critical risks immediately; earlier sections reference other pending
-rows in their owner section. Follow 0D's test table: independently selectable
-safety fixes and throughput improvements need separate rows despite shared helpers.
+**Resolve.** If this section needs a new decision or evidence warrants reopening
+one, complete 0D through its post-answer save, then continue to Apply below.
+If all choices are settled, cite their exact answers and go straight to Apply.
+Resolve critical risks now. Reference other pending rows in their owner sections;
+do not decide them here. Keep independent safety fixes and throughput improvements
+in separate rows, following 0D's test table.
 
-**Apply.** Verify the saved amendment against its actual answer or exact prior
-approval. Preserve existing content, approved behavior and required implementation,
-tests and success/failure contracts. Independent remedies and extra verification
-stay pending: no unapproved tasks, diagram prescriptions or verification steps.
-Save again only to correct this check's discrepancies under the storage policy;
-a correction needing new approval returns to 0D.
+**Apply.** Check the saved plan against each answer's exact scope. Preserve existing
+content, approved behavior, required implementation, tests and success/failure
+contracts. Leave unapproved remedies and extra verification pending; do not put
+them into tasks or prescribe them in diagrams. If the plan already matches, do
+not save again. Correct discrepancies under the storage policy; if a correction
+needs approval, resolve it through 0D before repeating this check.
 
-Record this section's findings and dispositions; "No issues found" means zero
-findings. Evaluate later sections before writing their conclusions or tasks.
-Assemble Required Outputs after Sections 1–10 and Section 11's findings or no-UI
-skip. Retain unresolved choices in the ledger and report; approval proves neither
-implementation nor verification.
+Record findings and dispositions, then review the next section. Do not write its
+conclusions or tasks before reviewing it. After Sections 1–10 and Section 11's
+review or no-UI skip, follow Closing sequence. Keep unresolved choices in the
+ledger and report; an approval is not proof of implementation or verification.
 
 ### Section 1: Architecture Review
 Publish **Current scope** in chat using the Step 0E mode-handoff format and the current ledger dispositions, including actual later scope-answer references. Retain mode, rationale and preference attribution. This updates scope after 0G; do not ask or log the mode again. Keep earlier answers as history, showing current accepted scope. Then say `Section 1: Architecture Review`.
