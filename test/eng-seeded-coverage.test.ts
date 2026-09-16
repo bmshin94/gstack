@@ -808,3 +808,119 @@ describe('captured required legacy characterization task representation', () => 
     ]) expect(evaluate(transcript(), plan).regression).toBeUndefined();
   });
 });
+
+// This original attempt timed out and had a separate D3 approval mismatch.
+// These assertions cover its three metric representations, not release success.
+import a689Count from './fixtures/eng-a689-count-public.json';
+import { isEngCompletionHandoff } from './helpers/eng-completion-handoff';
+describe('current native explanations and scheduled legacy baseline from a689', () => {
+  const originals=a689Count.calls as NativePlanQuestionCall[];
+  const begin=Date.parse(a689Count.windowStart), finish=Date.parse(a689Count.windowEnd);
+  const check=(calls=structuredClone(originals),parts=a689Count.parts) => evaluateEngSeedCoverage(
+    {status:'ready',calls,assistantMessages:[]},parts.join('\n\n'),begin,finish);
+  test('neutral D1 and D2 own distinct complexity and shared-state decisions',()=>{
+    const result=check();
+    expect(result.decisions.complexity).toBe(`${originals[0]!.sessionId}:${originals[0]!.toolUseId}`);
+    expect(result.decisions['shared-cache']).toBe(`${originals[1]!.sessionId}:${originals[1]!.toolUseId}`);
+    expect(isEngSeedDecisionAUQ(nativePlanCallFingerprint(originals[2]!,1,false),[],begin,finish)).toBe(false);
+  });
+  test('the approved baseline and replay tasks establish required legacy coverage',()=>{
+    expect(check().regression).toBe('plan');
+    expect(a689Count.originalOutcome).toBe('timeout');
+  });
+  test('the original inconsistent investigation and D9 remain outside navigation credit',()=>{
+    const call=originals.at(-1)!;
+    expect(isEngCompletionHandoff(nativePlanCallFingerprint(call,1,false),a689Count.parts.join('\n\n'),originals.slice(0,-1))).toBe(false);
+  });
+  const editCall=(index:number, change:(q:NativePlanQuestionCall['questions'][number])=>void)=>{
+    const calls=structuredClone(originals),call=calls[index]!,q=call.questions[0]!,old=q.question,answer=call.answers![old]!;
+    change(q); call.answers={[q.question]:answer};return calls;
+  };
+  test('current seed ownership and the whole offered remedy survive presentation changes',()=>{
+    for(const [index,before,after] of [
+      [0,'five new classes','5 new classes'],
+      [0,'How many moving parts should this refactor introduce?','Which component structure should this refactor introduce?'],
+      [1,'How should the two services get hold of the one cache adapter?','How should these services receive the cache adapter?'],
+    ] as const){
+      const calls=editCall(index,q=>q.question=q.question.replace(before,after));
+      expect(check(calls).decisions[index===0?'complexity':'shared-cache']).toBeDefined();
+    }
+    const rearranged=editCall(1,q=>{
+      const lines=q.options[0]!.description!.split('. ');q.options[0]!.description=[lines[1],lines[0],...lines.slice(2)].join('. ');
+    });
+    expect(check(rearranged).decisions['shared-cache']).toBeDefined();
+    const phrased=editCall(1,q=>q.options[0]!.description=q.options[0]!.description!.replace('AuthBroker and SessionMint','SessionMint and AuthBroker').replace('constructor parameter','constructor argument').replace('constructs a single','creates one'));
+    expect(check(phrased).decisions['shared-cache']).toBeDefined();
+    const risk=editCall(0,q=>q.options[0]!.description+=' If RequestPolicy later becomes stateful, this pure function would need another review.');
+    expect(check(risk).decisions.complexity).toBeDefined();
+  });
+  test('borrowed sources, inactive facts and partial or contradictory remedies cannot supply seeds',()=>{
+    const controls:Array<[number,(q:NativePlanQuestionCall['questions'][number])=>void]>=[
+      [0,q=>q.question=q.question.replace('PLAN.md','other/PLAN.md')],
+      [0,q=>q.question=q.question.replace('five new classes','four new classes')],
+      [0,q=>q.question=q.question.replace('ELI10:','ELI10: Historical example:')],
+      [0,q=>q.question+='\nThis finding is withdrawn.'],
+      [0,q=>q.options[0]!.description+=' RequestPolicy holds mutable state.'],
+      [0,q=>q.options[0]!.description+=' TokenStore remains a separate class.'],
+      [0,q=>q.options[0]!.description=q.options[0]!.description!.replace('pure function','function')],
+      [0,q=>q.options[0]!.description=q.options[0]!.description!.replace('TokenStore is dropped','TokenStore is retained')],
+      [0,q=>q.options[1]!.description=q.options[1]!.description!.replace('TokenStore','AuthBroker')],
+      [1,q=>q.question=q.question.replace('Project/branch/task:','Project/branch/task: other/PLAN.md —')],
+      [1,q=>q.question=q.question.replace('ELI10:','ELI10: Quoted example:')],
+      [1,q=>q.question+='\nThis issue is resolved.'],
+      [1,q=>q.options[0]!.description=q.options[0]!.description!.replace('fresh fake adapter','production adapter')],
+      [1,q=>q.options[0]!.description+=' Both services still import the module-level adapter.'],
+      [1,q=>q.options[0]!.description+=' Tests share the same production adapter.'],
+      [1,q=>q.options[0]!.description=q.options[0]!.description!.replace('passes it to both','passes it only to AuthBroker')],
+    ];
+    for(const [n,[index,change]] of controls.entries()) expect({n,result:check(editCall(index,change)).decisions[index===0?'complexity':'shared-cache']}).toEqual({n,result:undefined});
+    for(const index of [0,1]){
+      const calls=structuredClone(originals);calls[index]!.answered=false;
+      expect(check(calls).decisions[index===0?'complexity':'shared-cache']).toBeUndefined();
+    }
+  });
+  test('native selection, exact saved fields, current scope and both task proofs stay mandatory',()=>{
+    const changes:Array<(parts:string[])=>void>=[
+      parts=>parts[1]=parts[1]!.replaceAll('PLAN.md:','other/PLAN.md:'),
+      parts=>parts[1]=parts[1]!.replace('(CRITICAL)','(non-CRITICAL)'),
+      parts=>parts[1]=parts[1]!.replace('(CRITICAL)','(not CRITICAL)'),
+      parts=>parts[1]=parts[1]!.replace('State: approved','State: pending'),
+      parts=>parts[1]=parts[1]!.replaceAll('State: approved','State: approved\nState: approved'),
+      parts=>parts[1]=parts[1]!.replace('Header: Regression','Header: Stale'),
+      parts=>parts[1]=parts[1]!.replace('Actual answer: A — "Full characterization matrix"','Actual answer: B — "Happy path + three error classes"'),
+      parts=>parts[1]=parts[1]!.replace('same IDP call set.','same IDP call set. Cache writes are not asserted.'),
+      parts=>parts[1]=parts[1]!.replace('Fixtures are built before the rewrite starts.','Fixtures are built after the rewrite starts.'),
+      parts=>parts[1]=parts[1]!.replace('(2) Intentional differences: typed outcomes (ValidationFailed / Denied / DispatchFailed) instead of swallowed errors (D4 → A);','(2) Intentional differences: typed outcomes (ValidationFailed / Denied / DispatchFailed) instead of swallowed errors (D4 → B);'),
+      parts=>parts[2]=parts[2]!.replace('run against `legacyAuthFlow()` to capture golden values','run against `validateAndDispatch()` to capture golden values'),
+      parts=>parts[2]=parts[2]!.replace('Verify: parity suite green against legacy alone','Verify: suite runs later'),
+      parts=>parts[2]=parts[2]!.replace('run against `legacyAuthFlow()`','not run against `legacyAuthFlow()`'),
+      parts=>parts[2]=parts[2]!.replace('Verify: parity + E2E green','Verify: new-only tests green'),
+      parts=>parts[2]=parts[2]!.replace('Files: test/ (new), fixtures','Files: foreign/'),
+      parts=>parts[2]=parts[2]!.replace('Test review — T1 (D5 → A)','Test review — T1 (D5 → B)'),
+      parts=>parts[2]=parts[2]!.replace('delete `legacyAuthFlow()` only when green','delete `legacyAuthFlow()` immediately'),
+      parts=>parts[2]=parts[2]!.replace('## Implementation Tasks','## Historical Implementation Tasks'),
+      parts=>parts[2]+='\nT3 is optional.',
+      parts=>parts[1]+='\n## Current correction\nR5 is withdrawn.',
+    ];
+    for(const [n,change] of changes.entries()){const parts=[...a689Count.parts];change(parts);expect({n,result:check(structuredClone(originals),parts).regression}).toEqual({n,result:undefined});}
+    for(const index of [3,4]){
+      const calls=structuredClone(originals),call=calls[index]!,q=call.questions[0]!;call.answers![q.question]=q.options[1]!.label;
+      expect(check(calls).regression).toBeUndefined();
+    }
+    const duplicate=[...originals,structuredClone(originals[4]!)];
+    expect(check(duplicate).regression).toBeUndefined();
+  });
+  test('record selector notation and role order do not change native field ownership',()=>{
+    const parts=[...a689Count.parts];
+    parts[1]=parts[1]!.replace(/^(A|B|C)\) ([^\n]+)\n(?!(?:  |Header:))/gm,(line,letter)=>`${letter}) ${line}`);
+    expect(check(structuredClone(originals),parts).regression).toBe('plan');
+    const reordered=[...a689Count.parts];
+    reordered[1]=reordered[1]!.replace(/(\(1\) Behavior to preserve: .+?)(\(2\) Intentional differences: .+?)(\(3\) Acceptance: .+)/, '$3 $1$2');
+    expect(check(structuredClone(originals),reordered).regression).toBe('plan');
+    const taskPhrasing=[...a689Count.parts];taskPhrasing[2]=taskPhrasing[2]!.replace('Build the parity fixture matrix','Write the parity fixture matrix').replace('run against `legacyAuthFlow()` to capture golden values','execute against `legacyAuthFlow()` to record golden outcomes');
+    expect(check(structuredClone(originals),taskPhrasing).regression).toBe('plan');
+    const incomplete=editCall(4,q=>q.options[0]!.description=q.options[0]!.description!.replace('cache writes and IDP call set','cache writes'));
+    expect(check(incomplete).regression).toBeUndefined();
+  });
+
+});

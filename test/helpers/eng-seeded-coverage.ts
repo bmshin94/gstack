@@ -284,6 +284,58 @@ function explainedSeedSubjects(q: NativePlanQuestionCall['questions'][number]): 
     if (/\bvalidateAndDispatch(?:\(\))?(?=\s|[.,?!;:]|$)/.test(title) && nestedCatches &&
         catchesDiscard && !surfacedNow && !foreign.test(explanation) && errorPolicy) ids.push('swallowed-errors');
   }
+  // Neutral questions can put the count or shared-state defect in ELI10 and
+  // their complete remedies in native descriptions. Deliberation need not be
+  // duplicated into each description. Keep source, current facts and one whole
+  // option together; another question or incomplete option cannot fill it.
+  const explicitSources = [...subject.matchAll(/\b[\w./-]+\.md\b/g)].map(m => m[0]);
+  const currentOwner = neutralChoice && !explicitSources.some(file => file !== 'PLAN.md') &&
+    !/\b(?:other|another|different|foreign|historical|quoted|copied) (?:plan|source|review|project)\b/i.test(subject);
+  const fields = completeOptions.map(o => ({ ...o, label: o.label.replace(/^(?:[1-9]\d*)?[A-D][).:]\s*/, '') }));
+  const names = (s: string) => s.split(/\s*\+\s*|,\s*(?:and\s+)?|\s+and\s+/);
+  const number = (s: string) => counts[s.toLowerCase()] ?? Number(s);
+  const quantity = '(one|two|three|four|five|six|seven|eight|nine|[1-9]\\d*)';
+  const inventoryOf = (body: string) => {
+    const list = /(?:^|[.;]\s+)([A-Z]\w*(?:(?:\s*\+\s*|,\s*(?:and\s+)?|\s+and\s+)[A-Z]\w*)+) (?:as (?:separate )?|remain )?classes\b/.exec(body)?.[1];
+    return list ? names(list) : [];
+  };
+  const classCount = new RegExp(`\\bplan (?:adds|introduces|builds) ${quantity} new classes\\b`, 'i').exec(explanation);
+  const baseline = fields.filter(o => /^(?:keep|retain)\b/i.test(o.label));
+  const componentNames = ['AuthBroker', 'SessionMint', 'AuthCache', 'TokenStore', 'RequestPolicy'];
+  if (currentOwner && /\b(?:parts|structure|units|components|classes|decomposition)\b/i.test(title) && classCount &&
+      number(classCount[1]!) === componentNames.length &&
+      /\bAuthCache\b[^.!?]*\b(?:pass-through|facade|wrapper)\b[^.!?]*\bexisting (?:cache )?adapter\b/i.test(explanation) &&
+      /\bRequestPolicy\b[^.!?]*\b(?:stateless|pure)\b/i.test(explanation) &&
+      /\bTokenStore\b[^.!?]*\b(?:undefined|no description|no (?:stated |described )?responsibility|named only)\b/i.test(explanation) &&
+      baseline.some(o => {
+        const count = new RegExp(`\\b${quantity} classes\\b`, 'i').exec(o.label), inventory = inventoryOf(o.body);
+        return count && number(count[1]!) === componentNames.length && inventory.length === componentNames.length &&
+          new Set(inventory).size === inventory.length && componentNames.every(name => inventory.includes(name));
+      }) &&
+      !/\b(?:RequestPolicy|TokenStore) (?:now |already )?(?:has|requires|holds|carries) (?:its own |independent |mutable )*(?:state|responsibility|behavior)\b/i.test(text) &&
+      fields.some(o => {
+        const count = new RegExp(`^${quantity} (units?|components?|classes)\\b`, 'i').exec(o.label), retained = inventoryOf(o.body);
+        const policy = o.body.split(/;\s*|[.!?]\s+/).find(clause => /^RequestPolicy\b/.test(clause)) ?? '';
+        return count && number(count[1]!) === retained.length + (/classes/i.test(count[2]!) ? 0 : 1) &&
+          retained.length === 2 && new Set(retained).size === 2 && ['AuthBroker','SessionMint'].every(name => retained.includes(name)) &&
+          /\bpure\b/.test(policy) && /\bfunction\b/.test(policy) &&
+          /\b(?:no AuthCache facade|(?:drop|remove) (?:the )?AuthCache facade)\b/i.test(o.body) &&
+          /\bboth services (?:use|call|depend on) the existing (?:cache )?adapter directly\b/i.test(o.body) &&
+          /\bTokenStore (?:is )?(?:dropped|removed)\b/i.test(o.body) &&
+          !/\b(?:not|never) (?:pure|stateless)\b|\b(?:RequestPolicy|TokenStore)\b[^.;!?]*\b(?:holds|stores|carries|requires)\b[^.;!?]*\b(?:state|second store)\b|\b(?:RequestPolicy|AuthCache|TokenStore) (?:is |still |now |will be )*(?:retained|kept|restored|stateful)\b|\b(?:RequestPolicy|AuthCache|TokenStore) (?:remains|stays|is) (?:a |its )?(?:separate |independent |own )?class\b|\b(?:do not|don't|never) (?:drop|remove|use|call)\b/i.test(o.facts);
+      })) ids.push('complexity');
+
+  const moduleObject = /\bboth services\b/.test(explanation) &&
+    /\b(?:single|one|same) (?:cache )?(?:object|instance|adapter)\b/i.test(explanation) &&
+    /\b(?:top of a module|module-level|global)\b/i.test(explanation) &&
+    /\bimport\w*\b/i.test(explanation) && /\b(?:change|mutate|mutable)\b/i.test(explanation);
+  if (currentOwner && /\bcache adapter\b/i.test(title) && ['AuthBroker','SessionMint'].every(name => metadata[0]!.includes(name)) &&
+      moduleObject && !/\b(?:services|adapter|cache) (?:are |is |now |already )*(?:injected|isolated|no longer shared)\b/i.test(text) &&
+      fields.some(o => /^(?:Constructor injection|Inject\b)/i.test(o.label) &&
+        /\b(?:AuthBroker and SessionMint|SessionMint and AuthBroker) (?:take|receive) the (?:cache )?adapter as a constructor (?:parameter|argument)\b/.test(o.body) &&
+        /\b(?:One|A single) composition root\b[^.!?]*\b(?:constructs|creates) (?:a single|one) adapter instance\b[^.!?]*\bpasses it to both\b/.test(o.body) &&
+        /\bTests (?:construct|create) each service with a fresh fake adapter\b/.test(o.body) &&
+        !/\b(?:both services|AuthBroker|SessionMint)\b[^.;!?]*\b(?:still |also )?(?:import|use) (?:the |a )?(?:module-level|global|exported)\b|\btests?\b[^.;!?]*\b(?:share|reuse)\b[^.;!?]*\b(?:same|production|global)\b|\b(?:not|never|without) (?:a )?(?:fresh|isolated)\b|\b(?:do not|don't|never) (?:inject|construct|create|pass)\b/i.test(o.facts))) ids.push('shared-cache');
   const declaredNames = /\bclass arrangement\b[^?]*\(([^)]+)\)/i.exec(title)?.[1]?.split(/,\s*/);
   const declaredCount = /\b(one|two|three|four|five|six|seven|eight|nine|[1-9]\d*) (?:new )?(?:components|classes)\b/i.exec(title)?.[1];
   const beforeCount = declaredCount ? counts[declaredCount.toLowerCase()] ?? Number(declaredCount) : 0;
@@ -2107,17 +2159,23 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
     if (calls.length !== 1 || !completedDecision(calls[0]!, startedAt, finishedAt)) return;
     const call=calls[0]!, q=call.questions[0]!, selected=q.options.find(o=>o.label === call.answers![q.question]);
     const saved=question[0]![4]!.trim().split(/\n(?=[A-D]\) )/).map(block=>{
-      const line=block.indexOf('\n'); return { selector:block[0],label:block.slice(3,line),description:block.slice(line+1).trim() };
+      const line=block.indexOf('\n'), label=block.slice(0,line), description=block.slice(line+1).trim();
+      // A native label may already carry its selector. Otherwise the record
+      // adds one; both layouts still require the complete exact native fields.
+      const matching=q.options.filter(o=>(o.label === label || o.label === label.slice(3)) && prose(o.description ?? '').trim() === description);
+      return { selector:block[0],label:matching.length === 1 ? matching[0]!.label : undefined,description };
     });
-    const answer=/^([A-D])\) (.+) — (D[1-9]\d*) answer "(.+)"$/.exec(answers[0]!);
-    const caption=(s:string)=>s.replace(/\s*\(recommended\)$/, '').trim();
+    const legacyAnswer=/^([A-D])\) (.+) — (D[1-9]\d*) answer "(.+)"$/.exec(answers[0]!);
+    const quotedAnswer=/^([A-D]) — "([^"]+)" \((D[1-9]\d*) answer, this session\)$/.exec(answers[0]!);
+    const answer=legacyAnswer ?? quotedAnswer;
+    const caption=(s:string)=>s.replace(/^[A-D]\) /, '').replace(/\s*\(recommended\)$/, '').trim();
     if (!selected || question[0]![2]!.trim() !== prose(q.question).trim() || question[0]![3] !== q.header ||
         saved.length !== q.options.length || new Set(saved.map(o=>o.selector)).size !== saved.length ||
         !q.options.every(o=>saved.filter(s=>s.label === o.label && s.description === prose(o.description ?? '').trim()).length === 1) ||
-        !answer || answer[3] !== decision || answer[4] !== selected.label ||
+        !answer || answer[3] !== decision || legacyAnswer && legacyAnswer[4] !== selected.label ||
         !(caption(answer[2]!) === caption(selected.label) || caption(selected.label).startsWith(caption(answer[2]!)+':')) ||
         saved.find(o=>o.selector === answer[1])?.label !== selected.label) return;
-    return { row, decision, body, finding:finding[0]!, baseline:baseline[0]!, scope:scopes[0]!, selected, answeredAt:Date.parse(call.answeredAt!) };
+    return { row, decision, choice:answer[1]!, body, finding:finding[0]!, baseline:baseline[0]!, scope:scopes[0]!, selected, answeredAt:Date.parse(call.answeredAt!) };
   };
   const assertionFact='(?:decision|error class|cache writes?|dispatch(?: invocation)?|IDP call count|(?:IDP call )?order|assertions?|outcomes?)';
   const missingAssertion='(?:(?:not|never|no longer)(?: (?:always|consistently))? (?:asserted|verified|compared|checked|tested|recorded|required|needed)|optional|omitted|skipped|unverified)';
@@ -2160,6 +2218,56 @@ function declaredLegacyCharacterization(text: string, nativeCalls: readonly Nati
     !/\b(?:not|never) fail(?:s)?[ -]closed\b|\bfail[ -]open\b|\b(?:suppress\w*|swallow\w*|ignor\w*|discard\w*)\b[^.;\n]{0,60}\berrors?\b|\berrors?\b[^.;\n]{0,60}\b(?:suppressed|swallowed|ignored|discarded)\b/i.test(unquoted(body));
   const pairedTasks=taskSections.flatMap(s=>s.body.join('\n').split(/\n(?=-\s)/)).map(body=>({body,id:/^- (?:\[[ xX]\] )?(T[1-9]\d*)\b/.exec(body)?.[1]})).filter(t=>t.id);
   const taskField=(body:string,name:string)=>fieldValues(body,'  - '+name);
+  // A fixture-directory deliverable can capture the legacy oracle first and
+  // replay it in a later task. The approved record owns the parity contract;
+  // the tasks own the actual capture and both green runs, not the path spelling.
+  for (const section of current.filter(s=>/\bregression contract\b/i.test(s.title) && /\blegacyAuthFlow\b/.test(s.title))) {
+    const record=nativeRecord(section);
+    if (!record || suiteWithdrawn || !/\bCRITICAL\b/.test(record.finding) || /\b(?:not|non)[ -]CRITICAL\b/i.test(record.finding) || !proofActive(record.scope)) continue;
+    const roles=[...record.scope.matchAll(/\([1-9]\) (Behavior to preserve|Intentional differences|Acceptance): ([^]*?)(?=\([1-9]\) |$)/g)];
+    const role=(name:string)=>roles.filter(r=>r[1] === name);
+    if (roles.length !== 3 || ['Behavior to preserve','Intentional differences','Acceptance'].some(name=>role(name).length !== 1)) continue;
+    const preservation=role('Behavior to preserve')[0]![2]!, difference=role('Intentional differences')[0]![2]!, acceptance=role('Acceptance')[0]![2]!;
+    const target=/\blegacyAuthFlow\(\) and ([A-Za-z][\w.]*\(\)) produce the same outcome class\b/.exec(preservation)?.[1];
+    const approved=/\((D[1-9]\d*) (?:→|->) ([A-D])\)/.exec(difference);
+    const nativePromise=prose(record.selected.description ?? '');
+    const assertions=['outcome','cache writes','IDP call set'];
+    if (!target || !approved || !/\bfor every fixture in the matrix\b/.test(preservation) ||
+        !assertions.every(fact=>preservation.includes(fact)) || !/\bthe same cache writes\b/.test(preservation) || !/\bthe same IDP call set\b/.test(preservation) ||
+        !/\bBuild fixtures for the full matrix\b/.test(nativePromise) || !/\bAssert identical outcome, cache writes and IDP call set for legacyAuthFlow\(\) and /i.test(nativePromise) ||
+        !nativePromise.includes(target.replace(/^.*\./,'')) || !new RegExp(`\\btyped outcomes per ${approved[1]}\\b`).test(nativePromise) || !proofActive(nativePromise) ||
+        !/\b(?:Fixtures are built|Build fixtures) before the rewrite starts\b/.test(record.scope) ||
+        !/\bparity suite is green against both implementations\b/.test(acceptance) ||
+        !/\blegacyAuthFlow\(\) is deleted only after that\b/.test(acceptance) || !/\bE2E\b/.test(acceptance)) continue;
+    const errors=current.map(nativeRecord).filter(r=>r?.decision === approved[1]);
+    const types=/\btyped outcomes \(([^)]+)\) instead of swallowed errors\b/.exec(difference)?.[1]?.split(/\s*\/\s*/);
+    if (errors.length !== 1 || !types || types.length < 2 || new Set(types).size !== types.length) continue;
+    const error=errors[0]!;
+    if (error.choice !== approved[2] || error.answeredAt >= record.answeredAt || !proofActive(error.scope) ||
+        !/\btyped outcomes?\b/.test(error.selected.label) || !/\bEvery failure maps to a typed outcome\b/.test(error.selected.description ?? '') ||
+        !types.every(type=>(error.selected.description ?? '').includes(type) && error.scope.includes(type)) ||
+        !/\bnothing swallowed\b/.test(error.selected.description ?? '') || !/\bno catch swallows\b/.test(error.scope)) continue;
+    const tasks=pairedTasks.filter(task=>pairedTasks.filter(t=>t.id === task.id).length === 1 && proofActive(task.body) &&
+      !/\b(?:not|never|skip|omit|defer) (?:run|capture|record|assert|verify|compare)\b/i.test(unquoted(task.body)) &&
+      ['Files','Verify','Surfaced by'].every(field=>taskField(task.body,field).length === 1) &&
+      new RegExp(`\\(${record.decision} (?:→|->) ${record.choice}\\)`).test(taskField(task.body,'Surfaced by')[0]!) &&
+      [...taskField(task.body,'Surfaced by')[0]!.matchAll(/\bD[1-9]\d*\b/g)].length === 1 &&
+      [...taskField(task.body,'Surfaced by')[0]!.matchAll(/\b[\w./-]+\.md\b/g)].every(m=>m[0] === 'PLAN.md'));
+    const baseline=tasks.filter(task=>/\b(?:Build|Write|Add) the parity fixture matrix\b/.test(task.body.split('\n')[0]!) &&
+      /\b(?:run|execute) against legacyAuthFlow\(\) to (?:capture|record) golden (?:values|outcomes|outputs)\b/.test(task.body.split('\n')[0]!) &&
+      /^parity suite green against legacy alone$/.test(taskField(task.body,'Verify')[0]!));
+    const replay=tasks.filter(task=>new RegExp(`\\bRun the parity suite against ${target.replace(/^.*\./,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}`).test(task.body.split('\n')[0]!) &&
+      /\bdelete legacyAuthFlow\(\) only when green\b/.test(task.body.split('\n')[0]!) &&
+      /\bparity \+ E2E green\b/.test(taskField(task.body,'Verify')[0]!));
+    if (baseline.length !== 1 || replay.length !== 1 || baseline[0]!.id === replay[0]!.id) continue;
+    const files=(task:typeof pairedTasks[number])=>taskField(task.body,'Files')[0]!.split(/,\s*/).map(value=>value.replace(/ \(new\)$/,''));
+    if (!files(baseline[0]!).some(file=>/^test\//.test(file) && files(replay[0]!).includes(file))) continue;
+    const owner=`(?:${record.row}|${record.decision}|${error.row}|${error.decision}|${baseline[0]!.id}|${replay[0]!.id}|(?:the|this) (?:legacy )?(?:parity|regression) (?:suite|contract|baseline))`;
+    const revoked=current.some(s=>unquoted(s.body.join('\n').split(/^History:/m)[0]!).split(/\n|[.!?;]\s+/).some(line=>!sourceFrame(line) &&
+      (new RegExp(`\\b${owner} (?:is|was|has been|will be) (?:withdrawn|rejected|cancelled|deferred|optional|superseded|not required|no longer required)\\b`,'i').test(line) ||
+       new RegExp(`\\blegacyAuthFlow\\(\\) (?:is|will be) (?:changed|rewritten|removed|deleted) before ${baseline[0]!.id}\\b`,'i').test(line))));
+    if (!revoked) return true;
+  }
   for (const section of current.filter(s=>/\bregression contract\b/i.test(s.title) && /\blegacyAuthFlow\b/.test(s.title))) {
     const record=nativeRecord(section);
     if (!record || !/\bCRITICAL\b/.test(record.finding) || /\b(?:not|non)[ -]CRITICAL\b/i.test(record.finding) || suiteWithdrawn || !proofActive(record.scope)) continue;
