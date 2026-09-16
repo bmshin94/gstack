@@ -374,3 +374,18 @@ test('structured auto-decision evidence selects every native observer', () => {
     for (const id of expected) expect(producers).toContain(id);
   }
 });
+
+
+test('explanatory native mode evidence selects all observers with their existing tiers', () => {
+  const expected = ['auto-decide-preserved', 'conductor-prose', 'office-hours-auto-mode',
+    'plan-ceo-review-plan-mode', 'plan-design-review-plan-mode', 'plan-devex-review-plan-mode',
+    'plan-eng-review-plan-mode', 'plan-mode-no-op'];
+  for (const file of ['test/helpers/native-auto-decide.ts', 'test/auto-decide-explanatory-mode.test.ts',
+    'test/fixtures/auto-decide-explanatory-mode-043a.json']) {
+    expect([...selectTests([file], E2E_TOUCHFILES).selected].sort()).toEqual(expected);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+  expect(expected.map(id => E2E_TIERS[id])).toEqual([
+    'periodic', 'periodic', 'gate', 'gate', 'periodic', 'gate', 'periodic', 'gate',
+  ]);
+});

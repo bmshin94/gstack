@@ -41,13 +41,22 @@ function publicProse(text: string): string {
 function modeField(line: string): { value: string; completed: boolean } | null {
   const match = /^(?:(?:Correction|Actually|Update):\s*)?(?:Review )?Mode(?:( decision)(?: ([^:\r\n]+))?)?:\s*(.*)$/i.exec(line.replace(/^\s*[-*+]\s+/, '').trim());
   if (!match) return null;
-  // An explicit decision status is complete only in the supported completion
-  // class. Pending, cancelled, unfinished and unknown statuses cannot declare
-  // completion, and invalidate an earlier declaration through this same parser.
-  const completeStatus = !match[1] || /^(?:done|complete|completed)$/i.test(match[2]?.trim() ?? '');
+  // "Mode" and "Mode decision" are both field labels. If an explicit status
+  // follows, only the completion class is supported. Pending, cancelled,
+  // unfinished and unknown statuses also invalidate an earlier declaration.
+  const completeStatus = !match[2] || /^(?:done|complete|completed)$/i.test(match[2].trim());
   const value = plain(match[3]!);
   const unfinishedValue = /\b(?:withdrawn|retracted|revoked|cancelled|canceled|undecided|unfinished|incomplete|not complete(?:d)?|not selected|not decided|not yet|pending|proposed|if|unless|would|might|will)\b/i.test(value);
   return { value, completed: completeStatus && !unfinishedValue };
+}
+
+function selectedMode(value: string): string | null {
+  // The label ends before an explanatory clause or parenthetical. Use this same
+  // boundary for declarations and corrections: explanation punctuation cannot
+  // turn a completed choice into a withdrawal. modeField checks the full value
+  // first so conditional or unfinished explanations still fail closed.
+  const match = /^(.+?)(?:\s+\([^()]*\)[.!;]?$|[.,;:]|\s+[—–-]\s+\S|$)/.exec(value);
+  return match?.[1]?.trim().toUpperCase() ?? null;
 }
 
 function withdrawn(text: string, option: string): boolean {
@@ -56,16 +65,11 @@ function withdrawn(text: string, option: string): boolean {
       /\b(?:I|we)\s+(?:did not|didn't|have not|haven't|will not|won't|no longer)\s+auto-decide\b/i.test(prose) ||
       /\b(?:I|we)\s+(?:did not|didn't|have not|haven't)\s+make\s+(?:this|that|the)\s+(?:decision|selection|choice)\b/i.test(prose) ||
       /\b(?:this|that|the)\s+(?:auto[- ]decision|annotation|statement|decision|selection|choice)\b[^.!?\n]{0,100}\b(?:withdrawn|retracted|revoked|cancelled|canceled|hypothetical|conditional|example)\b/i.test(prose)) return true;
-  // Read the complete field before separating an explanatory parenthetical;
-  // punctuation inside that explanation does not change the enum. Status or
-  // conditional suffixes still withdraw a previously completed declaration.
   return prose.split('\n').some(line => {
     const parsed = modeField(line);
     if (parsed === null) return false;
     if (!parsed.completed) return true;
-    const field = parsed.value;
-    const selected = field.replace(/[.,;]$/, '').replace(/\s+\([^()]*\)$/, '').split(/[.,;]/, 1)[0]!.trim();
-    return selected.toLowerCase() !== option.toLowerCase();
+    return selectedMode(parsed.value)?.toLowerCase() !== option.toLowerCase();
   });
 }
 
@@ -150,12 +154,12 @@ function currentModeStatement(text: string): { option: string; statement: string
   for (let i = 0; i < lines.length; i++) {
     const statement = lines[i]!.replace(/^\s*[-*+]\s+/, '').trim();
     const field = modeField(statement);
-    const match = !field?.completed ? null : /^(HOLD SCOPE|SCOPE EXPANSION|SELECTIVE EXPANSION|SCOPE REDUCTION)(?:[.,;]|\s+\([^()]*\)[.!;]?$|$)/i.exec(field.value);
-    if (!match) continue;
+    const option = field?.completed ? selectedMode(field.value) : null;
+    if (!option || !modeNames.includes(option)) continue;
     // Source/example introductions and conditional selections cannot supply
     // a current declaration merely by putting a Mode field on the next line.
     if (/\b(?:example|hypothetical|historical|previous|quoted)\b/i.test(lines.slice(0, i + 1).join('\n'))) continue;
-    return { option: match[1]!.toUpperCase(), statement: lines[i]!.trim() };
+    return { option, statement: lines[i]!.trim() };
   }
   return null;
 }
