@@ -623,18 +623,39 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
   const wholeCount = (text: string, match: RegExpExecArray) => !countTail.test(text.slice(0, match.index));
   const count = new RegExp(`\\b(${countToken})\\s+(?:expansion\\s+)?(?:candidates?|proposals?)\\b`, 'i').exec(title);
   const rationale = /ELI10:\s*([\s\S]*?)(?=Stakes if (?:we pick )?wrong:)/i.exec(q.question)?.[1] ?? '';
-  const inventoryNoun = '(?:adjacent improvements|candidate expansions|expansion candidates|(?:independent )?(?:expansions|items|candidates|proposals))';
-  // Colons and parentheses both delimit a complete numbered inventory. Keep
-  // the same count/identity checks after parsing either presentation.
-  const inventory = new RegExp(`\\b(${countToken})\\s+${inventoryNoun}\\s*:\\s*([^.!?\\n]+)[.!?]`, 'i').exec(rationale)
-    ?? new RegExp(`\\b(${countToken})\\s+${inventoryNoun}\\s*\\(([^()!?\\n]+)\\)[.!?]`, 'i').exec(rationale);
-  if (!count || !inventory || !wholeCount(title, count) || !wholeCount(rationale, inventory) ||
+  const inventoryNoun = '(?:adjacent improvements|candidate expansions|expansion candidates|(?:independent |expansion )?(?:expansions|items|candidates|proposals))';
+  // The current native brief owns its inventory whether it appears in its
+  // title or explanation. Quoted inventories cannot establish that ownership.
+  const inventories = [title, rationale].flatMap(text => {
+    const plain = text.replace(/"[^"\n]*"|“[^”\n]*”|`[^`]*`/g, quote => ' '.repeat(quote.length));
+    const noun = `${inventoryNoun}(?:\\s+(?:are\\s+)?pending)?`;
+    const match = new RegExp(`\\b(${countToken})\\s+${noun}\\s*:\\s*([^.!?\\n]+)[.!?]`, 'i').exec(plain)
+      ?? new RegExp(`\\b(${countToken})\\s+${noun}\\s*\\(([^()!?\\n]+)\\)[.!?]`, 'i').exec(plain);
+    return match ? [{text: plain, match}] : [];
+  });
+  const inventory = inventories[0]?.match, inventoryText = inventories[0]?.text ?? '';
+  if (!count || !inventory || inventories.length !== 1 || !wholeCount(title, count) || !wholeCount(inventoryText, inventory) ||
       numberOf(count[1]!) !== numberOf(inventory[1]!) ||
-      /\b(?:example|quoted|historical|previously|formerly|if|unless)\b/i.test(rationale.slice(0, inventory.index))) return null;
+      /\b(?:example|quoted|historical|previously|formerly|if|unless)\b/i.test(inventoryText.slice(0, inventory.index))) return null;
   const ids = [...inventory[2]!.matchAll(/(?:^|[,;]\s*|\band\s+)([A-Z])([1-9]\d*)\s+/g)];
   const n = numberOf(count[1]!), prefix = ids[0]?.[1];
   if (!Number.isSafeInteger(n) || n < 2 || ids.length !== n || !prefix ||
       ids.some((id, i) => id[1] !== prefix || Number(id[2]) !== i + 1)) return null;
+  const plainRationale = rationale.replace(/"[^"\n]*"|“[^”\n]*”|`[^`]*`/g, quote => ' '.repeat(quote.length));
+  const countsOf = (text: string) => [...text.matchAll(new RegExp(`\\b(${countToken})\\s+(?:(?:short|sequential)\\s+)?(questions|prompts)\\b`, 'gi'))];
+  const completeCount = (match: RegExpExecArray, text: string, final: boolean) => wholeCount(text, match) &&
+    (numberOf(match[1]!) === n || (match[2]!.toLowerCase() === 'prompts' && final && numberOf(match[1]!) === n + 1));
+  // An extra prompt needs an asserted final step, not a mention in a
+  // negated, withdrawn, historical or quoted description of the walkthrough.
+  const hasFinalConfirmation = (text: string) => {
+    const clauses = text.split(/[;\n]|(?<=[.!?])\s+|\b(?:but|however)\b/i)
+      .filter(clause => /\bfinal confirmation\b/i.test(clause));
+    return clauses.length > 0 && clauses.every(clause =>
+      !/\b(?:no|not|never|without) (?:a |the |one |any )?(?:separate )?final confirmation\b|\bfinal confirmation\b[^;\n]*\b(?:withdrawn|cancelled|canceled|retracted|not|never)\b|\b(?:previously|formerly|historical|example|if|unless)\b/i.test(clause)) &&
+      clauses.some(clause => /\b(?:then|plus|including) (?:a |the |one )?(?:separate )?final confirmation\b/i.test(clause));
+  };
+  const announcedQuestions = countsOf(plainRationale);
+  if (announcedQuestions.some(match => !completeCount(match, plainRationale, hasFinalConfirmation(plainRationale)))) return null;
   const options = [...q.question.matchAll(/(?:^|\n)([A-D])[):.]\s+[^\n]+/g)];
   // Native option descriptions carry the comparison. Some briefs repeat it
   // inline; when present that repetition must still contain the complete menu.
@@ -642,7 +663,8 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
   const netAt = q.question.lastIndexOf('\nNet:');
   if (netAt < 0 || (options.length && netAt <= options.at(-1)!.index!)) return null;
   const optionsAt = options[0]?.index ?? netAt;
-  const menu = (value: string) => value.replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi, '');
+  const menu = (value: string) => value.replace(/\bAdd\s*\/\s*Defer\s*\/\s*Skip(?:\s*\/\s*Hold)?\b/gi, '')
+    .replace(/\bincluding (?:a|the) final confirmation\b/gi, '');
   const scopeEffect = /\b(?:approv\w*|authori[sz]\w*|accept\w*|commit\w*|adopt\w*|implement\w*|add(?:s|ed|ing)?|includ\w*|remov\w*|delet\w*|drop\w*|cut(?:s|ting)?|skip\w*|defer\w*|merg\w*|ship(?:s|ped|ping)?|deploy\w*|enabl\w*|disabl\w*)\b/i;
   // An unconditional or selected-choice effect cannot hide in another option.
   if (/\b(?:regardless|whichever|choosing|selecting|picking|any choice|every choice)\b[^.!?\n]*\b(?:approv\w*|authori[sz]\w*|commit\w*|add(?:s|ed|ing)?|delet\w*|drop\w*|skip\w*|defer\w*|merg\w*)\b/i.test(q.question + '\n' + q.options.map(o => o.description ?? '').join('\n'))) return null;
@@ -671,9 +693,10 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
     const label = o.label.replace(/^[A-D][):.]\s*/i, '').replace(/\s*\(recommended\)\s*$/i, '');
     const numbers = label.match(/\b\d+\b/g) ?? [];
     const rawDescription = o.description ?? '';
-    const description = menu(rawDescription.replace(/"[^"\n]*"|“[^”\n]*”|`[^`]*`/g, '')).trim();
+    const unquotedDescription = rawDescription.replace(/"[^"]*"|“[^”]*”|`[^`]*`/g, '');
+    const description = menu(unquotedDescription).trim();
     const option = options.findIndex(option => option[1] === id);
-    if (!id || (options.length && option < 0) || numbers.some(value => Number(value) !== n) || numbers.length > 1 ||
+    if ((options.length && option < 0) || numbers.some(value => Number(value) !== n) || numbers.length > 1 ||
         !/\b(?:full|complete|all)\b/i.test(label) || !/\b(?:split|walkthrough|per[- ]item|one[- ]by[- ]one)\b/i.test(label) ||
         /\b(?:if|unless|previously|formerly|historical|example)\b/i.test(label + '\n' + description)) return [];
     const candidateRange = numbers.length === 1 && /\bquestions?\b/i.test(label) &&
@@ -682,9 +705,17 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
     // A Dk.0 pacing choice can instead bind N sequential questions Dk.1–Dk.N
     // to the N-item inventory. The later final confirmation is another prompt.
     const chain = /^D([1-9]\d*)\.0\b/.exec(title)?.[1];
-    const sequence = chain && new RegExp(`\\b(${countToken})\\s+sequential questions\\s+D${chain}\\.1\\s*(?:through|to|[-–—])\\s*D${chain}\\.${n}\\b`, 'i').exec(description);
+    const sequence = chain && new RegExp(`\\bD${chain}\\.1\\s*(?:through|to|[-–—])\\s*D${chain}\\.${n}\\b`, 'i').test(description);
+    const counts = countsOf(description);
+    // Total prompt cost can include the separate final confirmation; the
+    // per-item range and question count still cover exactly the N candidates.
+    const finalConfirmation = hasFinalConfirmation(plainRationale + '\n' + unquotedDescription);
+    if (counts.some(match => !completeCount(match, description, finalConfirmation))) return [];
+    const perItem = /\b(?:Every|Each) (?:candidate|item|proposal) gets its own\b/i.test(description);
     const questionRange = /\bone per (?:candidate|item|proposal)\b/i.test(label) && sequence &&
-      wholeCount(description, sequence) && numberOf(sequence[1]!) === n &&
+      /\bsequential(?:ly)?\b/i.test(description) &&
+      (counts.length > 0 || (perItem && /\bone question per (?:candidate|item|proposal)\b/i.test(rationale) &&
+        new RegExp(`\\bD${chain}\\.final\\s+to confirm\\b`, 'i').test(description))) &&
       (description.match(/\bD[1-9]\d*\.[1-9]\d*\b/g)?.length ?? 0) === 2;
     // A full split can also bind the numbered inventory by cardinality and
     // universal per-item disposition, without inventing future question IDs.
@@ -699,7 +730,10 @@ function completeCandidateSplit(q: NativePlanQuestionCall['questions'][number]):
     const own = menu(label + '\n' + rawDescription + '\n' + ownBrief)
       .replace(/\bnothing is (?:dropped|removed|skipped) or merged on your behalf\b/gi, '')
       .replace(/\bno (?:candidate|item|proposal) is (?:silently )?(?:merged|dropped|removed|skipped) or (?:merged|dropped|removed|skipped)\b/gi, '');
-    if (/```|~~~|^\s*>|\b(?:not|never|without|except|excluding|stop\w*|omit\w*|narrow\w*|batch\w*|subset|shortlist|groups?)\b/im.test(label + '\n' + description) ||
+    // A Hold answer pauses this chain for discussion. It does not truncate
+    // the inventory; every other stop/exception remains an omission veto.
+    const procedural = menu(rawDescription).replace(/^\s*(?:✅\s*)?Hold(?: on any (?:item|candidate|proposal))? (?:stops|pauses) (?:the|this) chain (?:so we can discuss|for discussion|to discuss) before (?:continuing|proceeding|resuming)\.?\s*$/gim, '');
+    if (/```|~~~|^\s*>|\b(?:not|never|without|except|excluding|stop\w*|omit\w*|narrow\w*|batch\w*|subset|shortlist|groups?)\b/im.test(label + '\n' + procedural) ||
         scopeEffect.test(own)) return [];
     return [index + 1];
   });

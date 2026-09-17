@@ -376,7 +376,7 @@ const verify=(name:string,pass:boolean)=>test(name,()=>expect(pass).toBe(true));
 const choose=(e=state(),screen=pane(e.pacing))=>ceoExpansionPacingChoice(screen,e.transcript,f.selectedAt);
 verify('actual retained frame selects the complete seven-candidate walkthrough',choose(state(),actualFrame)?.index===1);
 for(const [name,mutate]of Object.entries({
- 'eight complete candidates':(q:any)=>{q.question=q.question.replaceAll('7 expansion candidates','8 expansion candidates').replace('7 adjacent improvements','8 adjacent improvements').replace('E7 cross-project views.','E7 cross-project views, E8 shared pinned groups.');q.options[0].label=q.options[0].label.replace('7 questions','8 questions');q.options[0].description=q.options[0].description.replace('E7','E8');},
+ 'eight complete candidates':(q:any)=>{q.question=q.question.replaceAll('7 expansion candidates','8 expansion candidates').replace('7 adjacent improvements','8 adjacent improvements').replace('E7 cross-project views.','E7 cross-project views, E8 shared pinned groups.').replaceAll('Seven','Eight');q.options[0].label=q.options[0].label.replace('7 questions','8 questions');q.options[0].description=q.options[0].description.replace('E7','E8');},
  'different proposal prefix':(q:any)=>{q.question=q.question.replace(/\bE(?=\d)/g,'P');q.options.forEach((o:any)=>{o.description=o.description.replace(/\bE(?=\d)/g,'P');});},
  'complete walkthrough label':(q:any)=>{q.options[0].label='A: Complete walkthrough, 7 questions (recommended)';},
  'one per item with explicit range':(q:any)=>{q.options[0].description='One question per item, E1 to E7.';},
