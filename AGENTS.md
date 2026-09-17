@@ -148,6 +148,8 @@ When fixing failures or preparing `/ship`, follow this order:
    for another agent run. Check behavior and acknowledgments; match exact prose
    only when that prose is the contract. Do not lower thresholds, increase model
    budgets, skip cases, or rejudge a failure to manufacture a pass.
+   For policy or validation repairs, exercise the actual registered callback with
+   representative native input and assert that it uses the helper’s result.
    When renderer or parser failures recur at the same boundary, verify the
    supported input class against the pinned runtime. Keep adversarial controls;
    do not add one spelling or glyph per paid failure.

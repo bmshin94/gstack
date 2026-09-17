@@ -81,6 +81,7 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/ceo-expansion-pacing-77.json', ['plan-ceo-mode-routing']],
     ['test/eng-published-navigation.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-published-navigation.json', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-6aef-count-public.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/disabled-retained-record.json', ['outside-plan-disabled-no-fallback']],
     ['test/ceo-native-ledger-replay.test.ts', ['plan-ceo-finding-count']],
     ['test/fixtures/ceo-native-ledger-8525.json', ['plan-ceo-finding-count']],
@@ -103,6 +104,9 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/design-count-native-issue-fields.json', ['plan-design-finding-count']],
     ['test/helpers/ceo-payment-findings.ts', ['plan-ceo-finding-count']],
     ['test/ceo-payment-findings.test.ts', ['plan-ceo-finding-count']],
+    ['test/ceo-source-attribution.test.ts', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-source-attribution-6aef.json', ['plan-ceo-finding-count']],
+    ['test/fixtures/ceo-current-record-6aef.json', ['plan-ceo-finding-count']],
     ['test/fixtures/ceo-payment-ledger-decisions.json', ['plan-ceo-finding-count']],
     ['test/setup-gbrain-remote-caller.test.ts', ['setup-gbrain-remote']],
     ['test/skill-fixture.test.ts', ['journey-ideation', 'journey-plan-eng', 'journey-debug', 'journey-qa', 'journey-code-review', 'journey-ship', 'journey-docs', 'journey-retro', 'journey-design-system', 'journey-visual-qa']],
@@ -141,6 +145,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/helpers/hermetic-env.test.ts', ['plan-ceo-split-overflow']],
     ['test/helpers/ceo-split-question-policy.ts', ['plan-ceo-split-overflow']],
     ['test/ceo-split-question-policy.test.ts', ['plan-ceo-split-overflow']],
+    ['test/fixtures/ceo-split-actor-6aef.json', ['plan-ceo-split-overflow']],
+    ['test/helpers/ceo-mode-option.ts', ['plan-ceo-mode-routing', 'plan-ceo-finding-count', 'plan-ceo-split-overflow']],
     ['docs/askuserquestion-split.md', ['plan-ceo-split-overflow', 'plan-decision-classification', 'plan-devex-peer-comparison-classification']],
     ['test/resolver-ask-user-format.test.ts', ['plan-ceo-split-overflow']],
     ['test/skill-e2e-plan-ceo-finding-count.test.ts', ['plan-ceo-finding-count']],
@@ -401,7 +407,8 @@ test('explanatory native mode evidence selects all observers with their existing
   const expected = ['auto-decide-preserved', 'conductor-prose', 'office-hours-auto-mode',
     'plan-ceo-review-plan-mode', 'plan-design-review-plan-mode', 'plan-devex-review-plan-mode',
     'plan-eng-review-plan-mode', 'plan-mode-no-op'];
-  for (const file of ['test/helpers/native-auto-decide.ts', 'test/auto-decide-explanatory-mode.test.ts',
+  for (const file of ['test/helpers/native-auto-decide.ts', 'test/auto-decide-current-declaration.test.ts',
+    'test/fixtures/auto-decide-current-declaration-6aef.json', 'test/auto-decide-explanatory-mode.test.ts',
     'test/fixtures/auto-decide-explanatory-mode-043a.json', 'test/fixtures/auto-decide-explanatory-mode-749df.json']) {
     expect([...selectTests([file], E2E_TOUCHFILES).selected].sort()).toEqual(expected);
     expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
