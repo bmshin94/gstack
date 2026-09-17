@@ -17,6 +17,17 @@ const phaseNumber = { ceo: 1, design: 2, dx: 2.5, eng: 3 };
 type Phase = keyof typeof phaseNumber;
 const clock = Date.parse('2026-09-17T04:00:00Z');
 
+async function withNativeProjectDirectory<T>(cwd: string | undefined, work: () => Promise<T>): Promise<T> {
+  const previous = process.env.CLAUDE_PROJECT_DIR;
+  if (cwd === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+  else process.env.CLAUDE_PROJECT_DIR = cwd;
+  try { return await work(); }
+  finally {
+    if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previous;
+  }
+}
+
 function fixture(phase: Phase = 'ceo', next = 'design') {
   const cwd = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'autoplan-publication-'))); dirs.push(cwd);
   const source = path.join(cwd, 'source.md'), active = path.join(cwd, 'active.md'), restore = path.join(cwd, 'restore.md');
@@ -78,6 +89,76 @@ function fixture(phase: Phase = 'ceo', next = 'design') {
 }
 
 describe('Autoplan parent publication guard', () => {
+  function changedDirectory(publish = true, next = 'design-phase.md') {
+    const f = fixture();
+    const registry = path.join(f.cwd, 'registry');
+    fs.mkdirSync(registry); fs.symlinkSync(path.join(ROOT, 'autoplan'), path.join(registry, 'autoplan'));
+    const currentCwd = fs.realpathSync(path.join(registry, 'autoplan/sections'));
+    f.use('cd', 'Bash', { command: `cd '${registry}/autoplan/sections' && pwd` });
+    f.result('cd', { content: currentCwd });
+    if (publish) f.message();
+    f.input.cwd = currentCwd;
+    f.input.tool_input = { file_path: next };
+    f.current();
+    const { rows } = f.journal();
+    const change = rows.findIndex(r => Array.isArray(r.message.content) &&
+      r.message.content.some((b: any) => b.type === 'tool_result' && b.tool_use_id === 'cd'));
+    for (const row of rows.slice(change)) row.cwd = currentCwd;
+    const save = () => fs.writeFileSync(f.input.transcript_path, rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+    save(); return { f, rows, save };
+  }
+
+  test('native project ownership survives a Bash cd through the installed skill link', async () => {
+    const { f } = changedDirectory();
+    expect(readOwnedClaudePublicTranscript(f.input.transcript_path, f.input.cwd, f.sessionId).transcript.status).toBe('missing');
+    expect(await withNativeProjectDirectory(f.cwd, () => runPublicationHook(f.input, ROOT))).toEqual({});
+  });
+
+  test('native project ownership still requires publication and permits same-phase repair after cd', async () => {
+    const { f } = changedDirectory(false);
+    const output: any = await withNativeProjectDirectory(f.cwd, () => runPublicationHook(f.input, ROOT));
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain('Publish the filled Phase 1');
+    const same = changedDirectory(false, 'ceo-phase.md');
+    expect(await withNativeProjectDirectory(same.f.cwd, () => runPublicationHook(same.f.input, ROOT))).toEqual({});
+  });
+
+  test('native project ownership preserves the absent-env same-directory adapter', async () => {
+    const f = fixture(); f.message(); f.current(); f.journal();
+    expect(await withNativeProjectDirectory(undefined, () => runPublicationHook(f.input, ROOT))).toEqual({});
+  });
+
+  for (const project of ['absent', 'empty', 'relative', 'foreign', 'unnormalized'] as const) {
+    test(`native project ownership rejects ${project} original-directory evidence after cd`, async () => {
+      const { f } = changedDirectory();
+      const value = project === 'absent' ? undefined : project === 'empty' ? '' : project === 'relative' ? 'relative' :
+        project === 'foreign' ? path.join(f.cwd, 'foreign') : f.cwd + '/.';
+      const output: any = await withNativeProjectDirectory(value, () => runPublicationHook(f.input, ROOT));
+      expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    });
+  }
+
+  for (const mutation of ['foreign-root', 'sidechain', 'dangling', 'competing-root', 'duplicate-root',
+    'foreign-session', 'wrong-current-input', 'incomplete-current'] as const) {
+    test(`native project ownership retains ${mutation} rejection after cd`, async () => {
+      const { f, rows, save } = changedDirectory();
+      const current = rows.at(-1)!;
+      if (mutation === 'foreign-root') rows[0]!.cwd = path.join(f.cwd, 'foreign');
+      if (mutation === 'sidechain') current.isSidechain = true;
+      if (mutation === 'dangling') current.parentUuid = randomUUID();
+      if (mutation === 'competing-root') rows.push({ ...rows[0]!, uuid: randomUUID() });
+      if (mutation === 'duplicate-root') rows.push({ ...rows[0]! });
+      if (mutation === 'foreign-session') current.sessionId = randomUUID();
+      if (mutation === 'wrong-current-input') f.input.tool_input = { file_path: 'eng-phase.md' };
+      save();
+      if (mutation === 'incomplete-current') {
+        const bytes = fs.readFileSync(f.input.transcript_path, 'utf8');
+        fs.writeFileSync(f.input.transcript_path, bytes.slice(0, -1));
+      }
+      const output: any = await withNativeProjectDirectory(f.cwd, () => runPublicationHook(f.input, ROOT));
+      expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    });
+  }
+
   for (const [phase, next] of [['ceo', 'design'], ['design', 'dx'], ['design', 'eng'], ['dx', 'eng'], ['eng', 'tasks']] as const) {
     test(`${phase} closes before ${next}; only the parent publication unlocks entry`, () => {
       const f = fixture(phase, next); f.current();

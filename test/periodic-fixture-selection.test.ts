@@ -839,3 +839,18 @@ test('collection completion lifecycle selects the existing native counter consum
     selectTests(['test/plan-count-timeout.test.ts'], E2E_TOUCHFILES).selected.sort());
   expect(selectTests(['test/plan-count-collection-completion.test.ts'], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
 });
+
+for (const file of ['test/plan-count-cross-cwd-ancestry.test.ts', 'test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json']) {
+  test(`${file} selects native cwd continuation consumers`, () => {
+    const selected = selectTests([file], E2E_TOUCHFILES);
+    expect(selected.reason).toBe('diff');
+    expect(selected.selected.sort()).toEqual([
+      'auto-decide-preserved', 'autoplan-chain-pty', 'conductor-prose',
+      'plan-ceo-finding-count', 'plan-ceo-mode-routing', 'plan-ceo-split-overflow',
+      'plan-design-finding-count', 'plan-design-review-plan-mode', 'plan-design-with-ui-scope',
+      'plan-devex-finding-count', 'plan-eng-finding-count', 'plan-eng-multi-finding-batching',
+      'plan-eng-review-plan-mode',
+    ].sort());
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  });
+}

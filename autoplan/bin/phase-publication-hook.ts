@@ -399,9 +399,13 @@ export async function runPublicationHook(value: unknown, root: string): Promise<
         typeof value.tool_use_id !== 'string' || !object(value.tool_input)) fail('Native parent hook identity is unavailable.');
     const input = value as PublicationHookInput;
     if (!candidate({ name: input.tool_name, input: input.tool_input }, input.cwd)) return {};
+    // Native hooks override this environment value with the session's project
+    // root. Bash cd changes input.cwd, not the journal's original ownership.
+    const projectCwd = process.env.CLAUDE_PROJECT_DIR ?? input.cwd;
+    if (!ownPath(projectCwd)) fail('Native parent project directory is unavailable.');
     const deadline = performance.now() + 2_000;
     do {
-      const snapshot = readOwnedClaudePublicTranscript(input.transcript_path, input.cwd, input.session_id);
+      const snapshot = readOwnedClaudePublicTranscript(input.transcript_path, projectCwd, input.session_id);
       if (snapshot.transcript.status === 'ready' && snapshot.events.some(e => e.kind === 'use' && e.toolUseId === input.tool_use_id))
         return publicationHookOutput(evaluateAutoplanPublication(input, root, snapshot.events));
       await new Promise(resolve => setTimeout(resolve, 50));

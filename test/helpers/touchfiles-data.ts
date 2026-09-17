@@ -182,7 +182,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/auto-decide-target-361c.json',
 'test/paid-retry-supervision.test.ts',
     'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json',
-    'test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts',
+    'test/helpers/plan-count-transcript.ts', 'test/plan-count-cross-cwd-ancestry.test.ts', 'test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json', 'test/plan-count-session-cwd.test.ts',
     'scripts/resolvers/learnings.ts',
     "test/fixtures/plan-scope-target-aw.json",
 
@@ -206,7 +206,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/auto-decide-target-361c.json',
 
     'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json',
-    'test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts',
+    'test/helpers/plan-count-transcript.ts', 'test/plan-count-cross-cwd-ancestry.test.ts', 'test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json', 'test/plan-count-session-cwd.test.ts',
     'test/helpers/office-hours-attempt.ts', 'test/office-hours-attempt.test.ts', 'lib/eval-model.ts', 'test/session-runner-tools.test.ts',
     'test/plan-design-sdk-fixture.test.ts',
     "test/fixtures/plan-scope-target-aw.json",
@@ -303,7 +303,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
 'test/paid-retry-supervision.test.ts',
     'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json',
     'test/fixtures/auto-decide-completed-mode-f359.json',
-    'test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts','test/pty-screen-unicode-ap.test.ts',
+    'test/helpers/plan-count-transcript.ts', 'test/plan-count-cross-cwd-ancestry.test.ts', 'test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json', 'test/plan-count-session-cwd.test.ts','test/pty-screen-unicode-ap.test.ts',
     'test/auto-decide-saved-ai.test.ts', 'test/fixtures/auto-decide-saved-ai.json', 'test/fixtures/auto-decide-retry-ai.json','bin/gstack-skill-start', 'bin/gstack-skill-end', 'bin/gstack-session-kind', 'scripts/resolvers/question-tuning.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-preamble-bash.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'plan-ceo-review/**', 'bin/gstack-question-preference', 'bin/gstack-config', 'bin/gstack-slug', 'hosts/claude/hooks/question-preference-hook.ts', 'hosts/claude/hooks/spawned-directive.ts', 'lib/is-conductor.ts', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/skill-e2e-auto-decide-preserved.test.ts', 'test/plan-count-truncated-border.test.ts', 'test/fixtures/eng-d2-truncated-border-0bcd.json', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/helpers/native-auto-decide.ts', 'test/auto-decide-current-declaration.test.ts', 'test/fixtures/auto-decide-current-declaration-6aef.json', 'test/auto-decide-explanatory-mode.test.ts', 'test/fixtures/auto-decide-explanatory-mode-043a.json', 'test/fixtures/auto-decide-explanatory-mode-749df.json', 'test/auto-decide-structured.test.ts', 'test/fixtures/auto-decide-structured-77.json', 'test/helpers/auto-decision-state.ts', 'test/auto-decision-state.test.ts', 'test/fixtures/auto-decide-state-cab3.json', 'bin/gstack-question-log', 'test/native-auto-decide.test.ts', 'test/native-auto-decide-pty.test.ts', 'test/helpers/fake-plan-seed.ts', 'test/helpers/plan-seed-submission.ts', 'test/plan-seed-submission.test.ts', 'test/fixtures/plan-seed-cli.ts', 'test/fixtures/native-auto-decide-ag.json', 'test/eng-seeded-completion-ai.test.ts', 'test/fixtures/eng-seeded-completion-ai.json', 'test/helpers/plan-count-pending-exit.ts', 'test/plan-count-pending-exit.test.ts', 'test/helpers/pty-screen.ts', 'test/pty-screen.test.ts', 'test/pty-screen-session.test.ts', 'test/fixtures/pty-screen/**',
     "test/ceo-mode-preference-al.test.ts",
     'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts',
@@ -321,7 +321,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/auto-decide-target-361c.json',
 
     'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json',
-    'test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts',
+    'test/helpers/plan-count-transcript.ts', 'test/plan-count-cross-cwd-ancestry.test.ts', 'test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json', 'test/plan-count-session-cwd.test.ts',
     'scripts/resolvers/learnings.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json", 'test/pty-screen-unicode-ap.test.ts', 'test/eng-scope-entry-ap.test.ts',
@@ -348,7 +348,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/ceo-expansion-posture-kind-dacc.json',
     'test/fixtures/ceo-expansion-pause-6714.json',
     'test/ceo-mode-pending-submit.test.ts', 'test/fixtures/ceo-mode-pending-submit.json',
-    "test/plan-count-session-cwd.test.ts",
+    "test/plan-count-cross-cwd-ancestry.test.ts", "test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json", "test/plan-count-session-cwd.test.ts",
 
     "test/ceo-mode-colon-at.test.ts", "test/fixtures/ceo-mode-colon-at.json",'test/pty-screen-unicode-ap.test.ts', 'plan-ceo-review/**', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble.ts', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/plan-count-native-input.test.ts', 'test/helpers/pty-screen.ts', 'test/pty-screen.test.ts', 'test/pty-screen-session.test.ts', 'test/fixtures/pty-screen/**', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/helpers/ceo-mode-option.ts', 'test/ceo-mode-expansion-disposition.test.ts', 'test/fixtures/ceo-expansion-disposition-77.json', 'test/ceo-mode-option.test.ts', 'test/pty-option-selection.test.ts', 'test/helpers/plan-count-transcript.ts', 'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json', 'test/plan-count-transcript.test.ts', 'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts', 'test/plan-count-prerequisite-n.test.ts', 'test/fixtures/ceo-prerequisite-n-call.json', 'test/fixtures/eng-prerequisite-77.json', 'test/skill-e2e-plan-ceo-mode-routing.test.ts', 'test/ceo-mode-posture-native.test.ts', 'test/fixtures/ceo-hold-posture-l.json', 'test/ceo-mode-labels-native.test.ts', 'test/fixtures/ceo-mode-labels-l.json', 'test/plan-count-checkbox.test.ts', 'test/fixtures/ceo-checkbox-l.screen.txt', 'test/ceo-mode-prerequisite.test.ts', 'test/fixtures/ceo-mode-prerequisite-o-calls.json', 'test/fixtures/ceo-mode-prerequisite-q-call.json', 'test/plan-count-preview-footer.test.ts', 'test/fixtures/ceo-preview-u-call.json', 'test/fixtures/ceo-preview-u-screen.txt', 'test/ceo-posture-packet.test.ts', 'test/fixtures/design-preview-v-screen.txt', 'test/plan-count-truncated-border.test.ts', 'test/fixtures/eng-d2-truncated-border-0bcd.json', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/fixtures/ceo-mode-preview-aa-screen.txt', 'test/fixtures/ceo-count-mode-preview-aa-screen.txt', 'test/ceo-expansion-auq.test.ts', 'test/fixtures/ceo-expansion-auq-ac.json', 'test/helpers/plan-count-pending-question.ts', 'test/autoplan-pending-question.test.ts', 'test/plan-pending-question-pty.test.ts', 'test/ceo-barless-submit.test.ts', 'test/fixtures/ceo-barless-submit-ac.json', 'test/pending-question-completion.test.ts', 'test/fixtures/pending-question-completion-ad.json', 'test/ceo-mode-posture-ad.test.ts', 'test/fixtures/ceo-mode-posture-ad.json', 'test/ceo-mode-full-ad.test.ts', 'test/fixtures/ceo-mode-full-ad.json', 'test/ceo-prerequisite-ad-v2.test.ts', 'test/fixtures/ceo-prerequisite-ad-v2.json', 'test/ceo-hold-posture-ag.test.ts', 'test/fixtures/ceo-hold-posture-ag.json',
     "test/ceo-hold-commitment-ar.test.ts", "test/fixtures/ceo-hold-commitment-ar.json",
@@ -360,7 +360,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json',
     'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts',
     'test/plan-count-prerequisite-n.test.ts', 'test/fixtures/ceo-prerequisite-n-call.json', 'test/fixtures/eng-prerequisite-77.json',
-    'test/helpers/plan-count-transcript.ts', 'test/plan-count-session-cwd.test.ts',
+    'test/helpers/plan-count-transcript.ts', 'test/plan-count-cross-cwd-ancestry.test.ts', 'test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json', 'test/plan-count-session-cwd.test.ts',
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json",
     "test/fixtures/design-scope-checkpoint-at.json",'plan-design-review/**', 'test/fixtures/plans/ui-heavy-feature.md', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/skill-e2e-plan-design-with-ui.test.ts', 'test/plan-count-truncated-border.test.ts', 'test/fixtures/eng-d2-truncated-border-0bcd.json', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt',
@@ -422,7 +422,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/eng-test-plan-edit-cli.js',
     'test/autoplan-owned-state.test.ts', 'test/fixtures/autoplan-owned-state-edit.json',
     'test/eng-finding-retry-budget.test.ts','scripts/resolvers/learnings.ts', 'test/gstack-brain-context-load.test.ts',
-    "test/plan-count-session-cwd.test.ts",
+    "test/plan-count-cross-cwd-ancestry.test.ts", "test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json", "test/plan-count-session-cwd.test.ts",
 
     "test/autoplan-cropped-gate-av.test.ts",
     "test/fixtures/autoplan-cropped-gate-av.json",
@@ -479,7 +479,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/ceo-onboarding-packet-90f.json', 'test/fixtures/ceo-baseline-alternatives-90f.json',
     'test/fixtures/ceo-recorded-decisions-dacc95ea.json',
     'test/helpers/ceo-payment-findings.ts', 'test/ceo-source-attribution.test.ts', 'test/fixtures/ceo-source-attribution-6aef.json', 'test/fixtures/ceo-current-record-6aef.json', 'test/ceo-payment-findings.test.ts', 'test/fixtures/ceo-payment-ledger-decisions.json',
-    "test/plan-count-session-cwd.test.ts",
+    "test/plan-count-cross-cwd-ancestry.test.ts", "test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json", "test/plan-count-session-cwd.test.ts",
 
     "test/ceo-annotation-header-at.test.ts", "test/fixtures/ceo-annotation-header-at.json", "test/ceo-section-parenthesis-at.test.ts", "test/fixtures/ceo-section-parenthesis-at.json",'test/pty-screen-unicode-ap.test.ts', 'test/ceo-current-omission-ap.test.ts', 'test/fixtures/ceo-current-omission-ap.json', 'test/ceo-declarative-premise-ap.test.ts', 'test/fixtures/ceo-declarative-premise-ap.json', 'test/design-crop-gutter-ap.test.ts', 'test/fixtures/design-crop-gutter-ap.json', 'test/helpers/dx-selected-navigation.ts', 'test/dx-selected-navigation-ap.test.ts', 'test/fixtures/dx-selected-navigation-ap.json', 'test/dx-manual-handoff-ao.test.ts', 'test/fixtures/dx-manual-handoff-ao.json', 'bin/gstack-config', 'bin/gstack-skill-start', 'bin/gstack-skill-end', 'plan-ceo-review/**', 'test/skill-ceo-section-ordering.test.ts', 'scripts/resolvers/preamble.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/plan-count-native-input.test.ts', 'test/helpers/pty-screen.ts', 'test/pty-screen.test.ts', 'test/pty-screen-session.test.ts', 'test/fixtures/pty-screen/**', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/claude-pty-runner.unit.test.ts', 'test/plan-count-completion.test.ts', 'test/plan-count-dx-handoff.test.ts', 'test/fixtures/devex-handoff-n-call.json', 'test/helpers/ceo-completion-handoff.ts', 'test/ceo-completion-handoff.test.ts', 'test/ceo-count-s-terminals.test.ts', 'test/fixtures/ceo-count-s-paired.json', 'test/fixtures/ceo-completion-handoff-calls.json', 'test/fixtures/ceo-completion-handoff-j-calls.json', 'test/fixtures/ceo-completion-handoff-k-calls.json', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/helpers/plan-count-transcript.ts', 'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json', 'test/helpers/plan-count-pending-exit.ts', 'test/plan-count-pending-exit.test.ts', 'test/plan-count-transcript.test.ts', 'test/helpers/plan-count-artifacts.ts', 'test/plan-count-artifacts.test.ts', 'test/helpers/eval-store.ts', 'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts', 'test/plan-count-collection-completion.test.ts', 'test/plan-count-timeout.test.ts', 'test/plan-count-navigation-r.test.ts', 'test/plan-count-prerequisite-n.test.ts', 'test/fixtures/ceo-prerequisite-n-call.json', 'test/fixtures/eng-prerequisite-77.json', 'test/skill-e2e-plan-ceo-finding-count.test.ts', 'test/ceo-completion-handoff-l.test.ts', 'test/fixtures/ceo-completion-handoff-l-calls.json', 'test/ceo-completion-handoff-m.test.ts', 'test/fixtures/ceo-completion-handoff-m-call.json', 'test/fixtures/devex-review-l-calls.json', 'test/plan-count-checkbox.test.ts', 'test/fixtures/ceo-checkbox-l.screen.txt', 'test/fixtures/ceo-handoff-n-calls.json', 'test/ceo-completion-handoff-o.test.ts', 'test/fixtures/ceo-completion-handoff-o-call.json', 'test/plan-count-empty-review.test.ts', 'test/fixtures/ceo-count-s-distinct.json', 'test/fixtures/plan-count-design-questionless-report.md', 'test/plan-count-dx-handoff-o.test.ts', 'test/fixtures/devex-handoff-o-call.json', 'test/helpers/ceo-approach-pick.ts', 'test/ceo-approach-pick.test.ts', 'test/fixtures/ceo-approach-q-call.json', 'test/fixtures/ceo-approach-r-call.json', 'test/fixtures/ceo-approach-r-distinct-call.json', 'test/fixtures/ceo-approach-q-paired-call.json', 'test/fixtures/ceo-completion-handoff-q-call.json', 'test/fixtures/ceo-completion-handoff-r-calls.json', 'test/fixtures/ceo-completion-handoff-t-call.json', 'test/helpers/plan-count-file-permission.ts', 'test/plan-count-file-permission.test.ts', 'test/fixtures/plan-count-edit-permission-t.json', 'test/plan-count-preview-footer.test.ts', 'test/fixtures/ceo-preview-u-call.json', 'test/fixtures/ceo-preview-u-screen.txt', 'test/fixtures/ceo-completion-handoff-u-call.json', 'test/fixtures/ceo-completion-handoff-v-call.json', 'test/fixtures/design-preview-v-screen.txt', 'test/plan-count-owned-permission.test.ts', 'test/fixtures/plan-count-owned-permission-v.json', 'test/fixtures/ceo-questionless-w-native.json', 'test/plan-count-ceo-body-finding.test.ts', 'test/fixtures/ceo-count-w-paired.json', 'test/fixtures/ceo-completion-handoff-w-call.json', 'test/fixtures/ceo-approach-y-call.json', 'test/fixtures/ceo-approach-y-screen.txt', 'test/ceo-handoff-y.test.ts', 'test/fixtures/ceo-handoff-y-call.json', 'test/plan-count-truncated-border.test.ts', 'test/fixtures/eng-d2-truncated-border-0bcd.json', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/fixtures/ceo-handoff-z-call.json', 'test/fixtures/ceo-approach-aa-call.json', 'test/review-handoffs-aa.test.ts', 'test/fixtures/review-handoff-aa-ceo.json', 'test/fixtures/review-handoff-aa-dx.json', 'test/helpers/ceo-mode-option.ts', 'test/ceo-mode-expansion-disposition.test.ts', 'test/fixtures/ceo-expansion-disposition-77.json', 'test/ceo-count-mode.test.ts', 'test/fixtures/ceo-count-mode-ab-call.json', 'test/ceo-count-ac.test.ts', 'test/fixtures/ceo-count-ac-calls.json', 'test/fixtures/ceo-count-ac-later-calls.json', 'test/plan-count-permission-ac.test.ts', 'test/fixtures/plan-count-permission-ac.json', 'test/fixtures/plan-count-permission-ad.json', 'test/fixtures/plan-count-permission-ae.json', 'test/ceo-count-ad-v2.test.ts', 'test/fixtures/ceo-count-ad-v2.json', 'test/fixtures/plan-count-permission-target-ad-v2.json', 'test/fixtures/ceo-finding-alias-af.json', 'test/fixtures/ceo-numbered-brief-af.json', 'test/ceo-contract-assertions-ag.test.ts', 'test/fixtures/ceo-contract-assertions-ag.json', 'test/fixtures/ceo-contract-assertions-ag-retry.json', 'test/fixtures/plan-count-permission-ah.json', 'test/ceo-parenthesized-issue-ah.test.ts', 'test/fixtures/ceo-parenthesized-issue-ah.json', 'test/ceo-section-choice-ai.test.ts', 'test/fixtures/ceo-section-choice-ai.json', 'test/fixtures/ceo-metadata-brief-ax.json', 'test/ceo-annotation-aj.test.ts', 'test/fixtures/ceo-annotation-aj.json',
     'test/plan-count-crop-ak.test.ts',
@@ -550,7 +550,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/eng-published-navigation.test.ts', 'test/fixtures/eng-published-navigation.json',
     'test/fixtures/eng-current-ledger-seeds.json',
     'scripts/resolvers/learnings.ts',
-    "test/plan-count-session-cwd.test.ts",
+    "test/plan-count-cross-cwd-ancestry.test.ts", "test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json", "test/plan-count-session-cwd.test.ts",
     "test/eng-scheduled-regression.test.ts",
     "test/eng-owned-explanation.test.ts", "test/fixtures/eng-owned-explanation.json",
 
@@ -608,7 +608,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/fixtures/design-completion-envelope-90f.json',
     "test/design-compact-primary-aw.test.ts",
     "test/fixtures/design-compact-primary-aw-call.json",
-    "test/plan-count-session-cwd.test.ts",
+    "test/plan-count-cross-cwd-ancestry.test.ts", "test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json", "test/plan-count-session-cwd.test.ts",
 
     "test/design-primary-emphasis-av.test.ts",
     "test/fixtures/design-primary-emphasis-av-calls.json",
@@ -652,7 +652,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/eng-finding-retry-budget.test.ts',
     "test/dx-upgrade-transition-aw.test.ts",
     "test/fixtures/dx-upgrade-transition-aw.json",
-    "test/plan-count-session-cwd.test.ts",
+    "test/plan-count-cross-cwd-ancestry.test.ts", "test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json", "test/plan-count-session-cwd.test.ts",
 
     "test/dx-reversed-tuples-av.test.ts",
     "test/fixtures/dx-reversed-tuples-av.json",
@@ -765,7 +765,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'scripts/resolvers/learnings.ts',
     'test/helpers/eng-seeded-coverage.ts', 'test/fixtures/eng-neutral-seed-749df.json', 'test/fixtures/eng-paired-suite-749df.json', 'test/fixtures/eng-a689-count-public.json', 'test/fixtures/eng-6aef-count-public.json', 'test/fixtures/eng-a689-retry-public.json', 'test/eng-seeded-coverage.test.ts',
     'test/eng-resolution-block-position.test.ts',
-    "test/plan-count-session-cwd.test.ts",
+    "test/plan-count-cross-cwd-ancestry.test.ts", "test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json", "test/plan-count-session-cwd.test.ts",
 
     "test/plan-scope-recovery-av.test.ts",
     "test/fixtures/plan-scope-recovery-av.json",
@@ -794,7 +794,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'test/plan-count-long-edit.test.ts', 'test/fixtures/plan-count-long-edit-0bcd.json', 'test/plan-count-cropped-wrap.test.ts',
     'test/fixtures/plan-count-cropped-wrap-6714.json',
     'test/eng-finding-retry-budget.test.ts',
-    "test/plan-count-session-cwd.test.ts",
+    "test/plan-count-cross-cwd-ancestry.test.ts", "test/fixtures/plan-count-cross-cwd-ancestry-0bcd.json", "test/plan-count-session-cwd.test.ts",
 'test/pty-screen-unicode-ap.test.ts', 'test/design-crop-gutter-ap.test.ts', 'test/fixtures/design-crop-gutter-ap.json', 'bin/gstack-config', 'plan-ceo-review/**', 'scripts/resolvers/preamble.ts', 'scripts/resolvers/preamble/generate-ask-user-format.ts', 'bin/gstack-question-preference', 'test/helpers/claude-pty-runner.ts', 'test/plan-count-design-ui-recovery.test.ts', 'test/fixtures/design-ui-boxed-question.json', 'test/plan-count-native-input.test.ts', 'test/helpers/pty-screen.ts', 'test/pty-screen.test.ts', 'test/pty-screen-session.test.ts', 'test/fixtures/pty-screen/**', 'test/helpers/hermetic-skill-runtime.ts', 'test/hermetic-skill-runtime.test.ts', 'test/helpers/claude-pty-runner.unit.test.ts', 'test/helpers/pty-trust-dialog.ts', 'test/pty-trust-dialog.test.ts', 'test/helpers/plan-count-transcript.ts', 'test/autoplan-public-narration.test.ts', 'test/fixtures/autoplan-public-narration-ad.json', 'test/helpers/plan-count-pending-exit.ts', 'test/plan-count-pending-exit.test.ts', 'test/plan-count-transcript.test.ts', 'test/helpers/plan-count-artifacts.ts', 'test/plan-count-artifacts.test.ts', 'test/helpers/eval-store.ts', 'test/helpers/plan-count-fixture.ts', 'test/plan-count-fixture.test.ts', 'test/plan-count-collection-completion.test.ts', 'test/plan-count-timeout.test.ts', 'test/plan-count-navigation-r.test.ts', 'test/plan-count-prerequisite-n.test.ts', 'test/fixtures/ceo-prerequisite-n-call.json', 'test/fixtures/eng-prerequisite-77.json', 'test/fixtures/forcing-finding-seeds.ts', 'test/skill-e2e-plan-ceo-split-overflow.test.ts', 'test/plan-count-checkbox.test.ts', 'test/fixtures/ceo-checkbox-l.screen.txt', 'test/helpers/plan-count-file-permission.ts', 'test/plan-count-file-permission.test.ts', 'test/fixtures/plan-count-edit-permission-t.json', 'test/plan-count-owned-permission.test.ts', 'test/fixtures/plan-count-owned-permission-v.json', 'test/fixtures/ceo-questionless-w-native.json', 'test/plan-count-truncated-border.test.ts', 'test/fixtures/eng-d2-truncated-border-0bcd.json', 'test/plan-count-truncated-question.test.ts', 'test/fixtures/ceo-approach-z-call.json', 'test/fixtures/ceo-approach-z-screen.txt', 'test/plan-count-permission-ac.test.ts', 'test/fixtures/plan-count-permission-ac.json', 'test/fixtures/plan-count-permission-ad.json', 'test/fixtures/plan-count-permission-ae.json', 'test/fixtures/plan-count-permission-target-ad-v2.json', 'test/fixtures/plan-count-permission-ah.json',
     'test/plan-count-crop-ak.test.ts',
     'test/fixtures/plan-count-crop-ak.json',

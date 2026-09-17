@@ -142,8 +142,8 @@ function validQuestions(value: unknown): value is NativePlanQuestion[] {
       object(o) && typeof o.label === 'string' && o.label.trim()));
 }
 
-/** Native journal writes can flush children before parents. Only the exact
- * owned snapshot uses UUID causality; ordinary readers keep physical order. */
+/** Native journal writes can flush children before parents. Owned snapshots
+ * use causal order; ordinary readers only recover membership, keeping physical order. */
 function ownedCausalLines(lines: string[], cwd: string, filename: string): string[] {
   const uuid = (value: unknown): value is string => typeof value === 'string' &&
     /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
@@ -260,11 +260,22 @@ export function readPlanCountTranscript(configDir: string, cwd: string,
         // fixture's first parent user message; legacy records keep exact-cwd scoping.
         let originSeen = false;
         const ancestry = new Set<string>();
+        let causalMembership: Set<string> | undefined;
         const nativeUuid = (value: unknown): value is string =>
           typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
         // Claude appends JSONL during rendering; an unfinished record is not
         // evidence of a call or an answer until its newline has been written.
         const completeLines = text.slice(0, text.lastIndexOf('\n') + 1).split('\n');
+        const recoveredMember = (id: string) => {
+          if (causalMembership === undefined) {
+            causalMembership = new Set<string>();
+            try {
+              causalMembership = new Set(ownedCausalLines(completeLines, cwd, entry.name)
+                .map(line => JSON.parse(line).uuid));
+            } catch { /* Invalid strict ancestry adds no recovery; legacy traversal continues. */ }
+          }
+          return causalMembership.has(id);
+        };
         for (const line of ownedSnapshot ? ownedCausalLines(completeLines, cwd, entry.name) : completeLines) {
           if (!line.trim()) continue;
           const record = JSON.parse(line);
@@ -275,7 +286,12 @@ export function readPlanCountTranscript(configDir: string, cwd: string,
             typeof record.cwd === 'string' && path.isAbsolute(record.cwd) &&
             nativeUuid(record.uuid) && validTimestamp(record.timestamp);
           const continuation = parentMetadata && nativeUuid(record.parentUuid) &&
-            ancestry.has(record.parentUuid) && !ancestry.has(record.uuid);
+            !ancestry.has(record.uuid) && (ancestry.has(record.parentUuid) ||
+              // A delayed metadata parent must not cut an already-rooted native
+              // session at its first cwd change. Recover membership lazily; do
+              // not discover a later root or reorder public uses and results.
+              (!ownedSnapshot && record.cwd !== cwd && ancestry.size > 0 &&
+                recoveredMember(record.uuid)));
           if (!originSeen && object(record.message) && ['user', 'assistant'].includes(record.message.role)) {
             originSeen = true;
             if (parentMetadata && record.cwd === cwd && record.message.role === 'user' &&
