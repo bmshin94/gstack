@@ -6,8 +6,10 @@ import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import * as floor from './helpers/plan-floor-review';
 import {resolveEvalModel} from '../lib/eval-model';
-import {createPendingQuestionRecorder,recordPendingQuestion,readPendingQuestion} from './helpers/plan-count-pending-question';
+import {createPendingQuestionRecorder,recordPendingQuestion,readPendingQuestion,pendingQuestionRecorderStatus} from './helpers/plan-count-pending-question';
+import {createPlanCountSnapshotWriter} from './helpers/plan-count-artifacts';
 import routing from './fixtures/plan-floor-routing-361c.json';
+import productTypes from './fixtures/plan-floor-product-type-70b.json';
 import * as runner from './helpers/claude-pty-runner';
 import {createPlanCountFixture} from './helpers/plan-count-fixture';
 import {readPlanFloorTarget} from './helpers/plan-floor-target';
@@ -39,24 +41,29 @@ const render = (question: typeof QUESTIONS.ceo) => ['☐ '+question.header,quest
 const FINDING = render(QUESTIONS.ceo);
 type Mode = 'captured' | 'owned' | 'owned-no-question' | 'foreign' | 'wrong-session' | 'missing-native' | 'linked-target' |
   'native-question' | 'scope' | 'prose' | 'finding' | 'routing' | 'unrelated' | 'partial' | 'quoted' | 'foreign-question' |
-  'stale-question' | 'answered-question' | 'failed-question' | 'mismatched-use' | 'duplicate-use' | 'judge-error' | 'mode' | 'pending-hook' | 'failed-hook' | 'packet' | 'prose-quoted' | 'prose-partial' | 'prose-foreign' | 'prose-stale';
+  'stale-question' | 'answered-question' | 'failed-question' | 'mismatched-use' | 'duplicate-use' | 'judge-error' | 'mode' | 'pending-hook' | 'failed-hook' | 'packet' | 'prose-quoted' | 'prose-partial' | 'prose-foreign' | 'prose-stale' | 'product-type' | 'product-type-undeclared' |
+  'unmatched-hook' | 'invalid-hook' | 'missing-hook' | 'idle-hook' | 'transition-hook' | 'unmatched-native';
+interface SnapshotOptions { evalDir: string; failFirst?: boolean; interrupt?: boolean }
 
 // Complete actual floor function; only clock/PTY/public-event and assessor
 // boundaries are controlled. Real ownership, permission and viewport parsers run.
 // Assessor responses are fixtures, never actual model-quality evidence.
-async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: typeof routing.captures[number]) {
+async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: typeof routing.captures[number], productQuestion=productTypes.captures[0]!.question, snapshotOptions?: SnapshotOptions) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'floor-permission-free-'));
   const config = path.join(dir, '.claude');
   let now = Date.now() - (mode.includes('hook') ? 10_000 : 1), launched: any, fixture: ReturnType<typeof createPlanCountFixture> | undefined;
   let screen = '', history = '', granted = false, closed = 0, saved: any;
   const sent: string[] = [], judgments: floor.PlanFloorReview[] = [], tools: any[] = [];
+  const snapshots: any[] = [], artifactErrors: string[] = [];
+  const retain = snapshotOptions ? createPlanCountSnapshotWriter({EVALS_RUN_ID:'floor-retention-free',GSTACK_EVAL_DIR:snapshotOptions.evalDir}) : undefined;
   const recorders: NonNullable<ReturnType<typeof createFilePermissionRecorder>>[] = [];
   let transcript: any = {status:'ready', calls:[], assistantMessages:[]};
   const question = structuredClone(QUESTIONS[kind]);
   class Clock extends Date { static now() { return now; } }
   const boundary = {
-    ...runner, fs, path, randomUUID, isDeepStrictEqual, readPendingQuestion, resolveEvalModel,
-    pickPlanFloorMode: floor.pickPlanFloorMode, Date: Clock, Bun: {sleep: async (ms: number) => { now += ms; }},
+    ...runner, fs, path, randomUUID, isDeepStrictEqual, readPendingQuestion, pendingQuestionRecorderStatus, resolveEvalModel,
+    pickPlanFloorMode: floor.pickPlanFloorMode, pickPlanFloorProductType: floor.pickPlanFloorProductType,
+    Date: Clock, Bun: {sleep: async (ms: number) => { now += ms; }},
     SANCTIONED_WRITE_SUBSTRINGS: ['gstack-test-plan-', '.claude/plans/'],
     createPlanCountFixture: (seed: string, opts: any) => {
       expect(opts).toMatchObject({nativeReviewOnly:true,preconfiguredReviewActor:true});
@@ -67,7 +74,12 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
     },
     readPlanFloorTarget, currentFilePermissionBinding,
     readPlanCountTranscript: (_config: string, _cwd: string, visit?: (event:any)=>void) => {tools.forEach(e=>visit?.(e));return transcript;},
-    createPlanCountSnapshotWriter: () => (value: any) => { saved = value; return {}; },
+    createPlanCountSnapshotWriter: () => (value: any) => {
+      saved = structuredClone(value); snapshots.push({at:now,observation:saved.observation});
+      if (snapshotOptions?.failFirst && snapshots.length === 1) return {artifactError:'controlled snapshot write failure'};
+      return retain?.(value) ?? {};
+    },
+    console: {error: (message: string) => artifactErrors.push(message)},
     logPtySnapshot: () => {},
     judgePtyState: () => { throw Error('Generic waiting cannot establish a finding'); },
     judgePlanFloorReview: (input: floor.PlanFloorReview, opts: any) => {
@@ -75,7 +87,7 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
       expect(opts.model).toBe(resolveEvalModel('warmup')); expect(opts.deadlineAt).toBeGreaterThan(now);
       floor.buildPlanFloorReviewPrompt(input);
       if(mode==='judge-error') throw Error('controlled assessment failure');
-      const classification = mode==='routing'||mode==='scope'||mode==='native-question' ? 'setup' :
+      const classification = mode==='routing'||mode==='scope'||mode==='native-question'||mode==='product-type-undeclared' ? 'setup' :
         mode==='unrelated' ? 'unrelated' : mode==='quoted' ? 'uncertain' : 'finding';
       return floor.validatePlanFloorAssessment(input, classification==='finding' ? {
         kind:'finding',seedQuote:SEED_QUOTES[kind],questionQuote:question.question,
@@ -86,7 +98,7 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
     launchClaudePty: async (opts: any) => {
       launched = opts;
       expect(opts.observeSetupQuestions).toBe(true);
-      let sequence=0, activeTab=0;
+      let sequence=0, activeTab=0, screenReads=0;
       const sid = opts.extraArgs[1], journal = path.join(config, 'projects', 'owned', sid + '.jsonl');
       fs.mkdirSync(path.dirname(journal), {recursive:true});
       transcript.assistantMessages = [{sessionId:sid, timestamp:new Clock(now).toISOString(), text:'Reviewing the supplied plan.'}];
@@ -125,24 +137,37 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
         hermeticConfigDir: config, pendingFilePermissionFiles, pendingQuestionFile:hookRecorder?.file,
         mark: () => 0, exited: () => false, exitCode: () => null,
         rawOutput: () => history, visibleText: () => history, visibleSince: () => history,
-        currentScreen: async () => screen,
+        currentScreen: async () => {
+          screenReads++;
+          if(snapshotOptions?.interrupt && screenReads === 2) throw Error('controlled screen interruption');
+          if(mode==='transition-hook' && screenReads === 2) recordPendingQuestion(JSON.stringify({
+            hook_event_name:'PreToolUse',tool_name:'AskUserQuestion',session_id:sid,tool_use_id:'hookQuestion',
+            cwd:opts.cwd,transcript_path:journal,tool_input:{questions:[question]},
+          }),hookRecorder!.file,opts.cwd,config);
+          return screen;
+        },
         send: (input: string) => {
           sent.push(input);
           if (input === `/plan-${kind}-review PLAN.md\r`) {
             fs.writeFileSync(journal, JSON.stringify({type:'user', isSidechain:false, cwd:opts.cwd, sessionId:sid,
               timestamp:new Clock(now).toISOString(), message:{role:'user', content:`<command-message>plan-${kind}-review</command-message>\n<command-name>/plan-${kind}-review</command-name>\n<command-args>PLAN.md</command-args>`}})+'\n');
             screen = permission;
-            if(['finding','unrelated','partial','quoted','foreign-question','stale-question','answered-question','failed-question','mismatched-use','duplicate-use','judge-error'].includes(mode)) {
+            if(['finding','unrelated','partial','quoted','foreign-question','stale-question','answered-question','failed-question','mismatched-use','duplicate-use','judge-error','unmatched-native'].includes(mode)) {
               if(mode==='partial')question.options[0].description='';
               if(mode==='quoted')question.question='Example from a previous review: '+question.question;
               if(mode==='unrelated')question.question='For OTHER.md, '+question.question;
               publish();
+              if(mode==='unmatched-native')screen='Reviewing the generator options.';
             } else if(mode.includes('hook')) {
               transcript.assistantMessages=[{sessionId:sid,timestamp:new Clock(now).toISOString(),text:'Reviewing the exact owned seed.'}];
-              recordPendingQuestion(JSON.stringify({hook_event_name:'PreToolUse',tool_name:'AskUserQuestion',session_id:sid,
+              if(!['idle-hook','transition-hook'].includes(mode)) recordPendingQuestion(JSON.stringify({hook_event_name:'PreToolUse',tool_name:'AskUserQuestion',session_id:sid,
                 tool_use_id:'hookQuestion',cwd:opts.cwd,transcript_path:journal,tool_input:{questions:[question]}}),hookRecorder!.file,opts.cwd,config);
+              if(mode==='invalid-hook')recordPendingQuestion('{}',hookRecorder!.file,opts.cwd,config);
+              if(mode==='missing-hook')hookRecorder!.dispose();
               if(mode==='failed-hook')transcript.calls=[{sessionId:sid,toolUseId:'hookQuestion',questions:[question],answered:false,failed:true}];
               screen=render(question);
+              if(['unmatched-hook','transition-hook'].includes(mode))screen='Reviewing the generator options.';
+              now=Math.max(now,Date.now()); // The real recorder's timestamp cannot be ahead of the controlled observation clock.
             } else if(mode==='packet') {
               const modeQuestion=(header:string)=>({header,question:'Which CEO review mode should apply to '+header+'?',multiSelect:false,
                 options:['SCOPE EXPANSION','SELECTIVE EXPANSION','HOLD SCOPE','SCOPE REDUCTION'].map(label=>({label,description:'Apply this review mode.'}))});
@@ -153,6 +178,8 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
             } else if(mode==='mode') {
               publish({header:'Mode',question:'Which CEO review mode should we use?',multiSelect:false,
                 options:['SCOPE EXPANSION','SELECTIVE EXPANSION','HOLD SCOPE','SCOPE REDUCTION'].map(label=>({label,description:'Apply this review mode.'}))});
+            } else if(mode.startsWith('product-type')) {
+              publish(structuredClone(productQuestion));
             } else if(mode==='routing') {
               screen=capture!.viewport; transcript.calls=structuredClone(capture!.calls).map(call=>({...call,sessionId:sid}));
               for(const call of transcript.calls)tools.push({sessionId:sid,toolUseId:call.toolUseId,name:'AskUserQuestion',kind:'use',
@@ -179,22 +206,31 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
           } else if((mode==='packet' && input==='\r') || (mode==='mode' && input==='3')) {
             const old=structuredClone(transcript.calls[0]);old.answered=true;old.answers=Object.fromEntries(old.questions.map((q:any)=>[q.question,'HOLD SCOPE']));
             publish();transcript.calls.unshift(old);history+='\n'+screen;
+          } else if(mode==='product-type' && input==='1') {
+            const old=structuredClone(transcript.calls[0]);old.answered=true;
+            old.answers={[old.questions[0].question]:old.questions[0].options[0].label};
+            publish();transcript.calls.unshift(old);history+='\n'+screen;
           } else if (input === '1\r') {
             granted = true;
             if(mode==='owned')publish(); else screen='';
             history += '\n' + screen;
           } else throw Error('Unexpected actor input: ' + JSON.stringify(input));
         },
-        close: async () => { closed++; },
+        close: async () => { closed++; for(const recorder of recorders)recorder.dispose(); },
       };
     },
   };
   const run = new Function(...Object.keys(boundary), body + '\nreturn runPlanSkillFloorCheck;')(...Object.values(boundary));
   try {
-    const result = await run({skillName:`plan-${kind}-review`, slashCommand:`/plan-${kind}-review`, followUpPrompt:SEEDS[kind],
-      requestedPlanPath:mode === 'captured' ? undefined : `/tmp/gstack-test-plan-${kind}-floor.md`, timeoutMs:100_000});
+    let result: any, error: unknown;
+    try {
+      result = await run({skillName:`plan-${kind}-review`, slashCommand:`/plan-${kind}-review`, followUpPrompt:SEEDS[kind],
+        productType:mode==='product-type'?'sdk-documentation':undefined,
+        requestedPlanPath:mode === 'captured' ? undefined : `/tmp/gstack-test-plan-${kind}-floor.md`, timeoutMs:100_000});
+    } catch(caught) { if(!snapshotOptions?.interrupt)throw caught; error=caught; }
     expect(closed).toBe(1); expect(fs.existsSync(fixture!.cwd)).toBe(false);
-    return {result, sent, judgments, granted, launched, saved, fixture};
+    expect(recorders.every(recorder=>!fs.existsSync(recorder.file))).toBe(true);
+    return {result, error, sent, judgments, granted, launched, saved, snapshots, artifactErrors, fixture};
   } finally { for (const recorder of recorders) recorder.dispose(); fixture?.cleanup(); fs.rmSync(dir,{recursive:true,force:true}); }
 }
 
@@ -254,12 +290,106 @@ test('declared HOLD mode is answered once and the later finding stays unanswered
   const e=await exercise('mode');expect(e.result.outcome).toBe('auq_observed');
   expect(e.sent).toEqual(['/plan-ceo-review PLAN.md\r','3']);expect(e.judgments).toHaveLength(1);
 });
+for (const [i,capture] of productTypes.captures.entries()) test(`captured DX product menu ${i+1} advances only its predeclared setup`,async()=>{
+ const e=await exercise('product-type','devex',undefined,capture.question);
+ expect(e.result.outcome).toBe('auq_observed');
+ expect(e.sent).toEqual(['/plan-devex-review PLAN.md\r','1']);expect(e.judgments).toHaveLength(1);
+ expect(e.judgments[0]!.seed).toContain('Product type is confirmed: SDK quickstart documentation');
+ expect(e.judgments[0]!.candidate).toMatchObject({question:QUESTIONS.devex});
+ expect(e.saved.observation.pendingQuestion.answered).toBe(false);
+});
+test('undeclared DX classification receives no answer and no finding credit',async()=>{
+ const e=await exercise('product-type-undeclared','devex');
+ expect(e.result.outcome).toBe('timeout');expect(e.sent).toEqual(['/plan-devex-review PLAN.md\r']);
+ expect(e.judgments).toHaveLength(1);
+});
 
 test('owned pending AUQ recorder supplies the complete question before JSONL publishes the call',async()=>{
   const e=await exercise('pending-hook');expect(e.result.outcome).toBe('auq_observed');
   expect(e.saved.observation.transcript.calls).toEqual([]);
   expect(e.saved.observation.pendingQuestion.source).toBe('pre_tool_use');
   expect(e.sent).toEqual(['/plan-ceo-review PLAN.md\r']);
+});
+for (const [mode,status] of [['unmatched-hook','pending'],['invalid-hook','invalid'],['missing-hook','missing'],['idle-hook','idle']] as const)
+test(`floor retains ${status} recorder diagnostics after fixture cleanup without granting credit`,async()=>{
+  const evalDir=fs.mkdtempSync(path.join(os.tmpdir(),'floor-retention-free-'));
+  try {
+    const e=await exercise(mode,'eng',undefined,undefined,{evalDir});
+    expect(e.result.outcome).toBe('timeout');expect(e.judgments).toHaveLength(0);
+    expect(e.sent).toEqual(['/plan-eng-review PLAN.md\r']);
+    const record=JSON.parse(fs.readFileSync(path.join(e.result.artifactDir,'observation.json'),'utf8'));
+    const diagnostics=record.questionDiagnostics;
+    expect(fs.existsSync(record.capture.cwd)).toBe(false);
+    expect(diagnostics.recorderStatus.status).toBe(status);
+    expect(diagnostics.parentSessionId).toBe(e.launched.extraArgs[1]);
+    expect(diagnostics.sampledAt).toBeGreaterThanOrEqual(record.commandStartedAt);
+    expect(diagnostics.nativeCandidates).toEqual([]);
+    expect(record.pendingQuestion).toBeUndefined();expect(record.auqObserved).toBe(false);
+    if(status==='pending')expect(diagnostics.validatedPendingQuestion).toMatchObject({
+      source:'pre_tool_use',toolUseId:'hookQuestion',questions:[QUESTIONS.eng],answered:false,failed:false,
+    });
+    else expect(diagnostics.validatedPendingQuestion).toBeUndefined();
+    if(status==='invalid')expect(diagnostics.recorderStatus.reason).toBe('invalid_event');
+    expect(fs.readFileSync(path.join(e.result.artifactDir,'terminal.screen.log'),'utf8')).toBe(e.saved.viewport);
+    expect(fs.readdirSync(e.result.artifactDir).some(name=>name.endsWith('.tmp'))).toBe(false);
+    const progress=e.snapshots.filter(s=>s.observation.state==='in_progress');
+    expect(progress.length).toBeGreaterThan(1);expect(progress.length).toBeLessThanOrEqual(8);
+    for(let i=0;i<progress.length;i++){
+      expect(progress[i].observation.outcome).toBeUndefined();expect(progress[i].observation.auqObserved).toBeUndefined();
+      if(i){
+        const binding=(s:any)=>JSON.stringify([s.questionDiagnostics.recorderStatus,s.questionDiagnostics.nativeCandidates,
+          s.questionDiagnostics.validatedPendingQuestion,s.pendingQuestion]);
+        if(binding(progress[i].observation)===binding(progress[i-1].observation))
+          expect(progress[i].at-progress[i-1].at).toBeGreaterThanOrEqual(15_000);
+      }
+    }
+  } finally {fs.rmSync(evalDir,{recursive:true,force:true});}
+});
+test('floor retains the complete published candidate before viewport rejection',async()=>{
+  const evalDir=fs.mkdtempSync(path.join(os.tmpdir(),'floor-retention-free-'));
+  try {
+    const e=await exercise('unmatched-native','eng',undefined,undefined,{evalDir});
+    const record=JSON.parse(fs.readFileSync(path.join(e.result.artifactDir,'observation.json'),'utf8'));
+    expect(e.result.outcome).toBe('timeout');expect(e.judgments).toHaveLength(0);
+    expect(record.questionDiagnostics.nativeCandidates).toEqual(record.transcript.calls);
+    expect(record.questionDiagnostics.nativeCandidates).toHaveLength(1);
+    expect(record.questionDiagnostics.nativeCandidates[0].questions).toEqual([QUESTIONS.eng]);
+    expect(record.pendingQuestion).toBeUndefined();expect(record.questionDiagnostics.validatedPendingQuestion).toBeUndefined();
+    expect(fs.readFileSync(path.join(e.result.artifactDir,'terminal.screen.log'),'utf8')).toBe('Reviewing the generator options.');
+  } finally {fs.rmSync(evalDir,{recursive:true,force:true});}
+});
+test('a recorder state change is retained before the periodic checkpoint interval',async()=>{
+  const e=await exercise('transition-hook','eng');
+  const progress=e.snapshots.filter(s=>s.observation.state==='in_progress');
+  expect(progress[0].observation.questionDiagnostics.recorderStatus.status).toBe('idle');
+  expect(progress[1].observation.questionDiagnostics.recorderStatus.status).toBe('pending');
+  expect(progress[1].at-progress[0].at).toBeLessThan(15_000);
+  expect(e.result.outcome).toBe('timeout');expect(e.judgments).toHaveLength(0);
+});
+test('interruption retains the last sampled binding and final recorder status before disposal',async()=>{
+  const evalDir=fs.mkdtempSync(path.join(os.tmpdir(),'floor-retention-free-'));
+  try {
+    const e=await exercise('unmatched-hook','eng',undefined,undefined,{evalDir,interrupt:true});
+    expect(String(e.error)).toContain('controlled screen interruption');expect(e.result).toBeUndefined();
+    const runRoot=path.join(evalDir,'pty-count','floor-retention-free');
+    const dirs=fs.readdirSync(runRoot);expect(dirs).toHaveLength(1);
+    const record=JSON.parse(fs.readFileSync(path.join(runRoot,dirs[0],'observation.json'),'utf8'));
+    expect(record.state).toBe('in_progress');expect(record.captureReason).toBe('before_cleanup');
+    expect(record.outcome).toBeUndefined();expect(record.auqObserved).toBeUndefined();
+    expect(record.questionDiagnostics.recorderStatus.status).toBe('pending');
+    expect(record.questionDiagnostics.validatedPendingQuestion.questions).toEqual([QUESTIONS.eng]);
+    expect(fs.existsSync(record.capture.cwd)).toBe(false);
+  } finally {fs.rmSync(evalDir,{recursive:true,force:true});}
+});
+test('an earlier periodic artifact error survives a later successful final snapshot',async()=>{
+  const evalDir=fs.mkdtempSync(path.join(os.tmpdir(),'floor-retention-free-'));
+  try {
+    const e=await exercise('unmatched-native','eng',undefined,undefined,{evalDir,failFirst:true});
+    expect(e.result.outcome).toBe('timeout');expect(e.result.artifactError).toBe('controlled snapshot write failure');
+    expect(e.artifactErrors).toEqual(['PTY artifact write failed: controlled snapshot write failure']);
+    const record=JSON.parse(fs.readFileSync(path.join(e.result.artifactDir,'observation.json'),'utf8'));
+    expect(record.artifactError).toBe(e.result.artifactError);expect(record.outcome).toBe('timeout');
+  } finally {fs.rmSync(evalDir,{recursive:true,force:true});}
 });
 test('declared native setup tabs are answered and submitted exactly once before the finding',async()=>{
   const e=await exercise('packet');expect(e.result.outcome,JSON.stringify({sent:e.sent,viewport:e.saved.viewport,pending:e.saved.observation.pendingQuestion})).toBe('auq_observed');
@@ -312,6 +442,7 @@ mock.module(${JSON.stringify(path.join(ROOT,'test/helpers/claude-pty-runner.ts')
   expect(opts.requestedPlanPath).toBe('/tmp/gstack-test-plan-'+kind+'-floor.md');
   expect(opts.followUpPrompt.split(opts.requestedPlanPath)).toHaveLength(2);
   expect(opts.timeoutMs).toBe(CAPTURE_LONG_MS);
+  expect(opts.productType).toBe(kind==='devex'?'sdk-documentation':undefined);
   expect(opts.env).toEqual({QUESTION_TUNING:'false',EXPLAIN_LEVEL:'default'});
   fs.appendFileSync(${JSON.stringify(facts)},JSON.stringify({kind,path:opts.requestedPlanPath})+'\\n');
   if(${JSON.stringify(outcome)}==='throw')throw Error('controlled runner failure');

@@ -441,14 +441,14 @@ test('file supervision regression selects all affected callers with their existi
   const gate = [
     'codex-offered-ceo-review', 'codex-offered-design-review', 'codex-offered-eng-review',
     'codex-offered-office-hours', 'office-hours-spec-review', 'plan-ceo-finding-floor',
-    'plan-ceo-review-benefits', 'plan-mode-no-op', 'plan-review-report',
+    'plan-ceo-review-benefits', 'plan-devex-finding-floor', 'plan-mode-no-op', 'plan-review-report',
   ];
   const periodic = [
     'auto-decide-preserved', 'codex-plan-ceo-format-approach', 'codex-plan-ceo-format-mode',
     'codex-plan-eng-format-coverage', 'codex-plan-eng-format-kind', 'plan-ceo-mode-routing',
     'plan-ceo-review', 'plan-ceo-review-expansion-energy', 'plan-ceo-review-format-approach',
     'plan-ceo-review-format-mode', 'plan-ceo-review-prosons-cadence', 'plan-ceo-review-selective',
-    'plan-eng-finding-floor', 'plan-eng-review', 'plan-eng-review-artifact',
+    'plan-design-finding-floor', 'plan-eng-finding-floor', 'plan-eng-review', 'plan-eng-review-artifact',
     'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-eng-review-plan-mode',
     'plan-review-prosons-format', 'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg',
   ];
@@ -609,4 +609,91 @@ test('native repair dependencies preserve every original tier', () => {
   "plan-devex-peer-comparison-classification": "periodic",
   "plan-decision-classification": "periodic"
 });
+});
+
+
+// These dependency edges do not create new paid identities. Reuse of unchanged
+// model inputs is qualified separately before a paid run.
+test('promoted public transcript decoder keeps its actual callers selected', () => {
+  const expected = [
+    'plan-eng-review-plan-mode',
+    'plan-design-review-plan-mode',
+    'auto-decide-preserved',
+    'conductor-prose',
+    'plan-ceo-mode-routing',
+    'plan-design-with-ui-scope',
+    'autoplan-chain-pty',
+    'plan-ceo-finding-count',
+    'plan-eng-finding-count',
+    'plan-design-finding-count',
+    'plan-devex-finding-count',
+    'plan-eng-multi-finding-batching',
+    'plan-ceo-split-overflow',
+    'plan-ceo-finding-floor',
+    'plan-eng-finding-floor',
+    'plan-design-finding-floor',
+    'plan-devex-finding-floor',
+  ];
+  expect(selectTests(['lib/claude-public-transcript.ts'], E2E_TOUCHFILES).selected.sort())
+    .toEqual(expected.sort());
+  expect(selectTests(['lib/claude-public-transcript.ts'], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+});
+
+test('Autoplan publication libraries and captured hook controls select the native chain', () => {
+  for (const file of [
+    'lib/autoplan-phase-publication.ts',
+    'test/autoplan-publication-guard.test.ts',
+    'test/autoplan-publication-hook.test.ts',
+    'test/autoplan-publication-generation.test.ts',
+    'test/fixtures/autoplan-publication-boundary-361c.json',
+  ]) {
+    expect(selectTests([file], E2E_TOUCHFILES).selected).toEqual(['autoplan-chain-pty']);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+  // Preserve the existing autoplan/** edges; native hook controls select only
+  // the chain, while a skill file change can select the existing broad owners.
+  expect(selectTests(['autoplan/bin/phase-publication-hook.ts'], E2E_TOUCHFILES).selected.sort())
+    .toEqual(selectTests(['autoplan/SKILL.md'], E2E_TOUCHFILES).selected.sort());
+  expect(E2E_TIERS['autoplan-chain-pty']).toBe('periodic');
+});
+
+test('combined Create captures select the existing owned file-permission consumers', () => {
+  const expected = [
+    'plan-ceo-finding-count',
+    'plan-eng-finding-count',
+    'plan-design-finding-count',
+    'plan-devex-finding-count',
+    'plan-eng-finding-floor',
+    'plan-ceo-finding-floor',
+    'plan-design-finding-floor',
+    'plan-devex-finding-floor',
+    'plan-eng-multi-finding-batching',
+    'plan-ceo-split-overflow',
+  ];
+  for (const file of ['test/plan-create-combined-permission.test.ts',
+    'test/fixtures/plan-create-combined-permission-70b.json']) {
+    expect(selectTests([file], E2E_TOUCHFILES).selected.sort()).toEqual([...expected].sort());
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+});
+
+test('floor quotation evidence selects four assessors and product-type evidence selects only DX', () => {
+  const floors = [
+    'plan-ceo-finding-floor',
+    'plan-eng-finding-floor',
+    'plan-design-finding-floor',
+    'plan-devex-finding-floor',
+  ];
+  expect(selectTests(['test/fixtures/plan-floor-quote-70b.json'], E2E_TOUCHFILES).selected.sort())
+    .toEqual([...floors].sort());
+  expect(selectTests(['test/fixtures/plan-floor-product-type-70b.json'], E2E_TOUCHFILES).selected)
+    .toEqual(['plan-devex-finding-floor']);
+  for (const file of ['test/plan-floor-review.test.ts', 'test/plan-floor-permission.test.ts'])
+    expect(selectTests([file], E2E_TOUCHFILES).selected.sort()).toEqual([...floors].sort());
+  for (const file of ['test/fixtures/plan-floor-quote-70b.json', 'test/fixtures/plan-floor-product-type-70b.json'])
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  expect(E2E_TIERS['plan-ceo-finding-floor']).toBe('gate');
+  expect(E2E_TIERS['plan-devex-finding-floor']).toBe('gate');
+  expect(E2E_TIERS['plan-design-finding-floor']).toBe('periodic');
+  expect(E2E_TIERS['plan-eng-finding-floor']).toBe('periodic');
 });

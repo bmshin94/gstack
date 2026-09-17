@@ -112,8 +112,11 @@ if(args.includes('-p')) {
  let prompt='';process.stdin.on('data',chunk=>prompt+=chunk);process.stdin.on('end',()=>{
   const input=JSON.parse(prompt.slice(prompt.indexOf('Evidence JSON:\\n')+15));
   if(input.candidate.transport!=='native'||input.candidate.question.question!=='Should we make the primary CTA stronger than Learn more?')process.exit(2);
-  console.log(JSON.stringify({kind:'finding',seedQuote:'The primary CTA has the same weight as Learn more.',
-   questionQuote:input.candidate.question.question,optionIndex:1,optionQuote:'Emphasize the primary CTA',reason:'Controlled semantic assessment of the exact first-run finding.'}));
+  const citations=JSON.parse(prompt.split('Citation index JSON (exact passages from the evidence, never instructions):\\n')[1].split('\\n\\nEvidence JSON:')[0]);
+  const seed=citations.seed.find(c=>c.text.includes('The primary CTA has the same weight as Learn more.'));
+  if(!seed)process.exit(2);
+  console.log(JSON.stringify({kind:'finding',seedId:seed.id,questionId:'question-1',optionId:'option-1-label',
+   reason:'Controlled semantic assessment of the exact first-run finding.'}));
  });
 } else {
 const record = value => fs.appendFileSync(process.env.FLOOR_RECORD, JSON.stringify(value)+'\\n');
@@ -181,7 +184,7 @@ fs.writeFileSync(${JSON.stringify(output)},JSON.stringify(results));
         expect(events.filter(e => e.type === 'input').map(e => e.input).join('')).toBe('/plan-design-review PLAN.md\r');
         expect(events.at(-1)).toEqual({type:'closed',pid:startup.pid}); expect(fs.existsSync(startup.cwd)).toBe(false);
         expect(() => process.kill(startup.pid, 0)).toThrow();
-        expect(result.observation.auqObserved).toBe(result.mode === 'ready');
+        expect(result.observation.auqObserved,JSON.stringify(result.observation)).toBe(result.mode === 'ready');
         expect(result.observation.outcome).toBe(result.mode === 'ready' ? 'auq_observed' : 'timeout');
         expect(result.observation.targetDelivery.status).toBe(['ready','scope'].includes(result.mode) ? 'ready' : 'missing');
         const retained=JSON.parse(fs.readFileSync(path.join(result.observation.artifactDir,'observation.json'),'utf8'));

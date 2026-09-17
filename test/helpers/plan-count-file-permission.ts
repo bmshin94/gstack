@@ -138,11 +138,16 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
   return !pathOnly || path.resolve(cwd, headerPath!) === target ? target : undefined;
 }
 
-/** Create previews omit the directory in their footer when the heading is cropped. */
-function croppedCreatePane(screen: string): { basename: string; preview: string } | undefined {
+/** Bind either native Create footer to the owned Write when its heading is cropped. */
+function croppedCreatePane(screen: string, expected: string): { basename: string; preview: string } | undefined {
   const text=screen.replace(/\r+\n?/g,'\n');
-  const pane=/^([\s\S]+)\n[╌─━]{3,}[ \t]*\n {0,3}Do you want to create ([^\n?\/\\]+)\?[ \t]*\n {0,3}❯[ \t]*1\.[ \t]*Yes[ \t]*\n\s*2\.[ \t]*Yes,\s+and\s+switch\s+to\s+accept\s+edits\s+\(auto-approve\s+file\s+edits\s+and\s+common\s+file\s+commands\)\s+for\s+this\s+session(?:\s*\(shift\+tab\))?\s*\n\s*3\.[ \t]*No[ \t]*\n\s*Esc to cancel [·•] Tab to amend\s*$/.exec(text);
+  const pane=/^([\s\S]+)\n[╌─━]{3,}[ \t]*\n {0,3}Do you want to create ([^\n?\/\\]+)\?[ \t]*\n {0,3}❯[ \t]*1\.[ \t]*Yes[ \t]*\n\s*2\.[ \t]*Yes,\s+and\s+switch\s+to\s+accept\s+edits\s+\(auto-approve\s+file\s+edits\s+and\s+common\s+file\s+commands\)\s+for\s+this\s+session(?:;\s+Yes,\s+and\s+always\s+allow\s+access\s+to\s+([^\r\n]+?)\s+for\s+this\s+session)?(?:\s*\(shift\+tab\))?\s*\n\s*3\.[ \t]*No[ \t]*\n\s*Esc to cancel [·•] Tab to amend\s*$/.exec(text);
   if (!pane || /[☐□]|^\s*(?:>|`{3}|~{3})/m.test(pane[1]!)) return undefined;
+  // Native option 2 can combine accept-edits with directory access. It remains
+  // unselected: its directory must agree, and the pending Write still owns every
+  // preview row. Never infer ownership from this optional directory alone.
+  const directory=pane[3]?.trim();
+  if (directory!==undefined && (!path.isAbsolute(directory)||directory!==path.dirname(expected))) return undefined;
   return {basename:pane[2]!.trim(),preview:pane[1]!};
 }
 
@@ -193,7 +198,7 @@ export function currentFilePermissionEpoch(file: string | undefined, expected: s
   screen: string): FilePermissionEpoch | null | undefined {
   if (!file || !expected || !config) return undefined;
   const panel = [...screen.matchAll(/(?:^|\n) {0,3}(?:Create|Edit|Write) file[ \t]*\n {0,3}([^\n]+)\n/g)].at(-1);
-  const create = panel ? undefined : croppedCreatePane(screen);
+  const create = panel ? undefined : croppedCreatePane(screen, expected);
   const target = panel ? path.resolve(cwd,panel[1]!.trim()) : croppedEditTarget(screen, cwd, expected) ??
     (create?.basename===path.basename(expected) ? expected : undefined);
   if (target !== expected) {

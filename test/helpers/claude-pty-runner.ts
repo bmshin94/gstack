@@ -32,12 +32,12 @@ import { createPlanCountFixture, ownedNativeReviewStateRoot, type NativeReviewSt
 import { createPlanCountSnapshotWriter } from './plan-count-artifacts';
 import { nativeSeededPlanSelection } from './plan-scope-selection';
 import { readPlanFloorTarget, type PlanFloorTargetDelivery } from './plan-floor-target';
-import { judgePlanFloorReview, pickPlanFloorMode, type PlanFloorReview, type PlanFloorAssessment } from './plan-floor-review';
+import { judgePlanFloorReview, pickPlanFloorMode, pickPlanFloorProductType, type PlanFloorReview, type PlanFloorAssessment } from './plan-floor-review';
 import { bindAutoDecisionState } from './auto-decision-state';
 import { findNativeAutoDecision, type NativeAutoDecision } from './native-auto-decide';
 import { readPlanCountTranscript, unresolvedPlanQuestionCalls, type NativePlanQuestionCall, type PlanCountTranscript, type NativePublicToolEvent } from './plan-count-transcript';
 import { createPendingExitRecorder, withPendingExit, isCurrentPlanApprovalScreen } from './plan-count-pending-exit';
-import { createPendingQuestionRecorder, readPendingQuestion } from './plan-count-pending-question';
+import { createPendingQuestionRecorder, readPendingQuestion, pendingQuestionRecorderStatus } from './plan-count-pending-question';
 import { createFilePermissionRecorder, currentFilePermissionBinding, type FilePermissionEpoch } from './plan-count-file-permission';
 import { createAutoplanArtifactRecorder, autoplanArtifactRecorderStatus, autoplanArtifactApprovalBoundary } from './autoplan-artifact-recorder';
 import { trustDialogInput } from './pty-trust-dialog';
@@ -5330,7 +5330,7 @@ export interface PlanSkillFloorObservation {
 
 /**
  * Drive a plan-* skill and qualify its first current seeded finding question.
- * The actor answers only its declared optional-prerequisite and mode choices.
+ * The actor answers only its declared optional-prerequisite, mode and product-type choices.
  */
 export async function runPlanSkillFloorCheck(opts: {
   /** Skill name, e.g. 'plan-eng-review'. Used for diagnostic strings only. */
@@ -5341,6 +5341,8 @@ export async function runPlanSkillFloorCheck(opts: {
   followUpPrompt: string;
   /** Explicit working-plan request relocated into the owned fixture before launch. */
   requestedPlanPath?: string;
+  /** Predeclared DX fixture classification; never inferred from a recommendation. */
+  productType?: 'sdk-documentation';
   /** Installation cwd retained for caller compatibility; review uses an owned seeded project. */
   cwd?: string;
   /** Total budget. Default 600000 (10 min). Tests exit early on AUQ. */
@@ -5357,6 +5359,10 @@ export async function runPlanSkillFloorCheck(opts: {
     'Proceed directly to the requested review; skip the optional /office-hours prerequisite.',
     'This actor has already declined routing setup, cross-project recall and outside reviewers.',
     'Preserve the supplied product scope. For review-mode questions choose HOLD SCOPE (CEO), DX POLISH (DX), or the full BIG CHANGE review (Eng). Design: review all seven dimensions.',
+    ...(opts.productType === 'sdk-documentation' ? [
+      'Product type is confirmed: SDK quickstart documentation, with the complete journey to the first SDK call as context. If asked to classify, choose SDK + Docs when offered, otherwise Documentation. This confirms the review lens; it does not expand the plan.',
+      'Target persona is confirmed: a hands-on developer integrating this SDK for the first time, trying to make one successful call. Product type and persona setup are already answered; proceed to reviewing the supplied plan.',
+    ] : []),
     opts.followUpPrompt,
   ].join('\n\n');
   const fixture = createPlanCountFixture(request, { requestedPlanPath: opts.requestedPlanPath,
@@ -5392,6 +5398,7 @@ export async function runPlanSkillFloorCheck(opts: {
   const setupChoices = new Map<string, Set<number>>();
   const submittedSetup = new Set<string>();
   const assessed = new Map<string, PlanFloorAssessment>();
+  let captureBeforeClose: (() => void) | undefined;
   try {
     await Bun.sleep(8000); // boot grace + auto-trust handler window
     const since = session.mark();
@@ -5402,11 +5409,38 @@ export async function runPlanSkillFloorCheck(opts: {
     let targetDelivery = readPlanFloorTarget(session.hermeticConfigDir, fixture.cwd,
       { ...deliveryOptions, now: Date.now() });
     const saveSnapshot = createPlanCountSnapshotWriter();
-    const finish = (observation: PlanSkillFloorObservation): PlanSkillFloorObservation => {
+    let nativeCandidates: NativePlanQuestionCall[] = [];
+    let validatedPendingQuestion: ReturnType<typeof readPendingQuestion>;
+    let sampledAt: number | undefined;
+    let lastCheckpointAt = 0, lastCheckpointState = '';
+    let artifactError: string | undefined;
+    let finished = false;
+    const capture = (observation: object) => {
+      const recorderStatus = pendingQuestionRecorderStatus(session.pendingQuestionFile, fixture.cwd, session.hermeticConfigDir);
       const artifacts = saveSnapshot({ skillName: opts.skillName, cwd: fixture.cwd,
         claudeConfigDir: session.hermeticConfigDir, raw: session.rawOutput(),
         visible: session.visibleSince(since), viewport,
-        observation: { ...observation, transcript, publicTools, pendingQuestion, floorReview, floorAssessment, targetDelivery, commandStartedAt } });
+        observation: { ...observation, transcript, publicTools, pendingQuestion, floorReview, floorAssessment, targetDelivery, commandStartedAt,
+          questionDiagnostics: { sampledAt, parentSessionId: sessionId, recorderStatus, recorderStatusAt: Date.now(), nativeCandidates, validatedPendingQuestion }, artifactError } });
+      if (artifacts.artifactError) {
+        artifactError ??= artifacts.artifactError;
+        console.error(`PTY artifact write failed: ${artifacts.artifactError}`);
+      }
+      return { ...artifacts, ...(artifactError ? { artifactError } : {}) };
+    };
+    const checkpoint = () => {
+      const state = JSON.stringify([pendingQuestionRecorderStatus(session.pendingQuestionFile, fixture.cwd, session.hermeticConfigDir),
+        targetDelivery.status, nativeCandidates, validatedPendingQuestion, pendingQuestion]);
+      if (state === lastCheckpointState && Date.now() - lastCheckpointAt < 15_000) return;
+      lastCheckpointState = state; lastCheckpointAt = Date.now();
+      capture({ state: 'in_progress', elapsedMs: Date.now() - startedAt });
+    };
+    captureBeforeClose = () => {
+      if (!finished) capture({ state: 'in_progress', captureReason: 'before_cleanup', elapsedMs: Date.now() - startedAt });
+    };
+    const finish = (observation: PlanSkillFloorObservation): PlanSkillFloorObservation => {
+      const artifacts = capture(observation);
+      finished = true;
       return { ...observation, targetDelivery, ...artifacts };
     };
 
@@ -5438,7 +5472,11 @@ export async function runPlanSkillFloorCheck(opts: {
       if (targetDelivery.status !== 'ready') {
         targetDelivery = readPlanFloorTarget(session.hermeticConfigDir, fixture.cwd,
           { ...deliveryOptions, now: Date.now() });
-        if (targetDelivery.status !== 'ready') continue;
+        if (targetDelivery.status !== 'ready') {
+          viewport = await session.currentScreen();
+          checkpoint();
+          continue;
+        }
       }
 
       // Current native identity precedes permission handling and finding assessment.
@@ -5455,9 +5493,13 @@ export async function runPlanSkillFloorCheck(opts: {
           event.sessionId === sessionId && event.kind === 'use' && event.name === 'AskUserQuestion' &&
           event.toolUseId === call.toolUseId && Date.parse(event.timestamp) >= commandStartedAt &&
           Date.parse(event.timestamp) <= Date.now() && isDeepStrictEqual(event.input?.questions, call.questions)).length === 1) : [];
+      nativeCandidates = currentCalls.slice();
+      validatedPendingQuestion = hook;
+      sampledAt = Date.now();
       if (hook?.sessionId === sessionId && !transcript.calls.some(call => call.toolUseId === hook.toolUseId)) currentCalls.push(hook);
       const matching = currentCalls.filter(call => matchesNativePlanQuestion(viewport, call));
       pendingQuestion = matching.length === 1 ? matching[0] : undefined;
+      checkpoint();
       const nativeQuestionVisible = Boolean(pendingQuestion);
       const permissionIsActiveRender = !nativeQuestionVisible && isPermissionDialogVisible(viewport);
       if (permissionIsActiveRender) {
@@ -5487,6 +5529,7 @@ export async function runPlanSkillFloorCheck(opts: {
         const allDesign = opts.skillName === 'plan-design-review' && designReviewSetupAUQ(fp)
           ? question.options.flatMap((option, i) => /^(?:Review )?All 7 (?:design )?(?:dimensions|passes)(?:\s*\(recommended\))?$/i.test(option.label.trim()) ? [i + 1] : []) : [];
         const pick = pickPlanFloorMode(opts.skillName, question) ?? planCountPrerequisitePick(fp, fp)
+          ?? (opts.skillName === 'plan-devex-review' ? pickPlanFloorProductType(question, opts.productType) : null)
           ?? (allDesign.length === 1 ? allDesign[0]! : null);
         if (pick !== null) {
           if (!chosen.has(index)) {
@@ -5582,6 +5625,8 @@ export async function runPlanSkillFloorCheck(opts: {
       elapsedMs: Date.now() - startedAt,
     });
   } finally {
-    try { await session.close(); } finally { fixture.cleanup(); }
+    try { captureBeforeClose?.(); } finally {
+      try { await session.close(); } finally { fixture.cleanup(); }
+    }
   }
 }

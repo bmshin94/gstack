@@ -20,6 +20,12 @@ for (const budget of FINDING_RETRY_BUDGETS) {
       expect([...source.matchAll(/const deadlineAt = Date\.now\(\) \+ 1_500_000;/g)]).toHaveLength(budget.cases);
       expect([...source.matchAll(/timeoutMs:\s*deadlineAt - Date\.now\(\)/g)]).toHaveLength(budget.cases);
       expect(source).toContain("floor: FLOOR, kind: 'scope', deadlineAt");
+    } else if (budget.file === 'test/skill-e2e-plan-eng-finding-count.test.ts') {
+      // Its terminal assessment shares the original allowance with the actor.
+      expect([...source.matchAll(/const startedAt = Date\.now\(\);/g)]).toHaveLength(budget.cases);
+      expect([...source.matchAll(/const deadlineAt = startedAt \+ 1_500_000;/g)]).toHaveLength(budget.cases);
+      expect([...source.matchAll(/timeoutMs:\s*deadlineAt - Date\.now\(\)/g)]).toHaveLength(budget.cases);
+      expect(source).toContain('deadlineAt: Math.min(input.deadlineAt, deadlineAt)');
     } else {
       expect([...source.matchAll(/timeoutMs:\s*1_500_000\b/g)]).toHaveLength(budget.cases);
     }
@@ -111,7 +117,7 @@ test('live periodic census fits the declared CI wall including setup', () => {
     const files = m.entries.filter(e => e.status === 'planned' && e.slice === index + 1).map(e => e.file);
     return paidShardWallUpperBoundMs(files, index === 5 ? 1 : 2);
   });
-  expect(walls).toEqual([19_140_000, 19_480_000, 19_880_000, 19_800_000, 19_800_000, 10_980_000, 10_320_000]);
+  expect(walls).toEqual([19_140_000, 19_480_000, 19_940_000, 19_800_000, 19_800_000, 10_980_000, 10_320_000]);
   expect(Math.max(...walls) + 20 * 60_000).toBeLessThanOrEqual(355 * 60_000);
   expect(m.entries.filter(e => e.status === 'planned')).toHaveLength(97);
   expect(m.entries.filter(e => e.status === 'planned' && e.slice === 6).every(e => e.file.includes('overlay-harness-'))).toBe(true);
@@ -159,7 +165,7 @@ test('current detach supervision covers the live-census floor', () => {
   const floor = Math.ceil((Math.ceil(files.length / DEFAULT_JOBS) * DEFAULT_SHARD_TIMEOUT_MS + excess) / 1000 * 1.05);
   const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dir, '../package.json'), 'utf8'));
   const configured = Number(pkg.scripts['eval:bg:periodic'].match(/--timeout\s+(\d+)/)[1]);
-  expect(floor).toBe(60039);
+  expect(floor).toBe(60165);
   expect(configured).toBeGreaterThanOrEqual(floor);
   expect(pkg.scripts['eval:bg:gate']).toContain('--timeout 28800');
 });

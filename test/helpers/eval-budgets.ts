@@ -111,6 +111,8 @@ export const FILE_RETRY_BUDGETS = [
     { file: 'test/skill-e2e-auto-decide-preserved.test.ts', attemptMs: PTY_MS, retries: 1 },
     { file: 'test/skill-e2e-plan-ceo-finding-floor.test.ts', attemptMs: PTY_MS, retries: 1 },
     { file: 'test/skill-e2e-plan-eng-finding-floor.test.ts', attemptMs: PTY_MS, retries: 1 },
+    { file: 'test/skill-e2e-plan-design-finding-floor.test.ts', attemptMs: PTY_MS, retries: 1 },
+    { file: 'test/skill-e2e-plan-devex-finding-floor.test.ts', attemptMs: PTY_MS, retries: 1 },
     { file: 'test/skill-e2e-plan-mode-no-op.test.ts', attemptMs: 5 * CAPTURE_LONG_MS, retries: 2 },
     { file: 'test/skill-e2e-plan-ceo-mode-routing.test.ts', attemptMs: 2 * CAPTURE_LONG_MS, retries: 1 },
     { file: 'test/skill-e2e-plan-eng-plan-mode.test.ts', attemptMs: 2 * CAPTURE_LONG_MS, retries: 1 },

@@ -20,6 +20,8 @@ const expectedWalls = {
   'test/skill-e2e-auto-decide-preserved.test.ts': 1_920_000,
   'test/skill-e2e-plan-ceo-finding-floor.test.ts': 1_920_000,
   'test/skill-e2e-plan-eng-finding-floor.test.ts': 1_920_000,
+  'test/skill-e2e-plan-design-finding-floor.test.ts': 1_920_000,
+  'test/skill-e2e-plan-devex-finding-floor.test.ts': 1_920_000,
   'test/skill-e2e-plan-mode-no-op.test.ts': 9_120_000,
   'test/skill-e2e-plan-ceo-mode-routing.test.ts': 2_520_000,
   'test/skill-e2e-plan-eng-plan-mode.test.ts': 2_520_000,
@@ -27,9 +29,9 @@ const expectedWalls = {
   'test/skill-e2e-plan.test.ts': 7_320_000,
 };
 
-test('registration covers exactly the twelve demonstrated full-file retry gaps', () => {
+test('registration covers exactly the fourteen demonstrated full-file retry gaps', () => {
   expect(Object.fromEntries(newBudgets.map(row => [row.file, row.shardMs]))).toEqual(expectedWalls);
-  expect(new Set(FILE_RETRY_BUDGETS.map(row => row.file)).size).toBe(18);
+  expect(new Set(FILE_RETRY_BUDGETS.map(row => row.file)).size).toBe(20);
   expect(STRICT_RETRY_CASE_BUDGETS.map(row => row.file)).toEqual([
     ...FINDING_RETRY_BUDGETS.map(row => row.file), AUQ_CONSISTENCY_RETRY_BUDGET.file,
   ]);
@@ -52,8 +54,9 @@ test('source allowances retain all captures, cases, and finalization grace', () 
   expect(read('test/helpers/codex-eval.ts')).toContain('CODEX_EVAL_FINALIZE_MS = 2 * CODEX_DRAIN_GRACE_MS');
   expect(read('test/helpers/codex-session-runner.ts')).toMatch(/CODEX_DRAIN_GRACE_MS\s*=\s*5_000/);
   expect(read('test/helpers/office-hours-attempt.ts')).toContain('OFFICE_HOURS_BUN_GRACE_MS = 10_000');
-  for (const file of ['auto-decide-preserved', 'plan-ceo-finding-floor', 'plan-eng-finding-floor']) {
+  for (const file of ['auto-decide-preserved', 'plan-ceo-finding-floor', 'plan-eng-finding-floor', 'plan-design-finding-floor', 'plan-devex-finding-floor']) {
     expect(timeoutExpressions(`test/skill-e2e-${file}.test.ts`)).toEqual(['PTY_MS']);
+    if (file.endsWith('-finding-floor')) expect(read(`test/skill-e2e-${file}.test.ts`)).toContain('timeoutMs: CAPTURE_LONG_MS');
   }
   const noop = read('test/skill-e2e-plan-mode-no-op.test.ts');
   expect(noop).toContain("['plan-ceo-review', 'plan-eng-review', 'plan-design-review'] as const");

@@ -127,7 +127,11 @@ test('actual caller declares QA support without changing its budgets or expected
   const caller = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-plan-eng-finding-count.test.ts'), 'utf8');
   expect(caller).toContain('approveEngTestPlanEdits: true');
   expect(caller).toContain('expectedPlanPath: planPath');
-  expect(caller).toContain('timeoutMs: 1_500_000');
+  expect(caller).toContain('const startedAt = Date.now();');
+  expect(caller).toContain('const deadlineAt = startedAt + 1_500_000;');
+  expect(caller).toContain('timeoutMs: deadlineAt - Date.now(),');
+  expect(caller).toContain('deadlineAt: Math.min(input.deadlineAt, deadlineAt)');
+  expect(caller).toMatch(/},\s*1_500_000\s*\/\* physical ceiling:/);
 });
 
 

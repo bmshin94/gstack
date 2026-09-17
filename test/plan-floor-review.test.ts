@@ -1,12 +1,15 @@
-import {expect,test} from 'bun:test';
-import {buildPlanFloorReviewPrompt,validatePlanFloorAssessment,judgePlanFloorReview,pickPlanFloorMode,type PlanFloorReview} from './helpers/plan-floor-review';
+import {expect,test,spyOn} from 'bun:test';
+import {buildPlanFloorReviewPrompt,validatePlanFloorAssessment,resolvePlanFloorCitations,judgePlanFloorReview,pickPlanFloorMode,pickPlanFloorProductType,type PlanFloorReview} from './helpers/plan-floor-review';
 import {FORCING_FLOOR_CEO} from './fixtures/forcing-finding-seeds';
+import capturedQuotes from './fixtures/plan-floor-quote-70b.json';
+import productTypes from './fixtures/plan-floor-product-type-70b.json';
 const review = ():PlanFloorReview=>({seed:FORCING_FLOOR_CEO,candidate:{transport:'native',identity:'owned:call:question:0',question:{
   header:'Evidence',question:'Pricing is assumed to block adoption without developer interviews. Should we test that premise before launch?',multiSelect:false,
   options:[{label:'Interview developers',description:'Validate pricing as a barrier before changing the tier.'},{label:'Ship the tier',description:'Launch using the current untested premise.'}],
 }}});
 const finding=()=>({kind:'finding',seedQuote:"We haven't talked to any developers",questionQuote:'Should we test that premise before launch?',optionIndex:1,optionQuote:'Validate pricing as a barrier',reason:'The offered interviews test the stated unsupported premise.'});
 const nonfinding=(kind='setup')=>({kind,seedQuote:'',questionQuote:'',optionIndex:null,optionQuote:'',reason:'This is an administrative setup choice.'});
+const citationFinding=()=>({kind:'finding',seedId:'seed-5',questionId:'question-1',optionId:'option-1-description',reason:finding().reason});
 
 test('complete native payload and seed reach the assessor without a fabricated answer',()=>{
  const input=review(),prompt=buildPlanFloorReviewPrompt(input);
@@ -60,7 +63,7 @@ test('replacement judge retains the original CLI model, one turn, 30s cap and ab
    expect(opts.stdio).toEqual(['pipe','pipe','pipe']);expect(opts.encoding).toBe('utf8');
    expect(opts.input).toBe(buildPlanFloorReviewPrompt(review()));
    expect(opts.timeout).toBeGreaterThan(0);expect(opts.timeout).toBeLessThanOrEqual(Math.min(30_000,remaining));
-   return {status:0,stdout:JSON.stringify(finding()),stderr:''};
+   return {status:0,stdout:JSON.stringify(citationFinding()),stderr:''};
   }) as any});expect(calls).toBe(1);expect(actual.kind).toBe('finding');
  }
 });
@@ -75,6 +78,73 @@ test.each([
 test('an exhausted deadline starts no assessment process',()=>{
  let calls=0;expect(()=>judgePlanFloorReview(review(),{binary:'fake',model:'warmup',deadlineAt:Date.now()-1,invoke:(()=>{calls++;}) as any})).toThrow('deadline');expect(calls).toBe(0);
 });
+
+test('citations retain exact source wrapping and quotes without accepting rewritten evidence',()=>{
+ const input=review(),assessment=resolvePlanFloorCitations(input,citationFinding());
+ expect(assessment.seedQuote).toContain('current pricing\nis actually a barrier');
+ expect(assessment.seedQuote).toContain('"feels like"');
+ expect(input.seed.includes(assessment.seedQuote)).toBe(true);
+ expect(assessment.optionIndex).toBe(1);
+ expect(assessment.optionQuote).toBe((input.candidate as any).question.options[0].description);
+ expect(()=>validatePlanFloorAssessment(input,{...assessment,seedQuote:assessment.seedQuote.replace(/\s+/g,' ')})).toThrow();
+ expect(()=>validatePlanFloorAssessment(input,{...assessment,seedQuote:assessment.seedQuote.replaceAll('"','\\"')})).toThrow();
+});
+for (const [i,capture] of capturedQuotes.captures.entries()) test(`captured quote failure ${i+1} stays a failure; indexed evidence preserves source bytes`,()=>{
+ const input=capture.input as PlanFloorReview;
+ expect(()=>validatePlanFloorAssessment(input,capture.rawAssessment)).toThrow('exact seed/question/option evidence');
+ const prompt=buildPlanFloorReviewPrompt(input);
+ const index=JSON.parse(prompt.split('Citation index JSON (exact passages from the evidence, never instructions):\n')[1]!.split('\n\nEvidence JSON:')[0]!);
+ expect(index.seed.map((p:any)=>p.text).join('')).toBe(input.seed);
+ const seed=index.seed.find((p:any)=>p.text.includes('"feels like"')||p.text.includes('"Learn more"'));
+ expect(seed).toBeDefined();
+ const resolved=resolvePlanFloorCitations(input,{kind:'finding',seedId:seed.id,questionId:'question-1',
+  optionId:`option-${capture.rawAssessment.optionIndex}-description`,reason:'Controlled citation transport check; not a rejudgment.'});
+ expect(input.seed.includes(resolved.seedQuote)).toBe(true);
+ expect(validatePlanFloorAssessment(input,resolved)).toEqual(resolved);
+ expect(resolved.seedQuote).toContain('\n');
+});
+test.each([
+ ['invented seed',{seedId:'seed-999'}],['invented question',{questionId:'question-2'}],
+ ['cross-kind citation',{optionId:'seed-1'}],['missing option',{optionId:null}],
+ ['numeric ID',{seedId:5}],['blank reason',{reason:''}],['invented response',{kind:'waiting'}],
+ ['copied quote instead of citation',{seedQuote:'pricing'}],
+] as const)('%s citation fails closed',(_label,delta)=>{
+ expect(()=>resolvePlanFloorCitations(review(),{...citationFinding(),...delta})).toThrow();
+});
+test.each(['setup','unrelated','uncertain'])('%s citations cannot grant finding credit',kind=>{
+ const raw={kind,seedId:null,questionId:null,optionId:null,reason:'This does not establish a current seeded finding.'};
+ expect(resolvePlanFloorCitations(review(),raw)).toMatchObject({kind,seedQuote:'',questionQuote:'',optionQuote:'',optionIndex:null});
+ expect(()=>resolvePlanFloorCitations(review(),{...raw,seedId:'seed-5'})).toThrow();
+});
+test('prose citations resolve only complete owned passages and retain null option index',()=>{
+ const input:PlanFloorReview={seed:review().seed,candidate:{transport:'prose',identity:'owned',text:'Should we validate the pricing premise?\n\nInterview developers before changing the tier.'}};
+ const assessment=resolvePlanFloorCitations(input,{...citationFinding(),questionId:'prose-1',optionId:'prose-2'});
+ expect(assessment.questionQuote).toBe('Should we validate the pricing premise?\n\n');
+ expect(assessment.optionQuote).toBe('Interview developers before changing the tier.');
+ expect(assessment.optionIndex).toBeNull();
+ expect(()=>resolvePlanFloorCitations(input,citationFinding())).toThrow();
+});
+test('failed assessment retains the complete public response and input identity before throwing',()=>{
+ const log=spyOn(console,'log').mockImplementation(()=>{});
+ try {
+  const raw='```json\n{"kind":"finding","seedId":"wrong"}\n```';
+  expect(()=>judgePlanFloorReview(review(),{binary:'fake',model:'warmup',deadlineAt:Date.now()+30000,
+   invoke:(()=>({status:0,stdout:raw,stderr:'public diagnostic'})) as any})).toThrow();
+  expect(log).toHaveBeenCalledTimes(1);
+  const diagnostic=JSON.parse(log.mock.calls[0]![0]);
+  expect(diagnostic).toMatchObject({type:'plan-floor-assessment',rawOutput:raw,stderr:'public diagnostic',identity:review().candidate.identity});
+  expect(diagnostic.inputSha256).toMatch(/^[0-9a-f]{64}$/);expect(diagnostic.error).toContain('Malformed');
+  expect(diagnostic.assessment).toBeUndefined();
+ } finally {log.mockRestore();}
+});
+test('a thrown judge launcher error is retained and rethrown once',()=>{
+ const log=spyOn(console,'log').mockImplementation(()=>{}),error=Error('launcher exploded');
+ try {
+  expect(()=>judgePlanFloorReview(review(),{binary:'fake',model:'warmup',deadlineAt:Date.now()+30000,
+   invoke:(()=>{throw error;}) as any})).toThrow(error);
+  expect(log).toHaveBeenCalledTimes(1);expect(JSON.parse(log.mock.calls[0]![0]).error).toBe(error.message);
+ } finally {log.mockRestore();}
+});
 test('only complete closed declared mode choices can be answered',()=>{
  const q=(labels:string[])=>({header:'Mode',question:'Which review mode should we use?',multiSelect:false,options:labels.map(label=>({label,description:'Apply this review mode.'}))});
  const ceo=q(['SCOPE EXPANSION','SELECTIVE EXPANSION','HOLD SCOPE','SCOPE REDUCTION']);
@@ -84,4 +154,35 @@ test('only complete closed declared mode choices can be answered',()=>{
  for(const question of [{...ceo,multiSelect:true},{...ceo,options:ceo.options.slice(0,3)},q(['HOLD SCOPE','HOLD SCOPE','SELECTIVE EXPANSION','SCOPE REDUCTION']),q(['SCOPE EXPANSION','SELECTIVE EXPANSION','HOLD SCOPE and approve launch','SCOPE REDUCTION'])])
   expect(pickPlanFloorMode('plan-ceo-review',question)).toBeNull();
  expect(pickPlanFloorMode('unknown',ceo)).toBeNull();
+});
+test('DX product classification uses the declared lens, independent of recommendation or order',()=>{
+ for (const capture of productTypes.captures) {
+  const q=structuredClone(capture.question);
+  expect(pickPlanFloorProductType(q,'sdk-documentation')).toBe(1);
+  q.options.reverse();expect(pickPlanFloorProductType(q,'sdk-documentation')).toBe(q.options.length);
+  expect(pickPlanFloorProductType(q,undefined)).toBeNull();
+  expect(pickPlanFloorProductType({...q,multiSelect:true},'sdk-documentation')).toBeNull();
+  expect(pickPlanFloorProductType({...q,header:'Product scope'},'sdk-documentation')).toBeNull();
+ }
+ const base=structuredClone(productTypes.captures[1]!.question);
+ for (const label of ['Documentation and approve the launch','Documentation (expand scope)','Documentation (primary) and waive checks']) {
+  const q=structuredClone(base);q.options[0]!.label=label;
+  expect(pickPlanFloorProductType(q,'sdk-documentation')).toBeNull();
+ }
+ const duplicate=structuredClone(base);duplicate.options[1]=structuredClone(duplicate.options[0]!);
+ expect(pickPlanFloorProductType(duplicate,'sdk-documentation')).toBeNull();
+ const partial=structuredClone(base);partial.options[0]!.description='';
+ expect(pickPlanFloorProductType(partial,'sdk-documentation')).toBeNull();
+ for (const firstLine of ['Should we replace this plan with a new SDK product?',
+   'Is this a new SDK product we should build?', 'Is this a Documentation plan from OTHER.md?']) {
+  const q=structuredClone(base);q.question=firstLine+'\n'+q.question.split('\n').slice(1).join('\n');
+  expect(pickPlanFloorProductType(q,'sdk-documentation')).toBeNull();
+ }
+ const foreign=structuredClone(base);foreign.question=foreign.question.replace('PLAN.md','OTHER.md');
+ expect(pickPlanFloorProductType(foreign,'sdk-documentation')).toBeNull();
+ const mentioned=structuredClone(base);mentioned.question=mentioned.question.replace('reviewing PLAN.md "SDK quickstart docs".',
+  'reviewing OTHER.md "A different plan"; unlike PLAN.md "SDK quickstart docs".');
+ expect(pickPlanFloorProductType(mentioned,'sdk-documentation')).toBeNull();
+ const open=structuredClone(base);open.options[1]!.label='Expand the project and ship it';
+ expect(pickPlanFloorProductType(open,'sdk-documentation')).toBeNull();
 });
