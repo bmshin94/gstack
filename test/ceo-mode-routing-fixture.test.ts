@@ -62,6 +62,12 @@ mock.module(path.join(root,'test/helpers/ceo-mode-option.ts'),()=>({
   },
   nextCeoPostureContinuation:()=>{current.continuationChecks.push(current.pacingChecks);return (scenario==='next-modal'||scenario==='pacing')&&!current.continued?'question':null;},
 }));
+// This lifecycle adapter supplies no native HOLD decision. The dedicated
+// HOLD callback controls exercise the real helper with an injected evaluator.
+mock.module(path.join(root,'test/helpers/ceo-hold-posture-review.ts'),()=>({
+  buildCeoHoldPostureReview:()=>{throw new Error('unexpected semantic HOLD branch');},
+  evaluateCeoHoldPostureReview:()=>{throw new Error('unexpected semantic HOLD assessment');},
+}));
 mock.module(path.join(root,'test/helpers/plan-count-transcript.ts'),()=>({
   readPlanCountTranscript:(config,cwd)=>{
     current.reads.push({config,cwd});return {status:'ready',calls:[],assistantMessages:[]};
