@@ -157,8 +157,8 @@ export function recordFilePermission(input: string, file: string, cwd: string, c
   } catch { try { fs.rmSync(file,{force:true}); } catch {} }
 }
 
-/** A long diff can crop its path header; the native access choice repeats the directory. */
-function croppedEditTarget(screen: string, cwd: string, expected: string): string | undefined {
+/** Complete native cropped Edit geometry; its basename alone grants no ownership. */
+function croppedEditPane(screen: string) {
   const text = screen.replace(/\r+\n?/g, '\n');
   // Cropping may begin inside a wrapped added/deleted diff row (four/five-space gutter).
   // Still require numbered rows below and the full native footer; never a quoted AUQ.
@@ -193,10 +193,24 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
   // The unselected option supplies path identity only. Input remains one-time Yes.
   // A redraw can leave this exact keyboard-hint tail on the unselected No row.
   // It does not change the selected one-time Yes or authorize another action.
-  const choices = /^ {0,3}❯[ \t]*1\.[ \t]*Yes[ \t]*\n\s*2\.[ \t]*Yes,\s+and\s+switch\s+to\s+accept\s+edits\s+\(auto-approve\s+file\s+edits\s+and\s+common\s+file\s+commands\)\s+for\s+this\s+session;\s+Yes,\s+and\s+always\s+allow\s+access\s+to\s+([^\r\n]+?)\s+for\s+this\s+session(?:\s*\(shift\+tab\))?\s*\n\s*3\.[ \t]*No(?:hift\+tab\))?[ \t]*\n\s*Esc to cancel [·•] Tab to amend\s*$/.exec(prompt[2]!);
+  const choices = /^ {0,3}❯[ \t]*1\.[ \t]*Yes[ \t]*\n\s*2\.[ \t]*Yes,\s+and\s+switch\s+to\s+accept\s+edits\s+\(auto-approve\s+file\s+edits\s+and\s+common\s+file\s+commands\)\s+for\s+this\s+session(?:;\s+Yes,\s+and\s+always\s+allow\s+access\s+to\s+([^\r\n]+?)\s+for\s+this\s+session)?(?:\s*\(shift\+tab\))?\s*\n\s*3\.[ \t]*No(?:hift\+tab\))?[ \t]*\n\s*Esc to cancel [·•] Tab to amend\s*$/.exec(prompt[2]!);
   const directory = choices?.[1]?.trim();
-  if (!directory || !path.isAbsolute(directory)) return undefined;
-  const target = path.join(directory, prompt[1]!.trim());
+  if (!choices || (directory !== undefined && !path.isAbsolute(directory))) return undefined;
+  return { basename: prompt[1]!.trim(), directory, headerPath: pathOnly ? headerPath : undefined,
+    continuation, preview: diff.slice(0, diff.indexOf(prompt[0]!)) };
+}
+
+/** Syntax-only opt-in for scoped count/floor callers; never generic grant authority. */
+export function isCroppedEditPermissionVisible(screen: string): boolean {
+  const pane = croppedEditPane(screen);
+  return Boolean(pane && pane.directory === undefined);
+}
+
+function croppedEditTarget(screen: string, cwd: string, expected: string): string | undefined {
+  const pane = croppedEditPane(screen);
+  if (!pane || (pane.directory === undefined && path.dirname(expected) !== cwd)) return undefined;
+  const { continuation, headerPath } = pane;
+  const target = path.join(pane.directory ?? cwd, pane.basename);
   if (continuation) {
     if (target !== expected) return undefined;
     const nextLine = continuation.nextLine;
@@ -222,7 +236,7 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
       } finally { fs.closeSync(fd); }
     } catch { return undefined; }
   }
-  return !pathOnly || path.resolve(cwd, headerPath!) === target ? target : undefined;
+  return !headerPath || path.resolve(cwd, headerPath) === target ? target : undefined;
 }
 
 /** Bind either native Create footer to the owned Write when its heading is cropped. */
@@ -289,6 +303,77 @@ function currentCreatePreview(preview: string, r: any, config: string, cwd: stri
     (!i||row.line===numbered[i-1]!.line+1)&&compact(row.text)===compact(source[row.line-1]!));
 }
 
+/** A cropped in-fixture Edit needs its sole current native request and exact visible diff. */
+function currentEditPreview(preview: string, r: any, config: string, cwd: string, startedAt: number): boolean {
+  try {
+    if (path.dirname(r.expected) !== cwd || fs.realpathSync(cwd) !== cwd || fs.realpathSync(r.expected) !== r.expected ||
+        [config, path.dirname(r.transcriptPath), r.transcriptPath].some(p => fs.realpathSync(p) !== p)) return false;
+    const pending = new Map<string, NativePublicToolEvent>(), seen = new Map<string, NativePublicToolEvent>();
+    const completed = new Set<string>();
+    let conflict = false;
+    const transcript = readPlanCountTranscript(config, cwd, event => {
+      if (event.sessionId !== r.sessionId) return;
+      if (event.kind === 'use') {
+        if (`${event.sessionId}:${event.toolUseId}` === r.pendingId && event.name !== 'Edit') conflict = true;
+        if (!['Write', 'Edit'].includes(event.name ?? '')) return;
+        const prior = seen.get(event.toolUseId);
+        if (prior && (prior.name !== event.name || !isDeepStrictEqual(prior.input, event.input))) conflict = true;
+        seen.set(event.toolUseId, event);
+        if (!completed.has(event.toolUseId)) pending.set(event.toolUseId, event);
+      } else if (event.kind === 'result') {
+        completed.add(event.toolUseId); pending.delete(event.toolUseId);
+      }
+    }, r.transcriptPath);
+    const event = [...pending.values()][0], input = event?.input;
+    if (conflict || transcript.status !== 'ready' || pending.size !== 1 || event?.name !== 'Edit' ||
+        `${event.sessionId}:${event.toolUseId}` !== r.pendingId || !Number.isFinite(Date.parse(event.timestamp)) ||
+        Date.parse(event.timestamp) < startedAt || Date.parse(event.timestamp) > Date.now() ||
+        input?.file_path !== r.expected || typeof input.old_string !== 'string' || !input.old_string ||
+        typeof input.new_string !== 'string' || (input.replace_all !== undefined && input.replace_all !== false)) return false;
+    const bytes = boundedRegular(r.expected, MAX_WRITE_INPUT_BYTES), before = bytes.toString('utf8');
+    if (!Buffer.from(before).equals(bytes)) return false;
+    const at = before.indexOf(input.old_string);
+    if (at < 0 || before.indexOf(input.old_string, at + input.old_string.length) !== -1) return false;
+    const after = before.slice(0, at) + input.new_string + before.slice(at + input.old_string.length);
+    const oldLines = before.split(/\r?\n/), newLines = after.split(/\r?\n/);
+    const firstLine = before.slice(0, at).split(/\r?\n/).length;
+    const oldLast = firstLine + input.old_string.split(/\r?\n/).length - 1;
+    const newLast = firstLine + input.new_string.split(/\r?\n/).length - 1;
+    const rows: Array<{line: number; kind: string; text: string; clipped?: boolean}> = [];
+    let leading: {kind: string; text: string} | undefined;
+    for (const line of preview.split('\n')) {
+      if (!line.trim() || /^[╌─━]{3,}[ \t]*$/.test(line)) continue;
+      const numbered = /^ {0,3}([1-9]\d*) ([ +\-])(.*)$/.exec(line);
+      if (numbered) {
+        if (leading) {
+          // A wrapped first row has no coordinate. The next same-kind numbered
+          // row anchors its complete visible suffix to the preceding source line.
+          if (leading.kind !== numbered[2] || Number(numbered[1]) < 2) return false;
+          rows.push({line:Number(numbered[1])-1,...leading,clipped:true}); leading=undefined;
+        }
+        rows.push({line:Number(numbered[1]),kind:numbered[2]!,text:numbered[3]!}); continue;
+      }
+      const wrapped = /^ {4,5}([+\-])(.*)$/.exec(line), last = rows.at(-1);
+      if (!wrapped) return false;
+      if (!last) {
+        if (leading && leading.kind !== wrapped[1]) return false;
+        leading={kind:wrapped[1]!,text:(leading?.text??'')+wrapped[2]!};
+      } else {
+        if (wrapped[1] !== last.kind) return false;
+        last.text += wrapped[2]!;
+      }
+    }
+    const compact = (value: string) => value.replace(/\s/g, '');
+    return !leading && rows.length >= 2 && rows.some(row => row.kind === '+' || row.kind === '-') &&
+      rows.every((row, i) => Number.isSafeInteger(row.line) && row.line > 0 &&
+        (!i || row.kind === '-' || rows[i-1]!.kind === '-' || row.line === rows[i-1]!.line + 1) &&
+        (row.kind === ' ' || (row.line >= firstLine && row.line <= (row.kind === '-' ? oldLast : newLast))) &&
+        row.line <= (row.kind === '-' ? oldLines : newLines).length &&
+        (row.clipped ? Boolean(compact(row.text)) && compact((row.kind === '-' ? oldLines : newLines)[row.line - 1]!).endsWith(compact(row.text)) :
+          compact(row.text) === compact((row.kind === '-' ? oldLines : newLines)[row.line - 1]!)));
+  } catch { return false; }
+}
+
 /** Undefined leaves other permissions alone; null keeps this report pane waiting. */
 export function currentFilePermissionEpoch(file: string | undefined, expected: string | undefined,
   cwd: string, config: string | null, startedAt: number, transcript: PlanCountTranscript,
@@ -296,6 +381,7 @@ export function currentFilePermissionEpoch(file: string | undefined, expected: s
   if (!file || !expected || !config) return undefined;
   const panel = [...screen.matchAll(/(?:^|\n) {0,3}(?:Create|Edit|Write) file[ \t]*\n {0,3}([^\n]+)\n/g)].at(-1);
   const create = panel ? undefined : croppedCreatePane(screen, expected);
+  const edit = panel ? undefined : croppedEditPane(screen);
   const target = panel ? path.resolve(cwd,panel[1]!.trim()) : croppedEditTarget(screen, cwd, expected) ??
     (create?.basename===path.basename(expected) ? expected : undefined);
   if (target !== expected) {
@@ -322,6 +408,7 @@ export function currentFilePermissionEpoch(file: string | undefined, expected: s
         r.completedIds.some((id: string) => id === r.pendingId || !r.seenIds.includes(id)) ||
         (r.completedId === null ? r.completedIds.length !== 0 : r.completedIds.at(-1) !== r.completedId)) return null;
     if(create && !currentCreatePreview(create.preview,r,config,cwd,startedAt,file)) return null;
+    if(edit && edit.directory === undefined && !currentEditPreview(edit.preview,r,config,cwd,startedAt)) return null;
     return {pendingId:r.pendingId,completedId:r.completedId,completedIds:r.completedIds};
   } catch { return null; }
 }

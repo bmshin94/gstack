@@ -14,8 +14,9 @@ import dxCustom from './fixtures/plan-floor-dx-custom-491.json';
 import * as runner from './helpers/claude-pty-runner';
 import {createPlanCountFixture} from './helpers/plan-count-fixture';
 import {readPlanFloorTarget} from './helpers/plan-floor-target';
-import {createFilePermissionRecorder, recordFilePermission, currentFilePermissionBinding, readPendingWriteInput} from './helpers/plan-count-file-permission';
+import {createFilePermissionRecorder, recordFilePermission, currentFilePermissionBinding, readPendingWriteInput, isCroppedEditPermissionVisible} from './helpers/plan-count-file-permission';
 import captured from './fixtures/plan-floor-permission-fb10.json';
+import croppedEdit from './fixtures/plan-edit-cropped-permission-1579.json';
 import {FORCING_FLOOR_CEO, FORCING_FLOOR_ENG, FORCING_FLOOR_DESIGN, FORCING_FLOOR_DEVEX} from './fixtures/forcing-finding-seeds';
 
 const ROOT = path.resolve(import.meta.dir, '..');
@@ -40,7 +41,7 @@ const render = (question: typeof QUESTIONS.ceo) => ['☐ '+question.header,quest
   ...question.options.flatMap((o,i)=>[`${i?' ':'❯'} ${i+1}. ${o.label}`,o.description]),
   'Enter to select · ↑/↓ to navigate · Esc to cancel'].join('\n');
 const FINDING = render(QUESTIONS.ceo);
-type Mode = 'captured' | 'owned' | 'owned-no-question' | 'foreign' | 'wrong-session' | 'missing-native' | 'linked-target' |
+type Mode = 'cropped-edit' | 'cropped-edit-missing' | 'cropped-edit-changed' | 'cropped-edit-completed' | 'captured' | 'owned' | 'owned-no-question' | 'foreign' | 'wrong-session' | 'missing-native' | 'linked-target' |
   'native-question' | 'scope' | 'prose' | 'finding' | 'routing' | 'unrelated' | 'partial' | 'quoted' | 'foreign-question' |
   'stale-question' | 'answered-question' | 'failed-question' | 'mismatched-use' | 'duplicate-use' | 'judge-error' | 'mode' | 'pending-hook' | 'failed-hook' | 'packet' | 'prose-quoted' | 'prose-partial' | 'prose-foreign' | 'prose-stale' | 'product-type' | 'product-type-undeclared' |
   'unmatched-hook' | 'invalid-hook' | 'missing-hook' | 'idle-hook' | 'transition-hook' | 'unmatched-native' | 'dx-setup' | 'dx-no-finding' | 'dx-undeclared' | 'dx-cropped' | 'dx-unrelated' | 'dx-uncertain' | 'dx-changing-call';
@@ -52,7 +53,7 @@ interface SnapshotOptions { evalDir: string; failFirst?: boolean; interrupt?: bo
 async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: typeof routing.captures[number], productQuestion=productTypes.captures[0]!.question, snapshotOptions?: SnapshotOptions) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'floor-permission-free-'));
   const config = path.join(dir, '.claude');
-  let now = Date.now() - (mode.includes('hook') ? 10_000 : 1), launched: any, fixture: ReturnType<typeof createPlanCountFixture> | undefined;
+  let now = Date.now() - (mode.includes('hook') || mode.startsWith('cropped-edit') ? 10_000 : 1), launched: any, fixture: ReturnType<typeof createPlanCountFixture> | undefined;
   let screen = '', history = '', granted = false, closed = 0, saved: any;
   const sent: string[] = [], judgments: floor.PlanFloorReview[] = [], tools: any[] = [];
   const snapshots: any[] = [], artifactErrors: string[] = [];
@@ -73,7 +74,7 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
       expect(config).toContain('routing_declined: true'); expect(config).toContain('cross_project_learnings: false');
       expect(config).toContain('codex_reviews: disabled'); return fixture;
     },
-    readPlanFloorTarget, currentFilePermissionBinding, readPendingWriteInput,
+    readPlanFloorTarget, currentFilePermissionBinding, readPendingWriteInput, isCroppedEditPermissionVisible,
     readPlanCountTranscript: (_config: string, _cwd: string, visit?: (event:any)=>void) => {tools.forEach(e=>visit?.(e));return transcript;},
     createPlanCountSnapshotWriter: () => (value: any) => {
       saved = structuredClone(value); snapshots.push({at:now,observation:saved.observation});
@@ -117,6 +118,9 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
         screen=render(q);
       };
       const expected = opts.observeFilePermissions?.[0];
+      const crop = mode.startsWith('cropped-edit');
+      const editInput = crop ? {...croppedEdit.pendingEdit.input,file_path:expected} : undefined;
+      if(crop)fs.writeFileSync(expected,croppedEdit.priorWrite.input.content);
       if (mode === 'linked-target') {
         const outside = path.join(dir,'outside.md'); fs.writeFileSync(outside,'outside must stay unchanged');
         fs.symlinkSync(outside,expected);
@@ -124,16 +128,19 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
       const pendingFilePermissionFiles = expected ? [(() => {
         const recorder = createFilePermissionRecorder(opts.cwd, config, expected)!;
         recorders.push(recorder);
-        if (mode !== 'missing-native') recordFilePermission(JSON.stringify({
-          hook_event_name:'PreToolUse', tool_name:'Write', session_id:mode === 'wrong-session' ? 'foreign' : sid,
+        if (mode !== 'missing-native' && mode !== 'cropped-edit-missing') recordFilePermission(JSON.stringify({
+          hook_event_name:'PreToolUse', tool_name:crop?'Edit':'Write', session_id:mode === 'wrong-session' ? 'foreign' : sid,
           tool_use_id:'write1', cwd:opts.cwd,
           transcript_path:mode === 'wrong-session' ? path.join(config,'projects','owned','foreign.jsonl') : journal,
-          tool_input:{file_path:expected, content:'not retained in permission metadata'},
+          tool_input:editInput??{file_path:expected, content:'not retained in permission metadata'},
         }), recorder.file, opts.cwd, config, expected);
+        if(mode==='cropped-edit-completed')recordFilePermission(JSON.stringify({hook_event_name:'PostToolUse',tool_name:'Edit',session_id:sid,
+          tool_use_id:'write1',cwd:opts.cwd,transcript_path:journal,tool_input:editInput}),recorder.file,opts.cwd,config,expected);
         return {file:recorder.file, expected};
       })()] : [];
       const permissionPath = mode === 'foreign' ? path.join(dir, 'foreign', path.basename(expected ?? 'report.md')) : expected;
-      const permission = mode === 'captured' ? captured.rawPermission :
+      const permission = crop ? croppedEdit.screen.replaceAll(path.basename(croppedEdit.hook.expected),path.basename(expected))
+        .replace('empathy narrative',mode==='cropped-edit-changed'?'different narrative':'empathy narrative') : mode === 'captured' ? captured.rawPermission :
         `Create file\n${permissionPath}\n────────────────\n 1 # Working review\n────────────────\nDo you want to create ${path.basename(permissionPath ?? 'report.md')}?\n❯ 1. Yes\n  2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session\n  3. No\nEsc to cancel · Tab to amend`;
       return {
         hermeticConfigDir: config, pendingFilePermissionFiles, pendingQuestionFile:hookRecorder?.file,
@@ -154,6 +161,12 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
             fs.writeFileSync(journal, JSON.stringify({type:'user', isSidechain:false, cwd:opts.cwd, sessionId:sid,
               timestamp:new Clock(now).toISOString(), message:{role:'user', content:`<command-message>plan-${kind}-review</command-message>\n<command-name>/plan-${kind}-review</command-name>\n<command-args>PLAN.md</command-args>`}})+'\n');
             screen = permission;
+            if(crop){
+              now=Math.max(now,Date.now());
+              tools.push({sessionId:sid,toolUseId:'write1',kind:'use',name:'Edit',timestamp:new Clock(now).toISOString(),input:editInput});
+              fs.appendFileSync(journal,JSON.stringify({cwd:opts.cwd,sessionId:sid,isSidechain:false,timestamp:new Clock(now).toISOString(),
+                message:{role:'assistant',content:[{type:'tool_use',id:'write1',name:'Edit',input:editInput}]}})+'\n');
+            }
             if(['finding','unrelated','partial','quoted','foreign-question','stale-question','answered-question','failed-question','mismatched-use','duplicate-use','judge-error','unmatched-native'].includes(mode)) {
               if(mode==='partial')question.options[0].description='';
               if(mode==='quoted')question.question='Example from a previous review: '+question.question;
@@ -228,7 +241,7 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
             history+='\n'+screen;
           } else if (input === '1\r') {
             granted = true;
-            if(mode==='owned')publish(); else screen='';
+            if(mode==='owned'||mode==='cropped-edit')publish(); else screen='';
             history += '\n' + screen;
           } else throw Error('Unexpected actor input: ' + JSON.stringify(input));
         },
@@ -265,6 +278,13 @@ test('one owned native Write grant enables the actual later question without ans
   expect(e.launched.observeFilePermissions).toEqual([e.fixture!.workingPlanPath]);
   expect(path.dirname(e.fixture!.workingPlanPath!)).toBe(e.fixture!.cwd);
   expect(e.saved.observation.transcript.status).toBe('ready'); expect(e.saved.viewport).toBe(FINDING);
+});
+test.each(['cropped-edit','cropped-edit-missing','cropped-edit-changed','cropped-edit-completed'] as Mode[])('%s routes through the actual floor only after exact ownership',async mode=>{
+  const e=await exercise(mode,'devex');
+  expect(e.sent).toEqual(mode==='cropped-edit'?['/plan-devex-review PLAN.md\r','1\r']:['/plan-devex-review PLAN.md\r']);
+  expect(e.result.outcome).toBe(mode==='cropped-edit'?'auq_observed':'timeout');
+  expect(e.judgments).toHaveLength(mode==='cropped-edit'?1:0);
+  if(mode==='cropped-edit')expect(e.saved.observation.pendingQuestion.answered).toBe(false);
 });
 test.each(['owned-no-question','foreign','wrong-session','missing-native','linked-target'] as Mode[])('%s cannot supply finding credit', async mode => {
   const e = await exercise(mode); expect(e.result.outcome).toBe('timeout');

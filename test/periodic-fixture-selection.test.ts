@@ -854,3 +854,22 @@ for (const file of ['test/plan-count-cross-cwd-ancestry.test.ts', 'test/fixtures
     expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
   });
 }
+
+
+test('native clipped regressions retain the existing parser and owned-permission selection', () => {
+  for (const [dependency, count, files] of [
+    ['test/helpers/claude-pty-runner.ts', 22, [
+      'test/plan-count-clipped-elision.test.ts', 'test/fixtures/eng-d1-clipped-elision-1579.json',
+    ]],
+    ['test/helpers/plan-count-file-permission.ts', 10, [
+      'test/plan-edit-cropped-permission.test.ts', 'test/fixtures/plan-edit-cropped-permission-1579.json',
+    ]],
+  ] as const) {
+    const expected = selectTests([dependency], E2E_TOUCHFILES).selected.sort();
+    expect(expected).toHaveLength(count);
+    for (const file of files) {
+      expect(selectTests([file], E2E_TOUCHFILES).selected.sort()).toEqual(expected);
+      expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+    }
+  }
+});

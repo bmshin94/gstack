@@ -5,8 +5,8 @@ const call=captured.call;
 const state=(stage:PlanFloorDXReply['stage']='focus'):PlanFloorDXReply=>({call:structuredClone(call),
   pane:planFloorDXPane(captured.questionViewport,call)!,reply:captured.reply,stage});
 
-test('original interior crop still rejects; actual larger native frame retains the complete renderer prefix',()=>{
-  expect(matchesNativePlanQuestion(captured.originalViewport,call)).toBe(false);
+test('generic matcher authenticates the crop while DX custom replies still require the complete pane',()=>{
+  expect(matchesNativePlanQuestion(captured.originalViewport,call)).toBe(true);
   expect(planFloorDXPane(captured.originalViewport,call)).toBeNull();
   expect(matchesNativePlanQuestion(captured.questionViewport,call)).toBe(false);
   expect(planFloorDXPane(captured.questionViewport,call)).not.toBeNull();

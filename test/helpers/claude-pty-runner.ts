@@ -38,7 +38,7 @@ import { findNativeAutoDecision, type NativeAutoDecision } from './native-auto-d
 import { readPlanCountTranscript, unresolvedPlanQuestionCalls, type NativePlanQuestionCall, type PlanCountTranscript, type NativePublicToolEvent } from './plan-count-transcript';
 import { createPendingExitRecorder, withPendingExit, isCurrentPlanApprovalScreen } from './plan-count-pending-exit';
 import { createPendingQuestionRecorder, readPendingQuestion, pendingQuestionRecorderStatus } from './plan-count-pending-question';
-import { createFilePermissionRecorder, currentFilePermissionBinding, readPendingWriteInput, type FilePermissionEpoch } from './plan-count-file-permission';
+import { createFilePermissionRecorder, currentFilePermissionBinding, readPendingWriteInput, isCroppedEditPermissionVisible, type FilePermissionEpoch } from './plan-count-file-permission';
 import { createAutoplanArtifactRecorder, autoplanArtifactRecorderStatus, autoplanArtifactApprovalBoundary } from './autoplan-artifact-recorder';
 import { trustDialogInput } from './pty-trust-dialog';
 import { createPtyScreen } from './pty-screen';
@@ -1375,7 +1375,7 @@ export function auqFingerprint(
 }
 
 /** Permission and question capture inspect the same cursor-anchored window. */
-function planCountPermissionMenu(visible: string): {
+function planCountPermissionMenu(visible: string, boundEdit = false): {
   normalized: string; cursorAt: number; prompt: string; menu: string;
 } | null {
   const normalized = stripPtyResidue(visible).replace(/\r+\n?/g, '\n');
@@ -1402,7 +1402,8 @@ function planCountPermissionMenu(visible: string): {
   // The cursor window can cut through a long diff while its complete native
   // heading is still on screen. Validate that original pane, including its
   // provenance and footer; the cropped window cannot replace those checks.
-  if (!prompt || !(isPermissionDialogVisible(context) || isNativeEditPermissionVisible(normalized))) return null;
+  if (!prompt || !(isPermissionDialogVisible(context) || isNativeEditPermissionVisible(normalized) ||
+      (boundEdit && isCroppedEditPermissionVisible(normalized)))) return null;
   return { normalized, cursorAt, prompt, menu };
 }
 
@@ -1420,11 +1421,17 @@ function matchesClippedNativeQuestion(visible: string, call: NativePlanQuestionC
   const question = call.questions[0]!;
   const native = exact(question.question);
   const displayed = exact(suffix);
+  // The ordinary native renderer first elides at 2,000 UTF-16 units; a
+  // short viewport can then crop that displayed prefix's header and start.
+  // Authenticate its whole visible suffix against that exact rendering too.
+  const prefix = question.question.slice(0, 2000);
+  const bounded = /[\uD800-\uDBFF]$/.test(prefix) ? prefix.slice(0, -1) : prefix;
+  const elided = question.question.length > 2000 ? exact(bounded.replace(/\t/g, ' ') + '…') : null;
   // Require substantial positive question text, including all visible
   // pre-menu lines. Shared option labels or a generic short tail cannot
   // borrow an unrelated pending call's routing policy.
   if (suffix.split('\n').filter(line => line.trim()).length < 2 || displayed.length < 160 ||
-      displayed.length > native.length || !native.endsWith(displayed)) return false;
+      displayed.length > native.length || !(native.endsWith(displayed) || elided?.endsWith(displayed))) return false;
   const menu = visible.slice(cursor.index);
   const footer = /Enter\s*to\s*select\s*·\s*(?:↑\/↓\s*to\s*navigate(?:\s*·\s*n\s*to\s*add\s*notes)?|Tab\/Arrow\s*keys\s*to\s*navigate)\s*·\s*Esc\s*to\s*cancel/i.exec(menu);
   if (!footer || !/^[\s│┃─━└┘]*$/.test(menu.slice(footer.index + footer[0].length))) return false;
@@ -1664,7 +1671,7 @@ export function createPlanCountPermissionGuard(): (visible: string, completionHi
   return (visible, completionHistory = visible, native) => {
     // Only the current viewport can establish an actionable permission.
     // Historical file results release a later identical grant, never a menu.
-    const candidate = planCountPermissionMenu(visible);
+    const candidate = planCountPermissionMenu(visible, Boolean(native));
     if (!candidate) {
       // A completed tool row can remain below its old controls. Suppress that
       // stale menu without making a trailing result an actionable permission.
@@ -5649,7 +5656,8 @@ export async function runPlanSkillFloorCheck(opts: {
       pendingQuestion = matching.length === 1 ? matching[0] : undefined;
       checkpoint();
       const nativeQuestionVisible = Boolean(pendingQuestion);
-      const permissionIsActiveRender = !nativeQuestionVisible && isPermissionDialogVisible(viewport);
+      const permissionIsActiveRender = !nativeQuestionVisible &&
+        (isPermissionDialogVisible(viewport) || isCroppedEditPermissionVisible(viewport));
       if (permissionIsActiveRender) {
         // An authorized file write enables the review, but never supplies its
         // finding question. Exclude the permission's old render after approval.
