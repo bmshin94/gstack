@@ -43,7 +43,7 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 * An "obvious fix" still needs approval when it is not covered by an exact accepted choice.
 
 ## Formatting Rules
-* Keep option labels short; put the complete comparison in the question's brief using 0D and the preamble format.
+* Keep option labels short; use Step 0D's exact `currentDecision` fields for the question and option descriptions.
 * Use **CRITICAL GAP** / **WARNING** / **OK** for scannability.
 
 ## Mode Quick Reference

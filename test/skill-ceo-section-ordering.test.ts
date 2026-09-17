@@ -780,6 +780,9 @@ test('CEO closing route checks approvals before outputs and verifies artifacts b
   const questions = section.split('## CRITICAL RULE — How to ask questions')[1]!.split('## Mode Quick Reference')[0]!;
   expect(questions).toContain('`D<N>` question heading and A/B/C option labels');
   expect(questions).toContain('Cite the stable ledger ID separately');
+  const formatting = questions.split('## Formatting Rules')[1]!;
+  expect(formatting).toContain("Step 0D's exact `currentDecision` fields for the question and option descriptions");
+  expect(formatting).not.toContain("put the complete comparison in the question's brief");
   expect(questions).not.toMatch(/NUMBER \+ (?:option )?LETTER|"3A"|One sentence max per option/);
 });
 
