@@ -18,6 +18,8 @@ test('semantic helper changes also select the separate DX analysis calibration',
     const shared = ['test/helpers/plan-review-decisions.ts', 'test/plan-review-decisions.test.ts',
       'test/helpers/plan-review-cases.ts', 'test/plan-review-cases.test.ts'].includes(file);
     const expected = shared ? [...IDS, 'plan-devex-peer-comparison-classification'] : [...IDS];
+    if (file === 'test/helpers/plan-review-decisions.ts' || file === 'test/plan-review-decisions.test.ts')
+      expected.push('plan-ceo-mode-routing');
     // The UI gate now uses the shared picker for acknowledged native questions.
     if (file === 'test/helpers/plan-review-cases.ts') expected.push('plan-design-with-ui-scope');
     // plan-review-cases.test.ts also verifies the Eng template/renderer gate.

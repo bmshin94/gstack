@@ -4,6 +4,14 @@ import { OVERLAY_FIXTURES } from './fixtures/overlay-nudges';
 
 describe('periodic fixture dependencies select their behavioral cases', () => {
   const cases: Array<[string, string[]]> = [
+    ['test/ceo-expansion-pacing-native.test.ts', ['plan-ceo-mode-routing']],
+    ['test/fixtures/ceo-expansion-pacing-fb10.json', ['plan-ceo-mode-routing']],
+    ['test/helpers/ceo-hold-posture-review.ts', ['plan-ceo-mode-routing']],
+    ['test/ceo-hold-posture-review.test.ts', ['plan-ceo-mode-routing']],
+    ['test/fixtures/ceo-hold-proof-fb10.json', ['plan-ceo-mode-routing']],
+    ['test/eng-semantic-terminal.test.ts', ['plan-eng-finding-count']],
+    ['test/fixtures/eng-fb10-count-public.json', ['plan-eng-finding-count']],
+    ['test/fixtures/autoplan-home-phase-entry-fb10.json', ['autoplan-chain-pty']],
     ['test/eng-error-flow-seed.test.ts', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/eng-69193-count-public.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/eng-e366-count-public.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
@@ -44,8 +52,6 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/fixtures/review-count-markdown-6f.json', ['plan-eng-finding-count', 'plan-design-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/eng-current-native-seeds.test.ts', ['plan-eng-finding-count']],
     ['test/fixtures/eng-current-native-seeds-6714.json', ['plan-eng-finding-count']],
-    ['test/plan-count-cropped-wrap.test.ts', ['plan-eng-finding-count', 'plan-ceo-finding-count', 'plan-design-finding-count', 'plan-devex-finding-count', 'plan-eng-multi-finding-batching', 'plan-ceo-split-overflow']],
-    ['test/fixtures/plan-count-cropped-wrap-6714.json', ['plan-eng-finding-count', 'plan-ceo-finding-count', 'plan-design-finding-count', 'plan-devex-finding-count', 'plan-eng-multi-finding-batching', 'plan-ceo-split-overflow']],
     ['test/fixtures/ceo-recorded-decisions-67147822.json', ['plan-ceo-finding-count']],
     ['test/fixtures/eng-batching-expanded-ledger-6714.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
     ['test/fixtures/eng-native-review-identities-6714.json', ['plan-eng-finding-count', 'plan-eng-multi-finding-batching']],
@@ -454,3 +460,33 @@ test('file supervision regression selects all affected callers with their existi
   for (const id of periodic) expect(E2E_TIERS[id]).toBe('periodic');
   expect(selectTests(changed, LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
 });
+
+test('floor permissions and large-report fixtures select their actual consumers', () => {
+  const floors = ['plan-ceo-finding-floor', 'plan-eng-finding-floor', 'plan-design-finding-floor', 'plan-devex-finding-floor'];
+  for (const file of ['test/plan-floor-permission.test.ts', 'test/fixtures/plan-floor-permission-fb10.json'])
+    expect(selectTests([file], E2E_TOUCHFILES).selected.sort()).toEqual([...floors].sort());
+  const filePermissionConsumers = selectTests(['test/helpers/plan-count-file-permission.ts'], E2E_TOUCHFILES).selected;
+  expect(filePermissionConsumers.sort()).toEqual([...floors, 'plan-ceo-finding-count', 'plan-eng-finding-count',
+    'plan-design-finding-count', 'plan-devex-finding-count', 'plan-eng-multi-finding-batching', 'plan-ceo-split-overflow'].sort());
+  expect(selectTests(['test/fixtures/ceo-report-permission-fb10.json'], E2E_TOUCHFILES).selected.sort())
+    .toEqual(filePermissionConsumers);
+  expect(E2E_TIERS['plan-ceo-finding-floor']).toBe('gate');
+  expect(E2E_TIERS['plan-devex-finding-floor']).toBe('gate');
+  expect(E2E_TIERS['plan-eng-finding-floor']).toBe('periodic');
+  expect(E2E_TIERS['plan-design-finding-floor']).toBe('periodic');
+});
+
+// These existing permission checks now also serve gate floor actors.
+for (const file of ['test/plan-count-cropped-wrap.test.ts', 'test/fixtures/plan-count-cropped-wrap-6714.json']) {
+  test(file, () => {
+    const gate = ['plan-ceo-finding-floor', 'plan-devex-finding-floor'];
+    const periodic = ['plan-ceo-finding-count', 'plan-eng-finding-count', 'plan-design-finding-count',
+      'plan-devex-finding-count', 'plan-eng-multi-finding-batching', 'plan-ceo-split-overflow',
+      'plan-eng-finding-floor', 'plan-design-finding-floor'];
+    const result = selectTests([file], E2E_TOUCHFILES);
+    expect(result.reason).toBe('diff');
+    expect(result.selected.sort()).toEqual([...gate, ...periodic].sort());
+    for (const id of gate) expect(E2E_TIERS[id]).toBe('gate');
+    for (const id of periodic) expect(E2E_TIERS[id]).toBe('periodic');
+  });
+}
