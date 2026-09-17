@@ -183,7 +183,7 @@ console.log(JSON.stringify(results));
       expect(launch.prompt).toContain("perform the skill's full final Read-back gate");
       expect(launch.prompt).not.toContain("When the workflow is complete, write the skill's final output");
       expect(launch.args[launch.args.indexOf('--max-turns') + 1]).toBe('25');
-      expect(launch.args[launch.args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Write,Edit,Agent');
+      expect(launch.args[launch.args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Write,Edit,Agent,Bash');
       expect(launch.args[launch.args.indexOf('--model') + 1]).toBe('fake-model');
     }
   } finally {
@@ -241,7 +241,7 @@ console.log(JSON.stringify({reads:[...capture.readSections],report:capture.repor
     expect(observed.prompt).toContain('never hide it or claim approval when no offered alternative satisfies these constraints');
     expect(observed.prompt).toContain('all 11 sections, giving each an explicit outcome');
     expect(observed.prompt).toContain('Complete every required artifact and verification before returning');
-    expect(observed.args[observed.args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Write,Edit');
+    expect(observed.args[observed.args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Write,Edit,Bash');
     expect(observed.args[observed.args.indexOf('--max-turns') + 1]).toBe('25');
   } finally {
     clearTimeout(timer); if (child.exitCode === null) child.kill();
@@ -328,6 +328,97 @@ console.log(JSON.stringify({plain:plain.exitReason,literal:literal.exitReason,se
 }, 20_000);
 
 
+test('section completion clock includes setup and queueing without extending the work deadline', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'section-completion-clock-'));
+  const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
+  const helper = (name: string) => path.resolve(import.meta.dir, 'helpers', name + '.ts');
+  const log = path.join(dir, 'launches.jsonl');
+  fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
+const {spawnSync}=require('node:child_process');
+const fs=require('node:fs');
+const prompt=await Bun.stdin.text();
+await Bun.sleep(100); // CLI/API startup stays inside the same deadline.
+const clock=spawnSync('bash',['-c','date -u +%Y-%m-%dT%H:%M:%SZ'],{encoding:'utf8'});
+fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({prompt,args:process.argv.slice(2),at:Date.now(),clock:{code:clock.status,text:clock.stdout.trim()}})+'\\n');
+console.log(JSON.stringify({type:'system',subtype:'init'}));
+if(prompt==='hold') await Bun.sleep(5000);
+console.log(JSON.stringify({type:'result',subtype:'success',result:'Finished',num_turns:1}));
+`, {mode: 0o755});
+  const script = path.join(dir, 'run.ts');
+  const literal = 'Keep "quotes", $(printf unsafe), and `literal` as text.';
+  fs.writeFileSync(script, `import {mock} from 'bun:test';
+let setupMs=0; const setups=[];
+mock.module(${JSON.stringify(helper('eval-store'))},()=>({getProjectEvalDir:()=>${JSON.stringify(path.join(dir,'evals'))}}));
+mock.module(${JSON.stringify(helper('hermetic-env'))},()=>({isHermeticEnabled:()=>true,hermeticChildEnv:extra=>{const start=Date.now();Bun.sleepSync(setupMs);setups.push({start,end:Date.now()});return {...process.env,...extra};}}));
+const {runSkillTest}=await import(${JSON.stringify(helper('session-runner'))});
+const base={workingDirectory:${JSON.stringify(dir)},model:'fake-model',maxTurns:7,tools:['Read','Bash'],allowedTools:['Read','Bash'],timeout:2000};
+const plain=await runSkillTest({...base,prompt:'plain',appendSystemPrompt:${JSON.stringify(literal)}});
+setupMs=250;
+const normal=await runSkillTest({...base,prompt:'normal',appendSystemPrompt:${JSON.stringify(literal)},completionReserveMs:500});
+setupMs=0;
+const defaultBudget=await runSkillTest({...base,timeout:undefined,prompt:'default-budget',completionReserveMs:30000});
+setupMs=500;
+const started=Date.now();
+const hold=await runSkillTest({...base,prompt:'hold',timeout:1000,startupGraceMs:1000,completionReserveMs:400});
+const wall=Date.now()-started;
+setupMs=150;
+const exhausted=await runSkillTest({...base,prompt:'must-not-launch',timeout:100,startupGraceMs:100,completionReserveMs:25});
+const rejected=[];
+for(const completionReserveMs of [0,-1,NaN,Infinity,null,1000,1001]){
+ try{await runSkillTest({...base,prompt:'invalid',timeout:1000,completionReserveMs});rejected.push(false);}
+ catch(e){rejected.push(e.message.includes('positive and smaller'));}
+}
+for(const timeout of [0,-1,NaN,Infinity]){
+ try{await runSkillTest({...base,prompt:'invalid-timeout',timeout,completionReserveMs:1});rejected.push(false);}
+ catch(e){rejected.push(e.message.includes('positive and smaller'));}
+}
+const unavailable=[];
+for(const unavailableTools of [{tools:['Read']},{allowedTools:['Read']},{tools:[]}]){
+ try{await runSkillTest({...base,...unavailableTools,prompt:'missing-clock-tool',completionReserveMs:200});unavailable.push(false);}
+ catch(e){unavailable.push(e.message.includes('clock requires Bash'));}
+}
+console.log(JSON.stringify({setups,plain:plain.exitReason,normal:normal.exitReason,defaultBudget:defaultBudget.exitReason,hold:hold.exitReason,wall,exhausted:exhausted.exitReason,rejected,unavailable}));`);
+  const env = {...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`};
+  delete env.CI;
+  const child = Bun.spawn([process.execPath, script], {cwd: dir, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe'});
+  const timer = setTimeout(() => child.kill(), 12_000);
+  try {
+    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect(code, stderr).toBe(0);
+    const result = JSON.parse(stdout.trim().split('\n').at(-1)!);
+    expect([result.plain, result.normal, result.defaultBudget]).toEqual(['success','success','success']);
+    expect(result.hold).toBe('timeout'); expect(result.wall).toBeGreaterThanOrEqual(950); expect(result.wall).toBeLessThan(2000);
+    expect(result.exhausted).toBe('timeout_startup'); expect(result.rejected).toEqual(Array(11).fill(true));
+    expect(result.unavailable).toEqual([true,true,true]);
+    const launches = fs.readFileSync(log,'utf8').trim().split('\n').map(line=>JSON.parse(line));
+    expect(launches.map(x=>x.prompt)).toEqual(['plain','normal','default-budget','hold']);
+    const notice = (x: any) => x.args[x.args.indexOf('--append-system-prompt')+1] as string;
+    expect(notice(launches[0])).toBe(literal);
+    expect(notice(launches[1]).startsWith(literal+'\n\nSection completion clock')).toBe(true);
+    for (const [i, timeout, reserve] of [[1,2000,500],[2,120000,30000],[3,1000,400]]) {
+      const x=launches[i]!, text=notice(x);
+      const time=(label:string)=>Date.parse(new RegExp('^'+label+' UTC: (.+)$','m').exec(text)![1]!);
+      const start=time('Runner entry'), deadline=time('Hard deadline'), completion=time('Completion reserve starts');
+      expect(deadline-start).toBe(timeout); expect(deadline-completion).toBe(reserve);
+      expect(start).toBeLessThanOrEqual(result.setups[i].start);
+      expect(result.setups[i].end-start).toBeGreaterThanOrEqual(i===1?250:i===3?500:0);
+      expect(x.at-result.setups[i].end).toBeGreaterThanOrEqual(90);
+      expect(x.clock.code).toBe(0); expect(x.clock.text).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+      expect(Math.abs(Date.parse(x.clock.text)-x.at)).toBeLessThan(1500);
+      expect(text).toContain('If the clock read fails, report timing unavailable');
+      expect(text).toContain('No required content or gate may be skipped');
+      expect(text).toContain('it never resets');
+      expect(x.args.filter((v:string)=>v==='--append-system-prompt')).toHaveLength(1);
+      if(i===3) expect(x.at).toBeGreaterThanOrEqual(completion);
+    }
+    const omitNotice=(args:string[])=>args.filter((_,i)=>i!==args.indexOf('--append-system-prompt')&&i!==args.indexOf('--append-system-prompt')+1);
+    expect(omitNotice(launches[1].args)).toEqual(omitNotice(launches[0].args));
+  } finally {
+    clearTimeout(timer); if(child.exitCode===null)child.kill(); await child.exited;
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+}, 15_000);
+
 test('full review capture exposes its actual timeout while other skill requests stay unchanged', async () => {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'section-deadline-routing-'));
   const helper=(name:string)=>path.resolve(import.meta.dir,'helpers',name+'.ts');
@@ -347,8 +438,12 @@ console.log(JSON.stringify(observed));`);
     for(const [i,request] of requests.entries()){
       const timeout=i%2===0?300000:480000;
       expect(request.timeout).toBe(timeout);expect(request.model).toBe('fake-model');expect(request.maxTurns).toBe(25);
-      expect(request.tools).toEqual(['Read','Grep','Glob','Write','Edit','Agent']);
+      expect(request.tools).toEqual(['Read','Grep','Glob','Write','Edit','Agent',...(i<4?['Bash']:[])]);
+      expect(request.allowedTools).toEqual(request.tools);
       if(i<4){
+        expect(request.completionReserveMs).toBe(timeout/4);
+        expect(request.prompt).toContain('runner-bound deadline and the observed clock');
+        expect(request.prompt).toContain('Bash may additionally run exactly `date -u +%Y-%m-%dT%H:%M:%SZ`');
         expect(request.prompt).toContain('Native execution window: '+timeout/1000+' seconds');
         expect(request.prompt).toContain('reserve the final '+timeout/4000+' seconds');
         expect(request.prompt).toContain('Every required section, finding, approval and output still has to be completed');
@@ -365,6 +460,8 @@ console.log(JSON.stringify(observed));`);
         }
       }else{
         expect(request.prompt).not.toContain('Native execution window:');
+        expect(request).not.toHaveProperty('completionReserveMs');
+        expect(request).not.toHaveProperty('appendSystemPrompt');
         const skill=['fixture','ship','office-hours'][Math.floor((i-4)/2)]!;
         const skillPath=path.join(dir,skill,'SKILL.md');
         const expected=`You are running an automated skill-execution test. No human is present, so AskUserQuestion is unavailable. The ONLY skill file you may read is this absolute path: ${skillPath}. Do NOT Glob/find/search for any other SKILL.md anywhere — especially nothing under ~/.claude or /Users.

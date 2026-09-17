@@ -112,7 +112,7 @@ const FAKE_CLAUDE = String.raw`
   } else if (fs.existsSync('incremental-edit')) {
     const exposed = observed.args[observed.args.indexOf('--tools') + 1]?.split(',') ?? [];
     const allowed = observed.args.slice(observed.args.indexOf('--allowed-tools') + 1);
-    if (!exposed.includes('Edit') || !allowed.includes('Edit') || exposed.includes('Agent') || exposed.includes('Bash')) throw new Error('Wrong native local-edit interface');
+    if (!exposed.includes('Edit') || !allowed.includes('Edit') || exposed.includes('Agent') || !exposed.includes('Bash') || !prompt.includes('Bash may additionally run exactly') || !prompt.includes('date -u +%Y-%m-%dT%H:%M:%SZ')) throw new Error('Wrong native local-edit interface');
     const file_path = path.join(process.cwd(), outputFile);
     const old_string = fs.readFileSync(file_path, 'utf8');
     const new_string = old_string + '\n## GSTACK REVIEW REPORT\nCompleted through a scoped Edit.\n';
@@ -374,7 +374,7 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
         planDir: dir, skillName: 'plan-ceo-review', scenario: 'Review the full plan',
         testName: 'section-tools-default', timeout: 5_000,
       });
-      expect(flagValue(observed().args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent');
+      expect(flagValue(observed().args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent,Bash');
       expect(observed().stateHome).toBe(getHermeticDirs().gstackHome);
       expect(observed().prompt).not.toContain('codex_reviews: disabled');
       expect(result.readSections.has('review-sections.md')).toBe(true);
@@ -432,9 +432,9 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
       expect(child.prompt).toContain('Before auto-selecting, save its full currentDecision question/header, every labeled option and full description, commitment comparison and source citations');
       expect(child.prompt).toContain('Read back the assembled plan and verify the full required outputs');
       expect(child.prompt).not.toContain('When the workflow is complete, write');
-      const allowed = child.args.slice(child.args.indexOf('--allowed-tools') + 1, child.args.indexOf('--allowed-tools') + 6);
-      expect(allowed).toEqual(['Read', 'Grep', 'Glob', 'Write', 'Edit']);
-      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit');
+      const allowed = child.args.slice(child.args.indexOf('--allowed-tools') + 1, child.args.indexOf('--allowed-tools') + 7);
+      expect(allowed).toEqual(['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Bash']);
+      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Bash');
     });
   });
 
@@ -455,7 +455,7 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
       expect(child.prompt).toContain('Do not write full implementation or test code unless needed to specify an accepted change');
       expect(child.prompt).toContain('Every required section, finding, approval and output still has to be completed');
       expect(child.prompt).toContain('After all required writes are complete');
-      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent');
+      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent,Bash');
       expect(child.prompt).not.toContain('codex_reviews: disabled');
       expect(child.prompt).not.toContain('all 11 sections');
     });
@@ -473,7 +473,9 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
       const blanket = "- At any decision point that would call AskUserQuestion, silently pick the skill's recommended option and continue. Do NOT stop to ask.";
       expect(original.prompt.split(blanket)).toHaveLength(2);
       expect(bounded.prompt).toBe(original.prompt.replace(blanket, policy));
-      expect(bounded.args).toEqual(original.args);
+      const stableArgs = (args: string[]) => args.map((arg, i) => i === args.indexOf('--append-system-prompt') + 1
+        ? arg.replace(/^(Runner entry|Hard deadline|Completion reserve starts) UTC:.*$/gm, '$1 UTC: <clock>') : arg);
+      expect(stableArgs(bounded.args)).toEqual(stableArgs(original.args));
       expect([...second.readSections]).toEqual([...first.readSections]);
       expect(second.exitReason).toBe(first.exitReason);
     });
@@ -514,7 +516,7 @@ describe.skipIf(process.platform === 'win32')('session-runner explicit tool avai
       expect(child.prompt).toContain('Every required section, finding, approval and output still has to be completed');
       expect(child.prompt).toContain('MUST actually Read that sections/ file with the Read tool BEFORE doing the work it covers');
       expect(child.prompt).toContain('After all required writes are complete');
-      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent');
+      expect(flagValue(child.args, '--tools')).toBe('Read,Grep,Glob,Write,Edit,Agent,Bash');
       expect(fs.readFileSync(path.join(dir, 'PLAN.md'), 'utf8')).toBe(fixtures['PLAN.md']);
       expect(fixtures['PLAN.md']).toContain('accepted requirements to review against');
       expect(fixtures['PLAN.md']).toContain('implementation itself remains proposed and unapproved');
@@ -597,7 +599,7 @@ Rules for this run:
       expect(result.toolCalls.map(call=>call.tool)).toEqual(['Read','Read','Edit','Read']);
       expect(result.toolCalls[2]!.output).toBe('File edited successfully.');
       expect(result.toolCalls[3]!.output).toBe(result.output);
-      expect(flagValue(observed().args,'--tools')).toBe('Read,Grep,Glob,Write,Edit');
+      expect(flagValue(observed().args,'--tools')).toBe('Read,Grep,Glob,Write,Edit,Bash');
       expect(observed().outsideDisabled).toBe(true); expect(observed().promptConfigMatchesState).toBe(true);
       expect(fs.existsSync(observed().stateHome)).toBe(false);
     });

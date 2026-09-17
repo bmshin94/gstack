@@ -220,6 +220,8 @@ export async function runSkillTest(options: {
   maxTurns?: number;
   /** Optional harness contract appended to the native system prompt. */
   appendSystemPrompt?: string;
+  /** Opt-in section completion reserve; describes the existing entry deadline. */
+  completionReserveMs?: number;
   /** Approval allowlist; does not restrict which tools the model can see. */
   allowedTools?: string[];
   /** Optional built-in tool availability. Omit to preserve the CLI defaults. */
@@ -272,6 +274,23 @@ export async function runSkillTest(options: {
 
   const deadline = startTime + timeout;
   const startedAt = new Date().toISOString();
+  let systemPrompt = options.appendSystemPrompt;
+  if (options.completionReserveMs !== undefined) {
+    const reserve = options.completionReserveMs;
+    if (!Number.isFinite(timeout) || timeout <= 0 || !Number.isFinite(reserve) || reserve <= 0 || reserve >= timeout) {
+      throw new Error('Section completion reserve must be positive and smaller than the existing work timeout');
+    }
+    if (!allowedTools.includes('Bash') || (options.tools !== undefined && !options.tools.includes('Bash'))) {
+      throw new Error('Section completion clock requires Bash in the declared tools and approval allowlist');
+    }
+    const notice = `Section completion clock (fixture contract):
+Runner entry UTC: ${new Date(startTime).toISOString()}
+Hard deadline UTC: ${new Date(deadline).toISOString()}
+Completion reserve starts UTC: ${new Date(deadline - reserve).toISOString()}
+Setup, CLI startup and API queueing consume this same window; it never resets.
+Before source Reads and after each saved checkpoint, use Bash to run exactly \`date -u +%Y-%m-%dT%H:%M:%SZ\`. Compare that observed UTC time with the times above. When remaining time is at most ${reserve / 1000} seconds, prioritize the remaining required completion outputs and verification. No required content or gate may be skipped. If the clock read fails, report timing unavailable; do not invent remaining time or restart the deadline.`;
+    systemPrompt = systemPrompt ? `${systemPrompt}\n\n${notice}` : notice;
+  }
 
   // Set up per-run log directory if runId is provided
   let runDir: string | null = null;
@@ -294,7 +313,7 @@ export async function runSkillTest(options: {
     '--max-turns', String(maxTurns),
     '--allowed-tools', ...allowedTools,
   ];
-  if (options.appendSystemPrompt) args.push('--append-system-prompt', options.appendSystemPrompt);
+  if (systemPrompt) args.push('--append-system-prompt', systemPrompt);
   // --allowed-tools controls approval, including when permissions are skipped;
   // only --tools removes unrelated built-ins such as Agent, Bash, and Skill.
   // Keep this opt-in: existing workflow evals intentionally use CLI defaults.
