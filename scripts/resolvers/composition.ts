@@ -3,6 +3,34 @@ import { outsideVoiceRuntime } from './outside-voice';
 import * as path from 'path';
 import { getHostConfig } from '../../hosts';
 
+/** Claude's scoped hook enforces the parent publication boundary during /autoplan. */
+export function generateAutoplanPublicationHook(ctx: TemplateContext, args?: string[]): string {
+  if (ctx.skillName !== 'autoplan' || args?.length) {
+    throw new Error('AUTOPLAN_PUBLICATION_HOOK is only valid in autoplan without arguments');
+  }
+  if (ctx.host !== 'claude') return '';
+
+  // Use the same installed runtime path as Claude's existing skill hooks.
+  // Emitting this through a host-specific resolver also keeps other hosts free
+  // of the generator's destructive-command advisory for safety hooks.
+  const unavailable = JSON.stringify({ hookSpecificOutput: {
+    hookEventName: 'PreToolUse', permissionDecision: 'deny',
+    permissionDecisionReason: 'Autoplan publication guard is unavailable. Restore the installed autoplan/bin/phase-publication-hook before continuing this skill.',
+  } });
+  const shellWord = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const script = `S="${toShellPath(ctx.paths.skillRoot)}/autoplan/bin/phase-publication-hook"
+if [ -f "$S" ]; then exec bash "$S"; fi
+printf '%s\\n' ${shellWord(unavailable)}`;
+  const command = `bash -c ${shellWord(script)}`;
+  return `hooks:
+  PreToolUse:
+    - matcher: "Read"
+      hooks:
+        - type: command
+          command: ${JSON.stringify(command)}
+          statusMessage: "Checking Autoplan phase publication..."`;
+}
+
 /**
  * {{INVOKE_SKILL:skill-name}} — emits prose instructing Claude to read
  * another skill's SKILL.md and follow it, skipping preamble sections.
