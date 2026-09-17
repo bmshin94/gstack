@@ -361,6 +361,7 @@ Before source Reads and after each saved checkpoint, use Bash to run exactly \`d
   let exitCode: number | undefined;
   let stdoutDone = false;
   let stderrDone = false;
+  let stderrEnded = false;
   let drainExpired = false;
   let streamError: Error | undefined;
   let processError: Error | undefined;
@@ -443,12 +444,18 @@ Before source Reads and after each saved checkpoint, use Bash to run exactly \`d
   };
   const onStderr = (chunk: string) => { stderr += chunk; };
   const onStderrDone = () => { stderrDone = true; releaseStderr(); };
+  const onStderrEnd = () => { stderrEnded = true; onStderrDone(); };
+  const onStderrClose = () => {
+    // Close releases the drain, but only end proves stderr reached EOF.
+    if (!stderrEnded) streamError ??= new Error('stderr closed before EOF');
+    onStderrDone();
+  };
   const onStreamError = (error: Error) => { streamError = error; };
   proc.on('exit', onExit);
   proc.on('error', onError);
   proc.stderr!.setEncoding('utf8');
   proc.stderr!.on('data', onStderr);
-  proc.stderr!.on('end', onStderrDone).on('close', onStderrDone).on('error', onStreamError);
+  proc.stderr!.on('end', onStderrEnd).on('close', onStderrClose).on('error', onStreamError);
   proc.stdout!.on('error', onStreamError);
   signal?.addEventListener('abort', onAbort, { once: true });
   phaseTimer = setTimeout(() => killRun(true), Math.max(0, startTime + startupGraceMs - Date.now()));

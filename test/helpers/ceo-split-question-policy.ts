@@ -1,5 +1,5 @@
 import type { NativeQuestion } from './plan-skill-questions';
-import { pickPlanReviewQuestion } from './plan-review-cases';
+import { CEO_SCOPE_CANDIDATES, pickPlanReviewQuestion } from './plan-review-cases';
 import { findCeoModeOption } from './ceo-mode-option';
 import type { AskUserQuestionFingerprint } from './claude-pty-runner';
 import type { PlanCountTranscript } from './plan-count-transcript';
@@ -87,6 +87,33 @@ export function ceoSplitDecisionFingerprints(
     });
     return { ...matching[0]!, toolUseId: signature, questions: structuredClone(call.questions), selectedOptions };
   });
+}
+
+/** Collection stops at the fixture's native scope decisions, not a full review
+ * report. The unchanged semantic evaluator still examines every collected tab. */
+export function isCeoSplitCollectionComplete(
+  transcript: PlanCountTranscript, fingerprints: readonly AskUserQuestionFingerprint[],
+): boolean {
+  if (new Set(transcript.calls.map(call => call.sessionId)).size !== 1) return false;
+  let decisions: ReturnType<typeof ceoSplitDecisionFingerprints>;
+  try { decisions = ceoSplitDecisionFingerprints(transcript, fingerprints); }
+  catch { return false; }
+  const targets = new Set<string>();
+  const calls = new Set<string>();
+  for (const fp of decisions) {
+    for (const [index, question] of fp.questions.entries()) {
+      const target = ceoSplitCandidate(question);
+      if (!target) continue;
+      const selected = question.options[fp.selectedOptions[index]! - 1]!;
+      if (targets.has(target) || !['include', 'defer', 'cut'].includes(ceoSplitOptionAction(selected.label) ?? '')) {
+        return false;
+      }
+      targets.add(target);
+      calls.add(fp.toolUseId);
+    }
+  }
+  return calls.size >= CEO_SCOPE_CANDIDATES.length - 1 &&
+    CEO_SCOPE_CANDIDATES.every(target => targets.has(target.id));
 }
 
 /** This simulated user keeps the split fixture's stated 2–3 integration cap.

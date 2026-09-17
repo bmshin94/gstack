@@ -17,6 +17,8 @@
  * call, including candidate choices before mode selection. It keeps the
  * N-1 call floor and requires independent offered dispositions for all five
  * candidates. The review-phase counter reports progress, not target coverage.
+ * Collection ends once all five native choices are acknowledged; the same
+ * semantic validator then decides whether those choices satisfy the metric.
  *
  * Why a separate test from skill-e2e-plan-ceo-finding-count and
  * skill-e2e-plan-eng-multi-finding-batching:
@@ -41,7 +43,7 @@ import {
   ceoStep0Boundary,
 } from './helpers/claude-pty-runner';
 import { FORCING_SPLIT_OVERFLOW_CEO } from './fixtures/forcing-finding-seeds';
-import { ceoSplitDecisionFingerprints, isCeoSplitCandidateCall, pickCeoSplitCountQuestion } from './helpers/ceo-split-question-policy';
+import { ceoSplitDecisionFingerprints, isCeoSplitCandidateCall, isCeoSplitCollectionComplete, pickCeoSplitCountQuestion } from './helpers/ceo-split-question-policy';
 import { CEO_SCOPE_CANDIDATES } from './helpers/plan-review-cases';
 import { evaluatePlanReviewDecisions } from './helpers/plan-review-decisions';
 
@@ -79,6 +81,7 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
           // Candidate choices can occur before mode selection. Only those
           // acknowledged menus satisfy the split metric; expansions do not.
           isReviewAUQ: isCeoSplitCandidateCall,
+          isCollectionComplete: isCeoSplitCollectionComplete,
           pickAUQ: pickCeoSplitCountQuestion,
           observeSetupQuestions: true,
           reviewCountCeiling: N + 3, // hard cap above floor + tolerance
@@ -88,7 +91,7 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
-        if (!['plan_ready', 'completion_summary', 'ceiling_reached'].includes(obs.outcome)) {
+        if (!['plan_ready', 'completion_summary', 'collection_complete', 'ceiling_reached'].includes(obs.outcome)) {
           throw new Error(
             `split-overflow test FAILED: outcome=${obs.outcome}\n` +
               `step0=${obs.step0Count} review=${obs.reviewCount} elapsed=${obs.elapsedMs}ms\n` +

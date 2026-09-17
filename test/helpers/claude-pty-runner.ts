@@ -1399,7 +1399,10 @@ function planCountPermissionMenu(visible: string): {
   // pane to a bare question would erase a crop, mismatch, or quoted prefix.
   // Other legacy permissions stay prompt-local so old labels cannot grant.
   const context = currentFilePermissionTarget(selected)?.operation === 'edit' ? before + menu : selected;
-  if (!prompt || !(isPermissionDialogVisible(context) || isNativeEditPermissionVisible(before + menu))) return null;
+  // The cursor window can cut through a long diff while its complete native
+  // heading is still on screen. Validate that original pane, including its
+  // provenance and footer; the cropped window cannot replace those checks.
+  if (!prompt || !(isPermissionDialogVisible(context) || isNativeEditPermissionVisible(normalized))) return null;
   return { normalized, cursorAt, prompt, menu };
 }
 
@@ -1511,7 +1514,9 @@ function matchesTruncatedNativeQuestion(visible: string, call: NativePlanQuestio
   const cursor = [...visible.matchAll(/❯\s*1\./g)].at(-1);
   if (!cursor) return false;
   const before = visible.slice(0, cursor.index);
-  const header = /^(?:[\t │┃]*\n)*[\t │┃]*[☐□]([^\n│]*)\n/.exec(before);
+  // Claude's single-question card can start with its native horizontal rule.
+  // Accept only that optional border, leaving arbitrary prose outside the pane.
+  const header = /^(?:[\t │┃]*\n)*(?:[ \t]*[─━]{10,}[ \t]*\n)?[\t │┃]*[☐□]([^\n│]*)\n/.exec(before);
   if (!header || /[☐□❯]/.test(before.slice(header[0].length))) return false;
   const exact = (value: string) => value.replace(/\s+/g, '');
   const question = call.questions[0]!;
@@ -4770,6 +4775,7 @@ export interface PlanSkillCountObservation {
   outcome:
     | 'plan_ready'
     | 'completion_summary'
+    | 'collection_complete'
     | 'ceiling_reached'
     | 'silent_write'
     | 'transcript_unavailable'
@@ -4865,6 +4871,9 @@ export async function runPlanSkillCounting(opts: {
   isArtifactGenerationAUQ?: Step0BoundaryPredicate;
   /** Optional issue classifier across phases; receives full native call metadata. */
   isReviewAUQ?: (fp: AskUserQuestionFingerprint, priorCalls?: readonly NativePlanQuestionCall[]) => boolean;
+  /** Stop a collection-only fixture once its acknowledged inputs are complete.
+   * This is not review completion or a passing verdict; the caller still validates them. */
+  isCollectionComplete?: (transcript: PlanCountTranscript, fingerprints: readonly AskUserQuestionFingerprint[]) => boolean;
   /** Narrow caller-specific selection; null retains the normal answer policy.
    * The first argument retains full pending metadata for existing callers.
    * Native-bound selection uses activeCapture, whose metadata is present only
@@ -4916,6 +4925,8 @@ export async function runPlanSkillCounting(opts: {
     throw Error('Design board state binding requires the Design caller and its declared picker');
   if (opts.approveEngTestPlanEdits && (opts.skillName !== 'plan-eng-review' || !opts.expectedPlanPath))
     throw Error('Eng test-plan approval requires the Eng caller and its explicit report');
+  if (opts.isCollectionComplete && opts.expectedPlanPath)
+    throw Error('Collection-only completion cannot replace the final report contract');
   const budgetStarted = performance.now();
   const startedAt = Date.now();
   const defaultPick = opts.defaultPick ?? 1;
@@ -5125,6 +5136,14 @@ export async function runPlanSkillCounting(opts: {
       const pending = transcript.calls.find(c => !c.answered && !c.failed)
         ?? readPendingQuestion(session.pendingQuestionFile, fixture.cwd,
           session.hermeticConfigDir, startedAt, transcript);
+      // Native ACKs → complete collection → caller validation. A process failure
+      // above or a pending native question still prevents this early collection stop.
+      if (opts.isCollectionComplete && !pending && transcript.status === 'ready' &&
+          transcript.calls.length > 0 && transcript.calls.every(call => call.answered && !call.failed) &&
+          !unresolvedPlanQuestionCalls(transcript.calls).length && remainingWork() > 0 &&
+          opts.isCollectionComplete(transcript, fingerprints) && remainingWork() > 0) {
+        return snapshot('collection_complete', 'Caller-defined native collection is complete; final validation remains required', visible);
+      }
       const newlyMatched = pending && matchesNativePlanQuestion(visible, pending);
       if (newlyMatched) lastMatchedNativeQuestion = pending;
       const renderedFrame = classifyPlanCountFrame(visible);

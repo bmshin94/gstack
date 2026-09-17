@@ -151,6 +151,8 @@ describe('periodic fixture dependencies select their behavioral cases', () => {
     ['test/helpers/hermetic-env.test.ts', ['plan-ceo-split-overflow']],
     ['test/helpers/ceo-split-question-policy.ts', ['plan-ceo-split-overflow']],
     ['test/ceo-split-question-policy.test.ts', ['plan-ceo-split-overflow']],
+    ['test/ceo-split-collection.test.ts', ['plan-ceo-split-overflow']],
+    ['test/fixtures/ceo-split-collection-0bcd.json', ['plan-ceo-split-overflow']],
     ['test/fixtures/ceo-split-actor-6aef.json', ['plan-ceo-split-overflow']],
     ['test/helpers/ceo-mode-option.ts', ['plan-ceo-mode-routing', 'plan-ceo-finding-count', 'plan-ceo-split-overflow']],
     ['docs/askuserquestion-split.md', ['plan-ceo-split-overflow', 'plan-decision-classification', 'plan-devex-peer-comparison-classification']],
@@ -573,6 +575,56 @@ const nativeRepairDependencies = [
       "plan-design-finding-floor",
       "plan-devex-finding-floor"
     ]
+  },
+  {
+    "name": "complete long native Edit panes",
+    "files": [
+      "test/plan-count-long-edit.test.ts",
+      "test/fixtures/plan-count-long-edit-0bcd.json"
+    ],
+    "owners": [
+      "plan-ceo-finding-count",
+      "plan-eng-finding-count",
+      "plan-design-finding-count",
+      "plan-devex-finding-count",
+      "plan-eng-finding-floor",
+      "plan-ceo-finding-floor",
+      "plan-design-finding-floor",
+      "plan-devex-finding-floor",
+      "plan-eng-multi-finding-batching",
+      "plan-ceo-split-overflow"
+    ]
+  },
+  {
+    "name": "native border on truncated questions",
+    "files": [
+      "test/plan-count-truncated-border.test.ts",
+      "test/fixtures/eng-d2-truncated-border-0bcd.json"
+    ],
+    "owners": [
+      "plan-ceo-review-plan-mode",
+      "plan-eng-review-plan-mode",
+      "plan-design-review-plan-mode",
+      "plan-devex-review-plan-mode",
+      "plan-mode-no-op",
+      "office-hours-auto-mode",
+      "auto-decide-preserved",
+      "conductor-prose",
+      "plan-ceo-mode-routing",
+      "plan-design-with-ui-scope",
+      "ship-idempotency-pty",
+      "autoplan-chain-pty",
+      "plan-ceo-finding-count",
+      "plan-eng-finding-count",
+      "plan-design-finding-count",
+      "plan-devex-finding-count",
+      "plan-eng-finding-floor",
+      "plan-ceo-finding-floor",
+      "plan-design-finding-floor",
+      "plan-devex-finding-floor",
+      "plan-eng-multi-finding-batching",
+      "plan-ceo-split-overflow"
+    ]
   }
 ];
 for (const group of nativeRepairDependencies) {
@@ -738,4 +790,52 @@ test('the declared engineering actor selects its existing count case', () => {
     expect(selectTests([file], E2E_TOUCHFILES).selected).toEqual(['plan-eng-finding-count']);
     expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
   }
+});
+
+
+test('stderr lifecycle regression selects runtime consumers without a quality-map edge', () => {
+  const expected = [
+    'browse-basic', 'browse-snapshot', 'aside-browse-basic', 'aside-browse-flow', 'aside-qa-quick',
+    'aside-scrape-json', 'aside-canary-quick', 'hermetic-canary', 'hermetic-sentinel', 'first-task-scaffold',
+    'skillmd-setup-discovery', 'skillmd-no-local-binary', 'skillmd-outside-git', 'session-awareness', 'operational-learning',
+    'qa-quick', 'qa-b6-static', 'qa-b7-spa', 'qa-b8-checkout', 'qa-only-no-fix',
+    'qa-fix-loop', 'qa-bootstrap', 'review-sql-injection', 'review-enum-completeness', 'review-base-branch',
+    'review-design-lite', 'review-army-migration-safety', 'review-army-perf-n-plus-one', 'review-army-delivery-audit', 'review-army-quality-score',
+    'review-army-json-findings', 'review-army-red-team', 'review-army-simplification', 'review-army-simplification-precision', 'review-army-consensus',
+    'office-hours-spec-review', 'office-hours-forcing-energy', 'office-hours-builder-wildness', 'plan-ceo-review', 'plan-ceo-review-selective',
+    'plan-ceo-review-benefits', 'plan-ceo-review-expansion-energy', 'plan-eng-review', 'plan-eng-review-artifact', 'plan-review-report',
+    'plan-design-review-plan-mode', 'office-hours-phase4-fork', 'auq-format-gate', 'tpa-present', 'tpa-absent-linux',
+    'tpa-broken', 'tpa-absent-darwin', 'tpa-apple-ban', 'ship-section-loading', 'plan-ceo-section-loading',
+    'carve-section-loading', 'setup-gbrain-remote', 'setup-gbrain-bad-token', 'setup-gbrain-path4-local-pglite', 'plan-ceo-review-format-mode',
+    'plan-ceo-review-format-approach', 'plan-eng-review-format-coverage', 'plan-eng-review-format-kind', 'plan-ceo-review-prosons-cadence', 'plan-review-prosons-format',
+    'plan-review-prosons-hardstop-neg', 'plan-review-prosons-neutral-neg', 'plan-tune-inspect', 'codex-offered-office-hours', 'codex-offered-ceo-review',
+    'codex-offered-design-review', 'codex-offered-eng-review', 'ship-base-branch', 'ship-local-workflow', 'review-dashboard-via',
+    'retro', 'retro-base-branch', 'cso-full-audit', 'cso-diff-mode', 'cso-infra-scope',
+    'learnings-show', 'timeline-event-flow', 'context-recovery-artifacts', 'context-save-writes-file', 'context-restore-loads-latest',
+    'context-save-routing', 'context-save-then-restore-roundtrip', 'context-restore-fragment-match', 'context-restore-empty-state', 'context-restore-list-delegates',
+    'context-restore-legacy-compat', 'context-save-list-current-branch', 'context-save-list-all-branches', 'document-release', 'codex-review',
+    'outside-voice-codex-to-claude-code', 'outside-voice-claude-code-to-codex', 'outside-plan-disabled-no-fallback', 'ship-coverage-audit', 'review-coverage-audit',
+    'plan-eng-coverage-audit', 'ship-triage', 'ship-docsync', 'docsync-spawned', 'design-consultation-core',
+    'design-consultation-existing', 'design-consultation-research', 'design-consultation-preview', 'plan-design-review-no-ui-scope', 'design-review-fix',
+    'design-review-detector-shim', 'design-review-detector-shim-dom', 'design-html-slop-gate', 'diagram-triplet', 'diagram-authoring-quality',
+    'gstack-upgrade-happy-path', 'land-and-deploy-workflow', 'land-and-deploy-first-run', 'land-and-deploy-review-gate', 'canary-workflow',
+    'benchmark-workflow', 'setup-deploy-workflow', 'autoplan-dual-voice', 'scrape-match-path', 'scrape-prototype-path',
+    'skillify-happy-path', 'skillify-provenance-refusal', 'skillify-approval-reject', 'journey-ideation', 'journey-plan-eng',
+    'journey-debug', 'journey-qa', 'journey-code-review', 'journey-ship', 'journey-docs',
+    'journey-retro', 'journey-design-system', 'journey-visual-qa', 'fanout-arm-overlay-on', 'fanout-arm-overlay-off',
+    'office-hours-brain-writeback', 'arm-benchmark-native-overbuild', 'arm-benchmark-crud-endpoint', 'arm-benchmark-bugfix-decoys', 'office-hours-section-loading',
+  ];
+  const file = 'test/session-runner-stream-lifecycle.test.ts';
+  expect(selectTests([file], E2E_TOUCHFILES).selected.sort()).toEqual(expected.sort());
+  expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+});
+
+
+test('collection completion lifecycle selects the existing native counter consumers', () => {
+  const selected = selectTests(['test/plan-count-collection-completion.test.ts'], E2E_TOUCHFILES);
+  expect(selected.reason).toBe('diff');
+  expect(selected.selected.length).toBeGreaterThan(0);
+  expect(selected.selected.sort()).toEqual(
+    selectTests(['test/plan-count-timeout.test.ts'], E2E_TOUCHFILES).selected.sort());
+  expect(selectTests(['test/plan-count-collection-completion.test.ts'], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
 });
