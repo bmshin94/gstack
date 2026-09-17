@@ -7,6 +7,10 @@ import { pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
 import { capturePlanCountQuestion, nativePlanCallFingerprint } from './helpers/claude-pty-runner';
 import retained from './fixtures/ceo-split-actor-6aef.json';
+import padding from './fixtures/ceo-split-padding-361c-public.json';
+import splitEdit from './fixtures/ceo-split-edit-permission-361c-public.json';
+import {createFilePermissionRecorder, recordFilePermission, currentFilePermissionEpoch} from './helpers/plan-count-file-permission';
+import {createPlanCountPermissionGuard} from './helpers/claude-pty-runner';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const capturedCalls = retained.calls as Parameters<typeof nativePlanCallFingerprint>[0][];
@@ -325,6 +329,8 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     facts.directory = path.join(${JSON.stringify(temp)}, directory);
     const planPath = path.join(facts.directory, 'gstack-test-plan-ceo-split-overflow.md');
     expect(opts.followUpPrompt).toBe(FORCING_SPLIT_OVERFLOW_CEO.replaceAll('/tmp/gstack-test-plan-ceo-split-overflow.md', planPath));
+    expect(opts.permissionPlanPath).toBe(planPath);
+    expect(opts.expectedPlanPath).toBeUndefined();
     for (const target of CEO_SCOPE_CANDIDATES) {
       expect(opts.followUpPrompt).toContain('## ' + target.id + ')');
       facts.candidates.push(target.id);
@@ -360,3 +366,89 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-split-ove
     if (scenario.count < 4) expect(out + err).toContain('target call count 3 below floor 4');
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }, 20_000);
+
+
+test.each(['original', 'blank rows', 'CRLF', 'clipped body'])(
+  'captured split native viewport padding binds the exact call: %s', variant => {
+    const call = structuredClone(padding.call);
+    const screen = variant === 'blank rows' ? '\n \t\n' + padding.screen
+      : variant === 'CRLF' ? padding.screen.replace(/\n/g, '\r\n')
+      : variant === 'clipped body' ? '\n' + padding.screen.split('\n').slice(2).join('\n')
+      : padding.screen;
+    const before = structuredClone(call);
+    const seen = new Set<string>();
+    const active = capturePlanCountQuestion(screen, seen, padding.elapsedMs, true, call)!;
+    expect(active?.nativeCall).toEqual(call);
+    expect(active?.options).toEqual(call.questions[0]!.options.map((option, i) => ({ index: i + 1, label: option.label })));
+    expect(pickCeoSplitCountQuestion(nativePlanCallFingerprint(call, 1, true), active)).toBe(2);
+    expect(capturePlanCountQuestion(screen, seen, padding.elapsedMs + 1, true, call)).toBeNull();
+    expect(call).toEqual(before);
+    expect(padding.outcome).toBe('THREW');
+  },
+);
+
+test.each(['foreign prefix', 'quoted pane', 'changed body', 'changed label', 'missing label',
+  'missing footer', 'trailing question', 'preceding menu', 'choices only', 'wrong native body',
+  'failed native', 'answered native', 'ambiguous packet'])(
+  'captured split viewport padding cannot borrow native identity: %s', variant => {
+    const call = structuredClone(padding.call);
+    let screen = padding.screen;
+    if (variant === 'foreign prefix') screen = '\nA different question with the same choices?\n' + screen;
+    if (variant === 'quoted pane') screen = '\n```text\n' + screen + '\n```';
+    if (variant === 'changed body') screen = screen.replace('Discord is asked for', 'Slack is asked for');
+    if (variant === 'changed label') screen = screen.replace('2. Defer (recommended)', '2. Include everything');
+    if (variant === 'missing label') screen = screen.replace('  4. Hold', '  Hold');
+    if (variant === 'missing footer') screen = screen.replace('Enter to select', 'Enter to inspect');
+    if (variant === 'trailing question') screen += '\nDo you want to create another.md?\n❯ 1. Yes\n2. No\nEsc to cancel · Tab to amend';
+    if (variant === 'preceding menu') screen = '\n❯ 1. Old choice\n2. Other\n' + screen;
+    if (variant === 'choices only') screen = '\n' + screen.slice(screen.indexOf('❯ 1.'));
+    if (variant === 'wrong native body') call.questions[0]!.question += '\nAdditional approval required.';
+    if (variant === 'failed native') call.failed = true;
+    if (variant === 'answered native') call.answered = true;
+    if (variant === 'ambiguous packet') call.questions.push(structuredClone(call.questions[0]!));
+    const active = capturePlanCountQuestion(screen, new Set(), padding.elapsedMs, true, call);
+    expect(active?.nativeCall).toBeUndefined();
+    if (active) expect(() => pickCeoSplitCountQuestion(nativePlanCallFingerprint(call, 1, true), active))
+      .toThrow('complete matched native question');
+  },
+);
+
+
+test('captured split report permission advances only through distinct owned native epochs', () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-report-permission-')));
+  const cwd = path.join(dir, 'cwd'), config = path.join(dir, 'config');
+  fs.mkdirSync(cwd); fs.mkdirSync(config);
+  const expected = path.join(cwd, path.basename(splitEdit.event.input.file_path));
+  const screen = splitEdit.screen.replaceAll(path.dirname(splitEdit.event.input.file_path), cwd);
+  const sessionId = splitEdit.event.sessionId, currentId = splitEdit.event.toolUseId;
+  const recorder = createFilePermissionRecorder(cwd, config, expected)!;
+  const startedAt = Date.now() - 1000;
+  const transcript = {status: 'ready' as const, calls: [], assistantMessages: [{sessionId, text: 'Reviewing the supplied plan.', timestamp: new Date().toISOString()}]};
+  // Reconstruct only hook state in this isolated free fixture. The paid attempt
+  // had no recorder; these epochs are never presented as historical grants.
+  const record = (kind: string, id: string) => recordFilePermission(JSON.stringify({
+    hook_event_name: kind, tool_name: 'Edit', session_id: sessionId, tool_use_id: id,
+    cwd, transcript_path: path.join(config, 'projects', 'owned', sessionId + '.jsonl'),
+    tool_input: {...splitEdit.event.input, file_path: expected},
+  }), recorder.file, cwd, config, expected);
+  const epoch = (pane = screen) => currentFilePermissionEpoch(recorder.file, expected, cwd, config, startedAt, transcript, pane);
+  try {
+    const withoutOwnership = createPlanCountPermissionGuard();
+    expect(currentFilePermissionEpoch(undefined, expected, cwd, config, startedAt, transcript, screen)).toBeUndefined();
+    expect(withoutOwnership(screen, '')).toBe('grant');
+    expect(withoutOwnership(screen, '')).toBe('handled');
+    record('PreToolUse', 'prior-edit');
+    const guard = createPlanCountPermissionGuard();
+    expect(guard(screen, '', epoch())).toBe('grant');
+    expect(guard(screen, '', epoch())).toBe('handled');
+    record('PostToolUse', 'prior-edit');
+    record('PreToolUse', currentId);
+    expect(epoch()?.pendingId).toBe(sessionId + ':' + currentId);
+    expect(guard(screen, '', epoch())).toBe('grant');
+    expect(guard(screen, '', epoch())).toBe('handled');
+    expect(epoch(screen.replaceAll(cwd, path.join(dir, 'foreign')))).toBeNull();
+    const state = JSON.parse(fs.readFileSync(recorder.file, 'utf8'));
+    fs.writeFileSync(recorder.file, JSON.stringify({...state, sessionId: 'foreign'}));
+    expect(epoch()).toBeNull();
+  } finally { recorder.dispose(); fs.rmSync(dir, {recursive: true, force: true}); }
+});

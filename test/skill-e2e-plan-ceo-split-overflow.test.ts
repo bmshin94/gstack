@@ -74,6 +74,7 @@ describeE2E('/plan-ceo-review split-overflow regression (periodic)', () => {
           skillName: 'plan-ceo-review',
           slashCommand: '/plan-ceo-review',
           followUpPrompt,
+          permissionPlanPath: planPath,
           isLastStep0AUQ: ceoStep0Boundary,
           // Candidate choices can occur before mode selection. Only those
           // acknowledged menus satisfy the split metric; expansions do not.

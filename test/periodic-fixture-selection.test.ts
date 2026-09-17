@@ -490,3 +490,123 @@ for (const file of ['test/plan-count-cropped-wrap.test.ts', 'test/fixtures/plan-
     for (const id of periodic) expect(E2E_TIERS[id]).toBe('periodic');
   });
 }
+
+
+// Shared harness repairs must select every existing consumer, including gate floors.
+const nativeRepairDependencies = [
+  {
+    "name": "AUTO mode declarations",
+    "files": [
+      "test/auto-decide-recommendation-scope.test.ts",
+      "test/fixtures/auto-decide-recommendation-361c.json",
+      "test/auto-decide-target-identity.test.ts",
+      "test/fixtures/auto-decide-target-361c.json"
+    ],
+    "owners": [
+      "plan-ceo-review-plan-mode",
+      "plan-eng-review-plan-mode",
+      "plan-design-review-plan-mode",
+      "plan-devex-review-plan-mode",
+      "plan-mode-no-op",
+      "office-hours-auto-mode",
+      "auto-decide-preserved",
+      "conductor-prose"
+    ]
+  },
+  {
+    "name": "owned cropped Create previews",
+    "files": [
+      "test/plan-create-permission.test.ts",
+      "test/fixtures/plan-create-permission-361c.json"
+    ],
+    "owners": [
+      "plan-ceo-finding-count",
+      "plan-eng-finding-count",
+      "plan-design-finding-count",
+      "plan-devex-finding-count",
+      "plan-eng-finding-floor",
+      "plan-ceo-finding-floor",
+      "plan-design-finding-floor",
+      "plan-devex-finding-floor",
+      "plan-eng-multi-finding-batching",
+      "plan-ceo-split-overflow"
+    ]
+  },
+  {
+    "name": "native selection defaults",
+    "files": [
+      "test/plan-review-native-default.test.ts",
+      "test/fixtures/eng-omitted-select-361c.json"
+    ],
+    "owners": [
+      "plan-ceo-mode-routing",
+      "plan-ceo-finding-count",
+      "plan-eng-finding-count",
+      "plan-design-finding-count",
+      "plan-devex-finding-count",
+      "plan-eng-multi-finding-batching",
+      "plan-ceo-split-overflow",
+      "plan-devex-peer-comparison-classification",
+      "plan-decision-classification"
+    ]
+  },
+  {
+    "name": "split native question and report permission",
+    "files": [
+      "test/fixtures/ceo-split-padding-361c-public.json",
+      "test/fixtures/ceo-split-edit-permission-361c-public.json"
+    ],
+    "owners": [
+      "plan-ceo-split-overflow"
+    ]
+  },
+  {
+    "name": "finding-qualified floors",
+    "files": [
+      "test/helpers/plan-floor-review.ts",
+      "test/plan-floor-review.test.ts",
+      "test/fixtures/plan-floor-routing-361c.json"
+    ],
+    "owners": [
+      "plan-ceo-finding-floor",
+      "plan-eng-finding-floor",
+      "plan-design-finding-floor",
+      "plan-devex-finding-floor"
+    ]
+  }
+];
+for (const group of nativeRepairDependencies) {
+  test(`native repair dependencies: ${group.name}`, () => {
+    for (const file of group.files) {
+      const selected = selectTests([file], E2E_TOUCHFILES);
+      expect(selected.reason).toBe('diff');
+      expect(selected.selected.sort()).toEqual([...group.owners].sort());
+      expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+    }
+  });
+}
+test('native repair dependencies preserve every original tier', () => {
+  expect(E2E_TIERS).toMatchObject({
+  "plan-ceo-review-plan-mode": "gate",
+  "plan-eng-review-plan-mode": "periodic",
+  "plan-design-review-plan-mode": "periodic",
+  "plan-devex-review-plan-mode": "gate",
+  "plan-mode-no-op": "gate",
+  "office-hours-auto-mode": "gate",
+  "auto-decide-preserved": "periodic",
+  "conductor-prose": "periodic",
+  "plan-ceo-finding-count": "periodic",
+  "plan-eng-finding-count": "periodic",
+  "plan-design-finding-count": "periodic",
+  "plan-devex-finding-count": "periodic",
+  "plan-eng-finding-floor": "periodic",
+  "plan-ceo-finding-floor": "gate",
+  "plan-design-finding-floor": "periodic",
+  "plan-devex-finding-floor": "gate",
+  "plan-eng-multi-finding-batching": "periodic",
+  "plan-ceo-split-overflow": "periodic",
+  "plan-ceo-mode-routing": "periodic",
+  "plan-devex-peer-comparison-classification": "periodic",
+  "plan-decision-classification": "periodic"
+});
+});

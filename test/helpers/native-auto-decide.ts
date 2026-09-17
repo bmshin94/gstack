@@ -30,9 +30,14 @@ function publicProse(text: string): string {
     }
     if (fence || /^(?: {4}|\t|\s*>)/.test(line)) continue;
     const current = plain(line);
-    // A direct correction owns its quoted verdict; an attributed example does not.
-    if (/^(?:Correction|Actually|Update):\s*/i.test(current)) lines.push(current.replace(/["“”`]/g, ''));
-    else lines.push(current.replace(/"(?:[^"\\]|\\.)*"|“[^”]*”|`[^`]*`/g, '""'));
+    // A quoted name is still the target of an otherwise asserted mode field.
+    // Preserve only that slot; whole quoted declarations remain non-assertions.
+    const correction = /^(?:Correction|Actually|Update):\s*/i.test(current);
+    lines.push(current.replace(/"(?:[^"\\]|\\.)*"|“[^”]*”|`[^`]*`/g, (quoted, offset) => {
+      const field = modeField(current.slice(0, offset) + '""');
+      if (field && modeNames.some(mode => field.value.toUpperCase() === `${mode} FOR ""`)) return quoted;
+      return correction ? quoted.replace(/["“”`]/g, '') : '""';
+    }));
   }
   return lines.join('\n');
 }
@@ -53,8 +58,23 @@ function modeField(line: string): { value: string; completed: boolean } | null {
   if (/^Decision$/i.test(label!) && !explicitMode.test(rawValue!) &&
       !/\b(?:HOLD|SCOPE|SELECTIVE)\b/i.test(rawValue!)) return null;
   const value = plain(rawValue!).replace(explicitMode, '');
-  const unfinishedValue = /\b(?:withdrawn|retracted|revoked|cancelled|canceled|undecided|unfinished|incomplete|not complete(?:d)?|not selected|not decided|not yet|pending|proposed|if|unless|would|might|will)\b/i.test(value);
-  const negatedMode = modeNames.some(mode => new RegExp(`\\b(?:not|never|no longer)\\s+${mode.replaceAll(' ', '[ _]+')}\\b`, 'i').test(value));
+  // Target-name words are identifiers, not modal/lifecycle assertions.
+  const choiceValue = value.replace(/^(.*?\bfor\s+)(?:"(?:[^"\\]|\\.)*"|“[^”]*”|`[^`]*`)/i, '$1""');
+  // A completed choice and commentary about the recommendation are different
+  // assertions. Modal words in an explicitly owned recommendation clause do
+  // not make the selected mode conditional. Keep uncertain choice assertions,
+  // including those after that commentary, and every lifecycle veto intact.
+  const chosenMode = modeNames.find(mode => value.toUpperCase().startsWith(mode) &&
+    !/\w/.test(value[mode.length] ?? ''));
+  const conditionalChoice = choiceValue.split(/[();,\n]|[.!?](?=\s|$)|\s+[—–-]\s+|\b(?:and|but|while|whereas|however)\b/i).some(clause => {
+    const recommendation = /^\s*(?:(?:the|my|our)\s+)?recommendation\b/i.exec(clause);
+    const remainder = recommendation ? clause.slice(recommendation[0].length) : clause;
+    const ownsChoice = /\b(?:mode|decision|selection|choice|I|we)\b/i.test(remainder) ||
+      modeNames.some(mode => mode !== chosenMode && new RegExp(`\\b${mode.replaceAll(' ', '[ _]+')}\\b`, 'i').test(remainder));
+    return (!recommendation || ownsChoice) && /\b(?:if|unless|would|might|will)\b/i.test(clause);
+  });
+  const unfinishedValue = conditionalChoice || /\b(?:withdrawn|retracted|revoked|cancelled|canceled|undecided|unfinished|incomplete|not complete(?:d)?|not selected|not decided|not yet|pending|proposed)\b/i.test(choiceValue);
+  const negatedMode = modeNames.some(mode => new RegExp(`\\b(?:not|never|no longer)\\s+${mode.replaceAll(' ', '[ _]+')}\\b`, 'i').test(choiceValue));
   return { value, completed: completeStatus && !unfinishedValue && !negatedMode };
 }
 
@@ -88,13 +108,26 @@ function selectedMode(value: string, questionSummary?: string): string | null {
   if (match?.[3]) {
     // A target clause must belong to the same completed audit decision. A
     // matching mode alone cannot authenticate another draft or future review.
-    const target = (text: string) => /\bfor\s+(.+?)(?=\s+\(|[,;:]|[.!?](?=\s|$)|$)/i.exec(text)?.[1]?.trim();
-    const normalize = (text: string) => text.replace(/^the\s+/i, '').replace(/\s+/g, ' ').toLowerCase();
+    const target = (text: string) => /\bfor\s+((?:"(?:[^"\\]|\\.)*"|“[^”]*”|`[^`]*`)(?:\s+(?:draft|plan))?|.+?)(?=\s+\(|[,;:]|[.!?](?=\s|$)|$)/i.exec(text)?.[1]?.trim();
+    const identity = (text: string) => {
+      const normalize = (name: string) => name.replace(/\s+/g, ' ').trim().toLowerCase();
+      const value = text.replace(/^the\s+/i, '');
+      const quoted = /^(?:"((?:[^"\\]|\\.)*)"|“([^”]*)”|`([^`]*)`)(?:\s+(?:draft|plan))?$/i.exec(value);
+      if (quoted) return { name: normalize(quoted[1] ?? quoted[2] ?? quoted[3]!), bare: null };
+      if (/["“”`]/.test(value)) return null;
+      const name = normalize(value), wrapper = /^(.+)\s+(?:draft|plan)$/i.exec(name);
+      return { name, bare: wrapper?.[1] ?? null };
+    };
     const declared = target(value), recorded = questionSummary && target(questionSummary);
+    const named = declared && identity(declared), logged = recorded && identity(recorded);
+    // A plan/draft head noun may wrap one exact title. Never strip words inside
+    // a quoted title, or strip different suffixes from both names to force a match.
+    const sameTarget = named && logged && !!named.name && (named.name === logged.name ||
+      named.name === logged.bare || named.bare === logged.name);
     const noncurrent = /\b(?:future|previous|prior|earlier|past|later|next|another|different|other|historical|hypothetical|example|quoted)\s+(?:draft|plan|review|invocation|session)\b/i;
-    if (!questionSummary || !declared || noncurrent.test(declared) ||
+    if (!questionSummary || !declared || noncurrent.test(declared) || (recorded && noncurrent.test(recorded)) ||
         (!/^(?:this|the current) (?:draft|plan|review|invocation|session)$/i.test(declared) &&
-          (!recorded || normalize(declared) !== normalize(recorded)))) return null;
+          !sameTarget)) return null;
   }
   if (match?.[2] || match?.[3]) {
     // One current field names one mode. A different mode after its explanation

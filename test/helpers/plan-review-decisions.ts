@@ -161,7 +161,11 @@ function prepare(input: PlanReviewDecisionInput) {
   for (const fp of input.fingerprints) {
     if (!fp || !text(fp.toolUseId, 256) || !Array.isArray(fp.questions) || !integer(fp.questions.length, 1, 4)
       || !Array.isArray(fp.selectedOptions) || fp.selectedOptions.length !== fp.questions.length) fail('incomplete native identity, questions or selectedOptions');
-    fp.questions.forEach((question, i) => {
+    // Native AskUserQuestion defaults an omitted multiSelect to false. Keep
+    // retained request bytes intact and reject every explicit invalid value.
+    const questions = fp.questions.map(question => record(question) && !Object.hasOwn(question, 'multiSelect')
+      ? { ...question, multiSelect: false } : question);
+    questions.forEach((question, i) => {
       if (!record(question) || !text(question.question, MAX_INPUT_BYTES) || !text(question.header, MAX_INPUT_BYTES)
         || question.multiSelect !== false || !Array.isArray(question.options) || !integer(question.options.length, 2, 4)
         || !integer(fp.selectedOptions![i], 1, question.options.length)) fail('invalid native question or selected option', { toolUseId: fp.toolUseId, questionIndex: i + 1 });
@@ -170,7 +174,7 @@ function prepare(input: PlanReviewDecisionInput) {
           || option.preview !== undefined && typeof option.preview !== 'string') fail('invalid native option');
       }
     });
-    const call = { toolUseId: fp.toolUseId, questions: fp.questions, selectedOptions: fp.selectedOptions };
+    const call = { toolUseId: fp.toolUseId, questions, selectedOptions: fp.selectedOptions };
     if (calls.has(fp.toolUseId) && !isDeepStrictEqual(calls.get(fp.toolUseId), call)) fail('conflicting duplicate native input or choices', { toolUseId: fp.toolUseId });
     calls.set(fp.toolUseId, call);
   }

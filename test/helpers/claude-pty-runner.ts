@@ -25,13 +25,14 @@ import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { stripVTControlCharacters } from 'node:util';
+import { stripVTControlCharacters, isDeepStrictEqual } from 'node:util';
 import { hermeticChildEnv, hermeticSkillsConfigDir, isHermeticEnabled } from './hermetic-env';
 import { withHermeticSkillRuntime } from './hermetic-skill-runtime';
 import { createPlanCountFixture, ownedNativeReviewStateRoot, type NativeReviewState } from './plan-count-fixture';
 import { createPlanCountSnapshotWriter } from './plan-count-artifacts';
 import { nativeSeededPlanSelection } from './plan-scope-selection';
 import { readPlanFloorTarget, type PlanFloorTargetDelivery } from './plan-floor-target';
+import { judgePlanFloorReview, pickPlanFloorMode, type PlanFloorReview, type PlanFloorAssessment } from './plan-floor-review';
 import { bindAutoDecisionState } from './auto-decision-state';
 import { findNativeAutoDecision, type NativeAutoDecision } from './native-auto-decide';
 import { readPlanCountTranscript, unresolvedPlanQuestionCalls, type NativePlanQuestionCall, type PlanCountTranscript, type NativePublicToolEvent } from './plan-count-transcript';
@@ -1392,9 +1393,10 @@ function matchesClippedNativeQuestion(visible: string, call: NativePlanQuestionC
   const cursor = [...visible.matchAll(/❯\s*1\./g)].at(-1);
   if (!cursor) return false;
   const before = visible.slice(0, cursor.index);
-  // This is the top of the actual viewport, not a selected historical
-  // snippet. A header, preceding menu or blank top is not clipped identity.
-  if (!before.split('\n')[0]?.trim() || /[☐□❯]/.test(before)) return false;
+  // Blank viewport padding carries no identity. Every nonblank pre-menu
+  // line must still match the native question suffix below; a header or
+  // preceding menu cannot become a clipped question.
+  if (/[☐□❯]/.test(before)) return false;
   const suffix = before.replace(/^[ \t]*[│┃] ?|[│┃][ \t]*$/gm, '').trim();
   const exact = (value: string) => value.replace(/\s+/g, '');
   const question = call.questions[0]!;
@@ -5300,29 +5302,11 @@ export async function runPlanSkillCounting(opts: {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// runPlanSkillFloorCheck — minimal "did the agent fire ANY AskUserQuestion?"
-// observer for gate-tier floor tests catching the May 2026 transcript bug
-// (model wrote plan + ExitPlanMode'd with reviewCount=0).
-//
-// Why this exists separately from runPlanSkillCounting: plan-mode AUQs render
-// every option on a single logical line via cursor-positioning escapes that
-// stripAnsi can't simulate. parseNumberedOptions therefore returns < 2 options
-// from those frames and never records a fingerprint. The full counting helper
-// works for periodic finding-count tests because their 25-min budgets give the
-// agent enough redraws that one frame eventually parses cleanly. Gate-tier
-// floor tests don't have that wall-time budget and need to exit early on the
-// first observation. This helper trades fingerprint precision for early-exit
-// reliability.
-//
-// Contract:
-//   - PASS  → outcome === 'auq_observed' (agent rendered any non-permission
-//             numbered-option list; we exit immediately and report success)
-//   - FAIL  → outcome === 'plan_ready' | 'completion_summary' | 'silent_write'
-//             (agent reached a terminal state without ever firing an AUQ —
-//             this IS the transcript bug)
-//   - SOFT  → outcome === 'timeout' (neither happened in budget; agent may
-//             just be slow — test should retry with a larger budget rather
-//             than treat as a hard regression)
+// runPlanSkillFloorCheck — stop at the first substantive seeded question.
+// Current owned input → complete question → evidence-backed assessment → outcome.
+// Setup answers advance only the predeclared review interface. Findings are
+// observed without answering them; permissions and generic waiting never count.
+// The existing model-work deadline also bounds the replacement waiting judge.
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface PlanSkillFloorObservation {
@@ -5335,17 +5319,18 @@ export interface PlanSkillFloorObservation {
     | 'plan_ready'
     | 'silent_write'
     | 'exited'
-    | 'timeout';
+    | 'timeout'
+    | 'assessment_error';
   summary: string;
-  /** Visible TTY tail (last 3KB) at terminal time. */
+  /** Public current viewport for an accepted finding; terminal tail otherwise. */
   evidence: string;
   /** Wall time (ms) until the outcome was decided. */
   elapsedMs: number;
 }
 
 /**
- * Drive a plan-* skill in plan mode and exit at the first non-permission
- * numbered-option render. See block comment above for the contract.
+ * Drive a plan-* skill and qualify its first current seeded finding question.
+ * The actor answers only its declared optional-prerequisite and mode choices.
  */
 export async function runPlanSkillFloorCheck(opts: {
   /** Skill name, e.g. 'plan-eng-review'. Used for diagnostic strings only. */
@@ -5368,7 +5353,14 @@ export async function runPlanSkillFloorCheck(opts: {
   const startedAt = Date.now();
   const timeoutMs = opts.timeoutMs ?? 600_000;
 
-  const fixture = createPlanCountFixture(opts.followUpPrompt, { requestedPlanPath: opts.requestedPlanPath });
+  const request = [
+    'Proceed directly to the requested review; skip the optional /office-hours prerequisite.',
+    'This actor has already declined routing setup, cross-project recall and outside reviewers.',
+    'Preserve the supplied product scope. For review-mode questions choose HOLD SCOPE (CEO), DX POLISH (DX), or the full BIG CHANGE review (Eng). Design: review all seven dimensions.',
+    opts.followUpPrompt,
+  ].join('\n\n');
+  const fixture = createPlanCountFixture(request, { requestedPlanPath: opts.requestedPlanPath,
+    nativeReviewOnly: true, preconfiguredReviewActor: true });
   const sessionId = randomUUID();
   let session: ClaudePtySession;
   try {
@@ -5380,6 +5372,7 @@ export async function runPlanSkillFloorCheck(opts: {
       model: opts.model,
       seedSkills: true,
       observeScreen: true,
+      observeSetupQuestions: true,
       observeFilePermissions: fixture.workingPlanPath ? [fixture.workingPlanPath] : undefined,
       extraArgs: ['--session-id', sessionId],
     });
@@ -5392,6 +5385,13 @@ export async function runPlanSkillFloorCheck(opts: {
     ({ ...binding, guard: createPlanCountPermissionGuard() }));
   let transcript: PlanCountTranscript = { status: 'missing', calls: [], assistantMessages: [] };
   let viewport = '';
+  let publicTools: NativePublicToolEvent[] = [];
+  let pendingQuestion: NativePlanQuestionCall | undefined;
+  let floorReview: PlanFloorReview | undefined;
+  let floorAssessment: PlanFloorAssessment | undefined;
+  const setupChoices = new Map<string, Set<number>>();
+  const submittedSetup = new Set<string>();
+  const assessed = new Map<string, PlanFloorAssessment>();
   try {
     await Bun.sleep(8000); // boot grace + auto-trust handler window
     const since = session.mark();
@@ -5406,37 +5406,21 @@ export async function runPlanSkillFloorCheck(opts: {
       const artifacts = saveSnapshot({ skillName: opts.skillName, cwd: fixture.cwd,
         claudeConfigDir: session.hermeticConfigDir, raw: session.rawOutput(),
         visible: session.visibleSince(since), viewport,
-        observation: { ...observation, transcript, targetDelivery, commandStartedAt } });
+        observation: { ...observation, transcript, publicTools, pendingQuestion, floorReview, floorAssessment, targetDelivery, commandStartedAt } });
       return { ...observation, targetDelivery, ...artifacts };
     };
 
     const start = Date.now();
-    let lastJudgeAt = 0;
-    let lastJudgeVerdict: PtyStateVerdict | null = null;
-    // Positional anchor for the scope-gate exclusion. The visible buffer is
-    // append-only (old renders never leave scrollback), so a gate question
-    // rendered in the 3s pre-target window would keep satisfying the
-    // full-buffer acceptance checks forever while a tail-only exclusion
-    // stops seeing it after ~TAIL_SCAN_BYTES of output — a vacuous
-    // auq_observed (found independently by 4 review passes). Once the gate
-    // render is seen, acceptance only counts AUQ renders in content APPENDED
-    // after that point.
-    let gateSeenIdx = -1;
-    let permissionSeenIdx = -1;
-    const JUDGE_AFTER_MS = 60_000;
-    const JUDGE_INTERVAL_MS = 30_000;
+    const deadlineAt = start + timeoutMs;
     while (Date.now() - start < timeoutMs) {
       await Bun.sleep(2000);
       const visible = session.visibleSince(since);
-      if (gateSeenIdx === -1 && isScopeGateQuestionVisible(visible)) {
-        gateSeenIdx = visible.length;
-      }
 
       if (session.exited()) {
         return finish({
           auqObserved: false,
           outcome: 'exited',
-          summary: `claude exited (code=${session.exitCode()}) before any AUQ render`,
+          summary: `claude exited (code=${session.exitCode()}) before a qualifying finding`,
           evidence: visible.slice(-3000),
           elapsedMs: Date.now() - startedAt,
         });
@@ -5457,38 +5441,28 @@ export async function runPlanSkillFloorCheck(opts: {
         if (targetDelivery.status !== 'ready') continue;
       }
 
-      // Success: ANY non-permission numbered-option list is an AUQ render —
-      // either via the native numbered-prompt UI (isNumberedOptionListVisible)
-      // OR via prose-rendered options under --disallowedTools when no MCP
-      // variant is callable (isProseAUQVisible). Both surface the question
-      // to the user; the bug we're catching is "fired zero AUQs."
-      //
-      // Scope-gate renders do NOT count: the gate's "What should I review?"
-      // can fire inside the 3s pre-target window and would trivially satisfy
-      // the floor, but the floor measures FINDING-driven questions. Once a
-      // gate render has been seen, acceptance scans only the content APPENDED
-      // after it (positional anchor above) — the buffer is append-only, so a
-      // whole-buffer acceptance would keep matching the stale gate render
-      // forever.
-      //
-      // The gate veto is ACTIVE-RENDER-aware, not blanket-tail: when a
-      // numbered menu is up, parseNumberedOptions anchors on the LAST cursor
-      // line, so we veto only when the pending menu IS the gate — a finding
-      // AUQ that renders within TAIL_SCAN_BYTES of the gate (model waiting,
-      // no further output) still satisfies the floor. Prose renders have no
-      // cursor anchor, so the prose path falls back to the tail check
-      // (accepted residual: prose gate + prose finding inside one tail can
-      // suppress until timeout; floors run the native-menu path in practice).
+      // Current native identity precedes permission handling and finding assessment.
+      floorReview = undefined; floorAssessment = undefined;
       viewport = await session.currentScreen();
+      publicTools = [];
       transcript = session.hermeticConfigDir
-        ? readPlanCountTranscript(session.hermeticConfigDir, fixture.cwd)
+        ? readPlanCountTranscript(session.hermeticConfigDir, fixture.cwd, event => publicTools.push(event))
         : { status: 'missing', calls: [], assistantMessages: [] };
-      const nativeQuestionVisible = transcript.calls.some(call => matchesNativePlanQuestion(viewport, call));
+      const hook = readPendingQuestion(session.pendingQuestionFile, fixture.cwd,
+        session.hermeticConfigDir, commandStartedAt, transcript);
+      const currentCalls = transcript.status === 'ready' ? transcript.calls.filter(call =>
+        call.sessionId === sessionId && !call.answered && !call.failed && publicTools.filter(event =>
+          event.sessionId === sessionId && event.kind === 'use' && event.name === 'AskUserQuestion' &&
+          event.toolUseId === call.toolUseId && Date.parse(event.timestamp) >= commandStartedAt &&
+          Date.parse(event.timestamp) <= Date.now() && isDeepStrictEqual(event.input?.questions, call.questions)).length === 1) : [];
+      if (hook?.sessionId === sessionId && !transcript.calls.some(call => call.toolUseId === hook.toolUseId)) currentCalls.push(hook);
+      const matching = currentCalls.filter(call => matchesNativePlanQuestion(viewport, call));
+      pendingQuestion = matching.length === 1 ? matching[0] : undefined;
+      const nativeQuestionVisible = Boolean(pendingQuestion);
       const permissionIsActiveRender = !nativeQuestionVisible && isPermissionDialogVisible(viewport);
       if (permissionIsActiveRender) {
         // An authorized file write enables the review, but never supplies its
         // finding question. Exclude the permission's old render after approval.
-        permissionSeenIdx = visible.length;
         const owned = currentFilePermissionBinding(ownedFilePermissions, fixture.cwd,
           session.hermeticConfigDir, startedAt, transcript, viewport);
         let ordinaryOwnedTarget = false;
@@ -5502,52 +5476,65 @@ export async function runPlanSkillFloorCheck(opts: {
         if (owned && ordinaryOwnedTarget && owned.binding.guard(viewport, session.visibleText(), owned.epoch) === 'grant')
           session.send('1\r');
       }
-      const tail = visible.slice(-TAIL_SCAN_BYTES);
-      const excluded = Math.max(gateSeenIdx, permissionSeenIdx);
-      const acceptWindow = excluded === -1 ? visible : visible.slice(excluded);
-      const activeMenu = parseNumberedOptions(visible);
-      const gateIsActiveRender =
-        activeMenu.length > 0
-          ? activeMenu.some((o) => /current\s*branch\s*diff/i.test(o.label))
-          : isScopeGateQuestionVisible(tail);
-      const eligibleFinding = !permissionIsActiveRender && !gateIsActiveRender;
-      if (
-        (isNumberedOptionListVisible(acceptWindow) || isProseAUQVisible(acceptWindow)) &&
-        eligibleFinding
-      ) {
-        return finish({
-          auqObserved: true,
-          outcome: 'auq_observed',
-          summary: 'agent rendered an AskUserQuestion (floor met)',
-          evidence: visible.slice(-3000),
-          elapsedMs: Date.now() - startedAt,
-        });
-      }
+      if (permissionIsActiveRender) continue;
 
-      // LLM judge fallback: same shape as runPlanSkillObservation. After 60s
-      // of polling without a regex hit, ask Haiku to classify the snapshot.
-      // 'waiting' verdict counts as floor met (model surfaced a question via
-      // prose the regex couldn't catch). 'working' / 'hung' / 'unknown' don't
-      // change the outcome — they enrich the eventual timeout summary so the
-      // failure diagnostic is more actionable than "no AUQ render."
-      const elapsed = Date.now() - start;
-      if (eligibleFinding && acceptWindow.trim() && elapsed > JUDGE_AFTER_MS && Date.now() - lastJudgeAt > JUDGE_INTERVAL_MS) {
-        lastJudgeAt = Date.now();
-        logPtySnapshot(acceptWindow, { testName: opts.skillName, elapsedMs: elapsed, tag: 'floor-judge-tick' });
-        lastJudgeVerdict = judgePtyState(acceptWindow, { testName: opts.skillName });
-        // The judge can't tell a scope-gate question from a finding question,
-        // so a 'waiting' verdict while the gate menu is the pending render
-        // must NOT satisfy the floor — same active-render exclusion as the
-        // regex path.
-        if (lastJudgeVerdict.state === 'waiting' && eligibleFinding) {
-          return finish({
-            auqObserved: true,
-            outcome: 'auq_observed',
-            summary: `LLM judge: ${lastJudgeVerdict.reasoning} (state=waiting after ${Math.round(elapsed / 1000)}s; floor met)`,
-            evidence: visible.slice(-3000),
-            elapsedMs: Date.now() - startedAt,
-          });
+      const fp = pendingQuestion && capturePlanCountQuestion(viewport, new Set(), Date.now() - start, true, pendingQuestion);
+      if (fp && pendingQuestion) {
+        const index = fp.nativeQuestionIndex ?? 0;
+        const question = pendingQuestion.questions[index]!;
+        const key = `${pendingQuestion.sessionId}:${pendingQuestion.toolUseId}`;
+        const chosen = setupChoices.get(key) ?? new Set<number>();
+        const allDesign = opts.skillName === 'plan-design-review' && designReviewSetupAUQ(fp)
+          ? question.options.flatMap((option, i) => /^(?:Review )?All 7 (?:design )?(?:dimensions|passes)(?:\s*\(recommended\))?$/i.test(option.label.trim()) ? [i + 1] : []) : [];
+        const pick = pickPlanFloorMode(opts.skillName, question) ?? planCountPrerequisitePick(fp, fp)
+          ?? (allDesign.length === 1 ? allDesign[0]! : null);
+        if (pick !== null) {
+          if (!chosen.has(index)) {
+            session.send(planCountQuestionInput(viewport, fp, pick));
+            chosen.add(index); setupChoices.set(key, chosen);
+          }
+          continue;
         }
+        floorReview = { seed: fixture.seed, candidate: { transport: 'native', identity: `${key}:question:${index}`,
+          question: structuredClone(question) } };
+      } else {
+        // Public fallback must be a complete current question, not scrollback,
+        // a generic idle prompt, permission, tool result or quoted example.
+        floorReview = undefined;
+        const message = transcript.assistantMessages.filter(m => m.sessionId === sessionId &&
+          Date.parse(m.timestamp) >= commandStartedAt && Date.parse(m.timestamp) <= Date.now()).at(-1);
+        const compact = (text: string) => text.replace(/\s+/g, '');
+        if (!currentCalls.length && message && isProseAUQVisible(viewport) && isProseAUQVisible(message.text) &&
+            !/^\s*(?:>|`{3,}|~{3,})/m.test(message.text) && compact(viewport).includes(compact(message.text)))
+          floorReview = { seed: fixture.seed, candidate: { transport: 'prose',
+            identity: `${message.sessionId}:${message.timestamp}`, text: message.text } };
+        const submit = planCountSubmissionInput(viewport);
+        const packet = currentCalls.find(call => setupChoices.get(`${call.sessionId}:${call.toolUseId}`)?.size === call.questions.length);
+        if (submit && packet) {
+          const key = `${packet.sessionId}:${packet.toolUseId}`;
+          if (!submittedSetup.has(key)) { session.send(submit); submittedSetup.add(key); }
+          continue;
+        }
+      }
+      if (floorReview) {
+        const key = JSON.stringify(floorReview);
+        floorAssessment = assessed.get(key);
+        if (!floorAssessment) {
+          try {
+            floorAssessment = judgePlanFloorReview(floorReview, {
+              binary: resolveClaudeBinary() ?? 'claude', model: resolveEvalModel('warmup'), deadlineAt });
+          } catch (error) {
+            return finish({ auqObserved: false, outcome: 'assessment_error',
+              summary: `Finding assessment failed: ${error instanceof Error ? error.message : String(error)}`,
+              evidence: viewport, elapsedMs: Date.now() - startedAt });
+          }
+          assessed.set(key, floorAssessment);
+        }
+        if (floorAssessment.kind === 'finding') return finish({
+          auqObserved: true, outcome: 'auq_observed',
+          summary: `Current ${floorReview.candidate.transport} question addresses the owned seeded finding: ${floorAssessment.reason}`,
+          evidence: viewport, elapsedMs: Date.now() - startedAt,
+        });
       }
 
       // Silent write outside sanctioned dirs is the transcript-bug shape.
@@ -5578,7 +5565,7 @@ export async function runPlanSkillFloorCheck(opts: {
         return finish({
           auqObserved: false,
           outcome: 'plan_ready',
-          summary: 'agent reached plan_ready without firing any AskUserQuestion',
+          summary: 'agent reached plan_ready without a qualifying finding question',
           evidence: visible.slice(-3000),
           elapsedMs: Date.now() - startedAt,
         });
@@ -5589,7 +5576,7 @@ export async function runPlanSkillFloorCheck(opts: {
       auqObserved: false,
       outcome: 'timeout',
       summary: targetDelivery.status === 'ready'
-        ? `no AUQ render and no terminal outcome within ${timeoutMs}ms`
+        ? `no qualifying finding question within ${timeoutMs}ms`
         : `seeded target delivery unavailable within ${timeoutMs}ms: ${targetDelivery.reason ?? targetDelivery.status}`,
       evidence: session.visibleSince(since).slice(-3000),
       elapsedMs: Date.now() - startedAt,

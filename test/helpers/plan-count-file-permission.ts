@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { PlanCountTranscript } from './plan-count-transcript';
+import { readPlanCountTranscript, type PlanCountTranscript, type NativePublicToolEvent } from './plan-count-transcript';
 
 const MAX_RECORD_BYTES = 64 * 1024;
 export interface FilePermissionEpoch { pendingId: string; completedId: string | null; completedIds?: string[] }
@@ -138,17 +138,68 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
   return !pathOnly || path.resolve(cwd, headerPath!) === target ? target : undefined;
 }
 
+/** Create previews omit the directory in their footer when the heading is cropped. */
+function croppedCreatePane(screen: string): { basename: string; preview: string } | undefined {
+  const text=screen.replace(/\r+\n?/g,'\n');
+  const pane=/^([\s\S]+)\n[╌─━]{3,}[ \t]*\n {0,3}Do you want to create ([^\n?\/\\]+)\?[ \t]*\n {0,3}❯[ \t]*1\.[ \t]*Yes[ \t]*\n\s*2\.[ \t]*Yes,\s+and\s+switch\s+to\s+accept\s+edits\s+\(auto-approve\s+file\s+edits\s+and\s+common\s+file\s+commands\)\s+for\s+this\s+session(?:\s*\(shift\+tab\))?\s*\n\s*3\.[ \t]*No[ \t]*\n\s*Esc to cancel [·•] Tab to amend\s*$/.exec(text);
+  if (!pane || /[☐□]|^\s*(?:>|`{3}|~{3})/m.test(pane[1]!)) return undefined;
+  return {basename:pane[2]!.trim(),preview:pane[1]!};
+}
+
+/** Bind every displayed source row to the sole pending native Write, not its basename alone. */
+function currentCreatePreview(preview: string, r: any, config: string, cwd: string, startedAt: number): boolean {
+  const pending=new Map<string,NativePublicToolEvent>(), seen=new Map<string,NativePublicToolEvent>();
+  const completed=new Set<string>();
+  let conflict=false;
+  const transcript=readPlanCountTranscript(config,cwd,event=>{
+    if (event.sessionId!==r.sessionId) return;
+    if(event.kind==='use' && (event.name==='Write'||event.name==='Edit')) {
+      const prior=seen.get(event.toolUseId);
+      if(prior && (prior.name!==event.name||JSON.stringify(prior.input)!==JSON.stringify(event.input))) conflict=true;
+      seen.set(event.toolUseId,event);
+      if(!completed.has(event.toolUseId)) pending.set(event.toolUseId,event);
+    } else if(event.kind==='result') {
+      completed.add(event.toolUseId);
+      pending.delete(event.toolUseId);
+    }
+  },r.transcriptPath);
+  const event=[...pending.values()][0];
+  if(conflict||transcript.status!=='ready'||pending.size!==1||!event||event.name!=='Write'||
+    `${event.sessionId}:${event.toolUseId}`!==r.pendingId||event.input?.file_path!==r.expected||
+    Date.parse(event.timestamp)<startedAt||typeof event.input.content!=='string'||
+    Buffer.byteLength(event.input.content)>4*1024*1024) return false;
+  const source=event.input.content.split(/\r?\n/), rows=preview.split('\n');
+  const numbered:Array<{line:number;text:string}>=[];
+  let leading='';
+  for(const row of rows) {
+    const match=/^ {0,3}([1-9]\d*)(?:[ \t](.*))?$/.exec(row);
+    if(match) numbered.push({line:Number(match[1]),text:match[2]??''});
+    else if(/^ {5,}\S/.test(row)||/^ {5,}$/.test(row)) {
+      if(numbered.length) numbered.at(-1)!.text+=row.trimStart();
+      else leading+=row.trimStart();
+    } else if(!row.trim() && !numbered.length) continue;
+    else return false;
+  }
+  const compact=(s:string)=>s.replace(/\s/g,'');
+  if(numbered.length<2) return false;
+  if(leading && !compact(source[numbered[0]!.line-2]??'').endsWith(compact(leading))) return false;
+  return numbered.every((row,i)=>Number.isSafeInteger(row.line)&&row.line>0&&row.line<=source.length&&
+    (!i||row.line===numbered[i-1]!.line+1)&&compact(row.text)===compact(source[row.line-1]!));
+}
+
 /** Undefined leaves other permissions alone; null keeps this report pane waiting. */
 export function currentFilePermissionEpoch(file: string | undefined, expected: string | undefined,
   cwd: string, config: string | null, startedAt: number, transcript: PlanCountTranscript,
   screen: string): FilePermissionEpoch | null | undefined {
   if (!file || !expected || !config) return undefined;
   const panel = [...screen.matchAll(/(?:^|\n) {0,3}(?:Create|Edit|Write) file[ \t]*\n {0,3}([^\n]+)\n/g)].at(-1);
-  const target = panel ? path.resolve(cwd,panel[1]!.trim()) : croppedEditTarget(screen, cwd, expected);
+  const create = panel ? undefined : croppedCreatePane(screen);
+  const target = panel ? path.resolve(cwd,panel[1]!.trim()) : croppedEditTarget(screen, cwd, expected) ??
+    (create?.basename===path.basename(expected) ? expected : undefined);
   if (target !== expected) {
     // A foreign path with this report's basename cannot fall back to a stale
     // owned grant. An incomplete owned menu also waits for full path identity.
-    const prompt = [...screen.matchAll(/^ {0,3}Do you want to make this edit to ([^\n?\/\\]+)\?[ \t]*$/gm)].at(-1);
+    const prompt = [...screen.matchAll(/^ {0,3}Do you want to (?:make this edit to|create) ([^\n?\/\\]+)\?[ \t]*$/gm)].at(-1);
     return (target && path.basename(target) === path.basename(expected)) ||
       prompt?.[1]?.trim() === path.basename(expected) ? null : undefined;
   }
@@ -168,6 +219,7 @@ export function currentFilePermissionEpoch(file: string | undefined, expected: s
         new Set(r.completedIds).size !== r.completedIds.length ||
         r.completedIds.some((id: string) => id === r.pendingId || !r.seenIds.includes(id)) ||
         (r.completedId === null ? r.completedIds.length !== 0 : r.completedIds.at(-1) !== r.completedId)) return null;
+    if(create && !currentCreatePreview(create.preview,r,config,cwd,startedAt)) return null;
     return {pendingId:r.pendingId,completedId:r.completedId,completedIds:r.completedIds};
   } catch { return null; }
 }
