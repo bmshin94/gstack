@@ -4688,7 +4688,8 @@ export async function runPlanSkillCounting(opts: {
     while (remainingWork() > 0) {
       await session.waitForOutput(observedOutput, Math.min(2000, remainingWork()));
       if (remainingWork() <= 0) break;
-      const coalesceMs = 250 - (performance.now() - lastObservationAt);
+      const coalesceMs = session.rawOutput().length > observedOutput
+        ? 250 : 250 - (performance.now() - lastObservationAt);
       if (coalesceMs > 0 && !await waitForWork(coalesceMs)) break;
       observedOutput = session.mark();
       lastObservationAt = performance.now();

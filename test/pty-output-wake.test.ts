@@ -81,6 +81,50 @@ process.stdout.write('READY');
   }
 }, 15_000);
 
+test.skipIf(process.platform === 'win32')('split terminal redraws settle before routing question input', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-pty-split-redraw-'));
+  const fake = path.join(dir, 'fake-claude');
+  const input = path.join(dir, 'input.txt');
+  const ready = `PTY_READY:${dir}`;
+  fs.writeFileSync(fake, `#!${process.execPath}
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+const project = path.join(process.env.CLAUDE_CONFIG_DIR, 'projects', 'split-redraw');
+fs.mkdirSync(project, {recursive:true});
+fs.writeFileSync(path.join(project, 'split-redraw.jsonl'), JSON.stringify({
+  cwd:process.cwd(), sessionId:'split-redraw', isSidechain:false,
+  message:{role:'assistant',content:[{type:'text',text:'Fixture CLI started.'}]},
+}) + '\\n');
+let started = false;
+process.stdin.setRawMode(true);
+process.stdin.on('data', bytes => {
+  fs.appendFileSync(${JSON.stringify(input)}, bytes);
+  if (started) return;
+  started = true;
+  process.stdout.write('☐Stripe event types\\nWhich event should the handler accept?\\n❯1.Specify one canonical event\\n2.Accept all events\\n');
+  setTimeout(() => process.stdout.write('·'.repeat(4200) + '\\nMinimum required test cases:\\n1.Happy path\\n2.Email failure\\n3.DB timeout\\n4.Unknown event\\n5.Unknown user\\n❯1\\n'), 30);
+  setTimeout(() => process.stdout.write('\\x1b[2J\\x1b[HGSTACK REVIEW REPORT\\n'), 700);
+});
+process.on('SIGINT', () => process.exit(0));
+process.stdin.resume();
+process.stdout.write(${JSON.stringify(ready)} + '\\x1b[2J\\x1b[H');
+`, { mode: 0o755 });
+  const originalBinary = process.env.BROWSE_TERMINAL_BINARY;
+  try {
+    process.env.BROWSE_TERMINAL_BINARY = fake;
+    const result = await runPlanSkillCounting({
+      skillName: 'plan-ceo-review', slashCommand: '/plan-ceo-review', followUpPrompt: '# Split redraw fixture',
+      isLastStep0AUQ: () => false, reviewCountCeiling: 1, timeoutMs: 9000, startupReadyMarker: ready,
+    });
+    expect(result.outcome).toBe('completion_summary');
+    expect(fs.readFileSync(input, 'utf8')).toBe('/plan-ceo-review\r');
+  } finally {
+    if (originalBinary === undefined) delete process.env.BROWSE_TERMINAL_BINARY;
+    else process.env.BROWSE_TERMINAL_BINARY = originalBinary;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}, 12_000);
+
 test.skipIf(process.platform === 'win32')('a missing startup-ready marker sends no command and cleans the owned PTY fixture', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-pty-not-ready-'));
   const fake = path.join(dir, 'fake-claude');
