@@ -81,6 +81,66 @@ test('an expired case starts no trials and still records its failed aggregate', 
   expect(summary).toMatchObject({ passed: false, timedOut: true, startedTrials: 0 }); expect(records).toBe(1);
 });
 
+test('deadline cleanup waits for aborted workers final writes within the same grace', async () => {
+  const dir = roots();
+  const workspaces: string[] = [];
+  const records: string[] = [];
+  let settled = 0;
+  let settledAtCleanup = -1;
+  try {
+    const summary = await runOverlayCaseLifecycle({ fixture, workMs: 20, graceMs: 500,
+      execute: async (arm, _index, signal) => {
+        const workspace = path.join(dir, arm); workspaces.push(workspace);
+        fs.mkdirSync(workspace);
+        await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+        await Bun.sleep(10);
+        fs.mkdirSync(workspace, { recursive: true });
+        fs.writeFileSync(path.join(workspace, 'last-tool-write'), 'cancelled tool settled');
+        settled++;
+        return sample();
+      },
+      recordTrial: (arm, index, outcome) => { expect(outcome.exitReason).toBe('timeout'); records.push(`${arm}-${index}`); },
+      recordAggregate: () => records.push('aggregate'),
+      cleanup: async () => {
+        settledAtCleanup = settled;
+        await Promise.all(workspaces.map(workspace => fs.promises.rm(workspace, { recursive: true, force: true })));
+      },
+    });
+    expect(summary).toMatchObject({ passed: false, timedOut: true, cleanupIncomplete: false, startedTrials: 2 });
+    expect(summary.errors).toEqual([]);
+    expect(settledAtCleanup).toBe(2);
+    expect(workspaces.every(workspace => !fs.existsSync(workspace))).toBe(true);
+    expect(records).toHaveLength(3);
+    expect(new Set(records).size).toBe(3);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('workers that outlive grace cannot start cleanup after the aggregate', async () => {
+  const completions: Array<(outcome: OverlayTrialOutcome) => void> = [];
+  let cleanups = 0; let records = 0;
+  const summary = await runOverlayCaseLifecycle({ fixture, workMs: 10, graceMs: 10,
+    execute: () => new Promise(resolve => completions.push(resolve)),
+    recordTrial: () => { records++; }, recordAggregate: () => { records++; },
+    cleanup: async () => { cleanups++; },
+  });
+  expect(summary).toMatchObject({ passed: false, timedOut: true, cleanupIncomplete: true });
+  expect(cleanups).toBe(0);
+  completions.forEach(resolve => resolve(sample()));
+  await Bun.sleep(10);
+  expect(cleanups).toBe(0);
+  expect(records).toBe(3);
+});
+
+test('cleanup errors after worker settlement retain their cause and fail the aggregate', async () => {
+  const summary = await runOverlayCaseLifecycle({ fixture, workMs: 1000, graceMs: 100,
+    execute: async arm => sample(arm === 'overlay-on' ? 3 : 2),
+    recordTrial: () => {}, recordAggregate: () => {},
+    cleanup: async () => { throw new Error('owned cleanup cause'); },
+  });
+  expect(summary).toMatchObject({ passed: false, timedOut: false, cleanupIncomplete: true });
+  expect(summary.errors).toEqual(['cleanup failed: owned cleanup cause']);
+});
+
 test('late SDK completion cannot run metric/assertion/snapshot validation', async () => {
   const dir = roots();
   const completions: Array<(result: AgentSdkResult) => void> = [];

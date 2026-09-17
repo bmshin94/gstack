@@ -20,7 +20,8 @@ export interface OverlayCaseSummary {
 
 /**
  * admit trial → run/validate → record once
- * work deadline → close admission + abort → record unfinished trials → drain ≤5s
+ * work deadline → close admission + abort → record unfinished trials
+ * → settle workers → clean workspaces (one shared grace ≤5s)
  * → one aggregate. Late providers cannot validate, record, or start more work.
  */
 export async function runOverlayCaseLifecycle(options: {
@@ -84,15 +85,24 @@ export async function runOverlayCaseLifecycle(options: {
     finalized = true;
     controller.abort(new Error('overlay case finalized'));
     clearTimeout(timer);
-    // Aborted SDK work and filesystem cleanup share one bounded grace window.
+    // Finish worker writes before deleting their directories, within one grace.
     let cleanupError: unknown;
-    const graceRemaining = Math.max(0, (timedOut ? deadlineAt : Date.now()) + graceMs - Date.now());
-    const cleanup = Promise.resolve().then(options.cleanup).catch(cause => { cleanupError = cause; });
+    const graceDeadlineAt = (timedOut ? deadlineAt : Date.now()) + graceMs;
+    const graceRemaining = Math.max(0, graceDeadlineAt - Date.now());
+    let graceClosed = false;
+    const cleanup = allWorkers.then(async () => {
+      // A worker settling after the aggregate must not start late filesystem work.
+      if (graceClosed || Date.now() >= graceDeadlineAt) return false;
+      try { await options.cleanup(); }
+      catch (cause) { cleanupError = cause; }
+      return true;
+    });
     let graceTimer: ReturnType<typeof setTimeout> | undefined;
     const drained = await Promise.race([
-      Promise.all([allWorkers, cleanup]).then(() => true),
-      new Promise<false>(resolve => { graceTimer = setTimeout(() => resolve(false), graceRemaining); }),
+      cleanup,
+      new Promise<false>(resolve => { graceTimer = setTimeout(() => { graceClosed = true; resolve(false); }, graceRemaining); }),
     ]);
+    graceClosed = true;
     if (graceTimer) clearTimeout(graceTimer);
     if (cleanupError) errors.push(`cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
     if (!drained) errors.push('overlay workers or cleanup did not settle within recording grace');

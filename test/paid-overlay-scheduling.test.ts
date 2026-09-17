@@ -8,7 +8,7 @@ import { AUTOPLAN_CHAIN_BUDGET } from './helpers/eval-budgets';
 import {
   applyHollowShardGuard, buildPaidShardArgs, buildRunManifest,
   DEFAULT_SHARD_TIMEOUT_MS, isOverlayTestFile, OVERLAY_MAX_ACTIVE_SHARDS,
-  parseCliOptions, parseRunManifest, resolvePaidShardTimeoutMs,
+  parseCliOptions, parseRunManifest, planPaidShards, resolvePaidShardBudget, resolvePaidShardTimeoutMs,
   retriesForFiles, runPaidShards, summarize, summaryExitCode,
 } from '../scripts/test-paid-shards';
 
@@ -22,6 +22,35 @@ const fakeEnv = {
 };
 
 describe('overlay file policy', () => {
+  test('grouped planning isolates every overlay and preserves ordinary retries', () => {
+    const workflow = 'test/skill-e2e-workflow.test.ts';
+    const files = [...overlayFiles, normalFile, workflow];
+    for (const maxFilesPerShard of [2, 3, 10]) {
+      const shards = planPaidShards(files, { maxFilesPerShard });
+      expect(shards.flat().sort()).toEqual([...files].sort());
+      for (const file of overlayFiles) expect(shards).toContainEqual([file]);
+      const workflowShard = shards.find(shard => shard.includes(workflow))!;
+      expect(workflowShard.some(isOverlayTestFile)).toBe(false);
+      expect(retriesForFiles(workflowShard)).toBe(2);
+      const args = buildPaidShardArgs(workflowShard, resolvePaidShardTimeoutMs(workflowShard), 2, retriesForFiles(workflowShard));
+      expect(args[args.indexOf('--retry') + 1]).toBe('2');
+      expect(planPaidShards(files.map(file => file.replaceAll('/', '\\')), { maxFilesPerShard })).toEqual(shards);
+    }
+  });
+
+  test('mixed or grouped overlay jobs reject before any child starts', async () => {
+    const invalidGroups = [[overlayFiles[0], normalFile], [overlayFiles[0], overlayFiles[1]]];
+    for (const files of invalidGroups) {
+      expect(() => resolvePaidShardBudget(files)).toThrow('own shard');
+      expect(() => resolvePaidShardBudget(files, 1_900_000)).toThrow('own shard');
+      let launched = 0;
+      await expect(runPaidShards([[normalFile], files], {
+        commandFor: () => { launched++; throw new Error('must never launch'); },
+      })).rejects.toThrow('own shard');
+      expect(launched).toBe(0);
+    }
+  });
+
   test('only the exact wrapper family gets one attempt and the extra process grace', () => {
     expect(overlayFiles).toHaveLength(6);
     expect(OVERLAY_MAX_ACTIVE_SHARDS).toBe(1);

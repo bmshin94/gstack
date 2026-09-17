@@ -376,7 +376,7 @@ export function planPaidShards(
   const shards: string[][] = [];
   let pending: string[] = [];
   for (const file of unique) {
-    if (file === AUTOPLAN_CHAIN_BUDGET.file || FILE_RETRY_BUDGETS.some(budget => budget.file === file)) {
+    if (isOverlayTestFile(file) || file === AUTOPLAN_CHAIN_BUDGET.file || FILE_RETRY_BUDGETS.some(budget => budget.file === file)) {
       if (pending.length) shards.push(pending);
       pending = [];
       shards.push([file]);
@@ -405,6 +405,7 @@ export function resolvePaidShardBudget(files: string[], overrideMs?: number): Pa
     throw new Error('Shard timeout must be a finite positive timer-safe integer');
   }
   const overlay = files.some(isOverlayTestFile);
+  if (overlay && files.length !== 1) throw new Error('Overlay budget requires its own shard');
   if (overlay && overrideMs !== undefined && overrideMs < OVERLAY_MIN_FILE_WALL_MS) {
     throw new Error(`Overlay shard requires at least ${OVERLAY_MIN_FILE_WALL_MS}ms; explicit wall ${overrideMs}ms cannot preserve its work and finalization budget`);
   }
