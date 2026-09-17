@@ -697,3 +697,44 @@ test('floor quotation evidence selects four assessors and product-type evidence 
   expect(E2E_TIERS['plan-design-finding-floor']).toBe('periodic');
   expect(E2E_TIERS['plan-eng-finding-floor']).toBe('periodic');
 });
+
+test('DX custom setup transport selects its existing floor case without quality resampling', () => {
+  for (const file of ['test/plan-floor-dx-actor.test.ts', 'test/fixtures/plan-floor-dx-custom-491.json']) {
+    expect(selectTests([file], E2E_TOUCHFILES).selected).toEqual(['plan-devex-finding-floor']);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+});
+
+
+test('numbered native-menu captures select the existing parser consumers', () => {
+  const expected = Object.entries(E2E_TOUCHFILES)
+    .filter(([, files]) => files.includes('test/plan-skill-questions.test.ts'))
+    .map(([id]) => id).sort();
+  expect(expected).toHaveLength(22);
+  for (const file of ['test/pty-numbered-option-indent-native.test.ts',
+    'test/fixtures/ceo-split-e5-numbered-description-491.json']) {
+    expect(selectTests([file], E2E_TOUCHFILES).selected.sort()).toEqual(expected);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+});
+
+
+test('pending native Write captures select the existing owned-permission consumers', () => {
+  const expected = Object.entries(E2E_TOUCHFILES)
+    .filter(([, files]) => files.includes('test/plan-create-combined-permission.test.ts'))
+    .map(([id]) => id).sort();
+  expect(expected).toHaveLength(10);
+  for (const file of ['test/plan-create-prepublication.test.ts',
+    'test/fixtures/plan-create-prepublication-491.json']) {
+    expect(selectTests([file], E2E_TOUCHFILES).selected.sort()).toEqual(expected);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+});
+
+test('the declared engineering actor selects its existing count case', () => {
+  for (const file of ['test/helpers/eng-count-question-policy.ts',
+    'test/eng-count-question-policy.test.ts', 'test/fixtures/eng-count-actor-491.json']) {
+    expect(selectTests([file], E2E_TOUCHFILES).selected).toEqual(['plan-eng-finding-count']);
+    expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);
+  }
+});

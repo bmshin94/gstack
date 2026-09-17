@@ -10,10 +10,11 @@ import {createPendingQuestionRecorder,recordPendingQuestion,readPendingQuestion,
 import {createPlanCountSnapshotWriter} from './helpers/plan-count-artifacts';
 import routing from './fixtures/plan-floor-routing-361c.json';
 import productTypes from './fixtures/plan-floor-product-type-70b.json';
+import dxCustom from './fixtures/plan-floor-dx-custom-491.json';
 import * as runner from './helpers/claude-pty-runner';
 import {createPlanCountFixture} from './helpers/plan-count-fixture';
 import {readPlanFloorTarget} from './helpers/plan-floor-target';
-import {createFilePermissionRecorder, recordFilePermission, currentFilePermissionBinding} from './helpers/plan-count-file-permission';
+import {createFilePermissionRecorder, recordFilePermission, currentFilePermissionBinding, readPendingWriteInput} from './helpers/plan-count-file-permission';
 import captured from './fixtures/plan-floor-permission-fb10.json';
 import {FORCING_FLOOR_CEO, FORCING_FLOOR_ENG, FORCING_FLOOR_DESIGN, FORCING_FLOOR_DEVEX} from './fixtures/forcing-finding-seeds';
 
@@ -42,7 +43,7 @@ const FINDING = render(QUESTIONS.ceo);
 type Mode = 'captured' | 'owned' | 'owned-no-question' | 'foreign' | 'wrong-session' | 'missing-native' | 'linked-target' |
   'native-question' | 'scope' | 'prose' | 'finding' | 'routing' | 'unrelated' | 'partial' | 'quoted' | 'foreign-question' |
   'stale-question' | 'answered-question' | 'failed-question' | 'mismatched-use' | 'duplicate-use' | 'judge-error' | 'mode' | 'pending-hook' | 'failed-hook' | 'packet' | 'prose-quoted' | 'prose-partial' | 'prose-foreign' | 'prose-stale' | 'product-type' | 'product-type-undeclared' |
-  'unmatched-hook' | 'invalid-hook' | 'missing-hook' | 'idle-hook' | 'transition-hook' | 'unmatched-native';
+  'unmatched-hook' | 'invalid-hook' | 'missing-hook' | 'idle-hook' | 'transition-hook' | 'unmatched-native' | 'dx-setup' | 'dx-no-finding' | 'dx-undeclared' | 'dx-cropped' | 'dx-unrelated' | 'dx-uncertain' | 'dx-changing-call';
 interface SnapshotOptions { evalDir: string; failFirst?: boolean; interrupt?: boolean }
 
 // Complete actual floor function; only clock/PTY/public-event and assessor
@@ -72,7 +73,7 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
       expect(config).toContain('routing_declined: true'); expect(config).toContain('cross_project_learnings: false');
       expect(config).toContain('codex_reviews: disabled'); return fixture;
     },
-    readPlanFloorTarget, currentFilePermissionBinding,
+    readPlanFloorTarget, currentFilePermissionBinding, readPendingWriteInput,
     readPlanCountTranscript: (_config: string, _cwd: string, visit?: (event:any)=>void) => {tools.forEach(e=>visit?.(e));return transcript;},
     createPlanCountSnapshotWriter: () => (value: any) => {
       saved = structuredClone(value); snapshots.push({at:now,observation:saved.observation});
@@ -87,7 +88,8 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
       expect(opts.model).toBe(resolveEvalModel('warmup')); expect(opts.deadlineAt).toBeGreaterThan(now);
       floor.buildPlanFloorReviewPrompt(input);
       if(mode==='judge-error') throw Error('controlled assessment failure');
-      const classification = mode==='routing'||mode==='scope'||mode==='native-question'||mode==='product-type-undeclared' ? 'setup' :
+      const dxSetup = mode.startsWith('dx-') && input.candidate.transport==='native' && input.candidate.question.header===dxCustom.call.questions[0]!.header;
+      const classification = dxSetup ? (mode==='dx-unrelated'?'unrelated':mode==='dx-uncertain'?'uncertain':'setup') : mode==='routing'||mode==='scope'||mode==='native-question'||mode==='product-type-undeclared' ? 'setup' :
         mode==='unrelated' ? 'unrelated' : mode==='quoted' ? 'uncertain' : 'finding';
       return floor.validatePlanFloorAssessment(input, classification==='finding' ? {
         kind:'finding',seedQuote:SEED_QUOTES[kind],questionQuote:question.question,
@@ -180,6 +182,9 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
                 options:['SCOPE EXPANSION','SELECTIVE EXPANSION','HOLD SCOPE','SCOPE REDUCTION'].map(label=>({label,description:'Apply this review mode.'}))});
             } else if(mode.startsWith('product-type')) {
               publish(structuredClone(productQuestion));
+            } else if(mode.startsWith('dx-')) {
+              publish(structuredClone(dxCustom.call.questions[0]!));
+              screen=mode==='dx-cropped'?dxCustom.originalViewport:dxCustom.questionViewport;
             } else if(mode==='routing') {
               screen=capture!.viewport; transcript.calls=structuredClone(capture!.calls).map(call=>({...call,sessionId:sid}));
               for(const call of transcript.calls)tools.push({sessionId:sid,toolUseId:call.toolUseId,name:'AskUserQuestion',kind:'use',
@@ -210,6 +215,17 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
             const old=structuredClone(transcript.calls[0]);old.answered=true;
             old.answers={[old.questions[0].question]:old.questions[0].options[0].label};
             publish();transcript.calls.unshift(old);history+='\n'+screen;
+          } else if(mode.startsWith('dx-')) {
+            if(input==='4')screen=dxCustom.focusedViewport;
+            else if(input==='\x1b[200~'+dxCustom.reply+'\x1b[201~') {
+              screen=dxCustom.filledViewport;
+              if(mode==='dx-changing-call')transcript.calls[0].questions[0].question+=' Changed after paste.';
+            } else if(input==='\r') {
+              const old=structuredClone(transcript.calls[0]);old.answered=true;old.answers={[old.questions[0].question]:dxCustom.reply};
+              if(mode==='dx-no-finding') {transcript.calls=[old];screen='';}
+              else {publish();transcript.calls.unshift(old);}
+            } else throw Error('Unexpected DX custom input: '+JSON.stringify(input));
+            history+='\n'+screen;
           } else if (input === '1\r') {
             granted = true;
             if(mode==='owned')publish(); else screen='';
@@ -225,7 +241,8 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
     let result: any, error: unknown;
     try {
       result = await run({skillName:`plan-${kind}-review`, slashCommand:`/plan-${kind}-review`, followUpPrompt:SEEDS[kind],
-        productType:mode==='product-type'?'sdk-documentation':undefined,
+        productType:mode==='product-type'||mode.startsWith('dx-')?'sdk-documentation':undefined,
+        devexSetupContext:mode.startsWith('dx-')&&mode!=='dx-undeclared'?dxCustom.reply:undefined,
         requestedPlanPath:mode === 'captured' ? undefined : `/tmp/gstack-test-plan-${kind}-floor.md`, timeoutMs:100_000});
     } catch(caught) { if(!snapshotOptions?.interrupt)throw caught; error=caught; }
     expect(closed).toBe(1); expect(fs.existsSync(fixture!.cwd)).toBe(false);
@@ -444,6 +461,11 @@ mock.module(${JSON.stringify(path.join(ROOT,'test/helpers/claude-pty-runner.ts')
   expect(opts.timeoutMs).toBe(CAPTURE_LONG_MS);
   expect(opts.productType).toBe(kind==='devex'?'sdk-documentation':undefined);
   expect(opts.env).toEqual({QUESTION_TUNING:'false',EXPLAIN_LEVEL:'default'});
+  if(kind==='devex'){
+    expect(opts.devexSetupContext).toContain('Confirmed persona: a hands-on developer making a first SDK call.');
+    expect(opts.devexSetupContext).toContain(opts.followUpPrompt.split('## Onboarding flow\\n')[1].replace(/\\s+/g,' '));
+    expect(opts.devexSetupContext).toContain('proposed fixes and scope changes remain undecided');
+  }else expect(opts.devexSetupContext).toBeUndefined();
   fs.appendFileSync(${JSON.stringify(facts)},JSON.stringify({kind,path:opts.requestedPlanPath})+'\\n');
   if(${JSON.stringify(outcome)}==='throw')throw Error('controlled runner failure');
   return {outcome:${JSON.stringify(outcome)},auqObserved:${outcome === 'auq_observed'},elapsedMs:1,summary:'controlled outcome',evidence:'fixture'};
@@ -460,3 +482,40 @@ ${files.map(file => `await import(${JSON.stringify(file)});`).join('\n')}
     if(outcome !== 'auq_observed') expect(output).toContain(outcome === 'throw' ? 'controlled runner failure' : 'floor test FAILED: outcome=timeout');
   } finally {fs.rmSync(dir,{recursive:true,force:true});}
 },25_000);
+
+// Complete real floor loop with captured native frames. Assessments are controlled
+// transport fixtures; only a later substantive question receives finding credit.
+test('DX declared context answers setup through native custom input, then awaits a real finding',async()=>{
+  const e=await exercise('dx-setup','devex');
+  expect(e.result.outcome).toBe('auq_observed');expect(e.judgments).toHaveLength(2);
+  expect(e.sent).toEqual(['/plan-devex-review PLAN.md\r','4','\x1b[200~'+dxCustom.reply+'\x1b[201~','\r']);
+  expect(e.launched.rows).toBe(80);
+  expect(e.fixture!.seed).toContain(dxCustom.reply);
+  expect(e.saved.observation.setupContextReplies[0].stage).toBe('done');
+  expect(e.saved.observation.transcript.calls.find((c:any)=>c.answered).answers).toEqual({[dxCustom.call.questions[0]!.question]:dxCustom.reply});
+});
+test.each(['dx-no-finding','dx-undeclared','dx-cropped','dx-unrelated','dx-uncertain','dx-changing-call'] as Mode[])('%s cannot obtain finding credit or approve an offered claim',async mode=>{
+  const e=await exercise(mode,'devex');expect(e.result.outcome).toBe('timeout');expect(e.result.auqObserved).toBe(false);
+  const typed=mode==='dx-no-finding'||mode==='dx-changing-call';
+  expect(e.sent).toEqual(typed?['/plan-devex-review PLAN.md\r','4','\x1b[200~'+dxCustom.reply+'\x1b[201~',...(mode==='dx-no-finding'?['\r']:[])]:['/plan-devex-review PLAN.md\r']);
+  expect(e.judgments).toHaveLength(mode==='dx-cropped'||mode==='dx-undeclared'?0:1);
+});
+
+
+test.each([false,true])('current Write input survives the actual floor snapshot and fixture cleanup (interruption=%s)',async interrupt=>{
+ const evalDir=fs.mkdtempSync(path.join(os.tmpdir(),'floor-write-retention-'));
+ try {
+  const e=await exercise('owned-no-question','eng',undefined,undefined,{evalDir,interrupt});
+  const snapshots=fs.readdirSync(path.join(evalDir,'pty-count','floor-retention-free'));
+  expect(snapshots).toHaveLength(1);
+  const artifact=path.join(evalDir,'pty-count','floor-retention-free',snapshots[0]!,'observation.json');
+  const saved=JSON.parse(fs.readFileSync(artifact,'utf8'));
+  expect(fs.existsSync(saved.capture.cwd)).toBe(false);
+  expect(saved.pendingWriteInputs).toHaveLength(1);
+  expect(saved.pendingWriteInputs[0]).toMatchObject({source:'PreToolUse',toolName:'Write',
+    sessionId:e.launched.extraArgs[1],input:{file_path:e.launched.observeFilePermissions[0],content:'not retained in permission metadata'}});
+  expect(saved.pendingWriteInputs[0].pendingId).toBe(`${e.launched.extraArgs[1]}:write1`);
+  if(interrupt) expect(saved.captureReason).toBe('before_cleanup');
+  else expect(saved.outcome).toBe('timeout');
+ }finally{fs.rmSync(evalDir,{recursive:true,force:true});}
+});

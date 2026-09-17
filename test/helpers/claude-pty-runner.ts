@@ -38,7 +38,7 @@ import { findNativeAutoDecision, type NativeAutoDecision } from './native-auto-d
 import { readPlanCountTranscript, unresolvedPlanQuestionCalls, type NativePlanQuestionCall, type PlanCountTranscript, type NativePublicToolEvent } from './plan-count-transcript';
 import { createPendingExitRecorder, withPendingExit, isCurrentPlanApprovalScreen } from './plan-count-pending-exit';
 import { createPendingQuestionRecorder, readPendingQuestion, pendingQuestionRecorderStatus } from './plan-count-pending-question';
-import { createFilePermissionRecorder, currentFilePermissionBinding, type FilePermissionEpoch } from './plan-count-file-permission';
+import { createFilePermissionRecorder, currentFilePermissionBinding, readPendingWriteInput, type FilePermissionEpoch } from './plan-count-file-permission';
 import { createAutoplanArtifactRecorder, autoplanArtifactRecorderStatus, autoplanArtifactApprovalBoundary } from './autoplan-artifact-recorder';
 import { trustDialogInput } from './pty-trust-dialog';
 import { createPtyScreen } from './pty-screen';
@@ -873,9 +873,15 @@ export function parseNumberedOptions(
   // last `1.` line. Allow leading `  ` or `❯ ` prefixes; do NOT include `❯`
   // in the leading character class because greedy matching would eat the
   // sigil and prevent the literal-cursor anchor above from finding it.
+  // Cursor-positioning residue can omit the space in the cursor's slot
+  // (`❯1.`) while peer rows still retain their ordinary two-space prefix.
+  const numberColumn = (row: RegExpExecArray) => row[0].replace(/❯(?=[1-9]\.)/, '❯ ').length - 2;
   if (cursorLineIdx < 0) {
+    const selectedRow = lines.map(line => /^[ \t]*❯[ \t]*[1-9]\./.exec(line)).findLast(Boolean);
+    const selectedColumn = selectedRow ? numberColumn(selectedRow) : null;
     for (let i = lines.length - 1; i >= 0; i--) {
-      if (/^(?:\s*|\s*❯\s+)1\./.test(lines[i] ?? '')) {
+      const firstRow = /^(?:\s*|\s*❯\s+)1\./.exec(lines[i] ?? '');
+      if (firstRow && (selectedColumn === null || firstRow[0].length - 2 <= selectedColumn)) {
         cursorLineIdx = i;
         break;
       }
@@ -895,6 +901,11 @@ export function parseNumberedOptions(
   // ascending indices starting from the cursor's option, and take each
   // label as the text between successive number tokens.
   const cursorLine = lines[cursorLineIdx] ?? '';
+  // A standalone row supplies its number's column. Wrapped descriptions
+  // start farther right and may themselves begin with "4." or another
+  // number. Inline/reflowed cursor lines have no such column constraint.
+  const standaloneRow = /^[ \t]*(?:❯[ \t]*)?1\./.exec(cursorLine);
+  const optionColumn = standaloneRow ? numberColumn(standaloneRow) : null;
   const cursorStart = cursorLine.indexOf('❯');
   const cursorSegment = cursorStart >= 0 ? cursorLine.slice(cursorStart) : cursorLine;
   const tokenRe = /(?:^|[^0-9])([1-9])\.(?!\d)\s*/g;
@@ -934,11 +945,15 @@ export function parseNumberedOptions(
 
   // Subsequent lines: standard start-of-line option parsing.
   for (let i = cursorLineIdx + 1; i < lines.length; i++) {
-    const m = optionRe.exec(lines[i] ?? '');
+    const line = lines[i] ?? '';
+    const m = optionRe.exec(line);
     if (!m) continue;
+    if (optionColumn !== null && line.indexOf(m[1]!) > optionColumn) continue;
     const idx = Number(m[1]);
     const label = (m[2] ?? '').trim();
-    if (seenIndices.has(idx)) continue;
+    // Two peer rows with the same number are ambiguous, even if their
+    // labels agree. A nested description was excluded by geometry above.
+    if (seenIndices.has(idx)) return [];
     if (label.length === 0) continue;
     seenIndices.add(idx);
     found.push({ index: idx, label });
@@ -4856,6 +4871,9 @@ export async function runPlanSkillCounting(opts: {
    * when capturePlanCountQuestion matched the currently visible native question. */
   pickAUQ?: (fp: AskUserQuestionFingerprint, activeCapture: AskUserQuestionFingerprint,
     context: Readonly<{ cwd: string; deadlineAt: number }>) => number | null;
+  /** Opt-in declared actor: wait for a complete current native tab, then require
+   * its picker answer. Unbound redraws never consume seen state or default to 1. */
+  requireNativePicker?: boolean;
   /** Observe owned pending AUQs for callers that need identity before answering. */
   observeSetupQuestions?: boolean;
   /** Bind the declared Design board actor and renderer to one fixture-owned daemon state. */
@@ -4892,6 +4910,8 @@ export async function runPlanSkillCounting(opts: {
   /** Override the spawned model. Defaults via launchClaudePty's chain. */
   model?: string;
 }): Promise<PlanSkillCountObservation> {
+  if (opts.requireNativePicker && !opts.pickAUQ)
+    throw Error('Native picker binding requires a declared picker');
   if (opts.bindDesignBoardState && (opts.skillName !== 'plan-design-review' || !opts.pickAUQ))
     throw Error('Design board state binding requires the Design caller and its declared picker');
   if (opts.approveEngTestPlanEdits && (opts.skillName !== 'plan-eng-review' || !opts.expectedPlanPath))
@@ -4971,7 +4991,11 @@ export async function runPlanSkillCounting(opts: {
   let viewport = '';
 
   const capture = (observation: object) => saveSnapshot({
-    skillName: opts.skillName, observation, raw: session.rawOutput(), visible: session.visibleText(), viewport,
+    skillName: opts.skillName, observation: { ...observation,
+      pendingWriteInputs: ownedFilePermissions.flatMap(binding => {
+        const input = readPendingWriteInput(binding.file, binding.expected, fixture.cwd, session.hermeticConfigDir, startedAt);
+        return input ? [input] : [];
+      }) }, raw: session.rawOutput(), visible: session.visibleText(), viewport,
     cwd: fixture.cwd, claudeConfigDir: session.hermeticConfigDir,
   });
 
@@ -5241,8 +5265,12 @@ export async function runPlanSkillCounting(opts: {
 
       // Dedupe the complete question, not just its answer labels: separate
       // findings often reuse the same Add to plan / Defer / Skip menu.
-      const fp = capturePlanCountQuestion(visible, seen, Date.now() - startedAt, !boundaryFired, pending);
+      if (opts.requireNativePicker && !newlyMatched) continue;
+      const capturedSeen = opts.requireNativePicker ? new Set(seen) : seen;
+      const fp = capturePlanCountQuestion(visible, capturedSeen, Date.now() - startedAt, !boundaryFired, pending);
       if (!fp) continue;
+      const boundNativeTab = pending && fp.nativeCall === pending && fp.nativeQuestionIndex !== undefined;
+      if (opts.requireNativePicker && !boundNativeTab) continue;
       // Press to advance — first AUQ may use the override pick.
       const routing = pending?.questions.length === 1
         ? nativePlanCallFingerprint(pending, fp.observedAtMs, fp.preReview) : fp;
@@ -5252,11 +5280,16 @@ export async function runPlanSkillCounting(opts: {
       // matched active tab before a caller can change that tab's choice.
       // The captured fingerprint alone proves whether native metadata matched
       // this active UI; an unrelated pending record is not a routing identity.
-      const boundNativeTab = pending && fp.nativeCall === pending && fp.nativeQuestionIndex !== undefined;
-      const callerPick = !pending || pending.questions.length === 1 || boundNativeTab
-        ? opts.pickAUQ?.(routing, fp, pickerContext) ?? null : null;
+      let callerPick: number | null = null;
+      if ((!opts.requireNativePicker || prerequisitePick === null) &&
+          (!pending || pending.questions.length === 1 || boundNativeTab)) {
+        callerPick = opts.pickAUQ?.(routing, fp, pickerContext) ?? null;
+      }
+      if (opts.requireNativePicker && prerequisitePick === null && callerPick === null)
+        throw Error('Declared native picker returned no authorized choice');
       const pickIdx = prerequisitePick ?? callerPick ??
         (isFirstAUQ && opts.firstAUQPick ? opts.firstAUQPick(routing) : defaultPick);
+      if (opts.requireNativePicker) for (const signature of capturedSeen) seen.add(signature);
       isFirstAUQ = false;
       const questionInput = planCountQuestionInput(visible, fp, pickIdx);
       if (remainingWork() <= 0) break;
@@ -5332,6 +5365,79 @@ export interface PlanSkillFloorObservation {
  * Drive a plan-* skill and qualify its first current seeded finding question.
  * The actor answers only its declared optional-prerequisite, mode and product-type choices.
  */
+/** DX's long empathy prompt needs its whole native pane, not an interior crop.
+ * Retain the actual header and complete pinned renderer prefix; the shared
+ * matcher still authenticates the pending question and native menu. */
+export function planFloorDXPane(visible: string, call: NativePlanQuestionCall): string | null {
+  if (call.answered || call.failed || call.questions.length !== 1) return null;
+  const text = stripPtyResidue(visible).replace(/\r+\n?/g, '\n');
+  const headers = [...text.matchAll(/(?:^|\n)[\t ]*[☐□][^\n]*\n/g)];
+  const header = headers.at(-1);
+  if (!header) return null;
+  const preceding = text.slice(0, header.index).trimEnd();
+  if (preceding && !/(?:^|\n)[ \t]*[─━]{10,}[ \t]*$/.test(preceding)) return null;
+  let fence: string | undefined;
+  for (const line of preceding.split('\n')) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!marker) continue;
+    if (!fence) fence = marker[1];
+    else if (marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = undefined;
+  }
+  if (fence) return null;
+  const pane = text.slice(header.index).trimStart();
+  const cursor = /(?:^|\n)❯\s*1\./.exec(pane);
+  if (!cursor) return null;
+  const body = pane.slice(pane.indexOf('\n') + 1, cursor.index)
+    .replace(/^[ \t]*[│┃] ?|[│┃][ \t]*$/gm, '').trim();
+  const compact = (value: string) => value.replace(/\s+/g, '');
+  const q = call.questions[0]!;
+  const displayed = q.question.length > 2000 ? q.question.slice(0, 2000) + '…' : q.question;
+  if (compact(body) !== compact(displayed) || !matchesNativePlanQuestion(pane, call)) return null;
+  return pane;
+}
+
+export interface PlanFloorDXReply {
+  call: NativePlanQuestionCall;
+  pane: string;
+  reply: string;
+  stage: 'focus' | 'paste' | 'submit' | 'done';
+}
+
+/** The native custom field focuses first, then accepts literal bracketed paste.
+ * Each step binds the same unanswered call and unchanged complete pane. */
+export function planFloorDXReplyInput(visible: string, call: NativePlanQuestionCall,
+  state: PlanFloorDXReply): { input: string; stage: PlanFloorDXReply['stage'] } | null {
+  if (state.stage === 'done' || call.answered || call.failed || call.questions.length !== 1 ||
+      call.questions[0]!.multiSelect || call.sessionId !== state.call.sessionId || call.toolUseId !== state.call.toolUseId ||
+      !isDeepStrictEqual(call.questions, state.call.questions) || !state.reply.trim() || state.reply.length > 1400 ||
+      /[\x00-\x1f\x7f]/.test(state.reply)) return null;
+  const compact = (value: string) => value.replace(/\s+/g, '');
+  const index = call.questions[0]!.options.length + 1;
+  if (state.stage === 'focus') {
+    const pane = planFloorDXPane(visible, call);
+    if (!pane || compact(pane) !== compact(state.pane) ||
+        !new RegExp(`(?:^|\\n)  ${index}\\. Type something\\.[ \\t]*(?:\\n|$)`).test(pane)) return null;
+    return { input: String(index), stage: 'paste' };
+  }
+  const lines = stripPtyResidue(visible).replace(/\r+\n?/g, '\n').split('\n');
+  const start = lines.findIndex(line => new RegExp(`^❯ ${index}\\. `).test(line));
+  if (start < 0 || lines.filter(line => /^❯ [1-9]\. /.test(line)).length !== 1) return null;
+  let end = start + 1;
+  while (end < lines.length && /^ {5}\S|^ {5,}\S/.test(lines[end]!)) end++;
+  const field = [lines[start]!.replace(new RegExp(`^❯ ${index}\\. `), ''),
+    ...lines.slice(start + 1, end).map(line => line.trim())].join(' ').trim();
+  if (field !== (state.stage === 'paste' ? 'Type something.' : state.reply)) return null;
+  lines.splice(start, end - start, `  ${index}. Type something.`);
+  const first = lines.findIndex(line => /^  1\. /.test(line));
+  if (first < 0) return null;
+  lines[first] = lines[first]!.replace(/^  1\./, '❯ 1.');
+  const pane = planFloorDXPane(lines.join('\n'), call);
+  if (!pane || compact(pane) !== compact(state.pane)) return null;
+  return state.stage === 'paste'
+    ? { input: '\x1b[200~' + state.reply + '\x1b[201~', stage: 'submit' }
+    : { input: '\r', stage: 'done' };
+}
+
 export async function runPlanSkillFloorCheck(opts: {
   /** Skill name, e.g. 'plan-eng-review'. Used for diagnostic strings only. */
   skillName: string;
@@ -5343,6 +5449,8 @@ export async function runPlanSkillFloorCheck(opts: {
   requestedPlanPath?: string;
   /** Predeclared DX fixture classification; never inferred from a recommendation. */
   productType?: 'sdk-documentation';
+  /** Literal persona/journey correction declared before DX setup; approves no offered remedy. */
+  devexSetupContext?: string;
   /** Installation cwd retained for caller compatibility; review uses an owned seeded project. */
   cwd?: string;
   /** Total budget. Default 600000 (10 min). Tests exit early on AUQ. */
@@ -5354,6 +5462,10 @@ export async function runPlanSkillFloorCheck(opts: {
 }): Promise<PlanSkillFloorObservation> {
   const startedAt = Date.now();
   const timeoutMs = opts.timeoutMs ?? 600_000;
+  const dxContext = opts.devexSetupContext;
+  if (dxContext !== undefined && (opts.skillName !== 'plan-devex-review' || opts.productType !== 'sdk-documentation' ||
+      !dxContext.trim() || dxContext.length > 1400 || /[\x00-\x1f\x7f]/.test(dxContext)))
+    throw Error('DX setup context requires the declared SDK-documentation actor and a bounded literal single line');
 
   const request = [
     'Proceed directly to the requested review; skip the optional /office-hours prerequisite.',
@@ -5363,6 +5475,7 @@ export async function runPlanSkillFloorCheck(opts: {
       'Product type is confirmed: SDK quickstart documentation, with the complete journey to the first SDK call as context. If asked to classify, choose SDK + Docs when offered, otherwise Documentation. This confirms the review lens; it does not expand the plan.',
       'Target persona is confirmed: a hands-on developer integrating this SDK for the first time, trying to make one successful call. Product type and persona setup are already answered; proceed to reviewing the supplied plan.',
     ] : []),
+    ...(dxContext ? ['For setup confirmations, this actor can supply only the following persona/journey correction through the native custom answer. It does not approve a proposed narrative, remedy, or scope change: ' + dxContext] : []),
     opts.followUpPrompt,
   ].join('\n\n');
   const fixture = createPlanCountFixture(request, { requestedPlanPath: opts.requestedPlanPath,
@@ -5379,6 +5492,7 @@ export async function runPlanSkillFloorCheck(opts: {
       seedSkills: true,
       observeScreen: true,
       observeSetupQuestions: true,
+      ...(dxContext ? { rows: 80 } : {}),
       observeFilePermissions: fixture.workingPlanPath ? [fixture.workingPlanPath] : undefined,
       extraArgs: ['--session-id', sessionId],
     });
@@ -5398,6 +5512,7 @@ export async function runPlanSkillFloorCheck(opts: {
   const setupChoices = new Map<string, Set<number>>();
   const submittedSetup = new Set<string>();
   const assessed = new Map<string, PlanFloorAssessment>();
+  const dxReplies = new Map<string, PlanFloorDXReply>();
   let captureBeforeClose: (() => void) | undefined;
   try {
     await Bun.sleep(8000); // boot grace + auto-trust handler window
@@ -5421,7 +5536,12 @@ export async function runPlanSkillFloorCheck(opts: {
         claudeConfigDir: session.hermeticConfigDir, raw: session.rawOutput(),
         visible: session.visibleSince(since), viewport,
         observation: { ...observation, transcript, publicTools, pendingQuestion, floorReview, floorAssessment, targetDelivery, commandStartedAt,
-          questionDiagnostics: { sampledAt, parentSessionId: sessionId, recorderStatus, recorderStatusAt: Date.now(), nativeCandidates, validatedPendingQuestion }, artifactError } });
+          pendingWriteInputs: ownedFilePermissions.flatMap(binding => {
+            const input = readPendingWriteInput(binding.file, binding.expected, fixture.cwd, session.hermeticConfigDir, startedAt);
+            return input ? [input] : [];
+          }),
+          questionDiagnostics: { sampledAt, parentSessionId: sessionId, recorderStatus, recorderStatusAt: Date.now(), nativeCandidates, validatedPendingQuestion },
+          ...(dxContext ? { setupContextReplies: [...dxReplies.values()] } : {}), artifactError } });
       if (artifacts.artifactError) {
         artifactError ??= artifacts.artifactError;
         console.error(`PTY artifact write failed: ${artifacts.artifactError}`);
@@ -5430,7 +5550,7 @@ export async function runPlanSkillFloorCheck(opts: {
     };
     const checkpoint = () => {
       const state = JSON.stringify([pendingQuestionRecorderStatus(session.pendingQuestionFile, fixture.cwd, session.hermeticConfigDir),
-        targetDelivery.status, nativeCandidates, validatedPendingQuestion, pendingQuestion]);
+        targetDelivery.status, nativeCandidates, validatedPendingQuestion, pendingQuestion, [...dxReplies.values()]]);
       if (state === lastCheckpointState && Date.now() - lastCheckpointAt < 15_000) return;
       lastCheckpointState = state; lastCheckpointAt = Date.now();
       capture({ state: 'in_progress', elapsedMs: Date.now() - startedAt });
@@ -5497,7 +5617,16 @@ export async function runPlanSkillFloorCheck(opts: {
       validatedPendingQuestion = hook;
       sampledAt = Date.now();
       if (hook?.sessionId === sessionId && !transcript.calls.some(call => call.toolUseId === hook.toolUseId)) currentCalls.push(hook);
-      const matching = currentCalls.filter(call => matchesNativePlanQuestion(viewport, call));
+      const activeReply = currentCalls.length === 1 && dxReplies.get(`${currentCalls[0]!.sessionId}:${currentCalls[0]!.toolUseId}`);
+      if (activeReply) {
+        pendingQuestion = undefined;
+        const next = planFloorDXReplyInput(viewport, currentCalls[0]!, activeReply);
+        if (next) { session.send(next.input); activeReply.stage = next.stage; }
+        checkpoint();
+        continue;
+      }
+      const matching = currentCalls.filter(call => dxContext
+        ? planFloorDXPane(viewport, call) !== null : matchesNativePlanQuestion(viewport, call));
       pendingQuestion = matching.length === 1 ? matching[0] : undefined;
       checkpoint();
       const nativeQuestionVisible = Boolean(pendingQuestion);
@@ -5520,7 +5649,8 @@ export async function runPlanSkillFloorCheck(opts: {
       }
       if (permissionIsActiveRender) continue;
 
-      const fp = pendingQuestion && capturePlanCountQuestion(viewport, new Set(), Date.now() - start, true, pendingQuestion);
+      const questionViewport = dxContext && pendingQuestion ? planFloorDXPane(viewport, pendingQuestion)! : viewport;
+      const fp = pendingQuestion && capturePlanCountQuestion(questionViewport, new Set(), Date.now() - start, true, pendingQuestion);
       if (fp && pendingQuestion) {
         const index = fp.nativeQuestionIndex ?? 0;
         const question = pendingQuestion.questions[index]!;
@@ -5572,6 +5702,11 @@ export async function runPlanSkillFloorCheck(opts: {
               evidence: viewport, elapsedMs: Date.now() - startedAt });
           }
           assessed.set(key, floorAssessment);
+        }
+        if (dxContext && floorAssessment.kind === 'setup' && pendingQuestion?.questions.length === 1 &&
+            !pendingQuestion.questions[0]!.multiSelect && floorReview.candidate.transport === 'native') {
+          const key = `${pendingQuestion.sessionId}:${pendingQuestion.toolUseId}`;
+          dxReplies.set(key, { call: structuredClone(pendingQuestion), pane: questionViewport, reply: dxContext, stage: 'focus' });
         }
         if (floorAssessment.kind === 'finding') return finish({
           auqObserved: true, outcome: 'auq_observed',

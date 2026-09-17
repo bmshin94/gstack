@@ -23,6 +23,7 @@ import {
 } from './helpers/claude-pty-runner';
 
 import { evaluateEngTerminalReview } from './helpers/eng-seeded-coverage';
+import { createEngCountActor, engCountActorRequest } from './helpers/eng-count-question-policy';
 
 const describeE2E = describeE2ETier('periodic');
 
@@ -91,11 +92,12 @@ describeE2E('/plan-eng-review seeded issue coverage (periodic)', () => {
         const startedAt = Date.now();
         const deadlineAt = startedAt + 1_500_000;
         const followUpPrompt = planEng5Findings(planPath);
+        const actorRequest = engCountActorRequest(followUpPrompt);
         let terminalAssessed = false;
         const obs = await runPlanSkillCounting({
           skillName: 'plan-eng-review',
           slashCommand: '/plan-eng-review',
-          followUpPrompt,
+          followUpPrompt: actorRequest,
           preconfiguredReviewActor: true,
           expectedPlanPath: planPath,
           approveEngTestPlanEdits: true,
@@ -110,6 +112,8 @@ describeE2E('/plan-eng-review seeded issue coverage (periodic)', () => {
             return evaluateEngTerminalReview(followUpPrompt, { ...input, deadlineAt: Math.min(input.deadlineAt, deadlineAt) });
           },
           observeSetupQuestions: true,
+          requireNativePicker: true,
+          pickAUQ: createEngCountActor(actorRequest),
           // Extra legitimate decisions are not a failure. The unchanged wall limit
           // bounds runaway reviews; coverage below uses scoped completed native calls.
           reviewCountCeiling: Infinity,
