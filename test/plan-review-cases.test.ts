@@ -825,14 +825,14 @@ describe('outside-voice commitment queue', () => {
           // Delegation must resolve to the complete procedure, including the
           // saved comparison and separate actual answer, without duplicating it.
           const stages = ['**1. Check sources and prior answers.**', '**2. Record the pending choice.**',
-            'Draft rows before comparing options.', "**3. Compare and save that row's options.**",
+            'Record pending rows before comparisons;', "**3. Compare and save that row's options.**",
             '**Pre-question checkpoint:**', '**4. Ask, record the answer, and amend.**'].map(stage => skeleton.indexOf(stage));
           expect(stages.every(position => position >= 0)).toBe(true);
           expect(stages).toEqual([...stages].sort((a, b) => a - b));
           expect(skeleton).toContain("`D<N> — <ROW-ID>: <one-line question>`");
           expect(skeleton).toContain("Ask one row per call with that object unchanged, without recomposing");
           expect(skeleton).toContain('compare its actual question, header, labels and full descriptions literally with the saved fields');
-          expect(skeleton).toContain('ROW-ID identifies this exact pending choice');
+          expect(skeleton).toContain('ROW-ID names the pending choice');
           expect(skeleton).toContain("Save the answer reference and scope");
           expect(skeleton).toContain("amend only authorized work");
           expect(queue).toContain('Keep preserves the current disposition; investigation and deferral do not authorize implementation');

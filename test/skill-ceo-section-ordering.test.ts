@@ -50,7 +50,7 @@ test('CEO decision cycle returns to its caller with two complete persistence che
   expect(positions.every(position => position >= 0)).toBe(true);
   expect(positions).toEqual([...positions].sort((a, b) => a - b));
   expect(cycle.match(/\*\*(?:Pre-question|Post-answer) checkpoint:\*\*/g)).toHaveLength(2);
-  expect(cycle).toContain('resume the section that sent you here, without restarting Step 0 or mode selection');
+  expect(cycle).toContain('resume the section that sent you here at its next instruction, without restarting Step 0 or mode selection');
   expect(cycle).not.toContain('Save pending rows before comparing options');
   expect(cycle).toContain('complete current plan, pending rows and comparisons');
 });
@@ -86,7 +86,7 @@ test('CEO completion facts precede summary and report while publication follows 
   expect(positions.every(position => position >= 0)).toBe(true);
   expect(positions).toEqual([...positions].sort((a, b) => a - b));
   expect(compactProse(section)).toContain('Derive facts from the approved ledger and completed sections');
-  expect(compactProse(section)).toContain('Do not announce a saved completion before the report Read-back gate passes');
+  expect(compactProse(section)).toContain('Stage 3 publishes it after report verification');
 });
 
 // These three source scenarios guard instruction branches, not native execution.
@@ -97,7 +97,7 @@ test('CEO handoff allows no pending choice without inventing an approval', () =>
   const noChoice = approach.indexOf('With no new answer needed');
   expect(noChoice).toBeGreaterThan(0);
   expect(noChoice).toBeLessThan(approach.indexOf('**2. Record the pending choice.**'));
-  expect(approach).toContain('go to 0E if you came from 0C');
+  expect(approach).toContain('Initial pass after 0C: proceed to 0E once required choices are settled');
   expect(approach).toContain('invent no alternatives or approval');
   expect(handoff).toContain('No new approach decision was needed');
   expect(compactProse(handoff)).toContain('Preserve 0D approvals');
@@ -163,7 +163,7 @@ test('SELECTIVE baseline cuts preserve prior answers until their own scope decis
   const cuts = compactProse(modeWork.split('**Deferring current scope**')[1]!);
   expect(cuts).toContain('REDUCTION, HOLD and SELECTIVE\'s HOLD checks');
   expect(cuts).toContain('**A)** Defer this item to TODOS.md **B)** Keep it in scope');
-  expect(cuts).toContain("apply 0D's prior-approval/reopening checks");
+  expect(cuts).toContain("Run all four 0D steps for each unanswered addition or deferral");
   expect(compactProse(source)).toContain('Selecting a mode does not approve changes');
   const answer = cuts.indexOf('wait for the answer');
   const apply = cuts.indexOf('A deferral changes only delivery scope');
@@ -190,16 +190,16 @@ test('CEO defines pending choices and storage before its first decision procedur
   // Native c6fc D3 saved and asked Effort 0: matching copies did not validate the domain.
   expect(compare).toContain('No implementation: use S and state zero work');
   // cdd D3 cited a missing ledger row; a completed comparison did not create it.
-  const rowCheck = compare.indexOf('Find exactly one row with step 2\'s assigned ID');
+  const rowCheck = compare.indexOf('Find exactly one row by its assigned ID');
   expect(rowCheck).toBeGreaterThan(compare.indexOf('**Pre-question checkpoint:**'));
-  expect(compare).toContain('return to 0D step 2 (Record the pending choice) and repair it');
-  expect(compare).toContain('Every description\'s effort/risk is one listed value, never a range');
+  expect(compare).toContain('Repair missing/duplicate rows in step 2');
+  expect(compare).toContain('Effort/risk must each be one listed value, never a range');
   expect(compare).toContain('After the latest successful Write/Edit, Read the ledger row and full payload through the last');
-  expect(compare).toContain('Copy the exact question, header, labels and full descriptions');
+  expect(compare).toContain('copy its grid and all exact fields');
   expect(compare).toContain('S/M/L/XL effort, low/medium/high risk');
-  expect(compare).toContain('against step 3');
-  const validate = compare.indexOf('Every description\'s effort/risk is one listed value');
-  const repair = compare.indexOf('Repair missing, changed or invalid `currentDecision` fields; repeat 0D step 3');
+  expect(compare).toContain('Validate every field above');
+  const validate = compare.indexOf('Effort/risk must each be one listed value');
+  const repair = compare.indexOf('Correct any missing, changed or invalid `currentDecision` field before saving');
   const readback = compare.indexOf('**Read-back.**');
   expect(validate).toBeGreaterThan(compare.indexOf('**Pre-question checkpoint:**'));
   expect(validate).toBeGreaterThan(rowCheck);
@@ -235,8 +235,75 @@ test('CEO chat storage still supplies both spec inputs and the full report witho
     expect(tasks).not.toContain('always write');
     const outside = generateCodexPlanReview(ctx);
     if (outside) expect(outside).toContain('Include the CEO scope summary when available for this mode');
-    expect(gate).toContain('do not call ExitPlanMode');
-    expect(gate.indexOf('not persisted')).toBeLessThan(gate.indexOf('1. Read the plan file'));
+    expect(gate).toContain('Do not call ExitPlanMode until all checks pass');
+    expect(gate.indexOf('if plan/report or completion-log persistence is forbidden')).toBeLessThan(gate.indexOf('1. Read the plan file'));
+    expect(gate).toContain('**Gate outcome: Blocked**');
+  }
+});
+
+// The original 660 judge found competing routes. These guards verify the
+// instruction branches and ordering; only the selected judge proves clarity.
+test('CEO routes administrative menus separately while scope and TODO retain the full decision protocol', () => {
+  const main = compactProse(fs.readFileSync(`${SKELETON}.tmpl`, 'utf8'));
+  const decisions = main.slice(main.indexOf('### 0D.'), main.indexOf('### 0E.'));
+  const administrative = decisions.match(/\| Mode \(0E\)[^|]*\| ([^|]+)\|/)?.[1];
+  const substantive = decisions.match(/\| Scope \(0G\)[^|]*\| ([^|]+)\|/)?.[1];
+  expect(administrative).toContain('prescribed menu and preamble transport');
+  expect(administrative).toContain('record the answer');
+  expect(administrative).toContain('do not approve remedies');
+  expect(substantive).toContain('Run steps 1–4');
+  expect(substantive).toContain('replace option labels/count only');
+  for (const gate of ['comparison', 'payload', 'save', 'Read-back', 'answer checks']) expect(substantive).toContain(gate);
+  expect(decisions).toContain('including D when offered');
+  expect(decisions).toContain('For different kinds of work');
+  expect(decisions).not.toContain('For every question');
+  expect(main).toContain('Run all four 0D steps for each unanswered addition or deferral, using the menu above');
+  const section = compactProse(fs.readFileSync(`${SECTION}.tmpl`, 'utf8'));
+  expect(section).toContain('Resolve each remaining proposal through all four steps of 0D, using the menu below');
+  expect(section).toContain('**A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring');
+  expect(main).toContain('**A)** Add to this plan\'s scope **B)** Defer to TODOS.md **C)** Skip');
+  expect(main).toContain('Reuse answered scope decisions without another question or comparison');
+});
+
+test('CEO output stages prepare body before report and publish only after verification with a blocked chat return', () => {
+  const section = compactProse(fs.readFileSync(`${SECTION}.tmpl`, 'utf8'));
+  const stages = ['### Stage 1 — Prepare', '### Review facts', '### Completion Summary',
+    '### Stage 2 — Save and verify', '{{PLAN_FILE_REVIEW_REPORT}}', '### Stage 3 — Publish', '## Review Log'];
+  const positions = stages.map(stage => section.indexOf(stage));
+  expect(positions.every(position => position >= 0)).toBe(true);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  expect(section).toContain('Keep them before the terminal report');
+  expect(section).toContain('no stage depends on a completion log written later');
+  expect(section).toContain('After the report Read-back gate passes');
+  expect(section).toContain('Do not append it after the report in the file');
+  const main = compactProse(fs.readFileSync(`${SKELETON}.tmpl`, 'utf8'));
+  const blocked = main.slice(main.indexOf('- **Blocked:**'), main.indexOf('- **Passed with'));
+  expect(blocked).toContain('complete plan, report and summary');
+  expect(blocked).toContain('Label only unwritten artifacts **not persisted**');
+  expect(blocked).toContain('a verified report stays persisted if its log is forbidden');
+  expect(blocked).toContain('**completion blocked**');
+  expect(blocked).toContain('without success telemetry, ExitPlanMode or the queued handoff');
+  expect(blocked).toContain('no gate pass is claimed');
+  const gate = compactProse(generateExitPlanModeGate({ skillName: 'plan-ceo-review' } as TemplateContext));
+  const precheck = gate.slice(0, gate.indexOf('Verify `Approval readiness: PASS`'));
+  expect(precheck).toContain('if plan/report or completion-log persistence is forbidden');
+  expect(precheck).toContain('or a save failed');
+  // Optional task/archive/TODO restrictions cannot block verified required artifacts.
+  expect(precheck).not.toMatch(/Forbidden storage|(?:task|archive|TODO).*forbidden/);
+});
+
+test('CEO prior unresolved count remains a final report bullet for prior-only and mixed unresolved cases', () => {
+  for (const host of ALL_HOST_CONFIGS) {
+    const ctx = { skillName: 'plan-ceo-review', host: host.name, paths: HOST_PATHS[host.name]! } as TemplateContext;
+    const report = compactProse(generatePlanFileReviewReport(ctx));
+    const status = report.slice(report.indexOf('**Unresolved-decisions status'), report.indexOf('### Write to the plan file'));
+    expect(status).toContain('excluding the current skill so it is not counted twice');
+    expect(status).toContain('If both counts are zero');
+    expect(status).toContain('exact unbolded line `NO UNRESOLVED DECISIONS`');
+    expect(status).toContain('one bullet per current open item');
+    expect(status).toContain('a final bullet `- + N unresolved from prior reviews`, even if there are no current items');
+    expect(status).toContain('last bullet is the final non-whitespace line');
+    expect(status).toContain('append no separate count line or trailing prose');
   }
 });
 
@@ -250,9 +317,9 @@ test('CEO saves compared proposals before recording an actual answer in its sepa
   const amend = procedure.indexOf('update Status and amend only authorized work');
   expect(0 <= compare && compare < save && save < ask && ask < actualAnswer && actualAnswer < amend).toBe(true);
   expect(procedure.slice(compare, ask)).toContain('Under the storage policy, save/present the complete current plan, pending rows and comparisons');
-  expect(compactProse(procedure.slice(compare, ask))).toContain('Show offered options and unchanged/shared/pending values');
+  expect(compactProse(procedure.slice(compare, ask))).toContain('Show unchanged, shared and pending values');
   expect(source).toContain('If an attempted save fails, report it and stop');
-  expect(procedure.slice(0, compare)).toContain('Draft rows before comparing options. Do not prewrite approval or implementation tasks');
+  expect(procedure.slice(0, compare)).toContain('Record pending rows before comparisons; never prewrite approval or tasks');
   expect(procedure.slice(ask)).toContain('storage policy before taking another row');
 });
 
@@ -261,18 +328,18 @@ test('CEO saves compared proposals before recording an actual answer in its sepa
 test('CEO value comparisons and decline-all outcomes stay explicit before approval', () => {
   const source = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   const procedure = compactProse(source.split('### 0D.')[1]!.split('### 0E.')[0]!);
-  const pendingSave = procedure.indexOf('Draft rows before comparing options.');
+  const pendingSave = procedure.indexOf('Record pending rows before comparisons;');
   const values = procedure.indexOf('Commitment | Source/approval or pending | Current | A | B | C');
   expect(values).toBeGreaterThan(-1);
   const comparedSave = procedure.indexOf('Under the storage policy, save/present the complete current plan, pending rows and comparisons');
   const ask = procedure.indexOf('**4. Ask, record');
   expect(pendingSave >= 0 && pendingSave < values && values < comparedSave && comparedSave < ask).toBe(true);
   const comparison = procedure.slice(values, ask);
-  expect(compactProse(comparison)).toContain('Show offered options and unchanged/shared/pending values');
-  expect(compactProse(comparison)).toContain('Shared values or test frameworks do not merge independent choices');
+  expect(compactProse(comparison)).toContain('Show unchanged, shared and pending values');
+  expect(compactProse(comparison)).toContain('shared values/frameworks do not merge independent choices');
   expect(comparison).toContain('Keep other rows fixed or pending');
   expect(compactProse(comparison)).toContain('preserve accepted requirements, tests and fixes');
-  expect(procedure).toContain('If every option is declined, continue only if the answer retains a viable current approach');
+  expect(procedure).toContain('If all options are declined, continue only with a viable current approach retained by the answer');
   expect(procedure).toContain('otherwise leave the row unresolved and stop for direction');
 });
 
@@ -292,7 +359,7 @@ test('CEO Step 0 drafts provisional contracts before menus and saves their compl
       const source = fs.readFileSync(file, 'utf8');
       const approach = compactProse(source.split('### 0D.')[1]?.split('### 0E. Mode Selection')[0] ?? '');
       const positions = ['**1. Check sources and prior answers.**', '**2. Record the pending choice.**',
-        'record behavior, limits, test method and coverage in Current/Proposed', 'Draft rows before comparing options.',
+        'Record owner, behavior, limits, test method and coverage in Current/Proposed', 'Record pending rows before comparisons;',
         "**3. Compare and save that row's options.**", '**Pre-question checkpoint:**',
         '**4. Ask, record the answer, and amend.**',
         'Ask one row per call with that object unchanged, without recomposing'].map(stage => approach.indexOf(stage));
@@ -302,12 +369,12 @@ test('CEO Step 0 drafts provisional contracts before menus and saves their compl
       expect(source.indexOf('| ID and owner |')).toBeLessThan(source.indexOf('**2. Record the pending choice.**'));
       expect(approach).toContain('behavior, limits, test method and coverage');
       expect(approach).toContain('other rows fixed or pending');
-      expect(approach).toContain('independently selectable changes separate rows');
-      expect(approach.indexOf('record behavior, limits, test method and coverage in Current/Proposed')).toBeLessThan(approach.indexOf('Build one `currentDecision`'));
-      expect(compactProse(approach)).toContain('Shared values or test frameworks do not merge independent choices');
+      expect(approach).toContain('independent changes separate ledger rows');
+      expect(approach.indexOf('Record owner, behavior, limits, test method and coverage in Current/Proposed')).toBeLessThan(approach.indexOf('Build one `currentDecision`'));
+      expect(compactProse(approach)).toContain('shared values/frameworks do not merge independent choices');
       expect(source).toContain('If an attempted save fails, report it and stop');
-      expect(approach).toContain('Draft rows before comparing options. Do not prewrite approval or implementation tasks');
-      expect(approach).toContain('Do not prewrite approval or implementation tasks');
+      expect(approach).toContain('Record pending rows before comparisons; never prewrite approval or tasks');
+      expect(approach).toContain('never prewrite approval or tasks');
       expect(approach).toContain('Save the answer reference and scope in Exact approval and scope');
       expect(source.indexOf('### 0D.')).toBeLessThan(source.indexOf('### 0E. Mode Selection'));
     }
@@ -323,7 +390,7 @@ test('CEO decision units and factual reconciliation precede menu synthesis', () 
   const section = fs.readFileSync(`${SECTION}.tmpl`, 'utf8');
   const alternatives = compactProse(skeleton.split('### 0D.')[1]?.split('### 0E.')[0] ?? '');
   const stages = ['**1. Check sources and prior answers.**', '**2. Record the pending choice.**',
-    'Draft rows before comparing options.',
+    'Record pending rows before comparisons;',
     "**3. Compare and save that row's options.**", '**Pre-question checkpoint:**',
     '**4. Ask, record the answer, and amend.**'];
   const positions = stages.map(stage => alternatives.indexOf(stage));
@@ -346,7 +413,7 @@ test('CEO outside findings reuse authority-first decisions without turning unkno
   const skeleton = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
   const procedure = compactProse(skeleton.split('### 0D.')[1]!.split('### 0E.')[0]!);
   const stages = ['**1. Check sources and prior answers.**', '**2. Record the pending choice.**',
-    'Draft rows before comparing options.', "**3. Compare and save that row's options.**",
+    'Record pending rows before comparisons;', "**3. Compare and save that row's options.**",
     '**Pre-question checkpoint:**', '**4. Ask, record the answer, and amend.**']
     .map(stage => procedure.indexOf(stage));
   expect(stages.every(position => position >= 0)).toBe(true);
@@ -363,7 +430,7 @@ test('CEO outside findings reuse authority-first decisions without turning unkno
   expect(tension).toContain('Revising two candidates takes two rows');
   expect(tension).toContain("check the assembled set's capacity and dependencies");
   expect(tension).toContain('Never silently trim or replace another candidate');
-  expect(procedure).toContain('Draft rows before comparing options. Do not prewrite approval or implementation tasks');
+  expect(procedure).toContain('Record pending rows before comparisons; never prewrite approval or tasks');
   expect(skeleton).toContain('If an attempted save fails, report it and stop; do not switch to chat');
   expect(compactProse(skeleton)).toContain('Honor user/host artifact and cleanup limits');
   expect(procedure).toContain('Under the storage policy, save/present the complete current plan, pending rows and comparisons');
@@ -388,7 +455,7 @@ test('CEO Step 0 defines the decision record, execution order, and mode approval
   expect(compactProse(step0)).toContain('cite evidence, conventions and test coverage; mark unknowns');
   expect(step0).toContain('Count all deliverables, including reused code');
   expect(step0).toContain('reuse, verification coverage');
-  expect(step0).toContain('Give independently selectable changes separate rows');
+  expect(step0).toContain('Give independent changes separate ledger rows');
   expect(step0).toContain('observations do not approve changes');
   expect(step0).toContain('Follow the preamble\'s session rules');
   expect(step0).toContain('An explicit choice skips steps 2–3');
@@ -435,47 +502,47 @@ describe('CEO review decision boundaries contract', () => {
     expect(skeleton).toContain('Set review depth');
     expect(compactProse(skeleton)).toContain('ask before expanding into implementation design');
     expect(alternatives).toContain('preserve unknowns');
-    expect(alternatives).toContain('Give independently selectable changes separate rows');
+    expect(alternatives).toContain('Give independent changes separate ledger rows');
     expect(alternatives).toContain("Approved change with open test method/coverage | Decide once");
     expect(alternatives).toContain('every option preserves required behavior and approved tests');
     expect(compactProse(section)).toContain('complete 0D through its post-answer save, then continue to Apply below');
     expect(compactProse(section)).toContain("following 0D's test table");
     expect(alternatives).toContain('Code change and required regressions | Keep together; carry both forward once approved');
     expect(alternatives).toContain('Separate independently selectable additions. Tests for undecided behavior stay pending');
-    expect(alternatives).toContain('Proposed tests for existing behavior | Separate independently selectable additions');
+    expect(alternatives).toContain('Tests for existing behavior | Separate independently selectable additions');
     expect(alternatives).toContain('Tests for undecided behavior stay pending');
     expect(alternatives).toContain('other rows fixed or pending');
     expect(alternatives).toContain('reuse, verification coverage');
     expect(alternatives).not.toContain('for architecture choices');
-    expect(alternatives.indexOf('record behavior, limits, test method and coverage in Current/Proposed')).toBeLessThan(alternatives.indexOf('Build one `currentDecision`'));
+    expect(alternatives.indexOf('Record owner, behavior, limits, test method and coverage in Current/Proposed')).toBeLessThan(alternatives.indexOf('Build one `currentDecision`'));
     expect(alternatives).toContain('explain necessary coupling');
     expect(compactProse(alternatives)).toContain('Reuse exact approvals');
     expect(alternatives).toContain("Code change and required regressions | Keep together; carry both forward once approved");
-    expect(alternatives).toContain('Proposed tests for existing behavior | Separate independently selectable additions');
+    expect(alternatives).toContain('Tests for existing behavior | Separate independently selectable additions');
     expect(compactProse(skeleton)).toContain("Cite actual instructions/answers and exact scope");
     expect(alternatives).toContain('Weigh diff size and long-term architecture equally');
     expect(compactProse(alternatives)).toContain('including a possible rewrite');
-    expect(alternatives).toContain('When this step\'s required decisions are settled, go to 0E if you came from 0C');
+    expect(alternatives).toContain('Initial pass after 0C: proceed to 0E once required choices are settled');
   });
 
   test('settled approach authority resolves the gate while new choices still require approval', () => {
     const approach = compactProse(alternatives.split('### 0E. Mode Selection')[0]!);
     const reuse = approach.split('**2. Record the pending choice.**')[0]!;
     const gate = approach.split('**STOP for the actual answer, even for a lone option.**')[1] ?? '';
-    expect(compactProse(reuse)).toContain('Check input, source and actual answers');
+    expect(compactProse(reuse)).toContain('Compare input, source and actual answers');
     expect(compactProse(reuse)).toContain('Reuse exact approvals');
-    const reopenRule = 'Reuse exact approvals; reopen only for concrete contradictions, changed assumptions or explicit user instructions';
+    const reopenRule = 'Reuse exact approvals; reopen only for contradictions, changed assumptions or user instructions, not speculation or reviewer agreement';
     expect(compactProse(skeleton)).toContain(reopenRule);
     expect(compactProse(skeleton).indexOf(reopenRule)).toBeLessThan(compactProse(skeleton).indexOf('**2. Record the pending choice.**'));
     expect(approach).toContain('STOP for the actual answer, even for a lone option');
-    expect(gate).toContain('When this step\'s required decisions are settled, go to 0E if you came from 0C');
-    expect(approach).toContain('A recommendation is not approval');
+    expect(gate).toContain('Initial pass after 0C: proceed to 0E once required choices are settled');
+    expect(approach).toContain('Recommendations are not approval');
     expect(approach).not.toContain('Do NOT proceed to Step 0D or 0F until the user responds to 0C-bis');
     expect(compactProse(approach)).toContain('Ask one row per call with that object unchanged, without recomposing');
-    expect(compactProse(approach)).toContain('Steps 1–4 govern review decisions');
+    expect(compactProse(approach)).toContain('Run steps 1–4. Prescribed menus replace option labels/count only');
     expect(compactProse(section)).toContain('resolve it through 0D before amending the plan');
     expect(section).toContain('An "obvious fix" still needs approval when it is not covered by an exact accepted choice');
-    expect(compactProse(approach)).toContain("Build one `currentDecision` before saving or asking, using the preamble");
+    expect(compactProse(approach)).toContain("Build one `currentDecision` to save and send, using the preamble");
     const generated = fs.readFileSync(SKELETON, 'utf8');
     expect(generated).toContain('### Tool resolution (read first)');
     expect(generated).toContain('SESSION_KIND: spawned');
@@ -485,11 +552,11 @@ describe('CEO review decision boundaries contract', () => {
   });
 
   test('coverage scoring is conditional and legitimate early decisions retain their exact approval', () => {
-    expect(alternatives).toContain('Score only coverage differences within this row');
-    const currentAndProposed = alternatives.indexOf('record behavior, limits, test method and coverage in Current/Proposed');
+    expect(alternatives).toContain('Score this row\'s coverage differences');
+    const currentAndProposed = alternatives.indexOf('Record owner, behavior, limits, test method and coverage in Current/Proposed');
     expect(currentAndProposed).toBeGreaterThan(0);
-    expect(currentAndProposed).toBeLessThan(alternatives.indexOf('Score only coverage differences'));
-    expect(compactProse(alternatives)).toContain("Build one `currentDecision` before saving or asking, using the preamble");
+    expect(currentAndProposed).toBeLessThan(alternatives.indexOf('Score this row\'s coverage differences'));
+    expect(compactProse(alternatives)).toContain("Build one `currentDecision` to save and send, using the preamble");
     expect(alternatives).toContain('10 = all edge cases');
     expect(alternatives).toContain('Note: options differ in kind, not coverage — no completeness score.');
     // Scoring and recommendation details are reused from the existing preamble.
@@ -500,7 +567,7 @@ describe('CEO review decision boundaries contract', () => {
     expect(alternatives).not.toContain('These approaches differ in coverage (minimal viable vs ideal architecture)');
     expect(temporal).toContain('Resolve scope and feasibility blockers through 0D now');
     expect(temporal).toContain('Carry the ledger and each answer\'s exact scope into the review sections');
-    expect(compactProse(alternatives)).toContain('Reuse exact approvals; reopen only for concrete contradictions, changed assumptions or explicit user instructions');
+    expect(compactProse(alternatives)).toContain('Reuse exact approvals; reopen only for contradictions, changed assumptions or user instructions, not speculation or reviewer agreement');
   });
 
   test('an unresolved section decision is answered before its scoped plan amendment', () => {
@@ -591,8 +658,8 @@ describe('CEO review decision continuity contract', () => {
     const earlyLedger = skeleton.slice(start, skeleton.indexOf('### 0A.'));
     expect(compactProse(earlyLedger)).toContain('cite evidence, conventions and test coverage; mark unknowns');
     const sources = compactProse(skeleton.split('**1. Check sources and prior answers.**')[1]!.split('**2. Record the pending choice.**')[0]!);
-    expect(compactProse(sources)).toContain('Reuse exact approvals; reopen only for concrete contradictions, changed assumptions or explicit user instructions');
-    expect(compactProse(sources)).toContain('never speculation or reviewer agreement');
+    expect(compactProse(sources)).toContain('Reuse exact approvals; reopen only for contradictions, changed assumptions or user instructions, not speculation or reviewer agreement');
+    expect(compactProse(sources)).toContain('not speculation or reviewer agreement');
     const limits = skeleton.split('**Keep the stated limits.**')[1]!.split('**Storage policy:')[0]!;
     expect(limits).toContain('Record each measure, value, unit and prerequisite');
     expect(limits).toContain('Changing a limit needs evidence and user approval');
@@ -626,8 +693,8 @@ describe('CEO review decision continuity contract', () => {
   test('ownership never defers a critical risk or merges distinct choices by topic', () => {
     const skeleton = fs.readFileSync(`${SKELETON}.tmpl`, 'utf8');
     expect(continuity).toContain('If this section needs a new decision or evidence warrants reopening one');
-    expect(skeleton).toContain('Give independently selectable changes separate rows');
-    expect(compactProse(compactProse(skeleton))).toContain('Shared values or test frameworks do not merge independent choices');
+    expect(skeleton).toContain('Give independent changes separate ledger rows');
+    expect(compactProse(compactProse(skeleton))).toContain('shared values/frameworks do not merge independent choices');
     for (const requirement of ['Resolve critical risks now',
       'complete 0D through its post-answer save, then continue to Apply below',
       'Keep independent safety fixes and throughput improvements in separate rows']) expect(continuity).toContain(requirement);
@@ -692,9 +759,9 @@ test('CEO closing route checks approvals before outputs and verifies artifacts b
   const actualGate = skeleton.indexOf('{{EXIT_PLAN_MODE_GATE}}');
   expect(actualGate).toBeGreaterThan(skeleton.indexOf('## Section self-check'));
   const terminal = skeleton.slice(actualGate);
-  const failed = terminal.split('**Failed or not persisted:**')[1]!.split('**Passed with a verified persisted report:**')[0]!;
-  expect(failed).toContain('complete labeled chat output and stop here');
-  expect(failed).toContain('Do not run success telemetry or call ExitPlanMode');
+  const failed = terminal.split('**Blocked:**')[1]!.split('**Passed with a verified persisted report:**')[0]!;
+  expect(compactProse(failed)).toContain('complete plan, report and summary');
+  expect(compactProse(failed)).toContain('end without success telemetry, ExitPlanMode or the queued handoff');
   const success = terminal.split('**Passed with a verified persisted report:**')[1]!;
   const terminalStages = ['**Telemetry (run last)** once', 'nonblocking cache refresh below',
     '{{BRAIN_CACHE_REFRESH}}', 'Only after a passing gate: call ExitPlanMode'].map(stage => success.indexOf(stage));
@@ -1089,14 +1156,14 @@ describe('CEO complete question persistence before dispatch', () => {
   test('CEO constructs and verifies one complete row decision before dispatch', () => {
     const stages = [
       '**2. Record the pending choice.**',
-      "Cite each row's source filename/message and section/lines when available",
+      "Cite the source filename/message and section/lines when available",
       "**3. Compare and save that row's options.**",
       'Build one `currentDecision`',
-      'Score only coverage differences within this row',
+      'Score this row\'s coverage differences',
       '**Pre-question checkpoint:**',
       '**Read-back.**',
       '**4. Ask, record the answer, and amend.**',
-      'Copy that Read into one native arguments object:',
+      'Copy the verified Read or chat text into one native arguments object:',
       'Before dispatch, compare its actual question, header, labels and full descriptions',
       'Ask one row per call with that object unchanged, without recomposing',
       '**STOP for the actual answer, even for a lone option.**',
@@ -1106,19 +1173,19 @@ describe('CEO complete question persistence before dispatch', () => {
     expect(stages.every(position => position >= 0)).toBe(true);
     expect(stages).toEqual([...stages].sort((a, b) => a - b));
     const built = cycle.slice(cycle.indexOf('Build one `currentDecision`'), cycle.indexOf('**Pre-question checkpoint:**'));
-    for (const field of ['entire native brief in `question`', 'final native `header` and labels within host limits', 'Offer 2–3 options', '1–2 sentence summary', 'S/M/L/XL effort', 'low/medium/high risk', 'reuse, verification coverage', 'options differ in kind, not coverage — no completeness score']) expect(built).toContain(field);
+    for (const field of ['`question` holds the full brief', 'final native `header` and labels within host limits', 'offer 2–3 options', '1–2 sentence summary', 'S/M/L/XL effort', 'low/medium/high risk', 'reuse, verification coverage', 'options differ in kind, not coverage — no completeness score']) expect(built).toContain(field);
     const save = cycle.slice(cycle.indexOf('**Pre-question checkpoint:**'), cycle.indexOf('**4. Ask'));
-    expect(compactProse(save)).toContain("Copy the exact question, header, labels and full descriptions together");
+    expect(compactProse(save)).toContain("copy its grid and all exact fields in this layout");
     expect(save).toContain('A grid, summary or pointer is insufficient');
     expect(compactProse(save)).toContain('Verify IDs and fields against `currentDecision`, citations against source');
     // Native 043a questions were recomposed after title-only saves; the final
     // Edit ACK also said a Read was unnecessary. These are workflow guards,
     // not proof that a model followed the instructions.
     expect(built).toContain('Project, ELI10, Stakes, Recommendation and applicable completeness/net text');
-    expect(compactProse(save)).toContain('Revisions replace the whole payload');
-    expect(compactProse(save)).toContain('Other answered decisions and their answers keep separate headings');
+    expect(compactProse(save)).toContain('Replace the whole payload on revision');
+    expect(compactProse(save)).toContain('Keep answered decisions and their answers under separate headings');
     expect(compactProse(save)).toContain('Read despite Edit\'s current-in-context hint');
-    expect(compactProse(save)).toContain('every correction requires a new Read');
+    expect(compactProse(save)).toContain('Correct mismatches, save and Read again before dispatch');
     const dispatch = cycle.slice(cycle.indexOf('**4. Ask'), cycle.indexOf('**STOP for the actual answer'));
     // The 6aef retry read every saved field, checked only formatting, then
     // rewrote its question, B label and all descriptions in the actual call.
@@ -1135,16 +1202,16 @@ describe('CEO complete question persistence before dispatch', () => {
     // Native 749df paired retry omitted its row ID; the distinct attempt added
     // one only at dispatch. Final labels/tradeoffs also drifted in paired try 1.
     expect(built).toContain('`D<N> — <ROW-ID>: <one-line question>`');
-    expect(compactProse(built)).toContain("ROW-ID identifies this exact pending choice");
-    expect(compactProse(built)).toContain('D counts questions, ROW-ID identifies this exact pending choice');
+    expect(compactProse(built)).toContain("ROW-ID names the pending choice");
+    expect(compactProse(built)).toContain('D counts questions; ROW-ID names the pending choice');
     expect(compactProse(built)).toContain('`(recommended)` on exactly one label');
     expect(compactProse(built)).toContain("each full native `description` contains");
     expect(compactProse(built)).toContain('at least 2 ✅ pros and 1 ❌ con');
-    expect(compactProse(built)).toContain("Keep preamble bullet lengths and hard-stop exception");
+    expect(compactProse(built)).toContain("Keep preamble bullet lengths and its hard-stop exception");
     const checkpoint = cycle.slice(cycle.indexOf('**Pre-question checkpoint:**'), cycle.indexOf('**4. Ask'));
-    expect(compactProse(checkpoint)).toContain('Find exactly one row with step 2\'s assigned ID');
-    expect(compactProse(checkpoint)).toContain("Check title row ID, header, final labels and full descriptions against step 3");
-    expect(checkpoint).toContain('Repair missing, changed or invalid `currentDecision` fields; repeat 0D step 3');
+    expect(compactProse(checkpoint)).toContain('Find exactly one row by its assigned ID');
+    expect(compactProse(checkpoint)).toContain("Validate every field above, including title row ID and host limits");
+    expect(checkpoint).toContain('Correct any missing, changed or invalid `currentDecision` field before saving');
     expect(compactProse(checkpoint)).toContain("through the last option's full description");
     expect(compactProse(checkpoint)).toContain('fetch continuations. Verify IDs and fields against `currentDecision`, citations against source');
     const dispatch = cycle.slice(cycle.indexOf('**4. Ask'), cycle.indexOf('**STOP for the actual answer'));
@@ -1156,12 +1223,12 @@ describe('CEO complete question persistence before dispatch', () => {
     const policy = compact(source.split('**Storage policy: choose before writing.**')[1]!.split('Keep one decision ledger')[0]!);
     expect(policy).toContain('If no path is permitted, present the complete labeled text in chat as **not persisted** and continue without attempting a write');
     expect(policy).toContain('If an attempted save fails, report it and stop; do not switch to chat');
-    expect(cycle).toContain('For chat, verify the full **not persisted** text');
-    expect(cycle).toContain('Stop on failed save/mismatch');
-    expect(cycle).toContain('A changed decision repeats 0D step 3');
-    expect(compactProse(cycle)).toContain("Only the preamble authorizes prose/auto-decision transport");
+    expect(cycle).toContain('For chat, verify the complete text labeled **not persisted**');
+    expect(cycle).toContain('A failed save stops the review');
+    expect(cycle).toContain('Changes repeat step 3\'s save and Read-back');
+    expect(compactProse(cycle)).toContain("Use prose/auto-decision transport only when the preamble authorizes it");
     expect(cycle).toContain('Only a preamble-authorized auto-decision resolves this wait; record its authority');
-    expect(cycle).toContain('A recommendation is not approval');
+    expect(cycle).toContain('Recommendations are not approval');
     expect(compactProse(cycle)).toContain('amend only authorized work');
     expect(cycle).toContain('With no new answer needed');
     expect(cycle).toContain('invent no alternatives or approval');

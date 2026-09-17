@@ -218,7 +218,8 @@ Complete 0A–0E in order, then follow the selected mode's route. Record 0A–0C
 **Set review depth from the user's request.** Scope prioritization needs inclusion
 and feasibility decisions; ask before expanding into implementation design.
 Resolve choices blocking the requested output or hiding material blockers.
-Correct facts and carry exact approvals forward without asking again.
+Correct facts. Reuse each actual answer for its authorized work and limits,
+without asking about that same choice again.
 
 **Keep the stated limits.** Record each measure, value, unit and prerequisite. Count all deliverables, including reused code. Changing a limit needs evidence and user approval.
 
@@ -252,43 +253,46 @@ Describe the 12-month ideal. Does this plan move toward or away from it?
 
 ### 0D. Alternatives (MANDATORY)
 
-Steps 1–4 govern review decisions. Mode/scope choices keep their prescribed menus
-and record actual answers in the ledger.
+Question routing:
+
+| Question | Route |
+|---|---|
+| Mode (0E), setup, navigation, document promotion | Use its prescribed menu and preamble transport; record the answer. These do not approve remedies. |
+| Scope (0G), TODO, approach, review/spec/outside finding | Run steps 1–4. Prescribed menus replace option labels/count only; keep the full comparison, payload, save, Read-back and answer checks. |
 
 **1. Check sources and prior answers.**
-Check input, source and actual answers: correct facts, flag approval conflicts,
-preserve unknowns. Reuse exact approvals; reopen only for concrete contradictions,
-changed assumptions or explicit user instructions, never speculation or reviewer
-agreement. With no new answer needed, cite settled answers and **Continue after
-0D**; invent no alternatives or approval.
+Compare input, source and actual answers. Correct facts, flag approval conflicts
+and preserve unknowns. Reuse exact approvals; reopen only for contradictions,
+changed assumptions or user instructions, not speculation or reviewer agreement.
+With no new answer needed, cite settled answers and **Continue after 0D**;
+invent no alternatives or approval.
 
 **2. Record the pending choice.**
-Give independently selectable changes separate rows; explain necessary coupling.
-Name each owner; record behavior, limits, test method and coverage in Current/Proposed.
-Cite each row's source filename/message and section/lines when available.
+Give independent changes separate ledger rows; explain necessary coupling. Record
+owner, behavior, limits, test method and coverage in Current/Proposed. Cite the
+source filename/message and section/lines when available.
 
-For tests:
-| Case | Decision |
-|------|----------|
+| Test choice | Treatment |
+|---|---|
 | Code change and required regressions | Keep together; carry both forward once approved. |
 | Approved change with open test method/coverage | Decide once; every option preserves required behavior and approved tests. |
-| Proposed tests for existing behavior | Separate independently selectable additions. Tests for undecided behavior stay pending. |
+| Tests for existing behavior | Separate independently selectable additions. Tests for undecided behavior stay pending. |
 
-Draft rows before comparing options. Do not prewrite approval or implementation tasks.
+Record pending rows before comparisons; never prewrite approval or tasks.
 
 **3. Compare and save that row's options.**
-Build one `currentDecision` before saving or asking, using the preamble:
-- **Question:** entire native brief in `question`. Title: `D<N> — <ROW-ID>: <one-line question>`;
-  D counts questions, ROW-ID identifies this exact pending choice. Include Project,
-  ELI10, Stakes, Recommendation and applicable completeness/net text.
-- **Header/labels:** final native `header` and labels within host limits;
-  `(recommended)` on exactly one label.
+Build one `currentDecision` to save and send, using the preamble:
+- **Question:** `question` holds the full brief: `D<N> — <ROW-ID>: <one-line question>`,
+  Project, ELI10, Stakes, Recommendation and applicable completeness/net text.
+  D counts questions; ROW-ID names the pending choice.
+- **Header/labels:** use final native `header` and labels within host limits;
+  put `(recommended)` on exactly one label.
 - **Descriptions:** each full native `description` contains a 1–2 sentence summary,
-  S/M/L/XL effort, low/medium/high risk, reuse, verification coverage and at least
-  2 ✅ pros and 1 ❌ con. Keep preamble bullet lengths and hard-stop exception.
+  S/M/L/XL effort, low/medium/high risk, reuse, verification coverage, at least
+  2 ✅ pros and 1 ❌ con. Keep preamble bullet lengths and its hard-stop exception.
 
-Save and dispatch these strings. Offer 2–3 options, preferably 3 for non-trivial
-plans; explain a lone viable option. No implementation: use S and state zero work.
+Without a prescribed menu, offer 2–3 options (prefer 3 for non-trivial plans);
+explain any lone option. No implementation: use S and state zero work.
 Weigh diff size and long-term architecture equally, including a possible rewrite.
 
 In Proposed, compare every commitment in the labels, descriptions and pros/cons:
@@ -297,57 +301,55 @@ In Proposed, compare every commitment in the labels, descriptions and pros/cons:
 Commitment | Source/approval or pending | Current | A | B | C
 ```
 
-Show offered options and unchanged/shared/pending values. Shared values or test
-frameworks do not merge independent choices. Keep other rows fixed or pending;
-preserve accepted requirements, tests and fixes. Do not invent unrelated options.
+Use the offered columns, including D when offered. Show unchanged, shared and
+pending values; shared values/frameworks do not merge independent choices. Keep
+other rows fixed or pending and preserve accepted requirements, tests and fixes.
+Offer no unrelated work.
 
-Score only coverage differences within this row: 10 = all edge cases, 7 = happy
-path, 3 = shortcut. For different kinds of work, write: "Note: options differ in kind, not coverage — no completeness score."
+Score this row's coverage differences: 10 = all edge cases, 7 = happy path,
+3 = shortcut. For different kinds of work, write: "Note: options differ in kind, not coverage — no completeness score."
 
-**Pre-question checkpoint:** For every question, including later findings:
+**Pre-question checkpoint:** Before each decision using this procedure:
 
-- **Row.** Find exactly one row with step 2's assigned ID. Check owner,
-   Current/Proposed, Status and Exact approval and scope. Missing/duplicate row:
-   return to 0D step 2 (Record the pending choice) and repair it.
-- **Fields.** Check title row ID, header, final labels and full descriptions against
-   step 3. Every description's effort/risk is one listed value, never a range.
-   Repair missing, changed or invalid `currentDecision` fields; repeat 0D step 3.
+- **Row.** Find exactly one row by its assigned ID. Check owner, Current/Proposed,
+  Status and Exact approval and scope. Repair missing/duplicate rows in step 2.
+- **Fields.** Validate every field above, including title row ID and host limits.
+  Effort/risk must each be one listed value, never a range. Correct any missing,
+  changed or invalid `currentDecision` field before saving.
 - **Save.** Under the storage policy, save/present the complete current plan,
-   pending rows and comparisons. Copy the exact question, header, labels and full
-   descriptions together under this decision's own heading, after its grid.
-   Prefix absent selectors only. Use this layout; do not fence the saved record:
+  pending rows and comparisons. Under this decision's own heading, copy its grid
+  and all exact fields in this layout. Add only absent selectors; do not fence it:
 
-   ```text
-   ## currentDecision (ROW-ID)
-   Commitment comparison: <complete grid>
+  ```text
+  ## currentDecision (ROW-ID)
+  Commitment comparison: <complete grid>
 
-   Question: <entire currentDecision.question, including every brief paragraph>
-   Header: <exact currentDecision.header>
-   A) <exact first option label; add a selector only if absent>
-   <full first option description>
-   B) <exact second option label; add a selector only if absent>
-   <full second option description; include C when offered>
-   ```
+  Question: <complete currentDecision.question>
+  Header: <exact currentDecision.header>
+  A) <exact first option label>
+  <full first option description>
+  B) <exact second option label>
+  <full second option description; repeat for all offered options>
+  ```
 
-   Revisions replace the whole payload. Other answered decisions and their answers
-   keep separate headings; no old question/header/options remain in this record.
+  Replace the whole payload on revision; leave no old fields in this record.
+  Keep answered decisions and their answers under separate headings.
 - **Read-back.** After the latest successful Write/Edit, Read the ledger row and
-   full payload through the last option's full description; fetch continuations.
-   Verify IDs and fields against `currentDecision`, citations against source.
-   Read despite Edit's current-in-context hint;
-   every correction requires a new Read. For chat, verify the full **not persisted**
-   text. A grid, summary or pointer is insufficient.
+  full payload through the last option's full description; fetch continuations.
+  Verify IDs and fields against `currentDecision`, citations against source.
+  Read despite Edit's current-in-context hint. For chat, verify the complete text
+  labeled **not persisted**. A grid, summary or pointer is insufficient.
 
-Stop on failed save/mismatch. A changed decision repeats 0D step 3.
+A failed save stops the review. Correct mismatches, save and Read again before dispatch.
 
 **4. Ask, record the answer, and amend.**
-Copy that Read into one native arguments object:
+Copy the verified Read or chat text into one native arguments object:
 `{questions: [{question, header, options: [{label, description}, ...]}]}`.
 Before dispatch, compare its actual question, header, labels and full descriptions
-literally with the saved fields, except Save-added selector prefixes.
-Compare strings, not format/scores. Changes repeat step 3's save
-and Read-back. Ask one row per call with that object unchanged, without recomposing.
-Only the preamble authorizes prose/auto-decision transport. A recommendation is not approval.
+literally with the saved fields, except Save-added selector prefixes. Compare
+strings, not format/scores. Changes repeat step 3's save and Read-back. Ask one
+row per call with that object unchanged, without recomposing.
+Use prose/auto-decision transport only when the preamble authorizes it. Recommendations are not approval.
 
 **STOP for the actual answer, even for a lone option.** Only a preamble-authorized
 auto-decision resolves this wait; record its authority. Save the answer reference
@@ -357,11 +359,15 @@ work. Do not edit code.
 **Post-answer checkpoint:** Save or present the complete amended plan under the
 storage policy before taking another row.
 
-If every option is declined, continue only if the answer retains a viable current
-approach; otherwise leave the row unresolved and stop for direction.
+If all options are declined, continue only with a viable current approach retained
+by the answer; otherwise leave the row unresolved and stop for direction.
 
-**Continue after 0D:** When this step's required decisions are settled, go to 0E if you came from 0C; otherwise
-resume the section that sent you here, without restarting Step 0 or mode selection.
+**Continue after 0D:**
+- Initial pass after 0C: proceed to 0E once required choices are settled, including
+  when no new answer was needed.
+- Later call: resume the section that sent you here at its next instruction,
+  without restarting Step 0 or mode selection.
+
 Report settled findings too; say "No issues, moving on." only when there are none.
 
 ### 0E. Mode Selection
@@ -434,7 +440,8 @@ with the defer/keep menu below; retain the rest.
 **Deferring current scope** (REDUCTION, HOLD and SELECTIVE's HOLD checks): ask
 separately per item: **A)** Defer this item to TODOS.md **B)** Keep it in scope.
 
-Name the item; apply 0D's prior-approval/reopening checks and wait for the answer.
+Run all four 0D steps for each unanswered addition or deferral, using the menu
+above. Keep other scope fixed or pending; wait for the answer before applying it.
 A deferral changes only delivery scope: record its answer/reason beside the prior
 approval. Keep other approvals and limits unchanged. In later sections, review
 the retained work and accepted additions; list deferred or rejected work as excluded.
@@ -532,7 +539,11 @@ STOP, Read the file and redo the review.
 {{EXIT_PLAN_MODE_GATE}}
 
 **Gate outcome:**
-- **Failed or not persisted:** report the failed check or complete labeled chat output and stop here. Do not run success telemetry or call ExitPlanMode.
+- **Blocked:** Return the failed check and complete plan, report and summary.
+  Label only unwritten artifacts **not persisted**; a verified report stays
+  persisted if its log is forbidden. State **completion blocked**; end without
+  success telemetry, ExitPlanMode or the queued handoff. Resume after resolving
+  the blocker; no gate pass is claimed.
 - **Passed with a verified persisted report:** run the preamble's **Telemetry (run last)** once, then the nonblocking cache refresh below.
 
 {{BRAIN_CACHE_REFRESH}}

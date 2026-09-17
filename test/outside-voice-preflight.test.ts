@@ -20,7 +20,10 @@ test('CEO and Eng describe the actual disabled route and completion validator', 
       const ctx: TemplateContext = { host: host.name, skillName, tmplPath: `${skillName}/SKILL.md.tmpl`, paths: HOST_PATHS[host.name] };
       const output = generateCodexPlanReview(ctx);
       expect(output).not.toContain('Skip this section entirely');
-      expect(output).toContain('persist `outside_status: disabled` with the guarded');
+      if (skillName === 'plan-ceo-review') {
+        expect(output.replace(/\s+/g, ' ')).toContain('If preflight selected `disabled`, use the guarded record below');
+        expect(output).toContain('"outside_status":"disabled"');
+      } else expect(output).toContain('persist `outside_status: disabled` with the guarded');
       const prompt = output.slice(output.indexOf('"IMPORTANT:'), output.indexOf('\n<plan content>"'));
       expect(prompt).toContain('End with Recommendation: <action> because <specific reason>');
       expect(prompt).toContain('If there are no findings, say so and explain why');
@@ -46,7 +49,10 @@ test('CEO and Eng describe the actual disabled route and completion validator', 
         expect(invocation.indexOf('exit 78')).toBeLessThan(invocation.indexOf('_OUTSIDE_TMP=$(mktemp'));
       } else {
         const prose = output.replace(/\s+/g, ' ');
-        expect(prose).toContain('a failed preflight (including harness mismatch), or a failed outside invocation');
+        expect(prose).toContain('Other preflight failures retain their printed diagnosis, including harness mismatch');
+        const fallback = prose.slice(prose.indexOf('**Native fallback'), prose.indexOf('Dispatch via the Agent tool'));
+        expect(fallback).toContain('Immediately before dispatch, recheck the preflight result');
+        expect(fallback).toContain('`CODEX_MODE: disabled`, return to **Record the disabled outcome** without dispatching');
         expect(prose).toContain('Its opening harness guard rechecks the fresh shell: exit 78 uses the same Native fallback below, never a replacement provider');
         expect(prose).toContain('A native result never supplies outside coverage.');
         expect(invocation).toContain('exit 78');

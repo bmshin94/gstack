@@ -2339,11 +2339,13 @@ describe('Design approval reconciliation', () => {
     expect(readiness).toContain('the checked row IDs and their actual answer or approval references');
     expect(readiness).toContain('Save or present the updated plan under Step 0');
     expect(readiness).toContain('A substantive change invalidates this result; navigation alone does not');
-    expect(gate).toContain("Verify the ledger's `Approval readiness: PASS` still matches the current row IDs and answer references");
-    expect(gate).toContain('This is read-only; do not repeat its decisions');
-    expect(gate.indexOf("Verify the ledger's")).toBeLessThan(gate.indexOf('1. Read the plan file'));
-    expect(gate).toContain('If a substantive change made it stale, stop before success telemetry or exit');
-    expect(gate).toContain('Resume at 0D for changed choices, then Approval readiness → affected outputs → report Read-back → Review Log → dashboard');
+    expect(gate).toContain('Verify `Approval readiness: PASS` against current row IDs and answer references');
+    expect(gate).toContain('Read-only verification');
+    expect(gate.indexOf('Verify `Approval readiness: PASS`')).toBeLessThan(gate.indexOf('1. Read the plan file'));
+    expect(gate).toContain('If stale, stop');
+    expect(gate).toContain('Resume changed choices at 0D, then repeat readiness, affected outputs, report Read-back, Review Log and dashboard');
+    expect(gate).toContain('Failed checks use **Gate outcome: Blocked**');
+    expect(gate).toContain('end without success telemetry, ExitPlanMode or the queued handoff');
     expect(check).toContain('Confirm you Read `sections/review-sections.md` and executed its review, required');
     expect(check).toContain('outputs and report from the file, not memory: Sections 1–10 and Section 11');
     expect(check).toContain('findings or no-UI skip.');
@@ -2357,7 +2359,7 @@ describe('Design approval reconciliation', () => {
     for (const field of ['ID', 'step 2', 'owner', 'Current/Proposed', 'Status', 'Exact approval and scope']) expect(row).toContain(field);
     expect(decisions).toContain('**STOP for the actual answer, even for a lone option.**');
     expect(decisions).toMatch(/amend only (?:what it authorizes|authorized work)/);
-    expect(decisions).toMatch(/Reuse (?:an )?exact approvals?[^.]*concrete contradictions?[^.]*changed assumptions?[^.]*explicit user instructions?/);
+    expect(decisions).toMatch(/Reuse exact approvals; reopen only for contradictions, changed assumptions or user instructions, not speculation or reviewer agreement/);
     expect(decisions).toMatch(/reopen only|requires reopening it/);
     expect(decisions).toContain('Report settled findings too; say "No issues, moving on." only when there are none');
   });
@@ -4400,19 +4402,19 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
     expect(positions.every(position => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     const approach = content.slice(approachIdx, modeIdx);
-    expect(approach).toMatch(/Check (?:the )?input, source and actual answers/);
+    expect(approach).toMatch(/Compare input, source and actual answers/);
     expect(approach).toMatch(/correct facts, flag approval conflicts[, ]+(?:and )?preserve unknowns/i);
     expect(approach).toMatch(/Reuse (?:an )?exact approvals?/);
     expect(content).toMatch(/(?:the actual instruction\/answer|Cite actual instructions\/answers) and exact scope/);
-    const reopenRule = content.match(/Reuse (?:an )?exact approvals?[^.]*concrete contradictions?[^.]*changed assumptions?[^.]*explicit user instructions?[^.]*/)?.[0];
+    const reopenRule = approach.match(/Reuse exact approvals; reopen only for contradictions, changed assumptions or user instructions, not speculation or reviewer agreement/)?.[0];
     expect(reopenRule).toBeDefined();
     expect(reopenRule!).toMatch(/reopen only|requires reopening it/);
     expect(content.indexOf(reopenRule!)).toBeGreaterThan(approachIdx);
     expect(content.indexOf(reopenRule!)).toBeLessThan(presentIdx);
     const gate = content.slice(stopIdx, modeIdx);
-    expect(gate).toContain("When this step's required decisions are settled, go to 0E if you came from 0C");
+    expect(gate).toContain("Initial pass after 0C: proceed to 0E once required choices are settled");
     expect(gate).toContain('even for a lone option');
-    expect(approach).toContain('A recommendation is not approval');
+    expect(approach).toContain('Recommendations are not approval');
     expect(approach).toMatch(/Ask one row per call with that object unchanged, without recomposing/);
     expect(approach).toContain('compare its actual question, header, labels and full descriptions literally with the saved fields');
     expect(gate).toMatch(/(?:Record its reference|Save the answer reference) and scope in Exact approval and scope/);
@@ -4548,7 +4550,10 @@ describe('EXIT PLAN MODE GATE placement', () => {
           expect(tail.replace(/\s+/g, ' ')).toContain('forbidden report/log persistence or an unrecovered save cannot pass');
           expect(finalHandoff).toContain('only when the host is in plan mode');
           expect(finalHandoff).toContain('Outside plan mode, finish the review in the current conversation; do not call ExitPlanMode');
-        } else expect(tail).toContain('full chat report as not persisted; do not call ExitPlanMode');
+        } else {
+          expect(tail.replace(/\s+/g, ' ')).toContain('Label only unwritten artifacts **not persisted**; a verified report stays persisted if its log is forbidden');
+          expect(tail.replace(/\s+/g, ' ')).toContain('end without success telemetry, ExitPlanMode or the queued handoff');
+        }
       } else {
         expect(lastH2, `${skill}/SKILL.md last ## heading (fences stripped)`).toBe('## EXIT PLAN MODE GATE (BLOCKING)');
       }
@@ -4557,7 +4562,7 @@ describe('EXIT PLAN MODE GATE placement', () => {
         expect(gate).toContain('Run this final verification for every review target, in every host mode');
         expect(gate).toContain('If any check fails, follow **Blocked outcome** without success telemetry or ExitPlanMode');
       } else expect(md, `${skill}/SKILL.md gate body`).toContain(skill === 'plan-ceo-review'
-        ? 'If any check fails, report the missing work and do not call ExitPlanMode'
+        ? 'Failed checks use **Gate outcome: Blocked**'
         : 'Failing this gate and calling ExitPlanMode anyway is a contract violation');
     }
   });
@@ -4662,7 +4667,7 @@ describe('GSTACK REVIEW REPORT mandatory unresolved-decisions status', () => {
       expect(content).toContain('NO UNRESOLVED DECISIONS');
       // The "never omit / always final" contract must be present, not just the phrase.
       expect(content).toContain('Unresolved-decisions status (MANDATORY');
-      expect(content).toMatch(/never omitted/);
+      expect(content).toMatch(skill === 'plan-ceo-review' ? /Never omit this status/ : /never omitted/);
       // \s+ tolerates prose line-wraps within "final non-whitespace line".
       expect(content).toMatch(/final\s+non-whitespace\s+line/);
     });
@@ -4680,7 +4685,7 @@ describe('GSTACK REVIEW REPORT mandatory unresolved-decisions status', () => {
         expect(gate).toMatch(/A bolded sentinel, missing status or (?:any )?trailing prose fails this check/);
         expect(gate).toContain(skill === 'plan-eng-review'
           ? 'If any check fails, follow **Blocked outcome** without success telemetry or ExitPlanMode'
-          : 'If any check fails, report the missing work and do not call ExitPlanMode');
+          : 'Failed checks use **Gate outcome: Blocked**');
       } else {
         expect(md).toContain('FINAL non-whitespace line is the unresolved-decisions');
         expect(md).toContain('FAILS the gate');

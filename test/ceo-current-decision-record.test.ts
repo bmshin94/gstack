@@ -240,20 +240,20 @@ test('distinct retry retains its actual preceding D2 count and rejects D3 withou
 
 test('the actual CEO save layout preserves the full native payload and separates prior records', () => {
   const template = readFileSync(`${import.meta.dir}/../plan-ceo-review/SKILL.md.tmpl`, 'utf8');
-  const layout = template.match(/```text\n(   ## currentDecision \(ROW-ID\)[\s\S]+?)\n   ```/);
+  const layout = template.match(/```text\n(  ## currentDecision \(ROW-ID\)[\s\S]+?)\n  ```/);
   expect(layout).not.toBeNull();
   const grid = exactFields.savedPlan.slice(begin, end).match(/```text\n[\s\S]+?\n```/);
   expect(grid).not.toBeNull();
   // Fill the actual source example with the existing captured native fields;
   // do not reconstruct a more permissive format or promote its original FAIL.
-  const record = layout![1]!.replace(/^   /gm, '')
+  const record = layout![1]!.replace(/^  /gm, '')
     .replace('ROW-ID', 'D1').replace('<complete grid>', '\n\n'+grid![0])
-    .replace('<entire currentDecision.question, including every brief paragraph>', q.question)
+    .replace('<complete currentDecision.question>', q.question)
     .replace('<exact currentDecision.header>', q.header)
-    .replace('A) <exact first option label; add a selector only if absent>', q.options[0]!.label)
+    .replace('A) <exact first option label>', q.options[0]!.label)
     .replace('<full first option description>', q.options[0]!.description!)
-    .replace('B) <exact second option label; add a selector only if absent>', q.options[1]!.label)
-    .replace('<full second option description; include C when offered>',
+    .replace('B) <exact second option label>', q.options[1]!.label)
+    .replace('<full second option description; repeat for all offered options>',
       q.options[1]!.description!+'\n'+q.options[2]!.label+'\n'+q.options[2]!.description!);
   const saved = (section: string) => exactFields.savedPlan.slice(0, begin)+section+'\n\n'+exactFields.savedPlan.slice(end);
   expect(exactCount(saved(record))).toBe(true);

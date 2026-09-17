@@ -47,7 +47,7 @@ test('calibration briefs preserve source-required structure and actual choices w
   expect(todo).toContain('Only unanswered TODO proposals reach this menu');
   expect(todo).toContain('Do not ask again about an item already deferred, skipped or kept');
   expect(todo).toContain('carry its actual answer and destination forward');
-  expect(todo).toContain('Present each remaining proposal as its own individual AskUserQuestion');
+  expect(todo).toContain('Resolve each remaining proposal through all four steps of 0D, using the menu below');
   expect(todo).toContain('Never batch TODOs — one per question');
   for (const token of ['Include', 'Defer', 'Cut', 'Hold']) expect(split).toContain(token);
   const corpus = planDecisionCalibrations();

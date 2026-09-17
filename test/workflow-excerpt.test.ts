@@ -7,13 +7,21 @@ import { join } from 'path';
 import { spawnSync } from 'child_process';
 
 function expectOutsideReviewControlFlow(text: string, promptHeading: string): void {
-  const markers = ['**Disabled is a terminal branch', promptHeading, '**If `CODEX_MODE: ready`', '\n**Native fallback —'];
+  const ceo = text.includes('**Record the disabled outcome:**');
+  const markers = [ceo ? '**Record the disabled outcome:**' : '**Disabled is a terminal branch', promptHeading, '**If `CODEX_MODE: ready`', '\n**Native fallback —'];
   const indices = markers.map(marker => text.indexOf(marker));
   expect(indices.every(index => index >= 0)).toBe(true);
   expect(indices).toEqual([...indices].sort((a, b) => a - b));
   const disabled = text.slice(indices[0], indices[1]);
-  expect(disabled).toContain('persist `outside_status: disabled`');
-  expect(disabled.replace(/\s+/g, ' ')).toMatch(/Do not construct a (?:review prompt|challenge), invoke an outside CLI, dispatch an Agent\/Task fallback/);
+  if (ceo) {
+    expect(disabled).toContain('"outside_status":"disabled"');
+    expect(disabled.replace(/\s+/g, ' ')).toContain('without a challenge, CLI invocation, Agent/Task fallback or questions about outside findings');
+    expect(disabled).toContain('_DISABLED_REVIEW_MODE=');
+    expect(disabled).toContain('if [ "$_DISABLED_REVIEW_MODE" = disabled ]');
+  } else {
+    expect(disabled).toContain('persist `outside_status: disabled`');
+    expect(disabled.replace(/\s+/g, ' ')).toMatch(/Do not construct a (?:review prompt|challenge), invoke an outside CLI, dispatch an Agent\/Task fallback/);
+  }
   expect(text.slice(indices[1], indices[2])).toContain('(skip only on `disabled`)');
 
   const fallback = text.slice(indices[3]);
@@ -24,6 +32,9 @@ function expectOutsideReviewControlFlow(text: string, promptHeading: string): vo
     expect(routing).toContain('Retain its output and diagnosis, finish termination, then use Native fallback');
     expect(routing).toContain('No prompt, outside process or native replacement');
     expect(fallback.replace(/\s+/g, ' ')).toContain('Immediately before dispatch, check the preflight result again: disabled means no replacement');
+  } else if (ceo) {
+    expect(fallback.replace(/\s+/g, ' ')).toContain('Other preflight failures retain their printed diagnosis, including harness mismatch');
+    expect(fallback.replace(/\s+/g, ' ')).toContain('These failures do not block the review; they use the bounded fallback below');
   } else {
     expect(fallback).toContain('The disabled branch never reaches this fallback.');
     expect(fallback.replace(/\s+/g, ' ')).toMatch(/Otherwise, use this fallback for missing\/broken CLI, failed authentication\/model selection, a failed preflight(?: \(including harness mismatch\))?, or a failed outside invocation\./);
@@ -31,7 +42,10 @@ function expectOutsideReviewControlFlow(text: string, promptHeading: string): vo
   const dispatch = fallback.indexOf('Dispatch via the Agent tool');
   expect(dispatch).toBeGreaterThan(0);
   const recheck = fallback.slice(0, dispatch);
-  if (!text.includes('**Outcome routing:**')) {
+  if (ceo) {
+    expect(recheck.replace(/\s+/g, ' ')).toContain('Immediately before dispatch, recheck the preflight result');
+    expect(recheck.replace(/\s+/g, ' ')).toContain('`CODEX_MODE: disabled`, return to **Record the disabled outcome** without dispatching');
+  } else if (!text.includes('**Outcome routing:**')) {
     expect(recheck).toContain('Immediately before dispatching, check the preflight result again.');
     expect(recheck).toContain('`CODEX_MODE: disabled`, finish this section with `outside_status: disabled`;');
     expect(recheck).toContain('do not dispatch.');

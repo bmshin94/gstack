@@ -148,7 +148,18 @@ empty); **VERDICT** is always present:
 - **VERDICT:** list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
   If Eng Review is not CLEAR and not skipped globally, append "eng review required".
 
-**Unresolved-decisions status (MANDATORY — never omitted; the report's final non-whitespace
+${ceo ? `**Unresolved-decisions status (MANDATORY):** This is the report's final content,
+after VERDICT. Count this review's open items from its ledger. For prior reviews,
+sum \`unresolved\` over the latest fresh row per skill (the dashboard's seven-day
+window), excluding the current skill so it is not counted twice.
+
+- If both counts are zero, end with the exact unbolded line \`NO UNRESOLVED DECISIONS\`.
+- Otherwise use the bold label \`**UNRESOLVED DECISIONS:**\` (not a new heading),
+  then one bullet per current open item. When the prior count N is positive, add
+  a final bullet \`- + N unresolved from prior reviews\`, even if there are no
+  current items. The last bullet is the final non-whitespace line; append no
+  separate count line or trailing prose. Never omit this status.
+` : `**Unresolved-decisions status (MANDATORY — never omitted; the report's final non-whitespace
 line).** After VERDICT, end the report (content under the \\\`## GSTACK REVIEW REPORT\\\`
 heading — a bold label, never a new \\\`## \\\` heading; exempt from the "omit when empty"
 rule) with exactly one: the exact unbolded line \\\`NO UNRESOLVED DECISIONS\\\` (a bolded one
@@ -156,7 +167,7 @@ does NOT count), OR a \\\`**UNRESOLVED DECISIONS:**\\\` header + one bullet per 
 (last bullet = final line; add \\\`+ N unresolved from prior reviews\\\` only when N > 0).
 This avoids double-counting: list THIS review's open items from context; for prior reviews
 sum \\\`unresolved\\\` over the latest fresh row per skill (dashboard 7-day window) after you
-DROP the current skill's row; emit the sentinel only when both are zero.
+DROP the current skill's row; emit the sentinel only when both are zero.`}
 
 ### Write to the ${reviewFile}
 
@@ -246,6 +257,27 @@ Required Outputs, preserving unresolved decisions in the report.`;
 }
 
 export function generateExitPlanModeGate(ctx: TemplateContext): string {
+  if (ctx.skillName === 'plan-ceo-review') return `## EXIT PLAN MODE GATE (BLOCKING)
+
+Read-only verification: if plan/report or completion-log persistence is forbidden,
+or a save failed, use **Gate outcome: Blocked**.
+
+Verify \`Approval readiness: PASS\` against current row IDs and answer references.
+If stale, stop. Resume changed choices at 0D, then repeat readiness, affected
+outputs, report Read-back, Review Log and dashboard before returning here.
+
+Verify all five checks:
+1. Read the plan file after your most recent write.
+2. Its LAST \`## \` heading is exactly \`## GSTACK REVIEW REPORT\`.
+3. The report contains the Runs / Status / Findings table and VERDICT, with
+   OUTSIDE COVERAGE / CROSS-MODEL when applicable.
+4. Its final non-whitespace line is the exact unbolded \`NO UNRESOLVED DECISIONS\`,
+   or the last bullet under \`**UNRESOLVED DECISIONS:**\`. A bolded sentinel,
+   missing status or any trailing prose fails this check.
+5. Confirm \`gstack-review-log\` was called and \`gstack-review-read\` ran at least once.
+
+Failed checks use **Gate outcome: Blocked**. Chat or body prose cannot replace
+the verified terminal report. Do not call ExitPlanMode until all checks pass.`;
   if (ctx.skillName === 'plan-eng-review') return `## EXIT PLAN MODE GATE (BLOCKING)
 
 Run this final verification for every review target, in every host mode. It
@@ -896,6 +928,7 @@ fi
 }
 
 export function generateCodexPlanReview(ctx: TemplateContext): string {
+  const ceo = ctx.skillName === 'plan-ceo-review';
   const needsApprovalReadiness = ['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName);
   const result = `## Outside Voice — Independent Plan Challenge (default-on)
 
@@ -921,12 +954,17 @@ coverage is non-blocking; approval and artifact-write requirements still apply.
 | Reviewer completes | Present its full output and resolve findings through Decision procedure. |
 | Native fallback unavailable or fails | Record unavailable coverage and continue to planning decisions. No clean-review credit. |
 
-` : ''}**Disabled is a terminal branch for this section.** If the preflight prints
+` : ''}${ceo ? `**Record the disabled outcome:** If preflight selected \`disabled\`, use the
+guarded record below, then continue to the remaining planning decisions and
+Approval readiness. This ends Outside Voice without a challenge, CLI invocation,
+Agent/Task fallback or questions about outside findings. It is an intentional
+opt-out, not missing coverage to replace.
+` : `**Disabled is a terminal branch for this section.** If the preflight prints
 \`CODEX_MODE: disabled\`, persist \`outside_status: disabled\` with the guarded
 command below, then continue directly to ${needsApprovalReadiness ? 'the remaining planning decisions and Approval readiness' : "the workflow's required outputs"} after this section. Do not construct a challenge,
 invoke an outside CLI, dispatch an Agent/Task fallback, or ask about outside findings.
 The native plan review is already complete. A disabled review is an intentional
-opt-out, not a provider failure that needs a replacement reviewer.
+opt-out, not a provider failure that needs a replacement reviewer.`}
 
 ${ctx.skillName === 'plan-ceo-review' ? 'Apply the Step 0 storage policy to this metadata write. If writing is forbidden, report disabled coverage in chat as not persisted and do not run the command below.\n\n' : ''}${generateDisabledOutsideRecord(ctx, 'codex-plan-review', 'plan-review')}
 
@@ -994,7 +1032,17 @@ ${outsideVoiceFor(ctx).label.toUpperCase()} SAYS (plan review — outside voice)
 ════════════════════════════════════════════════════════════
 \`\`\`
 
-${ctx.skillName === 'plan-eng-review' ? `**Native fallback — provider unavailable or execution failed, with reviews enabled:**
+${ceo ? `**Native fallback — provider unavailable or execution failed, with reviews enabled:**
+
+Report the actual failure: authentication needs \`${outsideVoiceFor(ctx).id === 'codex' ? 'codex login' : 'claude auth login'}\`;
+timeout means the five-minute limit expired; empty output means no response.
+Other preflight failures retain their printed diagnosis, including harness mismatch.
+These failures do not block the review; they use the bounded fallback below.
+
+Immediately before dispatch, recheck the preflight result. If it is
+\`CODEX_MODE: disabled\`, return to **Record the disabled outcome** without
+dispatching. Otherwise continue with the same prepared prompt.
+` : ctx.skillName === 'plan-eng-review' ? `**Native fallback — provider unavailable or execution failed, with reviews enabled:**
 
 Follow Outcome routing above. Immediately before dispatch, check the preflight
 result again: disabled means no replacement. The steps below own native dispatch,
@@ -1056,7 +1104,7 @@ with STATUS = "unavailable", SOURCE = "none", OUTSIDE_STATUS = "unavailable";
 then continue directly to ${needsApprovalReadiness ? 'the remaining planning decisions and Approval readiness' : 'outputs'}. The storage policy still applies.
 Do not record a clean review when no reviewer completed within the accepted wait.
 
-(On \`CODEX_MODE: disabled\` you already skipped this section per the preflight — do not reach here.)
+${ceo ? '' : '(On `CODEX_MODE: disabled` you already skipped this section per the preflight — do not reach here.)'}
 
 ${ctx.skillName === 'plan-eng-review' ? `**Cross-model tension:**
 

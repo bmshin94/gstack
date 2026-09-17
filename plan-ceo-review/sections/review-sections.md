@@ -358,7 +358,7 @@ Continue through the blocks below in file order:
 1. **Outside Voice:** run the configured review and resolve its findings through 0D. Record disabled or unavailable coverage and continue when no reviewer runs.
 2. **Resolve remaining TODO choices:** use the selected mode's scope rules.
 3. **Approval readiness:** check the ledger and record PASS before writing outputs. Its complete checklist is immediately after the TODO choices; no report or log is needed yet.
-4. **Required Outputs:** derive Review facts, prepare tasks and the summary, save the terminal review report and pass its Read-back gate. Then publish the Completion Summary.
+4. **Required Outputs:** follow the three stages below: prepare the plan body and summary, save and verify the terminal report, then publish the summary in chat.
 5. **Cleanup and history:** perform permitted cleanup, write Review Log and display the dashboard.
 6. **Navigation:** choose Next Steps and any docs/designs promotion; queue the next skill. A substantive answer returns to 0D → Approval readiness → affected outputs → report Read-back → log → dashboard. Navigation alone does not reopen decisions.
 7. **Learnings:** finish learning and brain write-back. Return to this skill's main `SKILL.md`, at **Section self-check**. Its EXIT gate only verifies completed work and the saved readiness result; it does not ask again. A passing persisted review then runs telemetry, cache refresh and exit.
@@ -424,12 +424,12 @@ Branch on the echoed `CODEX_MODE`:
 - **`model_unusable`** — authed but the account cannot use gstack's selected Codex model (#2477: HTTP 400 on every call). Relay the probe's HINT lines, tell the user the one-line fix (set `GSTACK_CODEX_MODEL=<supported-model>` or pass an explicit `-c model=...` override), and fall back to the Claude subagent path. The ~10s round trip is cached for 1h; timeouts fail open to `ready`.
 - **`ready`** — run the Codex pass below.
 
-**Disabled is a terminal branch for this section.** If the preflight prints
-`CODEX_MODE: disabled`, persist `outside_status: disabled` with the guarded
-command below, then continue directly to the remaining planning decisions and Approval readiness after this section. Do not construct a challenge,
-invoke an outside CLI, dispatch an Agent/Task fallback, or ask about outside findings.
-The native plan review is already complete. A disabled review is an intentional
-opt-out, not a provider failure that needs a replacement reviewer.
+**Record the disabled outcome:** If preflight selected `disabled`, use the
+guarded record below, then continue to the remaining planning decisions and
+Approval readiness. This ends Outside Voice without a challenge, CLI invocation,
+Agent/Task fallback or questions about outside findings. It is an intentional
+opt-out, not missing coverage to replace.
+
 
 Apply the Step 0 storage policy to this metadata write. If writing is forbidden, report disabled coverage in chat as not persisted and do not run the command below.
 
@@ -535,18 +535,16 @@ CODEX SAYS (plan review — outside voice):
 ════════════════════════════════════════════════════════════
 ```
 
-**Error handling:** All errors are non-blocking — the outside voice is informational.
-- Auth failure (stderr contains "auth", "login", "unauthorized"): "Codex auth failed. Run \`codex login\` to authenticate." Fall back to the Claude subagent below.
-- Timeout: "Codex timed out after 5 minutes." Fall back to the Claude subagent below.
-- Empty response: "Codex returned no response." Fall back to the Claude subagent below.
-
 **Native fallback — provider unavailable or execution failed, with reviews enabled:**
 
-Immediately before dispatching, check the preflight result again. On
-`CODEX_MODE: disabled`, finish this section with `outside_status: disabled`;
-do not dispatch. Otherwise, use this fallback for missing/broken CLI, failed
-authentication/model selection, a failed preflight (including harness mismatch), or a failed outside invocation.
-The disabled branch never reaches this fallback.
+Report the actual failure: authentication needs `codex login`;
+timeout means the five-minute limit expired; empty output means no response.
+Other preflight failures retain their printed diagnosis, including harness mismatch.
+These failures do not block the review; they use the bounded fallback below.
+
+Immediately before dispatch, recheck the preflight result. If it is
+`CODEX_MODE: disabled`, return to **Record the disabled outcome** without
+dispatching. Otherwise continue with the same prepared prompt.
 
 
 **Bounded outside-voice wait — one five-minute wait plus dispatch/cancellation overhead:**
@@ -590,7 +588,7 @@ with STATUS = "unavailable", SOURCE = "none", OUTSIDE_STATUS = "unavailable";
 then continue directly to the remaining planning decisions and Approval readiness. The storage policy still applies.
 Do not record a clean review when no reviewer completed within the accepted wait.
 
-(On `CODEX_MODE: disabled` you already skipped this section per the preflight — do not reach here.)
+
 
 **Cross-model tension:**
 
@@ -633,8 +631,9 @@ expansion scan and opt-in ceremony.
 
 Only unanswered TODO proposals reach this menu. Do not ask again about an item
 already deferred, skipped or kept; carry its actual answer and destination forward.
-Present each remaining proposal as its own individual AskUserQuestion. Never
-batch TODOs — one per question. If none remain, record that and continue.
+Resolve each remaining proposal through all four steps of 0D, using the menu
+below. Keep its full comparison, saved question/options, Read-back and actual
+answer. Never batch TODOs — one per question. If none remain, record that and continue.
 Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.
 
 For each TODO, describe:
@@ -670,9 +669,16 @@ Outputs. A substantive change invalidates this result; navigation alone does not
 
 ## Required Outputs
 
-Write these sections, registries, diagrams and Markdown tasks in the working plan
-from approved changes. Task JSONL and approved TODOs use their specified paths,
-separate from the 0H CEO archive. Prepare the summary; publish it after Read-back.
+Complete these three stages in order. They separate preparing review content from
+announcing saved completion; no stage depends on a completion log written later.
+
+### Stage 1 — Prepare the plan body and summary
+
+Write the following sections, registries, diagrams, Markdown tasks and Completion
+Summary in the working plan from approved changes. Keep them before the terminal
+report. Task JSONL and approved TODOs use their specified paths, separate from the
+0H CEO archive. The prepared summary supplies the report's current facts; it is
+not yet a chat announcement of saved completion.
 
 ### Review facts
 
@@ -795,10 +801,9 @@ this run (an empty file means "ran, no findings" — distinct from "didn't run")
 
 
 ### Completion Summary
-Prepare this from Review facts for the complete review. Do not announce a saved
-completion before the report Read-back gate passes; label chat-only outputs not
-persisted, including TODOs and the CEO plan below.
-
+Fill this template from Review facts now, as part of the plan body. Artifact
+outcomes remain pending until their writes are confirmed. Stage 3 publishes it
+after report verification; forbidden writes stay labeled not persisted.
 
 Use the full mode name from Step 0E; replace spaces with underscores only in the
 review log's `MODE` field. "System Audit" summarizes repository findings from
@@ -844,6 +849,11 @@ choices that differ in kind rather than coverage, and unanswered questions; use
 
 ### Unresolved Decisions
 If any AskUserQuestion goes unanswered, note it here. Never silently default.
+
+### Stage 2 — Save and verify the terminal report
+
+Use the prepared summary above, then follow this report procedure. Preserve the
+complete body and summary before the report; no new body section follows it.
 
 ## Plan File Review Report
 
@@ -905,15 +915,18 @@ empty); **VERDICT** is always present:
 - **VERDICT:** list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
   If Eng Review is not CLEAR and not skipped globally, append "eng review required".
 
-**Unresolved-decisions status (MANDATORY — never omitted; the report's final non-whitespace
-line).** After VERDICT, end the report (content under the `## GSTACK REVIEW REPORT`
-heading — a bold label, never a new `## ` heading; exempt from the "omit when empty"
-rule) with exactly one: the exact unbolded line `NO UNRESOLVED DECISIONS` (a bolded one
-does NOT count), OR a `**UNRESOLVED DECISIONS:**` header + one bullet per open item
-(last bullet = final line; add `+ N unresolved from prior reviews` only when N > 0).
-This avoids double-counting: list THIS review's open items from context; for prior reviews
-sum `unresolved` over the latest fresh row per skill (dashboard 7-day window) after you
-DROP the current skill's row; emit the sentinel only when both are zero.
+**Unresolved-decisions status (MANDATORY):** This is the report's final content,
+after VERDICT. Count this review's open items from its ledger. For prior reviews,
+sum `unresolved` over the latest fresh row per skill (the dashboard's seven-day
+window), excluding the current skill so it is not counted twice.
+
+- If both counts are zero, end with the exact unbolded line `NO UNRESOLVED DECISIONS`.
+- Otherwise use the bold label `**UNRESOLVED DECISIONS:**` (not a new heading),
+  then one bullet per current open item. When the prior count N is positive, add
+  a final bullet `- + N unresolved from prior reviews`, even if there are no
+  current items. The last bullet is the final non-whitespace line; append no
+  separate count line or trailing prose. Never omit this status.
+
 
 ### Write to the plan file
 
@@ -944,9 +957,12 @@ prior versions to leave the report mid-file when an older report already lived
 there — the user then sees a plan whose review report is not at the bottom and
 (correctly) rejects it.
 
+### Stage 3 — Publish the Completion Summary
+
 **Publish the Completion Summary:** After the report Read-back gate passes, show
-the summary with confirmed artifact outcomes. For chat-only output, show the
-complete plan, report and summary as not persisted; do not claim file completion.
+the prepared summary in chat with confirmed artifact outcomes. Do not append it
+after the report in the file. For chat-only output, show the complete plan, report
+and summary as not persisted; no file Read-back or saved completion is claimed.
 
 ## Handoff Note Cleanup
 

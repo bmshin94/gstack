@@ -356,7 +356,7 @@ Continue through the blocks below in file order:
 1. **Outside Voice:** run the configured review and resolve its findings through 0D. Record disabled or unavailable coverage and continue when no reviewer runs.
 2. **Resolve remaining TODO choices:** use the selected mode's scope rules.
 3. **Approval readiness:** check the ledger and record PASS before writing outputs. Its complete checklist is immediately after the TODO choices; no report or log is needed yet.
-4. **Required Outputs:** derive Review facts, prepare tasks and the summary, save the terminal review report and pass its Read-back gate. Then publish the Completion Summary.
+4. **Required Outputs:** follow the three stages below: prepare the plan body and summary, save and verify the terminal report, then publish the summary in chat.
 5. **Cleanup and history:** perform permitted cleanup, write Review Log and display the dashboard.
 6. **Navigation:** choose Next Steps and any docs/designs promotion; queue the next skill. A substantive answer returns to 0D → Approval readiness → affected outputs → report Read-back → log → dashboard. Navigation alone does not reopen decisions.
 7. **Learnings:** finish learning and brain write-back. Return to this skill's main `SKILL.md`, at **Section self-check**. Its EXIT gate only verifies completed work and the saved readiness result; it does not ask again. A passing persisted review then runs telemetry, cache refresh and exit.
@@ -384,8 +384,9 @@ expansion scan and opt-in ceremony.
 
 Only unanswered TODO proposals reach this menu. Do not ask again about an item
 already deferred, skipped or kept; carry its actual answer and destination forward.
-Present each remaining proposal as its own individual AskUserQuestion. Never
-batch TODOs — one per question. If none remain, record that and continue.
+Resolve each remaining proposal through all four steps of 0D, using the menu
+below. Keep its full comparison, saved question/options, Read-back and actual
+answer. Never batch TODOs — one per question. If none remain, record that and continue.
 Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.
 
 For each TODO, describe:
@@ -404,9 +405,16 @@ Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough
 
 ## Required Outputs
 
-Write these sections, registries, diagrams and Markdown tasks in the working plan
-from approved changes. Task JSONL and approved TODOs use their specified paths,
-separate from the 0H CEO archive. Prepare the summary; publish it after Read-back.
+Complete these three stages in order. They separate preparing review content from
+announcing saved completion; no stage depends on a completion log written later.
+
+### Stage 1 — Prepare the plan body and summary
+
+Write the following sections, registries, diagrams, Markdown tasks and Completion
+Summary in the working plan from approved changes. Keep them before the terminal
+report. Task JSONL and approved TODOs use their specified paths, separate from the
+0H CEO archive. The prepared summary supplies the report's current facts; it is
+not yet a chat announcement of saved completion.
 
 ### Review facts
 
@@ -460,10 +468,9 @@ List every ASCII diagram in files this plan touches. Still accurate?
 {{TASKS_SECTION_EMIT:ceo-review}}
 
 ### Completion Summary
-Prepare this from Review facts for the complete review. Do not announce a saved
-completion before the report Read-back gate passes; label chat-only outputs not
-persisted, including TODOs and the CEO plan below.
-
+Fill this template from Review facts now, as part of the plan body. Artifact
+outcomes remain pending until their writes are confirmed. Stage 3 publishes it
+after report verification; forbidden writes stay labeled not persisted.
 
 Use the full mode name from Step 0E; replace spaces with underscores only in the
 review log's `MODE` field. "System Audit" summarizes repository findings from
@@ -510,11 +517,19 @@ choices that differ in kind rather than coverage, and unanswered questions; use
 ### Unresolved Decisions
 If any AskUserQuestion goes unanswered, note it here. Never silently default.
 
+### Stage 2 — Save and verify the terminal report
+
+Use the prepared summary above, then follow this report procedure. Preserve the
+complete body and summary before the report; no new body section follows it.
+
 {{PLAN_FILE_REVIEW_REPORT}}
 
+### Stage 3 — Publish the Completion Summary
+
 **Publish the Completion Summary:** After the report Read-back gate passes, show
-the summary with confirmed artifact outcomes. For chat-only output, show the
-complete plan, report and summary as not persisted; do not claim file completion.
+the prepared summary in chat with confirmed artifact outcomes. Do not append it
+after the report in the file. For chat-only output, show the complete plan, report
+and summary as not persisted; no file Read-back or saved completion is claimed.
 
 ## Handoff Note Cleanup
 
