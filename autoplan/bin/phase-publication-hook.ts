@@ -328,6 +328,10 @@ function requirePublication(phase: Phase, entryOrder: number, entered: Event[], 
 
 /** Ordered public events only. This does not judge review content or create a report. */
 export function evaluateAutoplanPublication(input: PublicationHookInput, root: string, events: Event[]): PublicationDecision {
+  return evaluatePublication(input, root, events, false);
+}
+
+function evaluatePublication(input: PublicationHookInput, root: string, events: Event[], pendingRead: boolean): PublicationDecision {
   try {
     const requested = { name: input.tool_name, input: input.tool_input };
     if (!candidate(requested, input.cwd) || input.agent_id) return { allow: true };
@@ -340,14 +344,19 @@ export function evaluateAutoplanPublication(input: PublicationHookInput, root: s
       identities.add(identity);
     }
     const current = events.filter(e => e.kind === 'use' && e.toolUseId === input.tool_use_id);
-    if (current.length !== 1 || current[0]!.kind !== 'use' || current[0]!.name !== input.tool_name ||
+    if (pendingRead ? input.tool_name !== 'Read' || events.some(e =>
+      (e.kind === 'use' || e.kind === 'result') && e.toolUseId === input.tool_use_id) :
+      current.length !== 1 || current[0]!.kind !== 'use' || current[0]!.name !== input.tool_name ||
         !isDeepStrictEqual(current[0]!.input, input.tool_input)) fail('Current native phase-entry identity is unavailable. Retry this phase-entry tool after the journal is available.');
-    const before = events.filter(e => e.order < current[0]!.order);
+    const before = pendingRead ? events : events.filter(e => e.order < current[0]!.order);
     // Pinned Claude retains skill hooks after end_turn. Only an authenticated
     // later human request can release the old invocation; tool results and
     // compaction never do. A native slash or an actual init re-arms the guard.
     const human = before.filter(e => e.kind === 'user_turn').at(-1);
-    if (disarmed(before, root)) return { allow: true };
+    if (disarmed(before, root)) {
+      if (pendingRead) fail('Current native phase-entry identity is unavailable after this invocation ended.');
+      return { allow: true };
+    }
     if (human?.autoplan && !before.some(e => e.kind === 'use' && e.name === 'Bash' && e.order > human.order &&
         initArguments(e.input?.command, root))) fail('This Autoplan invocation needs its own successful init before phase entry.');
     const init = invocation(before, root);
@@ -372,6 +381,11 @@ export function evaluateAutoplanPublication(input: PublicationHookInput, root: s
     const pendingEntry = entered.some(e => e.kind === 'use' && candidate(e, input.cwd) &&
       !entered.some(r => r.kind === 'result' && r.toolUseId === e.toolUseId));
     if (pendingEntry) fail('A prior phase-entry tool is still pending. Retry after its native result before requesting another phase.');
+    // A streamed tool may reach PreToolUse before its journal record. The
+    // native input can revisit a phase already proven by prior owned ACKs;
+    // it cannot establish a phase, a publication, or a synthetic current use.
+    if (pendingRead && (!phase || number[target] > number[phase]))
+      fail('Current native phase-entry identity is required before entering a new phase.');
     if (!phase) {
       if (target !== 'ceo') fail('Read the current Phase 1 CEO entry successfully before entering a later phase.');
       return { allow: true };
@@ -406,8 +420,12 @@ export async function runPublicationHook(value: unknown, root: string): Promise<
     const deadline = performance.now() + 2_000;
     do {
       const snapshot = readOwnedClaudePublicTranscript(input.transcript_path, projectCwd, input.session_id);
-      if (snapshot.transcript.status === 'ready' && snapshot.events.some(e => e.kind === 'use' && e.toolUseId === input.tool_use_id))
-        return publicationHookOutput(evaluateAutoplanPublication(input, root, snapshot.events));
+      if (snapshot.transcript.status === 'ready') {
+        if (snapshot.events.some(e => e.kind === 'use' && e.toolUseId === input.tool_use_id))
+          return publicationHookOutput(evaluateAutoplanPublication(input, root, snapshot.events));
+        if (input.tool_name === 'Read' && evaluatePublication(input, root, snapshot.events, true).allow)
+          return {};
+      }
       await new Promise(resolve => setTimeout(resolve, 50));
     } while (performance.now() < deadline);
     fail('Native parent evidence has not reached the journal yet. Retry this phase-entry tool; no missing-publication conclusion has been made.');
