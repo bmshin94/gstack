@@ -410,6 +410,9 @@ function recordedDecision(fp: AskUserQuestionFingerprint, savedPlan: string, sou
   // of a special document-wide declaration. Resolve every cited section
   // against the actual input, and require an attributed current section.
   const activeSection = (text: string) => current(text) &&
+    // The prescribed answered-decision history is separate from a reopened
+    // row's current payload; it cannot supply or duplicate that comparison.
+    !/^Answered decisions?\b/i.test(text) &&
     !/\b(?:historical|archiv(?:ed|al)|withdrawn|retracted|superseded|obsolete|not current|no longer current)\b/i.test(text);
   const sectionContext = (document: ReturnType<typeof marked.lexer>, index: number) => {
     const headings: Array<{ depth: number; text: string }> = [];

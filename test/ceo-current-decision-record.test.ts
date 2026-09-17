@@ -275,6 +275,23 @@ test('the actual CEO save layout preserves the full native payload and separates
   }
 });
 
+test('a reopened row has one current comparison alongside its answered decision history', () => {
+  const oldFields = fields.replace(q.question, q.question.replace(/^D1 — /, 'D0 — D1: '));
+  const currentRecord = '### currentDecision (D1)\n'+fields;
+  const prior = (heading: string) => heading+'\n\nAnswer: A; prior choice retained in history.\n\n'+oldFields;
+  const replaceRecord = (record: string) => exactFields.savedPlan.slice(0, begin)+record+'\n\n'+exactFields.savedPlan.slice(end);
+  for (const heading of ['### Answered decision (D1) — D0', '### Answered decisions for D1']) {
+    expect(exactCount(replaceRecord(prior(heading)+'\n\n'+currentRecord))).toBe(true);
+    // An answered record cannot supply the missing current comparison.
+    expect(() => exactCount(replaceRecord(prior(heading)))).toThrow(/Unsupported/);
+    // A second current record still conflicts; history does not hide it.
+    expect(() => exactCount(replaceRecord(prior(heading)+'\n\n'+currentRecord+'\n\n'+currentRecord))).toThrow(/Unsupported/);
+  }
+  for (const heading of ['### Unanswered decision (D1)', '### Not answered decision (D1)', '### currentDecision (D1)']) {
+    expect(() => exactCount(replaceRecord(prior(heading)+'\n\n'+currentRecord))).toThrow(/Unsupported/);
+  }
+});
+
 test('prepared native identity distinguishes the question number from its ledger row before saving', () => {
   const template = readFileSync(`${import.meta.dir}/../plan-ceo-review/SKILL.md.tmpl`, 'utf8');
   const titleLayout = template.match(/`(D<N> — <ROW-ID>: <one-line question>)`/)?.[1];
