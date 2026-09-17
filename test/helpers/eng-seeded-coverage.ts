@@ -1,11 +1,88 @@
 import type { NativePlanQuestionCall, PlanCountTranscript } from './plan-count-transcript';
-import type { AskUserQuestionFingerprint } from './claude-pty-runner';
+import { nativePlanCallFingerprint, type AskUserQuestionFingerprint } from './claude-pty-runner';
+import { evaluatePlanReviewDecisions, type PlanReviewDecisionInput, type PlanReviewJudge } from './plan-review-decisions';
+import type { NativePlanTerminalReview, NativePlanTerminalAssessment } from './claude-pty-runner';
 import { hasRetainedLegacyCorpus } from './eng-retained-corpus';
 import { marked } from 'marked';
 
 /** Evidence for this fixture's four decision seeds; regression coverage is auto-added by the skill. */
 export const ENG_DECISION_SEEDS = ['complexity', 'shared-cache', 'swallowed-errors', 'sequential-idp'] as const;
 type Seed = typeof ENG_DECISION_SEEDS[number];
+
+/** The semantic evaluator receives every complete native question, including
+ * setup and later decisions. Live progress labels cannot discard evidence. */
+export function buildEngSeedDecisionInput(input: {
+  plan: string;
+  transcript: PlanCountTranscript;
+  startedAt: number;
+  finishedAt: number;
+  deadlineAt: number;
+}): PlanReviewDecisionInput {
+  const { plan, startedAt, finishedAt, deadlineAt } = input;
+  const transcript = structuredClone(input.transcript);
+  const calls = transcript.calls;
+  const identities = calls.map(call => `${call.sessionId}:${call.toolUseId}`);
+  if (!plan.trim() || transcript.status !== 'ready' || !calls.length ||
+      !Number.isFinite(startedAt) || !Number.isFinite(finishedAt) || !Number.isFinite(deadlineAt) ||
+      startedAt > finishedAt || finishedAt > deadlineAt ||
+      new Set(calls.map(call => call.sessionId)).size !== 1 ||
+      new Set(identities).size !== calls.length ||
+      calls.some(call => !completedDecision(call, startedAt, finishedAt))) {
+    throw new Error('Eng decisions require the complete owned, acknowledged native transcript and its original deadline');
+  }
+  const fingerprints = calls.map(call => ({
+    ...nativePlanCallFingerprint(call, Date.parse(call.answeredAt!), false),
+    toolUseId: `${call.sessionId}:${call.toolUseId}`,
+    questions: structuredClone(call.questions),
+    selectedOptions: call.questions.map(question =>
+      question.options.findIndex(option => option.label === call.answers![question.question]) + 1),
+  }));
+  return {
+    plan, fingerprints, floor: ENG_DECISION_SEEDS.length, kind: 'findings', deadlineAt,
+    targets: [
+      { id: 'complexity', description: 'Decide whether to reduce or justify the proposed new classes and their responsibilities for the same required behavior. A complete choice about the class arrangement counts even when it keeps the original classes.' },
+      { id: 'shared-cache', description: 'Decide ownership or isolation of AuthCache instead of AuthBroker and SessionMint mutating one module-level shared cache.' },
+      { id: 'swallowed-errors', description: 'Decide explicit handling of the currently swallowed error classes in validateAndDispatch rather than retaining nested catches that hide failures. Evaluate the full owned question and the offered remedies, including explicit outcome mapping or propagation; a type name alone is insufficient.' },
+      { id: 'sequential-idp', description: 'Decide whether to parallelize or explicitly defer the five independent sequential IDP validation calls. A passing mention or approval of another auth change does not decide this obligation.' },
+    ],
+  };
+}
+
+/** The writer already requires these six semantic columns. Navigation does
+ * not waive the final report contract or turn a different dashboard into it. */
+export function assertEngTerminalReport(plan: string): void {
+  const tokens = marked.lexer(plan);
+  const heads = tokens.flatMap((token, i) => token.type === 'heading' && token.depth === 2 && token.text === 'GSTACK REVIEW REPORT' ? [i] : []);
+  if (heads.length !== 1) throw new Error('Eng report requires one current terminal review report');
+  const tables = tokens.slice(heads[0]! + 1).filter(token => token.type === 'table' && token.header.some(cell => cell.text === 'Review'));
+  if (tables.length !== 1 || tables[0]!.type !== 'table') throw new Error('Eng report requires one review table');
+  const table = tables[0], names = table.header.map(cell => cell.text);
+  const required = ['Review', 'Trigger', 'Why', 'Runs', 'Status', 'Findings'];
+  if (names.length !== required.length || new Set(names).size !== names.length || required.some(name => !names.includes(name)))
+    throw new Error('Eng report requires Review/Trigger/Why/Runs/Status/Findings columns');
+  const eng = table.rows.filter(row => row[names.indexOf('Review')]?.text === 'Eng Review');
+  if (eng.length !== 1 || eng[0]!.some(cell => !cell.text.trim())) throw new Error('Eng report requires one complete current Eng Review row');
+}
+
+/** One semantic call owns native seed meaning, regression approval binding and
+ * navigation. It never consults the older lexical seed/report classifiers. */
+export async function evaluateEngTerminalReview(plan: string, input: NativePlanTerminalReview, judge?: PlanReviewJudge): Promise<NativePlanTerminalAssessment> {
+  assertEngTerminalReport(input.report);
+  const prepared = buildEngSeedDecisionInput({ plan, transcript: input.transcript, startedAt: input.startedAt,
+    finishedAt: input.finishedAt, deadlineAt: input.deadlineAt });
+  const session = input.transcript.calls[0]!.sessionId;
+  const messages = input.transcript.assistantMessages;
+  if (messages.some(message => message.sessionId !== session || !Number.isFinite(Date.parse(message.timestamp))
+    || Date.parse(message.timestamp) < input.startedAt || Date.parse(message.timestamp) > input.finishedAt))
+    throw new Error('Eng report narration has foreign or out-of-window ownership');
+  prepared.engReview = { finalPlan: input.report, publicNarration: messages.map(message => message.text).join('\n\n') };
+  const result = await evaluatePlanReviewDecisions(prepared, judge);
+  const navigation = result.judgment.engReview!.navigation;
+  const administrativeCallIds = input.transcript.calls.filter(call => call.questions.every((_, i) => navigation.some(row =>
+    row.toolUseId === `${call.sessionId}:${call.toolUseId}` && row.questionIndex === i + 1)))
+    .map(call => `${call.sessionId}:${call.toolUseId}`);
+  return { administrativeCallIds, substantiveCallIds: [...new Set(result.judgment.questions.filter(row => row.kind === 'finding').map(row => row.toolUseId))] };
+}
 
 // Ignore displayed examples/code, while retaining inline code identifiers.
 function prose(text: string, omitLiteralProse = false): string {

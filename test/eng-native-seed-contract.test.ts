@@ -27,12 +27,12 @@ for(const [name,edit] of Object.entries({
  'same-option negated owner':(q:any)=>{q.options[0].description+=' No single facade owns invalidation.';},
 }))test('held6bd structure class rejects '+name,()=>expect(heldStructureResult(changeHeldStructure(edit))).toEqual({}));
 
-test('held6bd whole captured callback: native ACKs, navigation freshness and all unchanged final assertions',()=>{
+test('held6bd historical native/seed gates and current report-bottom assertions',()=>{
  const h=structuredClone(held6bd),t=h.transcript as PlanCountTranscript;
  const source=fs.readFileSync(path.join(import.meta.dir,'skill-e2e-plan-eng-finding-count.test.ts'),'utf8');
- const start=source.indexOf("        if (!['plan_ready', 'completion_summary'].includes(obs.outcome))"),end=source.indexOf('\n      } finally {',start);
+ const start=source.indexOf("        if (!['plan_ready', 'completion_summary'].includes(obs.outcome))"),end=source.indexOf('        // A native completion summary',start);
  expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
- const validate=new Function('fs','planPath','obs','startedAt','evaluateEngSeedCoverage','assertReviewReportAtBottom',new Bun.Transpiler({loader:'ts'}).transformSync(source.slice(start,end)));
+ const validate=new Function('fs','planPath','obs','assertReviewReportAtBottom',new Bun.Transpiler({loader:'ts'}).transformSync(source.slice(start,end)));
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eng-held-captured-')),file=path.join(dir,'report.md'),now=Date.now;
  try{
   Date.now=()=>h.finishedAt;
@@ -45,7 +45,13 @@ test('held6bd whole captured callback: native ACKs, navigation freshness and all
   expect(hasNativePlanTerminal(t,file,h.startedAt,'plan_ready',admin)).toBe(true);
   expect(hasNativePlanTerminal(t,file,h.startedAt,'plan_ready',new Set())).toBe(false);
   const obs={outcome:'plan_ready',transcript:t,reviewCount:reviews,step0Count:0,fingerprints:[],elapsedMs:h.finishedAt-h.startedAt,evidence:'Captured public native ExitPlanMode'};
-  const check=(input=obs)=>validate(fs,file,input,h.startedAt,evaluateEngSeedCoverage,assertReviewReportAtBottom);
+  // The original deterministic export remains a historical compatibility
+  // check. New semantic acceptance is tested through the actual registered
+  // PTY path in eng-semantic-terminal; these old reports receive no new credit.
+  const check=(input=obs)=>{
+    validate(fs,file,input,assertReviewReportAtBottom);
+    if(!evaluateEngSeedCoverage(input.transcript,fs.readFileSync(file,'utf8'),h.startedAt,h.finishedAt).ok) throw Error('SEED COVERAGE FAIL');
+  };
   expect(()=>check()).not.toThrow();
   expect(()=>check({...obs,outcome:'cancelled'})).toThrow('finding-count FAILED');
   for(const mutate of [
@@ -282,20 +288,22 @@ test('semantic wording and type names do not require the captured sentence',()=>
   for(const [index,edit] of edits)expect(Object.keys(evaluate([change(index,edit)],'').decisions)).toHaveLength(1);
 });
 
-test('guard replay extracts the actual seeded callback and reaches unchanged final assertions',()=>{
+test('historical seed guard remains available while the actual callback uses one terminal assessment',()=>{
   const source=fs.readFileSync(path.join(import.meta.dir,'skill-e2e-plan-eng-finding-count.test.ts'),'utf8');
-  const expression=/isReviewAUQ: ([^\n]+),/.exec(source)?.[1];expect(expression).toBeTruthy();
-  const guard=new Function('isEngSeedDecisionAUQ','startedAt',`return (${expression});`)(isEngSeedDecisionAUQ,captured.startedAt);
+  const guard=(fp:any,prior:NativePlanQuestionCall[])=>isEngSeedDecisionAUQ(fp,prior,captured.startedAt,captured.finishedAt);
   const calls=transcript().calls;
   expect(calls.filter((c,i)=>guard(nativePlanCallFingerprint(c,0,true),calls.slice(0,i)))).toHaveLength(4);
   expect(source).not.toContain('createEngBatchingIssueCounter');
-  expect(source).toContain('evaluateEngSeedCoverage(obs.transcript, planContent, startedAt, Date.now())');
+  expect(source).toContain('evaluateEngTerminalReview(followUpPrompt');
+  expect(source).not.toContain('isReviewAUQ:');
+  expect(source).not.toContain('isCompletionHandoffAUQ:');
   expect(source).toContain('assertReviewReportAtBottom(planContent)');
   expect(source).toContain('reviewCountCeiling: Infinity');
-  expect(source).toContain('timeoutMs: 1_500_000');
+  expect(source).toContain('const deadlineAt = startedAt + 1_500_000');
+  expect(source).toContain('timeoutMs: deadlineAt - Date.now()');
   expect(source).toContain('approveEngTestPlanEdits: true');
   expect(source).toContain('preconfiguredReviewActor: true');
-  expect(source).toContain('isCompletionHandoffAUQ:');
+  expect(source).toContain('evaluateTerminal: async input =>');
 });
 test('native guard rejects incomplete, unowned, duplicate and foreign calls',()=>{
   const c=transcript().calls[4]!;
@@ -446,11 +454,11 @@ for(const [index,verb] of [[4,'consolidate'],[5,'inject'],[7,'map']] as const)te
   expect(evaluate([change(index,q=>{q.options[0]!.description+='\nCorrection: Do not '+verb+' this remedy.';})],'').decisions).toEqual({});
 });
 
-test('captured native exit and actual callback reach final assertions with the corrected guard',()=>{
+test('historical native exit/seed gates retain current report-bottom assertions',()=>{
   const source=fs.readFileSync(path.join(import.meta.dir,'skill-e2e-plan-eng-finding-count.test.ts'),'utf8');
-  const start=source.indexOf("        if (!['plan_ready', 'completion_summary'].includes(obs.outcome))"),end=source.indexOf('\n      } finally {',start);
+  const start=source.indexOf("        if (!['plan_ready', 'completion_summary'].includes(obs.outcome))"),end=source.indexOf('        // A native completion summary',start);
   expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
-  const validate=new Function('fs','planPath','obs','startedAt','evaluateEngSeedCoverage','assertReviewReportAtBottom',
+  const validate=new Function('fs','planPath','obs','assertReviewReportAtBottom',
     new Bun.Transpiler({loader:'ts'}).transformSync(source.slice(start,end)));
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eng-seed-native-')),file=path.join(dir,'report.md');
   try{
@@ -464,7 +472,10 @@ test('captured native exit and actual callback reach final assertions with the c
     expect(isQuestionlessNativePlanExit(t,file,captured.startedAt,captured.screen,new Set(t.calls.map(c=>`${c.sessionId}:${c.toolUseId}`)))).toBe(true);
     expect(isQuestionlessNativePlanExit(t,file,captured.startedAt,captured.screen,nonReview)).toBe(false);
     const obs={outcome:frame,transcript:t,reviewCount:review,step0Count:nonReview.size,fingerprints:[],elapsedMs:0,evidence:captured.screen};
-    const check=(input=obs)=>validate(fs,file,input,captured.startedAt,evaluateEngSeedCoverage,assertReviewReportAtBottom);
+    const check=(input=obs)=>{
+      validate(fs,file,input,assertReviewReportAtBottom);
+      if(!evaluateEngSeedCoverage(input.transcript,fs.readFileSync(file,'utf8'),captured.startedAt,captured.finishedAt).ok) throw Error('SEED COVERAGE FAIL');
+    };
     expect(()=>check()).not.toThrow();
     expect(()=>check({...obs,outcome:'no_review_questions' as any})).toThrow('finding-count FAILED');
     const missing={...obs,transcript:{...t,calls:t.calls.filter((_,i)=>i!==4)}};expect(()=>check(missing)).toThrow('SEED COVERAGE FAIL');

@@ -32,6 +32,7 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts).toEqual({
       skillName: 'plan-design-review', slashCommand: '/plan-design-review',
       followUpPrompt: FORCING_FLOOR_DESIGN, cwd: opts.cwd,
+      requestedPlanPath: '/tmp/gstack-test-plan-design-floor.md',
       timeoutMs: CAPTURE_LONG_MS,
       env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
     });

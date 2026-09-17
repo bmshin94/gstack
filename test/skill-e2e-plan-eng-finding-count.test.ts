@@ -22,9 +22,7 @@ import {
   assertReviewReportAtBottom,
 } from './helpers/claude-pty-runner';
 
-import { isEngCompletionHandoff } from './helpers/eng-completion-handoff';
-import type { NativePlanQuestionCall } from './helpers/plan-count-transcript';
-import { evaluateEngSeedCoverage, isEngSeedDecisionAUQ } from './helpers/eng-seeded-coverage';
+import { evaluateEngTerminalReview } from './helpers/eng-seeded-coverage';
 
 const describeE2E = describeE2ETier('periodic');
 
@@ -91,27 +89,31 @@ describeE2E('/plan-eng-review seeded issue coverage (periodic)', () => {
 
       try {
         const startedAt = Date.now();
-        const completedCalls = new Map<string, NativePlanQuestionCall>();
+        const deadlineAt = startedAt + 1_500_000;
+        const followUpPrompt = planEng5Findings(planPath);
+        let terminalAssessed = false;
         const obs = await runPlanSkillCounting({
           skillName: 'plan-eng-review',
           slashCommand: '/plan-eng-review',
-          followUpPrompt: planEng5Findings(planPath),
+          followUpPrompt,
           preconfiguredReviewActor: true,
           expectedPlanPath: planPath,
           approveEngTestPlanEdits: true,
           isLastStep0AUQ: engStep0Boundary,
           isSetupAUQ: engSetupAUQ,
           isFirstReviewAUQ: engFirstReviewAUQ,
-          isReviewAUQ: (fp, priorCalls) => isEngSeedDecisionAUQ(fp, priorCalls, startedAt),
-          isCompletionHandoffAUQ: fp => {
-            try { return isEngCompletionHandoff(fp, fs.readFileSync(planPath, 'utf8'), [...completedCalls.values()]); }
-            catch { return false; } // Unpublished work cannot establish a closed handoff.
-            finally { if (fp.nativeCall && !completedCalls.has(fp.signature)) completedCalls.set(fp.signature, fp.nativeCall); }
+          // Phase labels are progress only. One owned terminal assessment sees
+          // every complete native call and the published report together.
+          evaluateTerminal: async input => {
+            if (terminalAssessed) throw new Error('Eng terminal was assessed more than once');
+            terminalAssessed = true;
+            return evaluateEngTerminalReview(followUpPrompt, { ...input, deadlineAt: Math.min(input.deadlineAt, deadlineAt) });
           },
+          observeSetupQuestions: true,
           // Extra legitimate decisions are not a failure. The unchanged wall limit
           // bounds runaway reviews; coverage below uses scoped completed native calls.
           reviewCountCeiling: Infinity,
-          timeoutMs: 1_500_000,
+          timeoutMs: deadlineAt - Date.now(),
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },
         });
 
@@ -137,10 +139,6 @@ describeE2E('/plan-eng-review seeded issue coverage (periodic)', () => {
           );
         }
         const planContent = fs.readFileSync(planPath, 'utf-8');
-        const coverage = evaluateEngSeedCoverage(obs.transcript, planContent, startedAt, Date.now());
-        if (!coverage.ok) {
-          throw new Error(`SEED COVERAGE FAIL: ${JSON.stringify(coverage)}; observed reviewCount=${obs.reviewCount}`);
-        }
         const verdict = assertReviewReportAtBottom(planContent);
         if (!verdict.ok) {
           throw new Error(
@@ -150,6 +148,13 @@ describeE2E('/plan-eng-review seeded issue coverage (periodic)', () => {
                 : '') +
               `--- plan content (last 1KB) ---\n${planContent.slice(-1024)}`,
           );
+        }
+        // A native completion summary may finish without ExitPlanMode. Its
+        // existing runner gate already requires the report after every answer.
+        if (!terminalAssessed) {
+          terminalAssessed = true;
+          await evaluateEngTerminalReview(followUpPrompt, { transcript: obs.transcript, report: planContent,
+            reportMtimeMs: fs.lstatSync(planPath).mtimeMs, startedAt, finishedAt: Date.now(), deadlineAt });
         }
       } finally {
         try {

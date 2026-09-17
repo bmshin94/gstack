@@ -3,11 +3,13 @@ import ledgerSeedFixture from './fixtures/eng-current-ledger-seeds.json';
 import neutralSeedFixture from './fixtures/eng-neutral-seed-749df.json';
 import pairedSuiteFixture from './fixtures/eng-paired-suite-749df.json';
 import a689Retry from './fixtures/eng-a689-retry-public.json';
+import fb10Public from './fixtures/eng-fb10-count-public.json';
 import { describe, expect, test } from 'bun:test';
 import captured from './fixtures/eng-count-ad-v2.json';
 import af from './fixtures/eng-first-category-af.json';
 import type { NativePlanQuestionCall, PlanCountTranscript } from './helpers/plan-count-transcript';
-import { ENG_DECISION_SEEDS, evaluateEngSeedCoverage, isEngBatchingIssueAUQ } from './helpers/eng-seeded-coverage';
+import { ENG_DECISION_SEEDS, buildEngSeedDecisionInput, evaluateEngSeedCoverage, isEngBatchingIssueAUQ, isEngSeedDecisionAUQ } from './helpers/eng-seeded-coverage';
+import { buildPlanReviewDecisionPrompt, validatePlanReviewDecisionResponse } from './helpers/plan-review-decisions';
 import { nativePlanCallFingerprint } from './helpers/claude-pty-runner';
 import { E2E_TOUCHFILES, matchGlob } from './helpers/touchfiles';
 
@@ -19,6 +21,91 @@ const start = Date.parse('2026-09-09T19:00:00Z'), end = Date.parse('2026-09-09T1
 const report = '# Reviewed plan\n\n' + captured.reviewedTasks.lines.join('\n') + '\n\n## GSTACK REVIEW REPORT\nEng review complete.\n';
 const transcript = (): PlanCountTranscript => ({ status: 'ready', calls: structuredClone(calls), assistantMessages: [] });
 const evaluate = (t = transcript(), p = report) => evaluateEngSeedCoverage(t, p, start, end);
+
+describe('Eng semantic native evidence boundary', () => {
+  const start = Date.parse(fb10Public.windowStart), end = Date.parse(fb10Public.windowEnd);
+  const native = (): PlanCountTranscript => ({ status: 'ready', calls: structuredClone(fb10Public.calls) as NativePlanQuestionCall[], assistantMessages: [] });
+  const input = (t = native()) => buildEngSeedDecisionInput({ plan: fb10Public.plan, transcript: t,
+    startedAt: start, finishedAt: end, deadlineAt: Date.now() + 60_000 });
+  // This deliberately supplied response proves only local protocol checks.
+  // No model has classified this capture, and no paid result is inferred.
+  const response = (data = input()) => ({ questions: data.fingerprints.flatMap((fp, i) => fp.questions!.map((q, index) => ({
+    toolUseId: fp.toolUseId!, questionIndex: index + 1, kind: 'finding',
+    targetIds: ({ 0: ['sequential-idp'], 2: ['complexity'], 3: ['shared-cache'], 5: ['swallowed-errors'] } as Record<number, string[]>)[i] ?? [],
+    independentDecisions: 1, evidence: [{ field: 'question', optionIndex: null, quote: q.question.split('\n')[0]! }],
+    reason: 'Synthetic response for structural validation, not a semantic verdict.', optionActions: [],
+  }))) });
+
+  test('retains the original rejected class and error decisions as captured evidence', () => {
+    const t = native();
+    for (const index of [2, 5]) expect(isEngSeedDecisionAUQ(nativePlanCallFingerprint(t.calls[index]!, end, false), t.calls.slice(0, index), start, end)).toBe(false);
+  });
+
+  test('uses complete native fields and actual answers with all four independent targets', () => {
+    const t = native(), data = input(t);
+    expect(data.targets.map(target => target.id)).toEqual([...ENG_DECISION_SEEDS]);
+    expect(data.floor).toBe(4);
+    expect(data.ceiling).toBeUndefined();
+    expect(data.fingerprints).toHaveLength(t.calls.length);
+    data.fingerprints.forEach((fp, index) => {
+      const call = t.calls[index]!;
+      expect(fp.questions).toEqual(call.questions);
+      expect(fp.nativeCall).toEqual(call);
+      expect(fp.toolUseId).toBe(`${call.sessionId}:${call.toolUseId}`);
+      expect(fp.selectedOptions).toEqual(call.questions.map(q => q.options.findIndex(o => o.label === call.answers![q.question]) + 1));
+    });
+    expect(data.fingerprints[2]!.selectedOptions).toEqual([1]); // The actor kept all five classes, not recommended B.
+    expect(validatePlanReviewDecisionResponse(data, response(data)).coveredTargetIds).toEqual([...ENG_DECISION_SEEDS]);
+    const prompt = buildPlanReviewDecisionPrompt(data);
+    for (const fp of data.fingerprints) for (const q of fp.questions!) {
+      expect(prompt).toContain(JSON.stringify(q.question));
+      for (const o of q.options) expect(prompt).toContain(JSON.stringify(o.description));
+    }
+  });
+
+  test('takes an immutable snapshot before asynchronous classification', () => {
+    const t = native(), data = input(t), before = structuredClone(data);
+    t.calls[2]!.questions[0]!.question += '\nAltered after binding';
+    t.calls[2]!.answers = {};
+    expect(data).toEqual(before);
+  });
+
+  for (const [name, change] of [
+    ['foreign session', (t: PlanCountTranscript) => { t.calls[2]!.sessionId = 'foreign'; }],
+    ['duplicate native identity', (t: PlanCountTranscript) => { t.calls.push(structuredClone(t.calls[2]!)); }],
+    ['unanswered call', (t: PlanCountTranscript) => { t.calls[2]!.answered = false; }],
+    ['failed call', (t: PlanCountTranscript) => { t.calls[2]!.failed = true; }],
+    ['unanswered tab', (t: PlanCountTranscript) => { t.calls[2]!.unansweredQuestionIndices = [0]; }],
+    ['unoffered actual answer', (t: PlanCountTranscript) => { const c = t.calls[2]!; c.answers![c.questions[0]!.question] = 'Use a different option'; }],
+    ['duplicate offered labels', (t: PlanCountTranscript) => { const q = t.calls[2]!.questions[0]!; q.options[1]!.label = q.options[0]!.label; }],
+    ['out-of-window answer', (t: PlanCountTranscript) => { t.calls[2]!.answeredAt = new Date(start - 1).toISOString(); }],
+    ['foreign extra answer', (t: PlanCountTranscript) => { t.calls[2]!.answers!['Foreign question'] = 'A'; }],
+  ] as const) test(`rejects ${name} before a judge can run`, () => {
+    const t = native(); change(t); expect(() => input(t)).toThrow('complete owned');
+  });
+
+  for (const [name, change, error] of [
+    ['missing row', (r: ReturnType<typeof response>) => { r.questions.pop(); }, 'missing native question rows'],
+    ['duplicate row', (r: ReturnType<typeof response>) => { r.questions.push(structuredClone(r.questions[0]!)); }, 'duplicate native question'],
+    ['foreign identity', (r: ReturnType<typeof response>) => { r.questions[2]!.toolUseId = 'foreign'; }, 'phantom'],
+    ['wrong native quote', (r: ReturnType<typeof response>) => { r.questions[2]!.evidence[0]!.quote = r.questions[5]!.evidence[0]!.quote; }, 'exact native field'],
+    ['missing seed', (r: ReturnType<typeof response>) => { r.questions[2]!.targetIds = []; }, 'missing target decisions'],
+    ['bundled remedies', (r: ReturnType<typeof response>) => { r.questions[2]!.independentDecisions = 2; }, 'bundled independent decisions'],
+    ['two seeds in one choice', (r: ReturnType<typeof response>) => { r.questions[2]!.targetIds.push('swallowed-errors'); r.questions[5]!.targetIds = []; }, 'bundled independent decisions'],
+    ['uncertainty', (r: ReturnType<typeof response>) => { Object.assign(r.questions[2]!, { kind: 'uncertain', targetIds: [], independentDecisions: 0 }); }, 'uncertain classification'],
+  ] as const) test(`rejects judge ${name}`, () => {
+    const data = input(), raw = response(data); change(raw);
+    expect(() => validatePlanReviewDecisionResponse(data, raw)).toThrow(error);
+  });
+
+  test('keeps the absolute deadline and does not grant a new judge window', () => {
+    const deadlineAt = Date.now() - 1;
+    const data = buildEngSeedDecisionInput({ plan: fb10Public.plan, transcript: native(), startedAt: start, finishedAt: end, deadlineAt });
+    expect(data.deadlineAt).toBe(deadlineAt);
+    expect(() => buildPlanReviewDecisionPrompt(data)).toThrow('absolute case deadline exhausted');
+    expect(() => buildEngSeedDecisionInput({ plan: fb10Public.plan, transcript: native(), startedAt: start, finishedAt: end, deadlineAt: end - 1 })).toThrow('original deadline');
+  });
+});
 
 describe('retry capture and replay remain one owned regression contract', () => {
   const original = a689Retry.calls as NativePlanQuestionCall[];

@@ -116,15 +116,21 @@ function croppedEditTarget(screen: string, cwd: string, expected: string): strin
     if (!Number.isSafeInteger(nextLine) || nextLine < 2) return undefined;
     try {
       const stat = fs.lstatSync(target);
-      if (!stat.isFile() || stat.size > MAX_RECORD_BYTES) return undefined;
+      if (!stat.isFile()) return undefined;
       const fd = fs.openSync(target, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
       try {
         const opened = fs.fstatSync(fd);
-        if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size > MAX_RECORD_BYTES) return undefined;
-        const bytes = Buffer.alloc(MAX_RECORD_BYTES + 1);
+        if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino) return undefined;
+        // Only the complete source line behind this viewport continuation is
+        // needed. Large reports remain eligible without reading past the same
+        // 64-KiB cap or treating a truncated line as a complete line ending.
+        const bytes = Buffer.alloc(MAX_RECORD_BYTES);
         const length = fs.readSync(fd, bytes, 0, bytes.length, 0);
-        if (length !== opened.size || length > MAX_RECORD_BYTES) return undefined;
-        const prior = bytes.subarray(0, length).toString('utf8').split(/\r?\n/)[nextLine - 2];
+        const after = fs.fstatSync(fd);
+        if (length !== Math.min(opened.size, MAX_RECORD_BYTES) || after.size !== opened.size ||
+            after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) return undefined;
+        const complete = opened.size <= length ? length : bytes.lastIndexOf(10, length - 1) + 1;
+        const prior = bytes.subarray(0, complete).toString('utf8').split(/\r?\n/)[nextLine - 2];
         if (!prior?.trimEnd().endsWith(continuation.tail)) return undefined;
       } finally { fs.closeSync(fd); }
     } catch { return undefined; }
@@ -137,7 +143,7 @@ export function currentFilePermissionEpoch(file: string | undefined, expected: s
   cwd: string, config: string | null, startedAt: number, transcript: PlanCountTranscript,
   screen: string): FilePermissionEpoch | null | undefined {
   if (!file || !expected || !config) return undefined;
-  const panel = [...screen.matchAll(/(?:^|\n) {0,3}(?:Edit|Write) file[ \t]*\n {0,3}([^\n]+)\n/g)].at(-1);
+  const panel = [...screen.matchAll(/(?:^|\n) {0,3}(?:Create|Edit|Write) file[ \t]*\n {0,3}([^\n]+)\n/g)].at(-1);
   const target = panel ? path.resolve(cwd,panel[1]!.trim()) : croppedEditTarget(screen, cwd, expected);
   if (target !== expected) {
     // A foreign path with this report's basename cannot fall back to a stale

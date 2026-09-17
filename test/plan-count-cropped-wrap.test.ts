@@ -88,7 +88,7 @@ test('synthetic native success releases only the later pending request',()=>{
 
 const negatives:Array<[string,(f:any)=>void]>=[
  ['missing source',f=>{f.kind='missing';}],['source directory',f=>{f.kind='directory';}],
- ['oversized source',f=>{f.before+='x'.repeat(65537);}],
+ ['required source line beyond the bounded prefix',f=>{f.before='x'.repeat(65537)+f.before;}],
  ['stale source tail',f=>{f.before=f.before.replace('Architecture section of PLAN.md','Different section of PLAN.md');}],
  ['foreign wrapped text',f=>{f.screen=f.screen.replace('Architecture section of PLAN.md','Different section of PLAN.md');}],
  ['duplicate wrapped row',f=>{f.screen=f.screen.split('\n')[0]+'\n'+f.screen;}],

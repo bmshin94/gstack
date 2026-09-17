@@ -72,9 +72,13 @@ export function createPlanCountFixture(prompt: string, opts: {
   nativeReviewOnly?: boolean;
   preconfiguredReviewActor?: boolean;
   files?: Record<string, string>;
+  /** Explicit caller-authorized working plan, relocated into this fixture. */
+  requestedPlanPath?: string;
 } = {}): {
   cwd: string;
   env: Record<string, string>;
+  seed: string;
+  workingPlanPath?: string;
   cleanup(): void;
 } {
   if (opts.preconfiguredReviewActor && !opts.nativeReviewOnly)
@@ -90,6 +94,17 @@ export function createPlanCountFixture(prompt: string, opts: {
     }
   };
   try {
+    let workingPlanPath: string | undefined;
+    if (opts.requestedPlanPath !== undefined) {
+      const requested = opts.requestedPlanPath;
+      const name = path.basename(requested);
+      if (!path.isAbsolute(requested) || !/^[\w-]+\.md$/.test(name) ||
+          /^(?:plan|claude)\.md$/i.test(name) || prompt.split(requested).length !== 2 ||
+          Object.hasOwn(opts.files ?? {}, name))
+        throw new Error('Working plan requires one explicit path and a distinct ordinary Markdown filename');
+      workingPlanPath = path.join(cwd, name);
+      prompt = prompt.replace(requested, workingPlanPath);
+    }
     const files = Object.entries(opts.files ?? {});
     for (const [name] of files) {
       const parts = name.split(/[\\/]/);
@@ -140,7 +155,7 @@ export function createPlanCountFixture(prompt: string, opts: {
     git(['-c', 'user.name=Plan Count Fixture', '-c', 'user.email=plan-count@example.test',
       '-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', 'Seed review plan']);
     git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
-    return { cwd, env, cleanup };
+    return { cwd, env, seed: prompt, workingPlanPath, cleanup };
   } catch (error) {
     cleanup();
     throw error;

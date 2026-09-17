@@ -2039,6 +2039,66 @@ export function isQuestionlessNativePlanExit(
     hasCompletePlanReport(expectedPlanPath, startedAt, at, true);
 }
 
+export interface NativePlanTerminalReview {
+  transcript: PlanCountTranscript;
+  report: string;
+  reportMtimeMs: number;
+  startedAt: number;
+  finishedAt: number;
+  deadlineAt: number;
+}
+export interface NativePlanTerminalAssessment {
+  administrativeCallIds: readonly string[];
+  substantiveCallIds: readonly string[];
+}
+export type NativePlanTerminalEvaluator = (input: NativePlanTerminalReview) => Promise<NativePlanTerminalAssessment>;
+
+/** The opt-in semantic assessment runs once at a real owned Exit, before the
+ * existing freshness gate. It may exclude only native calls it has assessed;
+ * the unchanged terminal check then requires a later report for all other ACKs. */
+export async function evaluateOwnedNativePlanTerminal(transcript: PlanCountTranscript, expectedPlanPath: string,
+  startedAt: number, deadlineAt: number, evaluate: NativePlanTerminalEvaluator): Promise<{ administrative: ReadonlySet<string>; substantive: ReadonlySet<string> } | undefined> {
+  const finishedAt = Date.now();
+  if (!Number.isFinite(deadlineAt) || finishedAt >= deadlineAt) throw new Error('Native terminal assessment: absolute case deadline exhausted');
+  const snapshot = structuredClone(transcript), calls = snapshot.calls;
+  const identities = calls.map(call => `${call.sessionId}:${call.toolUseId}`);
+  const sessions = new Set([...calls.map(call => call.sessionId), ...snapshot.assistantMessages.map(m => m.sessionId),
+    ...(snapshot.planReadyRequests ?? []).map(r => r.sessionId)]);
+  const ready = [...(snapshot.planReadyRequests ?? [])].sort((a,b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)).at(-1);
+  if (snapshot.status !== 'ready' || !calls.length || sessions.size !== 1 || new Set(identities).size !== calls.length
+    || !ready?.sessionId || !ready.toolUseId || ready.failed !== false || identities.includes(`${ready.sessionId}:${ready.toolUseId}`) || !Number.isFinite(Date.parse(ready.timestamp))
+    || Date.parse(ready.timestamp) <= startedAt || Date.parse(ready.timestamp) > finishedAt
+    || calls.some(call => !call.sessionId || !call.toolUseId || call.answered !== true || call.failed !== false
+      || !Array.isArray(call.unansweredQuestionIndices) || call.unansweredQuestionIndices.length
+      || !call.questions.length || Object.keys(call.answers ?? {}).length !== call.questions.length
+      || !Number.isFinite(Date.parse(call.answeredAt ?? '')) || Date.parse(call.answeredAt!) < startedAt
+      || Date.parse(call.answeredAt!) >= Date.parse(ready.timestamp)
+      || call.questions.some(q => q.multiSelect || new Set(q.options.map(o => o.label)).size !== q.options.length
+        || !q.options.some(o => o.label === call.answers?.[q.question])))) return undefined;
+  if (!hasCompletePlanReport(expectedPlanPath, startedAt, Date.parse(ready.timestamp))) return undefined;
+  const stat = fs.lstatSync(expectedPlanPath), report = fs.readFileSync(expectedPlanPath, 'utf8');
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([evaluate({ transcript: structuredClone(snapshot), report, reportMtimeMs: stat.mtimeMs,
+      startedAt, finishedAt, deadlineAt }), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Native terminal assessment: absolute case deadline exhausted')), Math.max(1, deadlineAt - Date.now()));
+    })]);
+    if (Date.now() >= deadlineAt) throw new Error('Native terminal assessment: absolute case deadline exhausted');
+    const validIds = (ids: readonly string[]) => Array.isArray(ids) && new Set(ids).size === ids.length && ids.every(id => identities.includes(id));
+    if (!result || !validIds(result.administrativeCallIds) || !validIds(result.substantiveCallIds)
+      || !result.substantiveCallIds.length || result.administrativeCallIds.some(id => result.substantiveCallIds.includes(id)))
+      throw new Error('Native terminal assessment returned foreign, duplicate, overlapping or empty substantive identities');
+    const after = fs.lstatSync(expectedPlanPath);
+    if (!after.isFile() || after.dev !== stat.dev || after.ino !== stat.ino || after.size !== stat.size
+      || after.mtimeMs !== stat.mtimeMs || fs.readFileSync(expectedPlanPath, 'utf8') !== report)
+      throw new Error('Native terminal report changed during assessment');
+    const administrative = new Set(result.administrativeCallIds);
+    if (!hasNativePlanTerminal(snapshot, expectedPlanPath, startedAt, 'plan_ready', administrative))
+      throw new Error('Native terminal report is not fresh after every substantive native answer');
+    return { administrative, substantive: new Set(result.substantiveCallIds) };
+  } finally { clearTimeout(timer); }
+}
+
 /** Native report completion is independent of the terminal's streamed headings. */
 export function hasNativePlanTerminal(
   transcript: PlanCountTranscript,
@@ -4781,6 +4841,9 @@ export async function runPlanSkillCounting(opts: {
   isSetupAUQ?: Step0BoundaryPredicate;
   /** Optional native completed-review handoff identity, excluded from both count bands. */
   isCompletionHandoffAUQ?: Step0BoundaryPredicate;
+  /** Opt-in one-shot semantic assessment at a real native Exit. Existing callers
+   * retain their synchronous navigation and terminal policy. */
+  evaluateTerminal?: NativePlanTerminalEvaluator;
   /** Accepted artifact rendering is not a finding; its answer still requires a fresh report. */
   isArtifactGenerationAUQ?: Step0BoundaryPredicate;
   /** Optional issue classifier across phases; receives full native call metadata. */
@@ -5040,6 +5103,25 @@ export async function runPlanSkillCounting(opts: {
       if (newlyMatched) lastMatchedNativeQuestion = pending;
       const renderedFrame = classifyPlanCountFrame(visible);
       const administrative = new Set(fingerprints.filter(fp => fp.administrative === 'completion-handoff').map(fp => fp.signature));
+      if (opts.evaluateTerminal && opts.expectedPlanPath && renderedFrame === 'plan_ready' && !newlyMatched) {
+        const reviewed = await evaluateOwnedNativePlanTerminal(transcript, opts.expectedPlanPath, startedAt,
+          startedAt + timeoutMs - cleanupReserveMs, opts.evaluateTerminal);
+        if (reviewed) {
+          // Once semantics are validated, lexical phase labels have no veto.
+          // The earlier progress snapshots remain unchanged diagnostic evidence.
+          administrative.clear();
+          for (const identity of reviewed.administrative) administrative.add(identity);
+          for (const fp of fingerprints) {
+            fp.preReview = !reviewed.substantive.has(fp.signature) && !administrative.has(fp.signature);
+            if (administrative.has(fp.signature)) fp.administrative = 'completion-handoff';
+            else delete fp.administrative;
+          }
+          reviewCount = reviewed.substantive.size;
+          administrativeCount = administrative.size;
+          step0Count = fingerprints.length - reviewCount - administrativeCount;
+        }
+      }
+
       // A long completed summary may scroll its heading off the viewport.
       // With no active input UI, retain the existing native/report validator;
       // neither display text nor a missing heading supplies completion evidence.
@@ -5272,6 +5354,8 @@ export async function runPlanSkillFloorCheck(opts: {
   slashCommand: string;
   /** Complete request seeded in an isolated project before the command starts. */
   followUpPrompt: string;
+  /** Explicit working-plan request relocated into the owned fixture before launch. */
+  requestedPlanPath?: string;
   /** Installation cwd retained for caller compatibility; review uses an owned seeded project. */
   cwd?: string;
   /** Total budget. Default 600000 (10 min). Tests exit early on AUQ. */
@@ -5284,7 +5368,7 @@ export async function runPlanSkillFloorCheck(opts: {
   const startedAt = Date.now();
   const timeoutMs = opts.timeoutMs ?? 600_000;
 
-  const fixture = createPlanCountFixture(opts.followUpPrompt);
+  const fixture = createPlanCountFixture(opts.followUpPrompt, { requestedPlanPath: opts.requestedPlanPath });
   const sessionId = randomUUID();
   let session: ClaudePtySession;
   try {
@@ -5295,6 +5379,8 @@ export async function runPlanSkillFloorCheck(opts: {
       env: { ...opts.env, ...fixture.env },
       model: opts.model,
       seedSkills: true,
+      observeScreen: true,
+      observeFilePermissions: fixture.workingPlanPath ? [fixture.workingPlanPath] : undefined,
       extraArgs: ['--session-id', sessionId],
     });
   } catch (error) {
@@ -5302,12 +5388,16 @@ export async function runPlanSkillFloorCheck(opts: {
     throw error;
   }
 
+  const ownedFilePermissions = (session.pendingFilePermissionFiles ?? []).map(binding =>
+    ({ ...binding, guard: createPlanCountPermissionGuard() }));
+  let transcript: PlanCountTranscript = { status: 'missing', calls: [], assistantMessages: [] };
+  let viewport = '';
   try {
     await Bun.sleep(8000); // boot grace + auto-trust handler window
     const since = session.mark();
     const commandStartedAt = Date.now();
     session.send(`${opts.slashCommand} PLAN.md\r`);
-    const deliveryOptions = { seed: opts.followUpPrompt, sessionId,
+    const deliveryOptions = { seed: fixture.seed, sessionId,
       slashCommand: opts.slashCommand, startedAt: commandStartedAt };
     let targetDelivery = readPlanFloorTarget(session.hermeticConfigDir, fixture.cwd,
       { ...deliveryOptions, now: Date.now() });
@@ -5315,7 +5405,8 @@ export async function runPlanSkillFloorCheck(opts: {
     const finish = (observation: PlanSkillFloorObservation): PlanSkillFloorObservation => {
       const artifacts = saveSnapshot({ skillName: opts.skillName, cwd: fixture.cwd,
         claudeConfigDir: session.hermeticConfigDir, raw: session.rawOutput(),
-        visible: session.visibleSince(since), observation: { ...observation, targetDelivery, commandStartedAt } });
+        visible: session.visibleSince(since), viewport,
+        observation: { ...observation, transcript, targetDelivery, commandStartedAt } });
       return { ...observation, targetDelivery, ...artifacts };
     };
 
@@ -5331,6 +5422,7 @@ export async function runPlanSkillFloorCheck(opts: {
     // render is seen, acceptance only counts AUQ renders in content APPENDED
     // after that point.
     let gateSeenIdx = -1;
+    let permissionSeenIdx = -1;
     const JUDGE_AFTER_MS = 60_000;
     const JUDGE_INTERVAL_MS = 30_000;
     while (Date.now() - start < timeoutMs) {
@@ -5387,17 +5479,41 @@ export async function runPlanSkillFloorCheck(opts: {
       // cursor anchor, so the prose path falls back to the tail check
       // (accepted residual: prose gate + prose finding inside one tail can
       // suppress until timeout; floors run the native-menu path in practice).
+      viewport = await session.currentScreen();
+      transcript = session.hermeticConfigDir
+        ? readPlanCountTranscript(session.hermeticConfigDir, fixture.cwd)
+        : { status: 'missing', calls: [], assistantMessages: [] };
+      const nativeQuestionVisible = transcript.calls.some(call => matchesNativePlanQuestion(viewport, call));
+      const permissionIsActiveRender = !nativeQuestionVisible && isPermissionDialogVisible(viewport);
+      if (permissionIsActiveRender) {
+        // An authorized file write enables the review, but never supplies its
+        // finding question. Exclude the permission's old render after approval.
+        permissionSeenIdx = visible.length;
+        const owned = currentFilePermissionBinding(ownedFilePermissions, fixture.cwd,
+          session.hermeticConfigDir, startedAt, transcript, viewport);
+        let ordinaryOwnedTarget = false;
+        if (fixture.workingPlanPath) try {
+          const parent = fs.realpathSync(path.dirname(fixture.workingPlanPath));
+          let target: fs.Stats | undefined;
+          try { target = fs.lstatSync(fixture.workingPlanPath); }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+          ordinaryOwnedTarget = parent === fs.realpathSync(fixture.cwd) && (!target || target.isFile());
+        } catch { /* No authority for a linked, foreign, or unreadable target. */ }
+        if (owned && ordinaryOwnedTarget && owned.binding.guard(viewport, session.visibleText(), owned.epoch) === 'grant')
+          session.send('1\r');
+      }
       const tail = visible.slice(-TAIL_SCAN_BYTES);
-      const acceptWindow = gateSeenIdx === -1 ? visible : visible.slice(gateSeenIdx);
+      const excluded = Math.max(gateSeenIdx, permissionSeenIdx);
+      const acceptWindow = excluded === -1 ? visible : visible.slice(excluded);
       const activeMenu = parseNumberedOptions(visible);
       const gateIsActiveRender =
         activeMenu.length > 0
           ? activeMenu.some((o) => /current\s*branch\s*diff/i.test(o.label))
           : isScopeGateQuestionVisible(tail);
+      const eligibleFinding = !permissionIsActiveRender && !gateIsActiveRender;
       if (
         (isNumberedOptionListVisible(acceptWindow) || isProseAUQVisible(acceptWindow)) &&
-        !isPermissionDialogVisible(tail) &&
-        !gateIsActiveRender
+        eligibleFinding
       ) {
         return finish({
           auqObserved: true,
@@ -5415,15 +5531,15 @@ export async function runPlanSkillFloorCheck(opts: {
       // change the outcome — they enrich the eventual timeout summary so the
       // failure diagnostic is more actionable than "no AUQ render."
       const elapsed = Date.now() - start;
-      if (elapsed > JUDGE_AFTER_MS && Date.now() - lastJudgeAt > JUDGE_INTERVAL_MS) {
+      if (eligibleFinding && acceptWindow.trim() && elapsed > JUDGE_AFTER_MS && Date.now() - lastJudgeAt > JUDGE_INTERVAL_MS) {
         lastJudgeAt = Date.now();
-        logPtySnapshot(visible, { testName: opts.skillName, elapsedMs: elapsed, tag: 'floor-judge-tick' });
-        lastJudgeVerdict = judgePtyState(visible, { testName: opts.skillName });
+        logPtySnapshot(acceptWindow, { testName: opts.skillName, elapsedMs: elapsed, tag: 'floor-judge-tick' });
+        lastJudgeVerdict = judgePtyState(acceptWindow, { testName: opts.skillName });
         // The judge can't tell a scope-gate question from a finding question,
         // so a 'waiting' verdict while the gate menu is the pending render
         // must NOT satisfy the floor — same active-render exclusion as the
         // regex path.
-        if (lastJudgeVerdict.state === 'waiting' && !gateIsActiveRender) {
+        if (lastJudgeVerdict.state === 'waiting' && eligibleFinding) {
           return finish({
             auqObserved: true,
             outcome: 'auq_observed',

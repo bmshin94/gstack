@@ -29,6 +29,7 @@ describeE2E('/plan-design-review AskUserQuestion floor (periodic)', () => {
           skillName: 'plan-design-review',
           slashCommand: '/plan-design-review',
           followUpPrompt: FORCING_FLOOR_DESIGN,
+        requestedPlanPath: '/tmp/gstack-test-plan-design-floor.md',
           cwd: project,
           timeoutMs: CAPTURE_LONG_MS,
           env: { QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' },

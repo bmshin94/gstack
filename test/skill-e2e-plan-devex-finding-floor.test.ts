@@ -20,6 +20,7 @@ describeE2E('/plan-devex-review AskUserQuestion floor (gate)', () => {
         skillName: 'plan-devex-review',
         slashCommand: '/plan-devex-review',
         followUpPrompt: FORCING_FLOOR_DEVEX,
+        requestedPlanPath: '/tmp/gstack-test-plan-devex-floor.md',
         // LIVE-REPO CWD: PTY session needs the repo cwd — gstack skill
         // registry + hermetic pre-trusted dir (hermetic-env trustedDirs).
         cwd: process.cwd(),
