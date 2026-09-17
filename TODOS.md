@@ -3608,7 +3608,7 @@ reported; no effect threshold, model, overlay text, or pass result was changed.
 **Priority:** P0
 **Depends on:** None
 
-**Completed:** v1.87.1.0 (2026-09-15)
+**Completed:** v1.87.5.0 (2026-09-15)
 
 **Policy disposition:** Contract v2 retires the unsupported fanout experiments and
 records comparative efficacy separately from supported behavior checks. Historical

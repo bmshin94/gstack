@@ -219,7 +219,7 @@ Planner entries and execution results record the effective wall,
 its source and policy identifier. Custom drivers must resolve each job instead
 of passing their ordinary 1800-second default as an explicit Autoplan cap;
 their outer controller/detach wall must also cover the allocated work and cleanup.
-`eval:bg:periodic` already has a 37800-second outer cap. Legacy monolithic
+`eval:bg:periodic` already has a 60600-second outer cap. Legacy monolithic
 `eval:bg`/`eval:bg:all` retain their shorter 5400/7200-second caps and do not
 promise two complete Autoplan attempts; use the sharded periodic path for this policy.
 
