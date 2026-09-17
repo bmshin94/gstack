@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { initializePlan, prepareMethodology, createSnapshot, preparePhaseClose } from '../bin/gstack-autoplan-snapshot';
+import { initializePlan, prepareMethodology, createSnapshot, preparePhaseClose, prepareAmendedInput } from '../bin/gstack-autoplan-snapshot';
 import { evaluateAutoplanPublication, runPublicationHook, autoplanReadRange, type PublicationHookInput } from '../autoplan/bin/phase-publication-hook.ts';
 import { readOwnedClaudePublicTranscript, type ClaudeParentPublicEvent } from '../lib/claude-public-transcript';
 import { prematureAutoplanPhaseEntry } from './helpers/autoplan-method-read-audit';
@@ -89,6 +89,159 @@ function fixture(phase: Phase = 'ceo', next = 'design') {
 }
 
 describe('Autoplan parent publication guard', () => {
+  function checkpointWriter(f: ReturnType<typeof fixture>) {
+    const create = (phase: Phase, id: string) => {
+      const skill = path.join(f.cwd, id, 'SKILL.md');
+      fs.mkdirSync(path.dirname(skill));
+      fs.writeFileSync(skill, `---\nname: plan-${phase === 'dx' ? 'devex' : phase}-review\n---\n## Review Sections\nApply every current review criterion.\n`);
+      const method = prepareMethodology(phase, skill, f.restore).methodologyPath;
+      f.use(id, 'Bash', { command: `bun "${ROOT}/bin/gstack-autoplan-snapshot.ts" create ${phase} "${f.active}" "${f.restore}" "${method}"` });
+      const snapshot = createSnapshot(phase, f.active, f.restore, method);
+      f.result(id, { content: JSON.stringify(snapshot) });
+      return { method, snapshot };
+    };
+    return create;
+  }
+  function completedCycle() {
+    const f = fixture(); f.message();
+    const create = checkpointWriter(f), first = new Map<Phase, ReturnType<typeof create>>();
+    let unread: ReturnType<typeof create>;
+    for (const phase of ['design', 'dx', 'eng'] as const) {
+      f.read(`${phase}-entry`, path.join(ROOT, 'autoplan/sections', `${phase}-phase.md`));
+      const generation = create(phase, `${phase}-create`);
+      first.set(phase, generation);
+      f.read(`${phase}-snapshot`, path.join(path.dirname(generation.snapshot.snapshotPath), 'snapshot.json'));
+      // This old snapshot is acknowledged before closing, but never Read.
+      if (phase === 'eng') unread = create('eng', 'unread-historical-create');
+      fs.appendFileSync(f.active, `<!-- autoplan-accepted:${phase} -->\nNone: retain the current behavior.\n<!-- /autoplan-accepted:${phase} -->\n`);
+      const close = preparePhaseClose(phase, f.active, generation.snapshot.snapshotPath, f.restore, generation.method);
+      f.read(`${phase}-close`, close.closePacketPath); f.message(`Phase ${phaseNumber[phase]} complete.`);
+    }
+    const tasks = path.join(ROOT, 'autoplan/sections/tasks-aggregator.md');
+    f.read('first-tasks', tasks);
+    return { f, create, first, unread: unread!, tasks };
+  }
+  test('a fresh Eng checkpoint after tasks requires a new close and parent publication', async () => {
+    const { f, create, tasks } = completedCycle();
+    const rerun = create('eng', 'rerun-create');
+    f.read('rerun-snapshot', path.join(path.dirname(rerun.snapshot.snapshotPath), 'snapshot.json'));
+    f.input.tool_input = { file_path: tasks }; f.current(); f.journal();
+    const output: any = await withNativeProjectDirectory(f.cwd, () => runPublicationHook(f.input, ROOT));
+    expect(output.hookSpecificOutput?.permissionDecision).toBe('deny');
+    f.events.pop();
+    const close = preparePhaseClose('eng', f.active, rerun.snapshot.snapshotPath, f.restore, rerun.method);
+    f.read('rerun-close', close.closePacketPath); f.current(); f.journal();
+    expect(await withNativeProjectDirectory(f.cwd, () => runPublicationHook(f.input, ROOT)))
+      .toMatchObject({ hookSpecificOutput: { permissionDecisionReason: expect.stringContaining('Publish the filled Phase 3') } });
+    f.events.pop(); f.message('Phase 3 complete.'); f.current(); f.journal();
+    expect(await withNativeProjectDirectory(f.cwd, () => runPublicationHook(f.input, ROOT))).toEqual({});
+  });
+
+  for (const phase of ['ceo', 'design', 'dx', 'eng'] as const)
+    test(`a fresh ${phase} checkpoint reopens its own publication boundary after tasks`, () => {
+      const { f, create } = completedCycle(), rerun = create(phase, 'rerun-create');
+      // Creation supplies no forward-phase credit, but the owned new checkpoint
+      // invalidates the earlier cycle even before its first snapshot Read.
+      const next = { ceo: 'design-phase', design: 'eng-phase', dx: 'eng-phase', eng: 'tasks-aggregator' }[phase];
+      f.input.tool_input = { file_path: path.join(ROOT, 'autoplan/sections', `${next}.md`) }; f.current();
+      expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining(`Phase ${phaseNumber[phase]} close procedure`) });
+      f.events.pop();
+      f.use('rerun-review', 'Agent', { prompt: rerun.snapshot.nativeDispatchPrompt });
+      f.result('rerun-review', { content: 'Native reviewer launched.' });
+      const close = preparePhaseClose(phase, f.active, rerun.snapshot.snapshotPath, f.restore, rerun.method);
+      f.read('rerun-close', close.closePacketPath); f.current();
+      expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining(`Publish the filled Phase ${phaseNumber[phase]}`) });
+      f.events.pop(); f.message(`Phase ${phaseNumber[phase]} complete.`); f.current();
+      expect(f.evaluate()).toEqual({ allow: true });
+    });
+
+  test('historical driver, methodology and previously unread snapshot recovery does not reopen a phase', () => {
+    const { f, first, unread, tasks } = completedCycle();
+    for (const [id, file] of [['driver', path.join(ROOT, 'autoplan/sections/ceo-phase.md')],
+      ['methodology', first.get('design')!.method], ['snapshot', unread.snapshot.snapshotPath]] as const) f.read(`history-${id}`, file);
+    f.input.tool_input = { file_path: tasks }; f.current();
+    expect(f.evaluate()).toEqual({ allow: true });
+  });
+
+  test('an old close and a new report cannot close a different rerun checkpoint', () => {
+    const { f, tasks } = completedCycle(), create = checkpointWriter(f);
+    const oldClose = f.events.find(e => e.kind === 'use' && e.toolUseId === 'eng-close')!;
+    create('eng', 'new-generation');
+    f.read('old-close-replayed', oldClose.input!.file_path as string); f.message('Phase 3 complete.');
+    f.input.tool_input = { file_path: tasks }; f.current();
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('earlier checkpoint') });
+  });
+
+  for (const status of ['partial', 'failed', 'pending'] as const)
+    test(`a ${status} rerun close cannot borrow the first cycle's completed report`, () => {
+      const { f, create, tasks } = completedCycle(), rerun = create('eng', 'rerun');
+      const close = preparePhaseClose('eng', f.active, rerun.snapshot.snapshotPath, f.restore, rerun.method);
+      f.read('new-close', close.closePacketPath, 1, status === 'partial' ? 1 : undefined);
+      if (status === 'failed') f.events.at(-1)!.isError = true;
+      if (status === 'pending') f.events.pop();
+      f.input.tool_input = { file_path: tasks }; f.current();
+      expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Read every line') });
+    });
+
+  for (const kind of ['failed', 'unpaired', 'orphan-result', 'result-before-use', 'foreign-active',
+    'foreign-restore', 'reflected-old', 'altered-identity', 'altered-prompt', 'altered-baseline'] as const)
+    test(`a ${kind} checkpoint result cannot reopen historical phase state`, () => {
+      const { f, create, first, tasks } = completedCycle();
+      const old = first.get('eng')!.snapshot, fresh = create('eng', 'untrusted-create');
+      const use = f.events.at(-2)!, result = f.events.at(-1)!;
+      if (kind === 'failed') result.isError = true;
+      if (kind === 'unpaired') f.events.pop();
+      if (kind === 'orphan-result') f.events.splice(-2, 1);
+      if (kind === 'result-before-use') f.events.splice(-2, 2, result, use);
+      let output = fresh.snapshot;
+      if (kind === 'reflected-old') output = old;
+      if (kind === 'foreign-active' || kind === 'foreign-restore') {
+        const foreign = fixture('eng', 'tasks');
+        output = createSnapshot('eng', foreign.active, foreign.restore, foreign.method);
+        if (kind === 'foreign-restore') {
+          const method = prepareMethodology('eng', path.join(foreign.cwd, 'SKILL.md'), foreign.restore).methodologyPath;
+          output = createSnapshot('eng', f.active, foreign.restore, method);
+        }
+      }
+      if (kind === 'altered-identity') output = { ...output, sourceBytes: output.sourceBytes + 1 };
+      if (kind === 'altered-prompt') output = { ...output, nativePrompt: output.nativePrompt + 'Forged.' };
+      if (kind === 'altered-baseline') output = { ...output, baselineEdits: { ...output.baselineEdits, record: 'Forged checkpoint.' } };
+      result.content = JSON.stringify(output); f.reorder();
+      f.input.tool_input = { file_path: tasks }; f.current();
+      expect(f.evaluate()).toEqual({ allow: true });
+    });
+
+  for (const operation of ['prepare-close', 'amend-input'] as const)
+    test(`an internal ${operation} export does not start a new checkpoint generation`, () => {
+      const { f, first, tasks } = completedCycle(), prior = first.get('eng')!;
+      f.use('internal-export', 'Bash', { command: operation });
+      const output = operation === 'prepare-close'
+        ? preparePhaseClose('eng', f.active, prior.snapshot.snapshotPath, f.restore, prior.method)
+        : prepareAmendedInput('eng', f.active, prior.snapshot.snapshotPath, f.restore, prior.method);
+      f.result('internal-export', { content: JSON.stringify(output) });
+      f.input.tool_input = { file_path: tasks }; f.current();
+      expect(f.evaluate()).toEqual({ allow: true });
+    });
+
+  test('CEO second voice creation preserves its fixed Step-0 checkpoint', () => {
+    const f = fixture(); f.events.splice(4); const create = checkpointWriter(f);
+    const step0 = create('ceo', 'step0'), voice = create('ceo', 'voice');
+    f.read('voice-input', voice.snapshot.snapshotPath);
+    const close = preparePhaseClose('ceo', f.active, step0.snapshot.snapshotPath, f.restore, step0.method);
+    f.read('step0-close', close.closePacketPath); f.message(); f.current();
+    expect(f.evaluate()).toEqual({ allow: true });
+  });
+
+  test('preparing a later checkpoint cannot advance past an unpublished rerun', () => {
+    const { f, create, tasks } = completedCycle();
+    const design = create('design', 'design-rerun'); create('eng', 'prepared-eng');
+    f.input.tool_input = { file_path: tasks }; f.current();
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Phase 2 close procedure') });
+    f.events.pop(); f.read('current-recovery', design.method);
+    f.input.tool_input = { file_path: design.method }; f.current();
+    expect(f.evaluate()).toEqual({ allow: true });
+  });
+
   function changedDirectory(publish = true, next = 'design-phase.md') {
     const f = fixture();
     const registry = path.join(f.cwd, 'registry');

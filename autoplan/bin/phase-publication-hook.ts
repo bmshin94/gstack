@@ -149,6 +149,23 @@ function textResult(event: Event): string | undefined {
       typeof event.content[0].text === 'string') return event.content[0].text;
 }
 
+/** Authenticate the existing direct-create result; this does not prove its shell command's origin. */
+function checkpointResult(result: Event, entered: Event[], init: Invocation): { phase: Phase; path: string } | undefined {
+  const use = entered.find(e => e.kind === 'use' && e.toolUseId === result.toolUseId);
+  if (result.kind !== 'result' || use?.name !== 'Bash' || use.order >= result.order) return;
+  const text = textResult(result);
+  if (text === undefined) return;
+  const output = JSON.parse(text);
+  if (!object(output) || !['ceo', 'design', 'dx', 'eng'].includes(output.phase) ||
+      !ownPath(output.snapshotPath) || typeof output.nativePrompt !== 'string' || !object(output.baselineEdits)) return;
+  const { nativePrompt, baselineEdits, ...identity } = output;
+  const manifest = snapshot(path.dirname(output.snapshotPath), output.phase, init);
+  if (!isDeepStrictEqual(identity, manifest) || nativePrompt !== read(manifest.nativePromptPath, true) ||
+      baselineEdits.record !== `<!-- autoplan-baseline-edits:${output.phase} ${JSON.stringify({ sourceSha256: manifest.sourceSha256, replacements: [] })} -->` ||
+      typeof baselineEdits.instructions !== 'string') return;
+  return { phase: output.phase, path: output.snapshotPath };
+}
+
 /** Only the documented literal init argv, optionally after literal cd. No shell evaluation. */
 function initArguments(command: unknown, root: string): string[] | undefined {
   if (typeof command !== 'string') return;
@@ -299,7 +316,7 @@ function verifyCloseEdits(events: Event[], closeOrder: number, init: Invocation)
     fail('Implementation or accepted requirements changed after the close Read. Repeat the existing close procedure.');
 }
 
-function requirePublication(phase: Phase, entryOrder: number, entered: Event[], init: Invocation, current: boolean): void {
+function requirePublication(phase: Phase, entryOrder: number, entered: Event[], init: Invocation, current: boolean, checkpoint?: string): void {
   const closeReads = entered.filter((e): e is Use => e.kind === 'use' && e.name === 'Read' && e.order >= entryOrder &&
     ownPath(e.input?.file_path) && path.basename(e.input.file_path) === 'close-packet.md' &&
     path.dirname(path.dirname(e.input.file_path)) === path.dirname(init.restorePath) &&
@@ -307,6 +324,8 @@ function requirePublication(phase: Phase, entryOrder: number, entered: Event[], 
   if (!closeReads.length) fail(`Finish the existing Phase ${number[phase]} close procedure and Read its complete current close packet before entering the next phase.`);
   const latestPath = closeReads.at(-1)!.input!.file_path as string;
   const content = closePacket(latestPath, phase, init, current), covered = new Set<number>();
+  if (checkpoint && JSON.parse(/^Binding: (.+)$/m.exec(content)![1]!).checkpointPath !== checkpoint)
+    fail(`The Phase ${number[phase]} close packet belongs to an earlier checkpoint. Complete the current phase's close procedure with its fixed checkpoint.`);
   let closeOrder = -1;
   for (const use of closeReads.filter(e => e.input?.file_path === latestPath)) {
     const results = entered.filter(e => e.kind === 'result' && e.toolUseId === use.toolUseId);
@@ -362,8 +381,24 @@ function evaluatePublication(input: PublicationHookInput, root: string, events: 
     const init = invocation(before, root);
     const entered = before.filter(e => e.order > init.start && !disarmed(before.filter(prior => prior.order < e.order), root));
     const target = consumption(requested, input.cwd, root, init)!.phase;
-    let phase: Phase | undefined, entryOrder = init.start;
+    let phase: Phase | undefined, entryOrder = init.start, checkpoint: string | undefined;
+    const seenCheckpoints = new Set<string>(), preparedCheckpoints = new Map<Phase, string>();
     for (const use of entered) {
+      if (use.kind === 'result') {
+        let created: ReturnType<typeof checkpointResult>;
+        try { created = checkpointResult(use, entered, init); } catch { continue; }
+        if (!created || seenCheckpoints.has(created.path)) continue;
+        seenCheckpoints.add(created.path);
+        if (phase && number[created.phase] < number[phase]) {
+          // A fresh checkpoint reopens an affected phase after a later phase.
+          // Historical Reads and reflected create results do not reopen it.
+          phase = created.phase; entryOrder = use.order; checkpoint = created.path;
+        } else if (phase === created.phase) {
+          // CEO's later voice snapshot does not replace its Step-0 checkpoint.
+          checkpoint ??= created.path;
+        } else if (!preparedCheckpoints.has(created.phase)) preparedCheckpoints.set(created.phase, created.path);
+        continue;
+      }
       if (use.kind !== 'use' || !['Read', 'Agent'].includes(use.name ?? '')) continue;
       const results = entered.filter(e => e.kind === 'result' && e.toolUseId === use.toolUseId);
       if (results.length !== 1 || results[0]!.isError !== false || results[0]!.order <= use.order) continue;
@@ -373,9 +408,10 @@ function evaluatePublication(input: PublicationHookInput, root: string, events: 
       if (!phase || number[next.phase] > number[phase]) {
         // An unguarded earlier delivery cannot erase its predecessor's missing
         // publication. Recovery still uses that predecessor's existing close.
-        if (phase) try { requirePublication(phase, entryOrder, entered.filter(e => e.order < use.order), init, false); }
+        if (phase) try { requirePublication(phase, entryOrder, entered.filter(e => e.order < use.order), init, false, checkpoint); }
         catch { continue; }
         phase = next.phase; entryOrder = use.order;
+        checkpoint = preparedCheckpoints.get(phase); preparedCheckpoints.delete(phase);
       }
     }
     const pendingEntry = entered.some(e => e.kind === 'use' && candidate(e, input.cwd) &&
@@ -391,7 +427,7 @@ function evaluatePublication(input: PublicationHookInput, root: string, events: 
       return { allow: true };
     }
     if (number[target] <= number[phase]) return { allow: true };
-    requirePublication(phase, entryOrder, entered, init, true);
+    requirePublication(phase, entryOrder, entered, init, true, checkpoint);
     return { allow: true };
   } catch (error) {
     return { allow: false, reason: error instanceof BoundaryError
