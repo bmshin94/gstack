@@ -646,6 +646,7 @@ test('Autoplan publication libraries and captured hook controls select the nativ
     'test/autoplan-publication-hook.test.ts',
     'test/autoplan-publication-generation.test.ts',
     'test/fixtures/autoplan-publication-boundary-361c.json',
+    'test/fixtures/autoplan-phase-consumption-491.json',
   ]) {
     expect(selectTests([file], E2E_TOUCHFILES).selected).toEqual(['autoplan-chain-pty']);
     expect(selectTests([file], LLM_JUDGE_TOUCHFILES).selected).toEqual([]);

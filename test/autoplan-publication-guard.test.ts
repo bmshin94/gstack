@@ -4,10 +4,11 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { initializePlan, prepareMethodology, createSnapshot, preparePhaseClose } from '../bin/gstack-autoplan-snapshot';
-import { evaluateAutoplanPublication, runPublicationHook, type PublicationHookInput } from '../autoplan/bin/phase-publication-hook.ts';
+import { evaluateAutoplanPublication, runPublicationHook, autoplanReadRange, type PublicationHookInput } from '../autoplan/bin/phase-publication-hook.ts';
 import { readOwnedClaudePublicTranscript, type ClaudeParentPublicEvent } from '../lib/claude-public-transcript';
 import { prematureAutoplanPhaseEntry } from './helpers/autoplan-method-read-audit';
 import captured from './fixtures/autoplan-publication-boundary-361c.json';
+import consumption from './fixtures/autoplan-phase-consumption-491.json';
 
 const ROOT = fs.realpathSync(path.join(import.meta.dir, '..'));
 const dirs: string[] = [];
@@ -186,6 +187,106 @@ describe('Autoplan parent publication guard', () => {
     f.read('new-entry', path.join(ROOT, 'autoplan/sections/ceo-phase.md')); f.current();
     expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Finish the existing Phase 1 close procedure') });
   });
+  test('cached native Read reenters the current invocation without carrying its prior publication', () => {
+    const f = fixture(); f.message();
+    const active = path.join(f.cwd, 'fresh-active.md'), restore = path.join(f.cwd, 'fresh-restore.md');
+    const fresh = initializePlan(f.source, active, restore);
+    f.add({ kind: 'end_turn' }); f.add({ kind: 'user_turn', autoplan: true });
+    f.use('fresh-init', 'Bash', { command: `bun "${ROOT}/bin/gstack-autoplan-snapshot.ts" init "${f.source}" "${active}" "${restore}"` });
+    f.result('fresh-init', { content: JSON.stringify(fresh) });
+    const file = path.join(ROOT, 'autoplan/sections/ceo-phase.md');
+    f.use('cached-entry', 'Read', { file_path: file });
+    f.result('cached-entry', { content: 'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.', file: { filePath: file } });
+    f.current();
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Finish the existing Phase 1 close procedure') });
+  });
+
+  for (const [phase, next] of [['ceo', 'design'], ['design', 'dx'], ['dx', 'eng'], ['eng', 'tasks']] as const) {
+    test(`cached ${phase} entry retains that phase's publication barrier`, () => {
+      const f = fixture(phase, next), priorUse: any = structuredClone(f.events[2]), priorResult: any = structuredClone(f.events[3]);
+      priorUse.toolUseId = priorResult.toolUseId = 'prior-entry';
+      const result: any = f.events[3];
+      result.content = 'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.';
+      result.file = { filePath: priorResult.file.filePath };
+      f.events.unshift(priorUse, priorResult); f.reorder(); f.current();
+      expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining(`Publish the filled Phase ${phaseNumber[phase]}`) });
+      f.events.pop(); f.message(); f.current(); expect(f.evaluate()).toEqual({ allow: true });
+    });
+    test(`cached ${phase} close still needs publication after its new ACK`, () => {
+      const f = fixture(phase, next); f.message();
+      f.use('cache-close', 'Read', { ...(f.events[4] as any).input });
+      f.result('cache-close', { content: 'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.', file: { filePath: f.packet.closePacketPath } });
+      f.current(); expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining(`Publish the filled Phase ${phaseNumber[phase]}`) });
+      f.events.pop(); f.message(); f.current(); expect(f.evaluate()).toEqual({ allow: true });
+    });
+  }
+
+  test('cached incomplete close ranges never turn into a complete close', () => {
+    const f = fixture(), prior: any = f.events[5], request: any = f.events[4];
+    request.input.limit = 1; prior.file.content = prior.file.content.split('\n')[0]; prior.file.numLines = 1;
+    f.use('cache-close', 'Read', { ...request.input });
+    f.result('cache-close', { content: 'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.', file: { filePath: f.packet.closePacketPath } });
+    f.message(); f.current();
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Read every line') });
+  });
+
+  for (const mutation of ['none', 'cache-chain', 'same-range', 'duplicate-prior-use', 'duplicate-prior-result', 'conflicting-prior-use', 'missing-prior', 'stale-body', 'missing-body', 'wrong-total', 'foreign-path', 'foreign-session', 'pending-prior', 'failed-prior', 'ambiguous-prior', 'late-prior-ACK', 'changed-offset', 'changed-limit', 'failed-cache', 'unknown-cache', 'quoted-cache', 'seeded-cache', 'extra-cache-metadata'] as const) {
+    test(`native cached Read range authentication: ${mutation}`, () => {
+      const f = fixture(), use: any = structuredClone(f.events[2]), result: any = structuredClone(f.events[3]);
+      const content = fs.readFileSync(use.input.file_path, 'utf8');
+      let prior: any[] = [use, result];
+      const current: any = { ...structuredClone(use), toolUseId: 'cache', order: 10 };
+      const ack: any = { kind: 'result', sessionId: f.sessionId, toolUseId: 'cache', isError: false, order: 11,
+        content: 'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.', file: { filePath: use.input.file_path } };
+      if (mutation === 'cache-chain') prior.push({ ...structuredClone(current), toolUseId: 'prior-cache', order: 5 }, { ...structuredClone(ack), toolUseId: 'prior-cache', order: 6 });
+      if (mutation === 'same-range') { use.input.offset = current.input.offset = 2; use.input.limit = current.input.limit = 1; result.file.startLine = 2; result.file.numLines = 1; result.file.content = content.split('\n')[1]; }
+      if (mutation === 'duplicate-prior-use') prior.push({ ...structuredClone(use), order: 4 });
+      if (mutation === 'duplicate-prior-result') prior.push({ ...structuredClone(result), order: 4 });
+      if (mutation === 'conflicting-prior-use') prior.push({ ...structuredClone(use), input: { file_path: use.input.file_path + '.foreign' }, order: 4 });
+      if (mutation === 'missing-prior') prior = [];
+      if (mutation === 'stale-body') result.file.content += 'changed';
+      if (mutation === 'missing-body') delete result.file.content;
+      if (mutation === 'wrong-total') result.file.totalLines++;
+      if (mutation === 'foreign-path') use.input.file_path += '.foreign';
+      if (mutation === 'foreign-session') use.sessionId = result.sessionId = 'foreign';
+      if (mutation === 'pending-prior') prior.pop();
+      if (mutation === 'failed-prior') result.isError = true;
+      if (mutation === 'ambiguous-prior') prior.push({ ...result, isError: true, order: 4 });
+      if (mutation === 'late-prior-ACK') result.order = 12;
+      if (mutation === 'changed-offset') current.input.offset = 2;
+      if (mutation === 'changed-limit') current.input.limit = 1;
+      if (mutation === 'failed-cache') ack.isError = true;
+      if (mutation === 'unknown-cache') delete ack.isError;
+      if (mutation === 'quoted-cache') ack.content = `"${ack.content}"`;
+      if (mutation === 'seeded-cache') ack.content = '<system-reminder>This file is already in your context (see "Contents" above) and has not changed on disk. Use that content instead of re-reading.</system-reminder>';
+      if (mutation === 'extra-cache-metadata') ack.file.content = 'unverified';
+      const range = autoplanReadRange(current, ack, content, prior);
+      if (['none', 'cache-chain', 'same-range', 'duplicate-prior-use', 'duplicate-prior-result'].includes(mutation)) expect(range).toEqual(mutation === 'same-range' ? { start: 2, end: 2 } : { start: 1, end: content.split('\n').length });
+      else expect(range).toBeUndefined();
+    });
+  }
+
+  for (const mutation of ['missing-prior', 'stale-body', 'foreign-body', 'failed-cache', 'seeded-cache'] as const) test(`unverified cached initial entry cannot bypass the next phase: ${mutation}`, () => {
+    const f = fixture(), oldUse: any = structuredClone(f.events[2]), oldResult: any = structuredClone(f.events[3]);
+    oldUse.toolUseId = oldResult.toolUseId = 'old-read';
+    f.events.splice(4); (f.events[3] as any).file = { filePath: oldUse.input.file_path };
+    (f.events[3] as any).content = 'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.';
+    if (mutation === 'stale-body') oldResult.file.content += 'different';
+    if (mutation === 'foreign-body') oldUse.input.file_path += '.foreign';
+    if (mutation === 'failed-cache') (f.events[3] as any).isError = true;
+    if (mutation === 'seeded-cache') (f.events[3] as any).content = '<system-reminder>This file is already in your context</system-reminder>';
+    if (mutation !== 'missing-prior') f.events.unshift(oldUse, oldResult);
+    f.reorder(); f.current(); expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Phase 1') });
+    f.input.tool_input.file_path = path.join(ROOT, 'autoplan/sections/ceo-phase.md');
+    (f.events.at(-1) as any).input = f.input.tool_input;
+    expect(f.evaluate()).toEqual({ allow: true });
+  });
+
+  test('an invocation with no observed phase cannot skip its initial CEO entry', () => {
+    const f = fixture(); f.events.splice(2); f.current();
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Phase 1') });
+  });
+
   for (const field of ['methodology', 'checkpoint', 'packet-phase'] as const) test(`a ${field} identity from another invocation cannot grant entry`, () => {
     const f = fixture(); f.message(); f.current();
     if (field === 'methodology') {
@@ -292,4 +393,266 @@ describe('Autoplan parent publication guard', () => {
     fs.writeFileSync(f.input.transcript_path, rows.map(x => JSON.stringify(x)).join('\n') + '\n');
     expect(readOwnedClaudePublicTranscript(f.input.transcript_path, f.cwd, f.sessionId).events.some(e => e.kind === 'use' && e.toolUseId === 'next')).toBe(false);
   });
+});
+
+
+describe('Autoplan authenticated phase consumption', () => {
+  function nextSnapshot(f: ReturnType<typeof fixture>) {
+    const dir = path.join(f.cwd, 'next-skill'); fs.mkdirSync(dir);
+    const skill = path.join(dir, 'SKILL.md');
+    fs.writeFileSync(skill, '---\nname: plan-eng-review\n---\n## Review Sections\nApply every engineering criterion.\n');
+    const method = prepareMethodology('eng', skill, f.restore).methodologyPath;
+    return { method, snapshot: createSnapshot('eng', f.active, f.restore, method) };
+  }
+  test('captured complete Bash driver delivery preserves the original earliest DX omission', () => {
+    const request = consumption.events.find(e => e.kind === 'use' && e.name === 'Bash')!;
+    const pair = consumption.events.filter(e => e.toolUseId === request.toolUseId);
+    const transcript = { status: 'ready' as const, calls: [], assistantMessages: consumption.messages };
+    expect(prematureAutoplanPhaseEntry(pair as any, transcript, [{ phase: 'eng', requiredPhase: 2.5,
+      paths: [path.join(ROOT, 'autoplan/sections/eng-phase.md')], content: consumption.driverContent }], 0))
+      .toMatchObject({ readToolUseId: request.toolUseId, requiredPhase: 2.5 });
+  });
+  test('an owned next methodology Read cannot bypass the missing current parent publication', () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f);
+    f.input.tool_input = { file_path: next.method }; f.current();
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Publish the filled Phase 2.5') });
+  });
+  test('an exact next native Agent dispatch cannot bypass the missing current parent publication', () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f);
+    f.input.tool_name = 'Agent'; f.input.tool_input = { prompt: next.snapshot.nativeDispatchPrompt };
+    f.use('next', 'Agent', f.input.tool_input);
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Publish the filled Phase 2.5') });
+  });
+  const nextInput = (f: ReturnType<typeof fixture>, file: string) => { f.input.tool_input = { file_path: file }; f.current(); };
+  function target(f: ReturnType<typeof fixture>, kind: string) {
+    const n = nextSnapshot(f);
+    return kind === 'methodology' ? n.method : kind === 'methodology.json' ? path.join(path.dirname(n.method), kind) :
+      path.join(path.dirname(n.snapshot.snapshotPath), kind === 'implementation' ? 'eng-implementation.md' : kind);
+  }
+  for (const kind of ['methodology', 'methodology.json', 'native-prompt.md', 'snapshot.json', 'source-implementation.md', 'implementation']) {
+    test(`owned ${kind} consumption needs close and publication, then permits recovery`, () => {
+      const f = fixture('dx', 'eng'), file = target(f, kind);
+      const close = f.events.splice(4, 2); f.reorder(); nextInput(f, file);
+      expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Finish the existing Phase 2.5 close') });
+      f.events.pop(); f.events.push(...close); f.reorder(); f.current();
+      expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Publish the filled Phase 2.5') });
+      f.events.pop(); f.message(); f.current(); expect(f.evaluate()).toEqual({ allow: true });
+    });
+  }
+  test('actual captured parent wording does not publish DX or become tool-output credit', () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f);
+    for (const message of consumption.messages) f.message(message.text);
+    f.use('print-report', 'Bash', { command: 'print-report' }); f.result('print-report', { content: 'Phase 2.5 complete.' });
+    nextInput(f, next.method);
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Publish the filled Phase 2.5') });
+  });
+  for (const by of ['methodology', 'snapshot', 'close', 'Agent'] as const) test(`an owned ${by} delivery infers the actual phase without a driver Read`, () => {
+    const f = fixture('dx', 'eng'); f.events.splice(2, 2); f.reorder();
+    if (by !== 'close') {
+      const prior = f.events.splice(2);
+      if (by === 'Agent') {
+        const manifest = JSON.parse(fs.readFileSync(path.join(path.dirname(f.checkpoint), 'snapshot.json'), 'utf8'));
+        f.use('native-dx', 'Agent', { prompt: manifest.nativeDispatchPrompt }); f.result('native-dx', { content: 'Native reviewer launched.' });
+      } else f.read('owned-entry', by === 'methodology' ? f.method : path.join(path.dirname(f.checkpoint), 'snapshot.json'));
+      f.events.push(...prior); f.reorder();
+    }
+    f.current(); expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Publish the filled Phase 2.5') });
+    f.events.pop(); f.message(); f.current(); expect(f.evaluate()).toEqual({ allow: true });
+  });
+  test('an already delivered unguarded future methodology does not erase the unpublished predecessor', () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f); f.read('unguarded-future', next.method);
+    f.input.tool_name = 'Agent'; f.input.tool_input = { prompt: next.snapshot.nativeDispatchPrompt }; f.use('next', 'Agent', f.input.tool_input);
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Publish the filled Phase 2.5') });
+    f.events.pop(); f.message(); f.use('next', 'Agent', f.input.tool_input); expect(f.evaluate()).toEqual({ allow: true });
+  });
+  for (const kind of ['pending', 'error', 'foreign-session', 'incomplete'] as const) test(`${kind} future delivery cannot advance phase state`, () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f); f.read('future', next.method);
+    const ack = f.events.at(-1)! as any;
+    if (kind === 'pending') f.events.pop();
+    if (kind === 'error') ack.isError = true;
+    if (kind === 'foreign-session') ack.sessionId = 'foreign';
+    if (kind === 'incomplete') ack.file.content += 'not-delivered';
+    f.input.tool_name = 'Agent'; f.input.tool_input = { prompt: next.snapshot.nativeDispatchPrompt }; f.use('next', 'Agent', f.input.tool_input);
+    expect(f.evaluate().allow).toBe(false);
+  });
+  for (const invalid of ['denied-Agent', 'failed-Read', 'malformed-close'] as const) test(`${invalid} cannot poison same-phase repair`, () => {
+    const f = fixture('dx', 'eng');
+    if (invalid === 'denied-Agent') { f.use('bad', 'Agent', { prompt: 'You are the independent ENG reviewer for this phase.\nRead file: "/foreign/native-prompt.md"' }); f.result('bad', { isError: true }); }
+    if (invalid === 'failed-Read') { f.use('bad', 'Read', { file_path: path.join(f.cwd, 'autoplan-eng-foreign', 'methodology.md') }); f.result('bad', { isError: true }); }
+    if (invalid === 'malformed-close') {
+      const d = fs.mkdtempSync(path.join(f.cwd, 'autoplan-dx-')), file = path.join(d, 'close-packet.md');
+      fs.writeFileSync(file, 'Malformed owned close.\n', { mode: 0o444 }); f.read('bad', file);
+    }
+    nextInput(f, f.method); expect(f.evaluate()).toEqual({ allow: true });
+    f.events.pop(); f.input.tool_input = { file_path: path.join(ROOT, 'autoplan/sections/eng-phase.md') }; f.current();
+    expect(f.evaluate().allow).toBe(false);
+    f.events.pop(); const repaired = preparePhaseClose('dx', f.active, f.checkpoint, f.restore, f.method);
+    f.read('repaired-close', repaired.closePacketPath); f.message(); f.current(); expect(f.evaluate()).toEqual({ allow: true });
+  });
+  for (const invalid of ['foreign-root', 'foreign-restore', 'foreign-active', 'mutable', 'aliased', 'wrong-native', 'partial-prompt'] as const) test(`${invalid} current phase consumption remains denied`, () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f); f.message();
+    if (invalid === 'foreign-root') { nextInput(f, path.join(f.cwd, 'foreign', 'autoplan-eng-methodology-data', 'methodology.md')); }
+    else if (invalid === 'partial-prompt' || invalid === 'wrong-native') {
+      f.input.tool_name = 'Agent'; f.input.tool_input = { prompt: next.snapshot.nativeDispatchPrompt + (invalid === 'partial-prompt' ? '\nChanged' : '') };
+      if (invalid === 'wrong-native') { fs.chmodSync(next.snapshot.nativePromptPath, 0o644); fs.appendFileSync(next.snapshot.nativePromptPath, 'Changed'); fs.chmodSync(next.snapshot.nativePromptPath, 0o444); }
+      f.use('next', 'Agent', f.input.tool_input);
+    } else {
+      const manifest = path.join(path.dirname(next.method), 'methodology.json');
+      if (invalid === 'foreign-restore') { const x = JSON.parse(fs.readFileSync(manifest, 'utf8')); x.restorePath = f.source; fs.chmodSync(manifest, 0o644); fs.writeFileSync(manifest, JSON.stringify(x)); fs.chmodSync(manifest, 0o444); }
+      if (invalid === 'foreign-active') { const file = path.join(path.dirname(next.snapshot.snapshotPath), 'snapshot.json'); const x = JSON.parse(fs.readFileSync(file, 'utf8')); x.activePlan = f.source; fs.chmodSync(file, 0o644); fs.writeFileSync(file, JSON.stringify(x)); fs.chmodSync(file, 0o444); }
+      if (invalid === 'mutable') fs.chmodSync(next.method, 0o644);
+      if (invalid === 'aliased') { const file = next.method + '.saved'; fs.renameSync(next.method, file); fs.symlinkSync(file, next.method); }
+      nextInput(f, invalid === 'foreign-active' ? next.snapshot.nativePromptPath : next.method);
+    }
+    expect(f.evaluate().allow).toBe(false);
+  });
+  test('captured report-only Edit preserves implementation and accepted records, but still needs publication', () => {
+    const f = fixture('dx', 'eng'), edit = consumption.events.find(e => e.kind === 'use' && e.name === 'Edit')!.input as any;
+    fs.appendFileSync(f.active, edit.old_string + '\n');
+    f.use('report-edit', 'Edit', { ...edit, file_path: f.active });
+    fs.writeFileSync(f.active, fs.readFileSync(f.active, 'utf8').replace(edit.old_string, edit.new_string));
+    f.result('report-edit', { content: 'File updated.' }); f.current();
+    expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Publish the filled Phase 2.5') });
+    f.events.pop(); f.message(); f.current(); expect(f.evaluate()).toEqual({ allow: true });
+  });
+  for (const change of ['accepted-None', 'accepted-unapplied', 'implementation', 'ambiguous-new', 'replace-all', 'missing-input', 'Write', 'pending-Edit', 'unknown-result'] as const) test(`post-close ${change} requires a new verified close`, () => {
+    const f = fixture(); f.message();
+    let old = 'None: retain the current behavior.', next = 'None: silently changed decision.';
+    if (change === 'implementation') { old = 'Keep documented behavior.'; next = 'Implement new behavior.'; }
+    if (change === 'accepted-unapplied') next = '- Add a new capability.\n';
+    if (change === 'ambiguous-new') next = 'Review record';
+    const input: any = { file_path: f.active, old_string: old, new_string: next };
+    if (change === 'replace-all') input.replace_all = true;
+    if (change === 'missing-input') delete input.old_string;
+    if (change === 'Write') { delete input.old_string; delete input.new_string; input.content = fs.readFileSync(f.active, 'utf8'); }
+    f.use('mutation', change === 'Write' ? 'Write' : 'Edit', input);
+    if (change !== 'Write' && change !== 'pending-Edit') fs.writeFileSync(f.active, fs.readFileSync(f.active, 'utf8').replace(old, next));
+    if (change !== 'pending-Edit') f.result('mutation', { ...(change === 'unknown-result' ? { isError: undefined } : {}), content: 'Updated.' });
+    f.current(); expect(f.evaluate().allow).toBe(false);
+  });
+  test('multiple exact report-only Edits replay in reverse native order', () => {
+    const f = fixture(); fs.appendFileSync(f.active, 'Original report note.\n');
+    for (const [i, old, next] of [[1, 'Original report note.', 'Revised report note.'], [2, 'Revised report note.', 'Final report note.']] as const) {
+      f.use(`edit-${i}`, 'Edit', { file_path: f.active, old_string: old, new_string: next });
+      fs.writeFileSync(f.active, fs.readFileSync(f.active, 'utf8').replace(old, next)); f.result(`edit-${i}`, { content: 'Updated.' });
+    }
+    f.message(); f.current(); expect(f.evaluate()).toEqual({ allow: true });
+  });
+  test('ordinary repair tools, same-phase artifacts and unrelated child Agents remain available', () => {
+    const f = fixture('dx', 'eng'); fs.writeFileSync(f.active, fs.readFileSync(f.active, 'utf8').replace('Keep documented behavior.', 'Repair current behavior.'));
+    nextInput(f, f.method); expect(f.evaluate()).toEqual({ allow: true });
+    f.input.tool_name = 'Bash'; f.input.tool_input = { command: 'current-phase repair' }; expect(f.evaluate()).toEqual({ allow: true });
+    f.input.tool_name = 'Agent'; f.input.tool_input = { prompt: 'Investigate this current-phase prerequisite.' }; expect(f.evaluate()).toEqual({ allow: true });
+  });
+  test('rearm excludes disarmed future Reads and still requires the original outstanding publication', () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f);
+    f.add({ kind: 'end_turn' }); f.add({ kind: 'user_turn', autoplan: false });
+    f.read('unrelated-future', next.method);
+    f.use('re-init', 'Bash', (f.events[0] as any).input); f.result('re-init', { content: JSON.stringify({ ...f.init, reused: true }) });
+    nextInput(f, next.method); expect(f.evaluate()).toMatchObject({ allow: false, reason: expect.stringContaining('Publish the filled Phase 2.5') });
+  });
+  test('bound future native dispatch reaches the actual asynchronous hook reader', async () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f);
+    f.input.tool_name = 'Agent'; f.input.tool_input = { prompt: next.snapshot.nativeDispatchPrompt }; f.use('next', 'Agent', f.input.tool_input); f.journal();
+    expect(await runPublicationHook(f.input, ROOT)).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+    f.events.pop(); f.message(); f.use('next', 'Agent', f.input.tool_input); f.journal();
+    expect(await runPublicationHook(f.input, ROOT)).toEqual({});
+  });
+
+  function audit(f: ReturnType<typeof fixture>) {
+    return prematureAutoplanPhaseEntry(f.events.filter(e => e.kind === 'use' || e.kind === 'result') as any,
+      { status: 'ready', calls: [], assistantMessages: f.events.filter(e => e.kind === 'message') as any },
+      [{ phase: 'eng', requiredPhase: 2.5, paths: [path.join(ROOT, 'autoplan/sections/eng-phase.md')],
+        content: fs.readFileSync(path.join(ROOT, 'autoplan/sections/eng-phase.md'), 'utf8') }], 0);
+  }
+  test('Bash terminal whitespace transport preserves complete driver delivery', () => {
+    const f = fixture('dx', 'eng');
+    const file = path.join(ROOT, 'autoplan/sections/eng-phase.md');
+    f.use('native-cat', 'Bash', { command: `cat "${file}"` });
+    f.result('native-cat', { content: fs.readFileSync(file, 'utf8').trimEnd() });
+    expect(audit(f)).toMatchObject({ phase: 'eng', readToolUseId: 'native-cat' });
+  });
+
+  for (const ending of ['', '\n', '\r\n', ' \t\r\n', '\n\n\n']) test(`complete Bash driver accepts only terminal whitespace normalization: ${JSON.stringify(ending)}`, () => {
+    const f = fixture('dx', 'eng'), content = fs.readFileSync(path.join(ROOT, 'autoplan/sections/eng-phase.md'), 'utf8');
+    f.use('transport', 'Bash', { command: 'opaque-native-driver-loader' });
+    f.result('transport', { content: content.trimEnd() + ending });
+    expect(audit(f)).toMatchObject({ readToolUseId: 'transport' });
+    f.message(); expect(audit(f)).toMatchObject({ readToolUseId: 'transport' });
+  });
+  for (const change of ['missing-first', 'missing-last', 'internal-space', 'leading-space', 'same-line-prefix', 'same-line-suffix'] as const) test(`meaningful Bash driver content remains strict: ${change}`, () => {
+    const f = fixture('dx', 'eng'), original = fs.readFileSync(path.join(ROOT, 'autoplan/sections/eng-phase.md'), 'utf8').trimEnd();
+    const text = change === 'missing-first' ? original.slice(1) : change === 'missing-last' ? original.slice(0, -1) :
+      change === 'internal-space' ? original.replace('Read ', 'Read  ') : change === 'leading-space' ? ' ' + original :
+      change === 'same-line-prefix' ? 'PREFIX' + original : original + 'SUFFIX';
+    expect(text).not.toBe(original);
+    f.use('invalid-transport', 'Bash', { command: 'opaque-loader' }); f.result('invalid-transport', { content: text });
+    expect(audit(f)).toBeNull();
+  });
+  test('cached future driver delivery is visible to the detector at the current native request', () => {
+    const f = fixture('dx', 'eng'), file = path.join(ROOT, 'autoplan/sections/eng-phase.md');
+    f.read('earlier-body', file);
+    const prior = f.events.splice(-2); f.events.unshift(...prior); f.reorder();
+    // Earlier body predates this audit window. The new native cache ACK is the
+    // current entry; an eventual report does not erase that earlier violation.
+    prior.forEach(e => { e.timestamp = new Date(clock - 100).toISOString(); });
+    f.use('cached-future', 'Read', { file_path: file, offset: 1 });
+    f.result('cached-future', { content: 'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.', file: { filePath: file } });
+    const detect = () => prematureAutoplanPhaseEntry(f.events.filter(e => e.kind === 'use' || e.kind === 'result') as any,
+      { status: 'ready', calls: [], assistantMessages: f.events.filter(e => e.kind === 'message') as any },
+      [{ phase: 'eng', requiredPhase: 2.5, paths: [file], content: fs.readFileSync(file, 'utf8') }], clock);
+    expect(detect()).toMatchObject({ readToolUseId: 'cached-future' });
+    f.message(); expect(detect()).toMatchObject({ readToolUseId: 'cached-future' });
+  });
+
+  for (const kind of ['Read', 'Agent'] as const) test(`the actual detector authenticates ${kind} phase consumption through the current snapshot APIs`, () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f);
+    if (kind === 'Read') f.read('eng-consumer', next.method, 2, 1);
+    else { f.use('eng-consumer', 'Agent', { prompt: next.snapshot.nativeDispatchPrompt }); f.result('eng-consumer', { content: 'Native child launched.' }); }
+    expect(audit(f)).toMatchObject({ phase: 'eng', requiredPhase: 2.5, readToolUseId: 'eng-consumer' });
+    f.message();
+    expect(audit(f)).toMatchObject({ readToolUseId: 'eng-consumer', reportAt: f.events.at(-1)!.timestamp });
+    const message = f.events.pop()!; message.timestamp = new Date(clock - 1).toISOString(); f.events.unshift(message);
+    expect(audit(f)).toBeNull();
+  });
+  for (const mutation of ['missing-result', 'error', 'foreign-session', 'bad-content', 'wrong-restore', 'wrong-active', 'wrong-prompt', 'conflicting-result'] as const) test(`detector ${mutation} supplies no authenticated consumption`, () => {
+    const f = fixture('dx', 'eng'), next = nextSnapshot(f);
+    const agent = ['wrong-active', 'wrong-prompt'].includes(mutation);
+    if (agent) { f.use('consumer', 'Agent', { prompt: next.snapshot.nativeDispatchPrompt + (mutation === 'wrong-prompt' ? '\nForeign change.' : '') }); f.result('consumer', { content: 'Launched.' }); }
+    else f.read('consumer', next.method);
+    const result = f.events.at(-1)! as any;
+    if (mutation === 'missing-result') f.events.pop();
+    if (mutation === 'error') result.isError = true;
+    if (mutation === 'foreign-session') result.sessionId = 'foreign';
+    if (mutation === 'bad-content') result.file.content += 'Changed.';
+    if (mutation === 'conflicting-result') f.add({ ...result, isError: true });
+    if (mutation === 'wrong-restore' || mutation === 'wrong-active') {
+      const file = mutation === 'wrong-restore' ? path.join(path.dirname(next.method), 'methodology.json') : path.join(path.dirname(next.snapshot.snapshotPath), 'snapshot.json');
+      const m = JSON.parse(fs.readFileSync(file, 'utf8')); m[mutation === 'wrong-restore' ? 'restorePath' : 'activePlan'] = f.source;
+      fs.chmodSync(file, 0o644); fs.writeFileSync(file, JSON.stringify(m)); fs.chmodSync(file, 0o444);
+    }
+    expect(audit(f)).toBeNull();
+  });
+  for (const mode of ['literal-command', 'opaque-command', 'text-block', 'late-report', 'partial', 'changed', 'error', 'foreign-session', 'backward-result', 'conflicting-result', 'quoted-report', 'earlier-report'] as const) test(`captured Bash driver delivery: ${mode}`, () => {
+    const request = structuredClone(consumption.events.find(e => e.kind === 'use' && e.name === 'Bash')!) as any;
+    const result = structuredClone(consumption.events.find(e => e.kind === 'result' && e.toolUseId === request.toolUseId)!) as any;
+    const transcript: any = { status: 'ready', calls: [], assistantMessages: structuredClone(consumption.messages) };
+    if (mode === 'opaque-command') request.input.command = 'run-current-script';
+    if (mode === 'text-block') result.content = [{ type: 'text', text: result.content }];
+    if (mode === 'partial') result.content = result.content.replace(consumption.driverContent, consumption.driverContent.slice(1));
+    if (mode === 'changed') result.content = result.content.replace(consumption.driverContent, consumption.driverContent.replace('Phase 3', 'Phase 9'));
+    if (mode === 'error') result.isError = true;
+    if (mode === 'foreign-session') result.sessionId = 'foreign';
+    if (mode === 'backward-result') result.timestamp = new Date(Date.parse(request.timestamp) - 1).toISOString();
+    if (['late-report', 'quoted-report', 'earlier-report'].includes(mode)) transcript.assistantMessages.push({ sessionId: request.sessionId,
+      timestamp: new Date(Date.parse(request.timestamp) + (mode === 'late-report' ? 1 : -1)).toISOString(),
+      text: mode === 'quoted-report' ? '```\nPhase 2.5 complete.\n```' : 'Phase 2.5 complete.' });
+    const events = [request, result]; if (mode === 'conflicting-result') events.push({ ...result, isError: true });
+    const detected = prematureAutoplanPhaseEntry(events, transcript, [{ phase: 'eng', requiredPhase: 2.5,
+      paths: [path.join(ROOT, 'autoplan/sections/eng-phase.md')], content: consumption.driverContent }], 0);
+    const expected = ['literal-command', 'opaque-command', 'text-block', 'late-report', 'quoted-report'].includes(mode);
+    expect(detected !== null).toBe(expected);
+    if (expected) expect(detected!.readToolUseId).toBe(request.toolUseId);
+  });
+
 });

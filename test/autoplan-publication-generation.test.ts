@@ -17,15 +17,17 @@ function context(host: TemplateContext['host']): TemplateContext {
 function hookCommand(): string {
   const parsed = Bun.YAML.parse(generateAutoplanPublicationHook(context('claude'))) as any;
   expect(Object.keys(parsed.hooks)).toEqual(['PreToolUse']);
-  expect(parsed.hooks.PreToolUse).toHaveLength(1);
-  expect(parsed.hooks.PreToolUse[0].matcher).toBe('Read');
-  expect(parsed.hooks.PreToolUse[0].hooks).toHaveLength(1);
-  expect(parsed.hooks.PreToolUse[0].hooks[0].type).toBe('command');
+  expect(parsed.hooks.PreToolUse.map((entry: any) => entry.matcher)).toEqual(['Read', 'Agent']);
+  for (const entry of parsed.hooks.PreToolUse) {
+    expect(entry.hooks).toHaveLength(1);
+    expect(entry.hooks[0].type).toBe('command');
+    expect(entry.hooks[0].command).toBe(parsed.hooks.PreToolUse[0].hooks[0].command);
+  }
   return parsed.hooks.PreToolUse[0].hooks[0].command;
 }
 
 describe('Autoplan publication hook generation', () => {
-  test('only Claude receives the scoped Read hook', () => {
+  test('only Claude receives the scoped Read and Agent hook', () => {
     expect(hookCommand()).toContain('/autoplan/bin/phase-publication-hook');
     for (const host of ALL_HOST_CONFIGS) {
       if (host.name !== 'claude') expect(generateAutoplanPublicationHook(context(host.name))).toBe('');

@@ -46,7 +46,7 @@ export interface PlanCountTranscript {
   error?: string;
 }
 
-/** Hook-only append order. The existing fixture projection remains unchanged. */
+/** Hook-only verified causal order (physical order for independent ready records). The existing fixture projection remains unchanged. */
 export type ClaudeParentPublicEvent = (NativePublicToolEvent | {
   kind: 'message'; sessionId: string; timestamp: string; text: string;
 } | {
@@ -142,6 +142,82 @@ function validQuestions(value: unknown): value is NativePlanQuestion[] {
       object(o) && typeof o.label === 'string' && o.label.trim()));
 }
 
+/** Native journal writes can flush children before parents. Only the exact
+ * owned snapshot uses UUID causality; ordinary readers keep physical order. */
+function ownedCausalLines(lines: string[], cwd: string, filename: string): string[] {
+  const uuid = (value: unknown): value is string => typeof value === 'string' &&
+    /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
+  const scoped = lines.flatMap((line, index) => {
+    if (!line.trim()) return [];
+    const record = JSON.parse(line);
+    return object(record) && filename === `${record.sessionId}.jsonl` && record.agentId == null
+      ? [{ line, index, record }] : [];
+  });
+  const first = scoped.find(x => object(x.record.message) && ['user', 'assistant'].includes(x.record.message.role));
+  if (!first) return [];
+  const nodes = scoped.filter(({ record: r }) => r.isSidechain === false &&
+    typeof r.cwd === 'string' && path.isAbsolute(r.cwd) && uuid(r.uuid) && validTimestamp(r.timestamp));
+  const byId = new Map<string, typeof nodes[number]>();
+  for (const node of nodes) {
+    if (byId.has(node.record.uuid)) throw Error('ambiguous owned native UUID');
+    byId.set(node.record.uuid, node);
+  }
+  if (byId.get(first.record.uuid) !== first) return [];
+  const parent = (r: Record<string, any>): string | undefined => uuid(r.parentUuid) ? r.parentUuid :
+    r.parentUuid === null && r.type === 'system' && r.subtype === 'compact_boundary' &&
+    r.message == null && uuid(r.logicalParentUuid) ? r.logicalParentUuid : undefined;
+  // Anchor through the first observed conversation node, never an unrelated
+  // later root. An unflushed/malformed ancestor supplies no ownership.
+  let root = first;
+  const ancestry = new Set<string>();
+  while (true) {
+    if (ancestry.has(root.record.uuid)) throw Error('cyclic owned native ancestry');
+    ancestry.add(root.record.uuid);
+    const id = parent(root.record);
+    if (!id) break;
+    const next = byId.get(id);
+    if (!next) return [];
+    root = next;
+  }
+  if (root.record.parentUuid !== null || root.record.cwd !== cwd ||
+      !object(root.record.message) || root.record.message.role !== 'user') return [];
+  if (nodes.some(x => x !== root && x.record.parentUuid === null &&
+      object(x.record.message) && x.record.message.role === 'user')) throw Error('competing owned native roots');
+  // Stable topological traversal preserves physical order whenever two ready
+  // records have no parent dependency. No timestamp provides ordering credit.
+  const children = new Map<string, number[]>();
+  const indexed = new Map(nodes.map(x => [x.index, x]));
+  for (const node of nodes) {
+    const id = parent(node.record);
+    if (id) { const list = children.get(id) ?? []; list.push(node.index); children.set(id, list); }
+  }
+  const ready: number[] = [];
+  const offer = (value: number) => {
+    let i = ready.length; ready.push(value);
+    while (i > 0) { const p = (i - 1) >> 1; if (ready[p]! <= value) break;
+      ready[i] = ready[p]!; i = p; }
+    ready[i] = value;
+  };
+  const take = () => {
+    const result = ready[0]!, value = ready.pop()!;
+    if (ready.length) { let i = 0;
+      while (i * 2 + 1 < ready.length) { let c = i * 2 + 1;
+        if (c + 1 < ready.length && ready[c + 1]! < ready[c]!) c++;
+        if (ready[c]! >= value) break; ready[i] = ready[c]!; i = c; }
+      ready[i] = value;
+    }
+    return result;
+  };
+  const ordered: string[] = [];
+  offer(root.index);
+  while (ready.length) {
+    const node = indexed.get(take())!;
+    ordered.push(node.line);
+    for (const child of children.get(node.record.uuid) ?? []) offer(child);
+  }
+  return ordered;
+}
+
 /**
  * Count callers consume each answered (sessionId, toolUseId) once, regardless
  * of questions[].length. A batched tool call must never become N findings.
@@ -188,7 +264,8 @@ export function readPlanCountTranscript(configDir: string, cwd: string,
           typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
         // Claude appends JSONL during rendering; an unfinished record is not
         // evidence of a call or an answer until its newline has been written.
-        for (const line of text.slice(0, text.lastIndexOf('\n') + 1).split('\n')) {
+        const completeLines = text.slice(0, text.lastIndexOf('\n') + 1).split('\n');
+        for (const line of ownedSnapshot ? ownedCausalLines(completeLines, cwd, entry.name) : completeLines) {
           if (!line.trim()) continue;
           const record = JSON.parse(line);
           if (!object(record) || typeof record.sessionId !== 'string' ||
@@ -206,7 +283,7 @@ export function readPlanCountTranscript(configDir: string, cwd: string,
           }
           if (continuation) ancestry.add(record.uuid);
           // Native compaction resets parentUuid but links its prior owned
-          // append-order ancestry through logicalParentUuid. Summary text does
+          // UUID ancestry through logicalParentUuid. Summary text does
           // not establish ownership, and an arbitrary reset cannot seed a root.
           const compactContinuation = parentMetadata && record.type === 'system' &&
             record.subtype === 'compact_boundary' && record.parentUuid === null &&

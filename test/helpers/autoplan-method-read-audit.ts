@@ -4,6 +4,7 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, sep } from 'node:path';
 import type { NativePublicToolEvent, PlanCountTranscript } from './plan-count-transcript';
 import { autoplanPhaseCompletions } from './autoplan-phase-observer';
+import { boundAutoplanPhaseConsumption, autoplanReadRange } from '../../autoplan/bin/phase-publication-hook.ts';
 
 export interface MethodologyReadBinding {
   phase: string;
@@ -200,11 +201,9 @@ export function prematureAutoplanPhaseEntry(
   if (transcript.status !== 'ready' || !Number.isFinite(commandStartedAt)) return null;
   const seen = new Set<string>();
   for (const request of events) {
-    if (request.kind !== 'use' || request.name !== 'Read' || !identity(request.sessionId) ||
-        !identity(request.toolUseId)) continue;
-    const instruction = instructions.find(item => item.paths.includes(request.input?.file_path as string));
+    if (request.kind !== 'use' || !identity(request.sessionId) || !identity(request.toolUseId)) continue;
     const at = Date.parse(request.timestamp);
-    if (!instruction || !Number.isFinite(at) || at < commandStartedAt) continue;
+    if (!Number.isFinite(at) || at < commandStartedAt) continue;
     const key = `${request.sessionId}:${request.toolUseId}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -215,13 +214,44 @@ export function prematureAutoplanPhaseEntry(
     const result = results[0]!;
     const resultAt = Date.parse(result.timestamp);
     if (events.indexOf(result) < events.indexOf(request) || !Number.isFinite(resultAt) || resultAt < at || result.isError !== false) continue;
-    const file = result.file;
-    const lines = instruction.content.split('\n');
-    if (!object(file) || !instruction.paths.includes(file.filePath) || typeof file.content !== 'string' ||
-        !integer(file.startLine) || !integer(file.numLines) || file.totalLines !== lines.length ||
-        file.startLine + file.numLines - 1 > lines.length || (request.input?.offset ?? 1) !== file.startLine ||
-        (request.input?.limit !== undefined && (!integer(request.input.limit) || file.numLines > request.input.limit)) ||
-        file.content !== lines.slice(file.startLine - 1, file.startLine - 1 + file.numLines).join('\n')) continue;
+    let instruction = request.name === 'Read'
+      ? instructions.find(item => item.paths.includes(request.input?.file_path as string)) : undefined;
+    let content = instruction?.content;
+    if (!instruction && request.name === 'Bash') {
+      // Delivery of the complete frozen driver is entry regardless of shell
+      // spelling. This observes output; it does not authorize arbitrary Bash.
+      const texts = typeof result.content === 'string' ? [result.content] : Array.isArray(result.content)
+        ? result.content.filter(item => object(item) && item.type === 'text' && typeof item.text === 'string').map(item => item.text as string) : [];
+      instruction = instructions.find(item => item.content.trimEnd().length > 0 && texts.some(text => {
+        // Native Bash may strip terminal whitespace. Keep every meaningful byte,
+        // including leading/internal whitespace and whole-line source boundaries.
+        const expected = item.content.trimEnd(), actual = text.trimEnd();
+        const start = actual.indexOf(expected), end = start + expected.length;
+        return start >= 0 && (start === 0 || actual[start - 1] === '\n') &&
+          (end === actual.length || actual[end] === '\n');
+      }));
+    }
+    if (!instruction && ['Read', 'Agent'].includes(request.name ?? '')) {
+      // No new caller authority: derive the canonical installation from the
+      // existing exact driver binding; the production classifier authenticates
+      // init, restore, active plan and immutable source/dispatch identities.
+      for (const item of instructions) try {
+        const canonical = item.paths[0];
+        if (!canonical || basename(dirname(canonical)) !== 'sections' || basename(dirname(dirname(canonical))) !== 'autoplan') continue;
+        const root = dirname(dirname(dirname(canonical)));
+        const ordered = events.filter(e => e.sessionId === request.sessionId).map((e, order) => ({ ...e, order }));
+        const use = ordered.find(e => e.kind === 'use' && e.toolUseId === request.toolUseId)!;
+        const bound = boundAutoplanPhaseConsumption(ordered, use as any, root, root);
+        if (bound?.phase === item.phase) { instruction = item; content = bound.content; break; }
+      } catch { /* An unbound path/prompt supplies no consumed-phase evidence. */ }
+    }
+    if (!instruction) continue;
+    if (request.name === 'Read') {
+      const ordered = events.filter(e => e.sessionId === request.sessionId).map((e, order) => ({ ...e, order }));
+      const use = ordered.find(e => e.kind === 'use' && e.toolUseId === request.toolUseId)!;
+      const ack = ordered.find(e => e.kind === 'result' && e.toolUseId === request.toolUseId)!;
+      if (!autoplanReadRange(use as any, ack as any, content!, ordered as any)) continue;
+    }
     const report = autoplanPhaseCompletions({ ...transcript,
       assistantMessages: transcript.assistantMessages.filter(message => message.sessionId === request.sessionId) },
     commandStartedAt).find(hit => hit.phase === instruction.requiredPhase);

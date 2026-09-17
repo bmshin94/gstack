@@ -103,7 +103,7 @@ export function extractImplementationPlan(plan: string): string {
 // The author records accepted requirements, including conditions and verification,
 // once. This verifies their exact transport, not approval or complete enumeration.
 type AcceptedBlock = { phase: string; start: number; end: number; raw: string; body: string; newline: string; none: boolean };
-function acceptedBlocks(text: string): Map<string, AcceptedBlock> {
+export function acceptedBlocks(text: string): Map<string, AcceptedBlock> {
   const blocks = new Map<string, AcceptedBlock>();
   let open: { phase: string; start: number; body: number } | null = null;
   let fence: { char: string; length: number } | null = null;

@@ -23,6 +23,11 @@ hooks:
         - type: command
           command: "bash -c 'S=\"$HOME/.claude/skills/gstack/autoplan/bin/phase-publication-hook\"\nif [ -f \"$S\" ]; then exec bash \"$S\"; fi\nprintf '\\''%s\\n'\\'' '\\''{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Autoplan publication guard is unavailable. Restore the installed autoplan/bin/phase-publication-hook before continuing this skill.\"}}'\\'''"
           statusMessage: "Checking Autoplan phase publication..."
+    - matcher: "Agent"
+      hooks:
+        - type: command
+          command: "bash -c 'S=\"$HOME/.claude/skills/gstack/autoplan/bin/phase-publication-hook\"\nif [ -f \"$S\" ]; then exec bash \"$S\"; fi\nprintf '\\''%s\\n'\\'' '\\''{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Autoplan publication guard is unavailable. Restore the installed autoplan/bin/phase-publication-hook before continuing this skill.\"}}'\\'''"
+          statusMessage: "Checking Autoplan phase publication..."
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
@@ -640,6 +645,10 @@ Phases MUST execute in strict order: CEO → Design (if UI scope) → DX (if
 developer-facing scope) → Eng. Eng runs LAST, always, reviewing all prior amendments.
 Keep ONE phase active, completing these gates in order:
 1. Load its phase instructions and full skill/sections, recording complete Read ranges.
+   On Claude Code, enter through a native `Read` of the installed phase driver,
+   then use native `Read` for its methodology ranges. The driver Read is the
+   guarded entrypoint. If denied, finish or repair the preceding phase and retry
+   that same Read; changing file-loading tools does not satisfy the boundary.
 2. Complete the phase's required preliminary work (CEO: all Step 0, including its
    Spec Review Loop and its amendment checkpoint), then create the fresh snapshot
    and dispatch its nativeDispatchPrompt unchanged.

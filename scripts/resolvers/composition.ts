@@ -22,13 +22,14 @@ export function generateAutoplanPublicationHook(ctx: TemplateContext, args?: str
 if [ -f "$S" ]; then exec bash "$S"; fi
 printf '%s\\n' ${shellWord(unavailable)}`;
   const command = `bash -c ${shellWord(script)}`;
-  return `hooks:
-  PreToolUse:
-    - matcher: "Read"
+  // Keep each tool literal: the early-question launchers admit these hooks
+  // through their existing finite matcher policy.
+  const entries = ['Read', 'Agent'].map(tool => `    - matcher: "${tool}"
       hooks:
         - type: command
           command: ${JSON.stringify(command)}
-          statusMessage: "Checking Autoplan phase publication..."`;
+          statusMessage: "Checking Autoplan phase publication..."`).join('\n');
+  return `hooks:\n  PreToolUse:\n${entries}`;
 }
 
 /**
