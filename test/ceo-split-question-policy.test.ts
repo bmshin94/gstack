@@ -2,11 +2,125 @@ import { expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { pickCeoSplitQuestion } from './helpers/ceo-split-question-policy';
+import { ceoSplitCandidate, ceoSplitDecisionFingerprints, isCeoSplitCandidateCall, pickCeoSplitCountQuestion, pickCeoSplitQuestion } from './helpers/ceo-split-question-policy';
 import { pickPlanReviewQuestion } from './helpers/plan-review-cases';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
+import { capturePlanCountQuestion, nativePlanCallFingerprint } from './helpers/claude-pty-runner';
+import retained from './fixtures/ceo-split-actor-6aef.json';
 
 const ROOT = path.resolve(import.meta.dir, '..');
+const capturedCalls = retained.calls as Parameters<typeof nativePlanCallFingerprint>[0][];
+
+test('the captured actor followed option 1 instead of its recommendation and cap policy', () => {
+  const calls = capturedCalls.slice(0, 7);
+  expect(calls.map(call => call.questions[0]!.options.findIndex(option =>
+    option.label === call.answers?.[call.questions[0]!.question]) + 1)).toEqual([1, 1, 1, 1, 1, 1, 1]);
+  expect(calls.map(call => pickCeoSplitQuestion(call.questions[0]!))).toEqual([1, 2, 1, 2, 2, 2, 3]);
+  // The original timeout and actual answers remain untouched by the replay.
+  expect(retained.outcome).toBe('timeout');
+});
+
+test('all five actual candidate menus count before mode selection, without credit for later expansions', () => {
+  const fingerprints = capturedCalls.map(call => nativePlanCallFingerprint(call, 1, true));
+  expect(fingerprints.map(isCeoSplitCandidateCall)).toEqual([true, true, true, true, true, false, false, false, false, false, false, false, false]);
+  expect(capturedCalls.slice(0, 5).map(call => ceoSplitCandidate(call.questions[0]!))).toEqual(['E1', 'E2', 'E3', 'E4', 'E5']);
+});
+
+test('the native picker uses the complete matched active tab and never mutates it', () => {
+  for (const call of capturedCalls.slice(0, 7)) {
+    const pending = { ...structuredClone(call), answered: false, answers: undefined };
+    const fp = nativePlanCallFingerprint(pending, 1, true);
+    const before = structuredClone(fp);
+    expect(pickCeoSplitCountQuestion(fp, fp)).toBe(pickCeoSplitQuestion(pending.questions[0]!));
+    expect(fp).toEqual(before);
+  }
+});
+
+test('each complete native tab keeps its own signature and policy', () => {
+  const call = { ...structuredClone(capturedCalls[0]!), answered: false, answers: undefined,
+    questions: [structuredClone(capturedCalls[0]!.questions[0]!), structuredClone(capturedCalls[1]!.questions[0]!)] };
+  // Exercise the actual native viewport adapter with compact controlled
+  // questions, retaining the captured options and their recommendation order.
+  for (const question of call.questions) question.question = question.question.split('\n')[0]!;
+  for (let index = 0; index < call.questions.length; index++) {
+    const question = call.questions[index]!;
+    const screen = `← ☐ ${call.questions.map(q => q.header).join(' ☐ ')} ✔ Submit →\n│ ${question.question}\n` +
+      question.options.map((option, i) => `${i === 0 ? '❯' : ''}${i + 1}.${option.label}`).join('\n') +
+      '\n5.Type something.\n6.Chat about this\nEnter to select · Tab/Arrow keys to navigate · Esc to cancel\n';
+    const active = capturePlanCountQuestion(screen, new Set(), 1, true, call)!;
+    expect(active.nativeQuestionIndex).toBe(index);
+    expect(active.signature).toBe(`${call.sessionId}:${call.toolUseId}:question:${index}`);
+    expect(pickCeoSplitCountQuestion(active, active)).toBe(index + 1);
+    expect(() => pickCeoSplitCountQuestion(active, {...active, signature: `${call.sessionId}:${call.toolUseId}:question:${1 - index}`}))
+      .toThrow('complete matched native question');
+  }
+});
+
+test('scope validation receives every exact native question, including pre-review choices and expansions', () => {
+  const transcript = { status: 'ready' as const, calls: capturedCalls, assistantMessages: [] };
+  const fingerprints = capturedCalls.map(call => nativePlanCallFingerprint(call, 1, true));
+  const result = ceoSplitDecisionFingerprints(transcript, fingerprints);
+  expect(result).toHaveLength(capturedCalls.length);
+  expect(result.map(fp => fp.questions)).toEqual(capturedCalls.map(call => call.questions));
+  expect(result.every(fp => fp.selectedOptions.every(index => index === 1))).toBe(true);
+  expect(result.map(fp => fp.toolUseId)).toEqual(fingerprints.map(fp => fp.signature));
+});
+
+test.each(['custom_answer', 'missing_tab_answer', 'duplicate_label', 'unanswered', 'failed', 'foreign', 'omitted_call', 'extra_fingerprint', 'duplicate_call'])(
+  'semantic input rejects %s instead of silently dropping or remapping it', kind => {
+    const calls = structuredClone(capturedCalls.slice(0, 2));
+    if (kind === 'custom_answer') calls[1]!.answers = { [calls[1]!.questions[0]!.question]: 'Include something else' };
+    if (kind === 'missing_tab_answer') calls[1]!.questions.push(structuredClone(calls[0]!.questions[0]!));
+    if (kind === 'duplicate_label') calls[1]!.questions[0]!.options[1]!.label = calls[1]!.questions[0]!.options[0]!.label;
+    if (kind === 'unanswered') calls[1]!.answered = false;
+    if (kind === 'failed') calls[1]!.failed = true;
+    if (kind === 'duplicate_call') calls[1] = structuredClone(calls[0]!);
+    const fingerprints = calls.map(call => nativePlanCallFingerprint(call, 1, true));
+    if (kind === 'foreign') fingerprints[1]!.signature = 'another:call';
+    if (kind === 'omitted_call') fingerprints.pop();
+    if (kind === 'extra_fingerprint') fingerprints.push(structuredClone(fingerprints[0]!));
+    expect(() => ceoSplitDecisionFingerprints({status: 'ready', calls, assistantMessages: []}, fingerprints)).toThrow('Split decisions require');
+  },
+);
+
+test.each(['Hold', 'D) Hold', 'D. Hold (recommended)'])('selected %s grants no candidate disposition', label => {
+  const call = structuredClone(capturedCalls[0]!);
+  call.questions[0]!.options[3]!.label = label;
+  call.answers = { [call.questions[0]!.question]: label };
+  expect(ceoSplitCandidate(call.questions[0]!)).toBe('E1');
+  expect(isCeoSplitCandidateCall(nativePlanCallFingerprint(call, 1, true))).toBe(false);
+});
+
+test.each(['missing', 'foreign', 'answered', 'failed', 'unmatched_options', 'ambiguous_tab'])(
+  'the split actor rejects %s native routing evidence', kind => {
+    const call = { ...structuredClone(capturedCalls[1]!), answered: false, answers: undefined };
+    const fp = nativePlanCallFingerprint(call, 1, true);
+    if (kind === 'missing') fp.nativeCall = undefined;
+    if (kind === 'foreign') fp.signature = 'another-session:another-call';
+    if (kind === 'answered') call.answered = true;
+    if (kind === 'failed') call.failed = true;
+    if (kind === 'unmatched_options') fp.options[0]!.label = 'Unrelated option';
+    if (kind === 'ambiguous_tab') call.questions.push(structuredClone(call.questions[0]!));
+    expect(() => pickCeoSplitCountQuestion(fp, fp)).toThrow('complete matched native question');
+  },
+);
+
+test.each(['quoted', 'summary', 'wrong_platform', 'bundled', 'missing_cut', 'duplicate_action', 'multi_select', 'no_ack', 'failed'])(
+  'candidate credit rejects %s evidence', kind => {
+    const call = structuredClone(capturedCalls[0]!);
+    const question = call.questions[0]!;
+    if (kind === 'quoted') question.question = 'Example: ' + question.question;
+    if (kind === 'summary') question.question = 'D9 — Confirm E1 Slack was included?';
+    if (kind === 'wrong_platform') question.header = 'E1 Discord';
+    if (kind === 'bundled') question.question = question.question.replace('quarter?', 'quarter, and E2: Discord?');
+    if (kind === 'missing_cut') question.options = question.options.filter(option => option.label !== 'Cut');
+    if (kind === 'duplicate_action') question.options[3]!.label = 'Include';
+    if (kind === 'multi_select') question.multiSelect = true;
+    if (kind === 'no_ack') call.answered = false;
+    if (kind === 'failed') call.failed = true;
+    expect(isCeoSplitCandidateCall(nativePlanCallFingerprint(call, 1, true))).toBe(false);
+  },
+);
 const question = (labels = ['A) Keep all six, lift the cap', 'B) Trim to cap: Slack + Teams (recommended)',
   'C) Revise one option', 'D) Hold — discuss first']): NativeQuestion => ({
   header: 'Final set', multiSelect: false,
@@ -158,8 +272,29 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CEO_SCOPE_CANDIDATES } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-cases.ts'))};
 import { FORCING_SPLIT_OVERFLOW_CEO } from ${JSON.stringify(path.join(ROOT, 'test/fixtures/forcing-finding-seeds.ts'))};
-const facts = { calls: 0, directory: '', candidates: [], validated: false };
+import retained from ${JSON.stringify(path.join(ROOT, 'test/fixtures/ceo-split-actor-6aef.json'))};
+import { ceoSplitCandidate, isCeoSplitCandidateCall, pickCeoSplitCountQuestion } from ${JSON.stringify(path.join(ROOT, 'test/helpers/ceo-split-question-policy.ts'))};
+import { validatePlanReviewDecisionResponse } from ${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))};
+const validate = validatePlanReviewDecisionResponse;
+const facts = { calls: 0, judges: 0, directory: '', candidates: [], validated: false };
 const save = () => fs.writeFileSync(${JSON.stringify(facts)}, JSON.stringify(facts));
+mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/plan-review-decisions.ts'))}, () => ({
+  evaluatePlanReviewDecisions: async input => {
+    facts.judges++; save();
+    expect(input.kind).toBe('scope'); expect(input.floor).toBe(4);
+    expect(input.targets).toEqual(CEO_SCOPE_CANDIDATES);
+    expect(input.deadlineAt).toBeGreaterThan(Date.now());
+    expect(input.deadlineAt - Date.now()).toBeLessThanOrEqual(1_500_000);
+    return validate(input, { questions: input.fingerprints.map(fp => ({
+      toolUseId: fp.toolUseId, questionIndex: 1, kind: 'scope',
+      targetIds: [fp.questions[0].header.split(' ')[0]], independentDecisions: 1,
+      evidence: [{field: 'question', optionIndex: null, quote: fp.questions[0].question.split('\\n')[0]}],
+      reason: 'Controlled classification of the complete captured integration menu.',
+      optionActions: fp.questions[0].options.map((option, i) => ({optionIndex: i + 1,
+        action: ['include', 'defer', 'cut', 'hold'][i]})),
+    })) });
+  },
+}));
 mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/e2e-gate.ts'))}, () => ({
   describeE2ETier: tier => { expect(tier).toBe('periodic'); return describe; },
 }));
@@ -173,7 +308,16 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.cwd).toBeUndefined();
     expect(opts.reviewCountCeiling).toBe(8);
     expect(opts.isLastStep0AUQ).toBe(boundary);
-    expect(opts.timeoutMs).toBe(1_500_000);
+    expect(opts.isReviewAUQ).toBe(isCeoSplitCandidateCall);
+    expect(opts.pickAUQ).toBe(pickCeoSplitCountQuestion);
+    expect(opts.observeSetupQuestions).toBe(true);
+    const activeCall = { ...structuredClone(retained.calls[1]), answered: false, answers: undefined };
+    const active = { signature: activeCall.sessionId + ':' + activeCall.toolUseId, preReview: true,
+      nativeCall: activeCall, nativeQuestionIndex: 0, observedAtMs: 1, promptSnippet: activeCall.questions[0].question,
+      options: activeCall.questions[0].options.map((option, i) => ({index: i + 1, label: option.label})) };
+    expect(opts.pickAUQ(active, active)).toBe(2);
+    expect(opts.timeoutMs).toBeGreaterThan(1_499_000);
+    expect(opts.timeoutMs).toBeLessThanOrEqual(1_500_000);
     expect(opts.preconfiguredReviewActor).toBe(true);
     expect(opts.env).toEqual({ QUESTION_TUNING: 'false', EXPLAIN_LEVEL: 'default' });
     const directory = fs.readdirSync(${JSON.stringify(temp)}).find(name => name.startsWith('gstack-e2e-plan-ceo-split-overflow-'));
@@ -187,7 +331,11 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     }
     facts.validated = true; save();
     return { outcome: ${JSON.stringify(scenario.outcome)}, reviewCount: ${scenario.count},
-      fingerprints: CEO_SCOPE_CANDIDATES.slice(0, ${scenario.count}).map(target => ({preReview: false, promptSnippet: target.description})),
+      transcript: {status: 'ready', calls: retained.calls.slice(0, Math.min(5, ${scenario.count})), assistantMessages: []},
+      fingerprints: retained.calls.slice(0, Math.min(5, ${scenario.count})).map(call => ({
+        signature: call.sessionId + ':' + call.toolUseId, nativeCall: call, preReview: false,
+        promptSnippet: call.questions[0].question, options: call.questions[0].options.map((option, i) => ({index: i + 1, label: option.label})),
+      })),
       step0Count: 0, elapsedMs: 1, evidence: 'controlled registration' };
   },
 }));
@@ -207,7 +355,8 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-ceo-split-ove
     expect(observed.candidates).toEqual(['E1', 'E2', 'E3', 'E4', 'E5']);
     expect(fs.existsSync(observed.directory)).toBe(false);
     expect(exit, out + err).toBe(scenario.passes ? 0 : 1);
+    expect(observed.judges).toBe(scenario.outcome === 'timeout' ? 0 : 1);
     if (scenario.outcome === 'timeout') expect(out + err).toContain('split-overflow test FAILED: outcome=timeout');
-    if (scenario.count < 4) expect(out + err).toContain('SPLIT-OVERFLOW REGRESSION: reviewCount=3 < FLOOR=4');
+    if (scenario.count < 4) expect(out + err).toContain('target call count 3 below floor 4');
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }, 20_000);

@@ -14,7 +14,15 @@ for (const budget of FINDING_RETRY_BUDGETS) {
     expect(budget.shardMs).toBe(budget.cases * budget.testMs * (budget.retries + 1) + budget.shardReserveMs);
     expect(resolvePaidShardBudget([budget.file])).toEqual({ timeoutMs: budget.shardMs, source: 'registered', policyId: budget.id });
     const source = fs.readFileSync(path.join(import.meta.dir, '..', budget.file), 'utf8');
-    expect([...source.matchAll(/timeoutMs:\s*1_500_000\b/g)]).toHaveLength(budget.cases);
+    if (budget.file === 'test/skill-e2e-plan-ceo-split-overflow.test.ts') {
+      // This case shares its unchanged allowance with final semantic validation.
+      // Its actual registration adapter also verifies the elapsed-time routing.
+      expect([...source.matchAll(/const deadlineAt = Date\.now\(\) \+ 1_500_000;/g)]).toHaveLength(budget.cases);
+      expect([...source.matchAll(/timeoutMs:\s*deadlineAt - Date\.now\(\)/g)]).toHaveLength(budget.cases);
+      expect(source).toContain("floor: FLOOR, kind: 'scope', deadlineAt");
+    } else {
+      expect([...source.matchAll(/timeoutMs:\s*1_500_000\b/g)]).toHaveLength(budget.cases);
+    }
     expect([...source.matchAll(/1_500_000\s*\/\* physical ceiling:/g)]).toHaveLength(budget.cases);
     // Current periodic CI already supports this supervision wall.
     const workflow = fs.readFileSync(path.join(import.meta.dir, '../.github/workflows/evals-periodic.yml'), 'utf8');
