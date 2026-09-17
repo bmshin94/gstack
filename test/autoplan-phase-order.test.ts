@@ -356,8 +356,11 @@ describe('autoplan phase execution checkpoints', () => {
       expect(packet.report.total).toBe(totals[child]);
       expect(packet.report.includeDxMetrics).toBe(child === 'dx');
       expect(packet.phaseComplete).toBe(false);
-      expect(packet.text).not.toMatch(/Phase [\d.]+ complete/);
-      expect(packet.text).not.toContain('Passing to ');
+      const continuation = packet.text.split('## Return to the close procedure')[1]!;
+      expect(continuation).toContain('The following unfilled template is not a completed report');
+      expect(continuation).toContain(`**Phase ${numbers[child]} complete.**`);
+      expect(continuation).toContain(`Passing to <applicable ${packet.report.next}>.`);
+      expect(continuation).toContain('Preparation and a Read result complete neither verification nor publication');
       const caller = read(`autoplan/sections/${child}-phase.md.tmpl`).split('**Close this phase:**')[1]!;
       expect(caller.trim().endsWith('{{SECTION:phase-close}}')).toBe(true);
       expect(caller).not.toContain('**Phase ');

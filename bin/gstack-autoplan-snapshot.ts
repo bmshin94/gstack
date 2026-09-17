@@ -773,9 +773,35 @@ ${implementation}${implementation.endsWith('\n') ? '' : '\n'}${fence}
 
 ## Return to the close procedure
 
-The complete current input ends above. Continue at phase-close step 5 (Verify),
-then step 6 (Publish). Those are separate parent operations. This packet and its
-report fields perform neither operation and do not authorize phase advancement.
+The complete current input ends above. Perform these separate parent operations.
+
+**Verify the current implementation.** Compare it with accepted decisions, source
+requirements, conditions, tests and required outputs. Recheck full methodology/section
+Reads, successful writes and terminal reviewer results. Match a completed native
+review's INPUT to its voice snapshot. A pending reviewer keeps this phase open.
+Apply this phase's failure policy to failed native attempts; unavailable/disabled
+voices receive no completion credit. If any prerequisite is incomplete, finish the
+missing work. Fix omissions, then regenerate with the same checkpoint and Read the
+entire new packet before publication. Retention checks prove bytes; counts, hashes,
+keyword probes and a saved “Read-back” sentence do not perform this semantic review.
+
+**Publish the parent report.** After successful verification, SEND the filled template
+below now as visible parent assistant text. This message is the next operation before
+any next-phase tool call. Use actual findings, voice statuses and the actual host's
+reviewer names. Use N/A when either review voice is missing; confirmed counts require
+both voices. Resolve the handoff using the driver's applicable scope/skip rules.
+The following unfilled template is not a completed report:
+
+**Phase ${binding.report.number} complete.**
+${binding.report.includeDxMetrics ? 'DX overall: <score>/10. TTHW: <observed> min → <target> min.\n' : ''}Outside review: <completed: N concerns / unavailable / disabled>. Native subagent: <completed: N issues / unavailable>.
+Consensus: <N/A (voice coverage missing) | X/${binding.report.total} native+outside confirmed; Y disagreements → gate>.
+Passing to <applicable ${binding.report.next}>.
+
+**Return to the driver.** Only after sending the actual parent report, continue to
+the driver in the same turn. The driver alone advances phases and emits applicable
+skip messages; a skip is never a completion. Do not wait for a “continue” reply.
+Saving a report in ACTIVE_PLAN or printing it through Bash does not publish it.
+Preparation and a Read result complete neither verification nor publication.
 `;
     const closePacketPath = join(dirname(prepared.reviewInputPath), 'close-packet.md');
     writeFileSync(closePacketPath, content, { flag: 'wx', mode: 0o444 });
