@@ -93,9 +93,12 @@ measurement records once; a separate aggregate records the case verdict with
 zero additive cost and time. Failed writes retain partial evidence and fail the
 case. Versioning never rewrites historical artifacts.
 
-The paid runner executes one overlay wrapper at a time, disables Bun retries,
-and preserves native rate-limit retry evidence. Each fixture keeps its original
-turn cap, concurrency, 30-minute work budget, and recording grace. The six
+The paid runner executes one overlay wrapper per shard and one wrapper at a
+time, disables Bun retries, and preserves native rate-limit retry evidence. At
+finalization, workers must settle before workspace cleanup begins. Both share
+the existing five-second grace; expiry fails the case and prevents late workers
+from starting cleanup. Each fixture keeps its original turn cap, concurrency,
+30-minute work budget, and recording grace. The six
 wrappers remain periodic-tier cases; free tests exercise deterministic outcomes
 without making model calls. A free pass validates the instrument, not live model
 behavior or a positive efficacy claim.

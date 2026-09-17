@@ -212,7 +212,9 @@ have a 1,830-second minimum shard wall and run without Bun retries; see the
 [overlay contract](OVERLAY_BENCHMARK_CONTRACT.md) for their unchanged work budget.
 
 `resolvePaidShardBudget(files, overrideMs?)` is the canonical per-job resolver.
-Autoplan and each registered finding file require their own shard. An explicit
+Autoplan, each registered finding file, and each overlay wrapper require their
+own shard, even with `--files-per-shard` above one. Mixed or multi-file overlay
+jobs are rejected so ordinary files retain their configured retries. An explicit
 CLI `--timeout`, `EVALS_SHARD_TIMEOUT_MS`, or API `timeoutMs` still wins for these
 policies, including a lower cap; overlay overrides below their minimum are rejected.
 Planner entries and execution results record the effective wall,
