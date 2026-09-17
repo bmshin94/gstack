@@ -153,9 +153,22 @@ export interface AutoplanPhaseInstruction {
 }
 
 /** Bind only supported installed aliases to this instruction's frozen source. */
-export function registerAutoplanPhaseInstructionAliases(instructions: AutoplanPhaseInstruction[], configDir: string): void {
-  for (const instruction of instructions) for (const skill of [['autoplan'], ['gstack', 'autoplan']]) {
-    const installed = join(configDir, 'skills', ...skill, 'sections', `${instruction.phase}-phase.md`);
+export function registerAutoplanPhaseInstructionAliases(instructions: AutoplanPhaseInstruction[], configDir: string,
+  ownedSkillStateRoot?: string): void {
+  const registries = [join(configDir, 'skills')];
+  if (ownedSkillStateRoot) try {
+    // This is the state root returned by the same seeded launcher, not ambient
+    // HOME. Its sibling skill registry and config share one physical run root.
+    const home = dirname(ownedSkillStateRoot), runRoot = dirname(dirname(configDir));
+    const registry = join(home, '.claude', 'skills');
+    if (basename(ownedSkillStateRoot) === '.gstack' && dirname(home) === runRoot &&
+        basename(home).startsWith('skill-home-') &&
+        [runRoot, configDir, home, ownedSkillStateRoot, dirname(registry), registry].every(path =>
+          lstatSync(path).isDirectory() && realpathSync(path) === path)) registries.push(registry);
+  } catch { /* Missing, foreign or substituted ownership establishes no alias. */ }
+  for (const instruction of instructions) for (const registry of registries)
+    for (const skill of [['autoplan'], ['gstack', 'autoplan']]) {
+    const installed = join(registry, ...skill, 'sections', `${instruction.phase}-phase.md`);
     try {
       if (realpathSync(installed) === instruction.paths[0] && readFileSync(installed, 'utf8') === instruction.content &&
           !instruction.paths.includes(installed)) instruction.paths.push(installed);

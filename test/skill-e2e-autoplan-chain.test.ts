@@ -144,7 +144,8 @@ describeE2E('/autoplan native chain ordering (periodic)', () => {
         };
 
         try {
-          if (session.hermeticConfigDir) registerAutoplanPhaseInstructionAliases(phaseInstructions, session.hermeticConfigDir);
+          if (session.hermeticConfigDir) registerAutoplanPhaseInstructionAliases(phaseInstructions, session.hermeticConfigDir,
+            session.hermeticSkillStateRoot);
           await Bun.sleep(8000);
           session.mark();
           commandStartedAt = Date.now();

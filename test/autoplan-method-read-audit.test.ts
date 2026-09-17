@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -12,6 +12,7 @@ import { readPlanCountTranscript, type NativePublicToolEvent } from './helpers/p
 import recorded from './fixtures/autoplan-method-read-aa-events.json';
 import phaseEntry from './fixtures/autoplan-phase-entry-cf74.json';
 import aliasEntry from './fixtures/autoplan-phase-entry-alias-f359.json';
+import homeEntry from './fixtures/autoplan-home-phase-entry-fb10.json';
 const ROOT = resolve(import.meta.dir, '..');
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const events = () => clone(recorded.events) as NativePublicToolEvent[];
@@ -369,5 +370,96 @@ describe('owned installed phase aliases use the actual chain registration', () =
     const projected: NativePublicToolEvent[] = [];
     const transcript = readPlanCountTranscript(f.config, f.dir, event => projected.push(event));
     expect(prematureAutoplanPhaseEntry(projected, transcript, [f.instruction], f.startedAt) !== null).toBe(variant === 'parent');
+  });
+});
+
+describe('the seeded launcher HOME registry preserves the phase publication boundary', () => {
+  function fixture(phase: AutoplanPhaseInstruction['phase'] = 'design') {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'gstack-phase-home-'))); owned.push(dir);
+    const runRoot = join(dir, 'run'), config = join(runRoot, 'with-skills', '.claude');
+    const home = join(runRoot, 'skill-home-owned'), stateRoot = join(home, '.gstack');
+    const registry = join(home, '.claude', 'skills'), source = join(dir, 'source');
+    const canonical = join(source, 'autoplan', 'sections', `${phase}-phase.md`);
+    const content = readFileSync(join(ROOT, 'autoplan', 'sections', `${phase}-phase.md`), 'utf8');
+    // Populate canonical files before creating links. All fixture writes stay in dir.
+    for (const path of [config, stateRoot, registry, join(source, 'autoplan', 'sections')]) mkdirSync(path, { recursive: true });
+    writeFileSync(canonical, content);
+    symlinkSync(source, join(registry, 'gstack'), 'junction');
+    symlinkSync(join(source, 'autoplan'), join(registry, 'autoplan'), 'junction');
+    const installed = join(registry, 'gstack', 'autoplan', 'sections', `${phase}-phase.md`);
+    const instruction: AutoplanPhaseInstruction = { phase, requiredPhase: phase === 'design' ? 1 : phase === 'dx' ? 2 : 2.5,
+      paths: [canonical], content };
+    // Preserve the literal native packet and all parent messages; only map the
+    // captured file path to this isolated install for executable ownership checks.
+    const events = clone(homeEntry.events) as NativePublicToolEvent[];
+    const transcript = { status: 'ready' as const, calls: [], assistantMessages: clone(homeEntry.assistantMessages) };
+    const usePath = (filePath: string) => {
+      events[0]!.input!.file_path = filePath;
+      events[1]!.file = { ...(events[1]!.file as object), filePath, content,
+        numLines: content.split('\n').length, totalLines: content.split('\n').length };
+    };
+    usePath(installed);
+    const register = (state = stateRoot) => registerAutoplanPhaseInstructionAliases([instruction], config, state);
+    const startedAt = Date.parse(transcript.assistantMessages[0]!.timestamp);
+    const audit = () => prematureAutoplanPhaseEntry(events, transcript, [instruction], startedAt);
+    return { dir, runRoot, config, home, stateRoot, registry, source, canonical, installed, instruction,
+      events, transcript, usePath, register, audit };
+  }
+  test('actual fb10 HOME Read was missed despite exact canonical bytes and no parent publication', () => {
+    const f = fixture();
+    expect(homeEntry.observedPrematurePhaseEntry).toBeNull();
+    expect(homeEntry.events[1]!.file!.content).toBe(f.instruction.content);
+    expect(homeEntry.assistantMessages).toHaveLength(35);
+    expect(homeEntry.events[0]!.input!.file_path).toBe(join(homeEntry.ownedSkillStateRoot, '..', '.claude', 'skills', 'gstack', 'autoplan', 'sections', 'design-phase.md'));
+    registerAutoplanPhaseInstructionAliases([f.instruction], f.config);
+    expect(f.audit()).toBeNull(); // Original registration reproduces the missing alias.
+    f.register();
+    expect(f.audit()).toEqual({ phase: 'design', requiredPhase: 1,
+      sessionId: 'd3dddf71-ec90-4aa3-a510-f0eb9d85ad5d', readToolUseId: 'toolu_01CvVuWnRgxP6wn1iFM31wnt',
+      readAt: '2026-09-17T01:18:58.990Z', resultAt: '2026-09-17T01:18:59.007Z' });
+    const caller = readFileSync(join(ROOT, 'test', 'skill-e2e-autoplan-chain.test.ts'), 'utf8');
+    expect(caller).toMatch(/registerAutoplanPhaseInstructionAliases\(phaseInstructions, session\.hermeticConfigDir,\s*session\.hermeticSkillStateRoot\)/);
+  });
+  test.each(['design', 'dx', 'eng'] as const)('the same owned root binds both %s HOME aliases once', phase => {
+    const f = fixture(phase); f.register(); f.register();
+    const paths = [f.canonical, ...[['autoplan'], ['gstack', 'autoplan']].map(parts => join(f.registry, ...parts, 'sections', `${phase}-phase.md`))];
+    expect([...f.instruction.paths].sort()).toEqual(paths.sort());
+    for (const path of paths) { f.usePath(path); expect(f.audit()).toMatchObject({ phase, requiredPhase: f.instruction.requiredPhase }); }
+  });
+  test.each(['missing-state', 'foreign-state', 'wrong-state-name', 'non-seeded-home', 'state-symlink', 'home-symlink',
+    'config-symlink', 'registry-symlink', 'foreign-target', 'missing-target', 'stale-source'] as const)
+  ('%s establishes no installed alias', change => {
+    const f = fixture(); let state = f.stateRoot;
+    const foreign = join(f.dir, 'foreign'); mkdirSync(foreign);
+    if (change === 'missing-state') rmSync(f.stateRoot, { recursive: true });
+    if (change === 'foreign-state') { state = join(foreign, 'skill-home-other', '.gstack'); mkdirSync(state, { recursive: true }); }
+    if (change === 'wrong-state-name') { state = join(f.home, 'other'); mkdirSync(state); }
+    if (change === 'non-seeded-home') { state = join(f.runRoot, 'other', '.gstack'); mkdirSync(state, { recursive: true }); }
+    const replaced = change === 'state-symlink' ? f.stateRoot : change === 'home-symlink' ? f.home
+      : change === 'config-symlink' ? f.config : change === 'registry-symlink' ? f.registry : null;
+    if (replaced) { renameSync(replaced, replaced + '-saved'); symlinkSync(replaced + '-saved', replaced, 'junction'); }
+    if (change === 'foreign-target' || change === 'missing-target') {
+      mkdirSync(join(foreign, 'autoplan', 'sections'), { recursive: true });
+      writeFileSync(join(foreign, 'autoplan', 'sections', 'design-phase.md'), f.instruction.content);
+      rmSync(join(f.registry, 'gstack'));
+      symlinkSync(change === 'foreign-target' ? foreign : join(f.dir, 'missing'), join(f.registry, 'gstack'), 'junction');
+    }
+    if (change === 'stale-source') writeFileSync(f.canonical, f.instruction.content + 'Changed after binding.\n');
+    f.register(state); expect(f.audit()).toBeNull();
+  });
+  test.each(['missing-ack', 'failed-ack', 'changed-content', 'foreign-result'] as const)
+  ('a registered HOME alias with %s cannot establish entry', change => {
+    const f = fixture(); f.register(); const result = f.events[1]!;
+    if (change === 'missing-ack') f.events.pop();
+    if (change === 'failed-ack') result.isError = true;
+    if (change === 'changed-content') (result.file as any).content += 'Changed';
+    if (change === 'foreign-result') (result.file as any).filePath = join(f.dir, 'foreign.md');
+    expect(f.audit()).toBeNull();
+  });
+  test.each([-1, 0, 1])('only actual parent publication by request time %+d ms avoids early rejection', delta => {
+    const f = fixture(); f.register();
+    f.transcript.assistantMessages.push({ sessionId: f.events[0]!.sessionId,
+      timestamp: new Date(Date.parse(f.events[0]!.timestamp) + delta).toISOString(), text: 'Phase 1 complete.' });
+    expect(f.audit() === null).toBe(delta <= 0);
   });
 });
