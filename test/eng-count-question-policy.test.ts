@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import captured from './fixtures/eng-count-actor-491.json';
+import planningCapture from './fixtures/eng-d2-planning-prelude-4d.json';
 import { createEngCountActor, engCountActorRequest, ENG_COUNT_COMMITMENTS, pickEngCountQuestion } from './helpers/eng-count-question-policy';
 import { capturePlanCountQuestion, nativePlanCallFingerprint, planCountQuestionInput, planCountPrerequisitePick, matchesNativePlanQuestion, runPlanSkillCounting } from './helpers/claude-pty-runner';
 import type { NativeQuestion } from './helpers/plan-skill-questions';
@@ -170,18 +171,32 @@ const dispatchStart=runnerSource.indexOf('      // Dedupe the complete question,
 const dispatchEnd=runnerSource.indexOf('      // Give the agent a beat to advance to the next state.',dispatchStart);
 if(dispatchStart<0 || dispatchEnd<=dispatchStart)throw Error('Missing actual counting dispatch adapter boundary');
 const dispatchBody=runnerSource.slice(dispatchStart,dispatchEnd);
-const dispatchFactory=new Function('capturePlanCountQuestion','nativePlanCallFingerprint','planCountPrerequisitePick','planCountQuestionInput','matchesNativePlanQuestion',
+const dispatchFactory=new Function('capturePlanCountQuestion','nativePlanCallFingerprint','planCountPrerequisitePick','planCountQuestionInput','matchesNativePlanQuestion','path',
  new Bun.Transpiler({loader:'ts'}).transformSync(`return async function(opts,frames,pickerContext){
  const seen=new Set(),sent=[],checkpoints=[];let isFirstAUQ=true;const startedAt=Date.now(),boundaryFired=false;
  const defaultPick=opts.defaultPick??1,remainingWork=()=>10000;
- const session={send:key=>sent.push(key)};const selectPtyNumberedOption=async(s,pick)=>s.send(String(pick)+'\\r');
- for(const state of frames){const {visible,pending}=state;const newlyMatched=pending&&matchesNativePlanQuestion(visible,pending);checkpoints.push({seen:seen.size,sent:sent.length});
+ const session={send:key=>sent.push(key),hermeticConfigDir:opts.hermeticConfigDir??null};const selectPtyNumberedOption=async(s,pick)=>s.send(String(pick)+'\\r');
+ const planningDirectory=session.hermeticConfigDir?path.join(session.hermeticConfigDir,'plans'):undefined;
+ for(const state of frames){const {visible,pending}=state;const newlyMatched=pending&&matchesNativePlanQuestion(visible,pending,planningDirectory);checkpoints.push({seen:seen.size,sent:sent.length});
  ${dispatchBody}
  }
  return {sent,seen:[...seen],checkpoints};
  }`));
-const drive=dispatchFactory(capturePlanCountQuestion,nativePlanCallFingerprint,planCountPrerequisitePick,planCountQuestionInput,matchesNativePlanQuestion);
+const drive=dispatchFactory(capturePlanCountQuestion,nativePlanCallFingerprint,planCountPrerequisitePick,planCountQuestionInput,matchesNativePlanQuestion,path);
 const shortQuestion=(id:string)=>offered('parallel-idp',{header:id,question:'Explain the existing request behavior for '+id+'?',multiSelect:false,options:[]});
+
+for (const config of [planningCapture.pendingRecord.configDir, '/tmp/foreign/.claude', undefined])
+test('actual Eng dispatch requires the session planning directory: '+String(config), async()=>{
+ const record=structuredClone(planningCapture.pendingRecord.pending);
+ const call={sessionId:record.sessionId,toolUseId:record.toolUseId,questions:record.questions,answered:false,failed:false};
+ let calls=0;
+ const result=await drive({hermeticConfigDir:config,requireNativePicker:true,pickAUQ:(_fp,active)=>{
+  calls++;expect(active.nativeCall).toBe(call);return pickEngCountQuestion(call.questions[active.nativeQuestionIndex]);
+ }},[{visible:planningCapture.screen,pending:call},{visible:planningCapture.screen,pending:call}],{});
+ const owned=config===planningCapture.pendingRecord.configDir;
+ expect(calls).toBe(owned?1:0);expect(result.sent).toEqual(owned?['1']:[]);
+ expect(result.seen.length>0).toBe(owned);
+});
 
 test('opt-in unbound multi-tab redraw waits without calling picker or consuming seen state, then answers matched render',async()=>{
  const first=shortQuestion('First'),second=shortQuestion('Second');const call=pending(0,first);call.questions.push(second);

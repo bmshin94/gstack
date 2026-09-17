@@ -859,7 +859,7 @@ for (const file of ['test/plan-count-cross-cwd-ancestry.test.ts', 'test/fixtures
 test('native clipped regressions retain the existing parser and owned-permission selection', () => {
   for (const [dependency, count, files] of [
     ['test/helpers/claude-pty-runner.ts', 22, [
-      'test/plan-count-clipped-elision.test.ts', 'test/fixtures/eng-d1-clipped-elision-1579.json',
+      'test/plan-count-clipped-elision.test.ts', 'test/fixtures/eng-d1-clipped-elision-1579.json', 'test/fixtures/eng-d2-planning-prelude-4d.json',
     ]],
     ['test/helpers/plan-count-file-permission.ts', 10, [
       'test/plan-edit-cropped-permission.test.ts', 'test/fixtures/plan-edit-cropped-permission-1579.json',

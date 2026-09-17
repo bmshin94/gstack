@@ -41,7 +41,7 @@ const render = (question: typeof QUESTIONS.ceo) => ['☐ '+question.header,quest
   ...question.options.flatMap((o,i)=>[`${i?' ':'❯'} ${i+1}. ${o.label}`,o.description]),
   'Enter to select · ↑/↓ to navigate · Esc to cancel'].join('\n');
 const FINDING = render(QUESTIONS.ceo);
-type Mode = 'cropped-edit' | 'cropped-edit-missing' | 'cropped-edit-changed' | 'cropped-edit-completed' | 'captured' | 'owned' | 'owned-no-question' | 'foreign' | 'wrong-session' | 'missing-native' | 'linked-target' |
+type Mode = 'planning-owned' | 'planning-foreign' | 'cropped-edit' | 'cropped-edit-missing' | 'cropped-edit-changed' | 'cropped-edit-completed' | 'captured' | 'owned' | 'owned-no-question' | 'foreign' | 'wrong-session' | 'missing-native' | 'linked-target' |
   'native-question' | 'scope' | 'prose' | 'finding' | 'routing' | 'unrelated' | 'partial' | 'quoted' | 'foreign-question' |
   'stale-question' | 'answered-question' | 'failed-question' | 'mismatched-use' | 'duplicate-use' | 'judge-error' | 'mode' | 'pending-hook' | 'failed-hook' | 'packet' | 'prose-quoted' | 'prose-partial' | 'prose-foreign' | 'prose-stale' | 'product-type' | 'product-type-undeclared' |
   'unmatched-hook' | 'invalid-hook' | 'missing-hook' | 'idle-hook' | 'transition-hook' | 'unmatched-native' | 'dx-setup' | 'dx-no-finding' | 'dx-undeclared' | 'dx-cropped' | 'dx-unrelated' | 'dx-uncertain' | 'dx-changing-call';
@@ -61,6 +61,7 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
   const recorders: NonNullable<ReturnType<typeof createFilePermissionRecorder>>[] = [];
   let transcript: any = {status:'ready', calls:[], assistantMessages:[]};
   const question = structuredClone(QUESTIONS[kind]);
+  if (mode.startsWith('planning-')) question.question += '\n' + ('Explain the owned seeded finding and its existing remedy.\n').repeat(50);
   class Clock extends Date { static now() { return now; } }
   const boundary = {
     ...runner, fs, path, randomUUID, isDeepStrictEqual, readPendingQuestion, pendingQuestionRecorderStatus, resolveEvalModel,
@@ -167,11 +168,16 @@ async function exercise(mode: Mode, kind: keyof typeof SEEDS = 'ceo', capture?: 
               fs.appendFileSync(journal,JSON.stringify({cwd:opts.cwd,sessionId:sid,isSidechain:false,timestamp:new Clock(now).toISOString(),
                 message:{role:'assistant',content:[{type:'tool_use',id:'write1',name:'Edit',input:editInput}]}})+'\n');
             }
-            if(['finding','unrelated','partial','quoted','foreign-question','stale-question','answered-question','failed-question','mismatched-use','duplicate-use','judge-error','unmatched-native'].includes(mode)) {
+            if(['planning-owned','planning-foreign','finding','unrelated','partial','quoted','foreign-question','stale-question','answered-question','failed-question','mismatched-use','duplicate-use','judge-error','unmatched-native'].includes(mode)) {
               if(mode==='partial')question.options[0].description='';
               if(mode==='quoted')question.question='Example from a previous review: '+question.question;
               if(mode==='unrelated')question.question='For OTHER.md, '+question.question;
               publish();
+              if (mode.startsWith('planning-')) {
+                const directory = mode === 'planning-owned' ? path.join(config, 'plans') : path.join(dir, 'foreign', 'plans');
+                const prefix = Bun.wrapAnsi('Planning: ' + path.join(directory, 'native-plan.md'), 120, {hard:true,trim:false});
+                screen = prefix + '\n' + '─'.repeat(120) + '\n' + render({...question,question:question.question.slice(0,2000)+'…'});
+              }
               if(mode==='unmatched-native')screen='Reviewing the generator options.';
             } else if(mode.includes('hook')) {
               transcript.assistantMessages=[{sessionId:sid,timestamp:new Clock(now).toISOString(),text:'Reviewing the exact owned seed.'}];
@@ -278,6 +284,12 @@ test('one owned native Write grant enables the actual later question without ans
   expect(e.launched.observeFilePermissions).toEqual([e.fixture!.workingPlanPath]);
   expect(path.dirname(e.fixture!.workingPlanPath!)).toBe(e.fixture!.cwd);
   expect(e.saved.observation.transcript.status).toBe('ready'); expect(e.saved.viewport).toBe(FINDING);
+});
+for (const mode of ['planning-owned','planning-foreign'] as const) test(`actual floor binds the session plans directory: ${mode}`, async () => {
+  const e = await exercise(mode, 'eng');
+  expect(e.result.outcome).toBe(mode === 'planning-owned' ? 'auq_observed' : 'timeout');
+  expect(e.judgments).toHaveLength(mode === 'planning-owned' ? 1 : 0);
+  expect(e.sent).toEqual(['/plan-eng-review PLAN.md\r']);
 });
 test.each(['cropped-edit','cropped-edit-missing','cropped-edit-changed','cropped-edit-completed'] as Mode[])('%s routes through the actual floor only after exact ownership',async mode=>{
   const e=await exercise(mode,'devex');

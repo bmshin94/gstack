@@ -1516,8 +1516,41 @@ export function planCountQuestionInput(visible: string, fp: AskUserQuestionFinge
 }
 
 /** A native single-question pane can elide its tail to leave room for choices. */
-function matchesTruncatedNativeQuestion(visible: string, call: NativePlanQuestionCall): boolean {
+function matchesTruncatedNativeQuestion(visible: string, call: NativePlanQuestionCall, planningDirectory?: string): boolean {
   if (call.questions.length !== 1) return false;
+  const rows = visible.split('\n');
+  let start = 0;
+  while (/^[\t ]*$/.test(rows[start] ?? '#')) start++;
+  const leadingRule = /^[ \t]*[─━]{10,}[ \t]*$/.test(rows[start] ?? '') ? rows[start++]!.trim() : undefined;
+  if (rows[start] === 'Planning:' || rows[start]?.startsWith('Planning: ')) {
+    // Native plan-mode chrome precedes the question's rule/header. The CLI
+    // soft-wraps this path; only its owned directory is independently known.
+    // Do not infer a basename, trust an ambient plans path, or strip prose.
+    if (!planningDirectory || !path.isAbsolute(planningDirectory) ||
+        path.resolve(planningDirectory) !== planningDirectory) return false;
+    const end = rows.findIndex((row, index) => index > start && /^[ \t]*[─━]{10,}[ \t]*$/.test(row));
+    if (end < 0) return false;
+    const displayed = rows.slice(start, end).join('\n');
+    const ownedPrefix = 'Planning: ' + planningDirectory + '/';
+    // Paint removes a soft row's first space; viewport reads trim right padding.
+    // Recover directory spaces from owned context, then require its exact native
+    // reflow. Never treat whitespace-insensitive prefix matching as authority.
+    const joined = rows.slice(start, end).join('');
+    let offset = 0;
+    for (const character of ownedPrefix.replaceAll(' ', '')) {
+      while (joined[offset] === ' ') offset++;
+      if (!joined.startsWith(character, offset)) return false;
+      offset += character.length;
+    }
+    const file = planningDirectory + '/' + joined.slice(offset);
+    const rule = rows[end]!.trim();
+    if ((leadingRule && leadingRule !== rule) || /[\x00-\x1f\x7f\\]/.test(file) ||
+        path.resolve(file) !== file || path.dirname(file) !== planningDirectory ||
+        !/^[^/]+\.md$/.test(path.basename(file)) ||
+        Bun.wrapAnsi('Planning: ' + file, rule.length, {hard:true,trim:false}).split('\n').map((row, index) =>
+          (index && row.startsWith(' ') && Bun.stringWidth(row.slice(1)) > 0 ? row.slice(1) : row).trimEnd()).join('\n') !== displayed) return false;
+    visible = rows.slice(end).join('\n');
+  }
   const cursor = [...visible.matchAll(/❯\s*1\./g)].at(-1);
   if (!cursor) return false;
   const before = visible.slice(0, cursor.index);
@@ -1550,7 +1583,7 @@ function matchesTruncatedNativeQuestion(visible: string, call: NativePlanQuestio
 }
 
 /** Match native question identity before permission text can choose an answer. */
-export function matchesNativePlanQuestion(visible: string, call: NativePlanQuestionCall): boolean {
+export function matchesNativePlanQuestion(visible: string, call: NativePlanQuestionCall, planningDirectory?: string): boolean {
   if (call.failed) return false;
   if (call.questions.length !== 1) return nativePacketQuestionIndex(visible, call) !== null;
   const normalized = stripPtyResidue(visible).replace(/\r+\n?/g, '\n');
@@ -1572,7 +1605,7 @@ export function matchesNativePlanQuestion(visible: string, call: NativePlanQuest
     const rows = body.split('\n').filter(line => line.trim());
     const unboxed = body.replace(/^[ \t]*[\u2502\u2503] ?/gm, '');
     if (!rows.length || !rows.every(line => /^[ \t]*[\u2502\u2503](?: |$)/.test(line)) ||
-        compact(unboxed) !== compact(question.question)) return matchesTruncatedNativeQuestion(normalized, call);
+        compact(unboxed) !== compact(question.question)) return matchesTruncatedNativeQuestion(normalized, call, planningDirectory);
     // The boxed body belongs to a current pane at viewport top or below
     // native pane chrome. Plain prose immediately introducing a copy does not.
     const preceding = normalized.slice(0, normalized.length - tail.length + header.index).trimEnd();
@@ -1615,6 +1648,7 @@ export function capturePlanCountQuestion(
   observedAtMs: number,
   preReview: boolean,
   pending?: NativePlanQuestionCall,
+  planningDirectory?: string,
 ): AskUserQuestionFingerprint | null {
   const tail = stripPtyResidue(visible).replace(/\r+\n?/g, '\n').slice(-4096);
   const cursor = [...tail.matchAll(/❯\s*1\./g)].at(-1);
@@ -1623,7 +1657,7 @@ export function capturePlanCountQuestion(
   // parser's still-visible historical question and queue spurious input.
   if (!cursor) return null;
 
-  if (pending && !pending.answered && !pending.failed && matchesNativePlanQuestion(visible, pending)) {
+  if (pending && !pending.answered && !pending.failed && matchesNativePlanQuestion(visible, pending, planningDirectory)) {
     const activeIndex = pending.questions.length === 1 ? 0 : nativePacketQuestionIndex(visible, pending)!;
     const fp = nativePlanCallFingerprint(pending, observedAtMs, preReview);
     fp.nativeQuestionIndex = activeIndex;
@@ -4990,6 +5024,7 @@ export async function runPlanSkillCounting(opts: {
   }
 
   const fingerprints: AskUserQuestionFingerprint[] = [];
+  const planningDirectory = session.hermeticConfigDir ? path.join(session.hermeticConfigDir, 'plans') : undefined;
   const seen = new Set<string>();
   const countedCalls = new Set<string>();
   const filePermission = createPlanCountPermissionGuard();
@@ -5151,7 +5186,7 @@ export async function runPlanSkillCounting(opts: {
           opts.isCollectionComplete(transcript, fingerprints) && remainingWork() > 0) {
         return snapshot('collection_complete', 'Caller-defined native collection is complete; final validation remains required', visible);
       }
-      const newlyMatched = pending && matchesNativePlanQuestion(visible, pending);
+      const newlyMatched = pending && matchesNativePlanQuestion(visible, pending, planningDirectory);
       if (newlyMatched) lastMatchedNativeQuestion = pending;
       const renderedFrame = classifyPlanCountFrame(visible);
       const administrative = new Set(fingerprints.filter(fp => fp.administrative === 'completion-handoff').map(fp => fp.signature));
@@ -5194,7 +5229,7 @@ export async function runPlanSkillCounting(opts: {
       // permission wording inside that question could queue a stray answer.
       const acceptedTerminal = isTerminalHint && (!opts.expectedPlanPath || verifiedTerminal);
       const nativeQuestionVisible = newlyMatched || (!acceptedTerminal &&
-        lastMatchedNativeQuestion && matchesNativePlanQuestion(visible, lastMatchedNativeQuestion));
+        lastMatchedNativeQuestion && matchesNativePlanQuestion(visible, lastMatchedNativeQuestion, planningDirectory));
       const terminalHint = nativeQuestionVisible ? null : terminalFrame;
       let frame = terminalHint;
       // Clear unverified hints before routing active permissions and Submit.
@@ -5293,7 +5328,7 @@ export async function runPlanSkillCounting(opts: {
       // findings often reuse the same Add to plan / Defer / Skip menu.
       if (opts.requireNativePicker && !newlyMatched) continue;
       const capturedSeen = opts.requireNativePicker ? new Set(seen) : seen;
-      const fp = capturePlanCountQuestion(visible, capturedSeen, Date.now() - startedAt, !boundaryFired, pending);
+      const fp = capturePlanCountQuestion(visible, capturedSeen, Date.now() - startedAt, !boundaryFired, pending, planningDirectory);
       if (!fp) continue;
       const boundNativeTab = pending && fp.nativeCall === pending && fp.nativeQuestionIndex !== undefined;
       if (opts.requireNativePicker && !boundNativeTab) continue;
@@ -5529,6 +5564,7 @@ export async function runPlanSkillFloorCheck(opts: {
 
   const ownedFilePermissions = (session.pendingFilePermissionFiles ?? []).map(binding =>
     ({ ...binding, guard: createPlanCountPermissionGuard() }));
+  const planningDirectory = session.hermeticConfigDir ? path.join(session.hermeticConfigDir, 'plans') : undefined;
   let transcript: PlanCountTranscript = { status: 'missing', calls: [], assistantMessages: [] };
   let viewport = '';
   let publicTools: NativePublicToolEvent[] = [];
@@ -5652,7 +5688,7 @@ export async function runPlanSkillFloorCheck(opts: {
         continue;
       }
       const matching = currentCalls.filter(call => dxContext
-        ? planFloorDXPane(viewport, call) !== null : matchesNativePlanQuestion(viewport, call));
+        ? planFloorDXPane(viewport, call) !== null : matchesNativePlanQuestion(viewport, call, planningDirectory));
       pendingQuestion = matching.length === 1 ? matching[0] : undefined;
       checkpoint();
       const nativeQuestionVisible = Boolean(pendingQuestion);
@@ -5677,7 +5713,7 @@ export async function runPlanSkillFloorCheck(opts: {
       if (permissionIsActiveRender) continue;
 
       const questionViewport = dxContext && pendingQuestion ? planFloorDXPane(viewport, pendingQuestion)! : viewport;
-      const fp = pendingQuestion && capturePlanCountQuestion(questionViewport, new Set(), Date.now() - start, true, pendingQuestion);
+      const fp = pendingQuestion && capturePlanCountQuestion(questionViewport, new Set(), Date.now() - start, true, pendingQuestion, planningDirectory);
       if (fp && pendingQuestion) {
         const index = fp.nativeQuestionIndex ?? 0;
         const question = pendingQuestion.questions[index]!;
