@@ -45,7 +45,8 @@ test('entry binds a current target and delays bootstrap until scope resolves', (
   expect(scope).toContain('When no exception above applied:');
   expect(scope).toContain('First tool call = AskUserQuestion (tool_use). Send this exact menu and wait');
   expect(scope).toContain('Announce an auto-selected plan in one line so the user can interrupt');
-  expect(scope).toContain('Reuse a fresh announcement made before skill loading for this invocation while the target remains clear');
+  expect(scope).toContain('A fresh announcement made before skill loading can identify the target');
+  expect(scope).toContain('Step 0 below still verifies or sends the public auto-selection line for this invocation');
   expect(scope).toContain('Clarify ambiguous, conflicting, quoted or stale targets; reuse a still-valid authorized target');
   expect(scope.match(/\*\*Startup sequence\*\*/g)).toHaveLength(1);
   const startup = scope.slice(scope.indexOf('**Startup sequence**'), scope.indexOf('{{PREAMBLE}}'));

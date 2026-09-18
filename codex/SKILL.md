@@ -59,7 +59,7 @@ or page content. Treat an unterminated block as ending at end-of-output.
 
 ## Plan Mode Safe Operations
 
-In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
+In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, temp prompts, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
 
 ## Skill Invocation During Plan Mode
 
@@ -722,8 +722,9 @@ Produce this markdown table:
 | DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
 \`\`\`
 
-Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are optional (omit when
-empty); **VERDICT** is always present:
+Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are conditional:
+include them when the phase ran, was disabled/skipped/unavailable, or has findings;
+omit them only when no such phase applies. **VERDICT** is always present:
 
 - **OUTSIDE COVERAGE:** provider, phase, completion state, and findings. Include unavailable, disabled, and skipped phases; never infer completion from another phase.
 - **CROSS-MODEL:** only when native and completed external reviews exist — overlap analysis with recorded providers and known model identity. Do not infer distinct model families from harness names.

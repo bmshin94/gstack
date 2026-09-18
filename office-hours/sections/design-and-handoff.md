@@ -270,25 +270,15 @@ Present the reviewed design doc to the user via AskUserQuestion:
 
 
 
-## Brain Calibration Write-Back (Phase 2 / gated)
+## Brain Calibration Write-Back (gated)
 
-When the skill makes a typed prediction worth tracking (scope decision,
-TTHW target, architectural bet, wedge commitment), it MAY write a
-`kind=bet` take to the brain so a calibration profile builds over time.
+Skip unless `BRAIN_CALIBRATION_WRITEBACK` is set and the preamble/brain-health
+output or gstack config shows `brain_trust_policy@<endpoint-hash>=personal`.
+If unknown, skip. If both gates pass, record one durable
+typed prediction with `mcp__gbrain__takes_add`; if unavailable, use
+`mcp__gbrain__put_page` with a gstack:takes fence block.
 
-**Gated on two things:**
-1. Brain trust policy for the active endpoint is `personal` (check via
-   `~/.claude/skills/gstack/bin/gstack-config get brain_trust_policy@<endpoint-hash>`).
-   Shared brains skip write-back to avoid polluting team calibration.
-2. Feature flag `BRAIN_CALIBRATION_WRITEBACK` is set (today: false; flips
-   to true when upstream gbrain v0.42+ ships `takes_add` MCP op).
-
-When both gates pass, the write-back path uses `mcp__gbrain__takes_add`
-to record a take with weight 0.9 (per SKILL_CALIBRATION_WEIGHTS).
-If the MCP op is unavailable, fall back to `mcp__gbrain__put_page` with
-a gstack:takes fence block (documented but uglier path).
-
-Mandatory take frontmatter shape:
+Take frontmatter:
 ```yaml
 kind: bet
 holder: <user identity from whoami>
@@ -299,8 +289,7 @@ expected_resolution: <date in 1-3 months depending on skill>
 source_skill: office-hours
 ```
 
-After write, invalidate the affected digests so the next preflight reflects
-the new state:
+After write, invalidate affected digests:
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
@@ -308,7 +297,6 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || tru
   ~/.claude/skills/gstack/bin/gstack-brain-cache invalidate goals --project "$SLUG" 2>/dev/null || true
   ~/.claude/skills/gstack/bin/gstack-brain-cache invalidate competitive-intel --project "$SLUG" 2>/dev/null || true
 ```
-
 
 ## Brain Cache Background Refresh
 

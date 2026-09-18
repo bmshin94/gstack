@@ -73,7 +73,7 @@ export function generateInvokeSkill(ctx: TemplateContext, args?: string[]): stri
 
 **If unreadable:** Skip with "Could not load /${skillName} — skipping." and continue.
 
-Follow its instructions from top to bottom, **skipping these sections** (already handled by the parent skill):
+Follow its instructions from top to bottom, **skipping these sections when present** (already handled by the parent skill):
 ${allSkips.map(s => `- ${s}`).join('\n')}
 
 Execute every other section at full depth. When the loaded skill's instructions are complete, continue with the next step below.`;

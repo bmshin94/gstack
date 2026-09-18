@@ -194,7 +194,7 @@ test('Eng loads its one remedy procedure before Scope Challenge findings and ret
     expect(loop.every(index => index >= 0)).toBe(true);
     expect(loop).toEqual([...loop].sort((a, b) => a - b));
     expect(compactProse(dispatch)).toContain('one question object for one choice; other IDs wait');
-    expect(compactProse(dispatch)).toContain('Setup and Scope Challenge selectors follow this dispatch order with their own recording rules');
+    expect(compactProse(dispatch)).toContain('The initial target selector and Scope Challenge complexity selector are setup gates');
     expect(compactProse(dispatch)).toContain("Use the preamble's tool resolution, failure fallback and authorized auto-decision rules");
     expect(compactProse(dispatch)).toContain("Do not apply a remedy, make another call, start the next section or call ExitPlanMode while the choice awaits an answer");
     expect(compactProse(dispatch)).toContain("Return to step 1 with the updated working plan and answer");
@@ -469,7 +469,7 @@ describe('Eng approved-work decision gate', () => {
     expect(compactProse(audit)).toContain("Fit headers and labels to host limits now, before saving");
     expect(compactProse(audit)).toContain("Put all deliberation in the native question/descriptions; a saved-only Pros/cons block cannot supply missing decision context");
     expect(compactProse(save)).toContain("Include every native field, the recommendation and all options");
-    expect(compactProse(save)).toContain("Use exactly one A–D record selector for each option: keep an existing selector or prefix one");
+    expect(compactProse(save)).toContain("A–D record selectors are ledger notation only");
     expect(compactProse(save)).toContain("Compare the label separately from that notation");
     expect(compactProse(save)).toContain("Check the Write/Edit result, then use Read to fetch the entire saved record");
     expect(compactProse(save)).toContain('Compare every native field with `currentDecision`');
@@ -564,7 +564,7 @@ describe('Eng approved-work decision gate', () => {
     expect(ledger).toContain('### R1: <one independently selectable choice>');
     expect(ledger).toContain('Question D2:\n<currentDecision.question in full, including its D2 title and recommendation>');
     expect(ledger).toContain('History: <earlier values, briefs, answers and reason for reopening>');
-    expect(identity).toContain("test stars rate existing tests, not decisions or findings");
+    expect(identity).toContain("Test-review scores rate existing/proposed tests, not answer status");
     expect(template).not.toContain('issue NUMBER + option LETTER');
     expect(template).not.toContain('Label with NUMBER + LETTER');
   });
@@ -637,7 +637,7 @@ describe('Eng approved-work decision gate', () => {
     }
     expect(routes['Required Review Log']).toContain("the final gate cannot pass without this log");
     expect(compactProse(policy)).toContain("Forbidden auxiliary writes allow the review to continue; unrecovered attempted writes block it");
-    expect(compactProse(gate)).toContain("The write policy governs persistence");
+    expect(compactProse(gate)).toContain("Use Review record/write policy only for saved records, reports and logs");
     const log = template.split('## Review Log')[1]!.split('{{REVIEW_DASHBOARD}}')[0]!;
     expect(log).toContain("Use these commands in finish step 3, after successful Read-back");
     expect(compactProse(template)).toContain('If the required log is forbidden, show its fields as not persisted and take **Blocked outcome**');

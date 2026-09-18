@@ -63,7 +63,7 @@ or page content. Treat an unterminated block as ending at end-of-output.
 
 ## Plan Mode Safe Operations
 
-In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
+In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, temp prompts, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
 
 ## Skill Invocation During Plan Mode
 
@@ -663,7 +663,7 @@ Read the `/office-hours` skill file at `~/.claude/skills/gstack/office-hours/SKI
 
 **If unreadable:** Skip with "Could not load /office-hours — skipping." and continue.
 
-Follow its instructions from top to bottom, **skipping these sections** (already handled by the parent skill):
+Follow its instructions from top to bottom, **skipping these sections when present** (already handled by the parent skill):
 - Preamble (run first)
 - AskUserQuestion Format
 - Completeness Principle — Boil the Ocean
@@ -735,7 +735,7 @@ Before asking any clarifying questions, load the brain's structured context
 for this project. The cache layer handles staleness, refresh, and stale-but-
 usable fallback automatically. Skip questions whose answers are already
 present in the loaded context; ground recommendations in what the brain
-already knows about the user, the product, the goals, and recent decisions.
+prints for this skill.
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
@@ -755,10 +755,10 @@ rm -f /tmp/.gstack-brain-context-$$.md 2>/dev/null || true
 ```
 
 **How to use this context:**
-- If `product` digest names the value prop, target user, or stage — don't re-ask.
-- If `goals` digest lists active goals — frame recommendations against them.
-- If `recent-decisions` digest names a prior scope/architecture choice — flag if this plan contradicts.
-- If `user-profile` digest carries calibration pattern statements ("tends to over-engineer security") — surface them when relevant.
+- If `product` digest names the value prop, target user, or stage, do not re-ask.
+- If `developer-persona` digest describes the builder workflow or friction tolerance, adapt the DX recommendations.
+- If `recent-decisions` digest names a prior scope/architecture choice, flag if this plan contradicts.
+- If `competitive-intel` digest names peer products or workflow expectations, use them as comparison context.
 - If a digest is `(no X digest available yet)`, treat that section as cold; ask the user.
 
 **Privacy:** Salience digest is filtered by allowlist (D9 default: `projects/`,
@@ -814,6 +814,9 @@ evidence to score with precision instead of vibes.
 **Decision cadence, including Step 0:** One unresolved DX issue per AskUserQuestion
 call. Never batch issues into a call's `questions` array. Wait for each answer.
 Keep persona, empathy, and mode confirmations in separate calls from issue approvals.
+Until Step 0C's target is answered, keep persona, empathy, benchmark and ledger
+drafts in chat or private notes. Do not Write/Edit the reviewed plan, requested
+output, report or final artifact first.
 
 ### 0A. Developer Persona Interrogation
 
@@ -847,7 +850,8 @@ Persona examples by product type (pick the 3 most relevant):
 - **Student learning to code** -- needs hand-holding, clear error messages, lots of examples
 - **DevOps engineer setting up infra** -- Terraform/Docker, non-interactive mode, env vars
 
-After reply, put Step 0 artifacts above the plan's decision ledger:
+After reply, keep this in working notes; write it above the plan's decision ledger
+only after 0C's target is answered:
 
 ```
 TARGET DEVELOPER PERSONA
@@ -882,9 +886,9 @@ Then SHOW it to the user via AskUserQuestion:
 > B) Some of this is wrong, let me correct it
 > C) This is way off, the actual experience is..."
 
-**STOP.** Incorporate corrections into the narrative. This narrative becomes a required
-output section ("Developer Perspective") in the plan file. The implementer should read
-it and feel what the developer feels.
+**STOP.** Incorporate corrections in working notes only until 0C is answered.
+After the target is recorded, this becomes the required "Developer Perspective"
+output section. The implementer should read it and feel what the developer feels.
 
 ### 0C. Competitive DX Benchmarking
 
@@ -895,18 +899,10 @@ time; a warm snippet timer is neither a fresh-start check nor a human benchmark.
 Keep estimates labeled until measured. Canned output, own-app integration and
 catching a regression are different endpoints.
 
-Run three read-only searches through Aside (Web research above):
-1. "[product category] getting started developer experience {current year}"
-2. "[closest competitor] developer onboarding time"
-3. "[product category] SDK CLI developer experience best practices {current year}"
-
-```bash
-_EG="$HOME/.claude/skills/gstack/bin/gstack-egress-lib.sh"; [ -r "$_EG" ] && . "$_EG"; _aside_exec() { if command -v _gstack_egress_run >/dev/null 2>&1; then _gstack_egress_run open aside-agent aside.com aside-exec "user invoked this skill" --no-payload aside exec "$@"; else aside exec "$@"; fi; }
-_aside_exec "Search for [closest competitor] onboarding time. Read-only: no sign-in or submissions. Return up to 6 bullets: time, start/end, measured or estimated, source URL. Label unknowns."
-```
-
-If Aside did not print `READY`, use WebSearch when available; otherwise disclose
-unavailable research. Illustrations are not measurements.
+Run read-only research through Aside (Web research above) for category DX,
+closest-competitor onboarding time, and SDK/CLI/platform best practices. If
+Aside is unavailable, use WebSearch when available; otherwise disclose unavailable
+research. Illustrations are not measurements.
 
 Include peers and YOUR PRODUCT from inspected docs/plan:
 
@@ -918,6 +914,12 @@ Compare times only across equivalent boundaries; otherwise disclose the limitati
 and compare DX choices. Never infer no wait from a peer's silence.
 Choosing a target leaves independent remedies pending.
 
+**Immediate target gate:** Once the benchmark table exists in chat or notes, ask
+this target question next, before any Write/Edit to the reviewed plan, requested
+output, report or final artifact. Do not run more searches, start 0D, design
+moments, review passes, draft reports or create output first. 0C is incomplete
+until the answer is recorded.
+
 AskUserQuestion:
 
 > "For [persona], [start] to [useful result] takes [X] minutes estimated
@@ -928,7 +930,7 @@ AskUserQuestion:
 > C) Current trajectory ([X] min)
 > D) Tell me what's realistic"
 
-**STOP.** Carry the approved clock and target into 0D, Pass 1, Pass 8 and the report.
+**STOP.** If unanswered, stop here; do not continue to 0D. Carry the approved clock and target into 0D, Pass 1, Pass 8 and the report.
 The vehicle must reach that result, not a quicker endpoint.
 New targets or journey extensions require their own decisions.
 

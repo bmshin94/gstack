@@ -66,7 +66,7 @@ process.stdin.on('data',async bytes=>{
       ack('second',2);log('second-ack');
       process.stdout.write('\x1b[2J\x1b[HOwned collection data ready.\r\n');
     },4500);
-  }else if(['default','failed','foreign'].includes(mode))setTimeout(()=>process.exit(19),4500);
+  }else if(['default','failed','foreign'].includes(mode))setTimeout(()=>{process.exitCode=19;process.stdin.pause();process.stdin.destroy();},4500);
   process.stdout.write('\x1b[2J\x1b[HOwned collection fixture is working.\r\n');
 });
 process.on('SIGINT',()=>{log('sigint');process.exit(0)});

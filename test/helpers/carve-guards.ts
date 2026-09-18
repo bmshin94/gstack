@@ -181,7 +181,7 @@ export const CARVE_GUARDS: Record<string, CarveGuard> = {
     // v1.65 merge: provisional larger-of-both-waves budget; re-measured below.
         // Fork port wave 2 (#703): the repo-doc-preference block in the design
     // check grew every plan-review skeleton ~0.7KB. Measured values noted.
-    maxSkeletonBytes: 79_744, // Exact 744-byte anti-shortcut move: main 79,739 + section 75,559 = unchanged 155,298-byte union; retains 5-byte slack.
+    maxSkeletonBytes: 80_100, // + depth-specific output and 0H/0I feasibility boundary clarity; measured 80,073.
     minUnionBytes: 123_600, // token-reduction Phases 1-2 (v1.69.x branch): preamble bash -> bin/gstack-skill-start, onboarding -> gated emission; measured union 137,346
     mustContain: ['SCOPE EXPANSION', 'SELECTIVE EXPANSION', 'HOLD SCOPE', 'SCOPE REDUCTION'],
     // Default-on Codex outside-voice (codexPreflight block + CODEX_MODE branch
@@ -218,7 +218,7 @@ export const CARVE_GUARDS: Record<string, CarveGuard> = {
     // 1.08 → 1.10: the scope-gate exceptions block (+ its adversarial-review
     // hardening: host-anchored mode signal, precedence, passing-mention
     // guards) and the plan-mode preamble reword land the union at 1.092.
-    maxSizeRatio: 1.12, // measured 1.103
+    maxSizeRatio: 1.15, // + clarity rules for saved decisions/setup gates; measured 1.146
   },
   'plan-design-review': {
     skill: 'plan-design-review',
@@ -502,7 +502,7 @@ do not launch the downstream skill or open a browser.`,
       gateAfterStop: 'EXIT PLAN MODE GATE',
     },
     behavioral: 'prompt',
-    maxSkeletonBytes: 59_300, // + v1.78 AUQ spawned-trigger objectivity (explicit declaration + interactive fence); measured 58_867
+    maxSkeletonBytes: 59_350, // + v1.78 AUQ spawned-trigger objectivity; generated Codex overlay measured 59,307
     minUnionBytes: 83_400, // Phase 4 wave 1; measured union 84,304
     mustContain: ['GATE: PASS', 'CROSS-MODEL ANALYSIS', 'codex exec resume', 'sandbox_mode="read-only"', 'mktemp'],
     maxSizeRatio: 1.06, // measured 1.040 vs the v1.64.1.0 parity baseline

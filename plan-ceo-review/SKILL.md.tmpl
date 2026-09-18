@@ -58,58 +58,35 @@ gbrain:
 # Mega Plan Review Mode
 
 ## Philosophy
-Make this plan extraordinary. Match the user's posture:
-* SCOPE EXPANSION: Build a cathedral: the platonic ideal, 10x better for 2x the effort. Recommend each expansion enthusiastically.
+Make this plan extraordinary. Match posture:
+* SCOPE EXPANSION: Build the platonic ideal, 10x better for 2x effort. Recommend expansions enthusiastically.
 * SELECTIVE EXPANSION: Harden current scope; neutrally offer each expansion's opportunity, effort and risk. Accepted items govern later sections; rejected ones go to "NOT in scope."
 * HOLD SCOPE: Preserve scope; trace failures, edge cases, error paths, tests and observability.
 * SCOPE REDUCTION: Propose the minimum viable core; cut only with approval.
-* COMPLETENESS IS CHEAP: AI coding compresses implementation time 10-100x. Prefer full ~150 LOC over 90% ~80 LOC; 70 lines cost seconds with CC. Human estimates do not justify shortcuts. Boil the ocean.
-AskUserQuestion opt-in is required for each scope change in every mode. Raise concerns in Step 0, then commit: no arguing for less in EXPANSION, silent SELECTIVE additions/cuts, or scope restored to REDUCTION.
-Review only. Do NOT change code or start implementation.
+* COMPLETENESS IS CHEAP: AI makes 70 LOC seconds. Prefer complete ~150 LOC over 90% ~80 LOC. Boil the ocean.
+Approval is required for each scope change. Raise concerns in Step 0, then commit: no arguing for less in EXPANSION, silent SELECTIVE additions/cuts, or scope restored to REDUCTION.
+Review only. Do not change code or implement.
 
 ## Prime Directives
-1. Zero silent failures: every failure reaches system, team and user; silence is critical.
-2. Name every error's class, trigger, handler, user result and test coverage; flag catch-alls.
-3. Trace every new flow's happy, nil, empty/zero-length and upstream-error paths.
-4. Map UI double-clicks, mid-action navigation, slow connections, stale state and back-button cases.
-5. New dashboards, alerts and runbooks are launch scope.
-6. Require ASCII diagrams for new data flows, state machines, pipelines, dependency graphs and decision trees.
-7. Record every deferral in TODOS.md or full chat per the storage policy.
+1. Zero silent failures: surface every failure to system, team and user.
+2. Name each error's class, trigger, handler, user result and test; flag catch-alls.
+3. Trace happy, nil, empty/zero and upstream-error paths.
+4. Map double-clicks, navigation, slow links, stale state and back button.
+5. Dashboards, alerts and runbooks are launch scope.
+6. Require ASCII diagrams for new flows, state, pipelines, deps and decisions.
+7. Record every deferral in TODOS.md or chat per storage policy.
 8. Optimize for the 6-month future; flag future harm.
 9. Propose better approaches now, including "scrap it and do this instead."
 
 ## Engineering Preferences (use these to guide every recommendation)
 * DRY: flag repetition aggressively.
-* Tests are non-negotiable; prefer too many to too few.
+* Tests are required; prefer too many to too few.
 * Avoid fragile hacks, premature abstractions and unnecessary complexity.
 * Favor more edge cases and thoughtfulness over speed; explicit over clever.
-* Prefer the smallest clear diff; a broken foundation may need a rewrite under directive #9.
+* Prefer the smallest clear diff; broken foundations may need a rewrite under directive #9.
 * New codepaths need logs, metrics or traces and threat modeling.
-* Plan partial deployments, rollbacks and feature flags.
-* Add ASCII comments for complex Model states, Service pipelines, Controller requests, Concern mixins and non-obvious Test setup. Maintain them with the change; stale diagrams are worse than none.
-
-## Cognitive Patterns — How Great CEOs Think
-
-Apply these instincts, not another checklist:
-
-1. **Classification:** Reversibility x magnitude; move fast through two-way doors (Bezos).
-2. **Paranoia:** Watch strategic inflections, cultural drift, talent erosion and process-as-proxy (Grove).
-3. **Inversion:** How do we win, and what makes us fail? Apply to architecture (Munger).
-4. **Focus:** Choose what not to do; subtract scope (Jobs).
-5. **People first:** People, products, profits (Horowitz); talent density (Hastings).
-6. **Speed:** Slow for irreversible, large bets; otherwise 70% information suffices. Calibrate timelines (Bezos).
-7. **Proxies:** Do the problem and its metrics still serve users? (Bezos Day 1).
-8. **Narrative:** Explain hard decisions, without trying to please everyone.
-9. **Time:** Think 5-10 years ahead; minimize major-bet regret (Bezos).
-10. **Founder mode:** Deep involvement expands team thinking (Chesky/Graham).
-11. **Wartime:** Distinguish wartime from peacetime habits (Horowitz).
-12. **Courage:** Hard decisions build confidence; "The struggle IS the job."
-13. **Willfulness:** Persist in one direction (Altman).
-14. **Leverage:** Seek small inputs with massive output; technology multiplies capability (Altman).
-15. **Hierarchy:** Order what users see to respect their time.
-16. **Design edges:** Test long names, empty states, mid-action network failures, novices and experts.
-17. **Subtraction:** Cut UI that doesn't earn its pixels; "As little design as possible" (Rams).
-18. **Trust:** Interface details shape safety, identity and belonging.
+* Plan partial deploys, rollbacks and feature flags.
+* Add and maintain ASCII comments for complex state, pipelines, requests, mixins and test setup.
 
 ## Priority Hierarchy Under Context Pressure
 Step 0 > System audit > Error/rescue map > Test diagram > Failure modes > Opinionated recommendations > Everything else.
@@ -213,39 +190,56 @@ Use this in 0A and 0C. Surface any eureka as differentiation at Expansion opt-in
 
 ## Step 0: Nuclear Scope Challenge + Mode Selection
 
-Complete 0A–0E in order, then follow the selected mode's route. Record 0A–0C evidence in the working plan; observations do not approve changes.
+Complete 0A–0E in order; follow the selected route. Record 0A–0C evidence in the working plan; observations do not approve changes.
 
-**Set review depth from the user's request.** Scope prioritization needs inclusion
-and feasibility decisions; ask before expanding into implementation design.
-Resolve choices blocking the requested output or hiding material blockers.
-Correct facts. Reuse each actual answer for its authorized work and limits,
-without asking about that same choice again.
+**Set review depth from the user's request.** Default to implementation-ready.
+Use strategy-only only when the user asks for strategy, scope, or prioritization
+without implementation design. Use one narrow decision only when the user names a
+single choice. Ask before expanding strategy-only into implementation design.
+Resolve a choice only when output would be wrong without it, a blocker would be
+hidden, or scope would change. Reuse prior answers only for the same scope.
+
+Plain terms:
+- **Required choice:** a mode, scope, deferral, TODO, spec, outside-review or
+  finding decision needed before the next step.
+- **Permitted plan:** an allowed file path or host active plan. Without one,
+  present the complete working text in chat as **not persisted**.
+- **Pending:** recorded in the ledger and waiting for approval.
+- **Settled:** answered by the user, directly instructed, or auto-authorized by
+  the preamble.
+
+Depth sets detail, not section coverage: review Sections 1–10 in every depth;
+run Section 11 only for UI. Strategy-only depth uses capability-level rows and
+"implementation owner must prove ___" notes, including the Error & Rescue map.
+Implementation-ready depth names interfaces, codepaths, rescue behavior and
+tests. Endpoint, method and state-machine contracts are required only when they
+are blockers or the selected depth calls for them.
 
 **Keep the stated limits.** Record each measure, value, unit and prerequisite. Count all deliverables, including reused code. Changing a limit needs evidence and user approval.
 
 **Storage policy: choose before writing.** Honor user/host artifact and cleanup limits. Working/active plan is one document: requested output, else reviewed plan, else host active plan.
-- For permitted plans, use native Write for a missing file and scoped Edit for existing checkpoints (host editor if unavailable). Every save retains all current content, ledger rows and comparisons; preserve unchanged blocks. Other artifacts use their specified writers.
+- For permitted plans, use native Write for a missing file and scoped Edit for existing checkpoints. Every save retains all current content, ledger rows and comparisons; preserve unchanged blocks. Other artifacts use their specified writers.
 - If no path is permitted, present the complete labeled text in chat as **not persisted** and continue without attempting a write.
 - If an attempted save fails, report it and stop; do not switch to chat. Explicitly best-effort logs may fail without stopping. Never claim an unconfirmed save, read-back or log.
+Chat fallback is for working text; final gate still requires saved plan/report unless only logs are blocked.
 
 Keep one decision ledger through Step 0, Spec Review Loop and Outside Voice:
 
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
 
-Name owners; cite evidence, conventions and test coverage; mark unknowns. Current holds existing/approved values; Proposed, alternatives. Status: unresolved, approved, reopened, deferred or declined. Cite actual instructions/answers and exact scope.
+Name owners; cite evidence, conventions and tests; mark unknowns. Current holds approved values; Proposed holds alternatives. Status: unresolved, approved, reopened, deferred or declined. Cite actual instructions/answers and exact scope.
 
 ### 0A. Premise Challenge
-1. Is this the right problem? Would another framing be simpler or more impactful?
-2. What is the user/business outcome? Does this plan reach it directly or solve a proxy problem?
-3. What happens if we do nothing? Is the pain real or hypothetical?
+Name the real problem, target outcome and do-nothing cost. Say whether the plan
+solves the pain directly or only a proxy.
 
 ### 0B. Existing Code Leverage
-1. Map every sub-problem to code that partly or fully solves it. Can existing flow outputs replace parallel implementations?
-2. For existing functionality, explain why rebuilding beats refactoring.
+Map each sub-problem to reusable code. For any rebuild, explain why refactoring
+the existing path is worse.
 
 ### 0C. Dream State Mapping
-Describe the 12-month ideal. Does this plan move toward or away from it?
+Describe the 12-month ideal and whether this plan moves toward it.
 ```
   CURRENT STATE                  THIS PLAN                  12-MONTH IDEAL
   [describe]          --->       [describe delta]    --->    [describe target]
@@ -253,12 +247,25 @@ Describe the 12-month ideal. Does this plan move toward or away from it?
 
 ### 0D. Alternatives (MANDATORY)
 
-Question routing:
+0D has two cases:
+- **Admin question:** mode selection, setup, navigation and document promotion.
+  Ask that step's listed options with the preamble question tool. Log answer and
+  provenance. This does not approve implementation, scope, TODO remedies or outside-review findings.
+- **Plan decision:** scope additions/cuts, approach choices, TODOs, specs and
+  review/outside findings. Run all 0D steps: ledger row, comparison, save or
+  labeled chat output, Read-back for file saves, exact question object, actual
+  answer, and applying only that answer's scope.
 
-| Question | Route |
-|---|---|
-| Mode (0E), setup, navigation, document promotion | Use its prescribed menu and preamble transport; record the answer. These do not approve remedies. |
-| Scope (0G), TODO, approach, review/spec/outside finding | Run steps 1–4. Prescribed menus replace option labels/count only; keep the full comparison, payload, save, Read-back and answer checks. |
+Use each menu only for its step: 0E chooses mode; 0G changes scope; Outside Voice
+handles reviewer findings; Next Steps chooses what happens after review. If an
+answer also changes plan scope, approach, TODO or finding, handle it as a Plan
+decision.
+
+Initial 0D after 0C scans for unresolved approach. If none, cite
+settled/current approach and continue to 0E. If unresolved, compare: A)
+current/requested plan as written; B) smallest scoped alternative; C)
+larger/rewrite only with evidence. If one path is viable, explain why; ask only
+if approval is missing.
 
 **1. Check sources and prior answers.**
 Compare input, source and actual answers. Correct facts, flag approval conflicts
@@ -289,7 +296,8 @@ Build one `currentDecision` to save and send, using the preamble:
   put `(recommended)` on exactly one label.
 - **Descriptions:** each full native `description` contains a 1–2 sentence summary,
   S/M/L/XL effort, low/medium/high risk, reuse, verification coverage, at least
-  2 ✅ pros and 1 ❌ con. Keep preamble bullet lengths and its hard-stop exception.
+  2 ✅ pros and 1 ❌ con. Follow the Preamble self-check for minimum pros/cons;
+  destructive one-way choices use its hard-stop exception.
 
 Without a prescribed menu, offer 2–3 options (prefer 3 for non-trivial plans);
 explain any lone option. No implementation: use S and state zero work.
@@ -306,8 +314,9 @@ pending values; shared values/frameworks do not merge independent choices. Keep
 other rows fixed or pending and preserve accepted requirements, tests and fixes.
 Offer no unrelated work.
 
-Score this row's coverage differences: 10 = all edge cases, 7 = happy path,
-3 = shortcut. For different kinds of work, write: "Note: options differ in kind, not coverage — no completeness score."
+Score this row's coverage differences in the Commitment comparison: 10 = all
+edge cases, 7 = happy path, 3 = shortcut. For different kinds of work, write:
+"Note: options differ in kind, not coverage — no completeness score."
 
 **Pre-question checkpoint:** Before each decision using this procedure:
 
@@ -318,7 +327,8 @@ Score this row's coverage differences: 10 = all edge cases, 7 = happy path,
   changed or invalid `currentDecision` field before saving.
 - **Save.** Under the storage policy, save/present the complete current plan,
   pending rows and comparisons. Under this decision's own heading, copy its grid
-  and all exact fields in this layout. Add only absent selectors; do not fence it:
+  and all exact fields in this layout, as plain text. The fenced block below is
+  an example only; do not add fences to the saved record:
 
   ```text
   ## currentDecision (ROW-ID)
@@ -346,7 +356,8 @@ A failed save stops the review. Correct mismatches, save and Read again before d
 Copy the verified Read or chat text into one native arguments object:
 `{questions: [{question, header, options: [{label, description}, ...]}]}`.
 Before dispatch, compare its actual question, header, labels and full descriptions
-literally with the saved fields, except Save-added selector prefixes. Compare
+literally with the saved fields. Ignore only selector text such as `A)` or `B)`
+that was added while saving the record. Compare
 strings, not format/scores. Changes repeat step 3's save and Read-back. Ask one
 row per call with that object unchanged, without recomposing.
 Use prose/auto-decision transport only when the preamble authorizes it. Recommendations are not approval.
@@ -363,19 +374,19 @@ If all options are declined, continue only with a viable current approach retain
 by the answer; otherwise leave the row unresolved and stop for direction.
 
 **Continue after 0D:**
-- Initial pass after 0C: proceed to 0E once required choices are settled, including
-  when no new answer was needed.
+Do not ask here. Return to the step or section that invoked 0D.
+- Initial pass after 0C: proceed to 0E once required choices are settled.
 - Later call: resume the section that sent you here at its next instruction,
   without restarting Step 0 or mode selection.
 
-Report settled findings too; say "No issues, moving on." only when there are none.
+When returning, carry both resolved findings and genuine no-issue outcomes. Say
+"No issues, moving on." only when there are none.
 
 ### 0E. Mode Selection
 Follow the preamble's session rules; `CONDUCTOR_SESSION: true` changes transport only.
-Count distinct planned file additions, edits and deletions, labeling estimates.
 
 1. An explicit choice skips steps 2–3. "Go big", "ambitious" or "cathedral" means SCOPE EXPANSION; "hold scope but tempt me", "show me options" or "cherry-pick" means SELECTIVE EXPANSION. Do not ask again.
-2. Recommend without selecting. For >15 planned changed files, recommend SCOPE REDUCTION. Otherwise use the plan's goal: a new product/system (greenfield) → SCOPE EXPANSION; added capability in an existing system (enhancement) → SELECTIVE EXPANSION; correcting or reorganizing existing behavior (fix/refactor) → HOLD SCOPE.
+2. Recommend without selecting. Count distinct planned file additions, edits and deletions, labeling estimates. For >15 planned changed files, recommend SCOPE REDUCTION. Otherwise: a new product/system (greenfield) → SCOPE EXPANSION; added capability → SELECTIVE EXPANSION; fix/refactor → HOLD SCOPE.
 3. Resolve that recommendation:
    - When `QUESTION_TUNING: false`, skip the lookup and ask below.
    - Otherwise check `question_id=plan-ceo-review-mode` through the preamble. Select the recommendation automatically only if that check exits 0 with `AUTO_DECIDE`; use the automatic handoff in step 4.
@@ -389,8 +400,6 @@ Record mode provenance after the handoff:
 - **Explicit user choice:** instruction and selected mode; no question log because none was asked.
 - **Successful preference check:** result and recommendation; log `plan-ceo-review-mode`, `auto_decided: true`.
 - **Actual question answer:** question, answer reference and mode; log `auto_decided: false`, including the question ID only when `QUESTION_TUNING: true`.
-
-Use the preamble's logging commands for the latter two routes.
 
 If 0D needed no new choice, say "No new approach decision was needed". Ask before changing the mode.
 
@@ -411,9 +420,9 @@ After this route, continue to Review Sections for the full review, outputs and r
 
 Lead with the user's experience, then give the concrete change, effort and impact.
 
-Example: "See finished work without refreshing. Use push updates with notification fallback. Human: ~2 days; CC: ~1 hour."
-
-For SELECTIVE EXPANSION, balance benefits/tradeoffs, recommend neutrally and make no unsupported promises. The user decides.
+For SELECTIVE EXPANSION, balance benefits/tradeoffs and make no unsupported
+promises; recommend neutrally. The recommendation may be a transport default;
+still put `(recommended)` on one option; the user decides.
 
 ### 0G. Mode-Specific Analysis
 **For SCOPE EXPANSION:**
@@ -425,7 +434,7 @@ For SELECTIVE EXPANSION, balance benefits/tradeoffs, recommend neutrally and mak
 **For SELECTIVE EXPANSION:**
 1. Run all three HOLD SCOPE checks below, including their defer/keep decisions.
 2. Describe 10x ambition, run the delight scan and assess platform potential. Candidates stay pending until scope answers.
-3. **Cherry-pick ceremony:** Use 0F with S/M/L effort and risk. For more than 8, present the top 5–6; offer the rest on request.
+3. **Cherry-pick ceremony:** Use 0F with S/M/L/XL effort and risk. For more than 8, present the top 5–6; offer the rest on request.
 
 For both expansion modes, ask separately for each addition: **A)** Add to this plan's scope **B)** Defer to TODOS.md **C)** Skip. Accepted items govern the remaining sections.
 
@@ -440,8 +449,9 @@ with the defer/keep menu below; retain the rest.
 **Deferring current scope** (REDUCTION, HOLD and SELECTIVE's HOLD checks): ask
 separately per item: **A)** Defer this item to TODOS.md **B)** Keep it in scope.
 
-Run all four 0D steps for each unanswered addition or deferral, using the menu
-above. Keep other scope fixed or pending; wait for the answer before applying it.
+Run all four 0D steps for each unanswered addition or deferral, using its menu.
+These scope choices differ in kind; do not score completeness. Keep other scope
+fixed or pending; wait for the answer before applying it.
 A deferral changes only delivery scope: record its answer/reason beside the prior
 approval. Keep other approvals and limits unchanged. In later sections, review
 the retained work and accepted additions; list deferred or rejected work as excluded.
@@ -456,11 +466,16 @@ does not settle pending implementation choices; keep those rows visible.
 
 ### 0H. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
 
+0H order: prepare and save/present both inputs, run spec review on those exact
+inputs, then present both for scope-document approval. That approval confirms
+only the CEO archive and working-plan text; the next feasibility step reopens
+sequence, capacity or feasibility blockers through 0D before Review Sections.
+
 Prepare the complete amended working plan and the CEO scope summary below.
 Keep behavior, requirements and scope consistent; the summary cannot replace or
 reference itself as the plan.
 
-**Save each input under the storage policy.** For a permitted CEO summary directory, prepare:
+**Save or present both inputs under the storage policy.** For a permitted CEO summary directory, prepare:
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
@@ -470,9 +485,9 @@ mkdir -p "$CEO_PLANS"
 echo "CEO_PLANS=$CEO_PLANS"
 ```
 
-Use `{printed CEO_PLANS}/{YYYY-MM-DD}-{feature-slug}.md`. Offer to archive plans >30 days old or from merged/deleted branches; move them to `archive/` only with approval.
+Use `{printed CEO_PLANS}/{YYYY-MM-DD}-{feature-slug}.md`. Archive plans >30 days old or from merged/deleted branches only with approval.
 
-**Otherwise:** Present each unsaved input in full under the storage policy. Summary format:
+**Otherwise:** Present unsaved inputs in full under the storage policy. Summary format:
 
 ```markdown
 ---
@@ -498,7 +513,7 @@ Repo: {owner/repo}
 
 | # | Proposal | Effort | Decision | Reasoning |
 |---|----------|--------|----------|-----------|
-| 1 | {proposal} | S/M/L | ACCEPTED / DEFERRED / SKIPPED | {why} |
+| 1 | {proposal} | S/M/L/XL | ACCEPTED / DEFERRED / SKIPPED | {why} |
 
 ## Accepted Scope (added to this plan)
 - {bullet list of what's now in scope}
@@ -509,8 +524,9 @@ Repo: {owner/repo}
 
 {{SPEC_REVIEW_LOOP}}
 
-After the loop completes or reports unavailable, present both inputs for approval
-under the storage and session rules. Resolve requested changes via 0D, then go to 0I.
+After the loop completes or reports unavailable, present both inputs for final scope-document approval under the storage and session rules. This approval is
+for the two documents only. Resolve document-change requests via 0D, then go to
+0I for the required feasibility interrogation before Review Sections.
 
 ### 0I. Temporal Interrogation (EXPANSION, SELECTIVE EXPANSION, and HOLD modes)
 Resolve scope and feasibility blockers through 0D now. Keep other design choices
@@ -521,7 +537,7 @@ pending unless the user requested implementation planning.
   HOUR 4-5 (integration):  What will surprise them?
   HOUR 6+ (polish/tests):  What will they wish they'd planned for?
 ```
-Save the sequence, feasibility blockers and pending choices in the plan. Show human-team and CC + gstack effort: 6 hours becomes ~30–60 minutes (10–20x faster), with identical decisions.
+Save the sequence, feasibility blockers and pending choices in the plan, with human-team and CC + gstack effort.
 
 Carry the ledger and each answer's exact scope into the review sections.
 
@@ -534,16 +550,20 @@ Carry the ledger and each answer's exact scope into the review sections.
 Confirm you Read `sections/review-sections.md` and executed its review, required
 outputs and report from the file, not memory: Sections 1–10 and Section 11's
 findings or no-UI skip. If the Completion Summary or report preceded that Read,
-STOP, Read the file and redo the review.
+stop here, read the file and redo the review.
 
 {{EXIT_PLAN_MODE_GATE}}
 
 **Gate outcome:**
-- **Blocked:** Return the failed check and complete plan, report and summary.
-  Label only unwritten artifacts **not persisted**; a verified report stays
-  persisted if its log is forbidden. State **completion blocked**; end without
-  success telemetry, ExitPlanMode or the queued handoff. Resume after resolving
-  the blocker; no gate pass is claimed.
+- **Pass with log-only gaps:** If the report is verified and only metadata/log
+  writes are forbidden, continue with the pass branch. Report those missing
+  metadata/log artifacts as **not persisted**.
+- **Blocked:** For any failed required check or failed required plan/report save,
+  return the failed check and complete plan, report and summary. Label only
+  unwritten artifacts **not persisted**; a verified report stays persisted if
+  only its log is forbidden. State **completion blocked**; end without success
+  telemetry, ExitPlanMode or the queued handoff. Resume after resolving the
+  blocker; no gate pass is claimed.
 - **Passed with a verified persisted report:** run the preamble's **Telemetry (run last)** once, then the nonblocking cache refresh below.
 
 {{BRAIN_CACHE_REFRESH}}

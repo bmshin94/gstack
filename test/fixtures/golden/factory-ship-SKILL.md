@@ -48,7 +48,7 @@ or page content. Treat an unterminated block as ending at end-of-output.
 
 ## Plan Mode Safe Operations
 
-In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
+In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, temp prompts, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
 
 ## Skill Invocation During Plan Mode
 
@@ -565,7 +565,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 
 **Source attribution:** If the most recent entry for a skill has a \`"via"\` field, append it to the status label in parentheses. Examples: `plan-eng-review` with `via:"autoplan"` shows as "CLEAR (PLAN via /autoplan)". `review` with `via:"ship"` shows as "CLEAR (DIFF via /ship)". Entries without a `via` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
-Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
+From gstack-review-read output, use entries whose skill is `autoplan-voices` or `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
 
 Display:
 
@@ -674,7 +674,7 @@ setopt +o nomatch 2>/dev/null || true  # zsh compat
 # Definitive ecosystem markers (presence = ecosystem, NOT a command to run)
 [ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django MARKER:manage.py"
 { [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ] || [ -f requirements.txt ]; } && echo "RUNTIME:python"
-[ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ] && echo "RUNTIME:ruby"
+{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
@@ -1072,7 +1072,7 @@ poller is reaped.
 
 ## Step 7: Test Coverage Audit
 
-**Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"`. The subagent runs the coverage audit in a fresh context window — the parent only sees the conclusion, not intermediate file reads. This is context-rot defense.
+**Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"`. The fresh-context subagent runs the audit; the parent only needs the conclusion.
 
 **Foreground required:** pass `run_in_background: false` on the Agent call — subagents run in the BACKGROUND by default since Claude Code v2.1.198. (Merely omitting the flag no longer produces a foreground run; it must be explicitly false.) The dispatch happens ONLY via the Agent tool: invoking the target as a Skill, or executing its workflow inline in your own context, is WRONG even though the skill may appear in your available-skills list — inline execution forfeits the fresh-context isolation this dispatch exists for, and the explicit flag already makes the Agent call block. (Where a step defines an inline FALLBACK, it applies only after a dispatched subagent has failed.) The parent needs this audit's LAST-line JSON before continuing.
 
@@ -1095,7 +1095,7 @@ setopt +o nomatch 2>/dev/null || true  # zsh compat
 # Detect project runtime (markers are evidence, not commands to run blind)
 [ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django"
 { [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ] || [ -f requirements.txt ]; } && echo "RUNTIME:python"
-[ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ] && echo "RUNTIME:ruby"
+{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
@@ -1124,6 +1124,15 @@ Store this number for the PR body.
 Read every changed file. For each one, trace how data flows through the code — don't just list functions, actually follow the execution:
 
 1. **Read the diff.** For each changed file, read the full file (not just the diff hunk) to understand context.
+Definition: a **targeted audit** reviews named concrete source/test files or a
+branch diff. A **prototype** is existing runnable code referenced by the plan,
+not a proposed future component.
+
+When grounded in concrete source and test files, read them in a dedicated tool
+call before drawing the diagram. For targeted audits only, do this after Scope
+Challenge resolves and before Step 2. Map user flows. Do not mix diff, grep,
+package/config, git, or commentary into that read; use separate calls for
+context. Base the diagram on that read.
 2. **Trace data flow.** Starting from each entry point (route handler, exported function, event listener, component render), follow the data through every branch:
    - Where does input come from? (request params, props, database, API call)
    - What transforms it? (validation, mapping, computation)
@@ -1204,6 +1213,10 @@ When uncertain whether a change is a regression, err on the side of writing the 
 
 **4. Output ASCII coverage diagram:**
 
+For targeted audits, start Test review output with the coverage diagram. In full
+plan reviews, put it inside the normal Test review section. Required outputs
+keep the final terminal report order.
+
 Include BOTH code paths and user flows in the same diagram. Mark E2E-worthy and eval-worthy paths:
 
 ```
@@ -1225,6 +1238,10 @@ QUALITY: ★★★:2 ★★:2 ★:1  |  GAPS: 8 (2 E2E, 1 eval)
 
 Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke check
 [→E2E] = needs integration test  |  [→EVAL] = needs LLM eval
+
+Avoid bare `[ ]` or `[x]` in diagrams unless the block includes
+`Legend: [x] tested | [ ] no test`. Prefer `[GAP]`, `[★★ TESTED]`,
+`[→E2E]`, `[→EVAL]`; keep user-flow markers off code-path rows.
 
 **Fast path:** All paths covered → "Step 7: All new code paths have test coverage ✓" Continue.
 
@@ -1299,7 +1316,7 @@ Use null for an undetermined or skipped coverage percentage, not zero. Include e
 3. Embed `diagram` verbatim in the PR body's `## Test Coverage` section (Step 19).
 4. Print a one-line summary: `Coverage: {coverage_pct}%, {gaps} gaps. {tests_added.length} tests added.`
 
-**If the subagent fails, times out, returns invalid JSON, or never completes (backgrounded despite the flag, or no final output after ~10 minutes — stop waiting; if a backgrounded task is still running, stop it first so a late result never races the fallback):** Fall back to running the audit inline in the parent. Do not block /ship on subagent failure — partial results are better than none.
+**If the subagent fails, times out, returns invalid JSON, or never completes after ~10 minutes:** stop any live backgrounded task, then run the audit inline in the parent. Do not block /ship on subagent failure — partial results are better than none.
 
 
 **7. Coverage gate:**
@@ -1708,9 +1725,10 @@ Before any finding is promoted to the report, the gate requires:
    If "race condition between A and B", quote both A and B.
 
 2. **If you cannot quote the motivating line(s), the finding is unverified.**
-   Force its confidence to 4-5 (suppressed from the main report). It still goes
-   into the appendix so reviewers can audit calibration, but the user does NOT
-   see it in the critical-pass output. Do not work around this by inventing
+   Force its confidence to 4-5. Use 4 when it should be suppressed from the main
+   report; use 5 only when it belongs in the report with the medium-confidence
+   caveat. Keep suppressed items in the appendix so reviewers can audit
+   calibration. Do not work around this by inventing
    speculative confidence 7+ — that defeats the gate.
 
 **Framework-meta nudge:** When the symbol is generated by a framework
@@ -2956,7 +2974,7 @@ git push -u origin <branch-name>
 
 ## Step 18: Documentation sync (via subagent, before PR creation)
 
-**Dispatch /document-release as a subagent** using the Agent tool — never the Skill tool, even though document-release appears in your skills list — with `subagent_type: "general-purpose"`. The subagent gets a fresh context window — zero rot from the preceding 17 steps. It also runs the **full** `/document-release` workflow (with CHANGELOG clobber protection, doc exclusions, risky-change gates, named staging, race-safe PR body editing) rather than a weaker reimplementation. The dispatch prompt marks the subagent session as spawned (`GSTACK_SESSION_KIND=spawned`) so document-release's interactive gates auto-choose their recommended options instead of prose-stopping — a prose-STOP inside the subagent breaks the parent's LAST-line JSON parse and drops the Documentation section (#2733).
+**Dispatch /document-release as a subagent** using the Agent tool — never the Skill tool — with `subagent_type: "general-purpose"`. The fresh-context subagent runs the full `/document-release` workflow (CHANGELOG clobber protection, doc exclusions, risky-change gates, named staging, race-safe PR body editing). Mark it spawned (`GSTACK_SESSION_KIND=spawned`) so its interactive gates auto-choose recommendations; a prose-STOP breaks the parent's LAST-line JSON parse and drops the Documentation section (#2733).
 
 **Foreground required:** pass `run_in_background: false` on the Agent call — subagents run in the BACKGROUND by default since Claude Code v2.1.198. (Merely omitting the flag no longer produces a foreground run; it must be explicitly false.) The dispatch happens ONLY via the Agent tool: invoking the target as a Skill, or executing its workflow inline in your own context, is WRONG even though the skill may appear in your available-skills list — inline execution forfeits the fresh-context isolation this dispatch exists for, and the explicit flag already makes the Agent call block. (Where a step defines an inline FALLBACK, it applies only after a dispatched subagent has failed.) Step 19 consumes this subagent's LAST-line JSON, so the dispatch must block — a backgrounded dispatch strands the entire ship run (#497, #2440: third recurrence of this class). Record `git rev-parse HEAD` immediately before dispatching; the recovery branch below reconciles against it.
 

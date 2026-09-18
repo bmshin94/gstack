@@ -1,6 +1,6 @@
 import {expect,test,spyOn} from 'bun:test';
 import {buildPlanFloorReviewPrompt,validatePlanFloorAssessment,resolvePlanFloorCitations,judgePlanFloorReview,pickPlanFloorMode,pickPlanFloorProductType,type PlanFloorReview} from './helpers/plan-floor-review';
-import {FORCING_FLOOR_CEO} from './fixtures/forcing-finding-seeds';
+import {FORCING_FLOOR_CEO, FORCING_FLOOR_DEVEX} from './fixtures/forcing-finding-seeds';
 import capturedQuotes from './fixtures/plan-floor-quote-70b.json';
 import productTypes from './fixtures/plan-floor-product-type-70b.json';
 const review = ():PlanFloorReview=>({seed:FORCING_FLOOR_CEO,candidate:{transport:'native',identity:'owned:call:question:0',question:{
@@ -74,6 +74,54 @@ test.each([
  ['missing evidence',{status:0,stdout:JSON.stringify({...finding(),seedQuote:''}),stderr:''}],
 ] as const)('%s retains an explicit failure',(_label,result)=>{
  expect(()=>judgePlanFloorReview(review(),{binary:'fake',model:'warmup',deadlineAt:Date.now()+30_000,invoke:(()=>result) as any})).toThrow();
+});
+test.each([
+ ['Narrative','D1 - Does this empathy narrative match what your first-time SDK developer actually experiences?'],
+ ['Empathy check','D1 - Does this first-person journey match what your developer actually experiences?\nProject lens: hands-on developer making a first SDK call.'],
+ ['Empathy','D1 - Does this empathy narrative match reality?\nI want to walk the eight declared onboarding steps in the shoes of a hands-on developer trying to make one SDK call.'],
+] as const)('obvious DX empathy setup is classified without launching the assessor: %s', (header, question)=>{
+ const input:PlanFloorReview={seed:'## Onboarding flow\nEight manual setup steps and an emailed API key delay the first SDK call.',
+  candidate:{transport:'native',identity:'owned:dx-setup:question:0',question:{
+   header,
+   question,
+   multiSelect:false,
+   options:[{label:'Accurate, proceed',description:'Use this narrative as-is for the rest of the review.'},
+    {label:'Some corrections',description:'Correct persona or step details; unknowns stay labeled.'}],
+  }}};
+ let calls=0;
+ const actual=judgePlanFloorReview(input,{binary:'fake',model:'warmup',deadlineAt:Date.now()+30_000,
+  invoke:(()=>{calls++;throw Error('must not launch');}) as any});
+ expect(actual).toMatchObject({kind:'setup',seedQuote:'',questionQuote:'',optionIndex:null,optionQuote:''});
+ expect(calls).toBe(0);
+});
+test('DX TTHW target question is a seeded finding without launching the assessor',()=>{
+ for (const [questionText, labels] of [
+  ['D2 — Which time-to-first-call target should this quickstart aim for?', ['< 10 min + measured wait (recommended)', 'Current trajectory']],
+  ['D2 — Which time-to-first-call target should this quickstart be measured against?', ['A) Champion (< 2 min)', 'B) Competitive (2-5 min) (recommended)']],
+  ['D2 — Which time-to-first-call target should this quickstart be held to?', ['C) Current trajectory, made honest and measurable (recommended)', 'D) Tell me what is realistic']],
+  ['D2 — Which Time-to-Hello-World target should this quickstart be held to?', ['C) Current trajectory (~25-60 min active + unknown key wait) (recommended)', 'A) Champion (< 2 min)']],
+  ['D2 — Which Time-to-Hello-World target fits this first-call journey?', ['B) Competitive (2-5 min) (recommended)', 'C) Current trajectory (>10 min + unknown wait)']],
+  ['D2 — Which time-to-first-call target should this review hold the plan to?', ['Competitive (2-5 min) (recommended)', 'Champion (< 2 min)']],
+  ['D2 — Which time-to-first-call target should this review aim the plan at?', ['C) Current trajectory, polished (recommended)', 'A) Champion (< 2 min)']],
+  ['D2 (re-ask) — The previous reply restated the journey facts but did not choose a target. Which yardstick should the gap report score against?', ['B) Competitive (2-5 min) (recommended)', 'C) Current trajectory']],
+ ] as const) {
+ const input:PlanFloorReview={seed:FORCING_FLOOR_DEVEX,candidate:{transport:'native',identity:'owned:dx-tthw:question:0',question:{
+  header:'TTHW target',
+  question:`${questionText}\nThe plan has an emailed API key wait and no copy-pasteable quickstart command.`,
+  multiSelect:false,
+  options:[{label:labels[0],description:'Unattended setup under 10 min; email key turnaround measured separately.'},
+   {label:labels[1],description:'Industry abandonment threshold; blocked today by email key and local Postgres.'}],
+ }}};
+ let calls=0;
+ const actual=judgePlanFloorReview(input,{binary:'fake',model:'warmup',deadlineAt:Date.now()+30_000,
+  invoke:(()=>{calls++;throw Error('must not launch');}) as any});
+ expect(actual.kind).toBe('finding');
+ expect(actual.seedQuote).toContain('emailing the team');
+ expect(actual.questionQuote).toMatch(/(?:(?:time-to-first-call|Time-to-Hello-World) target|yardstick should the gap report score against)/);
+ expect(actual.optionIndex).toBe(1);
+ expect(actual.optionQuote).toMatch(/< 10 min|Champion|Competitive|Current trajectory/);
+ expect(calls).toBe(0);
+ }
 });
 test('an exhausted deadline starts no assessment process',()=>{
  let calls=0;expect(()=>judgePlanFloorReview(review(),{binary:'fake',model:'warmup',deadlineAt:Date.now()-1,invoke:(()=>{calls++;}) as any})).toThrow('deadline');expect(calls).toBe(0);

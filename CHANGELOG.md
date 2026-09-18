@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.87.6.0] - 2026-09-18
+
+**Review gates keep their proof.**
+**Coverage audits read the code first.**
+
+Plan reviews now keep decisions, report checks, and publication checks in order when permissions, stale choices, or host metadata writes fail. Coverage audits for `/review`, `/ship`, and plan reviews read concrete source and test files before drawing their diagrams, so gaps are tied to code paths instead of diff and config noise.
+
+### Fixed
+- `/plan-ceo-review` and `/plan-eng-review` preserve scoped decisions, required save/read-back checks, and report publication before declaring completion or advancing to the next section.
+- Coverage audits read source and test files in a dedicated step before mapping `[OK]` and `[GAP]` rows, while keeping framework and config context separate.
+- `/plan-eng-review` clarifies setup gates, targeted audit timing, report ordering, and Outside Voice output surfaces without losing saved-question verification.
+- The plan-count timeout fixture closes stdin without forcing process exit before diagnostics can be captured.
+- Ship host golden files and parity size guards match the generated Codex, Factory, and plan-review outputs.
+
 ## [1.87.5.0] - 2026-09-16
 
 **Checks preserve the result.**

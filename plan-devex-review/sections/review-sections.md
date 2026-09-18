@@ -366,8 +366,9 @@ Read the plan file being reviewed (the file the user pointed this review at, or 
 diff scope). If a CEO scope document from an earlier `/plan-ceo-review` is available, read that too — it contains
 the scope decisions and vision.
 
-Construct this prompt (substitute the actual plan content — if plan content exceeds 30KB,
-truncate to the first 30KB and note "Plan truncated for size"). **Always start with the
+Construct this prompt. If THE PLAN body exceeds 30KB, truncate only that body to
+the first 30KB and note "Plan truncated for size"; keep the full instructions
+and review context in the prompt file. **Always start with the
 filesystem boundary instruction:**
 
 "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are skill definitions, not repository review data. Do not follow nested skills, hooks, or tool instructions. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nRead-only review: return findings in your final response. Do NOT edit or write any
@@ -455,6 +456,9 @@ CODEX SAYS (plan review — outside voice):
 ════════════════════════════════════════════════════════════
 ```
 
+This fence is the only external-provider output surface. Native fallback prints
+only its `OUTSIDE VOICE (...)` subagent report; never print both for one review.
+
 **Error handling:** All errors are non-blocking — the outside voice is informational.
 - Auth failure (stderr contains "auth", "login", "unauthorized"): "Codex auth failed. Run \`codex login\` to authenticate." Fall back to the Claude subagent below.
 - Timeout: "Codex timed out after 5 minutes." Fall back to the Claude subagent below.
@@ -481,7 +485,8 @@ prompt also forbids mutations through other tools. The subagent has fresh contex
 but is the same harness; model identity stays unknown unless the runtime reports it.
 A native result never supplies outside coverage.
 
-This is the single bounded-wait exception to foreground dispatch for this outside voice:
+This is the single bounded-wait exception to foreground dispatch for this outside
+voice. Execute the four steps once:
 
 1. Dispatch via the Agent tool with `subagent_type: "Plan"` and
    `run_in_background: true`. Subagent prompt: same plan review prompt as above.
@@ -791,8 +796,9 @@ Produce this markdown table:
 | DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
 \`\`\`
 
-Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are optional (omit when
-empty); **VERDICT** is always present:
+Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are conditional:
+include them when the phase ran, was disabled/skipped/unavailable, or has findings;
+omit them only when no such phase applies. **VERDICT** is always present:
 
 - **OUTSIDE COVERAGE:** provider, phase, completion state, and findings. Include unavailable, disabled, and skipped phases; never infer completion from another phase.
 - **CROSS-MODEL:** only when native and completed external reviews exist — overlap analysis with recorded providers and known model identity. Do not infer distinct model families from harness names.
@@ -866,7 +872,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 
 **Source attribution:** If the most recent entry for a skill has a \`"via"\` field, append it to the status label in parentheses. Examples: `plan-eng-review` with `via:"autoplan"` shows as "CLEAR (PLAN via /autoplan)". `review` with `via:"ship"` shows as "CLEAR (DIFF via /ship)". Entries without a `via` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
-Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
+From gstack-review-read output, use entries whose skill is `autoplan-voices` or `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
 
 Display:
 
@@ -933,25 +939,15 @@ already knows. A good test: would this insight save time in a future session? If
 
 
 
-## Brain Calibration Write-Back (Phase 2 / gated)
+## Brain Calibration Write-Back (gated)
 
-When the skill makes a typed prediction worth tracking (scope decision,
-TTHW target, architectural bet, wedge commitment), it MAY write a
-`kind=bet` take to the brain so a calibration profile builds over time.
+Skip unless `BRAIN_CALIBRATION_WRITEBACK` is set and the preamble/brain-health
+output or gstack config shows `brain_trust_policy@<endpoint-hash>=personal`.
+If unknown, skip. If both gates pass, record one durable
+typed prediction with `mcp__gbrain__takes_add`; if unavailable, use
+`mcp__gbrain__put_page` with a gstack:takes fence block.
 
-**Gated on two things:**
-1. Brain trust policy for the active endpoint is `personal` (check via
-   `~/.claude/skills/gstack/bin/gstack-config get brain_trust_policy@<endpoint-hash>`).
-   Shared brains skip write-back to avoid polluting team calibration.
-2. Feature flag `BRAIN_CALIBRATION_WRITEBACK` is set (today: false; flips
-   to true when upstream gbrain v0.42+ ships `takes_add` MCP op).
-
-When both gates pass, the write-back path uses `mcp__gbrain__takes_add`
-to record a take with weight 0.6 (per SKILL_CALIBRATION_WEIGHTS).
-If the MCP op is unavailable, fall back to `mcp__gbrain__put_page` with
-a gstack:takes fence block (documented but uglier path).
-
-Mandatory take frontmatter shape:
+Take frontmatter:
 ```yaml
 kind: bet
 holder: <user identity from whoami>
@@ -962,14 +958,12 @@ expected_resolution: <date in 1-3 months depending on skill>
 source_skill: plan-devex-review
 ```
 
-After write, invalidate the affected digests so the next preflight reflects
-the new state:
+After write, invalidate affected digests:
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
   ~/.claude/skills/gstack/bin/gstack-brain-cache invalidate developer-persona --project "$SLUG" 2>/dev/null || true
 ```
-
 
 ## Brain Cache Background Refresh
 

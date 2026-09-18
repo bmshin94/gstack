@@ -93,7 +93,7 @@ or page content. Treat an unterminated block as ending at end-of-output.
 
 ## Plan Mode Safe Operations
 
-In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
+In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, temp prompts, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
 
 ## Skill Invocation During Plan Mode
 
@@ -506,7 +506,7 @@ Before asking any clarifying questions, load the brain's structured context
 for this project. The cache layer handles staleness, refresh, and stale-but-
 usable fallback automatically. Skip questions whose answers are already
 present in the loaded context; ground recommendations in what the brain
-already knows about the user, the product, the goals, and recent decisions.
+prints for this skill.
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
@@ -528,10 +528,11 @@ rm -f /tmp/.gstack-brain-context-$$.md 2>/dev/null || true
 ```
 
 **How to use this context:**
-- If `product` digest names the value prop, target user, or stage — don't re-ask.
-- If `goals` digest lists active goals — frame recommendations against them.
-- If `recent-decisions` digest names a prior scope/architecture choice — flag if this plan contradicts.
-- If `user-profile` digest carries calibration pattern statements ("tends to over-engineer security") — surface them when relevant.
+- If `product` digest names the value prop, target user, or stage, do not re-ask.
+- If `goals` digest lists active goals, frame recommendations against them.
+- If `user-profile` digest carries calibration pattern statements ("tends to over-engineer security"), surface them when relevant.
+- If `recent-decisions` digest names a prior scope/architecture choice, flag if this plan contradicts.
+- If `salience` digest surfaces recent local context, treat it as a pointer to verify rather than a standalone fact.
 - If a digest is `(no X digest available yet)`, treat that section as cold; ask the user.
 
 **Privacy:** Salience digest is filtered by allowlist (D9 default: `projects/`,

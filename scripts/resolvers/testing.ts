@@ -13,7 +13,7 @@ setopt +o nomatch 2>/dev/null || true  # zsh compat
 # Definitive ecosystem markers (presence = ecosystem, NOT a command to run)
 [ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django MARKER:manage.py"
 { [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ] || [ -f requirements.txt ]; } && echo "RUNTIME:python"
-[ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ] && echo "RUNTIME:ruby"
+{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
@@ -242,7 +242,7 @@ setopt +o nomatch 2>/dev/null || true  # zsh compat
 # Detect project runtime (markers are evidence, not commands to run blind)
 [ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django"
 { [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ] || [ -f requirements.txt ]; } && echo "RUNTIME:python"
-[ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ] && echo "RUNTIME:ruby"
+{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
@@ -287,6 +287,15 @@ Read every changed file. For each one, trace how data flows through the code —
 ${traceSource}
 
 ${traceStep1}
+Definition: a **targeted audit** reviews named concrete source/test files or a
+branch diff. A **prototype** is existing runnable code referenced by the plan,
+not a proposed future component.
+
+When grounded in concrete source and test files, read them in a dedicated tool
+call before drawing the diagram. For targeted audits only, do this after Scope
+Challenge resolves and before Step 2. Map user flows. Do not mix diff, grep,
+package/config, git, or commentary into that read; use separate calls for
+context. Base the diagram on that read.
 2. **Trace data flow.** Starting from each entry point (route handler, exported function, event listener, component render), follow the data through every branch:
    - Where does input come from? (request params, props, database, API call)
    - What transforms it? (validation, mapping, computation)
@@ -382,6 +391,10 @@ When uncertain whether a change is a regression, err on the side of writing the 
   sections.push(`
 **${mode === 'ship' ? '4' : 'Step 4'}. Output ASCII coverage diagram:**
 
+For targeted audits, start Test review output with the coverage diagram. In full
+plan reviews, put it inside the normal Test review section. Required outputs
+keep the final terminal report order.
+
 Include BOTH code paths and user flows in the same diagram. Mark E2E-worthy and eval-worthy paths:
 
 \`\`\`
@@ -403,6 +416,10 @@ QUALITY: ★★★:2 ★★:2 ★:1  |  GAPS: 8 (2 E2E, 1 eval)
 
 Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke check
 [→E2E] = needs integration test  |  [→EVAL] = needs LLM eval
+
+Avoid bare \`[ ]\` or \`[x]\` in diagrams unless the block includes
+\`Legend: [x] tested | [ ] no test\`. Prefer \`[GAP]\`, \`[★★ TESTED]\`,
+\`[→E2E]\`, \`[→EVAL]\`; keep user-flow markers off code-path rows.
 
 **Fast path:** All paths covered → "${mode === 'ship' ? 'Step 7' : mode === 'review' ? 'Step 4.75' : 'Test review'}: All new code paths have test coverage ✓" ${mode === 'plan' ? 'Still check LLM/eval scope and produce the Test Plan Artifact below.' : 'Continue.'}`);
 

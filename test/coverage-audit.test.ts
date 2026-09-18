@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { requireCoverageFileReads, validateCoverageAudit, type CoverageFile } from './helpers/coverage-audit';
+import { coverageAuditVerdict } from './helpers/coverage-audit-evidence';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const cwd = '/owned/coverage';
@@ -20,6 +21,14 @@ function captured(tool = 'Bash', decorate = (text: string) => text): any[] {
   ])];
 }
 const numbered = (separator: string) => (text: string) => text.split('\n').map((line, i) => `${String(i + 1).padStart(6)}${separator}${line}`).join('\n');
+function capturedNativeEvidence(): any[] {
+  return [{ type: 'system', subtype: 'init', session_id: owner.session_id, cwd }, ...files.flatMap((file, i) => [
+    { type: 'assistant', ...owner, message: { role: 'assistant', content: [{ type: 'tool_use', id: `read-${i}`, name: 'Read',
+      input: { file_path: file.path } }] } },
+    { type: 'user', ...owner, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `read-${i}`,
+      content: file.content, is_error: false }] } },
+  ])];
+}
 
 for (const [name, tool, decorate] of [
   ['plain shell', 'Bash', (s: string) => s],
@@ -34,6 +43,30 @@ test('one shell result can contain both complete files without parsing command s
   const rows = captured();
   rows[1].message.content[0].input.command = 'sed -n 1,999p src/billing.ts; cat test/billing.test.ts';
   rows[2].message.content[0].content = files.map(file => file.content).join('\n=====\n');
+  expect(() => requireCoverageFileReads(rows.slice(0, 3), cwd, files)).not.toThrow();
+});
+
+test('one cat -n command with multiple literal operands proves both full files', () => {
+  const rows = captured();
+  rows[1].message.content[0].input.command = 'cat -n src/billing.ts test/billing.test.ts';
+  rows[2].message.content[0].content = files
+    .flatMap(file => file.content.split('\n'))
+    .map((line, i) => `${String(i + 1).padStart(6)}\t${line}`)
+    .join('\n');
+  expect(() => requireCoverageFileReads(rows.slice(0, 3), cwd, files)).not.toThrow();
+});
+
+test('quoted literal echo separators in an && display chain still prove both reads', () => {
+  const rows = captured();
+  rows[1].message.content[0].input.command =
+    'cat -n src/billing.ts && echo "=====TESTS=====" && cat -n test/billing.test.ts && echo "=====DIFF=====" && git diff main --stat && git diff main';
+  rows[2].message.content[0].content = [
+    numbered('\t')(files[0]!.content),
+    '=====TESTS=====',
+    numbered('\t')(files[1]!.content),
+    '=====DIFF=====',
+    ' src/billing.ts | 2 ++',
+  ].join('\n');
   expect(() => requireCoverageFileReads(rows.slice(0, 3), cwd, files)).not.toThrow();
 });
 
@@ -69,6 +102,74 @@ for (const output of ['coverage GAP processPayment refundPayment', 'coverage tes
     expect(() => validateCoverageAudit({ exitReason: 'success', browseErrors: [], output, transcript: captured() } as any, cwd, files)).toThrow();
   });
 }
+
+test('diagram rejects bare checkbox markers unless the same block defines them', () => {
+  const ambiguous = [
+    'CODE PATHS                                            USER FLOWS',
+    '├── processPayment()                                  [ ] Payment checkout',
+    '│   └── [★★ TESTED] happy path USD',
+    '└── refundPayment()',
+    '    └── [GAP] happy path missing',
+  ].join('\n');
+  expect(coverageAuditVerdict({
+    exitReason: 'success', browseErrors: [], output: ambiguous, transcript: capturedNativeEvidence(),
+  } as any, { cwd, source: files[0]!, tests: files[1]! })).toMatchObject({
+    sourceRead: true, testsRead: true, diagram: false, passed: false,
+  });
+  expect(coverageAuditVerdict({
+    exitReason: 'success',
+    browseErrors: [],
+    output: ambiguous.replace('[ ] Payment checkout', '[GAP] Payment checkout'),
+    transcript: capturedNativeEvidence(),
+  } as any, { cwd, source: files[0]!, tests: files[1]! })).toMatchObject({
+    sourceRead: true, testsRead: true, diagram: true, passed: true,
+  });
+  expect(coverageAuditVerdict({
+    exitReason: 'success',
+    browseErrors: [],
+    output: `${ambiguous}\nLegend: [x] tested | [ ] no test`,
+    transcript: capturedNativeEvidence(),
+  } as any, { cwd, source: files[0]!, tests: files[1]! })).toMatchObject({
+    sourceRead: true, testsRead: true, diagram: true, passed: true,
+  });
+});
+
+test('diagram accepts an explicit single GAP legend mixed with quality keys', () => {
+  const output = [
+    'CODE PATHS                                                  USER FLOWS',
+    '[+] src/billing.ts                                          [+] Payment checkout',
+    '  ├── processPayment(amount, currency)                        ├── [★★  TESTED] Successful USD charge — billing.test.ts:6',
+    '  │   ├── [★★  TESTED] happy path USD — billing.test.ts:6     ├── [GAP]        Customer submits zero / negative amount',
+    '  │   └── [GAP]         unsupported currency → throw (:4)     └── [GAP] [→E2E] Double-click submit',
+    '  └── refundPayment(paymentId, reason)                      [+] Error states',
+    "      ├── [GAP]         happy path → 'refunded' (:11)         ├── [GAP]        'Invalid amount' surfaced",
+    "      └── [GAP]         !reason → 'Reason required' (:10)     └── [GAP]        'Reason required' surfaced",
+    '',
+    'Legend: ★★★ edges + errors  ★★ happy path only  ★ smoke  [GAP] no test  [→E2E] recommend integration test',
+  ].join('\n');
+  expect(coverageAuditVerdict({
+    exitReason: 'success', browseErrors: [], output, transcript: capturedNativeEvidence(),
+  } as any, { cwd, source: files[0]!, tests: files[1]! })).toMatchObject({
+    sourceRead: true, testsRead: true, diagram: true, passed: true,
+  });
+});
+
+test('review testing checklist documents a coverage diagram shape accepted by the native oracle', () => {
+  const checklist = fs.readFileSync(path.join(ROOT, 'review/specialists/testing.md'), 'utf8');
+  expect(checklist).toContain('If the caller explicitly asks for an ASCII coverage diagram');
+  expect(checklist).toContain('dedicated tool call');
+  expect(checklist).toMatch(/Read\s+diffs, package files, configs, or other context in separate tool calls\./);
+  expect(checklist).toContain('valid USD happy path returns success [OK]');
+  expect(checklist).toContain('refund success and guard branches not imported or untested [GAP]');
+  expect(checklist).toContain('Legend: [OK] tested [GAP] no test');
+  const output = checklist.match(/```text\n(src\/billing\.ts[\s\S]*?)\n```/)?.[1];
+  expect(output).toBeTruthy();
+  expect(coverageAuditVerdict({
+    exitReason: 'success', browseErrors: [], output: output!, transcript: capturedNativeEvidence(),
+  } as any, { cwd, source: files[0]!, tests: files[1]! })).toEqual({
+    sourceRead: true, testsRead: true, diagram: true, passed: true, failures: [],
+  });
+});
 
 test('both distinct nonempty expected files are mandatory', () => {
   for (const incomplete of [[], files.slice(0, 1), [files[0], files[0]], [{ ...files[0], content: '' }, files[1]]]) {

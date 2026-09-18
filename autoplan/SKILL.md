@@ -75,7 +75,7 @@ or page content. Treat an unterminated block as ending at end-of-output.
 
 ## Plan Mode Safe Operations
 
-In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
+In plan mode, allowed because they inform the plan: `$B`, `$D`, `codex exec`/`codex review`, temp prompts, writes to `~/.gstack/`, writes to the plan file, and `open` for generated artifacts.
 
 ## Skill Invocation During Plan Mode
 
@@ -537,7 +537,7 @@ Read the `/office-hours` skill file at `~/.claude/skills/gstack/office-hours/SKI
 
 **If unreadable:** Skip with "Could not load /office-hours — skipping." and continue.
 
-Follow its instructions from top to bottom, **skipping these sections** (already handled by the parent skill):
+Follow its instructions from top to bottom, **skipping these sections when present** (already handled by the parent skill):
 - Preamble (run first)
 - AskUserQuestion Format
 - Completeness Principle — Boil the Ocean
@@ -949,7 +949,7 @@ at most 2 repair attempts, warn at the gate with each still-incomplete item.
 
 **STOP here and present the final state to the user.**
 
-Present as a message, then use AskUserQuestion:
+Present this message, then use AskUserQuestion:
 
 ```
 ## /autoplan Review Complete
@@ -960,67 +960,46 @@ Present as a message, then use AskUserQuestion:
 ### Decisions Made: [N] total ([M] auto-decided, [K] taste choices, [J] user challenges)
 
 ### User Challenges (both models disagree with your stated direction)
-[For each user challenge:]
-**Challenge [N]: [title]** (from [phase])
-You said: [user's original direction]
-Both models recommend: [the change]
-Why: [reasoning]
-What we might be missing: [blind spots]
-If we're wrong, the cost is: [downside of changing]
-[If security/feasibility: "⚠️ Both models flag this as a security/feasibility risk,
-not just a preference."]
-
-Your call — your original direction stands unless you explicitly change it.
+For each: **Challenge [N]: [title]** (from [phase]); You said: [original];
+Both models recommend: [change]; Why: [reasoning]; What we might be missing:
+[blind spots]; If wrong: [cost]. If security/feasibility, say both models flag
+that risk. Your original direction stands unless you explicitly change it.
 
 ### Your Choices (taste decisions)
-[For each taste decision:]
-**Choice [N]: [title]** (from [phase])
-I recommend [X] — [principle]. But [Y] is also viable:
-  [1-sentence downstream impact if you pick Y]
+For each: **Choice [N]: [title]** (from [phase]). Recommend [X] — [principle].
+Name the viable alternative and its downstream impact.
 
 ### Auto-Decided: [M] decisions [see Decision Audit Trail in plan file]
 
 ### Review Scores
-- CEO: [summary]
-- CEO Voices: Codex [summary], Claude subagent [summary], Consensus [X/6 confirmed]
-- Design: [summary or "skipped, no UI scope"]
-- Design Voices: Codex [summary], Claude subagent [summary], Consensus [X/7 confirmed] (or "skipped")
-- Eng: [summary]
-- Eng Voices: Codex [summary], Claude subagent [summary], Consensus [X/6 confirmed]
-- DX: [summary or "skipped, no developer-facing scope"]
-- DX Voices: Codex [summary], Claude subagent [summary], Consensus [X/6 confirmed] (or "skipped")
+CEO, Design, DX and Eng: phase summary plus Codex, Claude
+and consensus status; say skipped where a phase did not run.
 
 ### Cross-Phase Themes
-[For any concern that appeared in 2+ phases' dual voices independently:]
-**Theme: [topic]** — flagged in [Phase 1, Phase 3]. High-confidence signal.
-[If no themes span phases:] "No cross-phase themes — each phase's concerns were distinct."
+List concerns independently raised in 2+ phases. If none: "No cross-phase themes — each phase's concerns were distinct."
 
 ### Deferred to TODOS.md
 [Items auto-deferred with reasons]
 
 ### Implementation Tasks (aggregated across phases)
-[Substitute the contents of $AGGREGATED_TASKS computed above. If empty:
-"_No per-phase task lists found in $TASKS_DIR for branch $BRANCH._"]
+[Substitute $AGGREGATED_TASKS. If empty: "_No per-phase task lists found in $TASKS_DIR for branch $BRANCH._"]
 ```
 
-**Cognitive load management:**
-- 0 user challenges: skip "User Challenges" section
-- 0 taste decisions: skip "Your Choices" section
-- 1-7 taste decisions: flat list
-- 8+: group by phase. Add warning: "This plan had unusually high ambiguity ([N] taste decisions). Review carefully."
+**Cognitive load:** skip empty User Challenges / Your Choices. Use a flat list
+for 1-7 taste decisions; group 8+ by phase and warn that ambiguity is high.
 
 AskUserQuestion options:
-- A) Approve as-is (accept all recommendations)
-- B) Approve with overrides (specify which taste decisions to change)
-- B2) Approve with user challenge responses (accept or reject each challenge)
-- C) Interrogate (ask about any specific decision)
-- D) Revise (the plan itself needs changes)
-- E) Reject (start over)
+- A) Approve as-is
+- B) Approve with overrides
+- B2) Resolve user challenges
+- C) Interrogate
+- D) Revise
+- E) Reject
 
 **Option handling:**
 - A: mark APPROVED, write review logs, suggest /ship
 - B: ask which overrides, apply, then follow D's affected-phase rerun rule (including Eng last) before re-presenting the gate. Counts toward the same 3-cycle cap as D.
-- B2: accept/reject User Challenges one at a time. Rejection preserves the user's direction; acceptance amends the plan. Re-run Eng after amendments, then re-present the gate. Uses D's same 3-cycle cap.
+- B2: accept/reject User Challenges one at a time; rejected ones preserve the user's direction. Re-run Eng, then re-present the gate.
 - C: answer freeform, re-present gate
 - D: make changes, re-run affected phases (scope→1, design→2, dx→2.5, test plan→3, arch→3; a re-run of any earlier phase re-runs Eng after it — the gate always reviews the final plan). Max 3 cycles.
 - E: start over
@@ -1028,27 +1007,24 @@ AskUserQuestion options:
 **Starting an affected-phase rerun:** Keep the current Implementation plan and all
 prior accepted obligations intact. Move that phase's already-applied
 `autoplan-baseline-edits` record verbatim into fenced history in Review record,
-retaining its original source SHA. Create a fresh amendment checkpoint from the
-current plan. For newly approved baseline edits, use that `create` result's
-`baselineEdits.record` and `sourceSha256`; the review projection hash is not the
-baseline identity. Carry forward every unchanged accepted requirement. Never replay old replacements or rewrite their
-historical source SHA. This starts a new phase invocation; compaction resumes the
-existing invocation and its checkpoint. Eng still runs after all prior amendments.
+retaining its original source SHA.
+Create a fresh amendment checkpoint. For new baseline edits, use `create`'s
+`baselineEdits.record` and `sourceSha256`; review projection hash is not baseline
+identity. Carry forward unchanged accepted requirements. Never replay old
+replacements or rewrite historical source SHA. This starts a new phase invocation;
+compaction resumes the existing invocation and checkpoint. Eng still runs last.
 
 ---
 
 ## Completion: Write Review Logs
 
-On approval, write each completed review's log entry for /ship's dashboard.
-Replace TIMESTAMP, STATUS, and N with actual values from each review phase.
-STATUS is "clean" if no unresolved issues, "issues_open" otherwise.
+On approval, log each completed review for /ship's dashboard. Replace TIMESTAMP,
+STATUS and N with actual phase values. STATUS is "clean" or "issues_open".
 
 ```bash
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-ceo-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"SELECTIVE_EXPANSION","via":"autoplan","commit":"'"$COMMIT"'"}'
-
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-eng-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"FULL_REVIEW","via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
@@ -1062,22 +1038,20 @@ If Phase 2.5 ran (DX scope):
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
-Dual voice logs: write this record separately for each PHASE (`ceo`, `design`,
-`dx`, `eng`), substituting that phase's status and counts. Generate one unique
-AUTOPLAN_RUN_ID at run start; share it and TIMESTAMP across all four records.
+Dual voice logs: write one record per PHASE (`ceo`, `design`, `dx`, `eng`) with
+that phase's status/counts. Generate one AUTOPLAN_RUN_ID and share it with TIMESTAMP.
 ```bash
 ~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"autoplan-voices","run_id":"AUTOPLAN_RUN_ID","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","host":"claude","outside_provider":"codex","outside_status":"OUTSIDE_STATUS","phase":"PHASE","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
 
-Always log skipped Design/DX phases: status and outside_status "skipped", source
-"none", zero consensus counts. SOURCE = "codex" only for completed
-external output; use separate "in-host" records for native results. OUTSIDE_STATUS:
-completed, unavailable, disabled, or skipped. Never carry success across phases
-or runs. Keep unknown model identity unknown and preserve reported multi-model usage.
+Always log skipped Design/DX: status/outside_status "skipped", source "none",
+zero consensus counts. SOURCE = "codex" only for completed external
+output; native results use "in-host". OUTSIDE_STATUS is completed, unavailable,
+disabled or skipped. Never carry success across phases/runs; preserve modelUsage.
 
 Retain the historical review-log skill ID; add `"host":"claude","outside_provider":"codex","outside_status":"completed|unavailable|disabled|skipped","phase":"autoplan"`. Record differing attempt outcomes separately. `source:"codex"` requires completed CLI output; native uses `source:"in-host"` (historical `source:"claude"`: native Claude). Availability/native fallback is not outside completion. Preserve all reported modelUsage; unknown model identity stays unknown.
 
-Present a phase-by-phase coverage table (CEO, design, DX, eng) with host, outside provider, outside status, native completion, and findings. Report partial coverage explicitly.
-Replace N values with actual consensus counts from the tables.
+Present a phase coverage table (CEO, design, DX, eng): host, outside provider/status,
+native completion, findings, and partial coverage. Replace N with actual counts.
 
 Suggest next step: `/ship` when ready to create the PR.

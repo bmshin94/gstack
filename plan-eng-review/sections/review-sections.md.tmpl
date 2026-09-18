@@ -1,6 +1,8 @@
 ## Review preparation
 
-After startup, follow the preparation sections below through Confidence Calibration. Read Decision procedure as the rule for later choices. Start the review at Scope Challenge, then complete Sections 1–4 in order.
+After startup, follow the preparation sections below through Confidence
+Calibration. Read Decision procedure as the rule for later choices. Start the
+review at Scope Challenge, then complete Sections 1–4 in order.
 
 ## Review record and write policy
 
@@ -57,8 +59,10 @@ unrecovered attempted writes block it. Apply this policy at every later write.
 {{LEARNINGS_SEARCH}}
 
 ## Retrospective learning
-Inspect recent review/refactor/revert commits for the selected paths. Record
-recurring issues or reversals and check those paths during this review.
+For selected paths, run `git log --oneline -- <paths>` and
+`git log --grep=revert --oneline -- <paths>`; branch diff uses changed files.
+Plan target with no files: use named future paths or record `not available`.
+Check recurring issues or reversals.
 
 **Plan-review evidence:** Implementation/validation steps are proposals. Calibrate
 findings below: quote the motivating plan requirement (file:line) and check existing interfaces
@@ -75,9 +79,16 @@ proposed code to settle unknowns. Keep suppressed findings for the output append
 ## Decision procedure
 
 Use this six-step loop for findings from Scope Challenge, Sections 1–4, Outside
-Voice and late changes. Finish one choice before starting another. Initial scope
-selectors have their own recording rules. The write policy governs persistence;
-the preamble governs question tools and authorized auto-decisions.
+Voice and late changes. Finish one choice before starting another. It also covers
+TODO choices. Setup gates are target/prerequisite choices before findings:
+Context Recovery/prerequisite prompts, initial target selector and Scope
+Challenge complexity selector. They use local rules, no pre-answer ledger.
+
+Flow: issue -> compare -> save/read -> ask/wait -> apply -> next issue.
+
+One question for one choice per AskUserQuestion call. Use the preamble for
+question transport/fallback and authorized auto-decisions. Use Review
+record/write policy only for saved records, reports and logs.
 
 ### 1. Establish current state
 
@@ -119,7 +130,8 @@ their own choices, and their tests wait for approval.
 
 ### 3. Compare one choice
 
-Select one pending ID and build `currentDecision`:
+Build one question for one choice per AskUserQuestion call: Select one pending
+ID and build `currentDecision`:
 - `question`: the complete D-numbered preamble brief, including Project, ELI10,
   Stakes, Recommendation and applicable completeness/net fields.
 - `header`: the exact native header.
@@ -130,18 +142,24 @@ file:line in the native fields. Offer 2–3 options, including do-nothing when
 reasonable; Outside Voice retains its four-option menu. Each option must explain
 human/CC effort, risk and maintenance. Tie the recommendation to the engineering
 preferences and prefer complete coverage when extra CC effort is marginal.
+If the host does not state limits, keep headers under 5 words and option labels
+under 5 words; put details in descriptions.
 
 For one fixed approved contract, coverage choices vary implementation or proof
 depth. Use `Completeness: N/10`: 10 covers all relevant in-scope edges, 7 covers
 the happy path, 3 is a shortcut. For different approaches, use
-`Note: options differ in kind, not coverage — no completeness score.` Bundling
-policies earns no completeness; test stars rate existing tests, not decisions or findings.
+`Note: options differ in kind, not coverage — no completeness score.`
+Completeness is only coverage depth for one approved contract. If options bundle
+unrelated policies, split them. Test-review scores rate existing/proposed tests,
+not answer status.
 
 Build a separate **comparison grid** for the whole brief. Give every selectable
 behavior, approach, guarantee or bound a row. Show its concrete current value,
 each option's value and work, and any approval citation. Include shared, fixed
-and pending choices. Put all deliberation in the native question/descriptions;
-a saved-only Pros/cons block cannot supply missing decision context.
+and pending choices.
+If the grid exposes another independent change, return to step 2 and split it before sending the question. Put all deliberation in the native
+question/descriptions; a saved-only Pros/cons block cannot supply missing
+decision context.
 
 Compare each option's full label and description with every row in its grid
 column. They must make the same commitments and retain the same conditions:
@@ -168,14 +186,19 @@ After the jitter answer, carry that value into both options of the later cap que
 
 ### 4. Save the pending record
 
+Invariant for this step: save one complete current record, Read that record
+back, then ask the exact saved question. Do not ask from memory.
+
 Save the record, complete grid and exact `currentDecision` in the report file,
 before `## GSTACK REVIEW REPORT`. Include every native field, the recommendation
-and all options. Use exactly one A–D record selector for each option: keep an
-existing selector or prefix one. Compare the label separately from that notation.
+and all options. A–D record selectors are ledger notation only: if a saved label
+already starts `A)`/`B)`/`C)`/`D)`, keep that one prefix; otherwise add it. Compare
+the label separately from that notation by removing the selector before matching.
 
-When revising, replace the whole current payload. Keep other choices' headings,
-content and approvals intact; move superseded payloads to History. Do not leave
-duplicate Question, Header or Options fields.
+When revising, replace the whole current payload for this record: comparison
+grid, question, header, options, state, actual answer and accepted scope. Keep
+other choices' headings, content and approvals intact; move superseded payloads
+to History. Do not leave duplicate Question, Header or Options fields.
 
 ```markdown
 ## Decision ledger
@@ -219,20 +242,26 @@ comparison or a critic's advice cannot substitute for this verification.
 ### 5. Ask and wait
 
 Use the preamble's tool resolution, failure fallback and authorized auto-decision
-rules. Setup and Scope Challenge selectors follow this dispatch order with their
-own recording rules.
+rules. The initial target selector and Scope Challenge complexity selector are
+setup gates with local rules and no pre-answer ledger rows because they choose
+scope first. Every later engineering remedy uses this Decision procedure.
 
 Send `AskUserQuestion({ questions: [currentDecision] })` after step 4. Send one
 question object for one choice; other IDs wait. Copy the verified question,
 header, labels and descriptions literally. Do not add or strip brief paragraphs
 or rebuild options. Authorized prose and auto-decisions use this same verified
 brief with the preamble's rendering and answer rules.
+When Question Tuning is enabled, copying the verified question preserves its
+`<gstack-qid:{question_id}>` marker.
 
 **STOP until the actual answer arrives.** Do not apply a remedy, make another
 call, start the next section or call ExitPlanMode while the choice awaits an
 answer. An obvious fix still needs an answer unless exact prior approval covers it.
 
 ### 6. Apply and refresh
+
+Invariant for this step: apply the selected option as one complete resolution
+block, Read it back, then continue. Do not update only the answer line.
 
 Read the selected saved label, full description and grid column together. Carry
 all commitments, conditions, unchanged values and pending choices forward. If
@@ -296,16 +325,32 @@ Before reviewing, answer:
    verify build/publish CI/CD, target OS/architectures and user download/install
    channels. Record deferred distribution explicitly in "NOT in scope".
 
-At 8+ files or 2+ new classes/services, STOP before Section 1. Use the preamble's decision-brief format for this complexity gate:
+At 8+ files or 2+ new classes/services, STOP before Section 1. Use the
+preamble's decision-brief format for this complexity gate.
 
-Initial scope selectors need no grid or **pre-answer** ledger write. Ask and wait
-before changes. After all complexity answers, save actual answers and accepted
-scope under the write policy, then begin findings; no retroactive pending record.
+Initial scope selectors need no grid or **pre-answer** ledger write. Ask and
+wait before changes.
 
-1. Explain complexity; ask each feature cut/deferral separately first.
-2. Compare original/smaller class/module arrangements with identical feature choices,
-   contracts and approved security/error/test/performance fixes. Unapproved fixes stay pending.
-3. Offer both concrete arrangements: structure only. Other remedies need separate accept/reject/defer answers.
+1. Explain complexity; ask each feature cut/deferral separately first. Ask and
+   wait before changing scope.
+2. Structure choice: after feature scope is fixed, compare only the file/class
+   arrangement. Compare original/smaller class/module arrangements with identical feature
+   choices, contracts and approved security/error/test/performance fixes.
+   Unapproved fixes stay pending.
+3. structure only menu:
+   `A) Original arrangement: <files/classes>; fixed features: <approved list>`
+   `B) Smaller arrangement: <files/classes>; fixed features: same list`
+   `Pending remedies not decided here: <ids>`.
+   These labels decide only file/class arrangement, not pending remedies.
+4. Save the actual feature and structure answers as one scope record: `feature
+   answers: <refs>; structure: <A/B + ref>; accepted scope: <exact scope>;
+   pending remedies: <ids or none>`.
+
+After all complexity answers, save actual answers and accepted scope under the
+write policy; no retroactive pending record.
+
+Other remedies need separate accept/reject/defer answers through Decision
+procedure after findings exist.
 
 Once the gate resolves, apply only accepted scope changes. Without a complexity gate, proceed directly to findings.
 
@@ -349,6 +394,10 @@ Resolve this section's new or reopened choices through the Decision procedure. T
 
 ### 3. Test review
 
+For a plan target, review proposed coverage against proposed paths. For a
+branch-diff target, diagram changed code paths plus callers/tests; the working
+plan is the remedy plan from diff findings.
+
 {{TEST_COVERAGE_AUDIT_PLAN}}
 
 After the Test Plan Artifact is saved or presented, report the Test review findings and their dispositions and continue to Performance review. The Test review's **Add missing tests to the plan** step resolves test and eval decisions before that artifact is written.
@@ -385,6 +434,8 @@ For each TODO, describe:
 
 Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
 
+Option C records accepted implementation scope; still do not edit product code.
+
 Record this context with each accepted TODO; a vague bullet is insufficient.
 
 {{PLAN_REVIEW_APPROVAL_CHECK}}
@@ -415,8 +466,9 @@ another review cycle.
    affected outputs from step 1 through publication before asking navigation again.
 6. **Finish.** Run Learning hooks, then return to the entrypoint's Section
    self-check and read-only EXIT PLAN MODE GATE. Run these checks in every host
-   mode. Only after both pass, run success telemetry and cache refresh; call
-   ExitPlanMode only in host plan mode.
+   mode. Brain Calibration Write-Back is one gated Learning hook. Only after
+   both pass, run success telemetry and cache refresh; call ExitPlanMode only in
+   host plan mode.
 
 ### Output reference — review body
 
@@ -507,7 +559,7 @@ choice for `KEY_DECISION`. Omit it if the review found nothing durable.
 
 Substitute values from the Completion Summary:
 - **TIMESTAMP**: current ISO 8601 datetime
-- **STATUS**: "clean" if 0 unresolved decisions AND 0 critical gaps; otherwise "issues_open"
+- **STATUS**: "clean" when `issues_found=0`, `unresolved=0` and `critical_gaps=0`; otherwise "issues_open". Resolved findings still count in `issues_found`, so "issues_open" can mean mapped work, not a failed review.
 - **unresolved**: this review's "Unresolved decisions" count; do not include prior reviews
 - **critical_gaps**: number from "Failure modes: ___ critical gaps flagged"
 - **issues_found**: total issues found across all review sections (Architecture + Code Quality + Performance + Test gaps)

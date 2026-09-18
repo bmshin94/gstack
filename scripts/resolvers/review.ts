@@ -36,7 +36,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 
 **Source attribution:** If the most recent entry for a skill has a \\\`"via"\\\` field, append it to the status label in parentheses. Examples: \`plan-eng-review\` with \`via:"autoplan"\` shows as "CLEAR (PLAN via /autoplan)". \`review\` with \`via:"ship"\` shows as "CLEAR (DIFF via /ship)". Entries without a \`via\` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
-${ctx.skillName === 'plan-ceo-review' ? 'From gstack-review-read output, use entries whose skill is `autoplan-voices` or `design-outside-voices` for the coverage detail below the dashboard.' : 'Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard.'} Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
+From gstack-review-read output, use entries whose skill is \`autoplan-voices\` or \`design-outside-voices\` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
 
 ${['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName) ? 'Display a fresh `clean` result as CLEAR and `issues_open` as ISSUES OPEN. Show missing, stale, disabled or unavailable results explicitly; none implies CLEAR. Keep the logged status unchanged.\n\n' : ''}Display:
 
@@ -140,8 +140,9 @@ ${conditionalWrites ? 'Display `clean` as CLEAR and `issues_open` as ISSUES OPEN
 | DX Review | \\\`/plan-devex-review\\\` | Developer experience gaps | {runs} | {status} | {findings} |
 \\\`\\\`\\\`
 
-Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are optional (omit when
-empty); **VERDICT** is always present:
+Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are conditional:
+include them when the phase ran, was disabled/skipped/unavailable, or has findings;
+omit them only when no such phase applies. **VERDICT** is always present:
 
 - **OUTSIDE COVERAGE:** provider, phase, completion state, and findings. Include unavailable, disabled, and skipped phases; never infer completion from another phase.
 - **CROSS-MODEL:** only when native and completed external reviews exist — overlap analysis with recorded providers and known model identity. Do not infer distinct model families from harness names.
@@ -259,12 +260,15 @@ Required Outputs, preserving unresolved decisions in the report.`;
 export function generateExitPlanModeGate(ctx: TemplateContext): string {
   if (ctx.skillName === 'plan-ceo-review') return `## EXIT PLAN MODE GATE (BLOCKING)
 
-Read-only verification: if plan/report or completion-log persistence is forbidden,
-or a save failed, use **Gate outcome: Blocked**.
+Read-only verification: if required plan/report persistence is forbidden or a
+required save failed, use **Gate outcome: Blocked**. If only completion-log or
+metadata writes are forbidden after the report is verified, skip those writes,
+label them not persisted and continue; they do not block the gate.
 
 Verify \`Approval readiness: PASS\` against current row IDs and answer references.
-If stale, stop. Resume changed choices at 0D, then repeat readiness, affected
-outputs, report Read-back, Review Log and dashboard before returning here.
+If stale because a choice changed, stop and return to 0D for that choice only;
+then repeat readiness, affected outputs, report Read-back, Review Log and
+dashboard before returning here.
 
 Verify all five checks:
 1. Read the plan file after your most recent write.
@@ -274,7 +278,9 @@ Verify all five checks:
 4. Its final non-whitespace line is the exact unbolded \`NO UNRESOLVED DECISIONS\`,
    or the last bullet under \`**UNRESOLVED DECISIONS:**\`. A bolded sentinel,
    missing status or any trailing prose fails this check.
-5. Confirm \`gstack-review-log\` was called and \`gstack-review-read\` ran at least once.
+5. If metadata writes were permitted, confirm \`gstack-review-log\` was called
+   and \`gstack-review-read\` ran at least once. If metadata writes were not
+   permitted, confirm the actual log fields were shown as not persisted.
 
 Failed checks use **Gate outcome: Blocked**. Chat or body prose cannot replace
 the verified terminal report. Do not call ExitPlanMode until all checks pass.`;
@@ -501,43 +507,47 @@ export function generateSpecReviewLoop(_ctx: TemplateContext): string {
   return `${ceo ? '####' : '##'} Spec Review Loop
 
 Run an adversarial review before presenting the final document to the user.
-${ceo ? 'Use 0D for any new or reopened amendment; 0H presents both completed inputs for final approval.' : "Follow the calling workflow's approval steps."}
+${ceo ? 'Use 0D for any new or reopened amendment discovered by the reviewer. The later 0H approval approves only the completed working plan and CEO summary, not unresolved amendments.' : "Follow the calling workflow's approval steps."}
 
 **Step 1: Dispatch reviewer subagent**
 
 ${ceo ? `Read Agent's tool definition. Set \`run_in_background: false\` if that field is available; omit it otherwise. Launch one reviewer with both inputs below.
 
-If the result contains a completed review, consume it. If it returns a pending task, use the host's wait tool. With no wait tool, end this response and resume on its completion notification. While waiting, do not advance, edit either input or launch another reviewer. A launch failure uses Step 2's unavailable branch.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
+If the result contains a completed review, consume it. If it returns a pending task, use the host's wait tool. With no wait tool, end this response and resume on its completion notification. While waiting, do not advance, edit either input or launch another reviewer.` : `Use Agent with JSON boolean \`run_in_background: false\`, never string \`"false"\`.
 Subagents default to background since ${CC_BACKGROUND_DEFAULT_SINCE}. Async launch metadata
 is not a verdict: wait for that agent's final review before continuing; do not launch a duplicate.
 The reviewer has fresh context: only the document, not the conversation.`}
 
 Prompt the subagent with:
-- ${ceo ? 'Both saved absolute paths, or both complete labeled texts if either input is not persisted: CEO scope summary and current amended working plan. Supply no other conversation context.' : 'The file path of the document just written'}
-${ceo ? `- "Read both inputs in full. Evaluate them together on all five dimensions below.
-  Plan requirements need not be repeated in the scope summary. Flag contradictions,
-  unsupported accepted expansions, and required behavior missing from both. Cite
-  the input and requirement for each finding. If either input is unavailable or
-  incomplete, report that failure instead of grading a partial input."` : `- "Read this document and review it on 5 dimensions. For each dimension, note PASS or
+- ${ceo ? 'Both saved absolute paths, or both complete labeled texts if either input is not persisted: CEO scope summary and current amended working plan. No other conversation context.' : 'The file path of the document just written'}
+${ceo ? `- "Read both inputs in full. Evaluate them together on all five dimensions.
+  Flag contradictions, unsupported accepted expansions and required behavior
+  missing from both. Cite input and requirement for each finding. If either
+  input is unavailable or incomplete, report that failure instead of grading
+  partial input."` : `- "Read this document and review it on 5 dimensions. For each dimension, note PASS or
   list specific issues with suggested fixes. At the end, output a quality score (1-10)
   across all dimensions."`}
 
 **Dimensions:**
-1. **Completeness** — Are all requirements addressed? Missing edge cases?
+${ceo ? `1. **Completeness** — requirements and edge cases.
+2. **Consistency** — no contradictions.
+3. **Clarity** — implementable without follow-up questions.
+4. **Scope** — no unapproved creep or YAGNI.
+5. **Feasibility** — buildable with the stated approach.` : `1. **Completeness** — Are all requirements addressed? Missing edge cases?
 2. **Consistency** — Do parts of the document agree with each other? Contradictions?
 3. **Clarity** — Could an engineer implement this without asking questions? Ambiguous language?
 4. **Scope** — Does the document creep beyond the original problem? YAGNI violations?
-5. **Feasibility** — Can this actually be built with the stated approach? Hidden complexity?
+5. **Feasibility** — Can this actually be built with the stated approach? Hidden complexity?`}
 
 The subagent should return:
 - A quality score (1-10)${ceo ? " across all dimensions" : ""}
-${ceo ? '- For each dimension, return PASS or numbered issues with descriptions and suggested fixes. Return overall PASS if all dimensions pass.' : '- PASS if no issues, or a numbered list of issues with dimension, description, and fix'}
+${ceo ? '- For each dimension, PASS or numbered issues with suggested fixes. Overall PASS only if all dimensions pass.' : '- PASS if no issues, or a numbered list of issues with dimension, description, and fix'}
 
 ${ceo ? `**Step 2: Process the result**
 
-- **Unavailable:** If launch or review fails, times out, or cannot review both complete inputs, stop the loop. Say "Spec review unavailable — presenting unreviewed doc." Preserve the failure and all prior findings. Continue to Step 3; this review is a quality bonus, not a gate.
+- **Unavailable:** If launch or review fails, times out, or cannot review both complete inputs, stop the loop. Say "Spec review unavailable — presenting unreviewed doc." Preserve the failure and all prior findings. Continue to Step 3; quality bonus, not a gate.
 - **PASS:** Stop the loop.
-- **Issues:** Stop after the third review, or when consecutive reviews repeat the same unresolved issues (the same requirements and problems). Otherwise use 0D for new or reopened choices, then amend the working plan's behavior/requirements and the CEO summary's scope decisions under the storage policy. Keep both consistent and re-dispatch with both updated inputs and the same instructions.
+- **Issues:** Stop after the third review, or when consecutive reviews repeat the same unresolved issues (the same requirements and problems). Otherwise use 0D for new or reopened choices, amend the working plan and CEO summary under the storage policy, Keep both consistent, and re-dispatch with both updated inputs and the same instructions.
 
 Make at most three reviewer launches. A missing score alone does not require another review.` : `**Step 2: Fix and re-dispatch**
 
@@ -557,7 +567,7 @@ already written to disk; the review is a quality bonus, not a gate.`}
 
 **Step 3: Report and persist metrics**
 
-${ceo ? `Report the outcome and the fields below. Show full reviewer output on request. List unresolved issues under "## Reviewer Concerns" in the CEO summary, citing the owning input.
+${ceo ? `Report the outcome and fields below. Show full reviewer output on request. List unresolved issues under "## Reviewer Concerns" in the CEO summary, citing the owning input.
 
 SCORE is the latest attempt's reported 1–10 grade after reviewing both full inputs. For an unavailable review or missing/invalid grade, use JSON \`null\` ("score unavailable"). Label earlier grades "prior review score".
 
@@ -942,8 +952,9 @@ review. The user turns this off only by asking explicitly
 
 ${outsideVoicePreflight(ctx, { disabledBehavior: 'skip-all' })}
 
-${ctx.skillName === 'plan-eng-review' ? `**Outcome routing:** Use this table throughout the section. Missing reviewer
-coverage is non-blocking; approval and artifact-write requirements still apply.
+${ctx.skillName === 'plan-eng-review' ? `**Outcome routing:** Pick exactly one row from this table, finish that row's
+steps, then leave Outside Voice. Missing reviewer coverage is non-blocking;
+approval and artifact-write requirements still apply.
 
 | Outcome | Next step |
 |---|---|
@@ -976,8 +987,9 @@ ${ctx.skillName === 'plan-ceo-review' ? 'Use the current complete working plan, 
 diff scope). If a CEO scope document from an earlier \`/plan-ceo-review\` is available, read that too — it contains
 the scope decisions and vision.`}
 
-Construct this prompt (substitute the actual plan content — if plan content exceeds 30KB,
-truncate to the first 30KB and note "Plan truncated for size"). **Always start with the
+Construct this prompt. If THE PLAN body exceeds 30KB, truncate only that body to
+the first 30KB and note "Plan truncated for size"; keep the full instructions
+and review context in the prompt file. **Always start with the
 filesystem boundary instruction:**
 
 "${CODEX_BOUNDARY}Read-only review: return findings in your final response. Do NOT edit or write any
@@ -1032,6 +1044,9 @@ ${outsideVoiceFor(ctx).label.toUpperCase()} SAYS (plan review — outside voice)
 ════════════════════════════════════════════════════════════
 \`\`\`
 
+This fence is the only external-provider output surface. Native fallback prints
+only its \`OUTSIDE VOICE (...)\` subagent report; never print both for one review.
+
 ${ceo ? `**Native fallback — provider unavailable or execution failed, with reviews enabled:**
 
 Report the actual failure: authentication needs \`${outsideVoiceFor(ctx).id === 'codex' ? 'codex login' : 'claude auth login'}\`;
@@ -1039,14 +1054,24 @@ timeout means the five-minute limit expired; empty output means no response.
 Other preflight failures retain their printed diagnosis, including harness mismatch.
 These failures do not block the review; they use the bounded fallback below.
 
+Use this exact route:
+- \`CODEX_MODE: disabled\` means intentional opt-out. Record disabled coverage and
+  do not run a replacement reviewer.
+- \`CODEX_MODE: ready\` means run the outside invocation above.
+- Any other preflight result, including \`under_current_harness\`,
+  \`under_codex\`, missing CLI, auth/model failure, harness mismatch or failed
+  output validation, means report the diagnosis and run the native fallback
+  below. A native result never counts as outside coverage.
+
 Immediately before dispatch, recheck the preflight result. If it is
 \`CODEX_MODE: disabled\`, return to **Record the disabled outcome** without
 dispatching. Otherwise continue with the same prepared prompt.
 ` : ctx.skillName === 'plan-eng-review' ? `**Native fallback — provider unavailable or execution failed, with reviews enabled:**
 
-Follow Outcome routing above. Immediately before dispatch, check the preflight
-result again: disabled means no replacement. The steps below own native dispatch,
-bounded waiting and cancellation; a native result never supplies outside coverage.` : `**Error handling:** All errors are non-blocking — the outside voice is informational.
+Use this fallback only after the routing row says to use it. Immediately before
+dispatch, check the preflight result again: disabled means no replacement;
+record disabled coverage and do not dispatch. If still enabled, run the bounded
+native attempt below. A native result never supplies outside coverage.` : `**Error handling:** All errors are non-blocking — the outside voice is informational.
 - Auth failure (stderr contains "auth", "login", "unauthorized"): "${outsideVoiceFor(ctx).label} auth failed. Run \\\`${outsideVoiceFor(ctx).id === 'codex' ? 'codex login' : 'claude auth login'}\\\` to authenticate." Fall back to the ${outsideVoiceFor(ctx).nativeLabel} subagent below.
 - Timeout: "${outsideVoiceFor(ctx).label} timed out after 5 minutes." Fall back to the ${outsideVoiceFor(ctx).nativeLabel} subagent below.
 - Empty response: "${outsideVoiceFor(ctx).label} returned no response." Fall back to the ${outsideVoiceFor(ctx).nativeLabel} subagent below.
@@ -1074,7 +1099,8 @@ prompt also forbids mutations through other tools. The subagent has fresh contex
 but is the same harness; model identity stays unknown unless the runtime reports it.
 A native result never supplies outside coverage.
 
-This is the single bounded-wait exception to foreground dispatch for this outside voice:
+This is the single bounded-wait exception to foreground dispatch for this outside
+voice. Execute the four steps once:
 
 1. Dispatch via the Agent tool with \`subagent_type: "Plan"\` and
    \`run_in_background: true\`. Subagent prompt: same plan review prompt as above.
@@ -1118,6 +1144,19 @@ For these questions, use the following four-option menus instead of the ordinary
 Report all findings, dispositions and remaining disagreements after resolving the questions. An answer to one row does not resolve the finding's other pending rows. Preserve /autoplan's authorized auto-decisions, audit trail and User Challenge rules; challenges wait for its final gate.
 
 ` : ctx.skillName === 'plan-ceo-review' ? `**Cross-model tension:**
+
+Enter this block only after an external reviewer completed and the current
+native review exists. Current native review means this skill's completed
+Sections 1-10/11 and current report. If the only reviewer is same-harness/native
+fallback, or if the external review was disabled, unavailable, timed out,
+cancelled, raw/incomplete or same-harness-only with unknown model identity, do
+not synthesize cross-model agreement. Record only OUTSIDE COVERAGE and do not
+write a CROSS-MODEL line.
+
+Native fallback findings still count as review findings from the current
+harness. Apply Outside Voice Integration Rule to any concrete finding: correct
+facts directly, and route material scope, policy, implementation or test changes
+through 0D.
 
 Record the reviewer and evidence in the same six-column ledger. Use 0D for new or reopened choices, including both saves and the actual answer; do not start a second procedure.
 

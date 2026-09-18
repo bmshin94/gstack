@@ -473,8 +473,9 @@ Produce this markdown table:
 | DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
 \`\`\`
 
-Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are optional (omit when
-empty); **VERDICT** is always present:
+Below the table, add these lines. **OUTSIDE COVERAGE** and **CROSS-MODEL** are conditional:
+include them when the phase ran, was disabled/skipped/unavailable, or has findings;
+omit them only when no such phase applies. **VERDICT** is always present:
 
 - **OUTSIDE COVERAGE:** provider, phase, completion state, and findings. Include unavailable, disabled, and skipped phases; never infer completion from another phase.
 - **CROSS-MODEL:** only when native and completed external reviews exist — overlap analysis with recorded providers and known model identity. Do not infer distinct model families from harness names.
@@ -555,7 +556,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 
 **Source attribution:** If the most recent entry for a skill has a \`"via"\` field, append it to the status label in parentheses. Examples: `plan-eng-review` with `via:"autoplan"` shows as "CLEAR (PLAN via /autoplan)". `review` with `via:"ship"` shows as "CLEAR (DIFF via /ship)". Entries without a `via` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
-Read `autoplan-voices` and `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
+From gstack-review-read output, use entries whose skill is `autoplan-voices` or `design-outside-voices` for the coverage detail below the dashboard. Group by workflow run and phase, not merely skill. Show each phase’s recorded provider and outside_status; partial coverage must remain partial. These records do not change the engineering gate.
 
 Display:
 
@@ -622,25 +623,15 @@ already knows. A good test: would this insight save time in a future session? If
 
 
 
-## Brain Calibration Write-Back (Phase 2 / gated)
+## Brain Calibration Write-Back (gated)
 
-When the skill makes a typed prediction worth tracking (scope decision,
-TTHW target, architectural bet, wedge commitment), it MAY write a
-`kind=bet` take to the brain so a calibration profile builds over time.
+Skip unless `BRAIN_CALIBRATION_WRITEBACK` is set and the preamble/brain-health
+output or gstack config shows `brain_trust_policy@<endpoint-hash>=personal`.
+If unknown, skip. If both gates pass, record one durable
+typed prediction with `mcp__gbrain__takes_add`; if unavailable, use
+`mcp__gbrain__put_page` with a gstack:takes fence block.
 
-**Gated on two things:**
-1. Brain trust policy for the active endpoint is `personal` (check via
-   `~/.claude/skills/gstack/bin/gstack-config get brain_trust_policy@<endpoint-hash>`).
-   Shared brains skip write-back to avoid polluting team calibration.
-2. Feature flag `BRAIN_CALIBRATION_WRITEBACK` is set (today: false; flips
-   to true when upstream gbrain v0.42+ ships `takes_add` MCP op).
-
-When both gates pass, the write-back path uses `mcp__gbrain__takes_add`
-to record a take with weight 0.5 (per SKILL_CALIBRATION_WEIGHTS).
-If the MCP op is unavailable, fall back to `mcp__gbrain__put_page` with
-a gstack:takes fence block (documented but uglier path).
-
-Mandatory take frontmatter shape:
+Take frontmatter:
 ```yaml
 kind: bet
 holder: <user identity from whoami>
@@ -651,14 +642,12 @@ expected_resolution: <date in 1-3 months depending on skill>
 source_skill: plan-design-review
 ```
 
-After write, invalidate the affected digests so the next preflight reflects
-the new state:
+After write, invalidate affected digests:
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
   ~/.claude/skills/gstack/bin/gstack-brain-cache invalidate brand --project "$SLUG" 2>/dev/null || true
 ```
-
 
 ## Brain Cache Background Refresh
 
